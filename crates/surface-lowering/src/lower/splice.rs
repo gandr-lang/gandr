@@ -133,7 +133,7 @@ impl<'source> Lowerer<'_, 'source>
                         ..
                     })
                 )
-            }) && self.name_at(at).as_ref() == word
+            }) && self.cx.name_at(at).as_ref() == word
         };
         let mut called = Pieces::new();
         let mut written = Vec::new();

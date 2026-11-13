@@ -127,6 +127,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Context;
 use super::Frame;
 use super::Lowered;
 use super::Lowerer;
@@ -147,6 +148,7 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
+use super::native::NativeRef;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
 use crate::error::FormFault;
@@ -394,7 +396,7 @@ impl<'source> Lowerer<'_, 'source>
                 state,
                 naming: Naming::Form,
             });
-            let Some((written, former)) = self.form_at(at)?
+            let Some((written, former)) = self.cx.form_at(at)?
             else {
                 return Err(site.fault(at.span, FormFault::MisplacedTile));
             };
@@ -489,7 +491,7 @@ impl<'source> Lowerer<'_, 'source>
             };
             let node = match former {
                 Former::TypeHead => {
-                    let named = self.name_at(at);
+                    let named = self.cx.name_at(at);
                     let Some(position) = binders.iter().rposition(|&bound| bound == named)
                     else {
                         return Err(continuation);
@@ -680,7 +682,10 @@ impl<'source> Lowerer<'_, 'source>
             Ok(protocol) => protocol,
             Err(ProtocolError::NonContractive(state)) => {
                 let at = written.get(usize::from(state)).copied().unwrap_or(site.at);
-                let name = self.form_at(at)?.map_or(site.name, |(name, _former)| name);
+                let name = self
+                    .cx
+                    .form_at(at)?
+                    .map_or(site.name, |(name, _former)| name);
                 return Err(Site { at, name, ..site }.out(FragmentBoundary::NonContractive));
             },
             Err(_malformed) => {
@@ -758,7 +763,7 @@ impl<'source> Lowerer<'_, 'source>
             closed(here, &mut cursor, arrow)?;
             let body = here.one(cursor.operands())?;
             exhausted(here, &cursor)?;
-            binders.push(self.name_at(variable));
+            binders.push(self.cx.name_at(variable));
             draft.sites.push(StateSite {
                 at: variable,
                 state,
@@ -906,7 +911,7 @@ impl<'source> Lowerer<'_, 'source>
         operand: Placed,
     ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
     {
-        let formed = self.form_at(operand)?;
+        let formed = self.cx.form_at(operand)?;
         let subject = Site {
             at: operand,
             name: formed.map_or(FormName::IDENTIFIER, |(name, _former)| name),
@@ -920,12 +925,13 @@ impl<'source> Lowerer<'_, 'source>
             && let Maybe::Present(bound) =
                 self.cx
                     .scope
-                    .resolve(frame, self.name_at(operand), &mut self.cx.fuel)?
+                    .resolve(frame, self.cx.name_at(operand), &mut self.cx.fuel)?
             && let Some(&(_, value)) = self.cx.ran.get(&bound.binder)
         {
             let lost = Site {
                 at: value,
                 name: self
+                    .cx
                     .form_at(value)?
                     .map_or(FormName::IDENTIFIER, |(name, _former)| name),
                 reading: subject.reading,
@@ -986,7 +992,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Ok(Stands::Other);
             };
             let placed = Placed::of(unwrapped.node, tree);
-            let Some((name, former)) = self.form_at(placed)?
+            let Some((name, former)) = self.cx.form_at(placed)?
             else {
                 return Ok(Stands::Other);
             };
@@ -1040,14 +1046,14 @@ impl<'source> Lowerer<'_, 'source>
         site: Site,
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
     {
-        let name = self.name_at(site.at);
+        let name = self.cx.name_at(site.at);
         if let Maybe::Present(stated) = self.stated_named(site, name)? {
             return Ok(written(stated.meaning));
         }
         let frame = site.reading.frame();
         if let Maybe::Present(Resolved::Declaration { constant, .. }) =
             self.resolve_name(site, frame, name)?
-            && let Maybe::Present(body) = self.definition_written(constant)
+            && let Maybe::Present(body) = NativeRef::over(&self.cx).definition_written(constant)
         {
             return Ok(Some(body));
         }
@@ -1062,7 +1068,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a type path.
     /// - ensures: the written type of the manifest or instantiated component
     ///   the path's module exports; nothing for any other path.
-    /// - fails: as [`Self::type_link`] and [`Self::path_head`].
+    /// - fails: as [`Context::type_link`] and [`Self::path_head`].
     /// - panics: none.
     /// - executable: none — as [`Self::stands`].
     ///
@@ -1083,13 +1089,13 @@ impl<'source> Lowerer<'_, 'source>
             return Err(repaired.refusal(site.name));
         }
         let mut links: Vec<(Placed, Placed)> = Vec::new();
-        let (target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
+        let (target, nested, member) = Context::type_link(site, &pieces.pieces, site.at.span)?;
         Self::linked(&mut links, target, nested, member);
         let head = self.path_head(site, target, &mut links)?;
         let path = self.path_named(head, &links);
         self.cx.collected.reach_declaring(
             self.cx.collected.unit.source_at(site.at.span.start()),
-            self.name_at(head),
+            self.cx.name_at(head),
         );
         if self.cx.recognition.resolve_path(&path)
             == PathResolution::Complete(Recognized::ModuleType)
@@ -1183,7 +1189,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<ComputationId, lowered::Absent>
     {
         for endpoint in self.cx.endpoints.read(endpoints).iter().rev() {
-            let Maybe::Present(origin) = self.origin_at(endpoint.binder)
+            let Maybe::Present(origin) = self.cx.origin_at(endpoint.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
@@ -1268,12 +1274,12 @@ impl<'source> Lowerer<'_, 'source>
         else if keyword == TileName::SELECT {
             exhausted(site, &cursor)?;
             let (subject, chosen) = self.keyword_two(site, operand)?;
-            if !matches!(self.form_at(chosen)?, Some((_, Former::Name))) {
+            if !matches!(self.cx.form_at(chosen)?, Some((_, Former::Name))) {
                 return Err(site.fault(chosen.span, FormFault::MisplacedTile));
             }
             (subject, SessionAction::Select {
                 endpoint: self.endpoint(frame, subject)?,
-                label: FieldLabel::from(String::from(self.name_at(chosen).as_ref())),
+                label: FieldLabel::from(String::from(self.cx.name_at(chosen).as_ref())),
             })
         }
         else if keyword == TileName::CLOSE || keyword == TileName::DROP {
@@ -1520,6 +1526,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut labelled: BTreeMap<SurfaceName<'source>, Placed> = BTreeMap::new();
         for &(pattern, body) in &written {
             let named = self
+                .cx
                 .form_at(pattern)?
                 .map_or(FormName::HOLE, |(name, _former)| name);
             if named != FormName::IDENTIFIER {
@@ -1530,7 +1537,7 @@ impl<'source> Lowerer<'_, 'source>
                     boundary: FragmentBoundary::Unadmitted(super::unread_pattern(named)),
                 });
             }
-            let label = self.name_at(pattern);
+            let label = self.cx.name_at(pattern);
             if let Some(&first) = labelled.get(&label) {
                 return Err(LoweringRefusal::DuplicateDefinition {
                     span: pattern.span,
@@ -1683,7 +1690,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         let child = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
-        let child_name = self.name_at(child_end);
+        let child_name = self.cx.name_at(child_end);
         self.note_binder(child_end, frame, child_name)?;
         self.note_binder(binder, frame, name)?;
         self.read(protocol.node, Reading::ValueType(frame));
@@ -1741,7 +1748,7 @@ impl<'source> Lowerer<'_, 'source>
         let operands = self.cx.operands.read(payloads);
         let mut carried: Vec<ValueTypeId> = Vec::with_capacity(operands.len());
         for &payload in operands {
-            match self.value_type_at(payload) {
+            match self.cx.value_type_at(payload) {
                 Maybe::Present(ty) => carried.push(ty),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
@@ -1826,15 +1833,15 @@ impl<'source> Lowerer<'_, 'source>
         let minted = action.try_map(
             ChildOrder::Forward,
             &mut (),
-            |&mut (), payload| match self.value_at(payload) {
+            |&mut (), payload| match self.cx.value_at(payload) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(reason) => Err(reason),
             },
-            |&mut (), arm| match self.computation_at(arm) {
+            |&mut (), arm| match self.cx.computation_at(arm) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(reason) => Err(reason),
             },
-            |&mut (), protocol| match self.value_type_at(protocol) {
+            |&mut (), protocol| match self.cx.value_type_at(protocol) {
                 Maybe::Present(id) => Ok(id),
                 Maybe::Absent(reason) => Err(reason),
             },

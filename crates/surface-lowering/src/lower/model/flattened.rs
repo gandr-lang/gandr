@@ -155,7 +155,7 @@ impl<'source> Lowerer<'_, 'source>
             at: declared,
             ..site
         };
-        let (applied, bound) = match self.form_at(declared)? {
+        let (applied, bound) = match self.cx.form_at(declared)? {
             Some((_, Former::TypeApplication)) => (declared, None),
             Some((_, Former::ManifestType)) => {
                 let mut pieces = Pieces::new();
@@ -305,7 +305,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let fixed: BTreeMap<Name, Placed> = sorts
             .iter()
-            .map(|&(sort, stated)| (Name::from(self.name_at(sort).as_ref()), stated))
+            .map(|&(sort, stated)| (Name::from(self.cx.name_at(sort).as_ref()), stated))
             .collect();
         let mut theories = self.bundled(named, (at, theory))?;
         if let Some(outermost) = theories.first_mut() {
@@ -646,7 +646,7 @@ impl<'source> Lowerer<'_, 'source>
                     .map_or(Ok(()), |flattened| {
                         Err(LoweringRefusal::ModelImplicitValue {
                             span: site.at.span,
-                            implicit: self.name_at(flattened.binder),
+                            implicit: self.cx.name_at(flattened.binder),
                         })
                     })
             },
@@ -699,7 +699,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let frame = site.reading.frame();
-        let name = self.name_at(member);
+        let name = self.cx.name_at(member);
         let Some(first) = flattened
             .components
             .first()
@@ -735,7 +735,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnknownMember {
                 span: member.span,
-                module: self.name_at(head),
+                module: self.cx.name_at(head),
                 member: name,
             });
         };
@@ -792,7 +792,7 @@ impl<'source> Lowerer<'_, 'source>
         flattened: &Flattened,
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
-        let name = self.name_at(selected);
+        let name = self.cx.name_at(selected);
         if flattened
             .fixed
             .iter()
@@ -807,7 +807,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnknownMember {
                 span: selected.span,
-                module: self.name_at(target),
+                module: self.cx.name_at(target),
                 member: name,
             });
         };
@@ -893,13 +893,13 @@ impl<'source> Lowerer<'_, 'source>
             span: resident.span,
             implicit,
         };
-        match self.form_at(resident)? {
+        match self.cx.form_at(resident)? {
             Some((_, Former::Constructor | Former::TypeHead)) => {
                 let packed = self.packed_module(site, resident, &slot.theory, &slot.fixed)?;
                 Ok(Supplied::Module(Arc::new(packed)))
             },
             Some((_, Former::Name)) => {
-                let name = self.name_at(resident);
+                let name = self.cx.name_at(resident);
                 let Maybe::Present(bound) =
                     self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?
                 else {
@@ -924,7 +924,7 @@ impl<'source> Lowerer<'_, 'source>
                         return Err(LoweringRefusal::UnknownMember {
                             span: resident.span,
                             module: name,
-                            member: self.name_at(component.named),
+                            member: self.cx.name_at(component.named),
                         });
                     };
                     let behind = count.saturating_sub(place).saturating_sub(1);
@@ -971,7 +971,7 @@ impl<'source> Lowerer<'_, 'source>
             slot.theory.last.span.start(),
             &self.theory_prefix(&slot.theory),
             slot.theory.last.span,
-            self.name_at(slot.theory.last),
+            self.cx.name_at(slot.theory.last),
         )?;
         let mut answering = BTreeSet::from([wanted]);
         for (&theory, included) in &self.cx.collected.included {
@@ -1155,7 +1155,7 @@ impl<'source> Lowerer<'_, 'source>
         let inserted = origin.inserted(Insertion::Implicit);
         let mut fixed = Vec::with_capacity(planned.fixed.len());
         for &(_, stated) in &planned.fixed {
-            let Maybe::Present(ty) = self.value_type_at(stated.node)
+            let Maybe::Present(ty) = self.cx.value_type_at(stated.node)
             else {
                 return;
             };
@@ -1260,16 +1260,18 @@ impl<'source> Lowerer<'_, 'source>
         let fixed: Option<Vec<(&Name, ValueTypeId)>> = bundled
             .manifests
             .iter()
-            .map(|&(ref name, defined)| match self.value_type_at(defined) {
-                Maybe::Present(id) => Some((name, id)),
-                Maybe::Absent(_) => None,
-            })
+            .map(
+                |&(ref name, defined)| match self.cx.value_type_at(defined) {
+                    Maybe::Present(id) => Some((name, id)),
+                    Maybe::Absent(_) => None,
+                },
+            )
             .collect();
         let Some(fixed) = fixed
         else {
             return unminted;
         };
-        let below = match self.origin_at(bundled.named) {
+        let below = match self.cx.origin_at(bundled.named) {
             Maybe::Present(named) => named.inserted(Insertion::Model),
             Maybe::Absent(_) => origin.inserted(Insertion::Model),
         };

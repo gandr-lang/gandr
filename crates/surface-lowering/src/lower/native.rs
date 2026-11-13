@@ -449,6 +449,7 @@ use gandr_theory_levitation::THEORY_CONSTRUCTORS;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
+use super::Context;
 use super::FormName;
 use super::Former;
 use super::Function;
@@ -845,19 +846,6 @@ struct Joinable
 
 impl Joint
 {
-    /// No joint: the declaration being read is no member of one.
-    ///
-    /// # Specification
-    /// trivial.
-    #[must_use]
-    pub(super) const fn alone() -> Self
-    {
-        Self {
-            members: Vec::new(),
-            own: Maybe::Absent(joint::Absent::Alone),
-        }
-    }
-
     /// The summand of the declaration being read.
     ///
     /// # Specification
@@ -912,6 +900,18 @@ impl Joint
             .map_or(Maybe::Absent(joint::Absent::Outside), |at| {
                 Maybe::Present(Summand::from(at))
             })
+    }
+    /// No joint: the declaration being read is no member of one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(super) const fn alone() -> Self
+    {
+        Self {
+            members: Vec::new(),
+            own: Maybe::Absent(joint::Absent::Alone),
+        }
     }
 }
 
@@ -1646,6 +1646,83 @@ pub(super) fn substituted_type(
     }
 }
 
+/// The native family's reads of the lowering: each reads the context alone,
+/// so a read borrows the context and never the lowering.
+#[repr(transparent)]
+pub(super) struct NativeRef<'cx, 'run, 'source>
+{
+    /// The context that each read reads.
+    cx: &'cx Context<'run, 'source>,
+}
+
+impl<'cx, 'run, 'source> NativeRef<'cx, 'run, 'source>
+{
+    /// The reads over `cx`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) const fn over(cx: &'cx Context<'run, 'source>) -> Self
+    {
+        Self { cx }
+    }
+}
+
+impl<'run, 'source> core::ops::Deref for NativeRef<'_, 'run, 'source>
+{
+    type Target = Context<'run, 'source>;
+
+    /// The context, so each read of the context reads as it does on the
+    /// context.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn deref(&self) -> &Self::Target
+    {
+        self.cx
+    }
+}
+
+/// The native family's way to its state and to the other families. Here the
+/// lowering is its own host: each read is a field, and each call into another
+/// family is the lowering's own method.
+impl<'run, 'source> Lowerer<'run, 'source>
+{
+    /// The lowering's context, to read.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn cx(&self) -> &Context<'run, 'source>
+    {
+        &self.cx
+    }
+
+    /// The native family's reads, which borrow the lowering alone.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn shared(&self) -> NativeRef<'_, 'run, 'source>
+    {
+        NativeRef::over(&self.cx)
+    }
+    /// The lowering's context, to write.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn cx_mut(&mut self) -> &mut Context<'run, 'source>
+    {
+        &mut self.cx
+    }
+
+    /// The family that answers a call into another family.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn host(&mut self) -> &mut Self
+    {
+        self
+    }
+}
 impl<'source> Lowerer<'_, 'source>
 {
     /// Seed every data declaration's types: each parameter's type under the
@@ -1688,25 +1765,26 @@ impl<'source> Lowerer<'_, 'source>
         seeds: &mut Vec<(NodeIndex, Reading)>,
     )
     {
-        let first = self.cx.current.data;
-        for (listed, form) in self.cx.collected.data.iter().enumerate().skip(first) {
+        let cx = self.cx_mut();
+        let first = cx.current.data;
+        for (listed, form) in cx.collected.data.iter().enumerate().skip(first) {
             let mut frame = Frame::Outermost;
             for parameter in &form.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
-                self.cx.data_frames.push((parameter.classifier.node, frame));
-                let name = SurfaceName::from(self.text_at(parameter.named));
-                let bound = self.cx.scope.extend_typed(
+                cx.data_frames.push((parameter.classifier.node, frame));
+                let name = SurfaceName::from(cx.text_at(parameter.named));
+                let bound = cx.scope.extend_typed(
                     frame,
                     name,
                     parameter.classifier.node,
                     Maybe::Present(parameter.named.span),
                 );
-                self.cx.scope.mention(bound);
+                cx.scope.mention(bound);
                 frame = Frame::Inner(bound);
             }
             if let Maybe::Present(kind) = form.kind {
                 seeds.push((kind.node, Reading::ValueType(Frame::Outermost)));
-                let _fresh = self.cx.kinds.insert(kind.node);
+                let _fresh = cx.kinds.insert(kind.node);
             }
             // Each index reads under the parameters and the indices before
             // it, a named one by its name; the generators read under the
@@ -1714,20 +1792,20 @@ impl<'source> Lowerer<'_, 'source>
             let mut indexed = frame;
             for index in &form.indices {
                 seeds.push((index.ty.node, Reading::ValueType(indexed)));
-                self.cx.data_frames.push((index.ty.node, indexed));
+                cx.data_frames.push((index.ty.node, indexed));
                 let bound = match index.named {
                     Maybe::Present(named) => {
-                        let name = SurfaceName::from(self.text_at(named));
-                        let bound = self.cx.scope.extend_typed(
+                        let name = SurfaceName::from(cx.text_at(named));
+                        let bound = cx.scope.extend_typed(
                             indexed,
                             name,
                             index.ty.node,
                             Maybe::Present(named.span),
                         );
-                        self.cx.scope.mention(bound);
+                        cx.scope.mention(bound);
                         bound
                     },
-                    Maybe::Absent(_) => self.cx.scope.extend(
+                    Maybe::Absent(_) => cx.scope.extend(
                         indexed,
                         SurfaceName::from(""),
                         Maybe::Absent(binder_site::Absent::Unwritten),
@@ -1740,7 +1818,7 @@ impl<'source> Lowerer<'_, 'source>
                 let mut inner = frame;
                 for (position, field) in generator.fields.iter().enumerate() {
                     seeds.push((field.ty.node, Reading::ValueType(inner)));
-                    self.cx.data_frames.push((field.ty.node, inner));
+                    cx.data_frames.push((field.ty.node, inner));
                     // The last field binds only for the indices the result
                     // states.
                     if Some(position) == last && generator.indices.is_empty() {
@@ -1748,17 +1826,17 @@ impl<'source> Lowerer<'_, 'source>
                     }
                     let bound = match field.named {
                         Maybe::Present(named) => {
-                            let name = SurfaceName::from(self.text_at(named));
-                            let bound = self.cx.scope.extend_typed(
+                            let name = SurfaceName::from(cx.text_at(named));
+                            let bound = cx.scope.extend_typed(
                                 inner,
                                 name,
                                 field.ty.node,
                                 Maybe::Present(named.span),
                             );
-                            self.cx.scope.mention(bound);
+                            cx.scope.mention(bound);
                             bound
                         },
-                        Maybe::Absent(_) => self.cx.scope.extend(
+                        Maybe::Absent(_) => cx.scope.extend(
                             inner,
                             SurfaceName::from(""),
                             Maybe::Absent(binder_site::Absent::Unwritten),
@@ -1768,10 +1846,10 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 for (place, index) in generator.indices.iter().enumerate() {
                     seeds.push((index.node, Reading::Value(inner)));
-                    self.cx.data_frames.push((index.node, inner));
+                    cx.data_frames.push((index.node, inner));
                     // A constructor written there is classified by the
                     // family's index type at its place.
-                    let _first = self.cx.inherited.insert(
+                    let _first = cx.inherited.insert(
                         index.node,
                         Classifier::Stated(StatedIndex {
                             form: listed,
@@ -1796,10 +1874,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: the one constructor [`Self::bare_named`] answers, its import
-    ///   reached; the several absence when it answers more than one, and the
-    ///   shadowed absence when two imports bind the name; otherwise the absence
-    ///   it answers.
+    /// - ensures: the one constructor [`NativeRef::bare_named`] answers, its
+    ///   import reached; the several absence when it answers more than one, and
+    ///   the shadowed absence when two imports bind the name; otherwise the
+    ///   absence it answers.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1817,7 +1895,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
-            self.cx.collected.owner_of(site.at.node),
+            self.cx().collected.owner_of(site.at.node),
             Maybe::Present(own) if found.family < own
         ),
         | Maybe::Absent(_) => true,
@@ -1828,10 +1906,10 @@ impl<'source> Lowerer<'_, 'source>
         name: SurfaceName<'source>,
     ) -> Maybe<Constructor, constructed::Absent>
     {
-        match self.bare_named(site, name) {
+        match self.shared().bare_named(site, name) {
             Ok(Maybe::Present((Bare::One(found), import))) => {
                 if let Some(import) = import {
-                    self.cx.collected.reach(import);
+                    self.cx_mut().collected.reach(import);
                 }
                 Maybe::Present(found)
             },
@@ -1851,7 +1929,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is the name's node or the form holding it.
     /// - ensures: what [`Self::constructor_named`] answers, but for its several
     ///   and shadowed absences.
-    /// - fails: [`Self::unselected`]'s refusal at the name for those two
+    /// - fails: [`NativeRef::unselected`]'s refusal at the name for those two
     ///   absences.
     /// - panics: none.
     ///
@@ -1873,276 +1951,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         match self.constructor_named(site, name) {
             Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed) => {
-                Err(self.unselected(site, site.at.span, name))
+                Err(self.shared().unselected(site, site.at.span, name))
             },
             found @ (Maybe::Present(_)
             | Maybe::Absent(
                 constructed::Absent::Unnamed | constructed::Absent::TypePlace,
             )) => Ok(found),
-        }
-    }
-
-    /// What the bare name `name`, written at `site`, answers among the
-    /// constructors the site sees, and the import that answers it.
-    ///
-    /// # Specification
-    /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: the type-place absence when `site` is a data family's
-    ///   argument at a parameter or index the family declares a universe;
-    ///   otherwise, when the site's source declares the name, what
-    ///   [`Collected::bare_constructor`] answers among its constructors whose
-    ///   family is admitted strictly before the site's declaration and stands
-    ///   in a container enclosing it; else what the source's unqualified
-    ///   imports answer, with the import, under the same test; the unnamed
-    ///   absence when nothing answers.
-    /// - fails: [`Ambiguity`] for two imports binding the name.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`Ambiguity`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a name one family declares answers its constructor, a
-    ///   name two families declare answers both, and a name two imports bind is
-    ///   their ambiguity.
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
-    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present((Bare::Several { first, second, .. }, _))) if first.family >= second.family))]
-    fn bare_named(
-        &self,
-        site: Site,
-        name: SurfaceName<'source>,
-    ) -> Result<Maybe<(Bare, Option<ByteSpan>), constructed::Absent>, Ambiguity>
-    {
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
-        else {
-            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        };
-        // No constructor is a value of a universe, so an argument at a place
-        // its data family declares one names a type.
-        if let Some(&argued) = self.cx.argued.get(&site.at.node)
-            && let Some(form) = self.cx.collected.data.get(argued.form)
-            && let Some(classifier) = argued.place.checked_sub(form.parameters.len()).map_or_else(
-                || {
-                    form.parameters
-                        .get(argued.place)
-                        .map(|parameter| parameter.classifier)
-                },
-                |index| form.indices.get(index).map(|index| index.ty),
-            )
-            && self.cx.tree.node(classifier.node).is_some_and(|node| {
-                matches!(
-                    shape_of(self.cx.pbg, node),
-                    Ok(Shape::Form {
-                        former: Former::Universe,
-                        ..
-                    })
-                )
-            })
-        {
-            return Ok(Maybe::Absent(constructed::Absent::TypePlace));
-        }
-        let source = self.cx.collected.unit.source_at(site.at.span.start());
-        let seen = |found: &Constructor| {
-            found.family < own && self.encloses(found.family, own) != Encloses(false)
-        };
-        if self
-            .cx
-            .collected
-            .constructors_in(source, name)
-            .next()
-            .is_some()
-        {
-            return Ok(self
-                .cx
-                .collected
-                .bare_constructor(source, name, seen)
-                .map_or(Maybe::Absent(constructed::Absent::Unnamed), |bare| {
-                    Maybe::Present((bare, None))
-                }));
-        }
-        let Maybe::Present((bare, import)) =
-            self.cx.collected.imported_constructor(source, name)?
-        else {
-            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        };
-        let shown = match bare {
-            Bare::One(found) => seen(&found),
-            Bare::Several { first, second, .. } => seen(&first) && seen(&second),
-        };
-        Ok(if shown {
-            Maybe::Present((bare, Some(import)))
-        }
-        else {
-            Maybe::Absent(constructed::Absent::Unnamed)
-        })
-    }
-
-    /// The refusal of the bare constructor name `name`, written at `span`
-    /// inside `site`, that selects no one constructor.
-    ///
-    /// # Specification
-    /// - requires: `site` is the name's node or the form holding it.
-    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
-    ///   the first two families and the count of the rest, when
-    ///   [`Self::bare_named`] answers several;
-    ///   [`LoweringRefusal::ImportShadows`] at `span`, naming both imports,
-    ///   when two imports bind the name; [`LoweringRefusal::UnresolvedName`] at
-    ///   `span` otherwise.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a name two families share is refused naming both, and
-    ///   a name two imports bind is refused naming both imports.
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
-    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
-    #[spec(ensures: |ret| matches!(ret,
-        LoweringRefusal::AmbiguousConstructor { span: at, .. }
-        | LoweringRefusal::ImportShadows { span: at, .. }
-        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
-    pub(super) fn unselected(
-        &self,
-        site: Site,
-        span: ByteSpan,
-        name: SurfaceName<'source>,
-    ) -> LoweringRefusal<'source>
-    {
-        match self.bare_named(site, name) {
-            Ok(Maybe::Present((
-                Bare::Several {
-                    first,
-                    second,
-                    more,
-                },
-                _,
-            ))) => self.ambiguous_constructor(span, name, first, second, more),
-            Err(ambiguity) => LoweringRefusal::ImportShadows {
-                span,
-                name,
-                import: ambiguity.import,
-                other: ambiguity.other,
-            },
-            Ok(Maybe::Present((Bare::One(_), _)) | Maybe::Absent(_)) => {
-                LoweringRefusal::UnresolvedName { span, name }
-            },
-        }
-    }
-
-    /// The refusal of the bare constructor name `name` at `span`, which the
-    /// families of `first` and `second` declare, and `more` families after
-    /// them.
-    ///
-    /// # Specification
-    /// - requires: `first`'s family's slot precedes `second`'s.
-    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
-    ///   the two families and the count of the rest;
-    ///   [`LoweringRefusal::UnresolvedName`] at `span` when the collection
-    ///   holds no slot for either family.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a name two families share is refused naming both.
-    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
-    #[spec(ensures: |ret| matches!(ret,
-        LoweringRefusal::AmbiguousConstructor { span: at, .. }
-        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
-    pub(super) fn ambiguous_constructor(
-        &self,
-        span: ByteSpan,
-        name: SurfaceName<'source>,
-        first: Constructor,
-        second: Constructor,
-        more: CandidateCount,
-    ) -> LoweringRefusal<'source>
-    {
-        let family = |found: Constructor| {
-            self.cx
-                .collected
-                .slots
-                .get(usize::from(found.family))
-                .map(|entry| entry.name)
-        };
-        match (family(first), family(second)) {
-            (Some(first), Some(second)) => LoweringRefusal::AmbiguousConstructor {
-                span,
-                name,
-                first,
-                second,
-                more,
-            },
-            (None, _) | (_, None) => LoweringRefusal::UnresolvedName { span, name },
-        }
-    }
-
-    /// Whether the container the slot `family` stands in encloses the
-    /// declaration at `own`: the top level encloses every declaration of its
-    /// source, and a module's body its own members and those of the modules
-    /// nested in it.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: enclosing for a family at a top level, or one in a module the
-    ///   container chain outward from `own`'s container reaches; not for a
-    ///   family in a module the chain does not reach, and for slots the
-    ///   collection does not hold.
-    /// - provides: the scope of a module family's bare constructors.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Termination
-    /// Each step moves from a module to the container it was opened in; the
-    /// containers form a tree rooted at a top level, so the walk ends there.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a module's bare constructor names inside the module
-    ///   and names nothing at the top level.
-    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
-    #[spec(ensures: |ret| ret.0
-        || !matches!(
-            self.cx.collected.slots.get(usize::from(family)).map(|entry| entry.container),
-            Some(Container::TopLevel(_))
-        )
-        || self.cx.collected.slots.get(usize::from(own)).is_none())]
-    fn encloses(
-        &self,
-        family: SlotIndex,
-        own: SlotIndex,
-    ) -> Encloses
-    {
-        let container = |slot: SlotIndex| {
-            self.cx
-                .collected
-                .slots
-                .get(usize::from(slot))
-                .map(|entry| entry.container)
-        };
-        let (Some(stands), Some(mut here)) = (container(family), container(own))
-        else {
-            return Encloses(false);
-        };
-        if let Container::TopLevel(_) = stands {
-            return Encloses(true);
-        }
-        loop {
-            if here == stands {
-                return Encloses(true);
-            }
-            let Container::Module(module) = here
-            else {
-                return Encloses(false);
-            };
-            let Some(outer) = self
-                .cx
-                .collected
-                .structures
-                .get(usize::from(module))
-                .map(|structure| structure.container)
-            else {
-                return Encloses(false);
-            };
-            here = outer;
         }
     }
 
@@ -2163,7 +1977,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(found) => matches!(
-            self.cx.collected.owner_of(site.at.node),
+            self.cx().collected.owner_of(site.at.node),
             Maybe::Present(own) if found.family < own
         ),
         | Maybe::Absent(_) => true,
@@ -2174,14 +1988,14 @@ impl<'source> Lowerer<'_, 'source>
         name: SurfaceName<'source>,
     ) -> Maybe<Ported, constructed::Absent>
     {
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Maybe::Absent(constructed::Absent::Unnamed);
         };
-        let source = self.cx.collected.unit.source_at(site.at.span.start());
-        let (found, import) = match self.cx.collected.ports.get(&(source, name)) {
+        let source = self.cx().collected.unit.source_at(site.at.span.start());
+        let (found, import) = match self.cx().collected.ports.get(&(source, name)) {
             Some(&found) => (found, None),
-            None => match self.cx.collected.imported_ported(source, name) {
+            None => match self.cx().collected.imported_ported(source, name) {
                 Ok(Maybe::Present((found, import))) => (found, Some(import)),
                 Ok(Maybe::Absent(_)) | Err(_) => {
                     return Maybe::Absent(constructed::Absent::Unnamed);
@@ -2192,7 +2006,7 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(constructed::Absent::Unnamed);
         }
         if let Some(import) = import {
-            self.cx.collected.reach(import);
+            self.cx_mut().collected.reach(import);
         }
         Maybe::Present(found)
     }
@@ -2230,7 +2044,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
     /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx().collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     pub(super) fn qualified_constructor(
         &mut self,
         site: Site,
@@ -2239,7 +2053,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Ok(unnamed);
         };
@@ -2254,14 +2068,14 @@ impl<'source> Lowerer<'_, 'source>
             },
         };
         let slot_of = |slot: SlotIndex| {
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(slot))
                 .is_some_and(|entry| entry.constant == constant)
         };
         let found = if let Some((position, form)) = self
-            .cx
+            .cx()
             .collected
             .data
             .iter()
@@ -2273,7 +2087,7 @@ impl<'source> Lowerer<'_, 'source>
                 .enumerate()
                 .find(|&(_, generator)| {
                     matches!(generator.port, Maybe::Absent(_))
-                        && SurfaceName::from(self.text_at(generator.named)) == name
+                        && SurfaceName::from(self.cx().text_at(generator.named)) == name
                 })
                 .map(|(tag, generator)| Constructor {
                     family: form.slot,
@@ -2283,7 +2097,7 @@ impl<'source> Lowerer<'_, 'source>
                     named: generator.named,
                 })
         }
-        else if let Maybe::Present(ref theory) = self.cx.collected.theory
+        else if let Maybe::Present(ref theory) = self.cx().collected.theory
             && slot_of(theory.slot)
         {
             theory
@@ -2301,7 +2115,7 @@ impl<'source> Lowerer<'_, 'source>
                 })
         }
         else if let Some((position, terms)) = self
-            .cx
+            .cx()
             .collected
             .terms
             .iter()
@@ -2313,7 +2127,7 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .zip(&terms.arities)
                 .enumerate()
-                .find(|&(_, (&named, _))| SurfaceName::from(self.text_at(named)) == name)
+                .find(|&(_, (&named, _))| SurfaceName::from(self.cx().text_at(named)) == name)
                 .map(|(tag, (&named, &arity))| Constructor {
                     family: terms.slot,
                     form: Generators::Terms(position),
@@ -2356,7 +2170,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   and `M.B(x)` in a pattern, and a family the module does not hold is no
     ///   answer.
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx().collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     pub(super) fn module_constructor(
         &mut self,
         site: Site,
@@ -2366,17 +2180,17 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Ok(unnamed);
         };
-        let structure = match self.opened_module(site, module, &[]) {
+        let structure = match self.host().opened_module(site, module, &[]) {
             Ok(structure) => structure,
             Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
             Err(_) => return Ok(unnamed),
         };
         let Some(exported) = self
-            .cx
+            .cx()
             .collected
             .structures
             .get(usize::from(structure))
@@ -2394,7 +2208,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(unnamed);
         };
         let found = self
-            .cx
+            .cx()
             .collected
             .data
             .iter()
@@ -2402,7 +2216,7 @@ impl<'source> Lowerer<'_, 'source>
             .filter(|&(_, form)| {
                 exported.contains(&form.slot)
                     && family.is_none_or(|family| {
-                        self.cx
+                        self.cx()
                             .collected
                             .slots
                             .get(usize::from(form.slot))
@@ -2415,7 +2229,7 @@ impl<'source> Lowerer<'_, 'source>
                     .enumerate()
                     .find(|&(_, generator)| {
                         matches!(generator.port, Maybe::Absent(_))
-                            && SurfaceName::from(self.text_at(generator.named)) == name
+                            && SurfaceName::from(self.cx().text_at(generator.named)) == name
                     })
                     .map(|(tag, generator)| Constructor {
                         family: form.slot,
@@ -2464,9 +2278,12 @@ impl<'source> Lowerer<'_, 'source>
             },
             ..site
         };
-        let family_name = SurfaceName::from(self.text_at(family));
+        let family_name = SurfaceName::from(self.cx().text_at(family));
         Ok(
-            match self.resolve_name(named, Frame::Outermost, family_name)? {
+            match self
+                .host()
+                .resolve_name(named, Frame::Outermost, family_name)?
+            {
                 Maybe::Present(Resolved::Declaration { constant, .. }) => Maybe::Present(constant),
                 Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(constructed::Absent::Unnamed),
             },
@@ -2492,7 +2309,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a qualified multi-output constructor constructs a
     ///   port, its record and a port pattern as the bare one does.
     /// - witness: `lower::native::tests::a_qualified_multi_output_constructor_names_its_ports`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx().collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     fn qualified_ported(
         &mut self,
         site: Site,
@@ -2501,7 +2318,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
         else {
             return Ok(unnamed);
         };
@@ -2510,13 +2327,13 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(unnamed);
         };
         let Some((position, form)) =
-            self.cx
+            self.cx()
                 .collected
                 .data
                 .iter()
                 .enumerate()
                 .find(|&(_, form)| {
-                    self.cx
+                    self.cx()
                         .collected
                         .slots
                         .get(usize::from(form.slot))
@@ -2531,7 +2348,7 @@ impl<'source> Lowerer<'_, 'source>
             .enumerate()
             .filter(|&(_, generator)| {
                 matches!(generator.port, Maybe::Present(_))
-                    && SurfaceName::from(self.text_at(generator.named)) == name
+                    && SurfaceName::from(self.cx().text_at(generator.named)) == name
             });
         let Some((first, generator)) = ports.next()
         else {
@@ -2580,19 +2397,19 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Ported, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        match self.form_at(head)? {
+        match self.cx().form_at(head)? {
             Some((_, Former::Constructor)) => {
-                Ok(self.ported_named(site, SurfaceName::from(self.text_at(head))))
+                Ok(self.ported_named(site, SurfaceName::from(self.cx().text_at(head))))
             },
             Some((_, Former::Projection)) => {
-                let Some((family, member)) = self.linked_selection(site, head)?
+                let Some((family, member)) = self.host().linked_selection(site, head)?
                 else {
                     return Ok(unnamed);
                 };
-                if !matches!(self.form_at(family)?, Some((_, Former::Constructor))) {
+                if !matches!(self.cx().form_at(family)?, Some((_, Former::Constructor))) {
                     return Ok(unnamed);
                 }
-                let name = SurfaceName::from(self.text_at(member));
+                let name = SurfaceName::from(self.cx().text_at(member));
                 // A family name that does not resolve is the projection's to
                 // refuse.
                 Ok(self.qualified_ported(site, family, name).unwrap_or(unnamed))
@@ -2637,15 +2454,15 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        let Some((family, member)) = self.linked_selection(site, head)?
+        let Some((family, member)) = self.host().linked_selection(site, head)?
         else {
             return Ok(unnamed);
         };
-        let Some(node) = self.cx.tree.node(family.node)
+        let Some(node) = self.cx().tree.node(family.node)
         else {
             return Ok(unnamed);
         };
-        match shape_of(self.cx.pbg, node)? {
+        match shape_of(self.cx().pbg, node)? {
             Shape::Form {
                 former: Former::Constructor,
                 ..
@@ -2658,7 +2475,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Ok(unnamed);
             },
         }
-        let name = SurfaceName::from(self.text_at(member));
+        let name = SurfaceName::from(self.cx().text_at(member));
         // A family name that does not resolve is the projection's to refuse.
         let found = self
             .qualified_constructor(site, family, name)
@@ -2668,8 +2485,8 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Absent(_) = found
             && name.as_ref().starts_with(char::is_uppercase)
             && let Ok(Maybe::Present(constant)) = self.qualified_family(site, family)
-            && let Some(form) = self.cx.collected.data.iter().find(|form| {
-                self.cx
+            && let Some(form) = self.cx().collected.data.iter().find(|form| {
+                self.cx()
                     .collected
                     .slots
                     .get(usize::from(form.slot))
@@ -2678,11 +2495,11 @@ impl<'source> Lowerer<'_, 'source>
             && !form
                 .generators
                 .iter()
-                .any(|generator| SurfaceName::from(self.text_at(generator.named)) == name)
+                .any(|generator| SurfaceName::from(self.cx().text_at(generator.named)) == name)
         {
             return Err(LoweringRefusal::UnknownMember {
                 span: member.span,
-                module: SurfaceName::from(self.text_at(family)),
+                module: SurfaceName::from(self.cx().text_at(family)),
                 member: name,
             });
         }
@@ -2713,7 +2530,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — `M.Box.B` names the constructor, and `M.Box.Nope` is
     ///   refused naming `Box`.
     /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.cx().collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
     fn module_family_selected(
         &mut self,
         site: Site,
@@ -2722,11 +2539,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
-        let mut link = self.linked_selection(site, family)?;
+        let mut link = self.host().linked_selection(site, family)?;
         if link.is_none() {
             let mut pieces = Pieces::new();
-            read_pieces(self.cx.pbg, self.cx.tree, family.node, &mut pieces)?;
-            if let Ok((module, &[], selected)) = Self::type_link(site, &pieces.pieces, family.span)
+            read_pieces(self.cx().pbg, self.cx().tree, family.node, &mut pieces)?;
+            if let Ok((module, &[], selected)) =
+                Context::type_link(site, &pieces.pieces, family.span)
             {
                 link = Some((module, selected));
             }
@@ -2735,21 +2553,21 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(unnamed);
         };
-        let family_name = SurfaceName::from(self.text_at(selected));
-        let name = SurfaceName::from(self.text_at(member));
+        let family_name = SurfaceName::from(self.cx().text_at(selected));
+        let name = SurfaceName::from(self.cx().text_at(member));
         let found = self.module_constructor(site, module, Some(family_name), name)?;
         if let Maybe::Absent(_) = found
             && name.as_ref().starts_with(char::is_uppercase)
-            && let Ok(structure) = self.opened_module(site, module, &[])
+            && let Ok(structure) = self.host().opened_module(site, module, &[])
             && self
-                .cx
+                .cx()
                 .collected
                 .structures
                 .get(usize::from(structure))
                 .is_some_and(|entry| {
                     entry.exports.iter().any(|export| {
                         matches!(*export, Member::Slot(slot) if self
-                            .cx.collected
+                            .cx().collected
                             .slots
                             .get(usize::from(slot))
                             .is_some_and(|held| held.name == family_name))
@@ -2794,15 +2612,15 @@ impl<'source> Lowerer<'_, 'source>
         head: Placed,
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(head.node)
+        let Some(node) = self.cx().tree.node(head.node)
         else {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
-        match shape_of(self.cx.pbg, node)? {
+        match shape_of(self.cx().pbg, node)? {
             Shape::Form {
                 former: Former::Constructor,
                 ..
-            } => Ok(self.constructor_named(site, SurfaceName::from(self.text_at(head)))),
+            } => Ok(self.constructor_named(site, SurfaceName::from(self.cx().text_at(head)))),
             Shape::Form {
                 former: Former::Projection,
                 ..
@@ -2875,7 +2693,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
     /// - witness: `lower::tests::a_telescope_operand_of_a_constructor_in_a_type_reads_by_its_field_5208`
     /// - witness: `lower::tests::a_parenthesised_or_nested_telescope_reads_by_its_place_5500`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == self.kept(fields)))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == self.cx().kept(fields)))]
     pub(super) fn construct(
         &mut self,
         site: Site,
@@ -2887,33 +2705,33 @@ impl<'source> Lowerer<'_, 'source>
         if count != constructor.arity {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
-        let frame = self.require(site, Produced::Value)?;
-        let Alone(alone) = self.classifies_alone(constructor);
+        let frame = self.host().require(site, Produced::Value)?;
+        let Alone(alone) = self.shared().classifies_alone(constructor);
         // A constructor standing where a body ends is the value the body
         // returns, of the type the body answers.
         let answered = self
-            .cx
+            .cx()
             .answers
             .get(&site.at.node)
-            .filter(|_| self.cx.exits.contains(&site.at.node));
+            .filter(|_| self.cx().exits.contains(&site.at.node));
         let classifier = match (
-            self.cx.classifiers.get(&site.at.node),
+            self.cx().classifiers.get(&site.at.node),
             answered,
-            self.cx.argued.get(&site.at.node),
-            self.cx.parameter_typed.get(&site.at.node),
-            self.cx.inherited.get(&site.at.node),
+            self.cx().argued.get(&site.at.node),
+            self.cx().parameter_typed.get(&site.at.node),
+            self.cx().inherited.get(&site.at.node),
         ) {
             (Some(&written), ..) => Classifier::Written(written),
             (None, ..) if alone => Classifier::Inserted,
             (None, Some(&answer), ..) => Classifier::Answered { answer, frame },
             (None, None, Some(&argued), ..) => {
-                let _first = self.cx.awaiting.insert(site.at.node);
+                let _first = self.cx_mut().awaiting.insert(site.at.node);
                 Classifier::Slot(argued)
             },
             (None, None, None, Some(&declared), _) => {
                 // The parameter's type reads the arguments before it, which
                 // the mint sweep reaches after it, so the call mints it.
-                let _first = self.cx.awaiting.insert(site.at.node);
+                let _first = self.cx_mut().awaiting.insert(site.at.node);
                 Classifier::Parameter(declared)
             },
             (None, None, None, None, Some(&inherited)) => {
@@ -2923,7 +2741,7 @@ impl<'source> Lowerer<'_, 'source>
                 // family types over its own parameters, which reads the
                 // call's arguments.
                 if let Classifier::Field(_) | Classifier::Parameter(_) = inherited {
-                    let _first = self.cx.awaiting.insert(site.at.node);
+                    let _first = self.cx_mut().awaiting.insert(site.at.node);
                 }
                 // The constructor around may read as no family's application,
                 // and then the field states no type for this one: the mint
@@ -2932,8 +2750,9 @@ impl<'source> Lowerer<'_, 'source>
                 if let (Classifier::Field(_), Generators::Written(written)) =
                     (inherited, constructor.form)
                 {
-                    let form = self.hole_group(self.cx.scope.form()).0;
-                    let _first = self.cx.fielded.insert(site.at.node, Fielded {
+                    let current = self.cx().scope.form();
+                    let form = self.host().hole_group(current).0;
+                    let _first = self.cx_mut().fielded.insert(site.at.node, Fielded {
                         form,
                         family: constructor.family,
                         written,
@@ -2949,22 +2768,22 @@ impl<'source> Lowerer<'_, 'source>
         if let Classifier::Answered { answer, .. } = classifier
             && answer.over == Over::Written
             && let Some(&(Plan::Decode(code, ..) | Plan::Unquote(code, ..))) =
-                self.cx.plans.get(answer.node)
-            && let Maybe::Absent(_) = self.decoded_definition(code)
+                self.cx().plans.get(answer.node)
+            && let Maybe::Absent(_) = self.shared().decoded_definition(code)
         {
             return Err(site.out(FragmentBoundary::Unannotated));
         }
         let family = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(constructor.family))
             .map_or_else(|| ConstantIndex::from(0_usize), |slot| slot.constant);
         for (index, position) in (fields.start .. fields.end).enumerate() {
-            if let Some(&field) = self.cx.operands.entries().get(position) {
-                self.read(field, Reading::Value(frame));
-                let former = self.cx.tree.node(field).and_then(|node| {
-                    if let Ok(Shape::Form { former, .. }) = shape_of(self.cx.pbg, node) {
+            if let Some(&field) = self.cx().operands.entries().get(position) {
+                self.host().read(field, Reading::Value(frame));
+                let former = self.cx().tree.node(field).and_then(|node| {
+                    if let Ok(Shape::Form { former, .. }) = shape_of(self.cx().pbg, node) {
                         Some(former)
                     }
                     else {
@@ -2989,7 +2808,7 @@ impl<'source> Lowerer<'_, 'source>
                         site.at.node,
                     )?
                 {
-                    let _first = self.cx.valued_telescopes.insert(telescope, stated);
+                    let _first = self.cx_mut().valued_telescopes.insert(telescope, stated);
                 }
                 // Only a constructor written in the field, bare or applied,
                 // reads the classifier the field gives. A classifier read off
@@ -3008,41 +2827,22 @@ impl<'source> Lowerer<'_, 'source>
                         site.at.node,
                     )?
                 {
-                    let _first = self.cx.inherited.insert(field, inherited);
+                    let _first = self.cx_mut().inherited.insert(field, inherited);
                 }
             }
         }
-        self.plan(
+        let kept = self.cx().kept(fields);
+        self.host().plan(
             site,
             Plan::Constructor(Constructed {
                 family,
                 tag: ConstructorTag::from(constructor.tag),
-                fields: self.kept(fields),
+                fields: kept,
                 classifier,
             }),
         );
 
         Ok(())
-    }
-
-    /// Whether the family of `constructor` takes neither parameters nor
-    /// indices, and so classifies its constructors alone.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn classifies_alone(
-        &self,
-        constructor: Constructor,
-    ) -> Alone
-    {
-        Alone(match constructor.form {
-            Generators::Written(form) => {
-                self.cx.collected.data.get(form).is_none_or(|written| {
-                    written.parameters.is_empty() && written.indices.is_empty()
-                })
-            },
-            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => true,
-        })
     }
 
     /// Record, for each argument of the call at `site`, the type the
@@ -3089,8 +2889,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
     /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
     #[spec(
-        captures: before = (self.cx.parameter_typed.len(), self.cx.thunked.len()),
-        ensures: |ret| ret.is_err() || (self.cx.parameter_typed.len() >= before.0 && self.cx.thunked.len() >= before.1),
+        captures: before = (self.cx().parameter_typed.len(), self.cx().thunked.len()),
+        ensures: |ret| ret.is_err() || (self.cx().parameter_typed.len() >= before.0 && self.cx().thunked.len() >= before.1),
     )]
     pub(super) fn parameters_classify(
         &mut self,
@@ -3105,7 +2905,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         let refused = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(slot))
@@ -3113,7 +2913,7 @@ impl<'source> Lowerer<'_, 'source>
         if refused {
             return Ok(());
         }
-        let Some(parameters) = self.cx.collected.parameters.get(&slot)
+        let Some(parameters) = self.cx().collected.parameters.get(&slot)
         else {
             return Ok(());
         };
@@ -3121,20 +2921,20 @@ impl<'source> Lowerer<'_, 'source>
         // lowering passes for an omitted entry pairs with none.
         let typed: Vec<(NodeIndex, Placed, bool)> = (applied.start .. applied.end)
             .filter(|&position| {
-                self.cx
+                self.cx()
                     .operands
                     .locate(At::from(position))
                     .is_none_or(|key| {
-                        !self.cx.instanced.contains_key(&key)
-                            && !self.cx.nominated.contains_key(&key)
-                            && !self.cx.components.contains_key(&key)
-                            && !self.cx.kept_implicits.contains(&key)
+                        !self.cx().instanced.contains_key(&key)
+                            && !self.cx().nominated.contains_key(&key)
+                            && !self.cx().components.contains_key(&key)
+                            && !self.cx().kept_implicits.contains(&key)
                     })
             })
             .zip(parameters)
             .filter_map(|(position, parameter)| match parameter.declared {
                 Maybe::Present(declared) => Some((
-                    *self.cx.operands.entries().get(position)?,
+                    *self.cx().operands.entries().get(position)?,
                     declared,
                     parameter.dependent,
                 )),
@@ -3142,14 +2942,15 @@ impl<'source> Lowerer<'_, 'source>
             })
             .collect();
         for (argument, declared, dependent) in typed {
-            let _first = self.cx.parameter_typed.insert(argument, CalledAt {
+            let kept = self.cx().kept(applied);
+            let _first = self.cx_mut().parameter_typed.insert(argument, CalledAt {
                 typed: declared,
                 slot,
-                applied: self.kept(applied),
+                applied: kept,
             });
-            let opened = self.cx.tree.node(argument).is_some_and(|node| {
+            let opened = self.cx().tree.node(argument).is_some_and(|node| {
                 matches!(
-                    shape_of(self.cx.pbg, node),
+                    shape_of(self.cx().pbg, node),
                     Ok(Shape::Form {
                         former: Former::Thunk | Former::Lambda,
                         ..
@@ -3167,10 +2968,10 @@ impl<'source> Lowerer<'_, 'source>
                 // A type naming the callee's parameters answers nothing where
                 // the call stands; the lambda's binder alone reads it (#3921).
                 let answers = if dependent {
-                    &mut self.cx.dependent_answers
+                    &mut self.cx_mut().dependent_answers
                 }
                 else {
-                    &mut self.cx.thunked
+                    &mut self.cx_mut().thunked
                 };
                 let _first = answers.insert(argument, answer);
             }
@@ -3199,7 +3000,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::parameters_classify`].
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.is_none_or(|slot| self.cx.collected.slots.get(usize::from(slot)).is_some())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.is_none_or(|slot| self.cx().collected.slots.get(usize::from(slot)).is_some())))]
     fn called_slot(
         &mut self,
         site: Site,
@@ -3207,24 +3008,24 @@ impl<'source> Lowerer<'_, 'source>
         head: Placed,
     ) -> Result<Option<SlotIndex>, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(head.node)
+        let Some(node) = self.cx().tree.node(head.node)
         else {
             return Ok(None);
         };
-        match shape_of(self.cx.pbg, node) {
+        match shape_of(self.cx().pbg, node) {
             Ok(Shape::Form {
                 former: Former::Name,
                 ..
             }) => {
-                let name = self.name_at(head);
+                let name = self.cx().name_at(head);
                 let Ok(Maybe::Present(Resolved::Declaration { constant, .. })) =
-                    self.resolve_name(site, frame, name)
+                    self.host().resolve_name(site, frame, name)
                 else {
                     return Ok(None);
                 };
                 let slot = SlotIndex::from(usize::from(constant));
                 Ok(self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(slot))
@@ -3239,12 +3040,12 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Ok(None);
                 };
-                let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+                let Maybe::Present(own) = self.cx().collected.owner_of(site.at.node)
                 else {
                     return Ok(None);
                 };
-                let declared = self.cx.collected.slots.get(usize::from(own));
-                let recursion = self.cx.recursions.get(&binder);
+                let declared = self.cx().collected.slots.get(usize::from(own));
+                let recursion = self.cx().recursions.get(&binder);
                 Ok(declared
                     .zip(recursion)
                     .is_some_and(|(declared, recursion)| declared.named.node == recursion.named)
@@ -3286,16 +3087,16 @@ impl<'source> Lowerer<'_, 'source>
         call: Placed,
     ) -> Result<Option<Placed>, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(call)?, Some((_, Former::Call))) {
+        if !matches!(self.cx().form_at(call)?, Some((_, Former::Call))) {
             return Ok(None);
         }
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, call.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, call.node, &mut scratch);
         let head = scratch.pieces.first().and_then(|piece| match *piece {
             Piece::Operand(head) => Some(head),
             Piece::Tile { .. } => None,
         });
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
         let Some(head) = head
         else {
@@ -3305,7 +3106,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        let Some(declared) = self.cx.collected.slots.get(usize::from(slot))
+        let Some(declared) = self.cx().collected.slots.get(usize::from(slot))
         else {
             return Ok(None);
         };
@@ -3317,12 +3118,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        if declared.refused().0 || self.cx.source_of.get(form.node) != Some(&self.cx.current.source)
+        if declared.refused().0
+            || self.cx().source_of.get(form.node) != Some(&self.cx().current.source)
         {
             return Ok(None);
         }
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, form.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, form.node, &mut scratch);
         // The parameter list closes at the form's first `)`: a parameter's
         // own parentheses stand inside its operand.
         let mut after = scratch
@@ -3340,7 +3142,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => None,
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
 
         Ok(result)
@@ -3396,7 +3198,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Classifier, inherited::Absent>, LoweringRefusal<'source>>
     {
         let unclassified = Maybe::Absent(inherited::Absent::Unclassified);
-        let Some(data) = self.cx.collected.data.get(at.form)
+        let Some(data) = self.cx().collected.data.get(at.form)
         else {
             return Ok(unclassified);
         };
@@ -3418,18 +3220,18 @@ impl<'source> Lowerer<'_, 'source>
         let named: Vec<SurfaceName<'source>> = data
             .parameters
             .iter()
-            .map(|parameter| self.name_at(parameter.named))
+            .map(|parameter| self.cx().name_at(parameter.named))
             .collect();
         // A field before it binding a parameter's name shadows the parameter,
         // so the spelling no longer says which the type names.
         let shadowed = generator.fields.iter().take(at.index).any(|earlier| {
-            matches!(earlier.named, Maybe::Present(binder) if named.contains(&self.name_at(binder)))
+            matches!(earlier.named, Maybe::Present(binder) if named.contains(&self.cx().name_at(binder)))
         });
         if shadowed {
             return Ok(substituted);
         }
         let family = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(data.slot))
@@ -3441,13 +3243,13 @@ impl<'source> Lowerer<'_, 'source>
         let spelled = |lowerer: &Self, node: NodeIndex| {
             SurfaceName::from(
                 lowerer
-                    .cx
+                    .cx()
                     .tree
                     .fragment(node)
                     .unwrap_or_else(|| SourceFragment::from("")),
             )
         };
-        let head = typed.keyword.map(|at| self.name_at(at));
+        let head = typed.keyword.map(|at| self.cx().name_at(at));
         let own = spelled(self, typed.node);
         let uniform = if typed.former == Former::TypeApplication {
             head.is_some()
@@ -3596,14 +3398,12 @@ impl<'source> Lowerer<'_, 'source>
         node: NodeIndex,
     ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
     {
-        let former =
-            self.cx
-                .tree
-                .node(node)
-                .and_then(|tree_node| match shape_of(self.cx.pbg, tree_node) {
-                    Ok(Shape::Form { former, .. }) => Some(former),
-                    Ok(_) | Err(_) => None,
-                });
+        let former = self.cx().tree.node(node).and_then(|tree_node| {
+            match shape_of(self.cx().pbg, tree_node) {
+                Ok(Shape::Form { former, .. }) => Some(former),
+                Ok(_) | Err(_) => None,
+            }
+        });
         Ok(match former {
             Some(Former::TelescopeType) => Some(node),
             // Only parentheses around one operand group it.
@@ -3652,14 +3452,20 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     #[spec(
-        captures: before = (self.cx.inherited.len(), self.cx.thunked.len()),
-        ensures: |ret| ret.is_err() || (self.cx.inherited.len() >= before.0 && self.cx.thunked.len() >= before.1),
+        captures: before = (self.cx().inherited.len(), self.cx().thunked.len()),
+        ensures: |ret| ret.is_err() || (self.cx().inherited.len() >= before.0 && self.cx().thunked.len() >= before.1),
     )]
     pub(super) fn sign_definitions(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
         let mut signed: Vec<(NodeIndex, NodeIndex)> = Vec::new();
         let mut unsigned: Vec<NodeIndex> = Vec::new();
-        for slot in self.cx.collected.slots.iter().skip(self.cx.current.slots) {
+        for slot in self
+            .cx()
+            .collected
+            .slots
+            .iter()
+            .skip(self.cx().current.slots)
+        {
             let Maybe::Present(Half {
                 operand: Operand::Written(definition),
                 ..
@@ -3680,7 +3486,10 @@ impl<'source> Lowerer<'_, 'source>
         }
         for definition in unsigned {
             if let Some((value, classifier)) = self.annotation(definition)? {
-                let _first = self.cx.annotated_definitions.insert(definition, classifier);
+                let _first = self
+                    .cx_mut()
+                    .annotated_definitions
+                    .insert(definition, classifier);
                 signed.push((value, classifier));
             }
         }
@@ -3690,11 +3499,11 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             if let Some(answer) = self.signed_answer(&written)? {
-                let _first = self.cx.thunked.insert(definition, answer);
+                let _first = self.cx_mut().thunked.insert(definition, answer);
             }
             else {
                 let _first = self
-                    .cx
+                    .cx_mut()
                     .inherited
                     .insert(definition, Classifier::Written(signature));
             }
@@ -3731,9 +3540,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let thunked = matches!(written.former, Former::ThunkType | Former::ReturnerType)
             && written.keyword.is_some_and(|at| {
-                type_former(self.name_at(at)) == Maybe::Present(TypeFormer::Thunk)
+                type_former(self.cx().name_at(at)) == Maybe::Present(TypeFormer::Thunk)
             });
-        let boxed = self.boxes(written.node)?.0;
+        let boxed = self.host().boxes(written.node)?.0;
         Ok(match *written.operands.as_slice() {
             [body] if thunked => Some(Answer {
                 node: body,
@@ -3787,19 +3596,19 @@ impl<'source> Lowerer<'_, 'source>
         node: NodeIndex,
     ) -> Result<Option<(NodeIndex, NodeIndex)>, LoweringRefusal<'source>>
     {
-        let Some(tree_node) = self.cx.tree.node(node)
+        let Some(tree_node) = self.cx().tree.node(node)
         else {
             return Ok(None);
         };
         let Shape::Form {
             former: Former::Parenthesized,
             ..
-        } = shape_of(self.cx.pbg, tree_node)?
+        } = shape_of(self.cx().pbg, tree_node)?
         else {
             return Ok(None);
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, node, &mut scratch);
         let parts = match *scratch.pieces.as_slice() {
             [
                 Piece::Tile { label: open, .. },
@@ -3815,7 +3624,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => None,
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
 
         Ok(parts)
@@ -3845,24 +3654,24 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a parenthesised application and a bare head.
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
-    #[spec(captures: before = self.cx.fuel.remaining(), ensures: self.cx.fuel.remaining() <= before)]
+    #[spec(captures: before = self.cx().fuel.remaining(), ensures: self.cx().fuel.remaining() <= before)]
     pub(super) fn unwrapped(
         &mut self,
         mut node: NodeIndex,
     ) -> Result<Maybe<Unwrapped, inherited::Absent>, LoweringRefusal<'source>>
     {
         loop {
-            self.cx.fuel.spend()?;
-            let Some(tree_node) = self.cx.tree.node(node)
+            self.cx_mut().fuel.spend()?;
+            let Some(tree_node) = self.cx().tree.node(node)
             else {
                 return Ok(Maybe::Absent(inherited::Absent::Unclassified));
             };
-            let Shape::Form { former, .. } = shape_of(self.cx.pbg, tree_node)?
+            let Shape::Form { former, .. } = shape_of(self.cx().pbg, tree_node)?
             else {
                 return Ok(Maybe::Absent(inherited::Absent::Unclassified));
             };
-            let mut scratch = core::mem::take(&mut self.cx.scratch);
-            let read = read_pieces(self.cx.pbg, self.cx.tree, node, &mut scratch);
+            let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+            let read = read_pieces(self.cx().pbg, self.cx().tree, node, &mut scratch);
             let operands: Vec<NodeIndex> = scratch
                 .pieces
                 .iter()
@@ -3875,7 +3684,7 @@ impl<'source> Lowerer<'_, 'source>
                 Piece::Tile { at, .. } => Some(at),
                 Piece::Operand(_) => None,
             });
-            self.cx.scratch = scratch;
+            self.cx_mut().scratch = scratch;
             read?;
             if former == Former::ParenthesizedType
                 && let [inner] = *operands.as_slice()
@@ -3917,7 +3726,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   refused.
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::native::tests::a_letter_naming_nothing_is_unresolved_1997`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constructor(_))))]
     pub(super) fn cons(
         &mut self,
         site: Site,
@@ -3930,16 +3739,16 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::InfixForm)));
         };
         if let Generators::Words(words) = constructor.form {
-            self.cx.lettered.push((letter.span, words));
+            self.cx_mut().lettered.push((letter.span, words));
             if constructor.named.span != letter.span {
-                self.cx.lettered.push((constructor.named.span, words));
+                self.cx_mut().lettered.push((constructor.named.span, words));
             }
         }
-        let start = self.cx.operands.entries().len();
-        self.cx.operands.push(rest.node);
+        let start = self.cx().operands.entries().len();
+        self.cx_mut().operands.push(rest.node);
         let fields = Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         };
         self.construct(site, constructor, fields)
     }
@@ -3975,11 +3784,11 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        let Some(node) = self.cx.tree.node(at.node)
+        let Some(node) = self.cx().tree.node(at.node)
         else {
             return unnamed;
         };
-        let (cell, inverse) = match shape_of(self.cx.pbg, node)? {
+        let (cell, inverse) = match shape_of(self.cx().pbg, node)? {
             Shape::Form {
                 former: Former::Name,
                 ..
@@ -3988,21 +3797,21 @@ impl<'source> Lowerer<'_, 'source>
                 former: Former::Call,
                 ..
             } => {
-                let mut pieces = core::mem::take(&mut self.cx.scratch);
-                let read = read_pieces(self.cx.pbg, self.cx.tree, at.node, &mut pieces);
+                let mut pieces = core::mem::take(&mut self.cx_mut().scratch);
+                let read = read_pieces(self.cx().pbg, self.cx().tree, at.node, &mut pieces);
                 let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
                     Piece::Operand(operand) => Some(operand),
                     Piece::Tile { .. } => None,
                 });
                 let written = (operands.next(), operands.next(), operands.next());
-                self.cx.scratch = pieces;
+                self.cx_mut().scratch = pieces;
                 read?;
                 let (Some(head), Some(cell), None) = written
                 else {
                     return unnamed;
                 };
-                if self.text_at(head).as_ref() != super::identity::BACK
-                    || !matches!(self.form_at(cell)?, Some((_, Former::Name)))
+                if self.cx().text_at(head).as_ref() != super::identity::BACK
+                    || !matches!(self.cx().form_at(cell)?, Some((_, Former::Name)))
                 {
                     return unnamed;
                 }
@@ -4057,8 +3866,10 @@ impl<'source> Lowerer<'_, 'source>
             },
             ..site
         };
-        let name = self.name_at(cell);
-        let resolved = self.resolve_name(named, site.reading.frame(), name)?;
+        let name = self.cx().name_at(cell);
+        let resolved = self
+            .host()
+            .resolve_name(named, site.reading.frame(), name)?;
         let Maybe::Present(super::Resolved::Declaration { constant, .. }) = resolved
         else {
             return match resolved {
@@ -4073,7 +3884,7 @@ impl<'source> Lowerer<'_, 'source>
             operand: Operand::Loop { words, generator },
             ..
         })) = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(constant))
@@ -4082,7 +3893,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
         let Some(family) = self
-            .cx
+            .cx()
             .collected
             .words
             .get(words)
@@ -4104,70 +3915,6 @@ impl<'source> Lowerer<'_, 'source>
             arity: 1,
             named: cell,
         }))
-    }
-
-    /// The first words whose point `base` spells, wrapped in `wraps`
-    /// reflexivities, with the slot the words take and the point's written
-    /// nodes.
-    ///
-    /// # Specification
-    /// - requires: `base` stands inside `wraps` `Path.here` calls, and it is
-    ///   none itself.
-    /// - ensures: the position of the first collected words whose wrapping is
-    ///   `wraps` and whose point `base` spells as a closed term over their
-    ///   family's constructors, as the words' declaring source names them;
-    ///   their slot; the point's written nodes in pre-order. None when no words
-    ///   are at `base`.
-    /// - fails: [`LoweringRefusal::UnknownMold`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::UnknownMold`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::looped_point`] and [`Self::stated_words`].
-    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
-    /// - witness: `lower::native::tests::a_here_pattern_reads_the_words_its_stated_type_names_6805`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.as_ref().is_none_or(|spelled| spelled.words < self.cx.collected.words.len() && !spelled.written.is_empty())))]
-    fn spelled_words(
-        &self,
-        base: Placed,
-        wraps: gandr_kernel_term::Reflexivities,
-    ) -> Result<Option<SpelledWords>, LoweringRefusal<'source>>
-    {
-        for (index, words) in self.cx.collected.words.iter().enumerate() {
-            if words.reflexivities != wraps {
-                continue;
-            }
-            let family = Generators::Written(words.family);
-            let Some(declared) = self.cx.collected.slots.get(usize::from(words.slot))
-            else {
-                continue;
-            };
-            let source = self
-                .cx
-                .collected
-                .unit
-                .source_at(declared.named.span.start());
-            let tag_of = |name: SourceFragment<'source>| {
-                self.cx
-                    .collected
-                    .constructors_in(source, SurfaceName::from(name))
-                    .find(|constructor| constructor.form == family)
-                    .map(|constructor| (constructor.tag, constructor.arity))
-            };
-            if let Maybe::Present(term) = closed_term(self.cx.pbg, self.cx.tree, base, &tag_of)?
-                && term.nodes == words.point
-            {
-                return Ok(Some(SpelledWords {
-                    words: index,
-                    slot: words.slot,
-                    written: term.written,
-                }));
-            }
-        }
-
-        Ok(None)
     }
 
     /// The empty word `Path.here(point)` is, when `point` spells the point a
@@ -4193,11 +3940,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   labelled at the family, and at any other point reflexivity.
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     #[spec(
-        captures: before = self.cx.pointed.len(),
+        captures: before = self.cx().pointed.len(),
         ensures: |ret| match ret {
             Ok(Maybe::Present(constructor)) => constructor.arity == 0 && constructor.tag == 0
-                && matches!(constructor.form, Generators::Words(_)) && self.cx.pointed.len() > before,
-            _ => self.cx.pointed.len() == before,
+                && matches!(constructor.form, Generators::Words(_)) && self.cx().pointed.len() > before,
+            _ => self.cx().pointed.len() == before,
         },
     )]
     pub(super) fn looped_point(
@@ -4205,13 +3952,13 @@ impl<'source> Lowerer<'_, 'source>
         point: Placed,
     ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
     {
-        let (base, calls) = reflexivities_around(self.cx.pbg, self.cx.tree, point)?;
+        let (base, calls) = reflexivities_around(self.cx().pbg, self.cx().tree, point)?;
         let wraps = gandr_kernel_term::Reflexivities::from(calls.len());
         let Some(SpelledWords {
             words: index,
             slot: family,
             written,
-        }) = self.spelled_words(base, wraps)?
+        }) = self.shared().spelled_words(base, wraps)?
         else {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
@@ -4226,7 +3973,7 @@ impl<'source> Lowerer<'_, 'source>
                 gandr_kernel_term::Reflexivities::from(calls.len().saturating_sub(position)),
             )
         });
-        self.cx.pointed.extend(
+        self.cx_mut().pointed.extend(
             call_nodes
                 .chain(point_nodes)
                 .map(|(span, wrapping)| (span, index, wrapping)),
@@ -4282,7 +4029,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::an_annotated_definition_value_is_signed_by_its_annotation_1107`
     /// - witness: `lower::native::tests::an_annotated_return_is_ascribed_its_returner_1107`
     /// - witness: `lower::native::tests::an_annotation_no_form_carries_is_a_value_ascription_1543`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Transparent(_) | Plan::Ascribed(..)))))]
     pub(super) fn annotated(
         &mut self,
         site: Site,
@@ -4301,38 +4048,42 @@ impl<'source> Lowerer<'_, 'source>
         let (frame, tail) = match site.reading {
             Reading::Value(frame) => (frame, false),
             Reading::Computation(_) => (
-                self.require(site, Produced::Value)?,
-                self.cx.exits.contains(&site.at.node),
+                self.host().require(site, Produced::Value)?,
+                self.cx().exits.contains(&site.at.node),
             ),
-            Reading::Head(_) => (self.require(site, Produced::Value)?, false),
+            Reading::Head(_) => (self.host().require(site, Produced::Value)?, false),
             Reading::Unread
             | Reading::ValueType(_)
             | Reading::CompType(_)
             | Reading::Result(_)
             | Reading::Function => return Err(declined),
         };
-        let signs = self.cx.annotated_definitions.contains_key(&site.at.node);
-        let returned = self.cx.ascribed.contains_key(&site.at.node);
+        let signs = self.cx().annotated_definitions.contains_key(&site.at.node);
+        let returned = self.cx().ascribed.contains_key(&site.at.node);
         let constructed = matches!(self.applied_constructor(site, inner)?, Maybe::Present(_));
         let carried = constructed || signs || returned || tail;
         if constructed {
-            let _held = self.cx.ascribed.remove(&site.at.node);
+            let _held = self.cx_mut().ascribed.remove(&site.at.node);
         }
         let _colon = cursor.tile(TileName::COLON);
         let classifier = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, &cursor)?;
-        self.read(classifier.node, Reading::ValueType(frame));
+        self.host().read(classifier.node, Reading::ValueType(frame));
         if tail && !constructed {
-            let _first = self.cx.ascribed.insert(site.at.node, classifier.node);
+            let _first = self.cx_mut().ascribed.insert(site.at.node, classifier.node);
         }
-        self.read(inner.node, Reading::Value(frame));
-        let _first = self.cx.classifiers.insert(inner.node, classifier.node);
+        self.host().read(inner.node, Reading::Value(frame));
+        let _first = self
+            .cx_mut()
+            .classifiers
+            .insert(inner.node, classifier.node);
         if carried {
-            self.plan(site, Plan::Transparent(inner.node));
+            self.host().plan(site, Plan::Transparent(inner.node));
         }
         else {
-            self.plan(site, Plan::Ascribed(inner.node, classifier.node));
+            self.host()
+                .plan(site, Plan::Ascribed(inner.node, classifier.node));
         }
 
         Ok(())
@@ -4376,81 +4127,31 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(_) = bare {
             return Ok(bare);
         }
-        let Some(node) = self.cx.tree.node(inner.node)
+        let Some(node) = self.cx().tree.node(inner.node)
         else {
             return Ok(bare);
         };
-        match shape_of(self.cx.pbg, node)? {
+        match shape_of(self.cx().pbg, node)? {
             Shape::Form {
                 former: Former::TypeHead,
                 ..
-            } => return Ok(self.constructor_named(site, self.name_at(inner))),
+            } => return Ok(self.constructor_named(site, self.cx().name_at(inner))),
             Shape::Form {
                 former: Former::Call | Former::TypeApplication,
                 ..
             } => {},
             Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => return Ok(bare),
         }
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let first = read_pieces(self.cx.pbg, self.cx.tree, inner.node, &mut scratch)
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let first = read_pieces(self.cx().pbg, self.cx().tree, inner.node, &mut scratch)
             .map(|()| scratch.pieces.first().copied());
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         match first? {
             Some(Piece::Operand(head)) => self.constructor_head(site, head),
             Some(Piece::Tile { label, at }) if label == TileName::TYPE_IDENTIFIER => {
-                Ok(self.constructor_named(site, self.name_at(at)))
+                Ok(self.constructor_named(site, self.cx().name_at(at)))
             },
             Some(Piece::Tile { .. }) | None => Ok(bare),
-        }
-    }
-
-    /// The number of parameters of the data family declared at `constant`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the parameter count of the data declaration whose slot takes
-    ///   `constant`, and none for `Theory`; the undeclared absence for any
-    ///   other declaration.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a family and a value declaration separate the hit
-    ///   from the miss.
-    /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
-    /// - witness: `lower::native::tests::the_presentation_code_names_its_family_where_a_type_is_read`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.cx.collected.slots.get(usize::from(constant)).is_some())]
-    pub(super) fn data_family(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<OperandCount, family::Absent>
-    {
-        match self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(constant))
-            .map(|slot| slot.definition)
-        {
-            Some(Maybe::Present(Half {
-                operand: Operand::Data(form),
-                ..
-            })) => self.cx.collected.data.get(form).map_or(
-                Maybe::Absent(family::Absent::Undeclared),
-                |written| {
-                    Maybe::Present(OperandCount::from(
-                        written
-                            .parameters
-                            .len()
-                            .saturating_add(written.indices.len()),
-                    ))
-                },
-            ),
-            Some(Maybe::Present(Half {
-                operand: Operand::Code,
-                ..
-            })) => Maybe::Present(OperandCount::from(0_usize)),
-            _ => Maybe::Absent(family::Absent::Undeclared),
         }
     }
 
@@ -4479,7 +4180,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
     /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
     /// - witness: `lower::tests::a_call_a_quoted_family_takes_is_the_value_it_returns_3572`
-    #[spec(ensures: |ret| ret.is_err() || self.cx.plans.get(site.at.node) == Some(&Plan::Data(constant, self.kept(applied))))]
+    #[spec(ensures: |ret| ret.is_err() || self.cx().plans.get(site.at.node) == Some(&Plan::Data(constant, self.cx().kept(applied))))]
     pub(super) fn family(
         &mut self,
         site: Site,
@@ -4492,25 +4193,25 @@ impl<'source> Lowerer<'_, 'source>
         if OperandCount::from(count) != arity {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
-        let frame = self.require(site, Produced::ValueType)?;
-        let form = self.cx.collected.data.iter().position(|form| {
-            self.cx
+        let frame = self.host().require(site, Produced::ValueType)?;
+        let form = self.cx().collected.data.iter().position(|form| {
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(form.slot))
                 .is_some_and(|slot| slot.constant == constant)
         });
-        let kept = self.kept(applied);
+        let kept = self.cx().kept(applied);
         for (place, position) in (applied.start .. applied.end).enumerate() {
-            if let Some(&argument) = self.cx.operands.entries().get(position) {
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
                 if let Some(form) = form {
-                    let _first = self.cx.argued.insert(argument, Argued {
+                    let _first = self.cx_mut().argued.insert(argument, Argued {
                         form,
                         place,
                         applied: kept,
                     });
                 }
-                self.read(argument, Reading::Value(frame));
+                self.host().read(argument, Reading::Value(frame));
             }
         }
         // Each argument is a value the family's type reads: it counts in that
@@ -4518,10 +4219,11 @@ impl<'source> Lowerer<'_, 'source>
         // body, as a path type's endpoints do. A type reads it wherever the
         // family stands, so a call written there is the value it returns, as
         // in a binder's type, and no run stands under the quote (#3572).
-        let arguments = stretch(self.cx.operands.entries(), applied);
-        self.cx.in_type.extend(arguments.iter().copied());
-        self.cx.type_read.extend(arguments.iter().copied());
-        self.plan(site, Plan::Data(constant, kept));
+        let cx = self.cx_mut();
+        let arguments = stretch(cx.operands.entries(), applied);
+        cx.in_type.extend(arguments.iter().copied());
+        cx.type_read.extend(arguments.iter().copied());
+        self.host().plan(site, Plan::Data(constant, kept));
 
         Ok(())
     }
@@ -4550,7 +4252,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   law-bearing theory's, and a name no theory answers.
     /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
     /// - witness: `tests::modules::models::the_terms_of_a_theory_outside_one_plain_sort_are_refused_4143`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Data(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Data(..))))]
     pub(super) fn terms_type(
         &mut self,
         site: Site,
@@ -4558,7 +4260,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let outside = |at: Site| at.out(FragmentBoundary::Unadmitted(Unbuilt::TermsType));
-        let Some(node) = self.cx.tree.node(theory)
+        let Some(node) = self.cx().tree.node(theory)
         else {
             return Err(outside(site));
         };
@@ -4566,22 +4268,22 @@ impl<'source> Lowerer<'_, 'source>
         let Shape::Form {
             former: Former::TypeHead | Former::Constructor,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return Err(outside(Site { at: named, ..site }));
         };
-        let (slot, presentation) = self.cx.collected.presented_theory(
+        let (slot, presentation) = self.cx().collected.presented_theory(
             named.span.start(),
             named.span,
-            self.name_at(named),
+            self.cx().name_at(named),
         )?;
         let Some(constant) = self
-            .cx
+            .cx()
             .collected
             .terms
             .iter()
             .find(|terms| terms.theory == slot)
-            .and_then(|terms| self.cx.collected.slots.get(usize::from(terms.slot)))
+            .and_then(|terms| self.cx().collected.slots.get(usize::from(terms.slot)))
             .map(|terms| terms.constant)
         else {
             let feature = term_generators(presentation)
@@ -4590,8 +4292,8 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         };
         let none = Stretch {
-            start: self.cx.operands.entries().len(),
-            end: self.cx.operands.entries().len(),
+            start: self.cx().operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         };
         self.family(site, constant, OperandCount::from(0_usize), none)
     }
@@ -4622,8 +4324,8 @@ impl<'source> Lowerer<'_, 'source>
     #[spec(
         ensures: |ret| match ret {
             | Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
-                matches!(self.data_family(constant), Maybe::Present(_))
-                    || matches!(self.codata_family(constant), Maybe::Present(_))
+                matches!(self.shared().data_family(constant), Maybe::Present(_))
+                    || matches!(self.shared().codata_family(constant), Maybe::Present(_))
             },
             | Ok(Maybe::Present(Resolved::Binder(_))) => false,
             | Ok(Maybe::Absent(_)) | Err(_) => true,
@@ -4636,23 +4338,25 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<Resolved, family::Absent>, LoweringRefusal<'source>>
     {
         let undeclared = Maybe::Absent(family::Absent::Undeclared);
-        let Some(node) = self.cx.tree.node(head.node)
+        let Some(node) = self.cx().tree.node(head.node)
         else {
             return Ok(undeclared);
         };
         let Shape::Form {
             former: Former::Constructor,
             ..
-        } = shape_of(self.cx.pbg, node)?
+        } = shape_of(self.cx().pbg, node)?
         else {
             return Ok(undeclared);
         };
-        let name = self.name_at(head);
+        let name = self.cx().name_at(head);
         if let Maybe::Present(_constructor) = self.constructor_named(site, name) {
             return Ok(undeclared);
         }
         let named = Site { at: head, ..site };
-        let Maybe::Present(resolved) = self.resolve_name(named, site.reading.frame(), name)?
+        let Maybe::Present(resolved) =
+            self.host()
+                .resolve_name(named, site.reading.frame(), name)?
         else {
             return Ok(undeclared);
         };
@@ -4660,44 +4364,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(undeclared);
         };
-        if matches!(self.data_family(constant), Maybe::Present(_))
-            || matches!(self.codata_family(constant), Maybe::Present(_))
+        if matches!(self.shared().data_family(constant), Maybe::Present(_))
+            || matches!(self.shared().codata_family(constant), Maybe::Present(_))
         {
             return Ok(Maybe::Present(resolved));
         }
 
         Ok(undeclared)
-    }
-
-    /// The number of parameters of the codata family declared at `constant`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the parameter count of the codata declaration whose slot
-    ///   takes `constant`; the undeclared absence for any other declaration.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a codata family and a data family beside it separate
-    ///   the hit from the miss.
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.cx.collected.slots.get(usize::from(constant)).is_some())]
-    pub(super) fn codata_family(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<OperandCount, family::Absent>
-    {
-        let Some(slot) = self.cx.collected.slots.get(usize::from(constant))
-        else {
-            return Maybe::Absent(family::Absent::Undeclared);
-        };
-        match self.cx.collected.descriptions.get(&slot.introduced_by.node) {
-            Maybe::Present(entry) if entry.description.polarity == DeclPolarity::Codata => {
-                Maybe::Present(OperandCount::from(entry.parameters.len()))
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(family::Absent::Undeclared),
-        }
     }
 
     /// Classify the codata family at `constant`, of `arity` parameters,
@@ -4721,7 +4394,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   reads its argument at its index in the body.
     /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
     /// - witness: `lower::tests::a_family_a_body_quotes_reads_its_parameters_at_their_indices_3553`
-    #[spec(ensures: |ret| ret.is_err() || self.cx.plans.get(site.at.node) == Some(&Plan::Codata(constant, self.kept(applied))))]
+    #[spec(ensures: |ret| ret.is_err() || self.cx().plans.get(site.at.node) == Some(&Plan::Codata(constant, self.cx().kept(applied))))]
     pub(super) fn codata_type(
         &mut self,
         site: Site,
@@ -4734,16 +4407,18 @@ impl<'source> Lowerer<'_, 'source>
         if OperandCount::from(count) != arity {
             return Err(site.out(FragmentBoundary::Arity(OperandCount::from(count))));
         }
-        let frame = self.require(site, Produced::CompType)?;
+        let frame = self.host().require(site, Produced::CompType)?;
         for position in applied.start .. applied.end {
-            if let Some(&argument) = self.cx.operands.entries().get(position) {
-                self.read(argument, Reading::Value(frame));
+            if let Some(&argument) = self.cx().operands.entries().get(position) {
+                self.host().read(argument, Reading::Value(frame));
             }
         }
-        let arguments = stretch(self.cx.operands.entries(), applied);
-        self.cx.in_type.extend(arguments.iter().copied());
-        self.cx.type_read.extend(arguments.iter().copied());
-        self.plan(site, Plan::Codata(constant, self.kept(applied)));
+        let cx = self.cx_mut();
+        let arguments = stretch(cx.operands.entries(), applied);
+        cx.in_type.extend(arguments.iter().copied());
+        cx.type_read.extend(arguments.iter().copied());
+        let kept = cx.kept(applied);
+        self.host().plan(site, Plan::Codata(constant, kept));
 
         Ok(())
     }
@@ -4797,14 +4472,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::a_match_continuing_its_block_answers_what_the_block_does`
     /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
     /// - witness: `lower::native::tests::a_layout_match_writes_where_before_its_arms_5557`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     pub(super) fn case(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::Computation)?;
+        let frame = self.host().require(site, Produced::Computation)?;
         let _case = cursor.tile(TileName::MATCH);
         let scrutinee = site.one(cursor.operands())?;
         if let Maybe::Present(with) = cursor.at(TileName::WITH) {
@@ -4857,7 +4532,7 @@ impl<'source> Lowerer<'_, 'source>
         if arms.is_empty() {
             return self.empty_case(site, frame, scrutinee, written);
         }
-        if self.cx.joined.contains(&site.at.node)
+        if self.cx().joined.contains(&site.at.node)
             && let Maybe::Present(stated) = written
         {
             return Err(LoweringRefusal::OutOfFragment {
@@ -4875,7 +4550,7 @@ impl<'source> Lowerer<'_, 'source>
         for &(pattern, body) in &arms {
             match self.loop_named(site, pattern)? {
                 Maybe::Present(NamedLoop { words, generator }) => {
-                    self.cx.lettered.push((pattern.span, words));
+                    self.cx_mut().lettered.push((pattern.span, words));
                     looped.push(LoopArm {
                         words,
                         generator: usize::from(generator),
@@ -4903,7 +4578,7 @@ impl<'source> Lowerer<'_, 'source>
             labelled: Vec::new(),
             cover: Cover::new(),
         };
-        let stated = self.scrutinee_type(frame, scrutinee)?;
+        let stated = self.host().scrutinee_type(frame, scrutinee)?;
         let mut roots = Vec::new();
         for (arm, &(pattern, body)) in arms.iter().enumerate() {
             let arm = ArmAt(arm);
@@ -4943,8 +4618,9 @@ impl<'source> Lowerer<'_, 'source>
             &patterns,
             (rows, Depth::default(), BTreeSet::new(), stated),
         )?;
-        let loops = self.loop_arms(site, &tests, looped)?;
+        let loops = self.shared().loop_arms(site, &tests, looped)?;
         kept.cover = self
+            .shared()
             .owed_loops(&loops, ArmAt(arms.len()))
             .map_or_else(Cover::new, |owed| covered(&tests, &owed));
         let eliminates = tests.iter().any(|test| {
@@ -4969,7 +4645,7 @@ impl<'source> Lowerer<'_, 'source>
         let answer = match ascribed {
             Maybe::Present(written) => Maybe::Present(written),
             Maybe::Absent(reason) => self
-                .cx
+                .cx()
                 .answers
                 .get(&site.at.node)
                 .copied()
@@ -4979,15 +4655,15 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.out(FragmentBoundary::Unannotated));
         }
         Self::keep(&patterns, &roots, &mut kept);
-        self.read(scrutinee.node, Reading::Value(frame));
+        self.host().read(scrutinee.node, Reading::Value(frame));
         let bodies = arms
             .iter()
             .map(|&(_pattern, body)| body.node)
             .chain(loops.iter().map(|arm| arm.body));
-        let enclosing = self.cx.scrutinised.get(&site.at.node).copied();
+        let enclosing = self.cx().scrutinised.get(&site.at.node).copied();
         self.scrutinise(frame, scrutinee, enclosing, bodies)?;
         if let Maybe::Present(node) = written {
-            self.read(node.node, Reading::Result(frame));
+            self.host().read(node.node, Reading::Result(frame));
         }
         // Each arm passes the answer on with the constructor it reads the
         // scrutinee at, which a match in its body reads the answer under.
@@ -5013,19 +4689,19 @@ impl<'source> Lowerer<'_, 'source>
             let mut inner = frame;
             binders.clear();
             for &binder in bound {
-                let name = SurfaceName::from(self.text_at(binder));
-                self.note_binder(binder, inner, name)?;
+                let name = SurfaceName::from(self.cx().text_at(binder));
+                self.host().note_binder(binder, inner, name)?;
                 let site = Maybe::Present(binder.span);
-                let id = match self.cx.pattern_stated.get(&binder.node) {
-                    Some(&stated) => self.cx.scope.extend_typed(inner, name, stated, site),
-                    None => self.cx.scope.extend(inner, name, site),
+                let id = match self.cx().pattern_stated.get(&binder.node) {
+                    Some(&stated) => self.cx_mut().scope.extend_typed(inner, name, stated, site),
+                    None => self.cx_mut().scope.extend(inner, name, site),
                 };
                 if let Maybe::Present(_) = switched {
                     binders.push(id);
                 }
                 inner = Frame::Inner(id);
             }
-            self.read(body.node, Reading::Computation(inner));
+            self.host().read(body.node, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
                 let settled = match switched {
                     Maybe::Present(binder) => {
@@ -5033,35 +4709,35 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     Maybe::Absent(reason) => Maybe::Absent(reason),
                 };
-                let at = self.cx.arms.push(ArmReading {
+                let at = self.cx_mut().arms.push(ArmReading {
                     settled,
                     outer: stated.arm,
                 });
-                let _first = self.cx.answers.insert(body.node, Answer {
+                let _first = self.cx_mut().answers.insert(body.node, Answer {
                     arm: Maybe::Present(at),
                     ..stated
                 });
             }
-            self.pass_paths(site.at.node, body.node);
+            self.host().pass_paths(site.at.node, body.node);
         }
         // A loop arm reads the case's answer at its loop's point as a binder,
         // which the minted case replaces by that answer.
         for arm in &loops {
-            let inner = Frame::Inner(self.cx.scope.extend(
+            let inner = Frame::Inner(self.cx_mut().scope.extend(
                 frame,
                 SurfaceName::from(""),
                 Maybe::Absent(binder_site::Absent::Unwritten),
             ));
-            self.read(arm.body, Reading::Computation(inner));
+            self.host().read(arm.body, Reading::Computation(inner));
             if let Maybe::Present(stated) = answer {
-                let _first = self.cx.answers.insert(arm.body, Answer {
+                let _first = self.cx_mut().answers.insert(arm.body, Answer {
                     over: Over::Loop { arm: inner },
                     ..stated
                 });
             }
-            self.pass_paths(site.at.node, arm.body);
+            self.host().pass_paths(site.at.node, arm.body);
         }
-        let index = self.cx.cases.push(CaseForm {
+        let index = self.cx_mut().cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
             frame,
@@ -5074,7 +4750,7 @@ impl<'source> Lowerer<'_, 'source>
             origin: kept,
             variables,
         });
-        self.plan(site, Plan::Case(index));
+        self.host().plan(site, Plan::Case(index));
 
         Ok(())
     }
@@ -5109,7 +4785,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   separate the empty sum's case, the data switch and the refusal.
     /// - witness: `lower::native::tests::a_match_of_no_arms_eliminates_the_empty_sum`
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Case(_) | Plan::EmptyCase(_)))))]
     fn empty_case(
         &mut self,
         site: Site,
@@ -5118,7 +4794,7 @@ impl<'source> Lowerer<'_, 'source>
         written: Maybe<Placed, answered::Absent>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let stated = self.scrutinee_type(frame, scrutinee)?;
+        let stated = self.host().scrutinee_type(frame, scrutinee)?;
         let Maybe::Present(family) = self.empty_switch(site, frame, stated)?
         else {
             if let Maybe::Present(stated) = written {
@@ -5129,8 +4805,8 @@ impl<'source> Lowerer<'_, 'source>
                     boundary: FragmentBoundary::Unadmitted(Unbuilt::EmptyMatch),
                 });
             }
-            self.read(scrutinee.node, Reading::Value(frame));
-            self.plan(site, Plan::EmptyCase(scrutinee.node));
+            self.host().read(scrutinee.node, Reading::Value(frame));
+            self.host().plan(site, Plan::EmptyCase(scrutinee.node));
             return Ok(());
         };
         let ascribed = match written {
@@ -5145,7 +4821,7 @@ impl<'source> Lowerer<'_, 'source>
         let answer = match ascribed {
             Maybe::Present(written) => Maybe::Present(written),
             Maybe::Absent(reason) => self
-                .cx
+                .cx()
                 .answers
                 .get(&site.at.node)
                 .copied()
@@ -5154,9 +4830,9 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Absent(_) = answer {
             return Err(site.out(FragmentBoundary::Unannotated));
         }
-        self.read(scrutinee.node, Reading::Value(frame));
+        self.host().read(scrutinee.node, Reading::Value(frame));
         if let Maybe::Present(node) = written {
-            self.read(node.node, Reading::Result(frame));
+            self.host().read(node.node, Reading::Result(frame));
         }
         let empty = Test::Data {
             level: TreeLevel::default(),
@@ -5170,7 +4846,7 @@ impl<'source> Lowerer<'_, 'source>
             branches: Vec::new(),
         };
         let cover = covered(core::slice::from_ref(&empty), &[]);
-        let index = self.cx.cases.push(CaseForm {
+        let index = self.cx_mut().cases.push(CaseForm {
             scrutinee: scrutinee.node,
             roots: Roots::Scrutinee,
             frame,
@@ -5192,7 +4868,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             variables: Vec::new(),
         });
-        self.plan(site, Plan::Case(index));
+        self.host().plan(site, Plan::Case(index));
 
         Ok(())
     }
@@ -5236,7 +4912,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Absent(reason) => return Ok(Maybe::Absent(reason)),
         };
-        let Some(written) = self.cx.collected.data.get(form)
+        let Some(written) = self.cx().collected.data.get(form)
         else {
             return Ok(Maybe::Absent(switched::Absent::Otherwise));
         };
@@ -5281,7 +4957,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_empty_data_and_on_a_path`
     /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |stated| match *stated {
-        Maybe::Present(Stated::Family { form, .. }) => form < self.cx.collected.data.len(),
+        Maybe::Present(Stated::Family { form, .. }) => form < self.cx().collected.data.len(),
         Maybe::Present(Stated::Path) | Maybe::Absent(_) => true,
     }))]
     fn stated_data(
@@ -5295,17 +4971,17 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(switched::Absent::Untyped));
         };
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
         let read = loop {
-            if let Err(refusal) = self.cx.fuel.spend() {
+            if let Err(refusal) = self.cx_mut().fuel.spend() {
                 break Err(refusal);
             }
-            let Some(tree) = self.cx.tree.node(at)
+            let Some(tree) = self.cx().tree.node(at)
             else {
                 break Ok(None);
             };
             let placed = Placed::of(at, tree);
-            let former = match self.form_at(placed) {
+            let former = match self.cx().form_at(placed) {
                 Ok(Some((_name, former))) => former,
                 Ok(None) => break Ok(None),
                 Err(refusal) => break Err(refusal),
@@ -5319,7 +4995,7 @@ impl<'source> Lowerer<'_, 'source>
             if former != Former::ParenthesizedType && former != Former::TypeApplication {
                 break Ok(None);
             }
-            if let Err(refusal) = read_pieces(self.cx.pbg, self.cx.tree, at, &mut scratch) {
+            if let Err(refusal) = read_pieces(self.cx().pbg, self.cx().tree, at, &mut scratch) {
                 break Err(refusal);
             }
             if former == Former::TypeApplication {
@@ -5337,7 +5013,7 @@ impl<'source> Lowerer<'_, 'source>
                 (Some(_) | None, _) => break Ok(None),
             }
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         let head = match read? {
             Some(Maybe::Present(head)) => head,
             Some(Maybe::Absent(_)) => return Ok(Maybe::Present(Stated::Path)),
@@ -5348,9 +5024,9 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-        let name = self.name_at(head);
+        let name = self.cx().name_at(head);
         let Maybe::Present(super::Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, frame, name)?
+            self.host().resolve_name(named, frame, name)?
         else {
             return otherwise;
         };
@@ -5358,7 +5034,7 @@ impl<'source> Lowerer<'_, 'source>
             operand: Operand::Data(form),
             ..
         })) = self
-            .cx
+            .cx()
             .collected
             .slots
             .get(usize::from(constant))
@@ -5366,7 +5042,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return otherwise;
         };
-        if form >= self.cx.collected.data.len() {
+        if form >= self.cx().collected.data.len() {
             return otherwise;
         }
 
@@ -5408,7 +5084,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   the field before it, with and without an answer.
     /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
     /// - witness: `lower::native::tests::a_data_field_some_constructor_lacks_is_refused_1106`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Projected(_))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Projected(_))))]
     pub(super) fn data_field(
         &mut self,
         site: Site,
@@ -5416,15 +5092,15 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let unplanned = Ok(arity::Planned(false));
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
         else {
             return unplanned;
         };
-        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
+        if !matches!(self.cx().form_at(target)?, Some((_, Former::Name))) {
             return unplanned;
         }
         let frame = site.reading.frame();
-        let written = self.scrutinee_type(frame, target)?;
+        let written = self.host().scrutinee_type(frame, target)?;
         let Maybe::Present(stated) = written
         else {
             return unplanned;
@@ -5433,29 +5109,29 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unplanned;
         };
-        let Some(data) = self.cx.collected.data.get(form)
+        let Some(data) = self.cx().collected.data.get(form)
         else {
             return unplanned;
         };
         if !data.indices.is_empty() {
             return unplanned;
         }
-        let field = self.name_at(selected);
+        let field = self.cx().name_at(selected);
         let mut branches = Vec::with_capacity(data.generators.len());
         for generator in &data.generators {
             let Some(position) = generator.fields.iter().position(|written| {
-                matches!(written.named, Maybe::Present(named) if self.name_at(named) == field)
+                matches!(written.named, Maybe::Present(named) if self.cx().name_at(named) == field)
             })
             else {
                 return Err(LoweringRefusal::PartialField {
                     span: selected.span,
                     field,
-                    constructor: self.name_at(generator.named),
+                    constructor: self.cx().name_at(generator.named),
                 });
             };
             branches.push((generator.fields.len(), position));
         }
-        let typed = if let Some(&answer) = self.cx.answers.get(&site.at.node) {
+        let typed = if let Some(&answer) = self.cx().answers.get(&site.at.node) {
             Typed::Answered(answer)
         }
         else {
@@ -5469,7 +5145,7 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .take(position)
                 .filter_map(|before| match before.named {
-                    Maybe::Present(named) => Some(self.name_at(named)),
+                    Maybe::Present(named) => Some(self.cx().name_at(named)),
                     Maybe::Absent(_) => None,
                 })
                 .collect();
@@ -5477,7 +5153,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(site.out(FragmentBoundary::Unannotated));
             };
-            if self.spells_any(declared, &earlier) == Spelled(true) {
+            if self.shared().spells_any(declared, &earlier) == Spelled(true) {
                 return Err(site.out(FragmentBoundary::Unannotated));
             }
             Typed::Field {
@@ -5487,16 +5163,16 @@ impl<'source> Lowerer<'_, 'source>
                 parameters: data.parameters.len(),
             }
         };
-        let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        let index = self.cx.projected.push(Projected {
+        let frame = self.host().require(site, Produced::Computation)?;
+        self.host().read(target.node, Reading::Value(frame));
+        let index = self.cx_mut().projected.push(Projected {
             subject: target.node,
             frame,
             family: constant,
             branches,
             typed,
         });
-        self.plan(site, Plan::Projected(index));
+        self.host().plan(site, Plan::Projected(index));
 
         Ok(arity::Planned(true))
     }
@@ -5522,7 +5198,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — each output of a two-output constructor, and an
     ///   output it lacks, separate the two ports from the refusal.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Constructor(_))))]
     pub(super) fn port(
         &mut self,
         site: Site,
@@ -5530,20 +5206,20 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let unplanned = Ok(arity::Planned(false));
-        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        let Ok((target, selected)) = Context::link(site, &pieces.pieces, site.at.span)
         else {
             return unplanned;
         };
         // `(C a).l` selects as `C(a).l` does.
-        let Some(target) = self.ungrouped_target(target, site.at.node)?
+        let Some(target) = self.host().ungrouped_target(target, site.at.node)?
         else {
             return unplanned;
         };
-        if !matches!(self.form_at(target)?, Some((_, Former::Call))) {
+        if !matches!(self.cx().form_at(target)?, Some((_, Former::Call))) {
             return unplanned;
         }
         let mut called = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut called)?;
+        read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut called)?;
         if let Maybe::Present(repaired) = called.repair {
             return Err(repaired.refusal(site.name));
         }
@@ -5556,22 +5232,22 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unplanned;
         };
-        let output = self.name_at(selected);
-        let Maybe::Present(constructor) = self.port_of(ported, output)
+        let output = self.cx().name_at(selected);
+        let Maybe::Present(constructor) = self.shared().port_of(ported, output)
         else {
             return Err(LoweringRefusal::PartialField {
                 span: selected.span,
                 field: output,
-                constructor: self.name_at(ported.named),
+                constructor: self.cx().name_at(ported.named),
             });
         };
-        self.constructed_at(head.span, constructor);
+        self.host().constructed_at(head.span, constructor);
         let _head = cursor.operands();
-        let start = self.cx.operands.entries().len();
-        arguments(site, &mut cursor, &mut self.cx.operands)?;
+        let start = self.cx().operands.entries().len();
+        arguments(site, &mut cursor, &mut self.cx_mut().operands)?;
         let fields = Stretch {
             start,
-            end: self.cx.operands.entries().len(),
+            end: self.cx().operands.entries().len(),
         };
         self.construct(site, constructor, fields)?;
 
@@ -5603,7 +5279,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   to its ports, and a parameterised family's takes its ports' types from
     ///   the record type its definition states.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Ports(..))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Ports(..))))]
     pub(super) fn ports(
         &mut self,
         site: Site,
@@ -5611,18 +5287,18 @@ impl<'source> Lowerer<'_, 'source>
         fields: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let name = self.name_at(ported.named);
+        let name = self.cx().name_at(ported.named);
         let unresolved = || LoweringRefusal::UnresolvedName {
             span: ported.named.span,
             name,
         };
         let (labels, alone) = match ported.form {
-            Generators::Written(form) => match self.cx.collected.data.get(form) {
+            Generators::Written(form) => match self.cx().collected.data.get(form) {
                 Some(data) => (
                     (ported.first .. ported.first.saturating_add(ported.count))
                         .filter_map(|tag| match data.generators.get(tag)?.port {
                             Maybe::Present(port) => Some((
-                                FieldLabel::from(String::from(self.name_at(port).as_ref())),
+                                FieldLabel::from(String::from(self.cx().name_at(port).as_ref())),
                                 ConstructorTag::from(tag),
                             )),
                             Maybe::Absent(_) => None,
@@ -5644,7 +5320,7 @@ impl<'source> Lowerer<'_, 'source>
             named: ported.named,
         };
         self.construct(site, first, fields)?;
-        let Some(&Plan::Constructor(constructed)) = self.cx.plans.get(site.at.node)
+        let Some(&Plan::Constructor(constructed)) = self.cx().plans.get(site.at.node)
         else {
             return Err(unresolved());
         };
@@ -5660,7 +5336,7 @@ impl<'source> Lowerer<'_, 'source>
             self.through_first_port(site, ported, fields);
             constructed
         };
-        self.plan(site, Plan::Ports(constructed, labels));
+        self.host().plan(site, Plan::Ports(constructed, labels));
 
         Ok(())
     }
@@ -5674,8 +5350,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   first port of `ported` at `site`.
     /// - ensures: every field holding an inherited classifier other than a
     ///   field classifier around `site` holds instead the field's declared type
-    ///   around `site`, which [`Self::classifier_type`] reads under the first
-    ///   port's entry of the record type, never the record type itself.
+    ///   around `site`, which [`NativeRef::classifier_type`] reads under the
+    ///   first port's entry of the record type, never the record type itself.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5683,7 +5359,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a field typed by the family over its own parameters
     ///   is classified by a port's type, not by the record of the ports.
     /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.cx.operands.entries().get(position).and_then(|field| self.cx.inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.cx.collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
+    #[spec(ensures: |()| (fields.start .. fields.end).all(|position| self.cx().operands.entries().get(position).and_then(|field| self.cx().inherited.get(field)).is_none_or(|inherited| matches!(inherited, &Classifier::Field(of) if of.around == site.at.node))) || !matches!(ported.form, Generators::Written(form) if self.cx().collected.data.get(form).and_then(|data| data.generators.get(ported.first)).is_some_and(|generator| generator.fields.len() >= (fields.start .. fields.end).count())))]
     fn through_first_port(
         &mut self,
         site: Site,
@@ -5695,7 +5371,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return;
         };
-        let Some(data) = self.cx.collected.data.get(form)
+        let Some(data) = self.cx().collected.data.get(form)
         else {
             return;
         };
@@ -5707,20 +5383,20 @@ impl<'source> Lowerer<'_, 'source>
         let declared: Vec<NodeIndex> = generator.fields.iter().map(|field| field.ty.node).collect();
         for (index, position) in (fields.start .. fields.end).enumerate() {
             let (Some(&field), Some(&declared)) = (
-                self.cx.operands.entries().get(position),
+                self.cx().operands.entries().get(position),
                 declared.get(index),
             )
             else {
                 continue;
             };
-            let Some(&inherited) = self.cx.inherited.get(&field)
+            let Some(&inherited) = self.cx().inherited.get(&field)
             else {
                 continue;
             };
             if matches!(inherited, Classifier::Field(of) if of.around == site.at.node) {
                 continue;
             }
-            let _replaced = self.cx.inherited.insert(
+            let _replaced = self.cx_mut().inherited.insert(
                 field,
                 Classifier::Field(FieldOf {
                     around: site.at.node,
@@ -5730,59 +5406,6 @@ impl<'source> Lowerer<'_, 'source>
                 }),
             );
         }
-    }
-
-    /// Whether some leaf of the syntax under `node` spells one of `names`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: spelled exactly when a node under `node`, `node` itself
-    ///   included, has no child and covers the bytes of a name in `names`;
-    ///   unspelled when `names` is empty.
-    /// - provides: a conservative reading of whether a written type names a
-    ///   binder: a name bound inside the type and spelled alike counts too.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — restating it walks the subtree again.
-    ///
-    /// # Termination
-    /// Each round pops one node and pushes its children, which sit strictly
-    /// above it in the tree's layout, so the walk visits each node of the
-    /// finite subtree once.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a field typed by the field before it, and one typed
-    ///   by a closed type, separate the two answers.
-    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `names` holds the fields before one constructor's field"
-        )
-    )]
-    fn spells_any(
-        &self,
-        node: NodeIndex,
-        names: &[SurfaceName<'source>],
-    ) -> Spelled
-    {
-        if names.is_empty() {
-            return Spelled(false);
-        }
-        let mut pending = Vec::from([node]);
-        while let Some(at) = pending.pop() {
-            let mut children = self.cx.tree.children(at).peekable();
-            if children.peek().is_none()
-                && self.cx.tree.fragment(at).is_some_and(|spelled| {
-                    names.iter().any(|name| name.as_ref() == spelled.as_ref())
-                })
-            {
-                return Spelled(true);
-            }
-            pending.extend(children);
-        }
-        Spelled(false)
     }
 
     /// The binder the scrutinee `scrutinee` of a match under `frame` reads,
@@ -5806,7 +5429,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   of its arms reads at a constructor.
     /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
     #[spec(ensures: |ret| match ret {
-        | Ok(Maybe::Present(binder)) => self.cx.scope.zone(binder) == Zone::Intuitionistic,
+        | Ok(Maybe::Present(binder)) => self.cx().scope.zone(binder) == Zone::Intuitionistic,
         | Ok(Maybe::Absent(_)) | Err(_) => true,
     })]
     fn scrutinee_binder(
@@ -5815,57 +5438,17 @@ impl<'source> Lowerer<'_, 'source>
         scrutinee: Placed,
     ) -> Result<Maybe<ScopeId, settled::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(scrutinee)?, Some((_, Former::Name))) {
+        let cx = self.cx_mut();
+        if !matches!(cx.form_at(scrutinee)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(settled::Absent::Unbound));
         }
-        let name = self.name_at(scrutinee);
-        Ok(
-            match self.cx.scope.resolve(frame, name, &mut self.cx.fuel)? {
-                Maybe::Present(bound) if bound.zone == Zone::Intuitionistic => {
-                    Maybe::Present(bound.binder)
-                },
-                Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(settled::Absent::Unbound),
+        let name = cx.name_at(scrutinee);
+        Ok(match cx.scope.resolve(frame, name, &mut cx.fuel)? {
+            Maybe::Present(bound) if bound.zone == Zone::Intuitionistic => {
+                Maybe::Present(bound.binder)
             },
-        )
-    }
-
-    /// The arm `arm`, then each arm the answer was passed into before it, from
-    /// the innermost out.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `arm`'s reading first when it is stored, then each stored
-    ///   reading's outer arm in turn while it stands before the one naming it.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Termination
-    /// Each step moves to a position strictly before the last, so the walk
-    /// ends within the store's length.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a match two arms deep reads the answer at both arms'
-    ///   constructors.
-    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    #[spec(ensures: |ret| ret.len() <= self.cx.arms.entries().len())]
-    fn arms_outward(
-        &self,
-        arm: Maybe<ArmIndex, passed::Absent>,
-    ) -> Vec<&ArmReading>
-    {
-        let mut chain = Vec::new();
-        let mut next = arm;
-        let mut bound = self.cx.arms.mark();
-        while let Maybe::Present(at) = next
-            && let Some(position) = self.cx.arms.position(at)
-            && position < bound
-            && let Some(reading) = self.cx.arms.get(at)
-        {
-            chain.push(reading);
-            bound = position;
-            next = reading.outer;
-        }
-        chain
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(settled::Absent::Unbound),
+        })
     }
 
     /// The alternatives of the arm pattern `pattern`: its or-pattern's
@@ -5894,12 +5477,12 @@ impl<'source> Lowerer<'_, 'source>
         let mut pending = Vec::from([pattern]);
         let mut pieces = Pieces::new();
         while let Some(next) = pending.pop() {
-            self.cx.fuel.spend()?;
-            let Some(node) = self.cx.tree.node(next.node)
+            self.cx_mut().fuel.spend()?;
+            let Some(node) = self.cx().tree.node(next.node)
             else {
                 continue;
             };
-            let Shape::Form { name, .. } = shape_of(self.cx.pbg, node)?
+            let Shape::Form { name, .. } = shape_of(self.cx().pbg, node)?
             else {
                 alternatives.push(next);
                 continue;
@@ -5908,7 +5491,7 @@ impl<'source> Lowerer<'_, 'source>
                 alternatives.push(next);
                 continue;
             }
-            read_pieces(self.cx.pbg, self.cx.tree, next.node, &mut pieces)?;
+            read_pieces(self.cx().pbg, self.cx().tree, next.node, &mut pieces)?;
             if let Maybe::Present(repaired) = pieces.repair {
                 return Err(repaired.refusal(FormName::OR_PATTERN));
             }
@@ -5945,15 +5528,15 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `loop` names the circle's loop, and `x` binds.
     /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| matches!(found, Maybe::Absent(_)) || !self.cx.collected.words.is_empty()))]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| matches!(found, Maybe::Absent(_)) || !self.cx().collected.words.is_empty()))]
     fn loop_named(
         &mut self,
         site: Site,
         pattern: Placed,
     ) -> Result<Maybe<NamedLoop, constructed::Absent>, LoweringRefusal<'source>>
     {
-        if !matches!(self.form_at(pattern)?, Some((name, _)) if name == FormName::IDENTIFIER)
-            || self.declares_a_loop(pattern, self.name_at(pattern))? == Declared::Binder
+        if !matches!(self.cx().form_at(pattern)?, Some((name, _)) if name == FormName::IDENTIFIER)
+            || self.declares_a_loop(pattern, self.cx().name_at(pattern))? == Declared::Binder
         {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         }
@@ -5998,28 +5581,29 @@ impl<'source> Lowerer<'_, 'source>
     ///   beside a later member of the same name; a name read as a loop there
     ///   refuses a punned pattern.
     /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
-    #[spec(ensures: |ret| ret.as_ref().ok() != Some(&Declared::Loop) || !self.cx.collected.words.is_empty())]
+    #[spec(ensures: |ret| ret.as_ref().ok() != Some(&Declared::Loop) || !self.cx().collected.words.is_empty())]
     fn declares_a_loop(
         &mut self,
         at: Placed,
         name: SurfaceName<'source>,
     ) -> Result<Declared, LoweringRefusal<'source>>
     {
-        if self.cx.collected.words.is_empty() {
+        let cx = self.cx_mut();
+        if cx.collected.words.is_empty() {
             return Ok(Declared::Binder);
         }
-        let Maybe::Present(own) = self.cx.collected.owner_of(at.node)
+        let Maybe::Present(own) = cx.collected.owner_of(at.node)
         else {
             return Ok(Declared::Binder);
         };
-        let mut container = self.cx.collected.slots.get(usize::from(own)).map_or_else(
-            || self.cx.collected.top(at.span.start()),
-            |slot| slot.container,
-        );
+        let mut container = cx
+            .collected
+            .slots
+            .get(usize::from(own))
+            .map_or_else(|| cx.collected.top(at.span.start()), |slot| slot.container);
         let is_loop = |target: SlotIndex| {
             matches!(
-                self.cx
-                    .collected
+                cx.collected
                     .slots
                     .get(usize::from(target))
                     .map(|slot| slot.definition),
@@ -6030,8 +5614,8 @@ impl<'source> Lowerer<'_, 'source>
             )
         };
         loop {
-            self.cx.fuel.spend()?;
-            if let Some(&target) = self.cx.collected.by_name.get(&(container, name))
+            cx.fuel.spend()?;
+            if let Some(&target) = cx.collected.by_name.get(&(container, name))
                 && is_loop(target)
             {
                 return Ok(Declared::Loop);
@@ -6040,24 +5624,23 @@ impl<'source> Lowerer<'_, 'source>
                 crate::module::Container::Module(module) => module,
                 crate::module::Container::TopLevel(source) => {
                     let Ok(Maybe::Present((target, import))) =
-                        self.cx.collected.imported_slot(source, name)
+                        cx.collected.imported_slot(source, name)
                     else {
                         return Ok(Declared::Binder);
                     };
                     if !is_loop(target) {
                         return Ok(Declared::Binder);
                     }
-                    self.cx.collected.reach(import);
+                    cx.collected.reach(import);
                     return Ok(Declared::Loop);
                 },
             };
-            container = self
-                .cx
+            container = cx
                 .collected
                 .structures
                 .get(usize::from(module))
                 .map_or_else(
-                    || self.cx.collected.top(at.span.start()),
+                    || cx.collected.top(at.span.start()),
                     |structure| structure.container,
                 );
         }
@@ -6095,7 +5678,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   it reads it alone.
     /// - witness: `tests::namespace::here_names_the_words_its_source_can_name_6722`
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|found| match *found {
-        HereWords::One(words) => words < self.cx.collected.words.len(),
+        HereWords::One(words) => words < self.cx().collected.words.len(),
         HereWords::None | HereWords::Many => true,
     }))]
     fn here_words(
@@ -6105,16 +5688,16 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut found = HereWords::None;
         let mut import = None;
-        for words in 0 .. self.cx.collected.words.len() {
+        for words in 0 .. self.cx().collected.words.len() {
             let loops = self
-                .cx
+                .cx()
                 .collected
                 .words
                 .get(words)
                 .map_or(0_usize, |form| form.loops.len());
             for generator in 0 .. loops {
                 let Some(&bound) = self
-                    .cx
+                    .cx()
                     .collected
                     .words
                     .get(words)
@@ -6137,7 +5720,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         if let (HereWords::One(_), Some(span)) = (found, import) {
-            self.cx.collected.reach(span);
+            self.cx_mut().collected.reach(span);
         }
         Ok(found)
     }
@@ -6151,9 +5734,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: [`Generators::Words`] at the position of the words that both
     ///   endpoints of the path type `stated` writes spell as their point, each
     ///   inside as many `Path.here` calls as the words' wrapping, read as
-    ///   [`Self::spelled_words`] reads a point; none when no type is stated,
-    ///   when it is no path type, or when the two endpoints spell no point of
-    ///   one type of words.
+    ///   [`NativeRef::spelled_words`] reads a point; none when no type is
+    ///   stated, when it is no path type, or when the two endpoints spell no
+    ///   point of one type of words.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk spends the
     ///   fuel; [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
@@ -6166,7 +5749,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   reads `here` at that circle's words; a case over the words at the
     ///   3-cell beside the words of the 2-sphere reads it at the 3-cell's.
     /// - witness: `lower::native::tests::a_here_pattern_reads_the_words_its_stated_type_names_6805`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|form| matches!(form, Generators::Words(words) if words < self.cx.collected.words.len()))))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|form| matches!(form, Generators::Words(words) if words < self.cx().collected.words.len()))))]
     fn stated_words(
         &mut self,
         stated: Maybe<NodeIndex, binder_type::Absent>,
@@ -6185,14 +5768,15 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let point = |endpoint: NodeIndex| -> Result<Option<usize>, LoweringRefusal<'source>> {
-            let Some(node) = self.cx.tree.node(endpoint)
+            let Some(node) = self.cx().tree.node(endpoint)
             else {
                 return Ok(None);
             };
             let (base, calls) =
-                reflexivities_around(self.cx.pbg, self.cx.tree, Placed::of(endpoint, node))?;
+                reflexivities_around(self.cx().pbg, self.cx().tree, Placed::of(endpoint, node))?;
             let wraps = gandr_kernel_term::Reflexivities::from(calls.len());
             Ok(self
+                .shared()
                 .spelled_words(base, wraps)?
                 .map(|spelled| spelled.words))
         };
@@ -6229,7 +5813,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::here_words`].
     /// - witness: `tests::namespace::here_names_the_words_its_source_can_name_6722`
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&scope| scope == LoopScope::Out || usize::from(target) < self.cx.collected.slots.len()))]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&scope| scope == LoopScope::Out || usize::from(target) < self.cx().collected.slots.len()))]
     fn loop_scope(
         &mut self,
         at: Placed,
@@ -6237,8 +5821,8 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<LoopScope, LoweringRefusal<'source>>
     {
         let (Maybe::Present(own), Some(name)) = (
-            self.cx.collected.owner_of(at.node),
-            self.cx
+            self.cx().collected.owner_of(at.node),
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(target))
@@ -6247,13 +5831,13 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(LoopScope::Out);
         };
-        let mut container = self.cx.collected.slots.get(usize::from(own)).map_or_else(
-            || self.cx.collected.top(at.span.start()),
+        let mut container = self.cx().collected.slots.get(usize::from(own)).map_or_else(
+            || self.cx().collected.top(at.span.start()),
             |slot| slot.container,
         );
         loop {
-            self.cx.fuel.spend()?;
-            if let Some(&bound) = self.cx.collected.by_name.get(&(container, name)) {
+            self.cx_mut().fuel.spend()?;
+            if let Some(&bound) = self.cx().collected.by_name.get(&(container, name)) {
                 return Ok(if bound == target {
                     LoopScope::Declared
                 }
@@ -6264,7 +5848,7 @@ impl<'source> Lowerer<'_, 'source>
             let module = match container {
                 crate::module::Container::Module(module) => module,
                 crate::module::Container::TopLevel(source) => {
-                    return Ok(match self.cx.collected.imported_slot(source, name) {
+                    return Ok(match self.cx().collected.imported_slot(source, name) {
                         Ok(Maybe::Present((bound, span))) if bound == target => {
                             LoopScope::Imported(span)
                         },
@@ -6273,156 +5857,15 @@ impl<'source> Lowerer<'_, 'source>
                 },
             };
             container = self
-                .cx
+                .cx()
                 .collected
                 .structures
                 .get(usize::from(module))
                 .map_or_else(
-                    || self.cx.collected.top(at.span.start()),
+                    || self.cx().collected.top(at.span.start()),
                     |structure| structure.container,
                 );
         }
-    }
-
-    /// Each of `loops`' arms as the loop its case owes and the arm's place
-    /// after the match's `first` constructor arms.
-    ///
-    /// # Specification
-    /// - requires: `loops` is what [`Self::loop_arms`] ordered.
-    /// - ensures: one pair for each arm, in order: the arm's words by their
-    ///   declaration's constant, its generator as the cell, and `first` plus
-    ///   its place; nothing when an arm's words name no slot.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the circle's loop arm names the circle's words and
-    ///   cell 0, after the point's arm.
-    /// - witness: `lower::native::tests::a_match_over_the_circle_covers_its_loop_5104`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|owed| owed.len() == loops.len()))]
-    fn owed_loops(
-        &self,
-        loops: &[LoopArm],
-        first: ArmAt,
-    ) -> Option<Vec<(Loop, ArmAt)>>
-    {
-        loops
-            .iter()
-            .enumerate()
-            .map(|(place, arm)| {
-                let words = self.cx.collected.words.get(arm.words)?;
-                let constant = self
-                    .cx
-                    .collected
-                    .slots
-                    .get(usize::from(words.slot))?
-                    .constant;
-                Some((
-                    Loop::new(constant, CellIndex::from(arm.generator)),
-                    ArmAt(first.0.saturating_add(place)),
-                ))
-            })
-            .collect()
-    }
-
-    /// The loop arms `written` of the match at `site`, in the order the loop
-    /// branches of the tree `tests`' root follow its constructors' branches.
-    ///
-    /// # Specification
-    /// - requires: `tests` is the match's compiled tree and `written` its loop
-    ///   arms, in source order.
-    /// - ensures: none for no loop arm; otherwise one arm per cell of the root
-    ///   switch's sort, loops and cells above dimension one alike, words by
-    ///   their position among the collected words and cells in written order.
-    /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] when the root is no
-    ///   switch on the scrutinee's constructors or a cell of its sort has no
-    ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a cell's second arm;
-    ///   the wrong-sort refusal at an arm for a cell of another sort.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the circle's loop arm follows its point's branch, and
-    ///   a loop arm over a case with no loop arm owed is refused.
-    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
-    #[spec(captures: count = written.len(), ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() <= count))]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `owed` holds the loop arms one family's words declare"
-        )
-    )]
-    fn loop_arms(
-        &self,
-        site: Site,
-        tests: &[Test],
-        written: Vec<LoopArm>,
-    ) -> Result<Vec<LoopArm>, LoweringRefusal<'source>>
-    {
-        let sort_of = |words: &WordsForm| {
-            self.cx
-                .collected
-                .data
-                .get(words.family)
-                .and_then(|form| self.cx.collected.slots.get(usize::from(form.slot)))
-                .map(|slot| slot.constant)
-        };
-        let root = match tests.first() {
-            Some(&Test::Data {
-                level,
-                family: Maybe::Present(family),
-                ..
-            }) if level == TreeLevel::default() => Some(family),
-            _ => None,
-        };
-        if written.is_empty() {
-            return Ok(written);
-        }
-        let uncovered = LoweringRefusal::NonExhaustiveMatch { span: site.at.span };
-        let Some(family) = root
-        else {
-            return Err(uncovered);
-        };
-        let mut owed = Vec::new();
-        for (index, words) in self.cx.collected.words.iter().enumerate() {
-            if sort_of(words) == Some(family) {
-                owed.extend((0 .. words.loops.len()).map(|generator| (index, generator)));
-            }
-        }
-        if let Some(stray) = written
-            .iter()
-            .find(|arm| !owed.contains(&(arm.words, arm.generator)))
-        {
-            return Err(LoweringRefusal::OutOfFragment {
-                span: stray.named.span,
-                form: FormName::MATCH,
-                sort: site.reading.sort(),
-                boundary: FragmentBoundary::WrongSort,
-            });
-        }
-        let mut ordered = Vec::with_capacity(owed.len());
-        for &(words, generator) in &owed {
-            let mut matching = written
-                .iter()
-                .filter(|arm| arm.words == words && arm.generator == generator);
-            let Some(&arm) = matching.next()
-            else {
-                return Err(uncovered);
-            };
-            if let Some(again) = matching.next() {
-                return Err(LoweringRefusal::DuplicateDefinition {
-                    span: again.named.span,
-                    name: SurfaceName::from(self.text_at(again.named)),
-                    first: arm.named.span,
-                });
-            }
-            ordered.push(arm);
-        }
-
-        Ok(ordered)
     }
 
     /// Read the or-free pattern `root` of the match at `site` into
@@ -6478,9 +5921,9 @@ impl<'source> Lowerer<'_, 'source>
         }]);
         let mut pieces = Pieces::new();
         while let Some(queued) = work.pop() {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let shape = if queued.punned.0 {
-                self.binder(queued.at, named)?
+                self.shared().binder(queued.at, named)?
             }
             else {
                 self.pattern_shape(site, queued, &mut pieces, patterns, named, &mut work)?
@@ -6491,44 +5934,6 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(first)
-    }
-
-    /// The binder the name written at `at` makes, numbered into `named`.
-    ///
-    /// # Specification
-    /// - requires: `at` is a pattern name or a punned label of one pattern.
-    /// - ensures: the binder of the next arm variable.
-    /// - fails: [`LoweringRefusal::DuplicateDefinition`] for a name already
-    ///   bound in the pattern.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`LoweringRefusal::DuplicateDefinition`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a name and a punned label each bind once.
-    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
-    #[spec(captures: before = named.len(), ensures: |ret| ret.is_err() || (named.len() == before.saturating_add(1) && matches!(ret, Ok(Matcher::Binder(variable)) if variable.0 == before)))]
-    fn binder(
-        &self,
-        at: Placed,
-        named: &mut Vec<Placed>,
-    ) -> Result<Matcher, LoweringRefusal<'source>>
-    {
-        let spelled = self.text_at(at);
-        if let Some(&earlier) = named
-            .iter()
-            .find(|&&binder| self.text_at(binder) == spelled)
-        {
-            return Err(LoweringRefusal::DuplicateDefinition {
-                span: at.span,
-                name: SurfaceName::from(spelled),
-                first: earlier.span,
-            });
-        }
-        named.push(at);
-
-        Ok(Matcher::Binder(VariableAt(named.len().saturating_sub(1))))
     }
 
     /// The shape of the queued pattern, its field patterns allocated and
@@ -6563,11 +5968,11 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let at = queued.at;
-        let Some(node) = self.cx.tree.node(at.node)
+        let Some(node) = self.cx().tree.node(at.node)
         else {
             return Ok(Matcher::Wild);
         };
-        let name = match shape_of(self.cx.pbg, node)? {
+        let name = match shape_of(self.cx().pbg, node)? {
             Shape::Form { name, .. } => name,
             Shape::Repair(repair) => {
                 return Err(LoweringRefusal::MalformedForm {
@@ -6587,10 +5992,10 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Wild);
         }
         if name == FormName::HOLE {
-            return Ok(Matcher::Hole(self.hole(at)?));
+            return Ok(Matcher::Hole(self.host().hole(at)?));
         }
         if name == FormName::IDENTIFIER {
-            if self.text_at(at).as_ref() == super::HERE {
+            if self.cx().text_at(at).as_ref() == super::HERE {
                 // The type the scrutinee's position states names the words;
                 // the words in scope name them only where it names none.
                 let form = match self.stated_words(queued.stated)? {
@@ -6613,21 +6018,23 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::LoopPattern)));
             }
             if let Maybe::Present(stated) = queued.stated {
-                let _first = self.cx.pattern_stated.insert(at.node, stated);
+                let _first = self.cx_mut().pattern_stated.insert(at.node, stated);
             }
-            return self.binder(at, named);
+            return self.shared().binder(at, named);
         }
         if name == FormName::NUMBER {
-            return integer(here, self.text_at(at));
+            return integer(here, self.cx().text_at(at));
         }
         if name == FormName::BOOLEAN {
-            return Ok(Matcher::Boolean(self.text_at(at).as_ref() == "true"));
+            return Ok(Matcher::Boolean(self.cx().text_at(at).as_ref() == "true"));
         }
         if name == FormName::CONSTRUCTOR {
-            let found = self.constructor_named(site, SurfaceName::from(self.text_at(at)));
-            return self.constructor_pattern(here, at, found, &[], patterns, work);
+            let found = self.constructor_named(site, SurfaceName::from(self.cx().text_at(at)));
+            return self
+                .shared()
+                .constructor_pattern(here, at, found, &[], patterns, work);
         }
-        read_pieces(self.cx.pbg, self.cx.tree, at.node, pieces)?;
+        read_pieces(self.cx().pbg, self.cx().tree, at.node, pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(repaired.refusal(here.name));
         }
@@ -6641,10 +6048,10 @@ impl<'source> Lowerer<'_, 'source>
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             let alias = here.one(cursor.operands())?;
             if !matches!(
-                self.cx
+                self.cx()
                     .tree
                     .node(alias.node)
-                    .map(|node| shape_of(self.cx.pbg, node)),
+                    .map(|node| shape_of(self.cx().pbg, node)),
                 Some(Ok(Shape::Form {
                     name: FormName::IDENTIFIER,
                     ..
@@ -6685,7 +6092,7 @@ impl<'source> Lowerer<'_, 'source>
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {
                 Some(&Piece::Tile { label, at: tile }) if label == TileName::NUMBER => {
-                    integer(here, self.text_at(tile))
+                    integer(here, self.cx().text_at(tile))
                 },
                 Some(&Piece::Tile { label, .. }) if label == TileName::TRUE => {
                     Ok(Matcher::Boolean(true))
@@ -6730,7 +6137,7 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             exhausted(here, &cursor)?;
-            let name = SurfaceName::from(self.text_at(head));
+            let name = SurfaceName::from(self.cx().text_at(head));
             let found = match family {
                 Some(family) => self.qualified_constructor(site, family, name)?,
                 None => self.constructor_named(site, name),
@@ -6746,7 +6153,9 @@ impl<'source> Lowerer<'_, 'source>
                     return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::PortPattern)));
                 }
             }
-            let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
+            let shape = self
+                .shared()
+                .constructor_pattern(here, head, found, &fields, patterns, work)?;
             patterns
                 .spelled
                 .push((queued.slot, head.span, PatternReading::Constructor));
@@ -6756,7 +6165,7 @@ impl<'source> Lowerer<'_, 'source>
             && let Maybe::Present(PortPattern { head, port, fields }) =
                 self.port_pattern(here, pieces)?
         {
-            let shape = self.constructor_pattern(
+            let shape = self.shared().constructor_pattern(
                 here,
                 head,
                 Maybe::Present(port),
@@ -6772,19 +6181,19 @@ impl<'source> Lowerer<'_, 'source>
         if name == FormName::TUPLE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             closed(here, &mut cursor, TileName::PAREN_OPEN)?;
-            let entries = Self::tuple_entries(here, &mut cursor)?;
+            let entries = Context::tuple_entries(here, &mut cursor)?;
             return self.components(here, queued, &entries, patterns, work);
         }
         if name == FormName::TELESCOPE_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             closed(here, &mut cursor, TileName::RECORD)?;
-            let entries = self.pattern_entries(here, &mut cursor)?;
+            let entries = self.cx().pattern_entries(here, &mut cursor)?;
             return self.components(here, queued, &entries, patterns, work);
         }
         if name == FormName::LABELLED_SUM_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
             closed(here, &mut cursor, TileName::SUM_OPEN)?;
-            let key = self.dotted(here, &mut cursor)?;
+            let key = self.cx().dotted(here, &mut cursor)?;
             closed(here, &mut cursor, TileName::EQUALS)?;
             let payload = here.one(cursor.operands())?;
             closed(here, &mut cursor, TileName::BRACE_CLOSE)?;
@@ -6828,12 +6237,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<PortPattern, constructed::Absent>, LoweringRefusal<'source>>
     {
         let unnamed = Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        let Ok((target, selected)) = Self::link(here, &pieces.pieces, here.at.span)
+        let Ok((target, selected)) = Context::link(here, &pieces.pieces, here.at.span)
         else {
             return unnamed;
         };
         let mut written = Pieces::new();
-        read_pieces(self.cx.pbg, self.cx.tree, target.node, &mut written)?;
+        read_pieces(self.cx().pbg, self.cx().tree, target.node, &mut written)?;
         if let Maybe::Present(repaired) = written.repair {
             return Err(repaired.refusal(here.name));
         }
@@ -6848,18 +6257,18 @@ impl<'source> Lowerer<'_, 'source>
                     else {
                         return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
                     };
-                    let name = SurfaceName::from(self.text_at(head));
+                    let name = SurfaceName::from(self.cx().text_at(head));
                     (head, self.qualified_ported(here, first, name)?)
                 },
                 Maybe::Absent(_) => (
                     first,
-                    self.ported_named(here, SurfaceName::from(self.text_at(first))),
+                    self.ported_named(here, SurfaceName::from(self.cx().text_at(first))),
                 ),
             },
             Maybe::Absent(_) => match cursor.clone().operands() {
                 Run::One(head)
                     if matches!(
-                        self.form_at(head)?,
+                        self.cx().form_at(head)?,
                         Some((_, Former::Constructor | Former::Projection))
                     ) =>
                 {
@@ -6868,7 +6277,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Run::One(_) | Run::Several { .. } | Run::Empty(_) => {
                     if !matches!(
-                        self.form_at(target)?,
+                        self.cx().form_at(target)?,
                         Some((_, Former::Constructor | Former::Projection))
                     ) {
                         return unnamed;
@@ -6893,128 +6302,17 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unnamed;
         };
-        let output = self.name_at(selected);
-        let Maybe::Present(port) = self.port_of(ported, output)
+        let output = self.cx().name_at(selected);
+        let Maybe::Present(port) = self.shared().port_of(ported, output)
         else {
             return Err(LoweringRefusal::PartialField {
                 span: selected.span,
                 field: output,
-                constructor: self.name_at(ported.named),
+                constructor: self.cx().name_at(ported.named),
             });
         };
 
         Ok(Maybe::Present(PortPattern { head, port, fields }))
-    }
-
-    /// The port of the multi-output constructor `ported` whose output is
-    /// named `output`, as a constructor of its family.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the generator among `ported`'s ports whose output tile spells
-    ///   `output`, at its tag, with the constructor's arity and name tile; the
-    ///   unnamed absence when no port spells it.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::port`].
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |ret| match ret {
-        Maybe::Present(port) => port.tag >= ported.first && port.tag < ported.first.saturating_add(ported.count),
-        Maybe::Absent(_) => true,
-    })]
-    fn port_of(
-        &self,
-        ported: Ported,
-        output: SurfaceName<'source>,
-    ) -> Maybe<Constructor, constructed::Absent>
-    {
-        let Generators::Written(form) = ported.form
-        else {
-            return Maybe::Absent(constructed::Absent::Unnamed);
-        };
-        let tag = self.cx.collected.data.get(form).and_then(|data| {
-            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
-                data.generators.get(tag).is_some_and(|generator| {
-                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
-                })
-            })
-        });
-        tag.map_or(Maybe::Absent(constructed::Absent::Unnamed), |tag| {
-            Maybe::Present(Constructor {
-                family: ported.family,
-                form: ported.form,
-                tag,
-                arity: ported.arity,
-                named: ported.named,
-            })
-        })
-    }
-
-    /// The shape of the constructor pattern at `here`, `found` the constructor
-    /// resolved for the name spelled at `head`, its field patterns `fields`
-    /// allocated and queued.
-    ///
-    /// # Specification
-    /// - requires: `here` is a constructor pattern; `found` is the resolution
-    ///   of the name at `head`, under the family written before it when one is.
-    /// - ensures: the constructor, its fields a fresh stretch of the part
-    ///   store, each field queued on `work` after its slot is allocated.
-    /// - fails: the unresolved-name refusal when `found` is absent; the arity
-    ///   refusal for other than its arity.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The pattern's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::pattern`].
-    /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
-    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
-    #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(fields.len()))]
-    fn constructor_pattern(
-        &self,
-        here: Site,
-        head: Placed,
-        found: Maybe<Constructor, constructed::Absent>,
-        fields: &[Placed],
-        patterns: &mut Written,
-        work: &mut Vec<Queued>,
-    ) -> Result<Matcher, LoweringRefusal<'source>>
-    {
-        let name = SurfaceName::from(self.text_at(head));
-        let constructor = match found {
-            Maybe::Present(constructor) => constructor,
-            Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed) => {
-                return Err(self.unselected(here, head.span, name));
-            },
-            Maybe::Absent(constructed::Absent::Unnamed | constructed::Absent::TypePlace) => {
-                return Err(LoweringRefusal::UnresolvedName {
-                    span: head.span,
-                    name,
-                });
-            },
-        };
-        if fields.len() != constructor.arity {
-            return Err(here.out(FragmentBoundary::Arity(OperandCount::from(fields.len()))));
-        }
-        let queued: Vec<Queued> = fields
-            .iter()
-            .map(|&field| Queued {
-                at: field,
-                slot: UNWRITTEN,
-                stated: Maybe::Absent(binder_type::Absent::Untyped),
-                related: Maybe::Absent(related::Absent::Otherwise),
-                punned: Punned(false),
-            })
-            .collect();
-
-        Ok(Matcher::Constructor {
-            form: constructor.form,
-            tag: constructor.tag,
-            fields: allocated(patterns, work, &queued),
-        })
     }
 
     /// The shape of the word pattern `g ∷ p` or `back(g) ∷ p` at `here`, the
@@ -7068,7 +6366,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
             };
-            if self.text_at(head).as_ref() != super::identity::BACK {
+            if self.cx().text_at(head).as_ref() != super::identity::BACK {
                 return Err(here.out(FragmentBoundary::Unadmitted(Unbuilt::ConsPattern)));
             }
             patterns
@@ -7089,7 +6387,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnresolvedName {
                 span: cell.span,
-                name: self.name_at(cell),
+                name: self.cx().name_at(cell),
             });
         };
         let queued = [Queued {
@@ -7170,12 +6468,12 @@ impl<'source> Lowerer<'_, 'source>
         // the last element; it is the list's rest all the same.
         if rest.is_none()
             && let Some(&last) = elements.last()
-            && let Some(node) = self.cx.tree.node(last.node)
-            && let Shape::Form { name, .. } = shape_of(self.cx.pbg, node)?
+            && let Some(node) = self.cx().tree.node(last.node)
+            && let Shape::Form { name, .. } = shape_of(self.cx().pbg, node)?
             && name == FormName::REST_PATTERN
         {
             let mut inner = Pieces::new();
-            read_pieces(self.cx.pbg, self.cx.tree, last.node, &mut inner)?;
+            read_pieces(self.cx().pbg, self.cx().tree, last.node, &mut inner)?;
             if let Maybe::Present(repaired) = inner.repair {
                 return Err(repaired.refusal(name));
             }
@@ -7269,7 +6567,7 @@ impl<'source> Lowerer<'_, 'source>
         if let Maybe::Present(typed) = self.unwrapped(stated)?
             && typed.former == Former::TypeApplication
             && typed.keyword.is_some_and(|head| {
-                self.former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
+                self.cx().former(self.cx().name_at(head)) == Maybe::Present(TypeFormer::List)
             })
             && let [element] = typed.operands[..]
         {
@@ -7292,14 +6590,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   equivalence or a quasi-inverse, as [`Self::stated_relation`] reads it,
     ///   or at a record nested in one, so are those of the record it
     ///   abbreviates, and at one written `Model(T)` whose record nests pairs,
-    ///   as [`Self::stated_bundle`] reads it, those of the record the signature
-    ///   states, each component unstated; at one stated as a record of one or
-    ///   more labelled entries, positional entries of its arity are its fields
-    ///   in the order the record writes them; otherwise positional entries, in
-    ///   index order, make a tuple and labelled ones a record of their labels;
-    ///   each component queued with the positional type of the same place, or
-    ///   the labelled type of the same label, of the telescope type `queued`
-    ///   states, when it states one.
+    ///   as [`Context::stated_bundle`] reads it, those of the record the
+    ///   signature states, each component unstated; at one stated as a record
+    ///   of one or more labelled entries, positional entries of its arity are
+    ///   its fields in the order the record writes them; otherwise positional
+    ///   entries, in index order, make a tuple and labelled ones a record of
+    ///   their labels; each component queued with the positional type of the
+    ///   same place, or the labelled type of the same label, of the telescope
+    ///   type `queued` states, when it states one.
     /// - fails: the entries' arrangement refusals; the stated type's own
     ///   malformation; the unresolved-name refusal for a label the dependent
     ///   record lacks.
@@ -7331,13 +6629,14 @@ impl<'source> Lowerer<'_, 'source>
         } = queued;
         let form = match stated {
             Maybe::Present(node) => {
-                self.stated_form(here, node, Former::TelescopeType, arity::Thunked(false))?
+                self.host()
+                    .stated_form(here, node, Former::TelescopeType, arity::Thunked(false))?
             },
             Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
         let arranged = arity::arrange(here, entries.to_vec())?;
         let links = match form {
-            Maybe::Present((_, ref typed)) => self.dependent_links(typed)?,
+            Maybe::Present((_, ref typed)) => self.host().dependent_links(typed)?,
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
         if let Maybe::Present((_, ref typed)) = form
@@ -7360,7 +6659,7 @@ impl<'source> Lowerer<'_, 'source>
         let layout = match (related, stated, &form) {
             (Maybe::Present(layout), ..) => Maybe::Present(layout),
             (Maybe::Absent(_), Maybe::Present(node), &Maybe::Absent(_)) => {
-                self.stated_relation(node)?
+                self.host().stated_relation(node)?
             },
             (Maybe::Absent(reason), ..) => Maybe::Absent(reason),
         };
@@ -7388,7 +6687,7 @@ impl<'source> Lowerer<'_, 'source>
             );
         }
         if let Maybe::Present(node) = stated
-            && let Maybe::Present((typed, links)) = self.stated_bundle(node, here.at)
+            && let Maybe::Present((typed, links)) = self.cx().stated_bundle(node, here.at)
             && match arranged {
                 arity::Arranged::Positional(ref entries) => entries.len() == typed.len(),
                 arity::Arranged::Labelled(_) => true,
@@ -7543,7 +6842,7 @@ impl<'source> Lowerer<'_, 'source>
                     else {
                         continue;
                     };
-                    let (arity::Place(place), _) = Self::labelled_in(typed, name, key)?;
+                    let (arity::Place(place), _) = Context::labelled_in(typed, name, key)?;
                     if let Some(slot) = placed.get_mut(place) {
                         *slot = Some((written, entry));
                     }
@@ -7686,9 +6985,12 @@ impl<'source> Lowerer<'_, 'source>
     {
         let stated = queued.stated;
         let summands = match stated {
-            Maybe::Present(node) => {
-                self.stated_entries(here, node, Former::LabelledSumType, arity::Thunked(false))?
-            },
+            Maybe::Present(node) => self.host().stated_entries(
+                here,
+                node,
+                Former::LabelledSumType,
+                arity::Thunked(false),
+            )?,
             Maybe::Absent(_) => Maybe::Absent(arity::stated_labels::Absent::Otherwise),
         };
         let (summands, arity) = match summands {
@@ -7721,7 +7023,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(here.fault(written.span, FormFault::MisplacedTile));
             },
             arity::Key::Label(name, written) => {
-                let (arity::Place(index), entry) = Self::labelled_in(&summands, name, written)?;
+                let (arity::Place(index), entry) = Context::labelled_in(&summands, name, written)?;
                 (index, Some(entry.held.at().node), written.span)
             },
             arity::Key::Positional => {
@@ -7785,25 +7087,25 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        while let Some(&Plan::Transparent(inner)) = self.cx.plans.get(at) {
+        while let Some(&Plan::Transparent(inner)) = self.cx().plans.get(at) {
             at = inner;
         }
-        match self.cx.plans.get(at) {
+        match self.cx().plans.get(at) {
             Some(&Plan::Atom(atom)) => return Ok(Some(atom)),
             Some(&Plan::Unplanned) | None => {},
             Some(_) => return Ok(None),
         }
-        let Some(tree) = self.cx.tree.node(at)
+        let Some(tree) = self.cx().tree.node(at)
         else {
             return Ok(None);
         };
         let placed = Placed::of(at, tree);
-        let Some((form, Former::Constructor | Former::TypeHead)) = self.form_at(placed)?
+        let Some((form, Former::Constructor | Former::TypeHead)) = self.cx().form_at(placed)?
         else {
             return Ok(None);
         };
-        let name = self.name_at(placed);
-        let Maybe::Present(atom) = self.atom(name)
+        let name = self.cx().name_at(placed);
+        let Maybe::Present(atom) = self.host().atom(name)
         else {
             return Ok(None);
         };
@@ -7816,10 +7118,12 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         }
 
-        Ok(match self.resolve_name(named, Frame::Outermost, name)? {
-            Maybe::Present(_) => None,
-            Maybe::Absent(_) => Some(atom),
-        })
+        Ok(
+            match self.host().resolve_name(named, Frame::Outermost, name)? {
+                Maybe::Present(_) => None,
+                Maybe::Absent(_) => Some(atom),
+            },
+        )
     }
 
     /// Compile `rows` to a decision tree over the scrutinee at level zero, or,
@@ -7880,7 +7184,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let _root = tree.queue(rooted, levels, rows);
         while let Some(item) = tree.work.pop() {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let test = self.reduce(site, patterns, &item, &mut tree)?;
             if let Some(held) = tree.tests.get_mut(item.slot.0) {
                 *held = test;
@@ -8027,7 +7331,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let arities: Vec<usize> = match form {
             Generators::Written(position) => self
-                .cx
+                .cx()
                 .collected
                 .data
                 .get(position)
@@ -8039,13 +7343,13 @@ impl<'source> Lowerer<'_, 'source>
                         .collect()
                 })
                 .unwrap_or_default(),
-            Generators::Presentation => match self.cx.collected.theory {
+            Generators::Presentation => match self.cx().collected.theory {
                 Maybe::Present(ref theory) => theory.arities.clone(),
                 Maybe::Absent(_) => Vec::new(),
             },
             Generators::Words(words) => {
                 let loops = self
-                    .cx
+                    .cx()
                     .collected
                     .words
                     .get(words)
@@ -8055,7 +7359,7 @@ impl<'source> Lowerer<'_, 'source>
                 arities
             },
             Generators::Terms(terms) => self
-                .cx
+                .cx()
                 .collected
                 .terms
                 .get(terms)
@@ -8064,32 +7368,32 @@ impl<'source> Lowerer<'_, 'source>
         };
         let declared = match form {
             Generators::Written(position) => self
-                .cx
+                .cx()
                 .collected
                 .data
                 .get(position)
                 .map(|written| (written.slot, written.parameters.is_empty())),
             // The presentation code's constructors need a written classifier,
             // so the switch reads it as a family of parameters would.
-            Generators::Presentation => match self.cx.collected.theory {
+            Generators::Presentation => match self.cx().collected.theory {
                 Maybe::Present(ref theory) => Some((theory.slot, false)),
                 Maybe::Absent(_) => None,
             },
             Generators::Words(words) => self
-                .cx
+                .cx()
                 .collected
                 .words
                 .get(words)
                 .map(|written| (written.slot, true)),
             Generators::Terms(terms) => self
-                .cx
+                .cx()
                 .collected
                 .terms
                 .get(terms)
                 .map(|written| (written.slot, true)),
         };
         let declared = declared.and_then(|(slot, bare)| {
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(slot))
@@ -8107,7 +7411,7 @@ impl<'source> Lowerer<'_, 'source>
         // its fields: the stated index's path to the scrutinee's.
         let equations = match form {
             Generators::Written(position) => self
-                .cx
+                .cx()
                 .collected
                 .data
                 .get(position)
@@ -8119,7 +7423,7 @@ impl<'source> Lowerer<'_, 'source>
         for (tag, &arity) in arities.iter().enumerate() {
             let mut specialised = Vec::new();
             for row in &item.rows {
-                self.cx.fuel.spend()?;
+                self.cx_mut().fuel.spend()?;
                 let mut next = row.clone();
                 let held = patterns.entry(row, switch.column);
                 let replacement = match *held {
@@ -8236,7 +7540,7 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(None);
         };
         let Some(stated) = self
-            .cx
+            .cx()
             .collected
             .data
             .get(position)
@@ -8253,7 +7557,7 @@ impl<'source> Lowerer<'_, 'source>
         };
         let (mut unread, mut alike) = (None, None);
         for (index, &term) in stated.iter().enumerate() {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let Some(head) = self.index_head(term)?
             else {
                 continue;
@@ -8315,20 +7619,20 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Vec::new());
         };
         let parameters = self
-            .cx
+            .cx()
             .collected
             .data
             .get(position)
             .map_or(0, |written| written.parameters.len());
         let mut pieces = Pieces::new();
         loop {
-            self.cx.fuel.spend()?;
-            let Some(tree) = self.cx.tree.node(at)
+            self.cx_mut().fuel.spend()?;
+            let Some(tree) = self.cx().tree.node(at)
             else {
                 return Ok(Vec::new());
             };
             let placed = Placed::of(at, tree);
-            let Some((_, former)) = self.form_at(placed)?
+            let Some((_, former)) = self.cx().form_at(placed)?
             else {
                 return Ok(Vec::new());
             };
@@ -8338,7 +7642,7 @@ impl<'source> Lowerer<'_, 'source>
             {
                 return Ok(Vec::new());
             }
-            read_pieces(self.cx.pbg, self.cx.tree, at, &mut pieces)?;
+            read_pieces(self.cx().pbg, self.cx().tree, at, &mut pieces)?;
             let mut operands = pieces.pieces.iter().filter_map(|piece| match *piece {
                 Piece::Operand(inner) => Some(inner),
                 Piece::Tile { .. } => None,
@@ -8423,7 +7727,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut left = Vec::new();
         let mut right = Vec::new();
         for row in &item.rows {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let held = patterns.entry(row, switch.column);
             let mut next = row.clone();
             next.columns = splice(&row.columns, switch.column, &[]);
@@ -8491,7 +7795,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut equal = Vec::new();
         let mut other = Vec::new();
         for row in &item.rows {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let held = patterns.entry(row, switch.column);
             let mut matched = row.clone();
             matched.columns = splice(&row.columns, switch.column, &[]);
@@ -8573,7 +7877,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut specialised = Vec::with_capacity(item.rows.len());
         let mut unwritten: Vec<(usize, FieldLabel)> = Vec::new();
         for row in &item.rows {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let mut next = row.clone();
             let held = patterns.entry(row, switch.column);
             let replacement = match *held {
@@ -8676,7 +7980,7 @@ impl<'source> Lowerer<'_, 'source>
         let labels: Vec<FieldLabel> = named.into_iter().collect();
         let mut specialised = Vec::with_capacity(item.rows.len());
         for row in &item.rows {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let mut next = row.clone();
             let held = patterns.entry(row, switch.column);
             let replacement: Vec<PatternAt> = match *held {
@@ -8770,7 +8074,7 @@ impl<'source> Lowerer<'_, 'source>
         for summand in 0 .. arity {
             let mut specialised = Vec::new();
             for row in &item.rows {
-                self.cx.fuel.spend()?;
+                self.cx_mut().fuel.spend()?;
                 let mut next = row.clone();
                 let held = patterns.entry(row, switch.column);
                 let replacement = match *held {
@@ -8852,7 +8156,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut empty = Vec::new();
         let mut cells = Vec::new();
         for row in &item.rows {
-            self.cx.fuel.spend()?;
+            self.cx_mut().fuel.spend()?;
             let held = patterns.entry(row, switch.column);
             let mut next = row.clone();
             match *held {
@@ -9058,8 +8362,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   past the `i` indices before it, which it does not name — field types,
     ///   stated indices and universe — `Type` at the fuss-free level when none
     ///   is written, its origin the declaration form — and the rules of its
-    ///   presented reading ([`Self::presentation`]), pushed onto the module's
-    ///   list, its index recorded by the declaration's position in the
+    ///   presented reading ([`NativeRef::presentation`]), pushed onto the
+    ///   module's list, its index recorded by the declaration's position in the
     ///   collection's data list; an indexed declaration whose presented reading
     ///   writes a rule mints nothing and holds
     ///   [`LoweringRefusal::OutOfFragment`] at [`FragmentBoundary::Indexed`],
@@ -9078,21 +8382,15 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_data_declaration_lowers_to_its_signature`
     /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
     /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
-    #[spec(captures: [data = self.cx.data.len(), signed = self.cx.signatures.len()], ensures: self.cx.data.len() >= data && self.cx.signatures.len() >= signed)]
+    #[spec(captures: [data = self.cx().data.len(), signed = self.cx().signatures.len()], ensures: self.cx().data.len() >= data && self.cx().signatures.len() >= signed)]
     pub(super) fn mint_data(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        for (position, form) in self
-            .cx
-            .collected
-            .data
-            .iter()
-            .enumerate()
-            .skip(self.cx.current.data)
-        {
-            let Some(slot) = self.cx.collected.slots.get(usize::from(form.slot))
+        let cx = self.cx_mut();
+        for (position, form) in cx.collected.data.iter().enumerate().skip(cx.current.data) {
+            let Some(slot) = cx.collected.slots.get(usize::from(form.slot))
             else {
                 continue;
             };
@@ -9102,7 +8400,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             let mut parameters = Vec::with_capacity(form.parameters.len());
             for parameter in &form.parameters {
-                if let Maybe::Present(classifier) = self.value_type_at(parameter.classifier.node) {
+                if let Maybe::Present(classifier) = cx.value_type_at(parameter.classifier.node) {
                     parameters.push(classifier);
                 }
             }
@@ -9111,7 +8409,7 @@ impl<'source> Lowerer<'_, 'source>
                 let fields: Vec<ValueTypeId> = generator
                     .fields
                     .iter()
-                    .filter_map(|field| match self.value_type_at(field.ty.node) {
+                    .filter_map(|field| match cx.value_type_at(field.ty.node) {
                         Maybe::Present(id) => Some(id),
                         Maybe::Absent(_) => None,
                     })
@@ -9123,7 +8421,7 @@ impl<'source> Lowerer<'_, 'source>
             let indices: Vec<ValueTypeId> = form
                 .indices
                 .iter()
-                .filter_map(|index| match self.value_type_at(index.ty.node) {
+                .filter_map(|index| match cx.value_type_at(index.ty.node) {
                     Maybe::Present(id) => Some(id),
                     Maybe::Absent(_) => None,
                 })
@@ -9135,7 +8433,7 @@ impl<'source> Lowerer<'_, 'source>
                     generator
                         .indices
                         .iter()
-                        .filter_map(|index| match self.value_at(index.node) {
+                        .filter_map(|index| match cx.value_at(index.node) {
                             Maybe::Present(id) => Some(id),
                             Maybe::Absent(_) => None,
                         })
@@ -9153,8 +8451,8 @@ impl<'source> Lowerer<'_, 'source>
                     .zip(&form.generators)
                     .all(|(stated, generator)| stated.len() == generator.indices.len());
             let kind = match form.kind {
-                Maybe::Present(written) => self.value_type_at(written.node),
-                Maybe::Absent(_) => match self.origin_at(form.declaration.node) {
+                Maybe::Present(written) => cx.value_type_at(written.node),
+                Maybe::Absent(_) => match cx.origin_at(form.declaration.node) {
                     Maybe::Present(origin) => {
                         let id = sink.arena.value_type_universe(
                             Sort::Ground(GroundSort::Value),
@@ -9173,23 +8471,20 @@ impl<'source> Lowerer<'_, 'source>
             if !complete {
                 continue;
             }
-            let (presentation, written) = self.presentation(form);
+            let (presentation, written) = NativeRef::over(cx).presentation(form);
             // An indexed family presents no rules: the checkers read a
             // presented type's rules over its terms at no index, so the family
             // is declined at its first rule.
             if let (false, Some(&span)) = (form.indices.is_empty(), written.first()) {
-                let _first = self
-                    .cx
-                    .faults
-                    .insert(form.slot, LoweringRefusal::OutOfFragment {
-                        span,
-                        form: FormName::RULE_MEMBER,
-                        sort: FragmentSort::Declaration,
-                        boundary: FragmentBoundary::Indexed,
-                    });
+                let _first = cx.faults.insert(form.slot, LoweringRefusal::OutOfFragment {
+                    span,
+                    form: FormName::RULE_MEMBER,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::Indexed,
+                });
                 continue;
             }
-            let index = DataIndex::from(self.cx.data.len());
+            let index = DataIndex::from(cx.data.len());
             let signature =
                 DataSignature::new(parameters, constructors, kind).presented(presentation);
             let signature = if form.indices.is_empty() {
@@ -9198,21 +8493,21 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 signature.indexed(indices, results)
             };
-            self.cx.data.push(Arc::new(signature));
-            self.cx.constructors.push(
+            cx.data.push(Arc::new(signature));
+            cx.constructors.push(
                 form.generators
                     .iter()
                     .map(|generator| {
-                        let mut name = String::from(<&str>::from(self.text_at(generator.named)));
+                        let mut name = String::from(<&str>::from(cx.text_at(generator.named)));
                         if let Maybe::Present(port) = generator.port {
                             name.push('.');
-                            name.push_str(<&str>::from(self.text_at(port)));
+                            name.push_str(<&str>::from(cx.text_at(port)));
                         }
                         name
                     })
                     .collect(),
             );
-            let _first = self.cx.signatures.insert(position, index);
+            let _first = cx.signatures.insert(position, index);
         }
         self.mint_words(sink);
         self.mint_terms(sink);
@@ -9248,32 +8543,25 @@ impl<'source> Lowerer<'_, 'source>
     ///   word's letters and its empty word's point are labelled.
     /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
-    #[spec(captures: before = self.cx.data.len(), ensures: self.cx.data.len() >= before && self.cx.worded.len() <= self.cx.collected.words.len())]
+    #[spec(captures: before = self.cx().data.len(), ensures: self.cx().data.len() >= before && self.cx().worded.len() <= self.cx().collected.words.len())]
     fn mint_words(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
+        let cx = self.cx_mut();
         let mut spelled = Vec::new();
         let mut arities = Vec::new();
-        for (index, words) in self
-            .cx
-            .collected
-            .words
-            .iter()
-            .enumerate()
-            .skip(self.cx.current.words)
-        {
+        for (index, words) in cx.collected.words.iter().enumerate().skip(cx.current.words) {
             let (Some(&minted), Some(form)) = (
-                self.cx.signatures.get(&words.family),
-                self.cx.collected.data.get(words.family),
+                cx.signatures.get(&words.family),
+                cx.collected.data.get(words.family),
             )
             else {
                 continue;
             };
             let constant = |slot: SlotIndex| {
-                self.cx
-                    .collected
+                cx.collected
                     .slots
                     .get(usize::from(slot))
                     .map(|entry| entry.constant)
@@ -9281,11 +8569,10 @@ impl<'source> Lowerer<'_, 'source>
             let (Some(family), Some(own), Some(kind), Maybe::Present(origin)) = (
                 constant(form.slot),
                 constant(words.slot),
-                self.cx
-                    .data
+                cx.data
                     .get(usize::from(minted))
                     .map(|signature| signature.kind()),
-                self.origin_at(form.declaration.node),
+                cx.origin_at(form.declaration.node),
             )
             else {
                 continue;
@@ -9302,8 +8589,7 @@ impl<'source> Lowerer<'_, 'source>
             constructors.push(Vec::new());
             names.push(String::from(super::HERE));
             for &bound in &words.loops {
-                let letter = self
-                    .cx
+                let letter = cx
                     .collected
                     .slots
                     .get(usize::from(bound))
@@ -9321,14 +8607,14 @@ impl<'source> Lowerer<'_, 'source>
             let presentation = gandr_core_term::Presentation::words(
                 gandr_core_term::FreeCells::new(family, cells).wrapped(words.reflexivities),
             );
-            let data = DataIndex::from(self.cx.data.len());
-            self.cx.data.push(Arc::new(
+            let data = DataIndex::from(cx.data.len());
+            cx.data.push(Arc::new(
                 DataSignature::new(Vec::new(), constructors, kind).presented(presentation),
             ));
-            self.cx.constructors.push(names);
-            let _first = self.cx.worded.insert(index, data);
+            cx.constructors.push(names);
+            let _first = cx.worded.insert(index, data);
             let mark = sink.arena.watermark();
-            let pointed_at = self.words_point(sink.arena, words);
+            let pointed_at = NativeRef::over(cx).words_point(sink.arena, words);
             // The type at each wrapping of the point, the family first.
             let wrapped = pointed_at.map(|based| {
                 let mut levels = Vec::from([based.0]);
@@ -9351,18 +8637,16 @@ impl<'source> Lowerer<'_, 'source>
             };
             let path = sink.arena.value_type_path(at, point, point);
             sink.origins.record_value_type(path, origin);
-            let lettered = self
-                .cx
+            let lettered = cx
                 .lettered
                 .iter()
-                .skip(self.cx.current.lettered)
+                .skip(cx.current.lettered)
                 .filter(|&&(_, at)| at == index)
                 .map(|&(span, _)| (span, path));
-            let pointed = self
-                .cx
+            let pointed = cx
                 .pointed
                 .iter()
-                .skip(self.cx.current.pointed)
+                .skip(cx.current.pointed)
                 .filter(|&&(_, at, _)| at == index)
                 .filter_map(|&(span, _, wrapping)| {
                     levels.get(usize::from(wrapping)).map(|&ty| (span, ty))
@@ -9418,7 +8702,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                 });
             }
-            let _first = self.cx.word_types.insert(index, (path, levels));
+            let _first = cx.word_types.insert(index, (path, levels));
             let nil = sink.arena.value_constructor(
                 own,
                 word,
@@ -9434,29 +8718,26 @@ impl<'source> Lowerer<'_, 'source>
                     Vec::from([nil]),
                 );
                 sink.origins.record_value(letter, origin);
-                let _first = self.cx.looped.insert(bound, (path, letter));
+                let _first = cx.looped.insert(bound, (path, letter));
             }
         }
         // A letter or an empty word this source writes over words an earlier
         // source minted is labelled at the types that source recorded.
-        let earlier =
-            |at: usize| (at < self.cx.current.words).then(|| self.cx.word_types.get(&at))?;
-        let lettered = self
-            .cx
+        let earlier = |at: usize| (at < cx.current.words).then(|| cx.word_types.get(&at))?;
+        let lettered = cx
             .lettered
             .iter()
-            .skip(self.cx.current.lettered)
+            .skip(cx.current.lettered)
             .filter_map(|&(span, at)| earlier(at).map(|&(path, _)| (span, path)));
-        let pointed = self
-            .cx
-            .pointed
-            .iter()
-            .skip(self.cx.current.pointed)
-            .filter_map(|&(span, at, wrapping)| {
-                earlier(at)
-                    .and_then(|&(_, ref levels)| levels.get(usize::from(wrapping)))
-                    .map(|&ty| (span, ty))
-            });
+        let pointed =
+            cx.pointed
+                .iter()
+                .skip(cx.current.pointed)
+                .filter_map(|&(span, at, wrapping)| {
+                    earlier(at)
+                        .and_then(|&(_, ref levels)| levels.get(usize::from(wrapping)))
+                        .map(|&ty| (span, ty))
+                });
         for (span, ty) in lettered.chain(pointed) {
             sink.origins.record_label(crate::origin::Label {
                 span,
@@ -9468,212 +8749,6 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
-    /// The carrier and the point of `words`: the family's type, and the closed
-    /// term the point spells over it, before any wrapping in reflexivity
-    /// ([`wrapped_point`] wraps them).
-    ///
-    /// # Specification
-    /// - requires: `words` is an entry of the collection's words list.
-    /// - ensures: the family's type without arguments, and the point as
-    ///   [`spelled_point`] mints it over that type.
-    /// - provides: with [`wrapped_point`], the path type `Path[.A =
-    ///   carrier](point, point)` a word at that point stands at, for the words'
-    ///   own binding and for a derived operation reading its path's type.
-    /// - fails: the unminted absence for words over a family the collection
-    ///   does not hold, or a point that spells nothing.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_words`], and a derived operation over
-    ///   a word.
-    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
-    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present((carrier, point)) => arena.value_type(carrier).is_some() && arena.value(point).is_some(),
-        | Maybe::Absent(_) => true,
-    })]
-    pub(super) fn words_point(
-        &self,
-        arena: &mut CoreArena,
-        words: &WordsForm,
-    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
-    {
-        let Some(form) = self.cx.collected.data.get(words.family)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let Some(family) = self.cx.collected.slots.get(usize::from(form.slot))
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let carrier = arena.value_type_data(family.constant, Vec::new());
-        let arities: Vec<gandr_kernel_term::FieldCount> = form
-            .generators
-            .iter()
-            .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
-            .collect();
-        let mut minted = Vec::new();
-        spelled_point(
-            arena,
-            (family.constant, carrier),
-            (&words.point, &arities),
-            &mut minted,
-        )
-        .map(|point| (carrier, point))
-    }
-
-    /// The words a constant is a word of: a loop's, or the words' own.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the entry of the collection's words list whose slot or one of
-    ///   whose loops' slots `constant` is.
-    /// - fails: [`worded::Absent::Unworded`] for any other constant.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the loop and the empty word read at their words, and
-    ///   a function at none.
-    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(
-        self.cx.collected.slots.get(usize::from(constant)).map(|slot| slot.definition),
-        Some(Maybe::Present(Half { operand: Operand::Loop { .. } | Operand::Words(_), .. }))
-    ))]
-    pub(super) fn words_at(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<&WordsForm, worded::Absent>
-    {
-        let Some(Maybe::Present(Half {
-            operand: Operand::Loop { words, .. } | Operand::Words(words),
-            ..
-        })) = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(constant))
-            .map(|slot| slot.definition)
-        else {
-            return Maybe::Absent(worded::Absent::Unworded);
-        };
-        self.cx
-            .collected
-            .words
-            .get(words)
-            .map_or(Maybe::Absent(worded::Absent::Unworded), Maybe::Present)
-    }
-
-    /// The rules a data declaration's presented reading writes over its own
-    /// constructors, as the checkers read a presented type: each side in
-    /// pre-order, a constructor by its tag and a variable by the order its
-    /// first occurrence on the left takes; beside them, the bytes each rule's
-    /// two sides cover.
-    ///
-    /// # Specification
-    /// - requires: the description route has read the declaration's cells.
-    /// - ensures: one rule per face of the presented reading, in rule order,
-    ///   whose left side is headed by a constructor, whose two sides apply only
-    ///   the declaration's own constructors and whose right side names only
-    ///   variables the left binds; the empty presentation when the declaration
-    ///   has no presented reading. A face applying an operation rewrites a
-    ///   call, not the type's terms, and is left to its operation. The spans
-    ///   are parallel to the rules.
-    /// - provides: the rules [`DataSignature::presented`] carries to both
-    ///   checkers, which validate them against the constructor table.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the circle's two cancellations lower to the rules
-    ///   both checkers rewrite its words by, a family without rules lowers to
-    ///   the free signature, and an indexed family's rule is declined where it
-    ///   is written.
-    /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
-    /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
-    #[spec(ensures: |ret| ret.0.rules().len() == ret.1.len()
-        && ret.1.len() <= match self.cx.collected.descriptions.get(&form.declaration.node) {
-            Maybe::Present(described) => described.description.rules.len(),
-            Maybe::Absent(_) => 0,
-        })]
-    fn presentation(
-        &self,
-        form: &crate::module::DataForm,
-    ) -> (gandr_core_term::Presentation, Vec<ByteSpan>)
-    {
-        let none = || (gandr_core_term::Presentation::default(), Vec::new());
-        let Maybe::Present(described) = self.cx.collected.descriptions.get(&form.declaration.node)
-        else {
-            return none();
-        };
-        let Some(cells) = self
-            .cx
-            .collected
-            .cells
-            .declarations
-            .iter()
-            .find(|cells| cells.at.node == form.declaration.node)
-        else {
-            return none();
-        };
-        let Maybe::Present(ref presented) = cells.presented
-        else {
-            return none();
-        };
-        let names: Vec<SourceFragment<'source>> = form
-            .generators
-            .iter()
-            .map(|generator| self.text_at(generator.named))
-            .collect();
-        let mut rules = Vec::new();
-        let mut spans = Vec::new();
-        let faces = if cells.oriented.is_empty() {
-            described.description.rules.as_ref()
-        }
-        else {
-            cells.oriented.as_slice()
-        };
-        let mut variables = Vec::new();
-        for &(index, _cell) in &presented.faces {
-            let (Some(face), Some(written)) = (
-                faces.get(usize::from(index)),
-                described.written.faces.get(usize::from(index)),
-            )
-            else {
-                continue;
-            };
-            variables.clear();
-            let (Maybe::Present(left), Maybe::Present(right), Some(from), Some(to)) = (
-                rule_side(
-                    &face.lhs,
-                    &names,
-                    &mut variables,
-                    Binding::Binds,
-                    Heads::Constructors,
-                ),
-                rule_side(
-                    &face.rhs,
-                    &names,
-                    &mut variables,
-                    Binding::Reads,
-                    Heads::Constructors,
-                ),
-                written.left.nodes.first(),
-                written.right.nodes.first(),
-            )
-            else {
-                continue;
-            };
-            if matches!(
-                left.first(),
-                Some(gandr_core_term::RuleNode::Constructor(_))
-            ) {
-                rules.push(gandr_core_term::PresentedRule::new(left, right));
-                spans.push(from.span.join(to.span));
-            }
-        }
-        (gandr_core_term::Presentation::new(rules), spans)
-    }
-
     /// Mint the terms of every theory a terms type of the source asks for.
     ///
     /// # Specification
@@ -9681,10 +8756,11 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: per terms entry of the source, a signature without parameters
     ///   at the fuss-free value universe whose constructors are the theory's
     ///   operations in its presentation's order, each taking its inputs as
-    ///   terms and named `S.op`, presented by the rules [`Self::term_rules`]
-    ///   reads, its index recorded by the entry's position; a fault at the
-    ///   entry's slot in its place when the rules do not read. Every node is
-    ///   located at the type that asked for the terms, as an insertion.
+    ///   terms and named `S.op`, presented by the rules
+    ///   [`NativeRef::term_rules`] reads, its index recorded by the entry's
+    ///   position; a fault at the entry's slot in its place when the rules do
+    ///   not read. Every node is located at the type that asked for the terms,
+    ///   as an insertion.
     /// - provides: the
     ///   [`DeclarationOutcome::Data`](crate::DeclarationOutcome::Data) outcome
     ///   of a terms slot.
@@ -9695,35 +8771,29 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a unital magma mints its terms with a nullary and a
     ///   binary constructor and its two unit rules.
     /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-    #[spec(captures: before = self.cx.data.len(), ensures: self.cx.data.len() >= before && self.cx.termed.len() <= self.cx.collected.terms.len())]
+    #[spec(captures: before = self.cx().data.len(), ensures: self.cx().data.len() >= before && self.cx().termed.len() <= self.cx().collected.terms.len())]
     fn mint_terms(
         &mut self,
         sink: &mut Sink<'_>,
     )
     {
-        for (index, terms) in self
-            .cx
-            .collected
-            .terms
-            .iter()
-            .enumerate()
-            .skip(self.cx.current.terms)
-        {
+        let cx = self.cx_mut();
+        for (index, terms) in cx.collected.terms.iter().enumerate().skip(cx.current.terms) {
             let (Some(own), Some(theory)) = (
-                self.cx.collected.slots.get(usize::from(terms.slot)),
-                self.cx.collected.slots.get(usize::from(terms.theory)),
+                cx.collected.slots.get(usize::from(terms.slot)),
+                cx.collected.slots.get(usize::from(terms.theory)),
             )
             else {
                 continue;
             };
-            let Maybe::Present(origin) = self.origin_at(own.introduced_by.node)
+            let Maybe::Present(origin) = cx.origin_at(own.introduced_by.node)
             else {
                 continue;
             };
-            let rules = match self.term_rules(terms) {
+            let rules = match NativeRef::over(cx).term_rules(terms) {
                 Ok(rules) => rules,
                 Err(refusal) => {
-                    let _first = self.cx.faults.insert(terms.slot, refusal);
+                    let _first = cx.faults.insert(terms.slot, refusal);
                     continue;
                 },
             };
@@ -9742,1245 +8812,19 @@ impl<'source> Lowerer<'_, 'source>
                 .iter()
                 .map(|&arity| alloc::vec![term; arity])
                 .collect();
-            let data = DataIndex::from(self.cx.data.len());
-            self.cx.data.push(Arc::new(
+            let data = DataIndex::from(cx.data.len());
+            cx.data.push(Arc::new(
                 DataSignature::new(Vec::new(), constructors, kind).presented(rules),
             ));
-            self.cx.constructors.push(
+            cx.constructors.push(
                 terms
                     .operations
                     .iter()
-                    .map(|&named| alloc::format!("{}.{}", theory.name, self.text_at(named)))
+                    .map(|&named| alloc::format!("{}.{}", theory.name, cx.text_at(named)))
                     .collect(),
             );
-            let _first = self.cx.termed.insert(index, data);
+            let _first = cx.termed.insert(index, data);
         }
-    }
-
-    /// The rules of the theory `terms` are the terms of, read over the terms'
-    /// constructors, as the checkers read a presented type.
-    ///
-    /// # Specification
-    /// - requires: the description route has read the theory's cells.
-    /// - ensures: one rule per rule of the theory, in rule order, oriented as
-    ///   its block orients it: each side in pre-order, an operation by the tag
-    ///   of its constructor and a variable by the order its first occurrence on
-    ///   the left takes; the empty presentation for a theory the collection
-    ///   holds no description of.
-    /// - provides: the rules [`DataSignature::presented`] carries to both
-    ///   checkers, which validate them against the constructor table: a rule no
-    ///   presented type rewrites by is refused there, at the terms.
-    /// - fails: [`LoweringRefusal::OutOfFragment`] at [`Unbuilt::TermsType`],
-    ///   over the rule's two sides, for a rule a side of which applies what is
-    ///   no operation of the theory or reads a variable its left side does not
-    ///   bind.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the fails clause.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a unital magma's two unit rules lower to rules over
-    ///   its terms, and a monoid's associativity reaches the checker, which
-    ///   refuses it.
-    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.rules().len() <= match self.cx.collected.slots.get(usize::from(terms.theory)).map(|slot| self.cx.collected.descriptions.get(&slot.introduced_by.node)) {
-        Some(Maybe::Present(described)) => described.description.rules.len(),
-        _ => 0,
-    }))]
-    fn term_rules(
-        &self,
-        terms: &TermsForm,
-    ) -> Result<gandr_core_term::Presentation, LoweringRefusal<'source>>
-    {
-        let Some(block) = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(terms.theory))
-            .map(|slot| slot.introduced_by.node)
-        else {
-            return Ok(gandr_core_term::Presentation::default());
-        };
-        let Maybe::Present(described) = self.cx.collected.descriptions.get(&block)
-        else {
-            return Ok(gandr_core_term::Presentation::default());
-        };
-        let faces = match self
-            .cx
-            .collected
-            .cells
-            .declarations
-            .iter()
-            .find(|cells| cells.at.node == block)
-        {
-            Some(cells) if !cells.oriented.is_empty() => cells.oriented.as_slice(),
-            Some(_) | None => described.description.rules.as_ref(),
-        };
-        let names: Vec<SourceFragment<'source>> = terms
-            .operations
-            .iter()
-            .map(|&named| self.text_at(named))
-            .collect();
-        let mut rules = Vec::with_capacity(faces.len());
-        let mut variables = Vec::new();
-        for (face, written) in faces.iter().zip(&described.written.faces) {
-            variables.clear();
-            let (Maybe::Present(left), Maybe::Present(right)) = (
-                rule_side(
-                    &face.lhs,
-                    &names,
-                    &mut variables,
-                    Binding::Binds,
-                    Heads::Operations,
-                ),
-                rule_side(
-                    &face.rhs,
-                    &names,
-                    &mut variables,
-                    Binding::Reads,
-                    Heads::Operations,
-                ),
-            )
-            else {
-                let span = match (written.left.nodes.first(), written.right.nodes.first()) {
-                    (Some(from), Some(to)) => from.span.join(to.span),
-                    _ => described.at.span,
-                };
-                return Err(LoweringRefusal::OutOfFragment {
-                    span,
-                    form: FormName::RULE_MEMBER,
-                    sort: FragmentSort::Declaration,
-                    boundary: FragmentBoundary::Unadmitted(Unbuilt::TermsType),
-                });
-            };
-            rules.push(gandr_core_term::PresentedRule::new(left, right));
-        }
-
-        Ok(gandr_core_term::Presentation::new(rules))
-    }
-
-    /// Mint the nominal type of the family at `constant` over the arguments
-    /// `arguments` names in the operand store.
-    ///
-    /// # Specification
-    /// - requires: every argument is already minted or absent.
-    /// - ensures: the family over its arguments, left to right, with the
-    ///   written origin; nothing when an argument did not lower.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::family`].
-    /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
-    pub(super) fn mint_family(
-        &self,
-        constant: ConstantIndex,
-        arguments: FormStretch,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let Some(written) = self.cx.operands.whole(arguments)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let mut passed = Vec::with_capacity(written.len());
-        for &argument in written {
-            match self.value_at(argument) {
-                Maybe::Present(value) => passed.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        let id = sink.arena.value_type_data(constant, passed);
-        sink.origins.record_value_type(id, origin);
-
-        Maybe::Present(Lowered::ValueType(id))
-    }
-
-    /// Mint the nominal computation type of the codata family at `constant`
-    /// over the arguments `arguments` names in the operand store.
-    ///
-    /// # Specification
-    /// - requires: every argument is already minted or absent.
-    /// - ensures: the family over its arguments, left to right, with the
-    ///   written origin; nothing when an argument did not lower.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::codata_type`].
-    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
-    pub(super) fn mint_codata(
-        &self,
-        constant: ConstantIndex,
-        arguments: FormStretch,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let Some(written) = self.cx.operands.whole(arguments)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let mut passed = Vec::with_capacity(written.len());
-        for &argument in written {
-            match self.value_at(argument) {
-                Maybe::Present(value) => passed.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        let id = sink.arena.comp_type_codata(constant, passed);
-        sink.origins.record_comp_type(id, origin);
-
-        Maybe::Present(Lowered::CompType(id))
-    }
-
-    /// Mint a constructor over its fields and its classifier.
-    ///
-    /// # Specification
-    /// - requires: every field, the annotation's type and the answer's are
-    ///   already minted or absent; for a slot, the family's parameter type and
-    ///   every argument before the constructor's are too.
-    /// - ensures: the constructor value over its fields, its classifier the
-    ///   annotation's type — or the type a family's argument quotes — carried
-    ///   into the term's binders; the value type the answer's returner returns
-    ///   carried from the answer's frame to the constructor's; for a slot, the
-    ///   family's parameter at the constructor's place with the parameters
-    ///   before it replaced by the arguments written for them; or the family
-    ///   over no arguments; the classifier's origin inserted and the written
-    ///   origin on the value; the constructor names its own family, so under a
-    ///   classifier of another family the checker refuses it rather than read
-    ///   the namesake constructor of that family; nothing when a field, the
-    ///   annotation, the answer or a slot's type or argument did not lower, or
-    ///   the answer is no returner.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::construct`].
-    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
-    /// - witness: `lower::native::tests::a_constructor_keeps_its_family_under_another_s_classifier_2075`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
-    pub(super) fn mint_constructor(
-        &self,
-        constructed: Constructed,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let Some(written) = self.cx.operands.whole(constructed.fields)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let mut fields = Vec::new();
-        for &field in written {
-            match self.value_at(field) {
-                Maybe::Present(value) => fields.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        let written =
-            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
-                Maybe::Present(id) => id,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-        let id = sink
-            .arena
-            .value_constructor(constructed.family, written, constructed.tag, fields);
-        Maybe::Present(sink.value(id, origin))
-    }
-
-    /// Mint a multi-output constructor applied with no output named: the
-    /// record of its ports.
-    ///
-    /// # Specification
-    /// - requires: as [`Self::mint_constructor`].
-    /// - ensures: the record keyed by each port's label, its value the port's
-    ///   constructor over the shared fields at that port's tag; for a family
-    ///   without arguments the port is classified as [`Self::mint_constructor`]
-    ///   classifies it, and for any other by its label's entry of the record
-    ///   type the classifier names; nothing when a field or the classifier did
-    ///   not lower, or the record type has no entry for a port.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::ports`].
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
-    pub(super) fn mint_ports(
-        &self,
-        constructed: Constructed,
-        ports: &[(FieldLabel, ConstructorTag)],
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let Some(written) = self.cx.operands.whole(constructed.fields)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let mut fields = Vec::new();
-        for &field in written {
-            match self.value_at(field) {
-                Maybe::Present(value) => fields.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        let written =
-            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
-                Maybe::Present(id) => id,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-        let first = ports.first().map(|&(ref label, _)| label);
-        let mut minted = BTreeMap::new();
-        for &(ref label, tag) in ports {
-            // A family without arguments classifies each port alone; any other
-            // port reads its entry of the record type.
-            let classifier = if constructed.classifier == Classifier::Inserted {
-                written
-            }
-            else {
-                Self::port_type(written, label, first, sink)
-            };
-            let id =
-                sink.arena
-                    .value_constructor(constructed.family, classifier, tag, fields.clone());
-            let _port = sink.value(id, origin);
-            let _first = minted.insert(label.clone(), id);
-        }
-        let id = sink.arena.value_record(minted);
-
-        Maybe::Present(sink.value(id, origin))
-    }
-
-    /// The type a port labelled `label` takes from `record`, the type its
-    /// record of ports is written at, `first` labelling the first port.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the entry at `label` when `record` is a record type holding
-    ///   it; else its entry at `first`; else `record` itself, so a record type
-    ///   missing a port, or a type that is no record, leaves the checker to
-    ///   refuse the record of ports against it.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the ports of a parameterised family read their
-    ///   classifiers off the record type at the value's position.
-    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
-    #[spec(ensures: |ret| ret == record || matches!(sink.arena.value_type(record), Some(&gandr_core_term::ValueType::Record(ref entries)) if entries.values().any(|&entry| entry == ret)))]
-    fn port_type(
-        record: ValueTypeId,
-        label: &FieldLabel,
-        first: Option<&FieldLabel>,
-        sink: &Sink<'_>,
-    ) -> ValueTypeId
-    {
-        match sink.arena.value_type(record) {
-            Some(&gandr_core_term::ValueType::Record(ref entries)) => entries
-                .get(label)
-                .or_else(|| entries.get(first?))
-                .copied()
-                .unwrap_or(record),
-            Some(_) | None => record,
-        }
-    }
-
-    /// The value type `classifier` names for a constructor of the family
-    /// `family`, minted in the term context of the constructor's frame.
-    ///
-    /// # Specification
-    /// - requires: as [`Self::mint_constructor`]; for a field's classifier, the
-    ///   field's declared type, the constructor it belongs to, that
-    ///   constructor's classifier and its fields before the field are minted or
-    ///   absent.
-    /// - ensures: the annotation's type — or the type a family's argument
-    ///   quotes — carried into the term's binders, or kept at the signature's
-    ///   when the constructor stands inside a signature type, whose terms count
-    ///   only the frames that bind there; the value type the answer's returner
-    ///   returns carried from the answer's frame to the constructor's; for a
-    ///   slot, the family's parameter at the constructor's place with the
-    ///   parameters before it replaced by the arguments written for them; for a
-    ///   declaration's parameter, its written type with the parameters before
-    ///   it replaced by the call's arguments for them; for a field, its
-    ///   declared type with the family's parameters replaced by the arguments
-    ///   of its constructor's classifier and the fields before it by the values
-    ///   written for them; for a stated index, the family's index type at its
-    ///   place with the earlier indices replaced by those the generator states
-    ///   and the parameters by the generator's own; or the family over no
-    ///   arguments; every node minted recorded at the classifier's inserted
-    ///   origin; nothing when a type or a value it reads did not lower, or the
-    ///   answer is no returner.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::construct`].
-    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
-    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
-    /// - witness: `lower::native::tests::an_annotation_inside_a_signature_type_counts_its_binders_there_3744`
-    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn classifier_type(
-        &self,
-        classifier: Classifier,
-        family: ConstantIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let classified = origin.inserted(Insertion::Classifier);
-        // The constructor's own family: the classifier the mint inserts when
-        // a field on the way reads as no family's application applies it.
-        let own = family;
-        // A field's classifier reads the classifier of the constructor around
-        // it: follow those out to the first that is no field's, the
-        // constructor that owns it.
-        let (mut classifier, mut family) = (classifier, family);
-        let mut owner = origin.node();
-        // Each field followed out, with the label of the first port when the
-        // constructor around it is a record of ports: its classifier is the
-        // record's, and the field reads the first port's entry of it.
-        let mut fields = Vec::new();
-        while let Classifier::Field(field) = classifier {
-            let (outer, port) = match self.cx.plans.get(field.around) {
-                // A family without arguments classifies its ports alone; any
-                // other's ports read the record type their position states.
-                Some(&Plan::Ports(outer, ref ports))
-                    if outer.classifier != Classifier::Inserted =>
-                {
-                    (outer, ports.first().map(|&(ref label, _)| label.clone()))
-                },
-                Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) => (outer, None),
-                Some(_) | None => return Maybe::Absent(lowered::Absent::Unminted),
-            };
-            fields.push((field, port));
-            owner = field.around;
-            (classifier, family) = (outer.classifier, outer.family);
-        }
-        let outermost = match classifier {
-            Classifier::Written(written) => {
-                // A type written as a family's argument is read as its code;
-                // the classifier is the type it quotes.
-                let quoted = if let Maybe::Present(code) = self.value_at(written)
-                    && let Some(&gandr_core_term::Value::Quote(quoted)) = sink.arena.value(code)
-                {
-                    Some(quoted)
-                }
-                else {
-                    None
-                };
-                let id = match (self.value_type_at(written), quoted) {
-                    (Maybe::Present(id), _) => id,
-                    (Maybe::Absent(_), Some(quoted)) => quoted,
-                    (Maybe::Absent(_), None) => return Maybe::Absent(lowered::Absent::Unminted),
-                };
-                // A constructor inside a signature type counts its fields in
-                // the signature's telescope: its annotation stays there too.
-                if self.cx.in_type.contains(&owner) && !self.cx.in_quote.contains(&owner) {
-                    id
-                }
-                else {
-                    let frame = self.reading(written).frame();
-                    self.relocate_value_type(id, frame, Telescope::Signature, sink, classified)
-                }
-            },
-            Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
-                Maybe::Present(id) => id,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            },
-            Classifier::Stated(stated) => match self.stated_index_type(stated, sink, classified) {
-                Maybe::Present(id) => id,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            },
-            Classifier::Resulted(of) => {
-                match self.resulted_type(of, owner, family, sink, classified) {
-                    Maybe::Present(id) => id,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                }
-            },
-            Classifier::Parameter(declared) => {
-                match self.called_parameter_type(declared, sink, classified) {
-                    Maybe::Present(id) => id,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                }
-            },
-            Classifier::Answered { answer, frame } => {
-                let mark = sink.arena.watermark();
-                let written = self.answered_type(answer, sink);
-                let Maybe::Present(written) = written
-                else {
-                    return Maybe::Absent(lowered::Absent::Unminted);
-                };
-                let written = self.unfolded(written, sink);
-                let gap = self
-                    .cx
-                    .scope
-                    .telescope_binders(frame)
-                    .count()
-                    .saturating_sub(self.cx.scope.telescope_binders(answer.frame).count());
-                let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-                let mut copies = Vec::new();
-                let carried = self.relocate(
-                    sink.arena,
-                    written,
-                    answer.frame,
-                    Telescope::Signature,
-                    lift,
-                    Some(&mut copies),
-                );
-                record_copied_since(
-                    sink,
-                    mark,
-                    origin.inserted(Insertion::Classifier),
-                    Maybe::Absent(rooted::Absent::Classifier),
-                    &copies,
-                );
-                let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(carried)
-                else {
-                    return Maybe::Absent(lowered::Absent::OtherSort);
-                };
-                result
-            },
-            Classifier::Inserted => {
-                let id = sink.arena.value_type_data(family, Vec::new());
-                sink.origins.record_value_type(id, classified);
-                id
-            },
-            // The loop above leaves no field's classifier.
-            Classifier::Field(_) => return Maybe::Absent(lowered::Absent::Unminted),
-        };
-        let mut ty = outermost;
-        for (field, port) in fields.into_iter().rev() {
-            if let Some(label) = port {
-                ty = Self::port_type(ty, &label, None, sink);
-            }
-            ty = match self.field_type(field, ty, sink, origin) {
-                Maybe::Present(id) => id,
-                Maybe::Absent(lowered::Absent::Unclassified) => {
-                    return self.fielded_classifier(own, sink, origin);
-                },
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-        }
-
-        Maybe::Present(ty)
-    }
-
-    /// The classifier of the constructor at `origin`, minted as its family
-    /// `family` over one wildcard for each parameter and each index: the
-    /// checker solves each wildcard from the type it checks the constructor
-    /// against (#6113).
-    ///
-    /// # Specification
-    /// - requires: the planning of the constructor's form is done, so the
-    ///   form's count of nominated wildcards is final.
-    /// - ensures: for a constructor in
-    ///   [`Context::fielded`](gandr_surface_lowering_base::lower::Context::fielded),
-    ///   the family over one wildcard hole for each parameter and then each
-    ///   index, each named in the constructor's form past every wildcard the
-    ///   planner nominated there and every wildcard the mint inserted before,
-    ///   each recorded at the classifier's inserted origin as the argument it
-    ///   stands for; the unclassified absence for any other constructor, or
-    ///   when the form has no name left for a wildcard.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a pair in a field of a pair whose type a definition's
-    ///   call computes takes its family over two wildcards, named apart from a
-    ///   wildcard the form writes.
-    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn fielded_classifier(
-        &self,
-        family: ConstantIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let unclassified = Maybe::Absent(lowered::Absent::Unclassified);
-        let Some(&fielded) = self.cx.fielded.get(&origin.node())
-        else {
-            return unclassified;
-        };
-        let Some(data) = self.cx.collected.data.get(fielded.written)
-        else {
-            return unclassified;
-        };
-        let planned = self
-            .cx
-            .nominated_places
-            .get(&(fielded.form, gandr_core_term::hole::HoleOrigin::Wildcard))
-            .copied()
-            .unwrap_or(0);
-        let inserted = sink.wildcards.get(&fielded.form).copied().unwrap_or(0);
-        let arity = data.parameters.len().saturating_add(data.indices.len());
-        let Some((first, count)) = u32::try_from(arity).ok().and_then(|count| {
-            let first = planned.checked_add(inserted)?;
-            first.checked_add(count).map(|_| (first, count))
-        })
-        else {
-            return unclassified;
-        };
-        let names = data
-            .parameters
-            .iter()
-            .map(|parameter| Some(parameter.named))
-            .chain(data.indices.iter().map(|index| match index.named {
-                Maybe::Present(named) => Some(named),
-                Maybe::Absent(_) => None,
-            }));
-        let family_name = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(fielded.family))
-            .map_or_else(String::new, |slot| String::from(slot.name.as_ref()));
-        let classified = origin.inserted(Insertion::Classifier);
-        let mut arguments = Vec::with_capacity(arity);
-        for (place, written) in (first ..).zip(names) {
-            let Some(hole) = gandr_core_term::hole::HoleId::wildcard_in(
-                fielded.form,
-                gandr_core_term::hole::HolePlace::from(place),
-            )
-            else {
-                return unclassified;
-            };
-            let parameter = written.map_or_else(
-                || alloc::format!("{}", arguments.len().saturating_add(1)),
-                |name| String::from(self.text_at(name).as_ref()),
-            );
-            let id = sink.arena.value_hole(hole);
-            sink.origins.record_value(id, classified);
-            sink.origins.record_omitted(id, crate::Omitted::Classifier {
-                family: family_name.clone(),
-                parameter,
-            });
-            arguments.push(id);
-        }
-        let _counted = sink
-            .wildcards
-            .insert(fielded.form, inserted.saturating_add(count));
-        let id = sink.arena.value_type_data(family, arguments);
-        sink.origins.record_value_type(id, classified);
-        Maybe::Present(id)
-    }
-
-    /// The type `field` gives a constructor written in it, given `applied`,
-    /// the classifier of the constructor the field belongs to.
-    ///
-    /// # Specification
-    /// - requires: the field's declared type and the constructor's fields
-    ///   before it are minted or absent; `applied` is minted in the
-    ///   constructor's frame.
-    /// - ensures: the field's declared type with the family's parameters
-    ///   replaced by `applied`'s arguments and the fields before it by the
-    ///   values the constructor is written with, every node the substitution
-    ///   mints recorded at the classifier's inserted origin; the unclassified
-    ///   absence when `applied` is no application of a family, which
-    ///   [`Self::classifier_type`] answers by [`Self::fielded_classifier`];
-    ///   nothing when the field's constructor plans no constructor, `applied`
-    ///   applies the family to fewer arguments than its parameters, or a type
-    ///   or a value it reads did not lower.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a list written in a field typed `List(Integer)`, in
-    ///   one typed `List(a)` of a family applied to `Integer`, and in one
-    ///   naming the field before it; a pair in a field of a pair whose type a
-    ///   definition's call computes, left unclassified.
-    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
-    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn field_type(
-        &self,
-        field: FieldOf,
-        applied: ValueTypeId,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
-            self.cx.plans.get(field.around)
-        else {
-            return unminted;
-        };
-        let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
-            sink.arena.value_type(applied)
-        else {
-            return Maybe::Absent(lowered::Absent::Unclassified);
-        };
-        let mut environment: Vec<ValueId> =
-            arguments.iter().take(field.parameters).copied().collect();
-        if environment.len() != field.parameters {
-            return unminted;
-        }
-        let Some(before) = self
-            .cx
-            .operands
-            .whole(outer.fields)
-            .and_then(|fields| fields.get(.. field.index))
-        else {
-            return unminted;
-        };
-        for &written in before {
-            match self.value_at(written) {
-                Maybe::Present(value) => environment.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        let declared = match self.value_type_at(field.declared) {
-            Maybe::Present(declared) => declared,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        // The innermost binder is the last field before this one.
-        environment.reverse();
-        instantiated(
-            declared,
-            &environment,
-            sink,
-            origin.inserted(Insertion::Classifier),
-        )
-    }
-
-    /// The type a data family's application gives the argument at `argued`'s
-    /// place.
-    ///
-    /// # Specification
-    /// - requires: the family's parameter and index types and the arguments
-    ///   before the place are minted or absent.
-    /// - ensures: the family's parameter, or index, at the place, read under
-    ///   the parameters and indices before it, with each of those replaced by
-    ///   the argument written for it, every node the substitution mints
-    ///   recorded at `origin`; nothing when the classifier or an argument did
-    ///   not lower.
-    /// - provides: the classifier of a constructor written as a family's
-    ///   argument (#421).
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `Inl(a)` written for the third parameter `s :
-    ///   SumOb(l, r)` of a family applied to `Integer` and `String` is
-    ///   classified `SumOb(Integer, String)`; `S(Z)` written for a vector's
-    ///   length is classified `Nat`.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
-    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn slot_type(
-        &self,
-        argued: Argued,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let Some(form) = self.cx.collected.data.get(argued.form)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        // An index reads under the parameters and the indices before it.
-        let parameters = form.parameters.len();
-        let classifier = argued.place.checked_sub(parameters).map_or_else(
-            || {
-                form.parameters
-                    .get(argued.place)
-                    .map(|parameter| parameter.classifier)
-            },
-            |index| form.indices.get(index).map(|index| index.ty),
-        );
-        let Some(classifier) = classifier
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        let declared = match self.value_type_at(classifier.node) {
-            Maybe::Present(declared) => declared,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let bound = argued.place;
-        let mut environment = Vec::with_capacity(bound);
-        for &argument in self.cx.operands.read(argued.applied).iter().take(bound) {
-            match self.value_at(argument) {
-                Maybe::Present(value) => environment.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        // The innermost parameter is the last before the place.
-        environment.reverse();
-        instantiated(declared, &environment, sink, origin)
-    }
-
-    /// The type a generator's result gives the index it states at `stated`'s
-    /// place.
-    ///
-    /// # Specification
-    /// - requires: the family's index types and the indices the generator
-    ///   states before the place are minted or absent.
-    /// - ensures: the family's index at the place, read under the family's
-    ///   parameters and the indices before it, with each earlier index replaced
-    ///   by the index the generator states for it and each parameter by the
-    ///   generator's own, read past its fields; every node the substitution
-    ///   mints recorded at `origin`; nothing when the index type or an earlier
-    ///   stated index did not lower.
-    /// - provides: the classifier of a constructor written as an index a
-    ///   generator's result states (#4027).
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `FZ(Zero)` stated for an index of type
-    ///   `Fin(Succ(Zero))` is classified so, and `FZ(n)` stated after `n` for
-    ///   an index of type `Fin(Succ(m))` reads the `n` stated before it.
-    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn stated_index_type(
-        &self,
-        stated: StatedIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(form) = self.cx.collected.data.get(stated.form)
-        else {
-            return unminted;
-        };
-        let (Some(generator), Some(index)) = (
-            form.generators.get(stated.generator),
-            form.indices.get(stated.place),
-        )
-        else {
-            return unminted;
-        };
-        let declared = match self.value_type_at(index.ty.node) {
-            Maybe::Present(declared) => declared,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let parameters = form.parameters.len();
-        let mut environment = Vec::with_capacity(parameters.saturating_add(stated.place));
-        for earlier in generator.indices.iter().take(stated.place) {
-            match self.value_at(earlier.node) {
-                Maybe::Present(value) => environment.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        // The innermost binder is the last index stated before the place.
-        environment.reverse();
-        // The parameters stand past the generator's fields, each of which
-        // binds where the result states an index; the last is innermost.
-        let fields = generator.fields.len();
-        for parameter in 0 .. parameters {
-            let Ok(at) = u32::try_from(fields.saturating_add(parameter))
-            else {
-                return unminted;
-            };
-            let variable = sink
-                .arena
-                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at));
-            sink.origins.record_value(variable, origin);
-            environment.push(variable);
-        }
-        instantiated(declared, &environment, sink, origin)
-    }
-
-    /// The type the generator's result gives the constructor at `owner`, which
-    /// a `let` with no type binds (#5050).
-    ///
-    /// # Specification
-    /// - requires: the indices the generator states and the constructor's
-    ///   fields are minted or absent.
-    /// - ensures: the family `family` applied to each index the generator's
-    ///   result states, read under the generator's fields, with each field
-    ///   replaced by the value the constructor is written with for it; every
-    ///   node the substitution mints recorded at `origin`; nothing when the
-    ///   family takes parameters, the generator states another count of indices
-    ///   than the family's kind, `owner` plans no constructor, or an index or a
-    ///   field did not lower.
-    /// - provides: the classifier of a constructor that a `let` with no type
-    ///   binds.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `Here(g, a)` bound by `let x = Here(g, a)` is
-    ///   classified `Var(Extend(g, a), a)`, and `There(g, a, b, x)` reads the
-    ///   index that its result states over its field `a`.
-    /// - witness: `lower::native::tests::an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn resulted_type(
-        &self,
-        of: ResultOf,
-        owner: NodeIndex,
-        family: ConstantIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(form) = self.cx.collected.data.get(of.form)
-        else {
-            return unminted;
-        };
-        let Some(generator) = form.generators.get(of.generator)
-        else {
-            return unminted;
-        };
-        if !form.parameters.is_empty() || generator.indices.len() != form.indices.len() {
-            return unminted;
-        }
-        let Some(&Plan::Constructor(constructed)) = self.cx.plans.get(owner)
-        else {
-            return unminted;
-        };
-        let Some(fields) = self.cx.operands.whole(constructed.fields)
-        else {
-            return unminted;
-        };
-        let mut environment = Vec::with_capacity(fields.len());
-        for &written in fields {
-            match self.value_at(written) {
-                Maybe::Present(value) => environment.push(value),
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            }
-        }
-        // The innermost binder is the last field.
-        environment.reverse();
-        let mut arguments = Vec::with_capacity(generator.indices.len());
-        let mut carried = Vec::new();
-        for index in &generator.indices {
-            let stated = match self.value_at(index.node) {
-                Maybe::Present(value) => value,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-            let mark = sink.arena.watermark();
-            carried.clear();
-            let TermId::Value(read) = gandr_core_term::substitute_environment_traced(
-                sink.arena,
-                TermId::Value(stated),
-                &environment,
-                &mut carried,
-            )
-            else {
-                return unminted;
-            };
-            exits::record_copies(sink, mark, &carried, origin);
-            arguments.push(read);
-        }
-        let id = sink.arena.value_type_data(family, arguments);
-        sink.origins.record_value_type(id, origin);
-        Maybe::Present(id)
-    }
-
-    /// The type a declaration's parameter gives the argument a call writes for
-    /// it.
-    ///
-    /// # Specification
-    /// - requires: the parameter's type and the call's arguments are minted or
-    ///   absent.
-    /// - ensures: the parameter's written type, read under the declaration's
-    ///   parameters before it, with each of those it names replaced by the
-    ///   argument the call writes for it, every node the substitution mints
-    ///   recorded at `origin`; the written type itself when it names none;
-    ///   nothing when it names a binder no argument stands for — a linear one,
-    ///   or one the declaration's parentheses do not bind — or a type or an
-    ///   argument it reads did not lower.
-    /// - provides: the classifier of a constructor written as a call's argument
-    ///   (#1833, #1876).
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a list passed for `xs : List(Integer)` is classified
-    ///   as written, and one passed for `xs : List(a)` after `Integer` for `a :
-    ///   Type` is classified `List(Integer)`, a recursive declaration's own
-    ///   binder standing between the two.
-    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
-    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    fn called_parameter_type(
-        &self,
-        declared: CalledAt,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<ValueTypeId, lowered::Absent>
-    {
-        let (written, environment) =
-            match self.called_environment(declared, declared.typed.node, sink) {
-                Maybe::Present(read) => read,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-        if environment.is_empty() {
-            return Maybe::Present(written);
-        }
-        instantiated(written, &environment, sink, origin)
-    }
-
-    /// The type written at `written`, read under the parameters before the
-    /// one `declared` names, beside the arguments the call writes for the
-    /// parameters it names: what [`Self::called_parameter_type`] substitutes.
-    ///
-    /// # Specification
-    /// - requires: `written` is read under the frame `declared`'s type is read
-    ///   under; the type and the call's arguments are minted or absent.
-    /// - ensures: the written type, and an environment, innermost first, that
-    ///   holds the argument the call writes for each parameter the type names,
-    ///   and any one of them for a binder between them it does not name; empty
-    ///   when the type names none.
-    /// - fails: the type's own absence; the unminted absence when it names a
-    ///   binder no argument stands for — a linear one, or one the declaration's
-    ///   parentheses do not bind; an argument's own absence.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::called_parameter_type`], and a lambda's
-    ///   binder at a parameter's domain.
-    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
-    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((id, _)) if sink.arena.value_type(id).is_some()))]
-    pub(super) fn called_environment(
-        &self,
-        declared: CalledAt,
-        written: NodeIndex,
-        sink: &Sink<'_>,
-    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let written = match self.value_type_at(written) {
-            Maybe::Present(read) => read,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
-        };
-        let Some(support) = sink.arena.value_type_support(written)
-        else {
-            return unminted;
-        };
-        if support.indices(Zone::Linear).next().is_some() {
-            return unminted;
-        }
-        let Some(parameters) = self.cx.collected.parameters.get(&declared.slot)
-        else {
-            return unminted;
-        };
-        // The binders the type counts its indices by, innermost first: the
-        // parameters before it its signature names, and whatever else binds
-        // there, a recursive declaration's own binder among them.
-        let bound: Vec<ScopeId> = self
-            .cx
-            .scope
-            .chain(self.reading(declared.typed.node).frame())
-            .filter(|&binder| {
-                self.cx.scope.zone(binder) != Zone::Linear
-                    && bool::from(self.cx.scope.binds(binder, Telescope::Signature))
-            })
-            .collect();
-        let applied = self.cx.operands.read(declared.applied);
-        // Each parameter's argument, by the bytes its binder is written at.
-        let arguments: BTreeMap<ByteSpan, NodeIndex> = parameters
-            .iter()
-            .zip(applied)
-            .map(|(parameter, &argument)| (parameter.binder.span, argument))
-            .collect();
-        let mut environment: Vec<Option<ValueId>> = Vec::new();
-        for index in support.indices(Zone::Intuitionistic) {
-            let Ok(at) = usize::try_from(u32::from(index))
-            else {
-                return unminted;
-            };
-            let Some(&binder) = bound.get(at)
-            else {
-                return unminted;
-            };
-            let Maybe::Present(site) = self.cx.scope.site(binder)
-            else {
-                return unminted;
-            };
-            let Some(&argument) = arguments.get(&site)
-            else {
-                return unminted;
-            };
-            let value = match self.value_at(argument) {
-                Maybe::Present(value) => value,
-                Maybe::Absent(reason) => return Maybe::Absent(reason),
-            };
-            if environment.len() <= at {
-                environment.resize(at.saturating_add(1), None);
-            }
-            if let Some(entry) = environment.get_mut(at) {
-                *entry = Some(value);
-            }
-        }
-        // A binder between the named ones that the type does not name takes
-        // any value: no index reaches it.
-        let Some(&filler) = environment.iter().flatten().next()
-        else {
-            return Maybe::Present((written, Vec::new()));
-        };
-        let environment: Vec<ValueId> = environment
-            .into_iter()
-            .map(|entry| entry.unwrap_or(filler))
-            .collect();
-
-        Maybe::Present((written, environment))
-    }
-
-    /// `ty`, a value type read under `frame` in `telescope`, carried into the
-    /// term context of the same frame.
-    ///
-    /// # Specification
-    /// - requires: `ty` is minted under `frame`, counting only the frames that
-    ///   bind in `telescope`.
-    /// - ensures: as [`Self::carry_value_type`] to `frame` itself.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closed annotation is carried unchanged, and one
-    ///   under a match's binders keeps each of its nodes at its bytes.
-    /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
-    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
-    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
-    pub(super) fn relocate_value_type(
-        &self,
-        ty: ValueTypeId,
-        frame: Frame,
-        telescope: Telescope,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        self.carry_value_type(ty, frame, telescope, frame, sink, origin)
-    }
-
-    /// `ty`, a value type read under `from` in `telescope`, carried into the
-    /// term context of `to`, a frame whose chain passes through `from`.
-    ///
-    /// # Specification
-    /// - requires: `ty` is minted under `from`, counting only the frames that
-    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
-    /// - ensures: `ty` itself when every frame of `from`'s chain binds and `to`
-    ///   is `from`; otherwise `ty` with a binder inserted for each frame of
-    ///   `from`'s chain that does not bind, then every free index raised by the
-    ///   intuitionistic frames `to`'s chain has past `from`, each node the
-    ///   rewrite copies recorded at the origin of the node it copies and every
-    ///   other node it mints with `origin`.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a closed annotation is carried unchanged; a type a
-    ///   scope fixes to a parameter is read at the scope and at an exercise
-    ///   under it.
-    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
-    /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
-    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
-    pub(super) fn carry_value_type(
-        &self,
-        ty: ValueTypeId,
-        from: Frame,
-        telescope: Telescope,
-        to: Frame,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        let gap = self
-            .cx
-            .scope
-            .telescope_binders(to)
-            .count()
-            .saturating_sub(self.cx.scope.telescope_binders(from).count());
-        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-        if lift == Binders::NONE && self.cx.scope.binders_in(from, telescope).all(|binds| binds) {
-            return ty;
-        }
-        let mark = sink.arena.watermark();
-        let wrapped = sink.arena.comp_type_returner(ty);
-        let mut copies = Vec::new();
-        let carried = self.relocate(
-            sink.arena,
-            wrapped,
-            from,
-            telescope,
-            lift,
-            Some(&mut copies),
-        );
-        let result = match sink.arena.comp_type(carried) {
-            Some(&CompType::Returner { result: inner, .. }) => inner,
-            _ => ty,
-        };
-        record_copied_since(
-            sink,
-            mark,
-            origin,
-            Maybe::Absent(rooted::Absent::Classifier),
-            &copies,
-        );
-
-        result
-    }
-
-    /// `ty`, a value type read under `from` in `telescope`, carried under
-    /// `to` in the same telescope, a frame whose chain passes through `from`.
-    ///
-    /// # Specification
-    /// - requires: `ty` is minted under `from`, counting only the frames that
-    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
-    /// - ensures: `ty` itself when no frame between `from` and `to` binds in
-    ///   `telescope`; otherwise `ty` with every free index raised by the frames
-    ///   between that bind, each node the shift copies recorded at the origin
-    ///   of the node it copies and every other node it mints with `origin`.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a typed parameter of a lambda inside a type, under a
-    ///   parameter the type does not name, binds its argument at its written
-    ///   type.
-    /// - witness: `lower::identity::tests::an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801`
-    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
-    pub(super) fn lift_value_type(
-        &self,
-        ty: ValueTypeId,
-        from: Frame,
-        telescope: Telescope,
-        to: Frame,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> ValueTypeId
-    {
-        let bound = |frame| {
-            self.cx
-                .scope
-                .binders_in(frame, telescope)
-                .filter(|&binds| binds)
-                .count()
-        };
-        let gap = bound(to).saturating_sub(bound(from));
-        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
-        if lift == Binders::NONE {
-            return ty;
-        }
-        let mark = sink.arena.watermark();
-        let mut copies = Vec::new();
-        let lifted = gandr_core_term::shift_value_type(sink.arena, ty, lift)
-            .settle_traced(sink.arena, &mut copies);
-        record_copied_since(
-            sink,
-            mark,
-            origin,
-            Maybe::Absent(rooted::Absent::Classifier),
-            &copies,
-        );
-
-        lifted
     }
 
     /// `domain`, the type `parameter` states, read past the binders of the
@@ -10995,7 +8839,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `domain` itself when no name just before `parameter` that
     ///   shares its written type binds; otherwise `domain` with every free
     ///   index raised by the names that bind, each copy recorded as
-    ///   [`Self::lift_value_type`] records its own.
+    ///   [`NativeRef::lift_value_type`] records its own.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -11038,1209 +8882,6 @@ impl<'source> Lowerer<'_, 'source>
         );
 
         lifted
-    }
-
-    /// `ty`, a computation type read under `frame` in `telescope`, carried
-    /// into the term context of the same frame.
-    ///
-    /// # Specification
-    /// - requires: `ty` is minted under `frame`, counting only the frames that
-    ///   bind in `telescope`.
-    /// - ensures: as [`Self::relocate_value_type`], for a computation type.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a computation type quoted in a body past an
-    ///   unmentioned parameter reads its binders in the term's context.
-    /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
-    #[spec(ensures: |ret| sink.arena.comp_type(ret).is_some() || ret == ty)]
-    pub(super) fn relocate_comp_type(
-        &self,
-        ty: CompTypeId,
-        frame: Frame,
-        telescope: Telescope,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> CompTypeId
-    {
-        if self
-            .cx
-            .scope
-            .binders_in(frame, telescope)
-            .all(|binds| binds)
-        {
-            return ty;
-        }
-        let mark = sink.arena.watermark();
-        let mut copies = Vec::new();
-        let carried = self.relocate(
-            sink.arena,
-            ty,
-            frame,
-            telescope,
-            Binders::default(),
-            Some(&mut copies),
-        );
-        record_copied_since(
-            sink,
-            mark,
-            origin,
-            Maybe::Absent(rooted::Absent::Classifier),
-            &copies,
-        );
-
-        carried
-    }
-
-    /// The computation type `answer` states, read under its own frame: the
-    /// written computation type, the returner over a written value type the
-    /// position returns, or the arrows an alias stands for past the domains
-    /// taken.
-    ///
-    /// # Specification
-    /// - requires: the answer's node is already minted or absent.
-    /// - ensures: the node's computation type for a written answer and a loop
-    ///   arm's, a returner newly minted over the node's value type for a
-    ///   returning one, and for a valued one the computation type the alias's
-    ///   thunk holds, its first `taken` arrows peeled; each with every stage a
-    ///   quantified signature placed erased, since a body's types are plain;
-    ///   the node's absence when it did not lower, and the other-sort absence
-    ///   for an alias holding fewer arrows.
-    /// - provides: the one reading every consumer of an answer mints it by.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Termination
-    /// The peeling loop runs `taken` times.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a function result and a thunk signed `() -> T`, each
-    ///   answering a constructor's classifier, and a match under a lambda
-    ///   signed `A -> B` answering `-F B`.
-    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
-    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
-    /// - witness: `lower::staged::tests::a_case_under_a_staged_result_answers_plainly`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
-    pub(super) fn answered_type(
-        &self,
-        answer: Answer,
-        sink: &mut Sink<'_>,
-    ) -> Maybe<CompTypeId, lowered::Absent>
-    {
-        let answered = match answer.over {
-            Over::Written | Over::Loop { .. } => self.comp_type_at(answer.node),
-            Over::Returning => match self.value_type_at(answer.node) {
-                Maybe::Present(result) => Maybe::Present(sink.arena.comp_type_returner(result)),
-                Maybe::Absent(reason) => Maybe::Absent(reason),
-            },
-            Over::Valued { taken } => {
-                let alias = match self.value_type_at(answer.node) {
-                    Maybe::Present(alias) => alias,
-                    Maybe::Absent(reason) => return Maybe::Absent(reason),
-                };
-                let Some(&gandr_core_term::ValueType::Thunk(mut held)) =
-                    sink.arena.value_type(alias)
-                else {
-                    return Maybe::Absent(lowered::Absent::OtherSort);
-                };
-                for _taken in 0 .. taken {
-                    let Some(&CompType::Arrow { codomain, .. }) = sink.arena.comp_type(held)
-                    else {
-                        return Maybe::Absent(lowered::Absent::OtherSort);
-                    };
-                    held = codomain;
-                }
-                Maybe::Present(held)
-            },
-        };
-        match answered {
-            Maybe::Present(written) if !self.cx.stage_marks.is_empty() => {
-                match gandr_core_term::staged::unstaged(sink.arena, Part::Computation(written)) {
-                    Some(Part::Computation(plain)) => Maybe::Present(plain),
-                    Some(Part::Value(_)) | None => Maybe::Absent(lowered::Absent::OtherSort),
-                }
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => answered,
-        }
-    }
-
-    /// `ty` read through each top-level definition whose application it
-    /// decodes: the decode of the definition's body applied to the same
-    /// arguments, reduced as [`gandr_core_term::decoded_comp_reading`] reduces
-    /// it, again while the reduct decodes another such application.
-    ///
-    /// # Specification
-    /// - requires: each definition body the chain reaches is minted or absent;
-    ///   [`Self::unfolded_definitions`] names them to the mint sweep.
-    /// - ensures: the first type of the chain that decodes no definition with a
-    ///   minted body, or whose decode does not reduce; `ty` itself when it
-    ///   decodes none. The nodes the reading makes are minted in the arena.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Termination
-    /// Each turn unfolds one definition, and the turns number at most the
-    /// slots; the inner walk descends an application spine to its head.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a constructor returned against `opt(Integer)` with
-    ///   `opt` a static abstraction over a returner, against `opt(A)` at a type
-    ///   parameter, and against a definition that unfolds to `opt`.
-    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
-    #[spec(ensures: |ret| ret == ty || sink.arena.comp_type(ret).is_some())]
-    fn unfolded(
-        &self,
-        ty: CompTypeId,
-        sink: &mut Sink<'_>,
-    ) -> CompTypeId
-    {
-        let mut read = ty;
-        let mut arguments = Vec::new();
-        for _definition in 0 .. self.cx.collected.slots.len() {
-            let Some(&CompType::Element { code, ref target }) = sink.arena.comp_type(read)
-            else {
-                break;
-            };
-            let target = target.clone();
-            arguments.clear();
-            let mut head = code;
-            while let Some(&Value::StaticApplication(applied, argument)) = sink.arena.value(head) {
-                arguments.push(argument);
-                head = applied;
-            }
-            let Some(&Value::Constant(constant)) = sink.arena.value(head)
-            else {
-                break;
-            };
-            let Maybe::Present(body) = self.definition_body(constant)
-            else {
-                break;
-            };
-            let mut applied = body;
-            for &argument in arguments.iter().rev() {
-                applied = sink.arena.value_static_application(applied, argument);
-            }
-            let decoded = sink.arena.comp_type_element(applied, target);
-            let reduced = gandr_core_term::decoded_comp_reading(sink.arena, decoded);
-            if reduced == decoded {
-                break;
-            }
-            read = reduced;
-        }
-
-        read
-    }
-
-    /// Add to `into` the body of each top-level definition the type at `from`
-    /// decodes an application of, then of each definition that body applies in
-    /// turn, so the mint sweep reaches them before a constructor
-    /// [`Self::unfolded`] classifies by them.
-    ///
-    /// # Specification
-    /// - ensures: `into` gains each such body; nothing for a type that decodes
-    ///   no definition's application.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the minting order is the claim; the witness
-    ///   observes the constructor it lets mint.
-    ///
-    /// # Termination
-    /// Each turn steps into a static abstraction's body or onto a body not yet
-    /// added, and the turns number at most the plans.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::unfolded`].
-    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
-    pub(super) fn unfolded_definitions(
-        &self,
-        from: NodeIndex,
-        into: &mut BTreeSet<NodeIndex>,
-    )
-    {
-        let mut at = from;
-        for _step in 0 .. usize::from(self.cx.plans.count()) {
-            let code = match self.cx.plans.get(at) {
-                Some(&Plan::StaticLambda(body)) => {
-                    at = body;
-                    continue;
-                },
-                Some(&(Plan::Decode(code, ..) | Plan::StaticApplication(code, _))) => code,
-                Some(_) | None => return,
-            };
-            let Maybe::Present(body) = self.decoded_definition(code)
-            else {
-                return;
-            };
-            if !into.insert(body) {
-                return;
-            }
-            at = body;
-        }
-    }
-
-    /// The node of the body of the top-level definition `code` names; a
-    /// binder names none.
-    ///
-    /// # Specification
-    /// trivial.
-    fn decoded_definition(
-        &self,
-        code: Code,
-    ) -> Maybe<NodeIndex, unfolding::Absent>
-    {
-        match code {
-            Code::Constant(constant) => self.definition_written(constant),
-            Code::Bound { .. } => Maybe::Absent(unfolding::Absent::Opaque),
-        }
-    }
-
-    /// The node of the body a top-level definition of `constant` writes: the
-    /// one form of `= e ;`, or the declaration form of a function tail
-    /// `(params) -> T { … }`, which the tail lowers at (#3665).
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn definition_written(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<NodeIndex, unfolding::Absent>
-    {
-        if let Some(slot) = self.cx.collected.slots.get(usize::from(constant))
-            && slot.constant == constant
-            && let Container::TopLevel(_) = slot.container
-            && let Maybe::Absent(_) = slot.refusal
-        {
-            match slot.definition {
-                Maybe::Present(Half {
-                    operand: Operand::Written(body),
-                    ..
-                }) => return Maybe::Present(body.node),
-                Maybe::Present(Half {
-                    declaration,
-                    operand: Operand::Function,
-                    ..
-                }) => return Maybe::Present(declaration.node),
-                Maybe::Present(_) | Maybe::Absent(_) => {},
-            }
-        }
-
-        Maybe::Absent(unfolding::Absent::Opaque)
-    }
-
-    /// The value the body of a top-level definition of `constant` lowered to.
-    ///
-    /// # Specification
-    /// trivial.
-    fn definition_body(
-        &self,
-        constant: ConstantIndex,
-    ) -> Maybe<ValueId, unfolding::Absent>
-    {
-        match self.definition_written(constant) {
-            Maybe::Present(node) => match self.value_at(node) {
-                Maybe::Present(body) => Maybe::Present(body),
-                Maybe::Absent(_) => Maybe::Absent(unfolding::Absent::Unlowered),
-            },
-            Maybe::Absent(reason) => Maybe::Absent(reason),
-        }
-    }
-
-    /// `ty`, a computation type read under `from` in `telescope`, carried
-    /// into the term context of `from` and then under `lift` more binders,
-    /// each node it rewrote reported into `copies` when given.
-    ///
-    /// # Specification
-    /// - requires: `ty` is minted under `from`, counting only the frames that
-    ///   bind in `telescope`.
-    /// - ensures: a binder inserted at each frame of `from`'s chain that does
-    ///   not bind in `telescope`, then every free index raised by `lift`;
-    ///   `copies`, when given, gains each node a shift rewrote beside its
-    ///   source.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a function result and a written answer become the
-    ///   motive of a nested tree; a dependent transport's motive answers where
-    ///   its endpoints are written.
-    /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
-    /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
-    #[spec(ensures: |ret| arena.comp_type(ret).is_some() || ret == ty)]
-    pub(super) fn relocate(
-        &self,
-        arena: &mut CoreArena,
-        ty: CompTypeId,
-        from: Frame,
-        telescope: Telescope,
-        lift: Binders,
-        mut copies: Option<&mut Vec<Carried>>,
-    ) -> CompTypeId
-    {
-        let mut shift =
-            |arena: &mut CoreArena, subject: CompTypeId, scope: Binders, amount: Binders| {
-                let shifted = gandr_core_term::shift_comp_type_under(arena, subject, scope, amount);
-                match copies.as_deref_mut() {
-                    Some(copies) => shifted.settle_traced(arena, copies),
-                    None => shifted.settle(arena),
-                }
-            };
-        let mut carried = ty;
-        for (position, binds) in self.cx.scope.binders_in(from, telescope).enumerate() {
-            if !binds {
-                let scope = Binders::from(u32::try_from(position).unwrap_or(u32::MAX));
-                carried = shift(arena, carried, scope, Binders::ONE);
-            }
-        }
-        shift(arena, carried, Binders::NONE, lift)
-    }
-
-    /// Mint the field read off a data value at `projected`: the data case over
-    /// the value whose branch for each constructor returns its field.
-    ///
-    /// # Specification
-    /// - requires: the subject, and the answer or the stated type and the
-    ///   field's declared type the projection is typed by, are already minted
-    ///   or absent.
-    /// - ensures: a data case over the subject's value whose motive returns the
-    ///   projection's type under one binder more, reading none of it, and whose
-    ///   branch for each constructor binds its fields and returns the one read;
-    ///   the type is the answer carried from its frame to the projection's, or
-    ///   the field's declared type lowered out from under the fields before it
-    ///   with the family's parameters replaced by the arguments of the
-    ///   subject's stated type carried to the projection's frame. The case
-    ///   carries the written origin and records the family it eliminates; every
-    ///   other node minted the inserted match origin, a copy that of the node
-    ///   it copies. Nothing when a node it reads did not lower, the stated type
-    ///   is no application of a family to at least its parameters, or the
-    ///   field's type names a field before it.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::data_field`].
-    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(Lowered::Computation(id)) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
-    pub(super) fn mint_projected(
-        &self,
-        projected: ProjectedIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        let Some(form) = self.cx.projected.get(projected)
-        else {
-            return unminted;
-        };
-        let Maybe::Present(scrutinee) = self.value_at(form.subject)
-        else {
-            return unminted;
-        };
-        let lift = |from: Frame| {
-            let gap = self
-                .cx
-                .scope
-                .telescope_binders(form.frame)
-                .count()
-                .saturating_sub(self.cx.scope.telescope_binders(from).count());
-            Binders::from(u32::try_from(gap).unwrap_or(u32::MAX))
-        };
-        let mark = sink.arena.watermark();
-        let mut copies = Vec::new();
-        let answered = match form.typed {
-            Typed::Answered(answer) => {
-                let Maybe::Present(written) = self.answered_type(answer, sink)
-                else {
-                    return unminted;
-                };
-                self.relocate(
-                    sink.arena,
-                    written,
-                    answer.frame,
-                    Telescope::Signature,
-                    lift(answer.frame),
-                    Some(&mut copies),
-                )
-            },
-            Typed::Field {
-                stated,
-                declared,
-                earlier,
-                parameters,
-            } => {
-                let (Maybe::Present(applied), Maybe::Present(declared)) =
-                    (self.value_type_at(stated), self.value_type_at(declared))
-                else {
-                    return unminted;
-                };
-                let at = self.reading(stated).frame();
-                let wrapped = sink.arena.comp_type_returner(applied);
-                let carried = self.relocate(
-                    sink.arena,
-                    wrapped,
-                    at,
-                    Telescope::Signature,
-                    lift(at),
-                    Some(&mut copies),
-                );
-                let Some(&CompType::Returner {
-                    result: applied, ..
-                }) = sink.arena.comp_type(carried)
-                else {
-                    return unminted;
-                };
-                let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
-                    sink.arena.value_type(applied)
-                else {
-                    return unminted;
-                };
-                let mut environment: Vec<ValueId> =
-                    arguments.iter().take(parameters).copied().collect();
-                if environment.len() != parameters {
-                    return unminted;
-                }
-                // The innermost binder is the last parameter.
-                environment.reverse();
-                let past = Binders::from(u32::try_from(earlier).unwrap_or(u32::MAX));
-                let Maybe::Present(lowered) =
-                    gandr_core_term::strengthen_value_type(sink.arena, declared, past)
-                else {
-                    return unminted;
-                };
-                let declared = lowered.settle(sink.arena);
-                let Maybe::Present(ty) =
-                    substituted_type(declared, &environment, sink.arena, Some(&mut copies))
-                else {
-                    return unminted;
-                };
-                sink.arena.comp_type_returner(ty)
-            },
-        };
-        let motive =
-            gandr_core_term::shift_comp_type(sink.arena, answered, Binders::ONE).settle(sink.arena);
-        let mut branches = Vec::with_capacity(form.branches.len());
-        let mut arities = Vec::with_capacity(form.branches.len());
-        for &(arity, position) in &form.branches {
-            let read = variable(
-                sink.arena,
-                Depth(arity.saturating_sub(position).saturating_sub(1)),
-            );
-            let mut branch = sink.arena.computation_return(read);
-            for _field in 0 .. arity {
-                branch = sink.arena.computation_lambda(branch);
-            }
-            branches.push(branch);
-            arities.push(gandr_kernel_term::FieldCount::from(arity));
-        }
-        let case = sink
-            .arena
-            .computation_data_case(scrutinee, motive, branches, arities);
-        sink.origins.record_elimination(case, form.family);
-        record_copied_since(
-            sink,
-            mark,
-            origin.inserted(Insertion::Match),
-            Maybe::Present((case, origin)),
-            &copies,
-        );
-
-        Maybe::Present(Lowered::Computation(case))
-    }
-
-    /// What each term variable of `frame` reads as at the arm `arm` and every
-    /// arm the answer was passed into before it: the scrutinee of each
-    /// settled one its constructor over what the arm reads its fields at, the
-    /// outermost arm read first.
-    ///
-    /// # Specification
-    /// - requires: the arms `arm` chains stand on `frame`'s chain.
-    /// - ensures: one value per term binder of `frame`, index for index, when
-    ///   some arm on the chain is settled and `frame` reads its scrutinee and
-    ///   every variable its reading names intuitionistically: each variable
-    ///   read through every such arm from the outermost in, an arm reading its
-    ///   scrutinee's variable as [`Self::built_value`] builds its reading and
-    ///   every other variable as itself. The unsettled absence otherwise, every
-    ///   variable reading itself.
-    /// - provides: the substitution an arm's leaf makes in the arm's body, made
-    ///   where a match in that body stands, so the match reads its answer and
-    ///   its own leaves read their bodies under it before its own refinement.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a match in an arm, on the arm's field, answers at the
-    ///   arm's constructor over each of its own constructors, and its branches
-    ///   read the outer scrutinee there too.
-    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(ref read) => read.len() == self.cx.scope.telescope_binders(frame).count(),
-        | Maybe::Absent(_) => true,
-    })]
-    fn arm_readings(
-        &self,
-        arm: Maybe<ArmIndex, passed::Absent>,
-        frame: Frame,
-        arena: &mut CoreArena,
-    ) -> Maybe<Vec<ValueId>, passed::Absent>
-    {
-        let context = self.cx.scope.telescope_binders(frame).count();
-        let mut readings: Option<Vec<ValueId>> = None;
-        for reading in self.arms_outward(arm).into_iter().rev() {
-            let Maybe::Present(ref settled) = reading.settled
-            else {
-                continue;
-            };
-            let Some(held) = self.term_depth(frame, settled.scrutinee)
-            else {
-                continue;
-            };
-            let Some(value) = self.built_value(frame, &settled.read, arena)
-            else {
-                continue;
-            };
-            let step: Vec<ValueId> = (0 .. context)
-                .map(|position| {
-                    if position == held.0 {
-                        value
-                    }
-                    else {
-                        variable(arena, Depth(position))
-                    }
-                })
-                .collect();
-            match readings {
-                None => readings = Some(step),
-                Some(ref mut read) => {
-                    for entry in read.iter_mut() {
-                        if let TermId::Value(stepped) = gandr_core_term::substitute_environment(
-                            arena,
-                            TermId::Value(*entry),
-                            &step,
-                        ) {
-                            *entry = stepped;
-                        }
-                    }
-                },
-            }
-        }
-        readings.map_or(Maybe::Absent(passed::Absent::Unsettled), Maybe::Present)
-    }
-
-    /// The value the prefix-ordered `read` spells under `frame`: an arm
-    /// variable's binder as its variable, a constructor over the values its
-    /// fields spell.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the value, when `read` spells exactly one term and `frame`
-    ///   reads every binder it names intuitionistically; none otherwise.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::arm_readings`].
-    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
-    #[spec(ensures: |ret| ret.is_none_or(|value| arena.value(value).is_some()))]
-    fn built_value(
-        &self,
-        frame: Frame,
-        read: &[Built],
-        arena: &mut CoreArena,
-    ) -> Option<ValueId>
-    {
-        let mut values: Vec<ValueId> = Vec::with_capacity(read.len());
-        for &node in read.iter().rev() {
-            match node {
-                Built::Bound(binder) => {
-                    let index = self.term_depth(frame, binder)?;
-                    values.push(variable(arena, index));
-                },
-                Built::Constructed { family, tag, arity } => {
-                    let from = values.len().checked_sub(arity)?;
-                    let fields = values.drain(from ..).rev().collect();
-                    values.push(arena.value_constructor_of(family, Vec::new(), tag, fields));
-                },
-            }
-        }
-        match *values.as_slice() {
-            [value] => Some(value),
-            _ => None,
-        }
-    }
-
-    /// The term index the intuitionistic binder `binder` has from `frame`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the index [`crate::resolve::Scope::bindings`] gives `binder`
-    ///   from `frame` when the binder is intuitionistic and on the chain; none
-    ///   otherwise.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::arm_readings`].
-    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    #[spec(ensures: |ret| ret.is_none_or(|_| self.cx.scope.zone(binder) == Zone::Intuitionistic))]
-    fn term_depth(
-        &self,
-        frame: Frame,
-        binder: ScopeId,
-    ) -> Option<Depth>
-    {
-        self.cx.scope.bindings(frame).find_map(|(_, bound)| {
-            (bound.binder == binder && bound.zone == Zone::Intuitionistic)
-                .then(|| Depth(usize::try_from(u32::from(bound.index)).unwrap_or(usize::MAX)))
-        })
-    }
-
-    /// Mint the match at `match`: its scrutinee bound once over its decision
-    /// tree.
-    ///
-    /// # Specification
-    /// - requires: the scrutinee, every arm body and the answer are already
-    ///   minted or absent.
-    /// - ensures: the tree, every node minted descending: a data case over the
-    ///   scrutinised level with the motive [`tracked_motives`] reads from the
-    ///   answer, each branch a lambda per field and then one per index
-    ///   equation, a pruned branch the case of no branches on its equation; a
-    ///   sum case for a boolean; an integer comparison bound and cased on; a
-    ///   guard's condition, read as its arm's body is, bound and cased on, its
-    ///   true branch the arm's leaf and its false branch the rows after it; a
-    ///   hole for a stuck node; and a leaf as its arm's body with each variable
-    ///   replaced by what [`level_read`] reads the level that settled it at and
-    ///   the case's context carried under the tree's binders, the scrutinee's
-    ///   variable read as [`level_read`] reads level zero where the root
-    ///   refines it. An answer passed into arms is read with each variable of
-    ///   the case's frame as [`Self::arm_readings`] reads it, and each leaf
-    ///   reads its body's variables so before its own refinement. Level zero is
-    ///   the scrutinee itself, carried under the binders above its use, so no
-    ///   binding of it is minted. The root carries the written origin, a leaf's
-    ///   copy of its arm's body the origin of what it copies, every other node
-    ///   the inserted match origin, and the arms are recorded beside the root
-    ///   with the scrutinee's value; a match whose first arm matches anything
-    ///   is that arm's body. A match that writes its answer has its root
-    ///   ascribed it, an integer test's case under the comparison's binder, but
-    ///   for a data case and a dependent split, whose motive is that answer.
-    ///   Nothing when the scrutinee, a reached body or a needed answer did not
-    ///   lower.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the witnesses read each tree back out of the arena.
-    /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
-    /// - witness: `lower::native::tests::literal_patterns_compare_and_branch`
-    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
-    /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
-    /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
-    /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
-    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
-    pub(super) fn mint_case(
-        &self,
-        case: CaseIndex,
-        sink: &mut Sink<'_>,
-        origin: Origin,
-    ) -> Maybe<Lowered, lowered::Absent>
-    {
-        let Some(form) = self.cx.cases.get(case)
-        else {
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        // Clauses scrutinise their columns, the tree's first binders, and no
-        // value at level zero.
-        let valued = match form.roots {
-            Roots::Scrutinee => match self.value_at(form.scrutinee) {
-                Maybe::Present(scrutinee) => Some(scrutinee),
-                Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
-            },
-            Roots::Parameters(_) | Roots::Lambdas(_) => None,
-        };
-        let mut bodies = Vec::with_capacity(form.bodies.len());
-        for &body in &form.bodies {
-            bodies.push(self.computation_at(body));
-        }
-        let guards: Vec<Maybe<ComputationId, lowered::Absent>> = (0 .. form.bodies.len())
-            .map(|arm| match form.guards.get(&ArmAt(arm)) {
-                Some(&guard) => self.computation_at(guard),
-                None => Maybe::Absent(lowered::Absent::Unminted),
-            })
-            .collect();
-        let mark = sink.arena.watermark();
-        // Level zero is never read under clauses: the unit stands for it.
-        let scrutinee = valued.unwrap_or_else(|| sink.arena.value_unit());
-        // What each variable of the match's frame reads as at the arms its
-        // answer was passed into.
-        let armed = match form.answer {
-            Maybe::Present(answer) => self.arm_readings(answer.arm, form.frame, sink.arena),
-            Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unpassed),
-        };
-        let motive = match form.answer {
-            Maybe::Present(answer) => match self.answered_type(answer, sink) {
-                Maybe::Present(written) => {
-                    // Clauses' root stands under one binder per column, the
-                    // lambdas of the parameters it matches.
-                    let gap = Depth(
-                        self.cx
-                            .scope
-                            .telescope_binders(form.frame)
-                            .count()
-                            .saturating_sub(self.cx.scope.telescope_binders(answer.frame).count())
-                            .saturating_add(form.roots.columns().0),
-                    );
-                    let base = self.relocate(
-                        sink.arena,
-                        written,
-                        answer.frame,
-                        Telescope::Signature,
-                        Binders::default(),
-                        None,
-                    );
-                    Maybe::Present(match armed {
-                        Maybe::Present(ref read) => {
-                            let carried = gandr_core_term::shift_comp_type(
-                                sink.arena,
-                                base,
-                                Binders::from(u32::try_from(gap.0).unwrap_or(u32::MAX)),
-                            )
-                            .settle(sink.arena);
-                            let refined = match environment_substituted(sink.arena, carried, read) {
-                                Maybe::Present(refined) => refined,
-                                Maybe::Absent(_) => carried,
-                            };
-                            (refined, Depth::default())
-                        },
-                        Maybe::Absent(_) => (base, gap),
-                    })
-                },
-                Maybe::Absent(reason) => Maybe::Absent(reason),
-            },
-            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
-        };
-        // The answer written on the match is its root's type: the motive's
-        // base, read where the match stands.
-        let ascription = match (form.ascribed, motive) {
-            (Maybe::Present(_), Maybe::Present((base, _gap))) => Maybe::Present(base),
-            (Maybe::Present(_), Maybe::Absent(reason)) => return Maybe::Absent(reason),
-            (Maybe::Absent(_), _) => Maybe::Absent(lowered::Absent::Unminted),
-        };
-        let scrutinised = Scrutinised {
-            scrutinee,
-            outer: Depth(self.cx.scope.telescope_binders(form.frame).count()),
-        };
-        let tracked = match motive {
-            Maybe::Present((base, gap))
-                if form.tests.iter().any(|test| {
-                    matches!(
-                        *test,
-                        Test::Data { .. }
-                            | Test::Split {
-                                dependent: Dependent(true),
-                                ..
-                            }
-                    )
-                }) =>
-            {
-                tracked_motives(&form.tests, base, gap, scrutinised, sink.arena)
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
-        };
-        let refinings = refinings(&form.tests);
-        let dependent = dependents(&form.tests, &tracked, sink.arena);
-        let readings = Readings {
-            refinings: &refinings,
-            dependent: &dependent,
-            held: held_variable(scrutinised, sink.arena),
-        };
-        let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
-            form.tests
-                .iter()
-                .map(|_test| Maybe::Absent(lowered::Absent::Unminted)),
-        );
-        let mut copies = Vec::new();
-        for (position, test) in form.tests.iter().enumerate().rev() {
-            let read = tracked
-                .get(position)
-                .copied()
-                .unwrap_or(Maybe::Absent(lowered::Absent::Unminted));
-            let at = refinings
-                .under
-                .get(position)
-                .copied()
-                .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
-            let answered = if position == 0_usize {
-                ascription
-            }
-            else {
-                Maybe::Absent(lowered::Absent::Unminted)
-            };
-            let id = mint_test(
-                test,
-                (scrutinised, readings),
-                (&bodies, &guards, match armed {
-                    Maybe::Present(ref read) => read,
-                    Maybe::Absent(_) => &[],
-                }),
-                &minted,
-                (read, at, answered),
-                sink,
-                &mut copies,
-            );
-            if let Some(held) = minted.get_mut(position) {
-                *held = id;
-            }
-        }
-        self.name_fields(form, &minted, sink);
-        let inserted = origin.inserted(Insertion::Match);
-        let minted_root = match minted.first() {
-            Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
-            Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
-            Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
-        };
-        let Maybe::Present(tree) = minted_root
-        else {
-            record_copied_since(
-                sink,
-                mark,
-                inserted,
-                Maybe::Absent(rooted::Absent::Unminted),
-                &copies,
-            );
-            return Maybe::Absent(lowered::Absent::Unminted);
-        };
-        // A matching lambda binds its columns itself, one lambda each.
-        let root = match form.roots {
-            Roots::Lambdas(Depth(columns)) => {
-                (0 .. columns).fold(tree, |body, _column| sink.arena.computation_lambda(body))
-            },
-            Roots::Scrutinee | Roots::Parameters(_) => tree,
-        };
-        if sink.arena.computations_since(mark).all(|id| id != root) {
-            record_copied_since(
-                sink,
-                mark,
-                inserted,
-                Maybe::Absent(rooted::Absent::Adopted),
-                &copies,
-            );
-            return Maybe::Present(Lowered::Computation(root));
-        }
-        record_copied_since(
-            sink,
-            mark,
-            inserted,
-            Maybe::Present((root, origin)),
-            &copies,
-        );
-        let mut kept = form.origin.clone();
-        kept.scrutinised = match valued {
-            Some(_) => Maybe::Present(scrutinee),
-            None => Maybe::Absent(scrutinised::Absent::Columns),
-        };
-        sink.origins.record_case(tree, kept);
-
-        Maybe::Present(Lowered::Computation(root))
-    }
-
-    /// Records, for each field binder a data switch of `form`'s tree opens
-    /// and each component binder a split opens, the arm variable every arm
-    /// reached through it binds there, when they agree on its name.
-    ///
-    /// # Specification
-    /// - requires: `minted` holds the tree's nodes as [`mint_test`] minted
-    ///   them, position for position.
-    /// - ensures: each lambda a minted data switch's branch opens for its field
-    ///   `f` under `d` tree binders is recorded as written at the arm variable
-    ///   that the leaves under that branch settle at level `d + f + 1`, when at
-    ///   least one leaf settles a variable there and every one that does writes
-    ///   the same name; each component `c` of a minted split under `d` tree
-    ///   binders likewise, at the variable the leaves under the split settle at
-    ///   level `d + c + 1`, or else at the label of the field a labelled
-    ///   pattern leaves unwritten there, or of the field the rest of a
-    ///   dependent record held there starts at; any other binder keeps no name.
-    /// - provides: the source's name for a pattern variable, which a type
-    ///   printed inside an arm reads its field binder by, whether or not the
-    ///   arm uses it.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the origins it records live in the sink's table,
-    ///   which a predicate over the lowerer cannot read.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a field a single arm names, and one two arms name
-    ///   alike, each answer under the written name; a relation's record split
-    ///   names a component its arm never uses, and one a label pattern omits; a
-    ///   dependent record's rest is named by the label it starts at.
-    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
-    /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
-    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            linear_search_in_loop,
-            reason = "bounded: `unwritten` holds the components one split leaves unwritten"
-        )
-    )]
-    fn name_fields(
-        &self,
-        form: &CaseForm,
-        minted: &[Maybe<ComputationId, lowered::Absent>],
-        sink: &mut Sink<'_>,
-    )
-    {
-        for (test, &held) in form.tests.iter().zip(minted) {
-            let Maybe::Present(switch) = held
-            else {
-                continue;
-            };
-            let (depth, branches) = match *test {
-                Test::Data {
-                    depth,
-                    ref branches,
-                    ..
-                } => (depth, branches),
-                Test::Split {
-                    depth,
-                    arity,
-                    child,
-                    ref unwritten,
-                    ..
-                } => {
-                    for component in 0 .. arity {
-                        let level = TreeLevel(depth.0.saturating_add(component).saturating_add(1));
-                        let name = if let Some(origin) = self.field_name(form, child, level) {
-                            ComponentName::Written(origin)
-                        }
-                        else {
-                            let Some(&(_, ref label)) =
-                                unwritten.iter().find(|&&(held, _)| held == component)
-                            else {
-                                continue;
-                            };
-                            ComponentName::Labelled(label.clone())
-                        };
-                        sink.origins
-                            .place_component(switch, SplitComponent::from(component), name);
-                    }
-                    continue;
-                },
-                Test::Pending
-                | Test::Stuck(_)
-                | Test::Absurd(_)
-                | Test::Leaf { .. }
-                | Test::Guard { .. }
-                | Test::Boolean { .. }
-                | Test::Integer { .. }
-                | Test::Record { .. }
-                | Test::Sum { .. }
-                | Test::List { .. } => continue,
-            };
-            let Some(&gandr_core_term::Computation::DataCase {
-                branches: ref lowered,
-                ..
-            }) = sink.arena.computation(switch)
-            else {
-                continue;
-            };
-            for (&(arity, at), &branch) in branches.iter().zip(lowered) {
-                let mut lambda = branch;
-                for field in 0 .. arity {
-                    let level = TreeLevel(depth.0.saturating_add(field).saturating_add(1));
-                    if let Some(origin) = self.field_name(form, at, level) {
-                        sink.origins.place_binder(lambda, origin);
-                    }
-                    let Some(&gandr_core_term::Computation::Lambda(body)) =
-                        sink.arena.computation(lambda)
-                    else {
-                        break;
-                    };
-                    lambda = body;
-                }
-            }
-        }
-    }
-
-    /// The origin of the arm variable every leaf under `at` settles at
-    /// `level`, when at least one does and all write one name.
-    ///
-    /// # Specification
-    /// - requires: `at` is a node of `form`'s tree.
-    /// - ensures: the first such variable's origin when the leaves under `at`
-    ///   that settle a variable at `level` all write the same name; none when
-    ///   no leaf does, two write different names, or the variable has no
-    ///   origin.
-    /// - provides: the name [`Self::name_fields`] records.
-    /// - fails: never.
-    /// - panics: none.
-    /// - intension: one pass over the subtree on an explicit stack.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::name_fields`].
-    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
-    #[spec(ensures: |ret| ret.is_none() || form.tests.get(at.0).is_some())]
-    fn field_name(
-        &self,
-        form: &CaseForm,
-        at: TestAt,
-        level: TreeLevel,
-    ) -> Option<Origin>
-    {
-        let mut named: Option<Placed> = None;
-        let mut pending = Vec::from([at]);
-        while let Some(TestAt(position)) = pending.pop() {
-            match form.tests.get(position) {
-                Some(&Test::Leaf {
-                    arm, ref bindings, ..
-                }) => {
-                    let variables = form.variables.get(arm.0).map_or(&[][..], Vec::as_slice);
-                    for (&settled, &variable) in bindings.iter().zip(variables) {
-                        if settled != level {
-                            continue;
-                        }
-                        match named {
-                            Some(first) if self.text_at(first) != self.text_at(variable) => {
-                                return None;
-                            },
-                            Some(_) => {},
-                            None => named = Some(variable),
-                        }
-                    }
-                },
-                Some(&Test::Data { ref branches, .. }) => {
-                    pending.extend(branches.iter().map(|&(_arity, child)| child));
-                },
-                Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
-                Some(&Test::List { nil, cell, .. }) => pending.extend([nil, cell]),
-                Some(
-                    &(Test::Boolean { yes, no, .. }
-                    | Test::Integer { yes, no, .. }
-                    | Test::Guard { yes, no, .. }),
-                ) => {
-                    pending.extend([yes, no]);
-                },
-                Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
-                    pending.push(child);
-                },
-                Some(&(Test::Pending | Test::Stuck(_) | Test::Absurd(_))) | None => {},
-            }
-        }
-        let variable = named?;
-        match self.origin_at(variable.node) {
-            Maybe::Present(origin) => Some(origin),
-            Maybe::Absent(_) => None,
-        }
-    }
-
-    /// The root data case `root` of the match `form` with a loop branch per
-    /// loop arm after its constructors' branches.
-    ///
-    /// # Specification
-    /// - requires: `root` is the minted root of `form`'s tree, and `form`
-    ///   carries loop arms.
-    /// - ensures: the data case over the root's scrutinee and motive whose
-    ///   branches are the root's, then each loop arm's body in `form`'s order
-    ///   with the binder its arm reads replaced by `b`, the root's answer at
-    ///   the arm's loop's point over the root's branches as
-    ///   [`gandr_core_term::identity::answer_at`] reads it, which the checker
-    ///   reads alike; every node the replacement rewrote reported in `copies`
-    ///   beside its original. The unminted absence when the root is no data
-    ///   case, a body did not lower or a point does not spell.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the circle's loop arm follows its point's branch and
-    ///   reads `Base`, the value that branch returns, for its answer.
-    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
-    fn with_loops(
-        &self,
-        form: &CaseForm,
-        root: ComputationId,
-        sink: &mut Sink<'_>,
-        copies: &mut Vec<Carried>,
-    ) -> Maybe<ComputationId, lowered::Absent>
-    {
-        let unminted = Maybe::Absent(lowered::Absent::Unminted);
-        // A presented type is never indexed, so its case takes no equation.
-        let Some(&gandr_core_term::Computation::DataCase {
-            scrutinee,
-            motive,
-            ref branches,
-            arities: ref constructors,
-            ..
-        }) = sink.arena.computation(root)
-        else {
-            return unminted;
-        };
-        let (branches, constructors) = (branches.clone(), constructors.clone());
-        let mut all = branches.clone();
-        let mut rewritten = Vec::new();
-        for arm in &form.loops {
-            let Maybe::Present(body) = self.computation_at(arm.body)
-            else {
-                return unminted;
-            };
-            let Some((carrier, point, arities)) =
-                self.cx.collected.words.get(arm.words).and_then(|words| {
-                    let data = self.cx.collected.data.get(words.family)?;
-                    let family = self
-                        .cx
-                        .collected
-                        .slots
-                        .get(usize::from(data.slot))?
-                        .constant;
-                    let arities: Vec<gandr_kernel_term::FieldCount> = data
-                        .generators
-                        .iter()
-                        .map(|generator| {
-                            gandr_kernel_term::FieldCount::from(generator.fields.len())
-                        })
-                        .collect();
-                    Some((family, &words.point, arities))
-                })
-            else {
-                return unminted;
-            };
-            let classifier = sink.arena.value_type_data(carrier, Vec::new());
-            let Maybe::Present(at) = spelled_point(
-                sink.arena,
-                (carrier, classifier),
-                (point, &arities),
-                &mut Vec::new(),
-            )
-            else {
-                return unminted;
-            };
-            let carried = gandr_core_term::identity::answer_at(
-                sink.arena,
-                at,
-                motive,
-                &branches,
-                &constructors,
-            );
-            rewritten.clear();
-            let instantiated = gandr_core_term::instantiate_computation_traced(
-                sink.arena,
-                body,
-                carried,
-                &mut rewritten,
-            );
-            exits::mark_copies(sink, &rewritten);
-            copies.extend_from_slice(&rewritten);
-            all.push(instantiated);
-        }
-        let extended = sink
-            .arena
-            .computation_data_case(scrutinee, motive, all, constructors);
-        if let Maybe::Present(family) = sink.origins.elimination(root) {
-            sink.origins.record_elimination(extended, family);
-        }
-        Maybe::Present(extended)
     }
 }
 
@@ -13447,8 +10088,8 @@ type Minted = Maybe<ComputationId, lowered::Absent>;
 ///   [`refinings`] stands it under, `readings` the tree's, and `answered` the
 ///   answer the match writes, read where the node stands, for its root; `armed`
 ///   is empty or holds, per term binder of the case's frame, the value
-///   [`Lowerer::arm_readings`] reads it as.
-/// - ensures: as [`Lowerer::mint_case`], for one node; a data case and a
+///   [`NativeRef::arm_readings`] reads it as.
+/// - ensures: as [`NativeRef::mint_case`], for one node; a data case and a
 ///   dependent split read the read motive; a leaf reads each arm variable as
 ///   [`level_read`] reads the level that settled it, and, under a refining
 ///   root, the scrutinee's variable as [`level_read`] reads level zero; a leaf
@@ -13462,7 +10103,7 @@ type Minted = Maybe<ComputationId, lowered::Absent>;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::mint_case`].
+/// - hypothesis: L3 — as [`NativeRef::mint_case`].
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
 /// - witness: `lower::native::tests::a_case_over_a_variable_answers_its_motive_at_each_constructor`
@@ -13751,7 +10392,7 @@ fn mint_test(
 ///
 /// # Specification
 /// - requires: `armed` is empty or holds one value per term binder of the
-///   case's frame, as [`Lowerer::arm_readings`] reads them.
+///   case's frame, as [`NativeRef::arm_readings`] reads them.
 /// - ensures: `armed` exactly when an intuitionistic index `j` the body's
 ///   support selects is at least `bound` and `armed`'s entry `j - bound` is no
 ///   variable at its own index; empty otherwise.
@@ -13817,7 +10458,7 @@ fn armed_for<'armed>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::mint_case`]; a guard reads its arm's
+/// - hypothesis: L3 — as [`NativeRef::mint_case`]; a guard reads its arm's
 ///   variable where its leaf does.
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::a_guard_reads_its_clause_s_variables`
@@ -13911,7 +10552,7 @@ fn settled_at(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::mint_case`].
+/// - hypothesis: L3 — as [`NativeRef::mint_case`].
 /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
 #[spec(ensures: |ret| match answered {
     | Maybe::Present(ty) => matches!(sink.arena.computation(ret), Some(&Computation::Ascribe { body, ty: written }) if body == id && written == ty),
@@ -14507,10 +11148,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   the variable the frame binds, the fixpoint's own thunk, read inside a
     ///   type at its index in the type's telescope as [`Self::resolved_term`]
     ///   reads any binder there, makes the function's fixpoint claim descent
-    ///   and checks the position [`Self::claim`] reads; heading a call, the
-    ///   call passes each of the function's parameters before the staged one as
-    ///   itself, labelled with its parameter's written type, and one argument
-    ///   for the staged one and each after it. Inside a joint fixpoint
+    ///   and checks the position [`NativeRef::claim`] reads; heading a call,
+    ///   the call passes each of the function's parameters before the staged
+    ///   one as itself, labelled with its parameter's written type, and one
+    ///   argument for the staged one and each after it. Inside a joint fixpoint
     ///   ([`Joint`]) a head naming a sibling member stands as the function's
     ///   own fixpoint binder, and either head's call injects its argument at
     ///   the called member's summand. The head's name, its marker aside, keeps
@@ -14541,8 +11182,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   through a sibling held for [`Self::refuse_sibling_arities`]; the
     ///   non-uniform refusal, at the argument, for a parameter before the
     ///   staged one passed as anything but itself; the several-parameters
-    ///   refusal [`Self::claim`] raises; the wrong-sort refusal outside a head
-    ///   or value position; and the allowance refusal from the binder walk.
+    ///   refusal [`NativeRef::claim`] raises; the wrong-sort refusal outside a
+    ///   head or value position; and the allowance refusal from the binder
+    ///   walk.
     /// - panics: none.
     ///
     /// # Errors
@@ -14569,24 +11211,24 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_reserved_claim_under_a_head_that_is_no_name_marks_the_whole_instantiation_3811`
     /// - witness: `lower::native::tests::a_head_naming_nothing_over_a_resident_is_unresolved_5303`
     /// - witness: `lower::method::tests::a_bare_index_is_refused_naming_the_selector_4944`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..)))))]
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _) | Plan::Application(..)))))]
     pub(super) fn instantiation(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        if self.supplied_value(site)? == arity::Planned(true) {
+        if self.host().supplied_value(site)? == arity::Planned(true) {
             return Ok(());
         }
-        if let Maybe::Present(bracket) = self.bare_index(site)? {
+        if let Maybe::Present(bracket) = self.host().bare_index(site)? {
             return Err(LoweringRefusal::MalformedForm {
                 span: bracket,
                 form: FormName::INSTANTIATION,
                 fault: FormFault::BareIndex,
             });
         }
-        let frame = self.require(site, Produced::Value)?;
+        let frame = self.host().require(site, Produced::Value)?;
         let head = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
         let resident = site.one(cursor.operands())?;
@@ -14595,8 +11237,8 @@ impl<'source> Lowerer<'_, 'source>
         }
         closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
         exhausted(site, &cursor)?;
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, resident.node, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, resident.node, &mut scratch);
         let claim = match *scratch.pieces.as_slice() {
             [Piece::Tile { label, .. }] if label == TileName::LESS_THAN => Some(Claim::Descent),
             [Piece::Tile { label, .. }] if label == TileName::GREATER_THAN => {
@@ -14604,19 +11246,19 @@ impl<'source> Lowerer<'_, 'source>
             },
             _ => None,
         };
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
-        let named = self.cx.tree.node(head.node).is_some_and(|node| {
+        let named = self.cx().tree.node(head.node).is_some_and(|node| {
             matches!(
-                shape_of(self.cx.pbg, node),
+                shape_of(self.cx().pbg, node),
                 Ok(Shape::Form {
                     former: Former::Name,
                     ..
                 })
             )
         });
-        let joint = match self.cx.collected.owner_of(site.at.node) {
-            Maybe::Present(owner) => self.joint(owner),
+        let joint = match self.cx().collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self.shared().joint(owner),
             Maybe::Absent(_) => Joint::alone(),
         };
         let Some(claim) = claim
@@ -14628,10 +11270,11 @@ impl<'source> Lowerer<'_, 'source>
             if !named {
                 return Err(site.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
             }
-            let name = self.name_at(head);
+            let name = self.cx().name_at(head);
+            let cx = self.cx_mut();
             if let (Maybe::Absent(_), Maybe::Absent(_)) = (
-                self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?,
-                joint.member(&self.cx.collected, name),
+                cx.scope.resolve(frame, name, &mut cx.fuel)?,
+                joint.member(&cx.collected, name),
             ) && let refusal @ LoweringRefusal::UnresolvedName { .. } =
                 self.foreign_claim(site, frame, head, name)?
             {
@@ -14646,36 +11289,38 @@ impl<'source> Lowerer<'_, 'source>
         if !named {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         }
-        let name = self.name_at(head);
-        let descent = self.cx.descents.get(&site.at.node).copied();
-        let resolved = self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?;
+        let name = self.cx().name_at(head);
+        let descent = self.cx().descents.get(&site.at.node).copied();
+        let cx = self.cx_mut();
+        let resolved = cx.scope.resolve(frame, name, &mut cx.fuel)?;
         // A sibling of the joint answers by the function's own fixpoint
         // binder: the joint fixpoint is the function's own, read at the
         // sibling's summand. The head's name, without its marker, keeps what
         // it calls: the function's own binder, or the sibling's declaration.
         let (bound, summand) = match resolved {
-            Maybe::Present(bound) if self.cx.recursions.contains_key(&bound.binder) => {
-                self.resolved(head.span, Resolved::Binder(bound));
+            Maybe::Present(bound) if self.cx().recursions.contains_key(&bound.binder) => {
+                self.host().resolved(head.span, Resolved::Binder(bound));
                 (bound, joint.summand())
             },
             Maybe::Present(_) => return Err(site.out(FragmentBoundary::ForeignClaim)),
             Maybe::Absent(_) => {
                 let (Maybe::Present((owner, _)), Maybe::Present(called)) =
-                    (joint.own, joint.member(&self.cx.collected, name))
+                    (joint.own, joint.member(&self.cx().collected, name))
                 else {
                     return Err(self.foreign_claim(site, frame, head, name)?);
                 };
                 if let Some(constant) = joint
                     .members
                     .get(usize::from(called))
-                    .and_then(|&member| self.cx.collected.slots.get(usize::from(member)))
+                    .and_then(|&member| self.cx().collected.slots.get(usize::from(member)))
                     .map(|slot| slot.constant)
                 {
                     let declared = Maybe::Absent(binder_type::Absent::Untyped);
-                    self.resolved(head.span, Resolved::Declaration { constant, declared });
+                    self.host()
+                        .resolved(head.span, Resolved::Declaration { constant, declared });
                 }
                 let Some(own) = self
-                    .cx
+                    .cx()
                     .collected
                     .slots
                     .get(usize::from(owner))
@@ -14683,14 +11328,15 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
                 };
-                let Maybe::Present(bound) = self.cx.scope.resolve(frame, own, &mut self.cx.fuel)?
+                let cx = self.cx_mut();
+                let Maybe::Present(bound) = cx.scope.resolve(frame, own, &mut cx.fuel)?
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
                 };
                 (bound, Maybe::Present(called))
             },
         };
-        let Some(&recursion) = self.cx.recursions.get(&bound.binder)
+        let Some(&recursion) = self.cx().recursions.get(&bound.binder)
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
         };
@@ -14703,7 +11349,7 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
             };
-            if !self.cx.cocased.contains(&descent.call.at.node) {
+            if !self.cx().cocased.contains(&descent.call.at.node) {
                 return Err(LoweringRefusal::UnguardedCorecursion {
                     span: site.at.span,
                     name,
@@ -14713,27 +11359,29 @@ impl<'source> Lowerer<'_, 'source>
                 return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
             }
             self.uniform_descent(frame, recursion, descent.call, descent.arguments)?;
-            let head = self.resolved_term(site, frame, Resolved::Binder(bound))?;
-            self.plan(site, head);
+            let head = self
+                .host()
+                .resolved_term(site, frame, Resolved::Binder(bound))?;
+            self.host().plan(site, head);
             return Ok(());
         }
         // The position first: a claim under a match on another parameter
         // reads its arguments against the wrong split.
-        self.claim(site, bound.binder)?;
+        self.shared().claim(site, bound.binder)?;
         match (descent, summand) {
             (Some(descent), Maybe::Present(summand)) => {
                 // The joint fixpoint takes the injection of the descended value
                 // first, then the parameters after it: a member that passes a
                 // leading parameter, or stages a later one, needs a joint over
                 // a telescope (#5065).
-                if !self.cx.parameters.read(recursion.uniform).is_empty()
+                if !self.cx().parameters.read(recursion.uniform).is_empty()
                     || recursion.staged != ParameterAt(0)
                 {
                     return Err(descent
                         .call
                         .out(FragmentBoundary::Unadmitted(Unbuilt::JointTelescope)));
                 }
-                let _previous = self.cx.injected.insert(site.at.node, summand);
+                let _previous = self.cx_mut().injected.insert(site.at.node, summand);
                 // A call through a sibling passes the sibling's parameters,
                 // which a sibling later in the block has not read yet: its
                 // count is held to them once every member is read.
@@ -14741,13 +11389,12 @@ impl<'source> Lowerer<'_, 'source>
                     (joint.own, joint.members.get(usize::from(summand)))
                     && own != summand
                 {
-                    self.cx.sibling_calls.push(SiblingCall {
+                    let cx = self.cx_mut();
+                    cx.sibling_calls.push(SiblingCall {
                         call: descent.call,
                         caller,
                         called,
-                        arguments: OperandCount::from(
-                            self.cx.operands.read(descent.arguments).len(),
-                        ),
+                        arguments: OperandCount::from(cx.operands.read(descent.arguments).len()),
                     });
                 }
                 else {
@@ -14764,11 +11411,13 @@ impl<'source> Lowerer<'_, 'source>
             },
             (None, Maybe::Absent(_)) => {},
         }
-        if let Some(held) = self.cx.recursions.get_mut(&bound.binder) {
+        if let Some(held) = self.cx_mut().recursions.get_mut(&bound.binder) {
             held.claimed = Claimed(true);
         }
-        let head = self.resolved_term(site, frame, Resolved::Binder(bound))?;
-        self.plan(site, head);
+        let head = self
+            .host()
+            .resolved_term(site, frame, Resolved::Binder(bound))?;
+        self.host().plan(site, head);
 
         Ok(())
     }
@@ -14810,12 +11459,12 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<LoweringRefusal<'source>, LoweringRefusal<'source>>
     {
         let named = Site { at: head, ..site };
-        if let Maybe::Present(_) = self.resolve_name(named, frame, name)? {
+        if let Maybe::Present(_) = self.host().resolve_name(named, frame, name)? {
             return Ok(site.out(FragmentBoundary::ForeignClaim));
         }
         let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
         if let PathResolution::Complete(Recognized::BuiltinPrimitive { .. }) =
-            self.cx.recognition.resolve_path(&path)
+            self.cx().recognition.resolve_path(&path)
         {
             return Ok(site.out(FragmentBoundary::ForeignClaim));
         }
@@ -14823,53 +11472,6 @@ impl<'source> Lowerer<'_, 'source>
             span: head.span,
             name,
         })
-    }
-
-    /// The joint fixpoint the declaration at `owner` is read in.
-    ///
-    /// # Specification
-    /// - requires: the module is collected.
-    /// - ensures: the `def rec` declarations of the mutual block holding
-    ///   `owner`, in block order, with `owner`'s summand, when the block
-    ///   declares at least two and `owner` is one; otherwise no joint.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Joint`].
-    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(ensures: |ret| match ret.own {
-        Maybe::Present((own, summand)) => own == owner && ret.members.len() >= 2 && ret.members.get(usize::from(summand)) == Some(&owner),
-        Maybe::Absent(_) => ret.members.is_empty(),
-    })]
-    pub(super) fn joint(
-        &self,
-        owner: SlotIndex,
-    ) -> Joint
-    {
-        let Some(block) = self
-            .cx
-            .collected
-            .blocks
-            .iter()
-            .find(|block| (block.first .. block.end).contains(&owner))
-        else {
-            return Joint::alone();
-        };
-        let members: Vec<SlotIndex> = self
-            .cx
-            .collected
-            .recursive
-            .range(block.first .. block.end)
-            .copied()
-            .collect();
-        match members.iter().position(|&member| member == owner) {
-            Some(at) if members.len() >= 2 => Joint {
-                members,
-                own: Maybe::Present((owner, Summand::from(at))),
-            },
-            Some(_) | None => Joint::alone(),
-        }
     }
 
     /// Check the arguments `arguments` a descent call `call` on `recursion`
@@ -14899,7 +11501,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   observe each refusal.
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
-    #[spec(ensures: |ret| ret.is_err() || self.cx.operands.read(arguments).len() == self.cx.parameters.read(recursion.parameters).len())]
+    #[spec(ensures: |ret| ret.is_err() || self.cx().operands.read(arguments).len() == self.cx().parameters.read(recursion.parameters).len())]
     fn uniform_descent(
         &mut self,
         frame: Frame,
@@ -14908,39 +11510,35 @@ impl<'source> Lowerer<'_, 'source>
         arguments: FormStretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let uniform = self.cx.parameters.read(recursion.uniform);
-        let first = self
-            .cx
-            .operands
-            .first(arguments)
-            .map_or(0_usize, usize::from);
-        let arguments = self.cx.operands.read(arguments);
-        if arguments.len() != self.cx.parameters.read(recursion.parameters).len() {
+        let cx = self.cx_mut();
+        let uniform = cx.parameters.read(recursion.uniform);
+        let first = cx.operands.first(arguments).map_or(0_usize, usize::from);
+        let arguments = cx.operands.read(arguments);
+        if arguments.len() != cx.parameters.read(recursion.parameters).len() {
             return Err(call.out(FragmentBoundary::Arity(OperandCount::from(arguments.len()))));
         }
         let mut passed_names = Vec::with_capacity(uniform.len());
         for (at, (parameter, &argument)) in uniform.iter().zip(arguments).enumerate() {
             // An implicit the call omits is the function's own.
-            if self
-                .cx
+            if cx
                 .operands
                 .locate(At::from(first.saturating_add(at)))
-                .is_some_and(|key| self.cx.kept_implicits.contains(&key))
+                .is_some_and(|key| cx.kept_implicits.contains(&key))
             {
                 continue;
             }
-            let Some(node) = self.cx.tree.node(argument)
+            let Some(node) = cx.tree.node(argument)
             else {
                 return Err(call.out(FragmentBoundary::NonUniform));
             };
             let passed = Placed::of(argument, node);
-            let unchanged = match shape_of(self.cx.pbg, node)? {
+            let unchanged = match shape_of(cx.pbg, node)? {
                 Shape::Form {
                     former: Former::Name,
                     ..
                 } => {
-                    let written = self.name_at(passed);
-                    match self.cx.scope.resolve(frame, written, &mut self.cx.fuel)? {
+                    let written = cx.name_at(passed);
+                    match cx.scope.resolve(frame, written, &mut cx.fuel)? {
                         Maybe::Present(found) if found.binder == parameter.frame => Some(found),
                         Maybe::Present(_) | Maybe::Absent(_) => None,
                     }
@@ -14958,9 +11556,9 @@ impl<'source> Lowerer<'_, 'source>
             // The argument is the parameter itself, which the fixpoint binds
             // outside the call: it answers at the parameter's written type.
             if let Maybe::Present(declared) = parameter.declared
-                && let Reading::ValueType(read) = self.reading(declared)
+                && let Reading::ValueType(read) = cx.reading(declared)
             {
-                self.cx.labels.push(LabelSite {
+                cx.labels.push(LabelSite {
                     written: passed.span,
                     held: declared,
                     read: LabelRead::ValueType(read),
@@ -14968,7 +11566,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         for (span, found) in passed_names {
-            self.resolved(span, Resolved::Binder(found));
+            self.host().resolved(span, Resolved::Binder(found));
         }
 
         Ok(())
@@ -15004,36 +11602,38 @@ impl<'source> Lowerer<'_, 'source>
         ty: NodeIndex,
     ) -> Result<Decoded, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(ty)
+        let Some(node) = self.cx().tree.node(ty)
         else {
             return Ok(Decoded(false));
         };
-        if !matches!(shape_of(self.cx.pbg, node)?, Shape::Form {
+        if !matches!(shape_of(self.cx().pbg, node)?, Shape::Form {
             former: Former::TypeApplication | Former::TypeHead,
             ..
         }) {
             return Ok(Decoded(false));
         }
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, ty, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, ty, &mut scratch);
         let head = scratch.pieces.iter().find_map(|piece| piece.type_head());
-        self.cx.scratch = scratch;
+        self.cx_mut().scratch = scratch;
         read?;
         let Some(head) = head
         else {
             return Ok(Decoded(false));
         };
-        let name = self.name_at(head);
+        let name = self.cx().name_at(head);
         // The head is resolved as the type's own node, which the function
         // declaring the parameter owns.
         let placed = Placed::of(ty, node);
-        let resolved = self.resolve_name(Site { at: placed, ..site }, frame, name)?;
+        let resolved = self
+            .host()
+            .resolve_name(Site { at: placed, ..site }, frame, name)?;
         let Maybe::Present(super::Resolved::Declaration { constant, .. }) = resolved
         else {
             return Ok(Decoded(false));
         };
         Ok(Decoded(
-            self.cx
+            self.cx()
                 .collected
                 .slots
                 .get(usize::from(constant))
@@ -15083,11 +11683,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   claims productivity (`>`), so every call may vary every parameter; the
     ///   last position otherwise. `kept` is the longest run of parameters
     ///   before `staged`, from the first, that every call of `own` under
-    ///   `roots` writes back bare in its own place ([`Self::kept_before`]). The
-    ///   classification sweep checks every claim against `staged`
-    ///   ([`Self::claim`]) and every kept argument against its parameter
-    ///   ([`Self::uniform_descent`]), so a name a binder between the match and
-    ///   the parameter shadows is refused there.
+    ///   `roots` writes back bare in its own place
+    ///   ([`NativeRef::kept_before`]). The classification sweep checks every
+    ///   claim against `staged` ([`NativeRef::claim`]) and every kept argument
+    ///   against its parameter ([`Self::uniform_descent`]), so a name a binder
+    ///   between the match and the parameter shadows is refused there.
     /// - provides: where the function binds its own name: after the kept
     ///   parameters, the ones from `kept` to `staged` its fixpoint's leading
     ///   binders.
@@ -15129,21 +11729,4449 @@ impl<'source> Lowerer<'_, 'source>
         roots: &[NodeIndex],
     ) -> Result<Staging, LoweringRefusal<'source>>
     {
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let found = self.first_claim(own, joint, (parameters, decoded), roots, &mut scratch);
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let found =
+            self.shared()
+                .first_claim(own, joint, (parameters, decoded), roots, &mut scratch);
         let staged = match found {
             Ok(found) => found.unwrap_or_else(|| ParameterAt(parameters.len().saturating_sub(1))),
             Err(refusal) => {
-                self.cx.scratch = scratch;
+                self.cx_mut().scratch = scratch;
                 return Err(refusal);
             },
         };
-        let kept = self.kept_before(own, parameters, roots, staged, &mut scratch);
-        self.cx.scratch = scratch;
+        let kept = self
+            .shared()
+            .kept_before(own, parameters, roots, staged, &mut scratch);
+        self.cx_mut().scratch = scratch;
         Ok(Staging {
             kept: kept?,
             staged,
         })
+    }
+
+    /// How many parameters a recursive call headed by the instantiation
+    /// `head`, read under `frame`, passes unchanged: those before the staged
+    /// one of the recursive function its head names.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form.
+    /// - ensures: the count of the named recursive function's parameters before
+    ///   its staged one when the head's name resolves to the frame binding a
+    ///   recursive function's own name; zero otherwise, where the claim
+    ///   ([`Self::instantiation`]) refuses or the call is a joint sibling's,
+    ///   whose members take no leading parameter.
+    /// - provides: the arguments a descent call leaves out of its application.
+    /// - fails: a fault reading the head's pieces or shape; the allowance
+    ///   refusal from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's or the binder walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call over a uniform leading parameter applies its
+    ///   later arguments alone.
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |leading| leading.0 <= self.cx().parameters.entries().len()))]
+    pub(super) fn leading_parameters(
+        &mut self,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<ParameterAt, LoweringRefusal<'source>>
+    {
+        Ok(ParameterAt(
+            self.instantiated_recursion(frame, head)?
+                .and_then(|binder| self.cx().recursions.get(&binder))
+                .map_or(0, |recursion| {
+                    self.cx().parameters.read(recursion.uniform).len()
+                }),
+        ))
+    }
+
+    /// Lay out a recursive call headed by the instantiation `head` in its
+    /// function's merged telescope's order, passing each entry it omits: an
+    /// implicit and an instance, as the call's arguments `written` give the
+    /// explicit ones.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form read under `frame`;
+    ///   `written` is the call's arguments, the last the operand store holds.
+    /// - ensures: when the head names the recursive function `site` stands in,
+    ///   and `written` holds one argument per explicit parameter of its merged
+    ///   telescope, the operands from `written.start` are one per parameter in
+    ///   the telescope's order: each explicit one the next written argument; an
+    ///   implicit before the fixpoint the function's own, kept in
+    ///   [`Context::kept_implicits`](gandr_surface_lowering_base::lower::Context::kept_implicits)
+    ///   and left out of the application; one past it a hole the call nominates
+    ///   ([`Self::nominate`]), a model implicit one per component
+    ///   ([`Self::pass_model`]); an instance the one of its interface in scope
+    ///   ([`Context::resolved_instance`]). Otherwise nothing changes, and the
+    ///   claim's arity check reads the call ([`Self::uniform_descent`]).
+    /// - fails: [`Context::resolved_instance`]'s, [`Self::nominate`]'s and
+    ///   [`Self::pass_model`]'s refusals; the head's, as
+    ///   [`Self::instantiated_recursion`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a descent under a row that labels a theory's instance
+    ///   passes the function's own instance; a descent under an implicit
+    ///   telescope passes the function's own implicit before its staged
+    ///   parameter.
+    /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
+    /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
+    #[spec(
+        captures: before = self.cx().operands.entries().len(),
+        ensures: |ret| ret.is_err() || self.cx().operands.entries().len() >= before,
+    )]
+    pub(super) fn omitted_entries(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+        written: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(binder) = self.instantiated_recursion(frame, head)?
+        else {
+            return Ok(());
+        };
+        let Some(recursion) = self.cx().recursions.get(&binder).copied()
+        else {
+            return Ok(());
+        };
+        let Maybe::Present(owner) = self.cx().collected.owner_of(site.at.node)
+        else {
+            return Ok(());
+        };
+        let Some(function) = self
+            .cx()
+            .collected
+            .slots
+            .get(usize::from(owner))
+            .filter(|slot| slot.named.node == recursion.named)
+            .map(|slot| slot.name)
+        else {
+            return Ok(());
+        };
+        let Some(Ok(entries)) = self.cx().collected.plicities.get(&owner).cloned()
+        else {
+            return Ok(());
+        };
+        let explicit = entries
+            .iter()
+            .filter(|entry| entry.plicity == crate::module::Plicity::Explicit)
+            .count();
+        if written.end.saturating_sub(written.start) != explicit || explicit == entries.len() {
+            return Ok(());
+        }
+        // The parameters before the fixpoint, which the call leaves out of
+        // its application.
+        let kept = self.cx().parameters.read(recursion.uniform).len();
+        let arguments = self.cx_mut().operands.split_off(At::from(written.start));
+        let mut arguments = arguments.into_iter();
+        let mut place = 0_usize;
+        for entry in entries {
+            if let Some((_, slot)) = self.host().implicit_slot(site, entry)? {
+                let width = slot.components().len();
+                if place < kept {
+                    for _component in 0 .. width {
+                        let cx = self.cx_mut();
+                        let _fresh = cx.kept_implicits.insert(cx.operands.next_key());
+                        cx.operands.push(site.at.node);
+                    }
+                }
+                else {
+                    self.host()
+                        .pass_model(site, frame, (function, entry.name), &slot, None)?;
+                }
+                place = place.saturating_add(width);
+                continue;
+            }
+            match entry.plicity {
+                crate::module::Plicity::Explicit => {
+                    if let Some(argument) = arguments.next() {
+                        self.cx_mut().operands.push(argument);
+                    }
+                },
+                crate::module::Plicity::Implicit if place < kept => {
+                    let cx = self.cx_mut();
+                    let _fresh = cx.kept_implicits.insert(cx.operands.next_key());
+                    cx.operands.push(site.at.node);
+                },
+                crate::module::Plicity::Implicit => {
+                    let hole = self.host().nominate(super::implicit::Nomination::Omitted {
+                        function,
+                        implicit: entry.name,
+                    })?;
+                    let cx = self.cx_mut();
+                    let _first = cx.nominated.insert(cx.operands.next_key(), hole);
+                    cx.operands.push(site.at.node);
+                },
+                crate::module::Plicity::Instance => {
+                    let index = self.cx().resolved_instance(site, frame, function, entry)?;
+                    let cx = self.cx_mut();
+                    let _first = cx.instanced.insert(cx.operands.next_key(), index);
+                    cx.operands.push(site.at.node);
+                },
+            }
+            place = place.saturating_add(1);
+        }
+
+        Ok(())
+    }
+
+    /// The frame binding the recursive function's own name the instantiation
+    /// `head`, read under `frame`, names.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form.
+    /// - ensures: the binder the head's bare name resolves to under `frame`
+    ///   when it keys a recursion; none for a head naming anything else.
+    /// - fails: a fault reading the head's pieces or shape; the allowance
+    ///   refusal from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's or the binder walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::leading_parameters`] and
+    ///   [`Self::parameters_classify`].
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |binder| binder.is_none_or(|binder| self.cx().recursions.contains_key(&binder))))]
+    fn instantiated_recursion(
+        &mut self,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<Option<ScopeId>, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.cx_mut().scratch);
+        let read = read_pieces(self.cx().pbg, self.cx().tree, head.node, &mut scratch);
+        let named = scratch.pieces.iter().find_map(|piece| match *piece {
+            Piece::Operand(operand) => Some(operand),
+            Piece::Tile { .. } => None,
+        });
+        self.cx_mut().scratch = scratch;
+        read?;
+        let Some(named) = named
+        else {
+            return Ok(None);
+        };
+        let Some(name) = self.shared().bare_name(named)?
+        else {
+            return Ok(None);
+        };
+        let cx = self.cx_mut();
+        Ok(match cx.scope.resolve(frame, name, &mut cx.fuel)? {
+            Maybe::Present(bound) if self.cx().recursions.contains_key(&bound.binder) => {
+                Some(bound.binder)
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
+    }
+
+    /// Record that each arm body in `bodies` stands under a match on
+    /// `scrutinee`, read under `frame`, when it names a recursive function's
+    /// parameter; `enclosing` is the record the match itself stands under.
+    ///
+    /// # Specification
+    /// - requires: `bodies` are the match's arm bodies, not yet visited by the
+    ///   classification sweep.
+    /// - ensures: when `scrutinee` is a name written bare that resolves to a
+    ///   recursive function's parameter, every body records that function and
+    ///   that parameter's position, replacing what an enclosing match recorded,
+    ///   unless `enclosing` records the parameter that same function stages:
+    ///   then every body keeps it, so a call under a match on another parameter
+    ///   still descends on the staged one; otherwise nothing changes, so a
+    ///   match on anything else leaves the enclosing match's record in force.
+    /// - provides: the scrutiny the sweep hands down to every node under an
+    ///   arm, which [`NativeRef::claim`] reads.
+    /// - fails: the allowance refusal from the binder walk; a fault reading the
+    ///   scrutinee's shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The binder walk's or the form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`NativeRef::claim`].
+    /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
+    /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
+    #[spec(
+        captures: before = self.cx().scrutinised.len(),
+        ensures: |ret| ret.is_err() || self.cx().scrutinised.len() >= before,
+    )]
+    pub(super) fn scrutinise(
+        &mut self,
+        frame: Frame,
+        scrutinee: Placed,
+        enclosing: Option<Scrutiny>,
+        bodies: impl IntoIterator<Item = NodeIndex>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        if self.cx().staged_parameters.is_empty() {
+            return Ok(());
+        }
+        let Some(written) = self.shared().bare_name(scrutinee)?
+        else {
+            return Ok(());
+        };
+        let cx = self.cx_mut();
+        let Maybe::Present(found) = cx.scope.resolve(frame, written, &mut cx.fuel)?
+        else {
+            return Ok(());
+        };
+        let Some(&scrutiny) = self.cx().staged_parameters.get(&found.binder)
+        else {
+            return Ok(());
+        };
+        let staged = enclosing.filter(|outer| {
+            outer.recursion == scrutiny.recursion
+                && self
+                    .cx()
+                    .recursions
+                    .get(&outer.recursion)
+                    .is_some_and(|held| held.staged == outer.position)
+        });
+        let recorded = staged.unwrap_or(scrutiny);
+        for body in bodies {
+            let _previous = self.cx_mut().scrutinised.insert(body, recorded);
+        }
+
+        Ok(())
+    }
+
+    /// Classify a decoder's own recursion written in the type one of its arms
+    /// returns, `el[<](a)`: the decode of the code the descent call returns.
+    ///
+    /// # Specification
+    /// - requires: `site` is a type application in type position whose head,
+    ///   named `name` at `head`, is followed by `[`; `cursor` stands past it.
+    /// - ensures: the descent `[<]` on a name the frame of a recursive
+    ///   function's fixpoint binds, applied to one argument per parameter with
+    ///   each before the staged one passed as itself, stands as the unquote of
+    ///   that fixpoint called on the staged argument and every one after it,
+    ///   each read as a value inside the type, as a decode's arguments are, at
+    ///   the universe the position reads, and makes the fixpoint claim descent
+    ///   once [`NativeRef::claim`] admits its position; the fixpoint's binder
+    ///   is recorded as mentioned. A call in the body of a lambda among the
+    ///   arguments thus stands as the value it returns, since a type holds no
+    ///   computation for it to run before.
+    /// - provides: the written spelling of an inductive-recursive decode, `(x :
+    ///   el[<](a)) -> -F el[<](b(x))`, whose codomain decodes a code the arm
+    ///   cannot compute before its binder.
+    /// - fails: the misplaced-tile fault for a bracket holding other than `<`;
+    ///   the unadmitted refusal for a head naming no recursive function in
+    ///   scope; the refusals [`Self::uniform_descent`] and [`NativeRef::claim`]
+    ///   raise; the wrong-sort refusal where no type is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The application's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decoder's arm returning a function type whose
+    ///   domain and codomain each decode a descent call, read back as the exact
+    ///   unquotes, and a descent on a name no fixpoint binds, refused as
+    ///   unadmitted.
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
+    pub(super) fn staged_unquote(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        closed(site, &mut cursor, TileName::LESS_THAN)?;
+        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        let start = self.cx().operands.entries().len();
+        arguments(site, &mut cursor, &mut self.cx_mut().operands)?;
+        let written = Stretch {
+            start,
+            end: self.cx().operands.entries().len(),
+        };
+        self.staged_descent(site, name, written)
+    }
+
+    /// Classify a descent `name[<](…)` standing where a type is read, its
+    /// arguments `written` in the operand store: the unquote of the call of the
+    /// recursive function `name`'s fixpoint, as [`Self::staged_unquote`] plans
+    /// the type application and [`Self::typed_call`] the call the expression
+    /// grammar molds inside a quoted type (#3681).
+    ///
+    /// # Specification
+    /// - requires: `site` stands where a type is read; `written` is the
+    ///   arguments the descent is written with, the last the store holds.
+    /// - ensures: as [`Self::staged_unquote`], past its tiles.
+    /// - fails: as [`Self::staged_unquote`], past its tiles.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The descent's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::staged_unquote`], and a descent the
+    ///   expression grammar molds at a quoted path carrier.
+    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
+    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx().plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
+    pub(super) fn staged_descent(
+        &mut self,
+        site: Site,
+        name: SurfaceName<'source>,
+        written: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let from = site.reading.frame();
+        let cx = self.cx_mut();
+        let Maybe::Present(bound) = cx.scope.resolve(from, name, &mut cx.fuel)?
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
+        };
+        let Some(&recursion) = self.cx().recursions.get(&bound.binder)
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
+        };
+        self.shared().claim(site, bound.binder)?;
+        self.uniform_descent(from, recursion, site, self.cx().kept(written))?;
+        if let Some(held) = self.cx_mut().recursions.get_mut(&bound.binder) {
+            held.claimed = Claimed(true);
+        }
+        let leading = self.cx().parameters.read(recursion.uniform).len();
+        let applied = Stretch {
+            start: written.start.saturating_add(leading).min(written.end),
+            end: written.end,
+        };
+        let universe = site.reading.positional_universe();
+        let produced = match universe.sort {
+            GroundSort::Value => Produced::ValueType,
+            GroundSort::Computation => Produced::CompType,
+        };
+        let frame = self.host().require(site, produced)?;
+        let telescope = self.host().name_in_type(site.at.node, bound.binder);
+        let code = Code::Bound {
+            from,
+            binder: bound.binder,
+            telescope,
+        };
+        let kept = self.cx().kept(applied);
+        self.host()
+            .plan_applied(site, Plan::Unquote(code, kept, universe), applied, frame);
+
+        Ok(())
+    }
+
+    /// Join each mutual block's recursive functions into one fixpoint over the
+    /// sum of their domains, each member that fixpoint at its own summand.
+    ///
+    /// **Choice.** The core has one fixpoint former, and the kernel stages a
+    /// fixpoint over a sum of a block's families at the block's one stage, so
+    /// mutual recursion is the joint fixpoint `fix f. λ y. case y { … }` over
+    /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
+    /// sibling `f (inj_j v) c₁ … cₘ`. A member's parameters after its staged
+    /// one stay the lambdas of its branch, so the case stands directly under
+    /// the staged lambda and no branch is re-indexed past them. Members whose
+    /// results differ, or whose types read the staged parameter, share the
+    /// joint at a goal a case over the sum computes ([`joint_goal`]), which
+    /// each arm and each member reads at its own summand (#5036).
+    /// **Alternatives.** A mutual fixpoint former, a new kernel node the
+    /// record declines; a tuple of fixpoints, which no stage relates.
+    /// **Reversal.** A member over leading parameters joins once the joint
+    /// reads a telescope rather than one domain (#5065).
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: in a mutual block of at least two `def rec` declarations,
+    ///   each staging its first parameter and lowered to `thunk (fix. λ. bᵢ)`
+    ///   at `+U (Aᵢ -> Cᵢ)` or `+U ((x : Aᵢ) -> Cᵢ)`, `bᵢ` the lambdas of the
+    ///   later parameters over the body and `Cᵢ` the arrow over their types,
+    ///   every member's body is `thunk (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑
+    ///   }) : G) (injᵢ x))`, each `bᵢ` raised past the case's binder and its
+    ///   copies at the origins of what they copy, every other node the
+    ///   fixpoint's insertion; `G` is `Σᵢ Aᵢ -> C` when every member is a plain
+    ///   arrow to one `C`, and [`joint_goal`] otherwise; the fixpoint claims
+    ///   descent when a member's did. A block with a member that did not lower
+    ///   so is unchanged.
+    /// - provides: mutual recursion between a block's functions as the one
+    ///   fixpoint the core has.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each member's body shape is a term in the sink's
+    ///   arena, which a clause would walk member by member; the witness reads
+    ///   the shapes back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    pub(super) fn mint_joints(
+        &mut self,
+        sink: &mut Sink<'_>,
+    )
+    {
+        let mut joined = Vec::new();
+        for index in self.cx().current.blocks .. self.cx().collected.blocks.len() {
+            let Some(&block) = self.cx().collected.blocks.get(index)
+            else {
+                continue;
+            };
+            let members = self
+                .cx()
+                .collected
+                .recursive
+                .range(block.first .. block.end);
+            let count = members.clone().count();
+            if count < 2 {
+                continue;
+            }
+            joined.clear();
+            for &member in members {
+                match self.shared().joinable(member, sink) {
+                    Maybe::Present(read) => joined.push(read),
+                    Maybe::Absent(_) => break,
+                }
+            }
+            if joined.len() == count {
+                self.join(&joined, sink);
+            }
+        }
+    }
+
+    /// Refuse each member of a mutual block whose call through a sibling
+    /// passes other than one argument per parameter of that sibling.
+    ///
+    /// **Choice.** A member classifies before its later siblings read their
+    /// parameters, so [`Self::instantiation`] holds each call through a sibling
+    /// and this pass counts it once every member is read. Members may take
+    /// different parameters after the first (#5036), so the count is the
+    /// called member's, not the caller's.
+    ///
+    /// # Specification
+    /// - requires: the source is classified and not yet minted.
+    /// - ensures: each held call whose count differs from its called member's
+    ///   parameters refuses its caller with the arity refusal at the call,
+    ///   unless the caller holds a refusal already; the held calls are spent.
+    /// - provides: the arity refusal of a call through a sibling.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause would recount every member's parameters;
+    ///   the witness reads the refusal back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call passing its sibling's parameters lowers, and
+    ///   one passing its caller's count to a sibling of another count refuses.
+    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+    pub(super) fn refuse_sibling_arities(&mut self)
+    {
+        let cx = self.cx_mut();
+        for held in core::mem::take(&mut cx.sibling_calls) {
+            let Some(&Maybe::Present(Half { declaration, .. })) = cx
+                .collected
+                .slots
+                .get(usize::from(held.called))
+                .map(|slot| &slot.definition)
+            else {
+                continue;
+            };
+            let parameters = cx.recursions.iter().find_map(|(&binder, recursion)| {
+                (cx.scope.declared(binder) == Maybe::Present(declaration.node))
+                    .then(|| cx.parameters.read(recursion.parameters).len())
+            });
+            if parameters.is_some_and(|count| OperandCount::from(count) != held.arguments) {
+                let _held = cx
+                    .faults
+                    .entry(held.caller)
+                    .or_insert_with(|| held.call.out(FragmentBoundary::Arity(held.arguments)));
+            }
+        }
+    }
+
+    /// Read each recursive call through the joint of a mutual block holding a
+    /// member the lowering refused as the call it is without the joint, which
+    /// [`Self::mint_joints`] leaves unformed for that block.
+    ///
+    /// **Choice.** Without the joint, a member is its own fixpoint over its own
+    /// domain: a call on itself passes its argument uninjected, and a call
+    /// through a sibling names the sibling's declaration, as a call of a
+    /// declaration outside the block does. The checker then meets the
+    /// refused sibling as a constant it has no type for, and the report reads
+    /// that refusal as the sibling's consequence, a note naming it, rather
+    /// than refusing the injection into a sum the joint never formed (#2340).
+    /// **Alternative.** Refusing every other member at the lowering, which
+    /// needs a refusal of its own for what the cascade cut already reports.
+    ///
+    /// # Specification
+    /// - requires: the source is classified and not yet minted.
+    /// - ensures: every call through a joint ([`Self::instantiation`]) whose
+    ///   block holds a member refused before the mint carries no injection, and
+    ///   one through a sibling member is planned as that member's constant;
+    ///   every other call through a joint is unchanged.
+    /// - provides: a lowered member of such a block typed at its own domain.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause compares the injections and plans before
+    ///   and after, a walk no clause makes; the witness reads the report back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member calling a sibling refused at its head and at
+    ///   its body is not refused by a shape of its own.
+    /// - witness: `lower::native::tests::a_member_beside_a_refused_sibling_calls_its_declaration_2340`
+    pub(super) fn unjoin_refused(&mut self)
+    {
+        let mut unjoined = Vec::new();
+        for (&head, &summand) in &self.cx().injected {
+            let Maybe::Present(owner) = self.cx().collected.owner_of(head)
+            else {
+                continue;
+            };
+            let joint = self.shared().joint(owner);
+            let refused = joint.members.iter().any(|&member| {
+                self.cx().faults.contains_key(&member)
+                    || self
+                        .cx()
+                        .collected
+                        .slots
+                        .get(usize::from(member))
+                        .is_some_and(|slot| matches!(slot.refusal, Maybe::Present(_)))
+            });
+            let Maybe::Present((_, own)) = joint.own
+            else {
+                continue;
+            };
+            if !refused {
+                continue;
+            }
+            let called = if summand == own {
+                None
+            }
+            else {
+                joint
+                    .members
+                    .get(usize::from(summand))
+                    .and_then(|&member| self.cx().collected.slots.get(usize::from(member)))
+                    .map(|slot| slot.constant)
+            };
+            unjoined.push((head, called));
+        }
+        for (head, called) in unjoined {
+            let _injected = self.cx_mut().injected.remove(&head);
+            if let Some(constant) = called
+                && let Some(plan) = self.cx_mut().plans.get_mut(head)
+            {
+                *plan = Plan::Constant(constant);
+            }
+        }
+    }
+
+    /// Mint the joint fixpoint of `joined` and make each member's body that
+    /// fixpoint at its summand, as [`Self::mint_joints`] states.
+    ///
+    /// # Specification
+    /// - requires: `joined` is one block's members in block order, at least
+    ///   two, each read by [`NativeRef::joinable`].
+    /// - ensures: as [`Self::mint_joints`] states for one block.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(requires: joined.len() >= 2)]
+    fn join(
+        &mut self,
+        joined: &[Joinable],
+        sink: &mut Sink<'_>,
+    )
+    {
+        let Some(first) = joined.first()
+        else {
+            return;
+        };
+        let mark = sink.arena.watermark();
+        let mut carried = Vec::new();
+        let domains: Vec<ValueTypeId> = joined.iter().map(|member| member.domain).collect();
+        let sum = sink.arena.value_type_sum(&domains);
+        let shared = joined.iter().all(|member| {
+            matches!(
+                sink.arena.comp_type(member.arrow),
+                Some(&CompType::Arrow { .. })
+            ) && gandr_core_term::equal_comp_type_syntax(
+                sink.arena,
+                member.codomain,
+                first.codomain,
+            ) == gandr_core_term::CertificateEquality::Equal
+        });
+        let ascribed = if shared {
+            sink.arena.comp_type_arrow(sum, first.codomain)
+        }
+        else {
+            joint_goal(sink, joined, sum, &mut carried)
+        };
+        // Each member's body stands under its own fixpoint binder and its
+        // parameter; in the joint it stands under the fixpoint binder, the
+        // case's scrutinee and the summand the case binds.
+        let mut branches = Vec::with_capacity(joined.len());
+        for member in joined {
+            branches.push(
+                gandr_core_term::shift_computation_under(
+                    sink.arena,
+                    member.branch,
+                    Binders::ONE,
+                    Binders::ONE,
+                )
+                .settle_traced(sink.arena, &mut carried),
+            );
+        }
+        let evidence = if joined
+            .iter()
+            .any(|member| member.evidence == FixpointEvidence::StructuralDescent)
+        {
+            FixpointEvidence::StructuralDescent
+        }
+        else {
+            FixpointEvidence::Partial
+        };
+        let scrutinee = sink
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let case = sink.arena.computation_case(scrutinee, &branches);
+        let lambda = sink.arena.computation_lambda(case);
+        let fixpoint = sink.arena.computation_fixpoint(lambda, evidence);
+        let joint = sink.arena.computation_ascribe(fixpoint, ascribed);
+        record_copied_since(
+            sink,
+            mark,
+            first.origin.inserted(Insertion::Joint),
+            Maybe::Absent(rooted::Absent::Unminted),
+            &carried,
+        );
+        for (at, member) in joined.iter().enumerate() {
+            let inserted = member.origin.inserted(Insertion::Fixpoint);
+            let own = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            sink.origins.record_value(own, inserted);
+            let injected = sink.arena.value_injection(Summand::from(at), own);
+            sink.origins.record_value(injected, inserted);
+            let applied = sink.arena.computation_application(joint, injected);
+            sink.origins.record_computation(applied, inserted);
+            let lambda = sink.arena.computation_lambda(applied);
+            sink.origins.record_computation(lambda, inserted);
+            let thunk = sink.arena.value_thunk(lambda);
+            sink.origins
+                .record_value(thunk, member.origin.inserted(Insertion::Thunk));
+            if let Some(lowered) = self.cx_mut().lowered.get_mut(member.declaration) {
+                *lowered = Maybe::Present(Lowered::Function {
+                    signature: Maybe::Present(member.signature),
+                    body: thunk,
+                });
+            }
+        }
+    }
+}
+
+/// The goal of a joint whose members' results differ: `Π (y : sum).
+/// El(⟨case y { return ⌜C₀⌝ | … | return ⌜Cₙ⌝ }⟩)`, each `Cᵢ` member `i`'s
+/// result with its parameter read as the summand the case binds.
+///
+/// **Choice.** The decode reads at each summand to that member's own result,
+/// in the checker and in the kernel, since a case on the joint's binder reads
+/// its goal at each injection (#5036). The motive is a case returning codes,
+/// so no declaration is minted for it.
+/// **Alternative.** A motive minted as a declaration of its own, which needs a
+/// constant and a slot the block does not have.
+///
+/// # Specification
+/// - requires: `joined` is one block's members, each read by
+///   [`NativeRef::joinable`], and `sum` the sum of their domains.
+/// - ensures: the dependent arrow above, its case ascribed at `F U_c 0`; a
+///   dependent member's result is raised past the case's scrutinee, and a plain
+///   one's past the scrutinee and the summand. The copies are traced into
+///   `carried`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Joint`].
+/// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
+#[spec(ensures: |ret| matches!(sink.arena.comp_type(ret), Some(&CompType::Pi { domain, .. }) if domain == sum))]
+fn joint_goal(
+    sink: &mut Sink<'_>,
+    joined: &[Joinable],
+    sum: ValueTypeId,
+    carried: &mut Vec<Carried>,
+) -> CompTypeId
+{
+    let mut arms = Vec::with_capacity(joined.len());
+    for member in joined {
+        let (under, amount) = if matches!(
+            sink.arena.comp_type(member.arrow),
+            Some(&CompType::Pi { .. })
+        ) {
+            (Binders::ONE, Binders::ONE)
+        }
+        else {
+            (Binders::NONE, Binders::from(2_u32))
+        };
+        let result =
+            gandr_core_term::shift_comp_type_under(sink.arena, member.codomain, under, amount)
+                .settle_traced(sink.arena, carried);
+        let code = sink.arena.value_quote_computation(result);
+        arms.push(sink.arena.computation_return(code));
+    }
+    let scrutinee = sink
+        .arena
+        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let motive = sink.arena.computation_case(scrutinee, &arms);
+    let codes = sink.arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Computation),
+        Level::zero(),
+    );
+    let codes = sink.arena.comp_type_returner(codes);
+    let motive = sink.arena.computation_ascribe(motive, codes);
+    let code = sink.arena.value_returned(motive);
+    let goal = sink.arena.comp_type_element(code, Level::zero());
+    sink.arena.comp_type_pi(sum, goal)
+}
+
+/// Whether a rule side binds its variables or reads the left side's.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Binding
+{
+    /// The left side: a variable's first occurrence takes the next ordinal.
+    Binds,
+    /// The right side: a variable reads the ordinal the left side gave it.
+    Reads,
+}
+
+/// Which applications of a rule side apply the generators it is read over.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Heads
+{
+    /// A data declaration's constructors: an operation is another reading's.
+    Constructors,
+    /// A theory's operations, each the constructor of its terms: a
+    /// constructor is no operation of the theory.
+    Operations,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rule side is not a presented type's.
+    pub(crate) mod rule_side {
+        /// The reason the side was passed over.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub(crate) enum Absent {
+            /// It applies what is no generator: an operation of a family, a
+            /// constructor of a theory, a results tuple, or a generator `names`
+            /// does not hold.
+            Foreign,
+            /// Its right side names a variable its left side does not bind.
+            Unbound,
+        }
+    }
+}
+
+/// One rule side in pre-order over the generators `names`, the applications
+/// `heads` names, its variables numbered through `variables`.
+///
+/// # Specification
+/// - requires: `variables` holds the left side's variables when `binding` reads
+///   them.
+/// - ensures: one node per term node, a generator by its position in `names`
+///   and a variable by its position in `variables` — appended there on its
+///   first occurrence when `binding` binds.
+/// - fails: [`rule_side::Absent::Foreign`] for an application `heads` does not
+///   name, a results tuple, an instantiation or a generator `names` does not
+///   hold; [`rule_side::Absent::Unbound`] for a variable a reading side meets
+///   unbound.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: the `while let` worklist, not recursion.
+/// - measure: the term nodes still to visit.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`NativeRef::presentation`] and
+///   [`NativeRef::term_rules`].
+/// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
+/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(ref nodes) => !nodes.is_empty(),
+    Maybe::Absent(_) => true,
+})]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `variables` holds one rule side's variables and `names` one family's constructors"
+    )
+)]
+fn rule_side(
+    side: &gandr_theory_levitation::FreeTerm,
+    names: &[SourceFragment<'_>],
+    variables: &mut Vec<gandr_theory_levitation::Name>,
+    binding: Binding,
+    heads: Heads,
+) -> Maybe<alloc::boxed::Box<[gandr_core_term::RuleNode]>, rule_side::Absent>
+{
+    let mut nodes = Vec::new();
+    let mut pending = Vec::from([side.to_node()]);
+    while let Some(node) = pending.pop() {
+        match (node.view(), heads) {
+            (gandr_theory_levitation::TermView::Var(name), _) => {
+                let position = match variables.iter().position(|bound| bound == name) {
+                    Some(position) => position,
+                    None if binding == Binding::Binds => {
+                        variables.push(name.clone());
+                        variables.len().saturating_sub(1)
+                    },
+                    None => return Maybe::Absent(rule_side::Absent::Unbound),
+                };
+                let Ok(ordinal) = u32::try_from(position)
+                else {
+                    return Maybe::Absent(rule_side::Absent::Unbound);
+                };
+                nodes.push(gandr_core_term::RuleNode::Variable(
+                    gandr_core_term::RuleVariable::from(ordinal),
+                ));
+            },
+            (gandr_theory_levitation::TermView::Ctor { name, args }, Heads::Constructors)
+            | (gandr_theory_levitation::TermView::Op { name, args }, Heads::Operations) => {
+                let Some(tag) = names
+                    .iter()
+                    .position(|&written| <&str>::from(written) == name.as_ref())
+                else {
+                    return Maybe::Absent(rule_side::Absent::Foreign);
+                };
+                nodes.push(gandr_core_term::RuleNode::Constructor(
+                    ConstructorTag::from(tag),
+                ));
+                let mark = pending.len();
+                pending.extend(args);
+                if let Some(children) = pending.get_mut(mark ..) {
+                    children.reverse();
+                }
+            },
+            (
+                gandr_theory_levitation::TermView::Op { .. }
+                | gandr_theory_levitation::TermView::Ctor { .. }
+                | gandr_theory_levitation::TermView::Results { .. }
+                | gandr_theory_levitation::TermView::Inst { .. }
+                | gandr_theory_levitation::TermView::Abs { .. }
+                | gandr_theory_levitation::TermView::Atom(_)
+                | gandr_theory_levitation::TermView::Lam { .. }
+                | gandr_theory_levitation::TermView::Bound(_),
+                _,
+            ) => {
+                return Maybe::Absent(rule_side::Absent::Foreign);
+            },
+        }
+    }
+    Maybe::Present(nodes.into_boxed_slice())
+}
+
+impl<'source> NativeRef<'_, '_, 'source>
+{
+    /// What the bare name `name`, written at `site`, answers among the
+    /// constructors the site sees, and the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: the type-place absence when `site` is a data family's
+    ///   argument at a parameter or index the family declares a universe;
+    ///   otherwise, when the site's source declares the name, what
+    ///   [`Collected::bare_constructor`] answers among its constructors whose
+    ///   family is admitted strictly before the site's declaration and stands
+    ///   in a container enclosing it; else what the source's unqualified
+    ///   imports answer, with the import, under the same test; the unnamed
+    ///   absence when nothing answers.
+    /// - fails: [`Ambiguity`] for two imports binding the name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name one family declares answers its constructor, a
+    ///   name two families declare answers both, and a name two imports bind is
+    ///   their ambiguity.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present((Bare::Several { first, second, .. }, _))) if first.family >= second.family))]
+    fn bare_named(
+        &self,
+        site: Site,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(Bare, Option<ByteSpan>), constructed::Absent>, Ambiguity>
+    {
+        let Maybe::Present(own) = self.cx.collected.owner_of(site.at.node)
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        // No constructor is a value of a universe, so an argument at a place
+        // its data family declares one names a type.
+        if let Some(&argued) = self.cx.argued.get(&site.at.node)
+            && let Some(form) = self.cx.collected.data.get(argued.form)
+            && let Some(classifier) = argued.place.checked_sub(form.parameters.len()).map_or_else(
+                || {
+                    form.parameters
+                        .get(argued.place)
+                        .map(|parameter| parameter.classifier)
+                },
+                |index| form.indices.get(index).map(|index| index.ty),
+            )
+            && self.cx.tree.node(classifier.node).is_some_and(|node| {
+                matches!(
+                    shape_of(self.cx.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::Universe,
+                        ..
+                    })
+                )
+            })
+        {
+            return Ok(Maybe::Absent(constructed::Absent::TypePlace));
+        }
+        let source = self.cx.collected.unit.source_at(site.at.span.start());
+        let seen = |found: &Constructor| {
+            found.family < own && self.encloses(found.family, own) != Encloses(false)
+        };
+        if self
+            .cx
+            .collected
+            .constructors_in(source, name)
+            .next()
+            .is_some()
+        {
+            return Ok(self
+                .cx
+                .collected
+                .bare_constructor(source, name, seen)
+                .map_or(Maybe::Absent(constructed::Absent::Unnamed), |bare| {
+                    Maybe::Present((bare, None))
+                }));
+        }
+        let Maybe::Present((bare, import)) =
+            self.cx.collected.imported_constructor(source, name)?
+        else {
+            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+        };
+        let shown = match bare {
+            Bare::One(found) => seen(&found),
+            Bare::Several { first, second, .. } => seen(&first) && seen(&second),
+        };
+        Ok(if shown {
+            Maybe::Present((bare, Some(import)))
+        }
+        else {
+            Maybe::Absent(constructed::Absent::Unnamed)
+        })
+    }
+
+    /// The refusal of the bare constructor name `name`, written at `span`
+    /// inside `site`, that selects no one constructor.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's node or the form holding it.
+    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
+    ///   the first two families and the count of the rest, when
+    ///   [`Self::bare_named`] answers several;
+    ///   [`LoweringRefusal::ImportShadows`] at `span`, naming both imports,
+    ///   when two imports bind the name; [`LoweringRefusal::UnresolvedName`] at
+    ///   `span` otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name two families share is refused naming both, and
+    ///   a name two imports bind is refused naming both imports.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    /// - witness: `tests::namespace::a_constructor_two_imports_bind_is_refused_at_its_use_2713`
+    #[spec(ensures: |ret| matches!(ret,
+        LoweringRefusal::AmbiguousConstructor { span: at, .. }
+        | LoweringRefusal::ImportShadows { span: at, .. }
+        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
+    pub(super) fn unselected(
+        &self,
+        site: Site,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> LoweringRefusal<'source>
+    {
+        match self.bare_named(site, name) {
+            Ok(Maybe::Present((
+                Bare::Several {
+                    first,
+                    second,
+                    more,
+                },
+                _,
+            ))) => self.ambiguous_constructor(span, name, first, second, more),
+            Err(ambiguity) => LoweringRefusal::ImportShadows {
+                span,
+                name,
+                import: ambiguity.import,
+                other: ambiguity.other,
+            },
+            Ok(Maybe::Present((Bare::One(_), _)) | Maybe::Absent(_)) => {
+                LoweringRefusal::UnresolvedName { span, name }
+            },
+        }
+    }
+
+    /// The refusal of the bare constructor name `name` at `span`, which the
+    /// families of `first` and `second` declare, and `more` families after
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: `first`'s family's slot precedes `second`'s.
+    /// - ensures: [`LoweringRefusal::AmbiguousConstructor`] at `span`, naming
+    ///   the two families and the count of the rest;
+    ///   [`LoweringRefusal::UnresolvedName`] at `span` when the collection
+    ///   holds no slot for either family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name two families share is refused naming both.
+    /// - witness: `lower::native::tests::a_bare_name_two_families_declare_is_refused_naming_both_2713`
+    #[spec(ensures: |ret| matches!(ret,
+        LoweringRefusal::AmbiguousConstructor { span: at, .. }
+        | LoweringRefusal::UnresolvedName { span: at, .. } if at == span))]
+    pub(super) fn ambiguous_constructor(
+        &self,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+        first: Constructor,
+        second: Constructor,
+        more: CandidateCount,
+    ) -> LoweringRefusal<'source>
+    {
+        let family = |found: Constructor| {
+            self.cx
+                .collected
+                .slots
+                .get(usize::from(found.family))
+                .map(|entry| entry.name)
+        };
+        match (family(first), family(second)) {
+            (Some(first), Some(second)) => LoweringRefusal::AmbiguousConstructor {
+                span,
+                name,
+                first,
+                second,
+                more,
+            },
+            (None, _) | (_, None) => LoweringRefusal::UnresolvedName { span, name },
+        }
+    }
+
+    /// Whether the container the slot `family` stands in encloses the
+    /// declaration at `own`: the top level encloses every declaration of its
+    /// source, and a module's body its own members and those of the modules
+    /// nested in it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: enclosing for a family at a top level, or one in a module the
+    ///   container chain outward from `own`'s container reaches; not for a
+    ///   family in a module the chain does not reach, and for slots the
+    ///   collection does not hold.
+    /// - provides: the scope of a module family's bare constructors.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step moves from a module to the container it was opened in; the
+    /// containers form a tree rooted at a top level, so the walk ends there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's bare constructor names inside the module
+    ///   and names nothing at the top level.
+    /// - witness: `tests::modules::a_module_member_family_is_named_through_the_module_4298`
+    #[spec(ensures: |ret| ret.0
+        || !matches!(
+            self.cx.collected.slots.get(usize::from(family)).map(|entry| entry.container),
+            Some(Container::TopLevel(_))
+        )
+        || self.cx.collected.slots.get(usize::from(own)).is_none())]
+    fn encloses(
+        &self,
+        family: SlotIndex,
+        own: SlotIndex,
+    ) -> Encloses
+    {
+        let container = |slot: SlotIndex| {
+            self.cx
+                .collected
+                .slots
+                .get(usize::from(slot))
+                .map(|entry| entry.container)
+        };
+        let (Some(stands), Some(mut here)) = (container(family), container(own))
+        else {
+            return Encloses(false);
+        };
+        if let Container::TopLevel(_) = stands {
+            return Encloses(true);
+        }
+        loop {
+            if here == stands {
+                return Encloses(true);
+            }
+            let Container::Module(module) = here
+            else {
+                return Encloses(false);
+            };
+            let Some(outer) = self
+                .cx
+                .collected
+                .structures
+                .get(usize::from(module))
+                .map(|structure| structure.container)
+            else {
+                return Encloses(false);
+            };
+            here = outer;
+        }
+    }
+
+    /// Whether the family of `constructor` takes neither parameters nor
+    /// indices, and so classifies its constructors alone.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn classifies_alone(
+        &self,
+        constructor: Constructor,
+    ) -> Alone
+    {
+        Alone(match constructor.form {
+            Generators::Written(form) => {
+                self.cx.collected.data.get(form).is_none_or(|written| {
+                    written.parameters.is_empty() && written.indices.is_empty()
+                })
+            },
+            Generators::Presentation | Generators::Words(_) | Generators::Terms(_) => true,
+        })
+    }
+
+    /// The first words whose point `base` spells, wrapped in `wraps`
+    /// reflexivities, with the slot the words take and the point's written
+    /// nodes.
+    ///
+    /// # Specification
+    /// - requires: `base` stands inside `wraps` `Path.here` calls, and it is
+    ///   none itself.
+    /// - ensures: the position of the first collected words whose wrapping is
+    ///   `wraps` and whose point `base` spells as a closed term over their
+    ///   family's constructors, as the words' declaring source names them;
+    ///   their slot; the point's written nodes in pre-order. None when no words
+    ///   are at `base`.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::looped_point`] and
+    ///   [`Lowerer::stated_words`].
+    /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::a_here_pattern_reads_the_words_its_stated_type_names_6805`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.as_ref().is_none_or(|spelled| spelled.words < self.cx.collected.words.len() && !spelled.written.is_empty())))]
+    fn spelled_words(
+        &self,
+        base: Placed,
+        wraps: gandr_kernel_term::Reflexivities,
+    ) -> Result<Option<SpelledWords>, LoweringRefusal<'source>>
+    {
+        for (index, words) in self.cx.collected.words.iter().enumerate() {
+            if words.reflexivities != wraps {
+                continue;
+            }
+            let family = Generators::Written(words.family);
+            let Some(declared) = self.cx.collected.slots.get(usize::from(words.slot))
+            else {
+                continue;
+            };
+            let source = self
+                .cx
+                .collected
+                .unit
+                .source_at(declared.named.span.start());
+            let tag_of = |name: SourceFragment<'source>| {
+                self.cx
+                    .collected
+                    .constructors_in(source, SurfaceName::from(name))
+                    .find(|constructor| constructor.form == family)
+                    .map(|constructor| (constructor.tag, constructor.arity))
+            };
+            if let Maybe::Present(term) = closed_term(self.cx.pbg, self.cx.tree, base, &tag_of)?
+                && term.nodes == words.point
+            {
+                return Ok(Some(SpelledWords {
+                    words: index,
+                    slot: words.slot,
+                    written: term.written,
+                }));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// The number of parameters of the data family declared at `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the parameter count of the data declaration whose slot takes
+    ///   `constant`, and none for `Theory`; the undeclared absence for any
+    ///   other declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family and a value declaration separate the hit
+    ///   from the miss.
+    /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
+    /// - witness: `lower::native::tests::the_presentation_code_names_its_family_where_a_type_is_read`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.cx.collected.slots.get(usize::from(constant)).is_some())]
+    pub(super) fn data_family(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<OperandCount, family::Absent>
+    {
+        match self
+            .cx
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        {
+            Some(Maybe::Present(Half {
+                operand: Operand::Data(form),
+                ..
+            })) => self.cx.collected.data.get(form).map_or(
+                Maybe::Absent(family::Absent::Undeclared),
+                |written| {
+                    Maybe::Present(OperandCount::from(
+                        written
+                            .parameters
+                            .len()
+                            .saturating_add(written.indices.len()),
+                    ))
+                },
+            ),
+            Some(Maybe::Present(Half {
+                operand: Operand::Code,
+                ..
+            })) => Maybe::Present(OperandCount::from(0_usize)),
+            _ => Maybe::Absent(family::Absent::Undeclared),
+        }
+    }
+
+    /// The number of parameters of the codata family declared at `constant`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the parameter count of the codata declaration whose slot
+    ///   takes `constant`; the undeclared absence for any other declaration.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata family and a data family beside it separate
+    ///   the hit from the miss.
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || self.cx.collected.slots.get(usize::from(constant)).is_some())]
+    pub(super) fn codata_family(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<OperandCount, family::Absent>
+    {
+        let Some(slot) = self.cx.collected.slots.get(usize::from(constant))
+        else {
+            return Maybe::Absent(family::Absent::Undeclared);
+        };
+        match self.cx.collected.descriptions.get(&slot.introduced_by.node) {
+            Maybe::Present(entry) if entry.description.polarity == DeclPolarity::Codata => {
+                Maybe::Present(OperandCount::from(entry.parameters.len()))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(family::Absent::Undeclared),
+        }
+    }
+
+    /// Whether some leaf of the syntax under `node` spells one of `names`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: spelled exactly when a node under `node`, `node` itself
+    ///   included, has no child and covers the bytes of a name in `names`;
+    ///   unspelled when `names` is empty.
+    /// - provides: a conservative reading of whether a written type names a
+    ///   binder: a name bound inside the type and spelled alike counts too.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — restating it walks the subtree again.
+    ///
+    /// # Termination
+    /// Each round pops one node and pushes its children, which sit strictly
+    /// above it in the tree's layout, so the walk visits each node of the
+    /// finite subtree once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field typed by the field before it, and one typed
+    ///   by a closed type, separate the two answers.
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `names` holds the fields before one constructor's field"
+        )
+    )]
+    fn spells_any(
+        &self,
+        node: NodeIndex,
+        names: &[SurfaceName<'source>],
+    ) -> Spelled
+    {
+        if names.is_empty() {
+            return Spelled(false);
+        }
+        let mut pending = Vec::from([node]);
+        while let Some(at) = pending.pop() {
+            let mut children = self.cx.tree.children(at).peekable();
+            if children.peek().is_none()
+                && self.cx.tree.fragment(at).is_some_and(|spelled| {
+                    names.iter().any(|name| name.as_ref() == spelled.as_ref())
+                })
+            {
+                return Spelled(true);
+            }
+            pending.extend(children);
+        }
+        Spelled(false)
+    }
+
+    /// The arm `arm`, then each arm the answer was passed into before it, from
+    /// the innermost out.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `arm`'s reading first when it is stored, then each stored
+    ///   reading's outer arm in turn while it stands before the one naming it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each step moves to a position strictly before the last, so the walk
+    /// ends within the store's length.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match two arms deep reads the answer at both arms'
+    ///   constructors.
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| ret.len() <= self.cx.arms.entries().len())]
+    fn arms_outward(
+        &self,
+        arm: Maybe<ArmIndex, passed::Absent>,
+    ) -> Vec<&ArmReading>
+    {
+        let mut chain = Vec::new();
+        let mut next = arm;
+        let mut bound = self.cx.arms.mark();
+        while let Maybe::Present(at) = next
+            && let Some(position) = self.cx.arms.position(at)
+            && position < bound
+            && let Some(reading) = self.cx.arms.get(at)
+        {
+            chain.push(reading);
+            bound = position;
+            next = reading.outer;
+        }
+        chain
+    }
+
+    /// Each of `loops`' arms as the loop its case owes and the arm's place
+    /// after the match's `first` constructor arms.
+    ///
+    /// # Specification
+    /// - requires: `loops` is what [`Self::loop_arms`] ordered.
+    /// - ensures: one pair for each arm, in order: the arm's words by their
+    ///   declaration's constant, its generator as the cell, and `first` plus
+    ///   its place; nothing when an arm's words name no slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm names the circle's words and
+    ///   cell 0, after the point's arm.
+    /// - witness: `lower::native::tests::a_match_over_the_circle_covers_its_loop_5104`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|owed| owed.len() == loops.len()))]
+    fn owed_loops(
+        &self,
+        loops: &[LoopArm],
+        first: ArmAt,
+    ) -> Option<Vec<(Loop, ArmAt)>>
+    {
+        loops
+            .iter()
+            .enumerate()
+            .map(|(place, arm)| {
+                let words = self.cx.collected.words.get(arm.words)?;
+                let constant = self
+                    .cx
+                    .collected
+                    .slots
+                    .get(usize::from(words.slot))?
+                    .constant;
+                Some((
+                    Loop::new(constant, CellIndex::from(arm.generator)),
+                    ArmAt(first.0.saturating_add(place)),
+                ))
+            })
+            .collect()
+    }
+
+    /// The loop arms `written` of the match at `site`, in the order the loop
+    /// branches of the tree `tests`' root follow its constructors' branches.
+    ///
+    /// # Specification
+    /// - requires: `tests` is the match's compiled tree and `written` its loop
+    ///   arms, in source order.
+    /// - ensures: none for no loop arm; otherwise one arm per cell of the root
+    ///   switch's sort, loops and cells above dimension one alike, words by
+    ///   their position among the collected words and cells in written order.
+    /// - fails: [`LoweringRefusal::NonExhaustiveMatch`] when the root is no
+    ///   switch on the scrutinee's constructors or a cell of its sort has no
+    ///   arm; [`LoweringRefusal::DuplicateDefinition`] at a cell's second arm;
+    ///   the wrong-sort refusal at an arm for a cell of another sort.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm follows its point's branch, and
+    ///   a loop arm over a case with no loop arm owed is refused.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(captures: count = written.len(), ensures: |ret| ret.as_ref().map_or(true, |ordered| ordered.len() <= count))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `owed` holds the loop arms one family's words declare"
+        )
+    )]
+    fn loop_arms(
+        &self,
+        site: Site,
+        tests: &[Test],
+        written: Vec<LoopArm>,
+    ) -> Result<Vec<LoopArm>, LoweringRefusal<'source>>
+    {
+        let sort_of = |words: &WordsForm| {
+            self.cx
+                .collected
+                .data
+                .get(words.family)
+                .and_then(|form| self.cx.collected.slots.get(usize::from(form.slot)))
+                .map(|slot| slot.constant)
+        };
+        let root = match tests.first() {
+            Some(&Test::Data {
+                level,
+                family: Maybe::Present(family),
+                ..
+            }) if level == TreeLevel::default() => Some(family),
+            _ => None,
+        };
+        if written.is_empty() {
+            return Ok(written);
+        }
+        let uncovered = LoweringRefusal::NonExhaustiveMatch { span: site.at.span };
+        let Some(family) = root
+        else {
+            return Err(uncovered);
+        };
+        let mut owed = Vec::new();
+        for (index, words) in self.cx.collected.words.iter().enumerate() {
+            if sort_of(words) == Some(family) {
+                owed.extend((0 .. words.loops.len()).map(|generator| (index, generator)));
+            }
+        }
+        if let Some(stray) = written
+            .iter()
+            .find(|arm| !owed.contains(&(arm.words, arm.generator)))
+        {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: stray.named.span,
+                form: FormName::MATCH,
+                sort: site.reading.sort(),
+                boundary: FragmentBoundary::WrongSort,
+            });
+        }
+        let mut ordered = Vec::with_capacity(owed.len());
+        for &(words, generator) in &owed {
+            let mut matching = written
+                .iter()
+                .filter(|arm| arm.words == words && arm.generator == generator);
+            let Some(&arm) = matching.next()
+            else {
+                return Err(uncovered);
+            };
+            if let Some(again) = matching.next() {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: again.named.span,
+                    name: SurfaceName::from(self.text_at(again.named)),
+                    first: arm.named.span,
+                });
+            }
+            ordered.push(arm);
+        }
+
+        Ok(ordered)
+    }
+
+    /// The binder the name written at `at` makes, numbered into `named`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a pattern name or a punned label of one pattern.
+    /// - ensures: the binder of the next arm variable.
+    /// - fails: [`LoweringRefusal::DuplicateDefinition`] for a name already
+    ///   bound in the pattern.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a name and a punned label each bind once.
+    /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
+    #[spec(captures: before = named.len(), ensures: |ret| ret.is_err() || (named.len() == before.saturating_add(1) && matches!(ret, Ok(Matcher::Binder(variable)) if variable.0 == before)))]
+    fn binder(
+        &self,
+        at: Placed,
+        named: &mut Vec<Placed>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let spelled = self.text_at(at);
+        if let Some(&earlier) = named
+            .iter()
+            .find(|&&binder| self.text_at(binder) == spelled)
+        {
+            return Err(LoweringRefusal::DuplicateDefinition {
+                span: at.span,
+                name: SurfaceName::from(spelled),
+                first: earlier.span,
+            });
+        }
+        named.push(at);
+
+        Ok(Matcher::Binder(VariableAt(named.len().saturating_sub(1))))
+    }
+
+    /// The port of the multi-output constructor `ported` whose output is
+    /// named `output`, as a constructor of its family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the generator among `ported`'s ports whose output tile spells
+    ///   `output`, at its tag, with the constructor's arity and name tile; the
+    ///   unnamed absence when no port spells it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::port`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(port) => port.tag >= ported.first && port.tag < ported.first.saturating_add(ported.count),
+        Maybe::Absent(_) => true,
+    })]
+    fn port_of(
+        &self,
+        ported: Ported,
+        output: SurfaceName<'source>,
+    ) -> Maybe<Constructor, constructed::Absent>
+    {
+        let Generators::Written(form) = ported.form
+        else {
+            return Maybe::Absent(constructed::Absent::Unnamed);
+        };
+        let tag = self.cx.collected.data.get(form).and_then(|data| {
+            (ported.first .. ported.first.saturating_add(ported.count)).find(|&tag| {
+                data.generators.get(tag).is_some_and(|generator| {
+                    matches!(generator.port, Maybe::Present(port) if self.name_at(port) == output)
+                })
+            })
+        });
+        tag.map_or(Maybe::Absent(constructed::Absent::Unnamed), |tag| {
+            Maybe::Present(Constructor {
+                family: ported.family,
+                form: ported.form,
+                tag,
+                arity: ported.arity,
+                named: ported.named,
+            })
+        })
+    }
+
+    /// The shape of the constructor pattern at `here`, `found` the constructor
+    /// resolved for the name spelled at `head`, its field patterns `fields`
+    /// allocated and queued.
+    ///
+    /// # Specification
+    /// - requires: `here` is a constructor pattern; `found` is the resolution
+    ///   of the name at `head`, under the family written before it when one is.
+    /// - ensures: the constructor, its fields a fresh stretch of the part
+    ///   store, each field queued on `work` after its slot is allocated.
+    /// - fails: the unresolved-name refusal when `found` is absent; the arity
+    ///   refusal for other than its arity.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::pattern`].
+    /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(fields.len()))]
+    fn constructor_pattern(
+        &self,
+        here: Site,
+        head: Placed,
+        found: Maybe<Constructor, constructed::Absent>,
+        fields: &[Placed],
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let name = SurfaceName::from(self.text_at(head));
+        let constructor = match found {
+            Maybe::Present(constructor) => constructor,
+            Maybe::Absent(constructed::Absent::Several | constructed::Absent::Shadowed) => {
+                return Err(self.unselected(here, head.span, name));
+            },
+            Maybe::Absent(constructed::Absent::Unnamed | constructed::Absent::TypePlace) => {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: head.span,
+                    name,
+                });
+            },
+        };
+        if fields.len() != constructor.arity {
+            return Err(here.out(FragmentBoundary::Arity(OperandCount::from(fields.len()))));
+        }
+        let queued: Vec<Queued> = fields
+            .iter()
+            .map(|&field| Queued {
+                at: field,
+                slot: UNWRITTEN,
+                stated: Maybe::Absent(binder_type::Absent::Untyped),
+                related: Maybe::Absent(related::Absent::Otherwise),
+                punned: Punned(false),
+            })
+            .collect();
+
+        Ok(Matcher::Constructor {
+            form: constructor.form,
+            tag: constructor.tag,
+            fields: allocated(patterns, work, &queued),
+        })
+    }
+
+    /// The carrier and the point of `words`: the family's type, and the closed
+    /// term the point spells over it, before any wrapping in reflexivity
+    /// ([`wrapped_point`] wraps them).
+    ///
+    /// # Specification
+    /// - requires: `words` is an entry of the collection's words list.
+    /// - ensures: the family's type without arguments, and the point as
+    ///   [`spelled_point`] mints it over that type.
+    /// - provides: with [`wrapped_point`], the path type `Path[.A =
+    ///   carrier](point, point)` a word at that point stands at, for the words'
+    ///   own binding and for a derived operation reading its path's type.
+    /// - fails: the unminted absence for words over a family the collection
+    ///   does not hold, or a point that spells nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::mint_words`], and a derived operation
+    ///   over a word.
+    /// - witness: `lower::native::tests::a_loop_mints_the_words_at_its_point`
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((carrier, point)) => arena.value_type(carrier).is_some() && arena.value(point).is_some(),
+        | Maybe::Absent(_) => true,
+    })]
+    pub(super) fn words_point(
+        &self,
+        arena: &mut CoreArena,
+        words: &WordsForm,
+    ) -> Maybe<(ValueTypeId, ValueId), lowered::Absent>
+    {
+        let Some(form) = self.cx.collected.data.get(words.family)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let Some(family) = self.cx.collected.slots.get(usize::from(form.slot))
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let carrier = arena.value_type_data(family.constant, Vec::new());
+        let arities: Vec<gandr_kernel_term::FieldCount> = form
+            .generators
+            .iter()
+            .map(|generator| gandr_kernel_term::FieldCount::from(generator.fields.len()))
+            .collect();
+        let mut minted = Vec::new();
+        spelled_point(
+            arena,
+            (family.constant, carrier),
+            (&words.point, &arities),
+            &mut minted,
+        )
+        .map(|point| (carrier, point))
+    }
+
+    /// The words a constant is a word of: a loop's, or the words' own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry of the collection's words list whose slot or one of
+    ///   whose loops' slots `constant` is.
+    /// - fails: [`worded::Absent::Unworded`] for any other constant.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the loop and the empty word read at their words, and
+    ///   a function at none.
+    /// - witness: `lower::identity::tests::a_derived_operation_synthesises_its_path_at_the_words`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(
+        self.cx.collected.slots.get(usize::from(constant)).map(|slot| slot.definition),
+        Some(Maybe::Present(Half { operand: Operand::Loop { .. } | Operand::Words(_), .. }))
+    ))]
+    pub(super) fn words_at(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<&WordsForm, worded::Absent>
+    {
+        let Some(Maybe::Present(Half {
+            operand: Operand::Loop { words, .. } | Operand::Words(words),
+            ..
+        })) = self
+            .cx
+            .collected
+            .slots
+            .get(usize::from(constant))
+            .map(|slot| slot.definition)
+        else {
+            return Maybe::Absent(worded::Absent::Unworded);
+        };
+        self.cx
+            .collected
+            .words
+            .get(words)
+            .map_or(Maybe::Absent(worded::Absent::Unworded), Maybe::Present)
+    }
+
+    /// The rules a data declaration's presented reading writes over its own
+    /// constructors, as the checkers read a presented type: each side in
+    /// pre-order, a constructor by its tag and a variable by the order its
+    /// first occurrence on the left takes; beside them, the bytes each rule's
+    /// two sides cover.
+    ///
+    /// # Specification
+    /// - requires: the description route has read the declaration's cells.
+    /// - ensures: one rule per face of the presented reading, in rule order,
+    ///   whose left side is headed by a constructor, whose two sides apply only
+    ///   the declaration's own constructors and whose right side names only
+    ///   variables the left binds; the empty presentation when the declaration
+    ///   has no presented reading. A face applying an operation rewrites a
+    ///   call, not the type's terms, and is left to its operation. The spans
+    ///   are parallel to the rules.
+    /// - provides: the rules [`DataSignature::presented`] carries to both
+    ///   checkers, which validate them against the constructor table.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's two cancellations lower to the rules
+    ///   both checkers rewrite its words by, a family without rules lowers to
+    ///   the free signature, and an indexed family's rule is declined where it
+    ///   is written.
+    /// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
+    /// - witness: `lower::native::tests::an_indexed_family_presents_no_rule_2865`
+    #[spec(ensures: |ret| ret.0.rules().len() == ret.1.len()
+        && ret.1.len() <= match self.cx.collected.descriptions.get(&form.declaration.node) {
+            Maybe::Present(described) => described.description.rules.len(),
+            Maybe::Absent(_) => 0,
+        })]
+    fn presentation(
+        &self,
+        form: &crate::module::DataForm,
+    ) -> (gandr_core_term::Presentation, Vec<ByteSpan>)
+    {
+        let none = || (gandr_core_term::Presentation::default(), Vec::new());
+        let Maybe::Present(described) = self.cx.collected.descriptions.get(&form.declaration.node)
+        else {
+            return none();
+        };
+        let Some(cells) = self
+            .cx
+            .collected
+            .cells
+            .declarations
+            .iter()
+            .find(|cells| cells.at.node == form.declaration.node)
+        else {
+            return none();
+        };
+        let Maybe::Present(ref presented) = cells.presented
+        else {
+            return none();
+        };
+        let names: Vec<SourceFragment<'source>> = form
+            .generators
+            .iter()
+            .map(|generator| self.text_at(generator.named))
+            .collect();
+        let mut rules = Vec::new();
+        let mut spans = Vec::new();
+        let faces = if cells.oriented.is_empty() {
+            described.description.rules.as_ref()
+        }
+        else {
+            cells.oriented.as_slice()
+        };
+        let mut variables = Vec::new();
+        for &(index, _cell) in &presented.faces {
+            let (Some(face), Some(written)) = (
+                faces.get(usize::from(index)),
+                described.written.faces.get(usize::from(index)),
+            )
+            else {
+                continue;
+            };
+            variables.clear();
+            let (Maybe::Present(left), Maybe::Present(right), Some(from), Some(to)) = (
+                rule_side(
+                    &face.lhs,
+                    &names,
+                    &mut variables,
+                    Binding::Binds,
+                    Heads::Constructors,
+                ),
+                rule_side(
+                    &face.rhs,
+                    &names,
+                    &mut variables,
+                    Binding::Reads,
+                    Heads::Constructors,
+                ),
+                written.left.nodes.first(),
+                written.right.nodes.first(),
+            )
+            else {
+                continue;
+            };
+            if matches!(
+                left.first(),
+                Some(gandr_core_term::RuleNode::Constructor(_))
+            ) {
+                rules.push(gandr_core_term::PresentedRule::new(left, right));
+                spans.push(from.span.join(to.span));
+            }
+        }
+        (gandr_core_term::Presentation::new(rules), spans)
+    }
+
+    /// The rules of the theory `terms` are the terms of, read over the terms'
+    /// constructors, as the checkers read a presented type.
+    ///
+    /// # Specification
+    /// - requires: the description route has read the theory's cells.
+    /// - ensures: one rule per rule of the theory, in rule order, oriented as
+    ///   its block orients it: each side in pre-order, an operation by the tag
+    ///   of its constructor and a variable by the order its first occurrence on
+    ///   the left takes; the empty presentation for a theory the collection
+    ///   holds no description of.
+    /// - provides: the rules [`DataSignature::presented`] carries to both
+    ///   checkers, which validate them against the constructor table: a rule no
+    ///   presented type rewrites by is refused there, at the terms.
+    /// - fails: [`LoweringRefusal::OutOfFragment`] at [`Unbuilt::TermsType`],
+    ///   over the rule's two sides, for a rule a side of which applies what is
+    ///   no operation of the theory or reads a variable its left side does not
+    ///   bind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a unital magma's two unit rules lower to rules over
+    ///   its terms, and a monoid's associativity reaches the checker, which
+    ///   refuses it.
+    /// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.rules().len() <= match self.cx.collected.slots.get(usize::from(terms.theory)).map(|slot| self.cx.collected.descriptions.get(&slot.introduced_by.node)) {
+        Some(Maybe::Present(described)) => described.description.rules.len(),
+        _ => 0,
+    }))]
+    fn term_rules(
+        &self,
+        terms: &TermsForm,
+    ) -> Result<gandr_core_term::Presentation, LoweringRefusal<'source>>
+    {
+        let Some(block) = self
+            .cx
+            .collected
+            .slots
+            .get(usize::from(terms.theory))
+            .map(|slot| slot.introduced_by.node)
+        else {
+            return Ok(gandr_core_term::Presentation::default());
+        };
+        let Maybe::Present(described) = self.cx.collected.descriptions.get(&block)
+        else {
+            return Ok(gandr_core_term::Presentation::default());
+        };
+        let faces = match self
+            .cx
+            .collected
+            .cells
+            .declarations
+            .iter()
+            .find(|cells| cells.at.node == block)
+        {
+            Some(cells) if !cells.oriented.is_empty() => cells.oriented.as_slice(),
+            Some(_) | None => described.description.rules.as_ref(),
+        };
+        let names: Vec<SourceFragment<'source>> = terms
+            .operations
+            .iter()
+            .map(|&named| self.text_at(named))
+            .collect();
+        let mut rules = Vec::with_capacity(faces.len());
+        let mut variables = Vec::new();
+        for (face, written) in faces.iter().zip(&described.written.faces) {
+            variables.clear();
+            let (Maybe::Present(left), Maybe::Present(right)) = (
+                rule_side(
+                    &face.lhs,
+                    &names,
+                    &mut variables,
+                    Binding::Binds,
+                    Heads::Operations,
+                ),
+                rule_side(
+                    &face.rhs,
+                    &names,
+                    &mut variables,
+                    Binding::Reads,
+                    Heads::Operations,
+                ),
+            )
+            else {
+                let span = match (written.left.nodes.first(), written.right.nodes.first()) {
+                    (Some(from), Some(to)) => from.span.join(to.span),
+                    _ => described.at.span,
+                };
+                return Err(LoweringRefusal::OutOfFragment {
+                    span,
+                    form: FormName::RULE_MEMBER,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::Unadmitted(Unbuilt::TermsType),
+                });
+            };
+            rules.push(gandr_core_term::PresentedRule::new(left, right));
+        }
+
+        Ok(gandr_core_term::Presentation::new(rules))
+    }
+
+    /// Mint the nominal type of the family at `constant` over the arguments
+    /// `arguments` names in the operand store.
+    ///
+    /// # Specification
+    /// - requires: every argument is already minted or absent.
+    /// - ensures: the family over its arguments, left to right, with the
+    ///   written origin; nothing when an argument did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::family`].
+    /// - witness: `lower::native::tests::a_data_family_applies_to_its_parameters`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_family(
+        &self,
+        constant: ConstantIndex,
+        arguments: FormStretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(written) = self.cx.operands.whole(arguments)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut passed = Vec::with_capacity(written.len());
+        for &argument in written {
+            match self.value_at(argument) {
+                Maybe::Present(value) => passed.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.value_type_data(constant, passed);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(Lowered::ValueType(id))
+    }
+
+    /// Mint the nominal computation type of the codata family at `constant`
+    /// over the arguments `arguments` names in the operand store.
+    ///
+    /// # Specification
+    /// - requires: every argument is already minted or absent.
+    /// - ensures: the family over its arguments, left to right, with the
+    ///   written origin; nothing when an argument did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::codata_type`].
+    /// - witness: `tests::description::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_codata(
+        &self,
+        constant: ConstantIndex,
+        arguments: FormStretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(written) = self.cx.operands.whole(arguments)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut passed = Vec::with_capacity(written.len());
+        for &argument in written {
+            match self.value_at(argument) {
+                Maybe::Present(value) => passed.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let id = sink.arena.comp_type_codata(constant, passed);
+        sink.origins.record_comp_type(id, origin);
+
+        Maybe::Present(Lowered::CompType(id))
+    }
+
+    /// Mint a constructor over its fields and its classifier.
+    ///
+    /// # Specification
+    /// - requires: every field, the annotation's type and the answer's are
+    ///   already minted or absent; for a slot, the family's parameter type and
+    ///   every argument before the constructor's are too.
+    /// - ensures: the constructor value over its fields, its classifier the
+    ///   annotation's type — or the type a family's argument quotes — carried
+    ///   into the term's binders; the value type the answer's returner returns
+    ///   carried from the answer's frame to the constructor's; for a slot, the
+    ///   family's parameter at the constructor's place with the parameters
+    ///   before it replaced by the arguments written for them; or the family
+    ///   over no arguments; the classifier's origin inserted and the written
+    ///   origin on the value; the constructor names its own family, so under a
+    ///   classifier of another family the checker refuses it rather than read
+    ///   the namesake constructor of that family; nothing when a field, the
+    ///   annotation, the answer or a slot's type or argument did not lower, or
+    ///   the answer is no returner.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::construct`].
+    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_constructor_keeps_its_family_under_another_s_classifier_2075`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_constructor(
+        &self,
+        constructed: Constructed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(written) = self.cx.operands.whole(constructed.fields)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut fields = Vec::new();
+        for &field in written {
+            match self.value_at(field) {
+                Maybe::Present(value) => fields.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let written =
+            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let id = sink
+            .arena
+            .value_constructor(constructed.family, written, constructed.tag, fields);
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// Mint a multi-output constructor applied with no output named: the
+    /// record of its ports.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_constructor`].
+    /// - ensures: the record keyed by each port's label, its value the port's
+    ///   constructor over the shared fields at that port's tag; for a family
+    ///   without arguments the port is classified as [`Self::mint_constructor`]
+    ///   classifies it, and for any other by its label's entry of the record
+    ///   type the classifier names; nothing when a field or the classifier did
+    ///   not lower, or the record type has no entry for a port.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::ports`].
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_ports(
+        &self,
+        constructed: Constructed,
+        ports: &[(FieldLabel, ConstructorTag)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(written) = self.cx.operands.whole(constructed.fields)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let mut fields = Vec::new();
+        for &field in written {
+            match self.value_at(field) {
+                Maybe::Present(value) => fields.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let written =
+            match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        let first = ports.first().map(|&(ref label, _)| label);
+        let mut minted = BTreeMap::new();
+        for &(ref label, tag) in ports {
+            // A family without arguments classifies each port alone; any other
+            // port reads its entry of the record type.
+            let classifier = if constructed.classifier == Classifier::Inserted {
+                written
+            }
+            else {
+                Self::port_type(written, label, first, sink)
+            };
+            let id =
+                sink.arena
+                    .value_constructor(constructed.family, classifier, tag, fields.clone());
+            let _port = sink.value(id, origin);
+            let _first = minted.insert(label.clone(), id);
+        }
+        let id = sink.arena.value_record(minted);
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// The type a port labelled `label` takes from `record`, the type its
+    /// record of ports is written at, `first` labelling the first port.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the entry at `label` when `record` is a record type holding
+    ///   it; else its entry at `first`; else `record` itself, so a record type
+    ///   missing a port, or a type that is no record, leaves the checker to
+    ///   refuse the record of ports against it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ports of a parameterised family read their
+    ///   classifiers off the record type at the value's position.
+    /// - witness: `lower::native::tests::a_multi_output_constructor_is_one_port_per_output`
+    #[spec(ensures: |ret| ret == record || matches!(sink.arena.value_type(record), Some(&gandr_core_term::ValueType::Record(ref entries)) if entries.values().any(|&entry| entry == ret)))]
+    fn port_type(
+        record: ValueTypeId,
+        label: &FieldLabel,
+        first: Option<&FieldLabel>,
+        sink: &Sink<'_>,
+    ) -> ValueTypeId
+    {
+        match sink.arena.value_type(record) {
+            Some(&gandr_core_term::ValueType::Record(ref entries)) => entries
+                .get(label)
+                .or_else(|| entries.get(first?))
+                .copied()
+                .unwrap_or(record),
+            Some(_) | None => record,
+        }
+    }
+
+    /// The value type `classifier` names for a constructor of the family
+    /// `family`, minted in the term context of the constructor's frame.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_constructor`]; for a field's classifier, the
+    ///   field's declared type, the constructor it belongs to, that
+    ///   constructor's classifier and its fields before the field are minted or
+    ///   absent.
+    /// - ensures: the annotation's type — or the type a family's argument
+    ///   quotes — carried into the term's binders, or kept at the signature's
+    ///   when the constructor stands inside a signature type, whose terms count
+    ///   only the frames that bind there; the value type the answer's returner
+    ///   returns carried from the answer's frame to the constructor's; for a
+    ///   slot, the family's parameter at the constructor's place with the
+    ///   parameters before it replaced by the arguments written for them; for a
+    ///   declaration's parameter, its written type with the parameters before
+    ///   it replaced by the call's arguments for them; for a field, its
+    ///   declared type with the family's parameters replaced by the arguments
+    ///   of its constructor's classifier and the fields before it by the values
+    ///   written for them; for a stated index, the family's index type at its
+    ///   place with the earlier indices replaced by those the generator states
+    ///   and the parameters by the generator's own; or the family over no
+    ///   arguments; every node minted recorded at the classifier's inserted
+    ///   origin; nothing when a type or a value it reads did not lower, or the
+    ///   answer is no returner.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::construct`].
+    /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    /// - witness: `lower::native::tests::an_annotation_inside_a_signature_type_counts_its_binders_there_3744`
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn classifier_type(
+        &self,
+        classifier: Classifier,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let classified = origin.inserted(Insertion::Classifier);
+        // The constructor's own family: the classifier the mint inserts when
+        // a field on the way reads as no family's application applies it.
+        let own = family;
+        // A field's classifier reads the classifier of the constructor around
+        // it: follow those out to the first that is no field's, the
+        // constructor that owns it.
+        let (mut classifier, mut family) = (classifier, family);
+        let mut owner = origin.node();
+        // Each field followed out, with the label of the first port when the
+        // constructor around it is a record of ports: its classifier is the
+        // record's, and the field reads the first port's entry of it.
+        let mut fields = Vec::new();
+        while let Classifier::Field(field) = classifier {
+            let (outer, port) = match self.cx.plans.get(field.around) {
+                // A family without arguments classifies its ports alone; any
+                // other's ports read the record type their position states.
+                Some(&Plan::Ports(outer, ref ports))
+                    if outer.classifier != Classifier::Inserted =>
+                {
+                    (outer, ports.first().map(|&(ref label, _)| label.clone()))
+                },
+                Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) => (outer, None),
+                Some(_) | None => return Maybe::Absent(lowered::Absent::Unminted),
+            };
+            fields.push((field, port));
+            owner = field.around;
+            (classifier, family) = (outer.classifier, outer.family);
+        }
+        let outermost = match classifier {
+            Classifier::Written(written) => {
+                // A type written as a family's argument is read as its code;
+                // the classifier is the type it quotes.
+                let quoted = if let Maybe::Present(code) = self.value_at(written)
+                    && let Some(&gandr_core_term::Value::Quote(quoted)) = sink.arena.value(code)
+                {
+                    Some(quoted)
+                }
+                else {
+                    None
+                };
+                let id = match (self.value_type_at(written), quoted) {
+                    (Maybe::Present(id), _) => id,
+                    (Maybe::Absent(_), Some(quoted)) => quoted,
+                    (Maybe::Absent(_), None) => return Maybe::Absent(lowered::Absent::Unminted),
+                };
+                // A constructor inside a signature type counts its fields in
+                // the signature's telescope: its annotation stays there too.
+                if self.cx.in_type.contains(&owner) && !self.cx.in_quote.contains(&owner) {
+                    id
+                }
+                else {
+                    let frame = self.reading(written).frame();
+                    self.relocate_value_type(id, frame, Telescope::Signature, sink, classified)
+                }
+            },
+            Classifier::Slot(argued) => match self.slot_type(argued, sink, classified) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Stated(stated) => match self.stated_index_type(stated, sink, classified) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Classifier::Resulted(of) => {
+                match self.resulted_type(of, owner, family, sink, classified) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
+            },
+            Classifier::Parameter(declared) => {
+                match self.called_parameter_type(declared, sink, classified) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
+            },
+            Classifier::Answered { answer, frame } => {
+                let mark = sink.arena.watermark();
+                let written = self.answered_type(answer, sink);
+                let Maybe::Present(written) = written
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                let written = self.unfolded(written, sink);
+                let gap = self
+                    .cx
+                    .scope
+                    .telescope_binders(frame)
+                    .count()
+                    .saturating_sub(self.cx.scope.telescope_binders(answer.frame).count());
+                let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+                let mut copies = Vec::new();
+                let carried = self.relocate(
+                    sink.arena,
+                    written,
+                    answer.frame,
+                    Telescope::Signature,
+                    lift,
+                    Some(&mut copies),
+                );
+                record_copied_since(
+                    sink,
+                    mark,
+                    origin.inserted(Insertion::Classifier),
+                    Maybe::Absent(rooted::Absent::Classifier),
+                    &copies,
+                );
+                let Some(&CompType::Returner { result, .. }) = sink.arena.comp_type(carried)
+                else {
+                    return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                result
+            },
+            Classifier::Inserted => {
+                let id = sink.arena.value_type_data(family, Vec::new());
+                sink.origins.record_value_type(id, classified);
+                id
+            },
+            // The loop above leaves no field's classifier.
+            Classifier::Field(_) => return Maybe::Absent(lowered::Absent::Unminted),
+        };
+        let mut ty = outermost;
+        for (field, port) in fields.into_iter().rev() {
+            if let Some(label) = port {
+                ty = Self::port_type(ty, &label, None, sink);
+            }
+            ty = match self.field_type(field, ty, sink, origin) {
+                Maybe::Present(id) => id,
+                Maybe::Absent(lowered::Absent::Unclassified) => {
+                    return self.fielded_classifier(own, sink, origin);
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        }
+
+        Maybe::Present(ty)
+    }
+
+    /// The classifier of the constructor at `origin`, minted as its family
+    /// `family` over one wildcard for each parameter and each index: the
+    /// checker solves each wildcard from the type it checks the constructor
+    /// against (#6113).
+    ///
+    /// # Specification
+    /// - requires: the planning of the constructor's form is done, so the
+    ///   form's count of nominated wildcards is final.
+    /// - ensures: for a constructor in
+    ///   [`Context::fielded`](gandr_surface_lowering_base::lower::Context::fielded),
+    ///   the family over one wildcard hole for each parameter and then each
+    ///   index, each named in the constructor's form past every wildcard the
+    ///   planner nominated there and every wildcard the mint inserted before,
+    ///   each recorded at the classifier's inserted origin as the argument it
+    ///   stands for; the unclassified absence for any other constructor, or
+    ///   when the form has no name left for a wildcard.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair in a field of a pair whose type a definition's
+    ///   call computes takes its family over two wildcards, named apart from a
+    ///   wildcard the form writes.
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn fielded_classifier(
+        &self,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unclassified = Maybe::Absent(lowered::Absent::Unclassified);
+        let Some(&fielded) = self.cx.fielded.get(&origin.node())
+        else {
+            return unclassified;
+        };
+        let Some(data) = self.cx.collected.data.get(fielded.written)
+        else {
+            return unclassified;
+        };
+        let planned = self
+            .cx
+            .nominated_places
+            .get(&(fielded.form, gandr_core_term::hole::HoleOrigin::Wildcard))
+            .copied()
+            .unwrap_or(0);
+        let inserted = sink.wildcards.get(&fielded.form).copied().unwrap_or(0);
+        let arity = data.parameters.len().saturating_add(data.indices.len());
+        let Some((first, count)) = u32::try_from(arity).ok().and_then(|count| {
+            let first = planned.checked_add(inserted)?;
+            first.checked_add(count).map(|_| (first, count))
+        })
+        else {
+            return unclassified;
+        };
+        let names = data
+            .parameters
+            .iter()
+            .map(|parameter| Some(parameter.named))
+            .chain(data.indices.iter().map(|index| match index.named {
+                Maybe::Present(named) => Some(named),
+                Maybe::Absent(_) => None,
+            }));
+        let family_name = self
+            .cx
+            .collected
+            .slots
+            .get(usize::from(fielded.family))
+            .map_or_else(String::new, |slot| String::from(slot.name.as_ref()));
+        let classified = origin.inserted(Insertion::Classifier);
+        let mut arguments = Vec::with_capacity(arity);
+        for (place, written) in (first ..).zip(names) {
+            let Some(hole) = gandr_core_term::hole::HoleId::wildcard_in(
+                fielded.form,
+                gandr_core_term::hole::HolePlace::from(place),
+            )
+            else {
+                return unclassified;
+            };
+            let parameter = written.map_or_else(
+                || alloc::format!("{}", arguments.len().saturating_add(1)),
+                |name| String::from(self.text_at(name).as_ref()),
+            );
+            let id = sink.arena.value_hole(hole);
+            sink.origins.record_value(id, classified);
+            sink.origins.record_omitted(id, crate::Omitted::Classifier {
+                family: family_name.clone(),
+                parameter,
+            });
+            arguments.push(id);
+        }
+        let _counted = sink
+            .wildcards
+            .insert(fielded.form, inserted.saturating_add(count));
+        let id = sink.arena.value_type_data(family, arguments);
+        sink.origins.record_value_type(id, classified);
+        Maybe::Present(id)
+    }
+
+    /// The type `field` gives a constructor written in it, given `applied`,
+    /// the classifier of the constructor the field belongs to.
+    ///
+    /// # Specification
+    /// - requires: the field's declared type and the constructor's fields
+    ///   before it are minted or absent; `applied` is minted in the
+    ///   constructor's frame.
+    /// - ensures: the field's declared type with the family's parameters
+    ///   replaced by `applied`'s arguments and the fields before it by the
+    ///   values the constructor is written with, every node the substitution
+    ///   mints recorded at the classifier's inserted origin; the unclassified
+    ///   absence when `applied` is no application of a family, which
+    ///   [`Self::classifier_type`] answers by [`Self::fielded_classifier`];
+    ///   nothing when the field's constructor plans no constructor, `applied`
+    ///   applies the family to fewer arguments than its parameters, or a type
+    ///   or a value it reads did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list written in a field typed `List(Integer)`, in
+    ///   one typed `List(a)` of a family applied to `Integer`, and in one
+    ///   naming the field before it; a pair in a field of a pair whose type a
+    ///   definition's call computes, left unclassified.
+    /// - witness: `lower::native::tests::a_field_classifies_the_constructor_written_in_it_1171`
+    /// - witness: `lower::native::tests::a_pair_in_a_field_at_a_computed_pair_type_takes_its_family_over_wildcards_6113`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn field_type(
+        &self,
+        field: FieldOf,
+        applied: ValueTypeId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(&(Plan::Constructor(outer) | Plan::Ports(outer, _))) =
+            self.cx.plans.get(field.around)
+        else {
+            return unminted;
+        };
+        let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
+            sink.arena.value_type(applied)
+        else {
+            return Maybe::Absent(lowered::Absent::Unclassified);
+        };
+        let mut environment: Vec<ValueId> =
+            arguments.iter().take(field.parameters).copied().collect();
+        if environment.len() != field.parameters {
+            return unminted;
+        }
+        let Some(before) = self
+            .cx
+            .operands
+            .whole(outer.fields)
+            .and_then(|fields| fields.get(.. field.index))
+        else {
+            return unminted;
+        };
+        for &written in before {
+            match self.value_at(written) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        let declared = match self.value_type_at(field.declared) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        // The innermost binder is the last field before this one.
+        environment.reverse();
+        instantiated(
+            declared,
+            &environment,
+            sink,
+            origin.inserted(Insertion::Classifier),
+        )
+    }
+
+    /// The type a data family's application gives the argument at `argued`'s
+    /// place.
+    ///
+    /// # Specification
+    /// - requires: the family's parameter and index types and the arguments
+    ///   before the place are minted or absent.
+    /// - ensures: the family's parameter, or index, at the place, read under
+    ///   the parameters and indices before it, with each of those replaced by
+    ///   the argument written for it, every node the substitution mints
+    ///   recorded at `origin`; nothing when the classifier or an argument did
+    ///   not lower.
+    /// - provides: the classifier of a constructor written as a family's
+    ///   argument (#421).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Inl(a)` written for the third parameter `s :
+    ///   SumOb(l, r)` of a family applied to `Integer` and `String` is
+    ///   classified `SumOb(Integer, String)`; `S(Z)` written for a vector's
+    ///   length is classified `Nat`.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::an_indexed_family_lowers_its_indices`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn slot_type(
+        &self,
+        argued: Argued,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let Some(form) = self.cx.collected.data.get(argued.form)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        // An index reads under the parameters and the indices before it.
+        let parameters = form.parameters.len();
+        let classifier = argued.place.checked_sub(parameters).map_or_else(
+            || {
+                form.parameters
+                    .get(argued.place)
+                    .map(|parameter| parameter.classifier)
+            },
+            |index| form.indices.get(index).map(|index| index.ty),
+        );
+        let Some(classifier) = classifier
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let declared = match self.value_type_at(classifier.node) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let bound = argued.place;
+        let mut environment = Vec::with_capacity(bound);
+        for &argument in self.cx.operands.read(argued.applied).iter().take(bound) {
+            match self.value_at(argument) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost parameter is the last before the place.
+        environment.reverse();
+        instantiated(declared, &environment, sink, origin)
+    }
+
+    /// The type a generator's result gives the index it states at `stated`'s
+    /// place.
+    ///
+    /// # Specification
+    /// - requires: the family's index types and the indices the generator
+    ///   states before the place are minted or absent.
+    /// - ensures: the family's index at the place, read under the family's
+    ///   parameters and the indices before it, with each earlier index replaced
+    ///   by the index the generator states for it and each parameter by the
+    ///   generator's own, read past its fields; every node the substitution
+    ///   mints recorded at `origin`; nothing when the index type or an earlier
+    ///   stated index did not lower.
+    /// - provides: the classifier of a constructor written as an index a
+    ///   generator's result states (#4027).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `FZ(Zero)` stated for an index of type
+    ///   `Fin(Succ(Zero))` is classified so, and `FZ(n)` stated after `n` for
+    ///   an index of type `Fin(Succ(m))` reads the `n` stated before it.
+    /// - witness: `lower::native::tests::a_constructor_at_a_family_s_index_takes_the_index_s_type_4027`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn stated_index_type(
+        &self,
+        stated: StatedIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.cx.collected.data.get(stated.form)
+        else {
+            return unminted;
+        };
+        let (Some(generator), Some(index)) = (
+            form.generators.get(stated.generator),
+            form.indices.get(stated.place),
+        )
+        else {
+            return unminted;
+        };
+        let declared = match self.value_type_at(index.ty.node) {
+            Maybe::Present(declared) => declared,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let parameters = form.parameters.len();
+        let mut environment = Vec::with_capacity(parameters.saturating_add(stated.place));
+        for earlier in generator.indices.iter().take(stated.place) {
+            match self.value_at(earlier.node) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost binder is the last index stated before the place.
+        environment.reverse();
+        // The parameters stand past the generator's fields, each of which
+        // binds where the result states an index; the last is innermost.
+        let fields = generator.fields.len();
+        for parameter in 0 .. parameters {
+            let Ok(at) = u32::try_from(fields.saturating_add(parameter))
+            else {
+                return unminted;
+            };
+            let variable = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(at));
+            sink.origins.record_value(variable, origin);
+            environment.push(variable);
+        }
+        instantiated(declared, &environment, sink, origin)
+    }
+
+    /// The type the generator's result gives the constructor at `owner`, which
+    /// a `let` with no type binds (#5050).
+    ///
+    /// # Specification
+    /// - requires: the indices the generator states and the constructor's
+    ///   fields are minted or absent.
+    /// - ensures: the family `family` applied to each index the generator's
+    ///   result states, read under the generator's fields, with each field
+    ///   replaced by the value the constructor is written with for it; every
+    ///   node the substitution mints recorded at `origin`; nothing when the
+    ///   family takes parameters, the generator states another count of indices
+    ///   than the family's kind, `owner` plans no constructor, or an index or a
+    ///   field did not lower.
+    /// - provides: the classifier of a constructor that a `let` with no type
+    ///   binds.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Here(g, a)` bound by `let x = Here(g, a)` is
+    ///   classified `Var(Extend(g, a), a)`, and `There(g, a, b, x)` reads the
+    ///   index that its result states over its field `a`.
+    /// - witness: `lower::native::tests::an_untyped_let_reads_its_constructor_s_classifier_off_its_result_5050`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn resulted_type(
+        &self,
+        of: ResultOf,
+        owner: NodeIndex,
+        family: ConstantIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.cx.collected.data.get(of.form)
+        else {
+            return unminted;
+        };
+        let Some(generator) = form.generators.get(of.generator)
+        else {
+            return unminted;
+        };
+        if !form.parameters.is_empty() || generator.indices.len() != form.indices.len() {
+            return unminted;
+        }
+        let Some(&Plan::Constructor(constructed)) = self.cx.plans.get(owner)
+        else {
+            return unminted;
+        };
+        let Some(fields) = self.cx.operands.whole(constructed.fields)
+        else {
+            return unminted;
+        };
+        let mut environment = Vec::with_capacity(fields.len());
+        for &written in fields {
+            match self.value_at(written) {
+                Maybe::Present(value) => environment.push(value),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
+        }
+        // The innermost binder is the last field.
+        environment.reverse();
+        let mut arguments = Vec::with_capacity(generator.indices.len());
+        let mut carried = Vec::new();
+        for index in &generator.indices {
+            let stated = match self.value_at(index.node) {
+                Maybe::Present(value) => value,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            let mark = sink.arena.watermark();
+            carried.clear();
+            let TermId::Value(read) = gandr_core_term::substitute_environment_traced(
+                sink.arena,
+                TermId::Value(stated),
+                &environment,
+                &mut carried,
+            )
+            else {
+                return unminted;
+            };
+            exits::record_copies(sink, mark, &carried, origin);
+            arguments.push(read);
+        }
+        let id = sink.arena.value_type_data(family, arguments);
+        sink.origins.record_value_type(id, origin);
+        Maybe::Present(id)
+    }
+
+    /// The type a declaration's parameter gives the argument a call writes for
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: the parameter's type and the call's arguments are minted or
+    ///   absent.
+    /// - ensures: the parameter's written type, read under the declaration's
+    ///   parameters before it, with each of those it names replaced by the
+    ///   argument the call writes for it, every node the substitution mints
+    ///   recorded at `origin`; the written type itself when it names none;
+    ///   nothing when it names a binder no argument stands for — a linear one,
+    ///   or one the declaration's parentheses do not bind — or a type or an
+    ///   argument it reads did not lower.
+    /// - provides: the classifier of a constructor written as a call's argument
+    ///   (#1833, #1876).
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a list passed for `xs : List(Integer)` is classified
+    ///   as written, and one passed for `xs : List(a)` after `Integer` for `a :
+    ///   Type` is classified `List(Integer)`, a recursive declaration's own
+    ///   binder standing between the two.
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    fn called_parameter_type(
+        &self,
+        declared: CalledAt,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let (written, environment) =
+            match self.called_environment(declared, declared.typed.node, sink) {
+                Maybe::Present(read) => read,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+        if environment.is_empty() {
+            return Maybe::Present(written);
+        }
+        instantiated(written, &environment, sink, origin)
+    }
+
+    /// The type written at `written`, read under the parameters before the
+    /// one `declared` names, beside the arguments the call writes for the
+    /// parameters it names: what [`Self::called_parameter_type`] substitutes.
+    ///
+    /// # Specification
+    /// - requires: `written` is read under the frame `declared`'s type is read
+    ///   under; the type and the call's arguments are minted or absent.
+    /// - ensures: the written type, and an environment, innermost first, that
+    ///   holds the argument the call writes for each parameter the type names,
+    ///   and any one of them for a binder between them it does not name; empty
+    ///   when the type names none.
+    /// - fails: the type's own absence; the unminted absence when it names a
+    ///   binder no argument stands for — a linear one, or one the declaration's
+    ///   parentheses do not bind; an argument's own absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::called_parameter_type`], and a lambda's
+    ///   binder at a parameter's domain.
+    /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
+    /// - witness: `lower::identity::tests::a_call_s_lambda_argument_reads_its_parameter_s_domain_3921`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((id, _)) if sink.arena.value_type(id).is_some()))]
+    pub(super) fn called_environment(
+        &self,
+        declared: CalledAt,
+        written: NodeIndex,
+        sink: &Sink<'_>,
+    ) -> Maybe<(ValueTypeId, Vec<ValueId>), lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let written = match self.value_type_at(written) {
+            Maybe::Present(read) => read,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let Some(support) = sink.arena.value_type_support(written)
+        else {
+            return unminted;
+        };
+        if support.indices(Zone::Linear).next().is_some() {
+            return unminted;
+        }
+        let Some(parameters) = self.cx.collected.parameters.get(&declared.slot)
+        else {
+            return unminted;
+        };
+        // The binders the type counts its indices by, innermost first: the
+        // parameters before it its signature names, and whatever else binds
+        // there, a recursive declaration's own binder among them.
+        let bound: Vec<ScopeId> = self
+            .cx
+            .scope
+            .chain(self.reading(declared.typed.node).frame())
+            .filter(|&binder| {
+                self.cx.scope.zone(binder) != Zone::Linear
+                    && bool::from(self.cx.scope.binds(binder, Telescope::Signature))
+            })
+            .collect();
+        let applied = self.cx.operands.read(declared.applied);
+        // Each parameter's argument, by the bytes its binder is written at.
+        let arguments: BTreeMap<ByteSpan, NodeIndex> = parameters
+            .iter()
+            .zip(applied)
+            .map(|(parameter, &argument)| (parameter.binder.span, argument))
+            .collect();
+        let mut environment: Vec<Option<ValueId>> = Vec::new();
+        for index in support.indices(Zone::Intuitionistic) {
+            let Ok(at) = usize::try_from(u32::from(index))
+            else {
+                return unminted;
+            };
+            let Some(&binder) = bound.get(at)
+            else {
+                return unminted;
+            };
+            let Maybe::Present(site) = self.cx.scope.site(binder)
+            else {
+                return unminted;
+            };
+            let Some(&argument) = arguments.get(&site)
+            else {
+                return unminted;
+            };
+            let value = match self.value_at(argument) {
+                Maybe::Present(value) => value,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            if environment.len() <= at {
+                environment.resize(at.saturating_add(1), None);
+            }
+            if let Some(entry) = environment.get_mut(at) {
+                *entry = Some(value);
+            }
+        }
+        // A binder between the named ones that the type does not name takes
+        // any value: no index reaches it.
+        let Some(&filler) = environment.iter().flatten().next()
+        else {
+            return Maybe::Present((written, Vec::new()));
+        };
+        let environment: Vec<ValueId> = environment
+            .into_iter()
+            .map(|entry| entry.unwrap_or(filler))
+            .collect();
+
+        Maybe::Present((written, environment))
+    }
+
+    /// `ty`, a value type read under `frame` in `telescope`, carried into the
+    /// term context of the same frame.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `frame`, counting only the frames that
+    ///   bind in `telescope`.
+    /// - ensures: as [`Self::carry_value_type`] to `frame` itself.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed annotation is carried unchanged, and one
+    ///   under a match's binders keeps each of its nodes at its bytes.
+    /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
+    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
+    pub(super) fn relocate_value_type(
+        &self,
+        ty: ValueTypeId,
+        frame: Frame,
+        telescope: Telescope,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        self.carry_value_type(ty, frame, telescope, frame, sink, origin)
+    }
+
+    /// `ty`, a value type read under `from` in `telescope`, carried into the
+    /// term context of `to`, a frame whose chain passes through `from`.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `from`, counting only the frames that
+    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
+    /// - ensures: `ty` itself when every frame of `from`'s chain binds and `to`
+    ///   is `from`; otherwise `ty` with a binder inserted for each frame of
+    ///   `from`'s chain that does not bind, then every free index raised by the
+    ///   intuitionistic frames `to`'s chain has past `from`, each node the
+    ///   rewrite copies recorded at the origin of the node it copies and every
+    ///   other node it mints with `origin`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed annotation is carried unchanged; a type a
+    ///   scope fixes to a parameter is read at the scope and at an exercise
+    ///   under it.
+    /// - witness: `lower::native::tests::a_relocated_annotation_keeps_its_bytes`
+    /// - witness: `lower::capability::tests::a_scope_fixing_a_sort_to_a_parameter_reads_it_where_it_is_used_2881`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
+    pub(super) fn carry_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let gap = self
+            .cx
+            .scope
+            .telescope_binders(to)
+            .count()
+            .saturating_sub(self.cx.scope.telescope_binders(from).count());
+        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+        if lift == Binders::NONE && self.cx.scope.binders_in(from, telescope).all(|binds| binds) {
+            return ty;
+        }
+        let mark = sink.arena.watermark();
+        let wrapped = sink.arena.comp_type_returner(ty);
+        let mut copies = Vec::new();
+        let carried = self.relocate(
+            sink.arena,
+            wrapped,
+            from,
+            telescope,
+            lift,
+            Some(&mut copies),
+        );
+        let result = match sink.arena.comp_type(carried) {
+            Some(&CompType::Returner { result: inner, .. }) => inner,
+            _ => ty,
+        };
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        result
+    }
+
+    /// `ty`, a value type read under `from` in `telescope`, carried under
+    /// `to` in the same telescope, a frame whose chain passes through `from`.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `from`, counting only the frames that
+    ///   bind in `telescope`; `from` is `to` or a frame of `to`'s chain.
+    /// - ensures: `ty` itself when no frame between `from` and `to` binds in
+    ///   `telescope`; otherwise `ty` with every free index raised by the frames
+    ///   between that bind, each node the shift copies recorded at the origin
+    ///   of the node it copies and every other node it mints with `origin`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed parameter of a lambda inside a type, under a
+    ///   parameter the type does not name, binds its argument at its written
+    ///   type.
+    /// - witness: `lower::identity::tests::an_annotation_inside_a_type_reads_in_the_type_s_telescope_3801`
+    #[spec(ensures: |ret| sink.arena.value_type(ret).is_some() || ret == ty)]
+    pub(super) fn lift_value_type(
+        &self,
+        ty: ValueTypeId,
+        from: Frame,
+        telescope: Telescope,
+        to: Frame,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> ValueTypeId
+    {
+        let bound = |frame| {
+            self.cx
+                .scope
+                .binders_in(frame, telescope)
+                .filter(|&binds| binds)
+                .count()
+        };
+        let gap = bound(to).saturating_sub(bound(from));
+        let lift = Binders::from(u32::try_from(gap).unwrap_or(u32::MAX));
+        if lift == Binders::NONE {
+            return ty;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let lifted = gandr_core_term::shift_value_type(sink.arena, ty, lift)
+            .settle_traced(sink.arena, &mut copies);
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        lifted
+    }
+
+    /// `ty`, a computation type read under `frame` in `telescope`, carried
+    /// into the term context of the same frame.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `frame`, counting only the frames that
+    ///   bind in `telescope`.
+    /// - ensures: as [`Self::relocate_value_type`], for a computation type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a computation type quoted in a body past an
+    ///   unmentioned parameter reads its binders in the term's context.
+    /// - witness: `lower::tests::a_quote_in_a_body_reads_past_an_unmentioned_parameter`
+    #[spec(ensures: |ret| sink.arena.comp_type(ret).is_some() || ret == ty)]
+    pub(super) fn relocate_comp_type(
+        &self,
+        ty: CompTypeId,
+        frame: Frame,
+        telescope: Telescope,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> CompTypeId
+    {
+        if self
+            .cx
+            .scope
+            .binders_in(frame, telescope)
+            .all(|binds| binds)
+        {
+            return ty;
+        }
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let carried = self.relocate(
+            sink.arena,
+            ty,
+            frame,
+            telescope,
+            Binders::default(),
+            Some(&mut copies),
+        );
+        record_copied_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(rooted::Absent::Classifier),
+            &copies,
+        );
+
+        carried
+    }
+
+    /// The computation type `answer` states, read under its own frame: the
+    /// written computation type, the returner over a written value type the
+    /// position returns, or the arrows an alias stands for past the domains
+    /// taken.
+    ///
+    /// # Specification
+    /// - requires: the answer's node is already minted or absent.
+    /// - ensures: the node's computation type for a written answer and a loop
+    ///   arm's, a returner newly minted over the node's value type for a
+    ///   returning one, and for a valued one the computation type the alias's
+    ///   thunk holds, its first `taken` arrows peeled; each with every stage a
+    ///   quantified signature placed erased, since a body's types are plain;
+    ///   the node's absence when it did not lower, and the other-sort absence
+    ///   for an alias holding fewer arrows.
+    /// - provides: the one reading every consumer of an answer mints it by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The peeling loop runs `taken` times.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function result and a thunk signed `() -> T`, each
+    ///   answering a constructor's classifier, and a match under a lambda
+    ///   signed `A -> B` answering `-F B`.
+    /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
+    /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
+    /// - witness: `lower::staged::tests::a_case_under_a_staged_result_answers_plainly`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.comp_type(id).is_some()))]
+    pub(super) fn answered_type(
+        &self,
+        answer: Answer,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<CompTypeId, lowered::Absent>
+    {
+        let answered = match answer.over {
+            Over::Written | Over::Loop { .. } => self.comp_type_at(answer.node),
+            Over::Returning => match self.value_type_at(answer.node) {
+                Maybe::Present(result) => Maybe::Present(sink.arena.comp_type_returner(result)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            Over::Valued { taken } => {
+                let alias = match self.value_type_at(answer.node) {
+                    Maybe::Present(alias) => alias,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let Some(&gandr_core_term::ValueType::Thunk(mut held)) =
+                    sink.arena.value_type(alias)
+                else {
+                    return Maybe::Absent(lowered::Absent::OtherSort);
+                };
+                for _taken in 0 .. taken {
+                    let Some(&CompType::Arrow { codomain, .. }) = sink.arena.comp_type(held)
+                    else {
+                        return Maybe::Absent(lowered::Absent::OtherSort);
+                    };
+                    held = codomain;
+                }
+                Maybe::Present(held)
+            },
+        };
+        match answered {
+            Maybe::Present(written) if !self.cx.stage_marks.is_empty() => {
+                match gandr_core_term::staged::unstaged(sink.arena, Part::Computation(written)) {
+                    Some(Part::Computation(plain)) => Maybe::Present(plain),
+                    Some(Part::Value(_)) | None => Maybe::Absent(lowered::Absent::OtherSort),
+                }
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => answered,
+        }
+    }
+
+    /// `ty` read through each top-level definition whose application it
+    /// decodes: the decode of the definition's body applied to the same
+    /// arguments, reduced as [`gandr_core_term::decoded_comp_reading`] reduces
+    /// it, again while the reduct decodes another such application.
+    ///
+    /// # Specification
+    /// - requires: each definition body the chain reaches is minted or absent;
+    ///   [`Self::unfolded_definitions`] names them to the mint sweep.
+    /// - ensures: the first type of the chain that decodes no definition with a
+    ///   minted body, or whose decode does not reduce; `ty` itself when it
+    ///   decodes none. The nodes the reading makes are minted in the arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each turn unfolds one definition, and the turns number at most the
+    /// slots; the inner walk descends an application spine to its head.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor returned against `opt(Integer)` with
+    ///   `opt` a static abstraction over a returner, against `opt(A)` at a type
+    ///   parameter, and against a definition that unfolds to `opt`.
+    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
+    #[spec(ensures: |ret| ret == ty || sink.arena.comp_type(ret).is_some())]
+    fn unfolded(
+        &self,
+        ty: CompTypeId,
+        sink: &mut Sink<'_>,
+    ) -> CompTypeId
+    {
+        let mut read = ty;
+        let mut arguments = Vec::new();
+        for _definition in 0 .. self.cx.collected.slots.len() {
+            let Some(&CompType::Element { code, ref target }) = sink.arena.comp_type(read)
+            else {
+                break;
+            };
+            let target = target.clone();
+            arguments.clear();
+            let mut head = code;
+            while let Some(&Value::StaticApplication(applied, argument)) = sink.arena.value(head) {
+                arguments.push(argument);
+                head = applied;
+            }
+            let Some(&Value::Constant(constant)) = sink.arena.value(head)
+            else {
+                break;
+            };
+            let Maybe::Present(body) = self.definition_body(constant)
+            else {
+                break;
+            };
+            let mut applied = body;
+            for &argument in arguments.iter().rev() {
+                applied = sink.arena.value_static_application(applied, argument);
+            }
+            let decoded = sink.arena.comp_type_element(applied, target);
+            let reduced = gandr_core_term::decoded_comp_reading(sink.arena, decoded);
+            if reduced == decoded {
+                break;
+            }
+            read = reduced;
+        }
+
+        read
+    }
+
+    /// Add to `into` the body of each top-level definition the type at `from`
+    /// decodes an application of, then of each definition that body applies in
+    /// turn, so the mint sweep reaches them before a constructor
+    /// [`Self::unfolded`] classifies by them.
+    ///
+    /// # Specification
+    /// - ensures: `into` gains each such body; nothing for a type that decodes
+    ///   no definition's application.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the minting order is the claim; the witness
+    ///   observes the constructor it lets mint.
+    ///
+    /// # Termination
+    /// Each turn steps into a static abstraction's body or onto a body not yet
+    /// added, and the turns number at most the plans.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::unfolded`].
+    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
+    pub(super) fn unfolded_definitions(
+        &self,
+        from: NodeIndex,
+        into: &mut BTreeSet<NodeIndex>,
+    )
+    {
+        let mut at = from;
+        for _step in 0 .. usize::from(self.cx.plans.count()) {
+            let code = match self.cx.plans.get(at) {
+                Some(&Plan::StaticLambda(body)) => {
+                    at = body;
+                    continue;
+                },
+                Some(&(Plan::Decode(code, ..) | Plan::StaticApplication(code, _))) => code,
+                Some(_) | None => return,
+            };
+            let Maybe::Present(body) = self.decoded_definition(code)
+            else {
+                return;
+            };
+            if !into.insert(body) {
+                return;
+            }
+            at = body;
+        }
+    }
+
+    /// The node of the body of the top-level definition `code` names; a
+    /// binder names none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded_definition(
+        &self,
+        code: Code,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        match code {
+            Code::Constant(constant) => self.definition_written(constant),
+            Code::Bound { .. } => Maybe::Absent(unfolding::Absent::Opaque),
+        }
+    }
+
+    /// The node of the body a top-level definition of `constant` writes: the
+    /// one form of `= e ;`, or the declaration form of a function tail
+    /// `(params) -> T { … }`, which the tail lowers at (#3665).
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn definition_written(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        if let Some(slot) = self.cx.collected.slots.get(usize::from(constant))
+            && slot.constant == constant
+            && let Container::TopLevel(_) = slot.container
+            && let Maybe::Absent(_) = slot.refusal
+        {
+            match slot.definition {
+                Maybe::Present(Half {
+                    operand: Operand::Written(body),
+                    ..
+                }) => return Maybe::Present(body.node),
+                Maybe::Present(Half {
+                    declaration,
+                    operand: Operand::Function,
+                    ..
+                }) => return Maybe::Present(declaration.node),
+                Maybe::Present(_) | Maybe::Absent(_) => {},
+            }
+        }
+
+        Maybe::Absent(unfolding::Absent::Opaque)
+    }
+
+    /// The value the body of a top-level definition of `constant` lowered to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definition_body(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<ValueId, unfolding::Absent>
+    {
+        match self.definition_written(constant) {
+            Maybe::Present(node) => match self.value_at(node) {
+                Maybe::Present(body) => Maybe::Present(body),
+                Maybe::Absent(_) => Maybe::Absent(unfolding::Absent::Unlowered),
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// `ty`, a computation type read under `from` in `telescope`, carried
+    /// into the term context of `from` and then under `lift` more binders,
+    /// each node it rewrote reported into `copies` when given.
+    ///
+    /// # Specification
+    /// - requires: `ty` is minted under `from`, counting only the frames that
+    ///   bind in `telescope`.
+    /// - ensures: a binder inserted at each frame of `from`'s chain that does
+    ///   not bind in `telescope`, then every free index raised by `lift`;
+    ///   `copies`, when given, gains each node a shift rewrote beside its
+    ///   source.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function result and a written answer become the
+    ///   motive of a nested tree; a dependent transport's motive answers where
+    ///   its endpoints are written.
+    /// - witness: `lower::native::tests::a_match_takes_its_answer_from_the_function_result`
+    /// - witness: `lower::identity::tests::a_dependent_transport_lowers_to_its_telescope`
+    #[spec(ensures: |ret| arena.comp_type(ret).is_some() || ret == ty)]
+    pub(super) fn relocate(
+        &self,
+        arena: &mut CoreArena,
+        ty: CompTypeId,
+        from: Frame,
+        telescope: Telescope,
+        lift: Binders,
+        mut copies: Option<&mut Vec<Carried>>,
+    ) -> CompTypeId
+    {
+        let mut shift =
+            |arena: &mut CoreArena, subject: CompTypeId, scope: Binders, amount: Binders| {
+                let shifted = gandr_core_term::shift_comp_type_under(arena, subject, scope, amount);
+                match copies.as_deref_mut() {
+                    Some(copies) => shifted.settle_traced(arena, copies),
+                    None => shifted.settle(arena),
+                }
+            };
+        let mut carried = ty;
+        for (position, binds) in self.cx.scope.binders_in(from, telescope).enumerate() {
+            if !binds {
+                let scope = Binders::from(u32::try_from(position).unwrap_or(u32::MAX));
+                carried = shift(arena, carried, scope, Binders::ONE);
+            }
+        }
+        shift(arena, carried, Binders::NONE, lift)
+    }
+
+    /// Mint the field read off a data value at `projected`: the data case over
+    /// the value whose branch for each constructor returns its field.
+    ///
+    /// # Specification
+    /// - requires: the subject, and the answer or the stated type and the
+    ///   field's declared type the projection is typed by, are already minted
+    ///   or absent.
+    /// - ensures: a data case over the subject's value whose motive returns the
+    ///   projection's type under one binder more, reading none of it, and whose
+    ///   branch for each constructor binds its fields and returns the one read;
+    ///   the type is the answer carried from its frame to the projection's, or
+    ///   the field's declared type lowered out from under the fields before it
+    ///   with the family's parameters replaced by the arguments of the
+    ///   subject's stated type carried to the projection's frame. The case
+    ///   carries the written origin and records the family it eliminates; every
+    ///   other node minted the inserted match origin, a copy that of the node
+    ///   it copies. Nothing when a node it reads did not lower, the stated type
+    ///   is no application of a family to at least its parameters, or the
+    ///   field's type names a field before it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::data_field`].
+    /// - witness: `lower::native::tests::a_data_field_is_the_case_returning_it_1106`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(Lowered::Computation(id)) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
+    pub(super) fn mint_projected(
+        &self,
+        projected: ProjectedIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let Some(form) = self.cx.projected.get(projected)
+        else {
+            return unminted;
+        };
+        let Maybe::Present(scrutinee) = self.value_at(form.subject)
+        else {
+            return unminted;
+        };
+        let lift = |from: Frame| {
+            let gap = self
+                .cx
+                .scope
+                .telescope_binders(form.frame)
+                .count()
+                .saturating_sub(self.cx.scope.telescope_binders(from).count());
+            Binders::from(u32::try_from(gap).unwrap_or(u32::MAX))
+        };
+        let mark = sink.arena.watermark();
+        let mut copies = Vec::new();
+        let answered = match form.typed {
+            Typed::Answered(answer) => {
+                let Maybe::Present(written) = self.answered_type(answer, sink)
+                else {
+                    return unminted;
+                };
+                self.relocate(
+                    sink.arena,
+                    written,
+                    answer.frame,
+                    Telescope::Signature,
+                    lift(answer.frame),
+                    Some(&mut copies),
+                )
+            },
+            Typed::Field {
+                stated,
+                declared,
+                earlier,
+                parameters,
+            } => {
+                let (Maybe::Present(applied), Maybe::Present(declared)) =
+                    (self.value_type_at(stated), self.value_type_at(declared))
+                else {
+                    return unminted;
+                };
+                let at = self.reading(stated).frame();
+                let wrapped = sink.arena.comp_type_returner(applied);
+                let carried = self.relocate(
+                    sink.arena,
+                    wrapped,
+                    at,
+                    Telescope::Signature,
+                    lift(at),
+                    Some(&mut copies),
+                );
+                let Some(&CompType::Returner {
+                    result: applied, ..
+                }) = sink.arena.comp_type(carried)
+                else {
+                    return unminted;
+                };
+                let Some(&gandr_core_term::ValueType::Data { ref arguments, .. }) =
+                    sink.arena.value_type(applied)
+                else {
+                    return unminted;
+                };
+                let mut environment: Vec<ValueId> =
+                    arguments.iter().take(parameters).copied().collect();
+                if environment.len() != parameters {
+                    return unminted;
+                }
+                // The innermost binder is the last parameter.
+                environment.reverse();
+                let past = Binders::from(u32::try_from(earlier).unwrap_or(u32::MAX));
+                let Maybe::Present(lowered) =
+                    gandr_core_term::strengthen_value_type(sink.arena, declared, past)
+                else {
+                    return unminted;
+                };
+                let declared = lowered.settle(sink.arena);
+                let Maybe::Present(ty) =
+                    substituted_type(declared, &environment, sink.arena, Some(&mut copies))
+                else {
+                    return unminted;
+                };
+                sink.arena.comp_type_returner(ty)
+            },
+        };
+        let motive =
+            gandr_core_term::shift_comp_type(sink.arena, answered, Binders::ONE).settle(sink.arena);
+        let mut branches = Vec::with_capacity(form.branches.len());
+        let mut arities = Vec::with_capacity(form.branches.len());
+        for &(arity, position) in &form.branches {
+            let read = variable(
+                sink.arena,
+                Depth(arity.saturating_sub(position).saturating_sub(1)),
+            );
+            let mut branch = sink.arena.computation_return(read);
+            for _field in 0 .. arity {
+                branch = sink.arena.computation_lambda(branch);
+            }
+            branches.push(branch);
+            arities.push(gandr_kernel_term::FieldCount::from(arity));
+        }
+        let case = sink
+            .arena
+            .computation_data_case(scrutinee, motive, branches, arities);
+        sink.origins.record_elimination(case, form.family);
+        record_copied_since(
+            sink,
+            mark,
+            origin.inserted(Insertion::Match),
+            Maybe::Present((case, origin)),
+            &copies,
+        );
+
+        Maybe::Present(Lowered::Computation(case))
+    }
+
+    /// What each term variable of `frame` reads as at the arm `arm` and every
+    /// arm the answer was passed into before it: the scrutinee of each
+    /// settled one its constructor over what the arm reads its fields at, the
+    /// outermost arm read first.
+    ///
+    /// # Specification
+    /// - requires: the arms `arm` chains stand on `frame`'s chain.
+    /// - ensures: one value per term binder of `frame`, index for index, when
+    ///   some arm on the chain is settled and `frame` reads its scrutinee and
+    ///   every variable its reading names intuitionistically: each variable
+    ///   read through every such arm from the outermost in, an arm reading its
+    ///   scrutinee's variable as [`Self::built_value`] builds its reading and
+    ///   every other variable as itself. The unsettled absence otherwise, every
+    ///   variable reading itself.
+    /// - provides: the substitution an arm's leaf makes in the arm's body, made
+    ///   where a match in that body stands, so the match reads its answer and
+    ///   its own leaves read their bodies under it before its own refinement.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match in an arm, on the arm's field, answers at the
+    ///   arm's constructor over each of its own constructors, and its branches
+    ///   read the outer scrutinee there too.
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(ref read) => read.len() == self.cx.scope.telescope_binders(frame).count(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn arm_readings(
+        &self,
+        arm: Maybe<ArmIndex, passed::Absent>,
+        frame: Frame,
+        arena: &mut CoreArena,
+    ) -> Maybe<Vec<ValueId>, passed::Absent>
+    {
+        let context = self.cx.scope.telescope_binders(frame).count();
+        let mut readings: Option<Vec<ValueId>> = None;
+        for reading in self.arms_outward(arm).into_iter().rev() {
+            let Maybe::Present(ref settled) = reading.settled
+            else {
+                continue;
+            };
+            let Some(held) = self.term_depth(frame, settled.scrutinee)
+            else {
+                continue;
+            };
+            let Some(value) = self.built_value(frame, &settled.read, arena)
+            else {
+                continue;
+            };
+            let step: Vec<ValueId> = (0 .. context)
+                .map(|position| {
+                    if position == held.0 {
+                        value
+                    }
+                    else {
+                        variable(arena, Depth(position))
+                    }
+                })
+                .collect();
+            match readings {
+                None => readings = Some(step),
+                Some(ref mut read) => {
+                    for entry in read.iter_mut() {
+                        if let TermId::Value(stepped) = gandr_core_term::substitute_environment(
+                            arena,
+                            TermId::Value(*entry),
+                            &step,
+                        ) {
+                            *entry = stepped;
+                        }
+                    }
+                },
+            }
+        }
+        readings.map_or(Maybe::Absent(passed::Absent::Unsettled), Maybe::Present)
+    }
+
+    /// The value the prefix-ordered `read` spells under `frame`: an arm
+    /// variable's binder as its variable, a constructor over the values its
+    /// fields spell.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value, when `read` spells exactly one term and `frame`
+    ///   reads every binder it names intuitionistically; none otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arm_readings`].
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    #[spec(ensures: |ret| ret.is_none_or(|value| arena.value(value).is_some()))]
+    fn built_value(
+        &self,
+        frame: Frame,
+        read: &[Built],
+        arena: &mut CoreArena,
+    ) -> Option<ValueId>
+    {
+        let mut values: Vec<ValueId> = Vec::with_capacity(read.len());
+        for &node in read.iter().rev() {
+            match node {
+                Built::Bound(binder) => {
+                    let index = self.term_depth(frame, binder)?;
+                    values.push(variable(arena, index));
+                },
+                Built::Constructed { family, tag, arity } => {
+                    let from = values.len().checked_sub(arity)?;
+                    let fields = values.drain(from ..).rev().collect();
+                    values.push(arena.value_constructor_of(family, Vec::new(), tag, fields));
+                },
+            }
+        }
+        match *values.as_slice() {
+            [value] => Some(value),
+            _ => None,
+        }
+    }
+
+    /// The term index the intuitionistic binder `binder` has from `frame`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the index [`crate::resolve::Scope::bindings`] gives `binder`
+    ///   from `frame` when the binder is intuitionistic and on the chain; none
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::arm_readings`].
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| ret.is_none_or(|_| self.cx.scope.zone(binder) == Zone::Intuitionistic))]
+    fn term_depth(
+        &self,
+        frame: Frame,
+        binder: ScopeId,
+    ) -> Option<Depth>
+    {
+        self.cx.scope.bindings(frame).find_map(|(_, bound)| {
+            (bound.binder == binder && bound.zone == Zone::Intuitionistic)
+                .then(|| Depth(usize::try_from(u32::from(bound.index)).unwrap_or(usize::MAX)))
+        })
+    }
+
+    /// Mint the match at `match`: its scrutinee bound once over its decision
+    /// tree.
+    ///
+    /// # Specification
+    /// - requires: the scrutinee, every arm body and the answer are already
+    ///   minted or absent.
+    /// - ensures: the tree, every node minted descending: a data case over the
+    ///   scrutinised level with the motive [`tracked_motives`] reads from the
+    ///   answer, each branch a lambda per field and then one per index
+    ///   equation, a pruned branch the case of no branches on its equation; a
+    ///   sum case for a boolean; an integer comparison bound and cased on; a
+    ///   guard's condition, read as its arm's body is, bound and cased on, its
+    ///   true branch the arm's leaf and its false branch the rows after it; a
+    ///   hole for a stuck node; and a leaf as its arm's body with each variable
+    ///   replaced by what [`level_read`] reads the level that settled it at and
+    ///   the case's context carried under the tree's binders, the scrutinee's
+    ///   variable read as [`level_read`] reads level zero where the root
+    ///   refines it. An answer passed into arms is read with each variable of
+    ///   the case's frame as [`Self::arm_readings`] reads it, and each leaf
+    ///   reads its body's variables so before its own refinement. Level zero is
+    ///   the scrutinee itself, carried under the binders above its use, so no
+    ///   binding of it is minted. The root carries the written origin, a leaf's
+    ///   copy of its arm's body the origin of what it copies, every other node
+    ///   the inserted match origin, and the arms are recorded beside the root
+    ///   with the scrutinee's value; a match whose first arm matches anything
+    ///   is that arm's body. A match that writes its answer has its root
+    ///   ascribed it, an integer test's case under the comparison's binder, but
+    ///   for a data case and a dependent split, whose motive is that answer.
+    ///   Nothing when the scrutinee, a reached body or a needed answer did not
+    ///   lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses read each tree back out of the arena.
+    /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::native::tests::literal_patterns_compare_and_branch`
+    /// - witness: `lower::native::tests::an_arm_variable_at_a_switched_field_reads_its_constructor_3008`
+    /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
+    /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+    /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
+    /// - witness: `lower::native::tests::a_match_in_an_arm_reads_the_answer_at_the_arm_s_constructor_2994`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    pub(super) fn mint_case(
+        &self,
+        case: CaseIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Some(form) = self.cx.cases.get(case)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        // Clauses scrutinise their columns, the tree's first binders, and no
+        // value at level zero.
+        let valued = match form.roots {
+            Roots::Scrutinee => match self.value_at(form.scrutinee) {
+                Maybe::Present(scrutinee) => Some(scrutinee),
+                Maybe::Absent(_) => return Maybe::Absent(lowered::Absent::Unminted),
+            },
+            Roots::Parameters(_) | Roots::Lambdas(_) => None,
+        };
+        let mut bodies = Vec::with_capacity(form.bodies.len());
+        for &body in &form.bodies {
+            bodies.push(self.computation_at(body));
+        }
+        let guards: Vec<Maybe<ComputationId, lowered::Absent>> = (0 .. form.bodies.len())
+            .map(|arm| match form.guards.get(&ArmAt(arm)) {
+                Some(&guard) => self.computation_at(guard),
+                None => Maybe::Absent(lowered::Absent::Unminted),
+            })
+            .collect();
+        let mark = sink.arena.watermark();
+        // Level zero is never read under clauses: the unit stands for it.
+        let scrutinee = valued.unwrap_or_else(|| sink.arena.value_unit());
+        // What each variable of the match's frame reads as at the arms its
+        // answer was passed into.
+        let armed = match form.answer {
+            Maybe::Present(answer) => self.arm_readings(answer.arm, form.frame, sink.arena),
+            Maybe::Absent(_) => Maybe::Absent(passed::Absent::Unpassed),
+        };
+        let motive = match form.answer {
+            Maybe::Present(answer) => match self.answered_type(answer, sink) {
+                Maybe::Present(written) => {
+                    // Clauses' root stands under one binder per column, the
+                    // lambdas of the parameters it matches.
+                    let gap = Depth(
+                        self.cx
+                            .scope
+                            .telescope_binders(form.frame)
+                            .count()
+                            .saturating_sub(self.cx.scope.telescope_binders(answer.frame).count())
+                            .saturating_add(form.roots.columns().0),
+                    );
+                    let base = self.relocate(
+                        sink.arena,
+                        written,
+                        answer.frame,
+                        Telescope::Signature,
+                        Binders::default(),
+                        None,
+                    );
+                    Maybe::Present(match armed {
+                        Maybe::Present(ref read) => {
+                            let carried = gandr_core_term::shift_comp_type(
+                                sink.arena,
+                                base,
+                                Binders::from(u32::try_from(gap.0).unwrap_or(u32::MAX)),
+                            )
+                            .settle(sink.arena);
+                            let refined = match environment_substituted(sink.arena, carried, read) {
+                                Maybe::Present(refined) => refined,
+                                Maybe::Absent(_) => carried,
+                            };
+                            (refined, Depth::default())
+                        },
+                        Maybe::Absent(_) => (base, gap),
+                    })
+                },
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+        };
+        // The answer written on the match is its root's type: the motive's
+        // base, read where the match stands.
+        let ascription = match (form.ascribed, motive) {
+            (Maybe::Present(_), Maybe::Present((base, _gap))) => Maybe::Present(base),
+            (Maybe::Present(_), Maybe::Absent(reason)) => return Maybe::Absent(reason),
+            (Maybe::Absent(_), _) => Maybe::Absent(lowered::Absent::Unminted),
+        };
+        let scrutinised = Scrutinised {
+            scrutinee,
+            outer: Depth(self.cx.scope.telescope_binders(form.frame).count()),
+        };
+        let tracked = match motive {
+            Maybe::Present((base, gap))
+                if form.tests.iter().any(|test| {
+                    matches!(
+                        *test,
+                        Test::Data { .. }
+                            | Test::Split {
+                                dependent: Dependent(true),
+                                ..
+                            }
+                    )
+                }) =>
+            {
+                tracked_motives(&form.tests, base, gap, scrutinised, sink.arena)
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Vec::new(),
+        };
+        let refinings = refinings(&form.tests);
+        let dependent = dependents(&form.tests, &tracked, sink.arena);
+        let readings = Readings {
+            refinings: &refinings,
+            dependent: &dependent,
+            held: held_variable(scrutinised, sink.arena),
+        };
+        let mut minted: Vec<Maybe<ComputationId, lowered::Absent>> = Vec::from_iter(
+            form.tests
+                .iter()
+                .map(|_test| Maybe::Absent(lowered::Absent::Unminted)),
+        );
+        let mut copies = Vec::new();
+        for (position, test) in form.tests.iter().enumerate().rev() {
+            let read = tracked
+                .get(position)
+                .copied()
+                .unwrap_or(Maybe::Absent(lowered::Absent::Unminted));
+            let at = refinings
+                .under
+                .get(position)
+                .copied()
+                .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
+            let answered = if position == 0_usize {
+                ascription
+            }
+            else {
+                Maybe::Absent(lowered::Absent::Unminted)
+            };
+            let id = mint_test(
+                test,
+                (scrutinised, readings),
+                (&bodies, &guards, match armed {
+                    Maybe::Present(ref read) => read,
+                    Maybe::Absent(_) => &[],
+                }),
+                &minted,
+                (read, at, answered),
+                sink,
+                &mut copies,
+            );
+            if let Some(held) = minted.get_mut(position) {
+                *held = id;
+            }
+        }
+        self.name_fields(form, &minted, sink);
+        let inserted = origin.inserted(Insertion::Match);
+        let minted_root = match minted.first() {
+            Some(&Maybe::Present(root)) if form.loops.is_empty() => Maybe::Present(root),
+            Some(&Maybe::Present(root)) => self.with_loops(form, root, sink, &mut copies),
+            Some(&Maybe::Absent(_)) | None => Maybe::Absent(lowered::Absent::Unminted),
+        };
+        let Maybe::Present(tree) = minted_root
+        else {
+            record_copied_since(
+                sink,
+                mark,
+                inserted,
+                Maybe::Absent(rooted::Absent::Unminted),
+                &copies,
+            );
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        // A matching lambda binds its columns itself, one lambda each.
+        let root = match form.roots {
+            Roots::Lambdas(Depth(columns)) => {
+                (0 .. columns).fold(tree, |body, _column| sink.arena.computation_lambda(body))
+            },
+            Roots::Scrutinee | Roots::Parameters(_) => tree,
+        };
+        if sink.arena.computations_since(mark).all(|id| id != root) {
+            record_copied_since(
+                sink,
+                mark,
+                inserted,
+                Maybe::Absent(rooted::Absent::Adopted),
+                &copies,
+            );
+            return Maybe::Present(Lowered::Computation(root));
+        }
+        record_copied_since(
+            sink,
+            mark,
+            inserted,
+            Maybe::Present((root, origin)),
+            &copies,
+        );
+        let mut kept = form.origin.clone();
+        kept.scrutinised = match valued {
+            Some(_) => Maybe::Present(scrutinee),
+            None => Maybe::Absent(scrutinised::Absent::Columns),
+        };
+        sink.origins.record_case(tree, kept);
+
+        Maybe::Present(Lowered::Computation(root))
+    }
+
+    /// Records, for each field binder a data switch of `form`'s tree opens
+    /// and each component binder a split opens, the arm variable every arm
+    /// reached through it binds there, when they agree on its name.
+    ///
+    /// # Specification
+    /// - requires: `minted` holds the tree's nodes as [`mint_test`] minted
+    ///   them, position for position.
+    /// - ensures: each lambda a minted data switch's branch opens for its field
+    ///   `f` under `d` tree binders is recorded as written at the arm variable
+    ///   that the leaves under that branch settle at level `d + f + 1`, when at
+    ///   least one leaf settles a variable there and every one that does writes
+    ///   the same name; each component `c` of a minted split under `d` tree
+    ///   binders likewise, at the variable the leaves under the split settle at
+    ///   level `d + c + 1`, or else at the label of the field a labelled
+    ///   pattern leaves unwritten there, or of the field the rest of a
+    ///   dependent record held there starts at; any other binder keeps no name.
+    /// - provides: the source's name for a pattern variable, which a type
+    ///   printed inside an arm reads its field binder by, whether or not the
+    ///   arm uses it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the origins it records live in the sink's table,
+    ///   which a predicate over the lowerer cannot read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field a single arm names, and one two arms name
+    ///   alike, each answer under the written name; a relation's record split
+    ///   names a component its arm never uses, and one a label pattern omits; a
+    ///   dependent record's rest is named by the label it starts at.
+    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
+    /// - witness: `lower::identity::tests::a_relation_split_names_each_written_component_665`
+    /// - witness: `lower::identity::tests::an_unwritten_field_is_named_by_its_label_670`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `unwritten` holds the components one split leaves unwritten"
+        )
+    )]
+    fn name_fields(
+        &self,
+        form: &CaseForm,
+        minted: &[Maybe<ComputationId, lowered::Absent>],
+        sink: &mut Sink<'_>,
+    )
+    {
+        for (test, &held) in form.tests.iter().zip(minted) {
+            let Maybe::Present(switch) = held
+            else {
+                continue;
+            };
+            let (depth, branches) = match *test {
+                Test::Data {
+                    depth,
+                    ref branches,
+                    ..
+                } => (depth, branches),
+                Test::Split {
+                    depth,
+                    arity,
+                    child,
+                    ref unwritten,
+                    ..
+                } => {
+                    for component in 0 .. arity {
+                        let level = TreeLevel(depth.0.saturating_add(component).saturating_add(1));
+                        let name = if let Some(origin) = self.field_name(form, child, level) {
+                            ComponentName::Written(origin)
+                        }
+                        else {
+                            let Some(&(_, ref label)) =
+                                unwritten.iter().find(|&&(held, _)| held == component)
+                            else {
+                                continue;
+                            };
+                            ComponentName::Labelled(label.clone())
+                        };
+                        sink.origins
+                            .place_component(switch, SplitComponent::from(component), name);
+                    }
+                    continue;
+                },
+                Test::Pending
+                | Test::Stuck(_)
+                | Test::Absurd(_)
+                | Test::Leaf { .. }
+                | Test::Guard { .. }
+                | Test::Boolean { .. }
+                | Test::Integer { .. }
+                | Test::Record { .. }
+                | Test::Sum { .. }
+                | Test::List { .. } => continue,
+            };
+            let Some(&gandr_core_term::Computation::DataCase {
+                branches: ref lowered,
+                ..
+            }) = sink.arena.computation(switch)
+            else {
+                continue;
+            };
+            for (&(arity, at), &branch) in branches.iter().zip(lowered) {
+                let mut lambda = branch;
+                for field in 0 .. arity {
+                    let level = TreeLevel(depth.0.saturating_add(field).saturating_add(1));
+                    if let Some(origin) = self.field_name(form, at, level) {
+                        sink.origins.place_binder(lambda, origin);
+                    }
+                    let Some(&gandr_core_term::Computation::Lambda(body)) =
+                        sink.arena.computation(lambda)
+                    else {
+                        break;
+                    };
+                    lambda = body;
+                }
+            }
+        }
+    }
+
+    /// The origin of the arm variable every leaf under `at` settles at
+    /// `level`, when at least one does and all write one name.
+    ///
+    /// # Specification
+    /// - requires: `at` is a node of `form`'s tree.
+    /// - ensures: the first such variable's origin when the leaves under `at`
+    ///   that settle a variable at `level` all write the same name; none when
+    ///   no leaf does, two write different names, or the variable has no
+    ///   origin.
+    /// - provides: the name [`Self::name_fields`] records.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the subtree on an explicit stack.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::name_fields`].
+    /// - witness: `lower::native::tests::a_pattern_variable_names_its_field_binder`
+    #[spec(ensures: |ret| ret.is_none() || form.tests.get(at.0).is_some())]
+    fn field_name(
+        &self,
+        form: &CaseForm,
+        at: TestAt,
+        level: TreeLevel,
+    ) -> Option<Origin>
+    {
+        let mut named: Option<Placed> = None;
+        let mut pending = Vec::from([at]);
+        while let Some(TestAt(position)) = pending.pop() {
+            match form.tests.get(position) {
+                Some(&Test::Leaf {
+                    arm, ref bindings, ..
+                }) => {
+                    let variables = form.variables.get(arm.0).map_or(&[][..], Vec::as_slice);
+                    for (&settled, &variable) in bindings.iter().zip(variables) {
+                        if settled != level {
+                            continue;
+                        }
+                        match named {
+                            Some(first) if self.text_at(first) != self.text_at(variable) => {
+                                return None;
+                            },
+                            Some(_) => {},
+                            None => named = Some(variable),
+                        }
+                    }
+                },
+                Some(&Test::Data { ref branches, .. }) => {
+                    pending.extend(branches.iter().map(|&(_arity, child)| child));
+                },
+                Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
+                Some(&Test::List { nil, cell, .. }) => pending.extend([nil, cell]),
+                Some(
+                    &(Test::Boolean { yes, no, .. }
+                    | Test::Integer { yes, no, .. }
+                    | Test::Guard { yes, no, .. }),
+                ) => {
+                    pending.extend([yes, no]);
+                },
+                Some(&(Test::Split { child, .. } | Test::Record { child, .. })) => {
+                    pending.push(child);
+                },
+                Some(&(Test::Pending | Test::Stuck(_) | Test::Absurd(_))) | None => {},
+            }
+        }
+        let variable = named?;
+        match self.origin_at(variable.node) {
+            Maybe::Present(origin) => Some(origin),
+            Maybe::Absent(_) => None,
+        }
+    }
+
+    /// The root data case `root` of the match `form` with a loop branch per
+    /// loop arm after its constructors' branches.
+    ///
+    /// # Specification
+    /// - requires: `root` is the minted root of `form`'s tree, and `form`
+    ///   carries loop arms.
+    /// - ensures: the data case over the root's scrutinee and motive whose
+    ///   branches are the root's, then each loop arm's body in `form`'s order
+    ///   with the binder its arm reads replaced by `b`, the root's answer at
+    ///   the arm's loop's point over the root's branches as
+    ///   [`gandr_core_term::identity::answer_at`] reads it, which the checker
+    ///   reads alike; every node the replacement rewrote reported in `copies`
+    ///   beside its original. The unminted absence when the root is no data
+    ///   case, a body did not lower or a point does not spell.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the circle's loop arm follows its point's branch and
+    ///   reads `Base`, the value that branch returns, for its answer.
+    /// - witness: `lower::native::tests::a_loop_arm_follows_the_constructors_branches`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if matches!(sink.arena.computation(id), Some(gandr_core_term::Computation::DataCase { .. }))))]
+    fn with_loops(
+        &self,
+        form: &CaseForm,
+        root: ComputationId,
+        sink: &mut Sink<'_>,
+        copies: &mut Vec<Carried>,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        // A presented type is never indexed, so its case takes no equation.
+        let Some(&gandr_core_term::Computation::DataCase {
+            scrutinee,
+            motive,
+            ref branches,
+            arities: ref constructors,
+            ..
+        }) = sink.arena.computation(root)
+        else {
+            return unminted;
+        };
+        let (branches, constructors) = (branches.clone(), constructors.clone());
+        let mut all = branches.clone();
+        let mut rewritten = Vec::new();
+        for arm in &form.loops {
+            let Maybe::Present(body) = self.computation_at(arm.body)
+            else {
+                return unminted;
+            };
+            let Some((carrier, point, arities)) =
+                self.cx.collected.words.get(arm.words).and_then(|words| {
+                    let data = self.cx.collected.data.get(words.family)?;
+                    let family = self
+                        .cx
+                        .collected
+                        .slots
+                        .get(usize::from(data.slot))?
+                        .constant;
+                    let arities: Vec<gandr_kernel_term::FieldCount> = data
+                        .generators
+                        .iter()
+                        .map(|generator| {
+                            gandr_kernel_term::FieldCount::from(generator.fields.len())
+                        })
+                        .collect();
+                    Some((family, &words.point, arities))
+                })
+            else {
+                return unminted;
+            };
+            let classifier = sink.arena.value_type_data(carrier, Vec::new());
+            let Maybe::Present(at) = spelled_point(
+                sink.arena,
+                (carrier, classifier),
+                (point, &arities),
+                &mut Vec::new(),
+            )
+            else {
+                return unminted;
+            };
+            let carried = gandr_core_term::identity::answer_at(
+                sink.arena,
+                at,
+                motive,
+                &branches,
+                &constructors,
+            );
+            rewritten.clear();
+            let instantiated = gandr_core_term::instantiate_computation_traced(
+                sink.arena,
+                body,
+                carried,
+                &mut rewritten,
+            );
+            exits::mark_copies(sink, &rewritten);
+            copies.extend_from_slice(&rewritten);
+            all.push(instantiated);
+        }
+        let extended = sink
+            .arena
+            .computation_data_case(scrutinee, motive, all, constructors);
+        if let Maybe::Present(family) = sink.origins.elimination(root) {
+            sink.origins.record_elimination(extended, family);
+        }
+        Maybe::Present(extended)
+    }
+
+    /// The joint fixpoint the declaration at `owner` is read in.
+    ///
+    /// # Specification
+    /// - requires: the module is collected.
+    /// - ensures: the `def rec` declarations of the mutual block holding
+    ///   `owner`, in block order, with `owner`'s summand, when the block
+    ///   declares at least two and `owner` is one; otherwise no joint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Joint`].
+    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
+    #[spec(ensures: |ret| match ret.own {
+        Maybe::Present((own, summand)) => own == owner && ret.members.len() >= 2 && ret.members.get(usize::from(summand)) == Some(&owner),
+        Maybe::Absent(_) => ret.members.is_empty(),
+    })]
+    pub(super) fn joint(
+        &self,
+        owner: SlotIndex,
+    ) -> Joint
+    {
+        let Some(block) = self
+            .cx
+            .collected
+            .blocks
+            .iter()
+            .find(|block| (block.first .. block.end).contains(&owner))
+        else {
+            return Joint::alone();
+        };
+        let members: Vec<SlotIndex> = self
+            .cx
+            .collected
+            .recursive
+            .range(block.first .. block.end)
+            .copied()
+            .collect();
+        match members.iter().position(|&member| member == owner) {
+            Some(at) if members.len() >= 2 => Joint {
+                members,
+                own: Maybe::Present((owner, Summand::from(at))),
+            },
+            Some(_) | None => Joint::alone(),
+        }
     }
 
     /// The name `operand` writes, when it is a bare name form; `None` for an
@@ -15174,25 +16202,25 @@ impl<'source> Lowerer<'_, 'source>
     /// `own` under `roots` writes back bare in its own place.
     ///
     /// # Specification
-    /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
-    ///   pieces.
+    /// - requires: as [`Lowerer::staged_by_body`]; `scratch` is free for
+    ///   reading pieces.
     /// - ensures: the largest `k <= staged` such that every call form headed by
     ///   an instantiation of `own`, and every descent of `own` written where a
     ///   type is read, writes, at each position below `k`, a bare name equal to
     ///   the parameter at that position; `staged` when no call stands under
     ///   `roots`.
-    /// - fails: as [`Self::staged_by_body`].
+    /// - fails: as [`Lowerer::staged_by_body`].
     /// - panics: none.
     ///
     /// # Errors
     /// The form fault.
     ///
     /// # Termination
-    /// - reason: as [`Self::staged_by_body`].
+    /// - reason: as [`Lowerer::staged_by_body`].
     /// - measure: the nodes under `roots` not yet popped.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::staged_by_body`].
+    /// - hypothesis: L3 — as [`Lowerer::staged_by_body`].
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     /// - witness: `lower::native::tests::a_recursive_call_passes_its_leading_parameters_unchanged`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |kept| *kept <= staged))]
@@ -15274,12 +16302,12 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The position the match above the first claim of `own`, or of a member
-    /// of `joint`, under `roots` scrutinises, by [`Self::staged_by_body`]'s
+    /// of `joint`, under `roots` scrutinises, by [`Lowerer::staged_by_body`]'s
     /// rule.
     ///
     /// # Specification
-    /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
-    ///   pieces.
+    /// - requires: as [`Lowerer::staged_by_body`]; `scratch` is free for
+    ///   reading pieces.
     /// - ensures: `Some` of the scrutinised parameter's position — the
     ///   innermost match's whose parameter the call does not write back bare
     ///   and `decoded` does not mark with a match outside it, the innermost's
@@ -15288,18 +16316,18 @@ impl<'source> Lowerer<'_, 'source>
     ///   on a parameter stands above the first claim; `None` when no
     ///   instantiation of `own` or of a member of `joint`, and no descent of
     ///   `own` written where a type is read, stands under `roots`.
-    /// - fails: as [`Self::staged_by_body`].
+    /// - fails: as [`Lowerer::staged_by_body`].
     /// - panics: none.
     ///
     /// # Errors
     /// The form fault.
     ///
     /// # Termination
-    /// - reason: as [`Self::staged_by_body`].
+    /// - reason: as [`Lowerer::staged_by_body`].
     /// - measure: the nodes under `roots` not yet popped.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::staged_by_body`].
+    /// - hypothesis: L3 — as [`Lowerer::staged_by_body`].
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
     /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     /// - witness: `lower::native::tests::a_descent_inside_a_record_type_stages_its_match_s_parameter_3087`
@@ -15472,7 +16500,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Whether `pieces`, a type application's, write a descent of `own` where a
-    /// type is read, `own[<](…)`, as [`Self::staged_unquote`] reads one.
+    /// type is read, `own[<](…)`, as [`Lowerer::staged_unquote`] reads one.
     ///
     /// # Specification
     /// - ensures: `true` exactly when the pieces open with a type identifier or
@@ -15498,237 +16526,16 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// How many parameters a recursive call headed by the instantiation
-    /// `head`, read under `frame`, passes unchanged: those before the staged
-    /// one of the recursive function its head names.
-    ///
-    /// # Specification
-    /// - requires: `head` is an instantiation form.
-    /// - ensures: the count of the named recursive function's parameters before
-    ///   its staged one when the head's name resolves to the frame binding a
-    ///   recursive function's own name; zero otherwise, where the claim
-    ///   ([`Self::instantiation`]) refuses or the call is a joint sibling's,
-    ///   whose members take no leading parameter.
-    /// - provides: the arguments a descent call leaves out of its application.
-    /// - fails: a fault reading the head's pieces or shape; the allowance
-    ///   refusal from the binder walk.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The form's or the binder walk's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a call over a uniform leading parameter applies its
-    ///   later arguments alone.
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |leading| leading.0 <= self.cx.parameters.entries().len()))]
-    pub(super) fn leading_parameters(
-        &mut self,
-        frame: Frame,
-        head: Placed,
-    ) -> Result<ParameterAt, LoweringRefusal<'source>>
-    {
-        Ok(ParameterAt(
-            self.instantiated_recursion(frame, head)?
-                .and_then(|binder| self.cx.recursions.get(&binder))
-                .map_or(0, |recursion| {
-                    self.cx.parameters.read(recursion.uniform).len()
-                }),
-        ))
-    }
-
-    /// Lay out a recursive call headed by the instantiation `head` in its
-    /// function's merged telescope's order, passing each entry it omits: an
-    /// implicit and an instance, as the call's arguments `written` give the
-    /// explicit ones.
-    ///
-    /// # Specification
-    /// - requires: `head` is an instantiation form read under `frame`;
-    ///   `written` is the call's arguments, the last the operand store holds.
-    /// - ensures: when the head names the recursive function `site` stands in,
-    ///   and `written` holds one argument per explicit parameter of its merged
-    ///   telescope, the operands from `written.start` are one per parameter in
-    ///   the telescope's order: each explicit one the next written argument; an
-    ///   implicit before the fixpoint the function's own, kept in
-    ///   [`Context::kept_implicits`](gandr_surface_lowering_base::lower::Context::kept_implicits)
-    ///   and left out of the application; one past it a hole the call nominates
-    ///   ([`Self::nominate`]), a model implicit one per component
-    ///   ([`Self::pass_model`]); an instance the one of its interface in scope
-    ///   ([`Self::resolved_instance`]). Otherwise nothing changes, and the
-    ///   claim's arity check reads the call ([`Self::uniform_descent`]).
-    /// - fails: [`Self::resolved_instance`]'s, [`Self::nominate`]'s and
-    ///   [`Self::pass_model`]'s refusals; the head's, as
-    ///   [`Self::instantiated_recursion`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As `- fails:`.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a descent under a row that labels a theory's instance
-    ///   passes the function's own instance; a descent under an implicit
-    ///   telescope passes the function's own implicit before its staged
-    ///   parameter.
-    /// - witness: `lower::native::tests::a_recursion_under_an_instance_row_binds_its_own_name_3699`
-    /// - witness: `lower::native::tests::a_recursion_under_an_implicit_telescope_descends_on_its_matched_parameter_3828`
-    #[spec(
-        captures: before = self.cx.operands.entries().len(),
-        ensures: |ret| ret.is_err() || self.cx.operands.entries().len() >= before,
-    )]
-    pub(super) fn omitted_entries(
-        &mut self,
-        site: Site,
-        frame: Frame,
-        head: Placed,
-        written: Stretch,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let Some(binder) = self.instantiated_recursion(frame, head)?
-        else {
-            return Ok(());
-        };
-        let Some(recursion) = self.cx.recursions.get(&binder).copied()
-        else {
-            return Ok(());
-        };
-        let Maybe::Present(owner) = self.cx.collected.owner_of(site.at.node)
-        else {
-            return Ok(());
-        };
-        let Some(function) = self
-            .cx
-            .collected
-            .slots
-            .get(usize::from(owner))
-            .filter(|slot| slot.named.node == recursion.named)
-            .map(|slot| slot.name)
-        else {
-            return Ok(());
-        };
-        let Some(Ok(entries)) = self.cx.collected.plicities.get(&owner).cloned()
-        else {
-            return Ok(());
-        };
-        let explicit = entries
-            .iter()
-            .filter(|entry| entry.plicity == crate::module::Plicity::Explicit)
-            .count();
-        if written.end.saturating_sub(written.start) != explicit || explicit == entries.len() {
-            return Ok(());
-        }
-        // The parameters before the fixpoint, which the call leaves out of
-        // its application.
-        let kept = self.cx.parameters.read(recursion.uniform).len();
-        let arguments = self.cx.operands.split_off(At::from(written.start));
-        let mut arguments = arguments.into_iter();
-        let mut place = 0_usize;
-        for entry in entries {
-            if let Some((_, slot)) = self.implicit_slot(site, entry)? {
-                let width = slot.components().len();
-                if place < kept {
-                    for _component in 0 .. width {
-                        let _fresh = self.cx.kept_implicits.insert(self.cx.operands.next_key());
-                        self.cx.operands.push(site.at.node);
-                    }
-                }
-                else {
-                    self.pass_model(site, frame, (function, entry.name), &slot, None)?;
-                }
-                place = place.saturating_add(width);
-                continue;
-            }
-            match entry.plicity {
-                crate::module::Plicity::Explicit => {
-                    if let Some(argument) = arguments.next() {
-                        self.cx.operands.push(argument);
-                    }
-                },
-                crate::module::Plicity::Implicit if place < kept => {
-                    let _fresh = self.cx.kept_implicits.insert(self.cx.operands.next_key());
-                    self.cx.operands.push(site.at.node);
-                },
-                crate::module::Plicity::Implicit => {
-                    let hole = self.nominate(super::implicit::Nomination::Omitted {
-                        function,
-                        implicit: entry.name,
-                    })?;
-                    let _first = self.cx.nominated.insert(self.cx.operands.next_key(), hole);
-                    self.cx.operands.push(site.at.node);
-                },
-                crate::module::Plicity::Instance => {
-                    let index = self.resolved_instance(site, frame, function, entry)?;
-                    let _first = self.cx.instanced.insert(self.cx.operands.next_key(), index);
-                    self.cx.operands.push(site.at.node);
-                },
-            }
-            place = place.saturating_add(1);
-        }
-
-        Ok(())
-    }
-
-    /// The frame binding the recursive function's own name the instantiation
-    /// `head`, read under `frame`, names.
-    ///
-    /// # Specification
-    /// - requires: `head` is an instantiation form.
-    /// - ensures: the binder the head's bare name resolves to under `frame`
-    ///   when it keys a recursion; none for a head naming anything else.
-    /// - fails: a fault reading the head's pieces or shape; the allowance
-    ///   refusal from the binder walk.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The form's or the binder walk's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::leading_parameters`] and
-    ///   [`Self::parameters_classify`].
-    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
-    /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |binder| binder.is_none_or(|binder| self.cx.recursions.contains_key(&binder))))]
-    fn instantiated_recursion(
-        &mut self,
-        frame: Frame,
-        head: Placed,
-    ) -> Result<Option<ScopeId>, LoweringRefusal<'source>>
-    {
-        let mut scratch = core::mem::take(&mut self.cx.scratch);
-        let read = read_pieces(self.cx.pbg, self.cx.tree, head.node, &mut scratch);
-        let named = scratch.pieces.iter().find_map(|piece| match *piece {
-            Piece::Operand(operand) => Some(operand),
-            Piece::Tile { .. } => None,
-        });
-        self.cx.scratch = scratch;
-        read?;
-        let Some(named) = named
-        else {
-            return Ok(None);
-        };
-        let Some(name) = self.bare_name(named)?
-        else {
-            return Ok(None);
-        };
-        Ok(
-            match self.cx.scope.resolve(frame, name, &mut self.cx.fuel)? {
-                Maybe::Present(bound) if self.cx.recursions.contains_key(&bound.binder) => {
-                    Some(bound.binder)
-                },
-                Maybe::Present(_) | Maybe::Absent(_) => None,
-            },
-        )
-    }
-
     /// Check the position the claim at `site` descends on against the one the
     /// recursive function whose own name the frame `recursion` binds stages.
     ///
     /// # Specification
     /// - requires: `recursion` binds a recursive function's own name.
     /// - ensures: `Ok` when the parameter recorded for `site` by
-    ///   [`Self::scrutinise`] for this function — the staged one when any match
-    ///   above `site` takes it apart, the innermost match's otherwise — or its
-    ///   last parameter where no match is, is the staged one
-    ///   ([`Self::staged_by_body`]).
+    ///   [`Lowerer::scrutinise`] for this function — the staged one when any
+    ///   match above `site` takes it apart, the innermost match's otherwise —
+    ///   or its last parameter where no match is, is the staged one
+    ///   ([`Lowerer::staged_by_body`]).
     /// - provides: the one-position rule every claim of one function keeps.
     /// - fails: [`LoweringRefusal::DescentOnSeveralParameters`] at `site`,
     ///   naming the staged parameter and the claimed one, when they differ.
@@ -15781,196 +16588,6 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
-    /// Record that each arm body in `bodies` stands under a match on
-    /// `scrutinee`, read under `frame`, when it names a recursive function's
-    /// parameter; `enclosing` is the record the match itself stands under.
-    ///
-    /// # Specification
-    /// - requires: `bodies` are the match's arm bodies, not yet visited by the
-    ///   classification sweep.
-    /// - ensures: when `scrutinee` is a name written bare that resolves to a
-    ///   recursive function's parameter, every body records that function and
-    ///   that parameter's position, replacing what an enclosing match recorded,
-    ///   unless `enclosing` records the parameter that same function stages:
-    ///   then every body keeps it, so a call under a match on another parameter
-    ///   still descends on the staged one; otherwise nothing changes, so a
-    ///   match on anything else leaves the enclosing match's record in force.
-    /// - provides: the scrutiny the sweep hands down to every node under an
-    ///   arm, which [`Self::claim`] reads.
-    /// - fails: the allowance refusal from the binder walk; a fault reading the
-    ///   scrutinee's shape.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The binder walk's or the form's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::claim`].
-    /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
-    /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
-    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
-    #[spec(
-        captures: before = self.cx.scrutinised.len(),
-        ensures: |ret| ret.is_err() || self.cx.scrutinised.len() >= before,
-    )]
-    pub(super) fn scrutinise(
-        &mut self,
-        frame: Frame,
-        scrutinee: Placed,
-        enclosing: Option<Scrutiny>,
-        bodies: impl IntoIterator<Item = NodeIndex>,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        if self.cx.staged_parameters.is_empty() {
-            return Ok(());
-        }
-        let Some(written) = self.bare_name(scrutinee)?
-        else {
-            return Ok(());
-        };
-        let Maybe::Present(found) = self.cx.scope.resolve(frame, written, &mut self.cx.fuel)?
-        else {
-            return Ok(());
-        };
-        let Some(&scrutiny) = self.cx.staged_parameters.get(&found.binder)
-        else {
-            return Ok(());
-        };
-        let staged = enclosing.filter(|outer| {
-            outer.recursion == scrutiny.recursion
-                && self
-                    .cx
-                    .recursions
-                    .get(&outer.recursion)
-                    .is_some_and(|held| held.staged == outer.position)
-        });
-        let recorded = staged.unwrap_or(scrutiny);
-        for body in bodies {
-            let _previous = self.cx.scrutinised.insert(body, recorded);
-        }
-
-        Ok(())
-    }
-
-    /// Classify a decoder's own recursion written in the type one of its arms
-    /// returns, `el[<](a)`: the decode of the code the descent call returns.
-    ///
-    /// # Specification
-    /// - requires: `site` is a type application in type position whose head,
-    ///   named `name` at `head`, is followed by `[`; `cursor` stands past it.
-    /// - ensures: the descent `[<]` on a name the frame of a recursive
-    ///   function's fixpoint binds, applied to one argument per parameter with
-    ///   each before the staged one passed as itself, stands as the unquote of
-    ///   that fixpoint called on the staged argument and every one after it,
-    ///   each read as a value inside the type, as a decode's arguments are, at
-    ///   the universe the position reads, and makes the fixpoint claim descent
-    ///   once [`Self::claim`] admits its position; the fixpoint's binder is
-    ///   recorded as mentioned. A call in the body of a lambda among the
-    ///   arguments thus stands as the value it returns, since a type holds no
-    ///   computation for it to run before.
-    /// - provides: the written spelling of an inductive-recursive decode, `(x :
-    ///   el[<](a)) -> -F el[<](b(x))`, whose codomain decodes a code the arm
-    ///   cannot compute before its binder.
-    /// - fails: the misplaced-tile fault for a bracket holding other than `<`;
-    ///   the unadmitted refusal for a head naming no recursive function in
-    ///   scope; the refusals [`Self::uniform_descent`] and [`Self::claim`]
-    ///   raise; the wrong-sort refusal where no type is read.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The application's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a decoder's arm returning a function type whose
-    ///   domain and codomain each decode a descent call, read back as the exact
-    ///   unquotes, and a descent on a name no fixpoint binds, refused as
-    ///   unadmitted.
-    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
-    pub(super) fn staged_unquote(
-        &mut self,
-        site: Site,
-        name: SurfaceName<'source>,
-        mut cursor: Cursor<'_>,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        closed(site, &mut cursor, TileName::LESS_THAN)?;
-        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
-        let start = self.cx.operands.entries().len();
-        arguments(site, &mut cursor, &mut self.cx.operands)?;
-        let written = Stretch {
-            start,
-            end: self.cx.operands.entries().len(),
-        };
-        self.staged_descent(site, name, written)
-    }
-
-    /// Classify a descent `name[<](…)` standing where a type is read, its
-    /// arguments `written` in the operand store: the unquote of the call of the
-    /// recursive function `name`'s fixpoint, as [`Self::staged_unquote`] plans
-    /// the type application and [`Self::typed_call`] the call the expression
-    /// grammar molds inside a quoted type (#3681).
-    ///
-    /// # Specification
-    /// - requires: `site` stands where a type is read; `written` is the
-    ///   arguments the descent is written with, the last the store holds.
-    /// - ensures: as [`Self::staged_unquote`], past its tiles.
-    /// - fails: as [`Self::staged_unquote`], past its tiles.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// The descent's refusal.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::staged_unquote`], and a descent the
-    ///   expression grammar molds at a quoted path carrier.
-    /// - witness: `lower::native::tests::a_decoders_descent_in_its_returned_type_unquotes_the_fixpoint`
-    /// - witness: `lower::tests::a_descent_at_a_quoted_path_carrier_unquotes_as_in_a_type_3681`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.cx.plans.get(site.at.node), Some(&Plan::Unquote(Code::Bound { .. }, ..))))]
-    pub(super) fn staged_descent(
-        &mut self,
-        site: Site,
-        name: SurfaceName<'source>,
-        written: Stretch,
-    ) -> Result<(), LoweringRefusal<'source>>
-    {
-        let from = site.reading.frame();
-        let Maybe::Present(bound) = self.cx.scope.resolve(from, name, &mut self.cx.fuel)?
-        else {
-            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
-        };
-        let Some(&recursion) = self.cx.recursions.get(&bound.binder)
-        else {
-            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::RecursiveClaim)));
-        };
-        self.claim(site, bound.binder)?;
-        self.uniform_descent(from, recursion, site, self.kept(written))?;
-        if let Some(held) = self.cx.recursions.get_mut(&bound.binder) {
-            held.claimed = Claimed(true);
-        }
-        let leading = self.cx.parameters.read(recursion.uniform).len();
-        let applied = Stretch {
-            start: written.start.saturating_add(leading).min(written.end),
-            end: written.end,
-        };
-        let universe = site.reading.positional_universe();
-        let produced = match universe.sort {
-            GroundSort::Value => Produced::ValueType,
-            GroundSort::Computation => Produced::CompType,
-        };
-        let frame = self.require(site, produced)?;
-        let telescope = self.name_in_type(site.at.node, bound.binder);
-        let code = Code::Bound {
-            from,
-            binder: bound.binder,
-            telescope,
-        };
-        let kept = self.kept(applied);
-        self.plan_applied(site, Plan::Unquote(code, kept, universe), applied, frame);
-
-        Ok(())
-    }
-
     /// The evidence the fixpoint of `function` carries, when it recurses.
     ///
     /// # Specification
@@ -15981,7 +16598,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   binders stand before it; partial evidence for a recursive tail none of
     ///   whose calls claims it, and the plain absence for a tail that does not
     ///   recurse.
-    /// - provides: the claim [`Self::mint_function`] closes the fixpoint with.
+    /// - provides: the claim [`Lowerer::mint_function`] closes the fixpoint
+    ///   with.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -16020,206 +16638,6 @@ impl<'source> Lowerer<'_, 'source>
                 Some(_) | None => FixpointEvidence::Partial,
             }),
             Maybe::Absent(reason) => Maybe::Absent(reason),
-        }
-    }
-
-    /// Join each mutual block's recursive functions into one fixpoint over the
-    /// sum of their domains, each member that fixpoint at its own summand.
-    ///
-    /// **Choice.** The core has one fixpoint former, and the kernel stages a
-    /// fixpoint over a sum of a block's families at the block's one stage, so
-    /// mutual recursion is the joint fixpoint `fix f. λ y. case y { … }` over
-    /// `A₀ + … + Aₙ`, a member `λ x. f (injᵢ x)` and a descent through a
-    /// sibling `f (inj_j v) c₁ … cₘ`. A member's parameters after its staged
-    /// one stay the lambdas of its branch, so the case stands directly under
-    /// the staged lambda and no branch is re-indexed past them. Members whose
-    /// results differ, or whose types read the staged parameter, share the
-    /// joint at a goal a case over the sum computes ([`joint_goal`]), which
-    /// each arm and each member reads at its own summand (#5036).
-    /// **Alternatives.** A mutual fixpoint former, a new kernel node the
-    /// record declines; a tuple of fixpoints, which no stage relates.
-    /// **Reversal.** A member over leading parameters joins once the joint
-    /// reads a telescope rather than one domain (#5065).
-    ///
-    /// # Specification
-    /// - requires: the mint sweep has run.
-    /// - ensures: in a mutual block of at least two `def rec` declarations,
-    ///   each staging its first parameter and lowered to `thunk (fix. λ. bᵢ)`
-    ///   at `+U (Aᵢ -> Cᵢ)` or `+U ((x : Aᵢ) -> Cᵢ)`, `bᵢ` the lambdas of the
-    ///   later parameters over the body and `Cᵢ` the arrow over their types,
-    ///   every member's body is `thunk (λ x. ((fix. λ y. case y { b₀↑ | … | bₙ↑
-    ///   }) : G) (injᵢ x))`, each `bᵢ` raised past the case's binder and its
-    ///   copies at the origins of what they copy, every other node the
-    ///   fixpoint's insertion; `G` is `Σᵢ Aᵢ -> C` when every member is a plain
-    ///   arrow to one `C`, and [`joint_goal`] otherwise; the fixpoint claims
-    ///   descent when a member's did. A block with a member that did not lower
-    ///   so is unchanged.
-    /// - provides: mutual recursion between a block's functions as the one
-    ///   fixpoint the core has.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — each member's body shape is a term in the sink's
-    ///   arena, which a clause would walk member by member; the witness reads
-    ///   the shapes back.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Joint`].
-    /// - witness: `lower::native::tests::a_mutual_block_member_takes_a_parameter_after_its_staged_one_3722`
-    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
-    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    pub(super) fn mint_joints(
-        &mut self,
-        sink: &mut Sink<'_>,
-    )
-    {
-        let mut joined = Vec::new();
-        for index in self.cx.current.blocks .. self.cx.collected.blocks.len() {
-            let Some(&block) = self.cx.collected.blocks.get(index)
-            else {
-                continue;
-            };
-            let members = self.cx.collected.recursive.range(block.first .. block.end);
-            let count = members.clone().count();
-            if count < 2 {
-                continue;
-            }
-            joined.clear();
-            for &member in members {
-                match self.joinable(member, sink) {
-                    Maybe::Present(read) => joined.push(read),
-                    Maybe::Absent(_) => break,
-                }
-            }
-            if joined.len() == count {
-                self.join(&joined, sink);
-            }
-        }
-    }
-
-    /// Refuse each member of a mutual block whose call through a sibling
-    /// passes other than one argument per parameter of that sibling.
-    ///
-    /// **Choice.** A member classifies before its later siblings read their
-    /// parameters, so [`Self::instantiation`] holds each call through a sibling
-    /// and this pass counts it once every member is read. Members may take
-    /// different parameters after the first (#5036), so the count is the
-    /// called member's, not the caller's.
-    ///
-    /// # Specification
-    /// - requires: the source is classified and not yet minted.
-    /// - ensures: each held call whose count differs from its called member's
-    ///   parameters refuses its caller with the arity refusal at the call,
-    ///   unless the caller holds a refusal already; the held calls are spent.
-    /// - provides: the arity refusal of a call through a sibling.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the clause would recount every member's parameters;
-    ///   the witness reads the refusal back.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a call passing its sibling's parameters lowers, and
-    ///   one passing its caller's count to a sibling of another count refuses.
-    /// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
-    pub(super) fn refuse_sibling_arities(&mut self)
-    {
-        for held in core::mem::take(&mut self.cx.sibling_calls) {
-            let Some(&Maybe::Present(Half { declaration, .. })) = self
-                .cx
-                .collected
-                .slots
-                .get(usize::from(held.called))
-                .map(|slot| &slot.definition)
-            else {
-                continue;
-            };
-            let parameters = self.cx.recursions.iter().find_map(|(&binder, recursion)| {
-                (self.cx.scope.declared(binder) == Maybe::Present(declaration.node))
-                    .then(|| self.cx.parameters.read(recursion.parameters).len())
-            });
-            if parameters.is_some_and(|count| OperandCount::from(count) != held.arguments) {
-                let _held = self
-                    .cx
-                    .faults
-                    .entry(held.caller)
-                    .or_insert_with(|| held.call.out(FragmentBoundary::Arity(held.arguments)));
-            }
-        }
-    }
-
-    /// Read each recursive call through the joint of a mutual block holding a
-    /// member the lowering refused as the call it is without the joint, which
-    /// [`Self::mint_joints`] leaves unformed for that block.
-    ///
-    /// **Choice.** Without the joint, a member is its own fixpoint over its own
-    /// domain: a call on itself passes its argument uninjected, and a call
-    /// through a sibling names the sibling's declaration, as a call of a
-    /// declaration outside the block does. The checker then meets the
-    /// refused sibling as a constant it has no type for, and the report reads
-    /// that refusal as the sibling's consequence, a note naming it, rather
-    /// than refusing the injection into a sum the joint never formed (#2340).
-    /// **Alternative.** Refusing every other member at the lowering, which
-    /// needs a refusal of its own for what the cascade cut already reports.
-    ///
-    /// # Specification
-    /// - requires: the source is classified and not yet minted.
-    /// - ensures: every call through a joint ([`Self::instantiation`]) whose
-    ///   block holds a member refused before the mint carries no injection, and
-    ///   one through a sibling member is planned as that member's constant;
-    ///   every other call through a joint is unchanged.
-    /// - provides: a lowered member of such a block typed at its own domain.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the clause compares the injections and plans before
-    ///   and after, a walk no clause makes; the witness reads the report back.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a member calling a sibling refused at its head and at
-    ///   its body is not refused by a shape of its own.
-    /// - witness: `lower::native::tests::a_member_beside_a_refused_sibling_calls_its_declaration_2340`
-    pub(super) fn unjoin_refused(&mut self)
-    {
-        let mut unjoined = Vec::new();
-        for (&head, &summand) in &self.cx.injected {
-            let Maybe::Present(owner) = self.cx.collected.owner_of(head)
-            else {
-                continue;
-            };
-            let joint = self.joint(owner);
-            let refused = joint.members.iter().any(|&member| {
-                self.cx.faults.contains_key(&member)
-                    || self
-                        .cx
-                        .collected
-                        .slots
-                        .get(usize::from(member))
-                        .is_some_and(|slot| matches!(slot.refusal, Maybe::Present(_)))
-            });
-            let Maybe::Present((_, own)) = joint.own
-            else {
-                continue;
-            };
-            if !refused {
-                continue;
-            }
-            let called = if summand == own {
-                None
-            }
-            else {
-                joint
-                    .members
-                    .get(usize::from(summand))
-                    .and_then(|&member| self.cx.collected.slots.get(usize::from(member)))
-                    .map(|slot| slot.constant)
-            };
-            unjoined.push((head, called));
-        }
-        for (head, called) in unjoined {
-            let _injected = self.cx.injected.remove(&head);
-            if let Some(constant) = called
-                && let Some(plan) = self.cx.plans.get_mut(head)
-            {
-                *plan = Plan::Constant(constant);
-            }
         }
     }
 
@@ -16321,309 +16739,4 @@ impl<'source> Lowerer<'_, 'source>
             origin,
         })
     }
-
-    /// Mint the joint fixpoint of `joined` and make each member's body that
-    /// fixpoint at its summand, as [`Self::mint_joints`] states.
-    ///
-    /// # Specification
-    /// - requires: `joined` is one block's members in block order, at least
-    ///   two, each read by [`Self::joinable`].
-    /// - ensures: as [`Self::mint_joints`] states for one block.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Joint`].
-    /// - witness: `lower::native::tests::a_mutual_blocks_recursive_functions_share_one_fixpoint`
-    #[spec(requires: joined.len() >= 2)]
-    fn join(
-        &mut self,
-        joined: &[Joinable],
-        sink: &mut Sink<'_>,
-    )
-    {
-        let Some(first) = joined.first()
-        else {
-            return;
-        };
-        let mark = sink.arena.watermark();
-        let mut carried = Vec::new();
-        let domains: Vec<ValueTypeId> = joined.iter().map(|member| member.domain).collect();
-        let sum = sink.arena.value_type_sum(&domains);
-        let shared = joined.iter().all(|member| {
-            matches!(
-                sink.arena.comp_type(member.arrow),
-                Some(&CompType::Arrow { .. })
-            ) && gandr_core_term::equal_comp_type_syntax(
-                sink.arena,
-                member.codomain,
-                first.codomain,
-            ) == gandr_core_term::CertificateEquality::Equal
-        });
-        let ascribed = if shared {
-            sink.arena.comp_type_arrow(sum, first.codomain)
-        }
-        else {
-            joint_goal(sink, joined, sum, &mut carried)
-        };
-        // Each member's body stands under its own fixpoint binder and its
-        // parameter; in the joint it stands under the fixpoint binder, the
-        // case's scrutinee and the summand the case binds.
-        let mut branches = Vec::with_capacity(joined.len());
-        for member in joined {
-            branches.push(
-                gandr_core_term::shift_computation_under(
-                    sink.arena,
-                    member.branch,
-                    Binders::ONE,
-                    Binders::ONE,
-                )
-                .settle_traced(sink.arena, &mut carried),
-            );
-        }
-        let evidence = if joined
-            .iter()
-            .any(|member| member.evidence == FixpointEvidence::StructuralDescent)
-        {
-            FixpointEvidence::StructuralDescent
-        }
-        else {
-            FixpointEvidence::Partial
-        };
-        let scrutinee = sink
-            .arena
-            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-        let case = sink.arena.computation_case(scrutinee, &branches);
-        let lambda = sink.arena.computation_lambda(case);
-        let fixpoint = sink.arena.computation_fixpoint(lambda, evidence);
-        let joint = sink.arena.computation_ascribe(fixpoint, ascribed);
-        record_copied_since(
-            sink,
-            mark,
-            first.origin.inserted(Insertion::Joint),
-            Maybe::Absent(rooted::Absent::Unminted),
-            &carried,
-        );
-        for (at, member) in joined.iter().enumerate() {
-            let inserted = member.origin.inserted(Insertion::Fixpoint);
-            let own = sink
-                .arena
-                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-            sink.origins.record_value(own, inserted);
-            let injected = sink.arena.value_injection(Summand::from(at), own);
-            sink.origins.record_value(injected, inserted);
-            let applied = sink.arena.computation_application(joint, injected);
-            sink.origins.record_computation(applied, inserted);
-            let lambda = sink.arena.computation_lambda(applied);
-            sink.origins.record_computation(lambda, inserted);
-            let thunk = sink.arena.value_thunk(lambda);
-            sink.origins
-                .record_value(thunk, member.origin.inserted(Insertion::Thunk));
-            if let Some(lowered) = self.cx.lowered.get_mut(member.declaration) {
-                *lowered = Maybe::Present(Lowered::Function {
-                    signature: Maybe::Present(member.signature),
-                    body: thunk,
-                });
-            }
-        }
-    }
-}
-
-/// The goal of a joint whose members' results differ: `Π (y : sum).
-/// El(⟨case y { return ⌜C₀⌝ | … | return ⌜Cₙ⌝ }⟩)`, each `Cᵢ` member `i`'s
-/// result with its parameter read as the summand the case binds.
-///
-/// **Choice.** The decode reads at each summand to that member's own result,
-/// in the checker and in the kernel, since a case on the joint's binder reads
-/// its goal at each injection (#5036). The motive is a case returning codes,
-/// so no declaration is minted for it.
-/// **Alternative.** A motive minted as a declaration of its own, which needs a
-/// constant and a slot the block does not have.
-///
-/// # Specification
-/// - requires: `joined` is one block's members, each read by
-///   [`Lowerer::joinable`], and `sum` the sum of their domains.
-/// - ensures: the dependent arrow above, its case ascribed at `F U_c 0`; a
-///   dependent member's result is raised past the case's scrutinee, and a plain
-///   one's past the scrutinee and the summand. The copies are traced into
-///   `carried`.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Joint`].
-/// - witness: `lower::native::tests::a_mutual_block_member_takes_later_parameters_its_sibling_does_not_5036`
-#[spec(ensures: |ret| matches!(sink.arena.comp_type(ret), Some(&CompType::Pi { domain, .. }) if domain == sum))]
-fn joint_goal(
-    sink: &mut Sink<'_>,
-    joined: &[Joinable],
-    sum: ValueTypeId,
-    carried: &mut Vec<Carried>,
-) -> CompTypeId
-{
-    let mut arms = Vec::with_capacity(joined.len());
-    for member in joined {
-        let (under, amount) = if matches!(
-            sink.arena.comp_type(member.arrow),
-            Some(&CompType::Pi { .. })
-        ) {
-            (Binders::ONE, Binders::ONE)
-        }
-        else {
-            (Binders::NONE, Binders::from(2_u32))
-        };
-        let result =
-            gandr_core_term::shift_comp_type_under(sink.arena, member.codomain, under, amount)
-                .settle_traced(sink.arena, carried);
-        let code = sink.arena.value_quote_computation(result);
-        arms.push(sink.arena.computation_return(code));
-    }
-    let scrutinee = sink
-        .arena
-        .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let motive = sink.arena.computation_case(scrutinee, &arms);
-    let codes = sink.arena.value_type_universe(
-        gandr_core_term::Sort::Ground(GroundSort::Computation),
-        Level::zero(),
-    );
-    let codes = sink.arena.comp_type_returner(codes);
-    let motive = sink.arena.computation_ascribe(motive, codes);
-    let code = sink.arena.value_returned(motive);
-    let goal = sink.arena.comp_type_element(code, Level::zero());
-    sink.arena.comp_type_pi(sum, goal)
-}
-
-/// Whether a rule side binds its variables or reads the left side's.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Binding
-{
-    /// The left side: a variable's first occurrence takes the next ordinal.
-    Binds,
-    /// The right side: a variable reads the ordinal the left side gave it.
-    Reads,
-}
-
-/// Which applications of a rule side apply the generators it is read over.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Heads
-{
-    /// A data declaration's constructors: an operation is another reading's.
-    Constructors,
-    /// A theory's operations, each the constructor of its terms: a
-    /// constructor is no operation of the theory.
-    Operations,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a rule side is not a presented type's.
-    pub(crate) mod rule_side {
-        /// The reason the side was passed over.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub(crate) enum Absent {
-            /// It applies what is no generator: an operation of a family, a
-            /// constructor of a theory, a results tuple, or a generator `names`
-            /// does not hold.
-            Foreign,
-            /// Its right side names a variable its left side does not bind.
-            Unbound,
-        }
-    }
-}
-
-/// One rule side in pre-order over the generators `names`, the applications
-/// `heads` names, its variables numbered through `variables`.
-///
-/// # Specification
-/// - requires: `variables` holds the left side's variables when `binding` reads
-///   them.
-/// - ensures: one node per term node, a generator by its position in `names`
-///   and a variable by its position in `variables` — appended there on its
-///   first occurrence when `binding` binds.
-/// - fails: [`rule_side::Absent::Foreign`] for an application `heads` does not
-///   name, a results tuple, an instantiation or a generator `names` does not
-///   hold; [`rule_side::Absent::Unbound`] for a variable a reading side meets
-///   unbound.
-/// - panics: none.
-///
-/// # Termination
-/// - reason: the `while let` worklist, not recursion.
-/// - measure: the term nodes still to visit.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Lowerer::presentation`] and [`Lowerer::term_rules`].
-/// - witness: `lower::native::tests::a_presented_family_lowers_its_rules`
-/// - witness: `tests::modules::models::a_theory_s_terms_are_its_operations_over_its_rules_4143`
-#[spec(ensures: |ret| match ret {
-    Maybe::Present(ref nodes) => !nodes.is_empty(),
-    Maybe::Absent(_) => true,
-})]
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        linear_search_in_loop,
-        reason = "bounded: `variables` holds one rule side's variables and `names` one family's constructors"
-    )
-)]
-fn rule_side(
-    side: &gandr_theory_levitation::FreeTerm,
-    names: &[SourceFragment<'_>],
-    variables: &mut Vec<gandr_theory_levitation::Name>,
-    binding: Binding,
-    heads: Heads,
-) -> Maybe<alloc::boxed::Box<[gandr_core_term::RuleNode]>, rule_side::Absent>
-{
-    let mut nodes = Vec::new();
-    let mut pending = Vec::from([side.to_node()]);
-    while let Some(node) = pending.pop() {
-        match (node.view(), heads) {
-            (gandr_theory_levitation::TermView::Var(name), _) => {
-                let position = match variables.iter().position(|bound| bound == name) {
-                    Some(position) => position,
-                    None if binding == Binding::Binds => {
-                        variables.push(name.clone());
-                        variables.len().saturating_sub(1)
-                    },
-                    None => return Maybe::Absent(rule_side::Absent::Unbound),
-                };
-                let Ok(ordinal) = u32::try_from(position)
-                else {
-                    return Maybe::Absent(rule_side::Absent::Unbound);
-                };
-                nodes.push(gandr_core_term::RuleNode::Variable(
-                    gandr_core_term::RuleVariable::from(ordinal),
-                ));
-            },
-            (gandr_theory_levitation::TermView::Ctor { name, args }, Heads::Constructors)
-            | (gandr_theory_levitation::TermView::Op { name, args }, Heads::Operations) => {
-                let Some(tag) = names
-                    .iter()
-                    .position(|&written| <&str>::from(written) == name.as_ref())
-                else {
-                    return Maybe::Absent(rule_side::Absent::Foreign);
-                };
-                nodes.push(gandr_core_term::RuleNode::Constructor(
-                    ConstructorTag::from(tag),
-                ));
-                let mark = pending.len();
-                pending.extend(args);
-                if let Some(children) = pending.get_mut(mark ..) {
-                    children.reverse();
-                }
-            },
-            (
-                gandr_theory_levitation::TermView::Op { .. }
-                | gandr_theory_levitation::TermView::Ctor { .. }
-                | gandr_theory_levitation::TermView::Results { .. }
-                | gandr_theory_levitation::TermView::Inst { .. }
-                | gandr_theory_levitation::TermView::Abs { .. }
-                | gandr_theory_levitation::TermView::Atom(_)
-                | gandr_theory_levitation::TermView::Lam { .. }
-                | gandr_theory_levitation::TermView::Bound(_),
-                _,
-            ) => {
-                return Maybe::Absent(rule_side::Absent::Foreign);
-            },
-        }
-    }
-    Maybe::Present(nodes.into_boxed_slice())
 }

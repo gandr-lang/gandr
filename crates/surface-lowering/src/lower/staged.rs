@@ -204,19 +204,19 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 return Err(implicit);
             };
-            let name = self.name_at(written);
+            let name = self.cx.name_at(written);
             if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
                 let sort = site.one(cursor.operands())?;
-                let head = matches!(self.form_at(sort)?, Some((_, Former::TypeHead)));
-                if head && self.name_at(sort).as_ref() == "Size" {
+                let head = matches!(self.cx.form_at(sort)?, Some((_, Former::TypeHead)));
+                if head && self.cx.name_at(sort).as_ref() == "Size" {
                     let _shadowed = names.insert(name, StageBinder::from(bounds.len()));
                     bounds.push(StageBound::Unbounded);
                 }
-                else if head && self.name_at(sort).as_ref() == "Region" {
+                else if head && self.cx.name_at(sort).as_ref() == "Region" {
                     let ordinal = u32::try_from(regions.len()).map_err(|_wide| implicit)?;
                     let _shadowed = regions.insert(name, RegionBinder::from(ordinal));
                 }
-                else if head && self.name_at(sort).as_ref() == "Mode" {
+                else if head && self.cx.name_at(sort).as_ref() == "Mode" {
                     let _fresh = modes.insert(name);
                 }
                 else if let Maybe::Absent(_) = self.merged_at(site.at.node) {
@@ -228,7 +228,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
                 };
-                let bounding = self.name_at(over);
+                let bounding = self.cx.name_at(over);
                 let Some(&bounded) = names.get(&name)
                 else {
                     return Err(LoweringRefusal::UnresolvedName {
@@ -404,7 +404,7 @@ impl<'source> Lowerer<'_, 'source>
                 .out(FragmentBoundary::Reserved(Unbuilt::StageResident)));
                 break;
             };
-            let stage_name = self.name_at(at);
+            let stage_name = self.cx.name_at(at);
             match caller.get(&stage_name) {
                 Some(&ordinal) if label == TileName::IDENTIFIER => {
                     staged.push((StageBinder::from(binder), Stage::At(StageId::from(ordinal))));
@@ -467,7 +467,7 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let placed = Placed::of(at, node);
-            let formed = self.form_at(placed)?;
+            let formed = self.cx.form_at(placed)?;
             read_pieces(self.cx.pbg, self.cx.tree, at, scratch)?;
             if let Some((form, Former::StagedType)) = formed
                 && patched::bracket_of(&scratch.pieces) == patched::Written::Stage
@@ -488,7 +488,7 @@ impl<'source> Lowerer<'_, 'source>
                     Piece::Tile { .. } | Piece::Operand(_) => None,
                 });
                 if let Some(written) = written {
-                    let name = self.name_at(written);
+                    let name = self.cx.name_at(written);
                     let Some(&binder) = names.get(&name)
                     else {
                         return Err(LoweringRefusal::UnresolvedName {
@@ -625,7 +625,7 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        self.value_type_at(base).map(|base| {
+        self.cx.value_type_at(base).map(|base| {
             let id = sink.arena.value_type_staged(base, stage);
             sink.origins.record_value_type(id, origin);
             Lowered::ValueType(id)

@@ -84,7 +84,7 @@ impl Lowerer<'_, '_>
         let mut sorts: Vec<(&Name, ValueTypeId)> =
             Vec::with_capacity(slot.fixed().len().saturating_add(1));
         for (name, stated) in slot.fixed() {
-            match self.value_type_at(stated.node) {
+            match self.cx.value_type_at(stated.node) {
                 Maybe::Present(ty) => sorts.push((name, ty)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }

@@ -247,7 +247,7 @@ impl<'source> Lowerer<'_, 'source>
         written: Placed,
     ) -> Result<World, LoweringRefusal<'source>>
     {
-        let name = self.name_at(written);
+        let name = self.cx.name_at(written);
         match self.resolve_name(site, frame, name)? {
             Maybe::Present(Resolved::Declaration { constant, .. }) => Ok(World::Declared(constant)),
             Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_) => {
@@ -306,7 +306,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut cursor = Cursor::new(&pieces.pieces, pattern.span);
         let binder = statement.one(cursor.operands())?;
-        if !matches!(self.form_at(binder)?, Some((_, Former::Name))) {
+        if !matches!(self.cx.form_at(binder)?, Some((_, Former::Name))) {
             return Ok(Maybe::Absent(unopened::Absent::OtherPattern));
         }
         closed(statement, &mut cursor, TileName::AT)?;
@@ -366,13 +366,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         let form = match worlded {
             Worlded::At { inner, world } => {
-                return self.value_type_at(inner).map(|inner| {
+                return self.cx.value_type_at(inner).map(|inner| {
                     let id = sink.arena.value_type_world(WorldType::At { inner, world });
                     sink.origins.record_value_type(id, origin);
                     Lowered::ValueType(id)
                 });
             },
-            Worlded::Hold { value } => match self.value_at(value) {
+            Worlded::Hold { value } => match self.cx.value_at(value) {
                 Maybe::Present(value) => WorldForm::Hold { value },
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             },
@@ -522,7 +522,7 @@ impl<'source> Lowerer<'_, 'source>
                         required.interface.last.node,
                         &required.manifest,
                     ),
-                    self.origin_at(required.interface.last.node),
+                    self.cx.origin_at(required.interface.last.node),
                 ) {
                     (Ok(interface), Maybe::Present(origin)) => {
                         self.interface_signature(&interface, Standing::Read, sink, origin)
@@ -585,7 +585,7 @@ impl<'source> Lowerer<'_, 'source>
             let (span, name, seen) = match entry.label {
                 Maybe::Present(written) => {
                     let named = self.label_of(site, written)?;
-                    (named.span, self.name_at(named), &mut labelled)
+                    (named.span, self.cx.name_at(named), &mut labelled)
                 },
                 Maybe::Absent(_) => {
                     let name = entry.interface.name(self.cx.tree);

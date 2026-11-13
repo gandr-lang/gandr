@@ -46,18 +46,12 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_core_term::ArenaWatermark;
 use gandr_core_term::Binders;
 use gandr_core_term::Carried;
-use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
-use gandr_core_term::Sources;
 use gandr_core_term::SplitMotive;
-use gandr_core_term::Value;
-use gandr_core_term::ValueId;
-use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::SessionAction;
@@ -70,6 +64,15 @@ pub use gandr_surface_lowering_base::lower::exits::InferredExit;
 pub(super) use gandr_surface_lowering_base::lower::exits::Leaves;
 pub(super) use gandr_surface_lowering_base::lower::exits::Rest;
 pub use gandr_surface_lowering_base::lower::exits::Returned;
+pub(super) use gandr_surface_lowering_base::lower::exits::comp_type_origin;
+pub(super) use gandr_surface_lowering_base::lower::exits::computation_origin;
+pub(super) use gandr_surface_lowering_base::lower::exits::found_or;
+pub(super) use gandr_surface_lowering_base::lower::exits::keep_case;
+pub(super) use gandr_surface_lowering_base::lower::exits::label_replaced;
+pub(super) use gandr_surface_lowering_base::lower::exits::mark_copies;
+pub(super) use gandr_surface_lowering_base::lower::exits::record_copies;
+pub(super) use gandr_surface_lowering_base::lower::exits::value_origin;
+pub(super) use gandr_surface_lowering_base::lower::exits::value_type_origin;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
@@ -91,10 +94,7 @@ use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::origin::Insertion;
-use crate::origin::Label;
-use crate::origin::Labelled;
 use crate::origin::Origin;
-use crate::origin::Provenance;
 use crate::table::NodeTable;
 
 #[cfg(test)]
@@ -1248,56 +1248,6 @@ impl<'source> Lowerer<'_, 'source>
     }
 }
 
-/// Record, for every copy a rewrite made of an exit, a `break`, a loop or a
-/// bind whose rest is distributed, that the copy is one too.
-///
-/// # Specification
-/// - requires: `carried` is what one rewrite reported.
-/// - ensures: every computation `carried` maps an exit, a `break`, a loop or a
-///   loop's re-hold to is one; every one it maps a distributed bind to is
-///   distributed, at the original's origin.
-/// - provides: what keeps a match leaf's copy of an arm body commutable.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an exit in an arm that binds a field leaves from the
-///   leaf's copy of the arm, and a `break` in an arm continues what follows its
-///   loop from the leaf's copy.
-/// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
-/// - witness: `lower::loops::tests::a_break_continues_what_follows_its_loop`
-#[spec(ensures: carried.iter().all(|pair| match *pair {
-    Carried::Computation(held, written) => (!sink.exits.contains(&held) || sink.exits.contains(&written))
-        && (!sink.breaks.contains(&held) || sink.breaks.contains(&written))
-        && (!sink.loops.contains(&held) || sink.loops.contains(&written))
-        && (!sink.reholds.contains(&held) || sink.reholds.contains(&written))
-        && (!sink.distributed.contains_key(&held) || sink.distributed.contains_key(&written)),
-    Carried::Value(..) | Carried::ValueType(..) | Carried::CompType(..) => true,
-}))]
-pub(super) fn mark_copies(
-    sink: &mut Sink<'_>,
-    carried: &[Carried],
-)
-{
-    for pair in carried {
-        if let Carried::Computation(held, written) = *pair {
-            for marks in [
-                &mut sink.exits,
-                &mut sink.breaks,
-                &mut sink.loops,
-                &mut sink.reholds,
-            ] {
-                if marks.contains(&held) {
-                    let _first = marks.insert(written);
-                }
-            }
-            if let Some(&origin) = sink.distributed.get(&held) {
-                let _first = sink.distributed.insert(written, origin);
-            }
-        }
-    }
-}
-
 /// `body` with every bind whose rest is distributed commuted into its
 /// computation.
 ///
@@ -1627,86 +1577,6 @@ fn continue_end(
     bound
 }
 
-/// Label each written variable a rewrite replaced with the value that stands
-/// for it now, when that value answers at other bytes, and carry every label
-/// naming a replaced variable or session action over to its replacement; keep
-/// each written value type a rewrite replaced as a stand-in for its
-/// replacement.
-///
-/// # Specification
-/// - requires: every node `carried` reports has its origin recorded.
-/// - ensures: one label per variable `carried` reports replaced whose origin is
-///   written and whose replacement's origin spans other bytes, naming the
-///   replacement; a label that named a replaced variable, or the endpoint of a
-///   replaced session action, names its replacement; one stand-in per value
-///   type `carried` reports replaced whose origin is written and whose
-///   replacement's origin spans other bytes.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a use of a bound match's binder, instantiated at the
-///   value an arm passes, answers at that value's type, through a chain of such
-///   instantiations too; a scrutinee a leaf's copy replaces answers at its
-///   bytes; a functor's parameter type, renamed to an argument's, answers where
-///   the template writes it; an endpoint written in an offer the lowering
-///   rebuilds answers at the rebuilt offer.
-/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-/// - witness: `lower::tests::a_type_head_answers_at_what_it_stands_for`
-/// - witness: `lower::session::tests::each_endpoint_answers_at_its_action`
-/// - witness: `lower::exits::tests::a_variable_answering_at_its_own_bytes_gains_no_label`
-/// - witness: `lower::exits::tests::a_renamed_parameter_type_stands_in_only_at_other_bytes`
-#[spec(captures: before = sink.origins.labels().len(), ensures: sink.origins.labels().len() >= before)]
-pub(super) fn label_replaced(
-    sink: &mut Sink<'_>,
-    carried: &[Carried],
-)
-{
-    for pair in carried {
-        match *pair {
-            Carried::Value(replaced, standing) => {
-                if !matches!(sink.arena.value(replaced), Some(&Value::Variable { .. })) {
-                    continue;
-                }
-                sink.origins
-                    .relabel(&Labelled::Value(replaced), &Labelled::Value(standing));
-                let (Maybe::Present(written), Maybe::Present(now)) =
-                    (sink.origins.value(replaced), sink.origins.value(standing))
-                else {
-                    continue;
-                };
-                if written.provenance() == Provenance::Written && now.span() != written.span() {
-                    sink.origins.record_label(Label {
-                        span: written.span(),
-                        labelled: Labelled::Value(standing),
-                    });
-                }
-            },
-            Carried::ValueType(replaced, standing) => {
-                let (Maybe::Present(written), Maybe::Present(now)) = (
-                    sink.origins.value_type(replaced),
-                    sink.origins.value_type(standing),
-                )
-                else {
-                    continue;
-                };
-                if written.provenance() == Provenance::Written && now.span() != written.span() {
-                    sink.origins.record_stand_in(standing, written);
-                }
-            },
-            Carried::Computation(replaced, standing) => {
-                if matches!(
-                    sink.arena.computation(replaced),
-                    Some(&Computation::Session(_))
-                ) {
-                    sink.origins.relabel_action(replaced, standing);
-                }
-            },
-            Carried::CompType(..) => {},
-        }
-    }
-}
-
 /// `rest`, under one intuitionistic binder, with every index past that binder
 /// raised by `amount`'s intuitionistic count and every free linear index by
 /// its linear count, every node it mints recorded at its source's origin.
@@ -1752,192 +1622,6 @@ fn carry(
     record_copies(sink, mark, carried, fallback);
 
     copy
-}
-
-/// Record the origin of every node minted since `mark`, each its source's in
-/// `carried`.
-///
-/// # Specification
-/// - requires: nothing has been recorded for a node minted since `mark`, and
-///   `carried` reports the rewrite that minted them.
-/// - ensures: every node minted since `mark` carries the origin of the first
-///   node `carried` reports it rewritten from, or `fallback`; every computation
-///   rewritten from a match's root carries the match's record; each written
-///   variable the rewrite replaced is labelled as [`label_replaced`] labels it.
-/// - provides: the origin half of [`carry`].
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`carry`].
-/// - witness: `lower::tests::every_minted_node_has_an_origin`
-/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-#[spec(ensures: sink.arena.computations_since(mark).all(|id| matches!(sink.origins.computation(id), Maybe::Present(_)))
-    && sink.arena.values_since(mark).all(|id| matches!(sink.origins.value(id), Maybe::Present(_))))]
-pub(super) fn record_copies(
-    sink: &mut Sink<'_>,
-    mark: ArenaWatermark,
-    carried: &[Carried],
-    fallback: Origin,
-)
-{
-    let sources = Sources::of(carried);
-    for id in sink.arena.values_since(mark) {
-        let origin = value_origin(sink, &sources, id, fallback);
-        sink.origins.record_value(id, origin);
-    }
-    for id in sink.arena.computations_since(mark) {
-        let origin = computation_origin(sink, &sources, id, fallback);
-        sink.origins.record_computation(id, origin);
-        keep_case(sink, &sources, id);
-    }
-    for id in sink.arena.value_types_since(mark) {
-        let origin = value_type_origin(sink, &sources, id, fallback);
-        sink.origins.record_value_type(id, origin);
-    }
-    for id in sink.arena.comp_types_since(mark) {
-        let origin = comp_type_origin(sink, &sources, id, fallback);
-        sink.origins.record_comp_type(id, origin);
-    }
-    label_replaced(sink, carried);
-}
-
-/// The origin of value `id`: the origin of the value it stands for in
-/// `sources`, or `fallback`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn value_origin(
-    sink: &Sink<'_>,
-    sources: &Sources,
-    id: ValueId,
-    fallback: Origin,
-) -> Origin
-{
-    sources.values().get(&id).map_or(fallback, |&held| {
-        found_or(sink.origins.value(held), fallback)
-    })
-}
-
-/// The origin of computation `id`: the origin of the computation it stands
-/// for in `sources`, or `fallback`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn computation_origin(
-    sink: &Sink<'_>,
-    sources: &Sources,
-    id: ComputationId,
-    fallback: Origin,
-) -> Origin
-{
-    sources.computations().get(&id).map_or(fallback, |&held| {
-        found_or(sink.origins.computation(held), fallback)
-    })
-}
-
-/// The origin of value type `id`: the origin of the value type it stands for
-/// in `sources`, or `fallback`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn value_type_origin(
-    sink: &Sink<'_>,
-    sources: &Sources,
-    id: ValueTypeId,
-    fallback: Origin,
-) -> Origin
-{
-    sources.value_types().get(&id).map_or(fallback, |&held| {
-        found_or(sink.origins.value_type(held), fallback)
-    })
-}
-
-/// The origin of computation type `id`: the origin of the computation type it
-/// stands for in `sources`, or `fallback`.
-///
-/// # Specification
-/// trivial.
-pub(super) fn comp_type_origin(
-    sink: &Sink<'_>,
-    sources: &Sources,
-    id: CompTypeId,
-    fallback: Origin,
-) -> Origin
-{
-    sources.comp_types().get(&id).map_or(fallback, |&held| {
-        found_or(sink.origins.comp_type(held), fallback)
-    })
-}
-
-/// Record for computation `id` the match record of the computation it stands
-/// for in `sources`, when that one roots a match, and the family it
-/// eliminates, when it is a data case.
-///
-/// # Specification
-/// - requires: `id` has no match record yet.
-/// - ensures: a copy of a match's root carries that match's record; where the
-///   source eliminates the value its record names and the copy eliminates a
-///   value of its own, the copy's record names the copy's, so the patterns
-///   answer where the run judged the copy (#298); a copy of a data case
-///   eliminates the source's family.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a match carried under a binder keeps its patterns, a
-///   match bound by a `let` whose block continues its local ends answers its
-///   patterns at the copy's scrutinee, and a match written in an arm that binds
-///   a field names its own arms in the leaf's copy.
-/// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
-/// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
-/// - witness: `lower::native::tests::a_data_case_names_the_family_it_eliminates_809`
-#[spec(ensures: sources.computations().get(&id).is_none_or(|&held|
-    (matches!(sink.origins.case(held), Maybe::Absent(_)) || matches!(sink.origins.case(id), Maybe::Present(_)))
-    && (matches!(sink.origins.elimination(held), Maybe::Absent(_)) || matches!(sink.origins.elimination(id), Maybe::Present(_)))))]
-pub(super) fn keep_case(
-    sink: &mut Sink<'_>,
-    sources: &Sources,
-    id: ComputationId,
-)
-{
-    let Some(&held) = sources.computations().get(&id)
-    else {
-        return;
-    };
-    if let Maybe::Present(family) = sink.origins.elimination(held) {
-        sink.origins.record_elimination(id, family);
-    }
-    if let Maybe::Present(case) = sink.origins.case(held) {
-        let mut kept = case.clone();
-        if let (Some(source), Some(copy)) = (
-            eliminated(sink.arena.computation(held)),
-            eliminated(sink.arena.computation(id)),
-        ) && kept.scrutinised == Maybe::Present(source)
-        {
-            kept.scrutinised = Maybe::Present(copy);
-        }
-        sink.origins.record_case(id, kept);
-    }
-}
-
-/// The value a case, a data case or a list case eliminates; nothing for any
-/// other node.
-///
-/// # Specification
-/// trivial.
-fn eliminated(node: Option<&Computation>) -> Option<ValueId>
-{
-    match node {
-        Some(
-            &(Computation::Case { scrutinee, .. }
-            | Computation::DataCase { scrutinee, .. }
-            | Computation::ListCase {
-                list: scrutinee, ..
-            }),
-        ) => Some(scrutinee),
-        Some(_) | None => None,
-    }
 }
 
 /// Rebuild `node` over its children's commuted forms, the last of `results`.
@@ -2167,21 +1851,4 @@ fn rebuild(
     sink.origins.relabel_action(node, rebuilt);
 
     rebuilt
-}
-
-/// The origin `found` holds, or `fallback`.
-///
-/// # Specification
-/// trivial.
-const fn found_or<Reason>(
-    found: Maybe<Origin, Reason>,
-    fallback: Origin,
-) -> Origin
-where
-    Reason: Copy,
-{
-    match found {
-        Maybe::Present(origin) => origin,
-        Maybe::Absent(_) => fallback,
-    }
 }

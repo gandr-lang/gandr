@@ -172,7 +172,7 @@ impl<'source> Lowerer<'_, 'source>
             let mut frame = Frame::Outermost;
             for parameter in &entry.parameters {
                 seeds.push((parameter.classifier.node, Reading::ValueType(frame)));
-                let name = self.name_at(parameter.named);
+                let name = self.cx.name_at(parameter.named);
                 let extended = self.cx.scope.extend_typed(
                     frame,
                     name,
@@ -262,7 +262,7 @@ impl<'source> Lowerer<'_, 'source>
             let constant = slot.constant;
             let before = sink.arena.watermark();
             let result = self.decode_family(sink.arena, entry, constant, &types);
-            if let Maybe::Present(origin) = self.origin_at(at.node) {
+            if let Maybe::Present(origin) = self.cx.origin_at(at.node) {
                 for id in sink.arena.values_since(before) {
                     sink.origins.record_value(id, origin);
                 }
@@ -285,7 +285,7 @@ impl<'source> Lowerer<'_, 'source>
                     );
                 }
                 for id in sink.arena.comp_types_since(before) {
-                    let placed = match written.get(&id).map(|&node| self.origin_at(node)) {
+                    let placed = match written.get(&id).map(|&node| self.cx.origin_at(node)) {
                         Some(Maybe::Present(placed)) => placed,
                         Some(Maybe::Absent(_)) | None => origin,
                     };
@@ -506,7 +506,7 @@ impl<'source> Lowerer<'_, 'source>
         node: NodeIndex,
     )
     {
-        let Maybe::Present(origin) = self.origin_at(node)
+        let Maybe::Present(origin) = self.cx.origin_at(node)
         else {
             return;
         };
@@ -555,7 +555,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(DecodeError::MalformedCode);
         };
-        let Maybe::Present(kind) = self.value_type_at(classifier.node)
+        let Maybe::Present(kind) = self.cx.value_type_at(classifier.node)
         else {
             return Err(DecodeError::MalformedCode);
         };
@@ -563,7 +563,7 @@ impl<'source> Lowerer<'_, 'source>
             .parameters
             .iter()
             .map(
-                |parameter| match self.value_type_at(parameter.classifier.node) {
+                |parameter| match self.cx.value_type_at(parameter.classifier.node) {
                     Maybe::Present(classifier) => Ok(classifier),
                     Maybe::Absent(_) => Err(DecodeError::MalformedCode),
                 },
@@ -610,7 +610,7 @@ impl<'source> Lowerer<'_, 'source>
             .observations
             .iter()
             .filter(|written| matches!(written.itself, Maybe::Absent(_)))
-            .map(|written| match self.value_type_at(written.at) {
+            .map(|written| match self.cx.value_type_at(written.at) {
                 Maybe::Present(field) => Ok(field),
                 Maybe::Absent(_) => Err(DecodeError::MalformedCode),
             })
@@ -676,7 +676,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut values: Vec<ValueId> = Vec::new();
         for &step in arguments {
             match step {
-                Applied::Argument(node) => match self.value_at(node) {
+                Applied::Argument(node) => match self.cx.value_at(node) {
                     Maybe::Present(value) => values.push(value),
                     Maybe::Absent(_) => return Err(DecodeError::MalformedCode),
                 },

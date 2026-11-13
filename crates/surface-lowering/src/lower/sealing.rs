@@ -208,16 +208,16 @@ impl<'source> Lowerer<'_, 'source>
                 continue;
             };
             let (Maybe::Present(representation), Maybe::Present(named), Maybe::Present(written)) = (
-                self.value_type_at(represented.defined.node),
-                self.origin_at(recorded.named.node),
-                self.origin_at(represented.defined.node),
+                self.cx.value_type_at(represented.defined.node),
+                self.cx.origin_at(recorded.named.node),
+                self.cx.origin_at(represented.defined.node),
             )
             else {
                 continue;
             };
             let kind = match recorded.kind {
                 Maybe::Present(kind) => {
-                    let Maybe::Present(id) = self.value_type_at(kind.node)
+                    let Maybe::Present(id) = self.cx.value_type_at(kind.node)
                     else {
                         continue;
                     };

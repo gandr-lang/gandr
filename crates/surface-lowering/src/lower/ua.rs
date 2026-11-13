@@ -194,7 +194,7 @@ impl<'source> Lowerer<'_, 'source>
                 })
             )
         });
-        let name = self.name_at(named);
+        let name = self.cx.name_at(named);
         let former = match name.as_ref() {
             UA if is_name => Stratified::Ua,
             COMPOSE if is_name => Stratified::Compose,
@@ -255,7 +255,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   name in their place is refused.
     /// - witness: `lower::ua::tests::a_statement_the_syntax_cannot_read_is_refused`
     /// - witness: `lower::identity::tests::a_composite_the_syntax_cannot_read_is_refused`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| self.cx.text_at(resident).as_ref().parse::<usize>().map(Count::from).as_ref() == Ok(value)))]
     pub(super) fn resident<Count>(
         &self,
         site: Site,
@@ -273,7 +273,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(refused);
         };
-        let text = self.text_at(numeral);
+        let text = self.cx.text_at(numeral);
         let spelled: &str = text.as_ref();
         match spelled.parse::<usize>() {
             Ok(value) if spelled.bytes().all(|byte| byte.is_ascii_digit()) => {
@@ -386,7 +386,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(written.out(FragmentBoundary::Unadmitted(Unbuilt::UaDescription)));
         };
-        let name = self.name_at(at);
+        let name = self.cx.name_at(at);
         let local = self
             .cx
             .collected

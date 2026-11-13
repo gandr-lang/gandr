@@ -158,7 +158,7 @@ impl<'source> Lowerer<'_, 'source>
             site.at.span.start(),
             &prefix,
             theory.last.span,
-            self.name_at(theory.last),
+            self.cx.name_at(theory.last),
         )?;
         // Each carrier by the sort it is written for, then in the order the
         // signature states the sorts.
@@ -185,7 +185,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(LoweringRefusal::UnknownMember {
                 span: sort.span,
                 module: named,
-                member: self.name_at(sort),
+                member: self.cx.name_at(sort),
             });
         }
         let map = self
@@ -217,7 +217,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.plan(
             site,
-            Plan::Called(Code::Constant(map), self.kept(arguments)),
+            Plan::Called(Code::Constant(map), self.cx.kept(arguments)),
         );
 
         Ok(())
