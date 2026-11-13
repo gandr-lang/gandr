@@ -64,11 +64,18 @@ def featured($in; $held):
      | $it.id]
   | unique;
 
+# The row that reads a thing: of the answered row items that cover it, the
+# longest (#7105). A row of an item reads that item over the row of its
+# module, so a `narrowed` item of a moved module keeps its own act.
+def reader($items; $thing): [$items[] | select(covers(.; $thing))] | max_by(length);
+
 . as $in
 | ($in.mode == "full") as $full
 | ($in.body | deletes_rows) as $rows
 | ($rows // []) as $rs
 | ([($in.held // [])[] | {key: ., value: true}] | from_entries) as $held
+| ([$rs[] | .item | select(answered)]) as $items
+| ([$in.left[] | select(.kind | IN("item", "test")) | {key: .id, value: reader($items; .)}] | from_entries) as $readers
 | featured($in; $held) as $featured
 | (
     # A change that takes things out needs the section. A thing whose body
@@ -98,8 +105,9 @@ def featured($in; $held):
            # The check computes the act of an item or a test from the bodies
            # (#7058). A row that says `moved` or `renamed` names a body that
            # stands in the head, and a row that asks a sign-off names a body
-           # that stands nowhere in the head.
-           ([$in.left[] | select(.kind | IN("item", "test")) | select(covers($item; .))] as $things
+           # that stands nowhere in the head. Each thing answers to the
+           # longest row that covers it (#7105).
+           ([$in.left[] | select(.kind | IN("item", "test")) | select($readers[.id] == $item)] as $things
             | (if $full and ($row.act | IN("moved", "renamed")) then
                  $things[] | select(.moved == null)
                  | "`\(.id)` stands nowhere in the head with the same body, and the row of `\($item)` says `\($row.act)`: no item that the head adds has its tokens, so the row says `deleted`, `merged` or `narrowed`, with the architect's sign-off (#7058)"
