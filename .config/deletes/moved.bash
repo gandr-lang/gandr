@@ -106,7 +106,7 @@ served() {
 # point. A manifest names a package by its whole name, so `gandr-core-checker`
 # names no `gandr-core-checker-base`. An item with `tests` among its segments
 # is seen by its own crate alone. An item with no crate segment, or whose
-# crate the base lacks, prints nothing, and its reader is any file.
+# crate the base lacks, prints nothing, and every crate can read it.
 crates_naming() {
   local base=$1 item=$2
   [[ $item == *::* ]] || return 0
@@ -153,21 +153,22 @@ crates_naming() {
 
 # `joined <fork> <base> <item>` prints each file at `<base>` that names
 # `<item>` and that names it nowhere at `<fork>`, one for each line. Such a
-# file is a new reader of the item, a ledger row or a README line among them.
-# A file names the item by the whole word of its last segment (#7125). A file
-# under `crates/` names it only in a crate that can name the item
-# (`crates_naming`); a file outside `crates/` names it anywhere.
+# file is a new reader of the item. A reader is a Rust source of a crate that
+# can name the item (`crates_naming`), or of any crate when none is known,
+# and no other file (#7164): a script, a ledger row or a README is no reader.
+# A Rust source names the item by the whole word of its last segment (#7125).
 joined() {
-  local fork=$1 base=$2 item=$3 name crates
+  local fork=$1 base=$2 item=$3 name crate crates
   name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
   mapfile -t crates < <(crates_naming "$base" "$item")
+  local -a sources=()
+  if (( ${#crates[@]} == 0 )); then
+    sources=(':(glob)crates/**/*.rs')
+  else
+    for crate in "${crates[@]}"; do sources+=(":(glob)$crate/**/*.rs"); done
+  fi
   joined_readers() {
-    if (( ${#crates[@]} == 0 )); then
-      git grep -l -w -F -e "$name" "$1"
-    else
-      git grep -l -w -F -e "$name" "$1" -- "${crates[@]}"
-      git grep -l -w -F -e "$name" "$1" -- . ':(exclude)crates/'
-    fi 2> /dev/null | sed "s|^$1:||" | sort -u
+    git grep -l -w -F -e "$name" "$1" -- "${sources[@]}" 2> /dev/null | sed "s|^$1:||" | sort -u
   }
   comm -13 <(joined_readers "$fork") <(joined_readers "$base")
 }
