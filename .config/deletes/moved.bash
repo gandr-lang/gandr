@@ -98,13 +98,78 @@ served() {
 # patch and still change what the deletion means. The architect reads the
 # item as it stands at the base, with its readers, so the check binds both.
 #
-# `joined <fork> <base> <name>` prints each file at `<base>` that names
-# `<name>` and that names it nowhere at `<fork>`, one for each line. Such a
+# `crates_naming <base> <item>` prints the directory of each crate at
+# `<base>` that can name `<item>`, one for each line (#7125). The first
+# segment of the item's path is its crate's library, `gandr_core_checker`
+# for the package `gandr-core-checker`. A crate can name the item when it is
+# the item's crate, or when its manifest names a crate that can, to a fixed
+# point. A manifest names a package by its whole name, so `gandr-core-checker`
+# names no `gandr-core-checker-base`. An item with `tests` among its segments
+# is seen by its own crate alone. An item with no crate segment, or whose
+# crate the base lacks, prints nothing, and its reader is any file.
+crates_naming() {
+  local base=$1 item=$2
+  [[ $item == *::* ]] || return 0
+  local package=${item%%::*}
+  package=${package//_/-}
+  local alone=0
+  [[ "::$item::" == *::tests::* ]] && alone=1
+  git grep -I -e '' "$base" -- 'crates/*/Cargo.toml' 2> /dev/null | awk -v want="$package" -v alone="$alone" '
+    match($0, /^[^:]*:crates\/[^\/]+\/Cargo\.toml:/) {
+      dir = substr($0, 1, RLENGTH - 1)
+      text = substr($0, RLENGTH + 1)
+      sub(/^[^:]*:crates\//, "", dir)
+      sub(/\/Cargo\.toml$/, "", dir)
+      if (!(dir in package) && text ~ /^name = "/) {
+        name = text
+        sub(/^name = "/, "", name)
+        sub(/".*/, "", name)
+        package[dir] = name
+        dir_of[name] = dir
+      } else {
+        body[dir] = body[dir] "\n" text
+      }
+    }
+    END {
+      if (!(want in dir_of)) exit
+      naming[want] = 1
+      grew = !alone
+      while (grew) {
+        grew = 0
+        for (dir in package) {
+          if (package[dir] in naming) continue
+          for (name in naming) {
+            if (match(body[dir], "(^|[^A-Za-z0-9_-])" name "([^A-Za-z0-9_-]|$)")) {
+              naming[package[dir]] = 1
+              grew = 1
+              break
+            }
+          }
+        }
+      }
+      for (name in naming) print "crates/" dir_of[name]
+    }' | sort
+}
+
+# `joined <fork> <base> <item>` prints each file at `<base>` that names
+# `<item>` and that names it nowhere at `<fork>`, one for each line. Such a
 # file is a new reader of the item, a ledger row or a README line among them.
+# A file names the item by the whole word of its last segment (#7125). A file
+# under `crates/` names it only in a crate that can name the item
+# (`crates_naming`); a file outside `crates/` names it anywhere.
 joined() {
-  local fork=$1 base=$2 name=$3
-  comm -13 <(git grep -l -F -e "$name" "$fork" 2> /dev/null | sed "s|^$fork:||" | sort) \
-    <(git grep -l -F -e "$name" "$base" 2> /dev/null | sed "s|^$base:||" | sort)
+  local fork=$1 base=$2 item=$3 name crates
+  name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
+  mapfile -t crates < <(crates_naming "$base" "$item")
+  joined_readers() {
+    if (( ${#crates[@]} == 0 )); then
+      git grep -l -w -F -e "$name" "$1"
+    else
+      git grep -l -w -F -e "$name" "$1" -- "${crates[@]}"
+      git grep -l -w -F -e "$name" "$1" -- . ':(exclude)crates/'
+    fi 2> /dev/null | sed "s|^$1:||" | sort -u
+  }
+  comm -13 <(joined_readers "$fork") <(joined_readers "$base")
 }
 
 # `reshaped <fork> <base> <file> <start> <end>` succeeds when the record of

@@ -97,6 +97,50 @@ got=$(cd "$repo" && joined "$fork2" "$reader" Gone | tr '\n' ' ')
 got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#6852: a landing below that names the item nowhere adds no reader" "$got"
 
+# The readers of an item stay within the crates that can name it (#7125).
+# The item lives in `gandr-item`. `gandr-user` names that package, and
+# `gandr-far` names `gandr-user`. The name of `gandr-item-base` only starts
+# with the item's package, and `gandr-other` names `gandr-item-base` alone.
+# A landing below adds a file with `receive` to each crate but the item's,
+# which gets one with `receiver`, and a ledger row with `receive`.
+crates_repo=$work/crates
+git init --quiet --initial-branch landing "$crates_repo"
+git -C "$crates_repo" config user.email cases@example.invalid
+git -C "$crates_repo" config user.name cases
+git -C "$crates_repo" config commit.gpgsign false
+manifest() {
+  mkdir -p "$crates_repo/crates/$1/src"
+  printf '[package]\nname = "gandr-%s"\n\n[dependencies]\n' "$1" > "$crates_repo/crates/$1/Cargo.toml"
+  if [[ -n ${2:-} ]]; then printf '%s\n' "$2" >> "$crates_repo/crates/$1/Cargo.toml"; fi
+}
+manifest item
+manifest user 'gandr-item = { path = "../item" }'
+manifest far 'gandr-user.workspace = true'
+manifest item-base
+manifest other 'gandr-item-base = { path = "../item-base" }'
+crates_commit() { git -C "$crates_repo" add -A && git -C "$crates_repo" commit --quiet --no-verify -m "$1" && git -C "$crates_repo" rev-parse HEAD; }
+crates_fork=$(crates_commit manifests)
+mkdir -p "$crates_repo/ledger"
+printf 'fn f(receiver: u8) {}\n' > "$crates_repo/crates/item/src/a.rs"
+printf 'fn g() { receive() }\n' > "$crates_repo/crates/user/src/b.rs"
+printf '// receive\n' > "$crates_repo/crates/far/src/c.rs"
+printf 'fn receive() {}\n' > "$crates_repo/crates/item-base/src/d.rs"
+printf 'fn receive() {}\n' > "$crates_repo/crates/other/src/e.rs"
+printf "INSERT INTO reader VALUES ('receive');\n" > "$crates_repo/ledger/readers.sql"
+crates_base=$(crates_commit readers)
+got=$(cd "$crates_repo" && crates_naming "$crates_base" 'gandr_item::session::receive' | tr '\n' ' ')
+[[ $got == 'crates/far crates/item crates/user ' ]] \
+  || fail "#7125: the crates that can name an item are its own and each crate that names one of them, to a fixed point; a name that only starts with the package names another" "$got"
+got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::Program::<'"'"'arena>::receive' | tr '\n' ' ')
+[[ $got == 'crates/far/src/c.rs crates/user/src/b.rs ledger/readers.sql ' ]] \
+  || fail "#7125: a reader names the whole word, in a crate that can name the item or outside crates/" "$got"
+got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_item::session::tests::receive' | tr '\n' ' ')
+[[ $got == 'ledger/readers.sql ' ]] \
+  || fail "#7125: an item of a test module is read in its own crate alone" "$got"
+got=$(cd "$crates_repo" && joined "$crates_fork" "$crates_base" 'gandr_gone::receive' | tr '\n' ' ')
+[[ $got == 'crates/far/src/c.rs crates/item-base/src/d.rs crates/other/src/e.rs crates/user/src/b.rs ledger/readers.sql ' ]] \
+  || fail "#7125: an item whose crate the base lacks is read in every file, by the whole word" "$got"
+
 # An edit below of the item's own line changes its record at the base, and an
 # edit of another line of the same file does not.
 git -C "$repo" checkout --quiet landing
@@ -195,4 +239,4 @@ git -C "$served_origin" gc --quiet --prune=now
   || fail "#7012: a signed commit that a pushed ref holds is served, so the sign-off holds" "not served"
 
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a row below that names the item joins its readers; a reader names the whole word within the crates that can name the item; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
