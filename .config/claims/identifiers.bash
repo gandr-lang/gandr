@@ -29,8 +29,10 @@ identifiers_check() {
     crates+=${manifest##*/}$'\n'
   done
   design=$(git -C "$vault" -c core.quotePath=false ls-files -- 'docs/programme/*.md' 'plans/*.md')
-  mapfile -t marks < <(jq -n -r -L "$claims" --arg body "$1" --argjson number "$2" --argjson parent "$3" \
-    --arg rows "$rows" --arg crates "$crates" \
+  # The body and the lists have no bound on their size, so jq reads them
+  # from files, and only the numbers go on its command line.
+  mapfile -t marks < <(jq -n -r -L "$claims" --rawfile body <(printf '%s' "$1") --argjson number "$2" --argjson parent "$3" \
+    --rawfile rows <(printf '%s' "$rows") --rawfile crates <(printf '%s' "$crates") \
     'include "sections"; $body | unit_identifiers($number; $parent; $rows | split("\n"); $crates | split("\n")) | identifier_marks[] | .grep')
   if (( ${#marks[@]} > 0 )); then
     for mark in "${marks[@]}"; do args+=(-e "$mark"); done
@@ -39,10 +41,11 @@ identifiers_check() {
   fi
   # The text of each page found, by its path. With no page found, jq reads
   # `/dev/null`, which gives no line.
-  (cd "$vault" && jq -R -n -c --arg body "$1" --argjson number "$2" --argjson parent "$3" --arg rows "$rows" \
-    --arg crates "$crates" --arg design "$design" --argjson before "$4" \
+  (cd "$vault" && jq -R -n -c --rawfile body <(printf '%s' "$1") --argjson number "$2" --argjson parent "$3" \
+    --rawfile rows <(printf '%s' "$rows") --rawfile crates <(printf '%s' "$crates") \
+    --rawfile design <(printf '%s' "$design") --slurpfile before <(printf '%s' "$4") \
     '(reduce inputs as $line ({}; .[input_filename] += $line + "\n")) as $texts
     | {number: $number, parent: $parent, body: $body, rows: ($rows | split("\n")), crates: ($crates | split("\n")),
-       design: ($design | split("\n")), texts: $texts, before: $before}' "${found[@]:-/dev/null}") \
+       design: ($design | split("\n")), texts: $texts, before: $before[0]}' "${found[@]:-/dev/null}") \
     | jq -r -L "$claims" -f "$claims/identifiers.jq"
 }
