@@ -6123,6 +6123,30 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         let _earlier = self.following.insert(constant, position);
     }
 
+    /// Keep the stage signature and the following position of the adopted
+    /// definition at `constant`, as its judgement kept them: a call reads the
+    /// first, and a reader of its result reads the second.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn adopt_stages(
+        &mut self,
+        constant: ConstantIndex,
+        (stage, following): (
+            Option<gandr_kernel_term::StageSignature>,
+            Option<gandr_kernel_term::StagedPosition>,
+        ),
+    )
+    {
+        if let Some(stage) = stage {
+            self.keep_stage_signature(constant, stage);
+        }
+        if let Some(position) = following {
+            self.record_following(constant, position);
+        }
+    }
+
     /// The position of the parameter whose stage the result of the definition
     /// at `constant` stands at, when it follows one.
     ///
