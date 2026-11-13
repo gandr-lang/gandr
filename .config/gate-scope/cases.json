@@ -457,7 +457,7 @@
         "check:typos",
         "check:witnesses"
       ],
-      "changed": ["crates/surface-driver/src/config.rs", "crates/surface-mcp/src/rap.rs"],
+      "changed": ["crates/surface-driver/src/config.rs", "crates/surface-agentic/src/rap.rs"],
       "landing": true
     },
     "output": [

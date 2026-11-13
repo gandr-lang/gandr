@@ -164,8 +164,8 @@
 //! writes each answer and notification as a line to standard output, through
 //! the same hub: its tools and resources read the documents the workspace's
 //! editors hold open, at the version they last synchronised, so a model sees
-//! the diagnostics the editor shows (`gandr-surface-mcp`). A model host runs it
-//! as a stdio server in the workspace's directory.
+//! the diagnostics the editor shows (`gandr-surface-agentic`). A model host
+//! runs it as a stdio server in the workspace's directory.
 //!
 //! `gandr view` attaches to the same hub's render bus and follows the document
 //! it checked last: a line naming the document, its version and how many
@@ -2778,7 +2778,7 @@ fn switched(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the session runs as [`followed`] carries it, each leg as
-///   `gandr_surface_mcp::relay` relays it, and exits `0` once the hub has
+///   `gandr_surface_agentic::relay` relays it, and exits `0` once the hub has
 ///   answered all of standard input; a failed stream is noted on standard error
 ///   and exits `2`.
 /// - provides: `gandr mcp`, a model's entry point.
@@ -2802,15 +2802,15 @@ fn mcp(
     followed(
         socket,
         (linger, spelling),
-        |input, stream, handover, following| match gandr_surface_mcp::relay(
+        |input, stream, handover, following| match gandr_surface_agentic::relay(
             input,
             &mut std::io::stdout().lock(),
             stream,
             handover.replay(),
             move || matches!(following.moved(), Maybe::Present(_)),
         ) {
-            Ok(gandr_surface_mcp::Relayed::Ended) => Leg::Ended(ExitCode::SUCCESS),
-            Ok(gandr_surface_mcp::Relayed::Switched(next)) => Leg::Switched(next),
+            Ok(gandr_surface_agentic::Relayed::Ended) => Leg::Ended(ExitCode::SUCCESS),
+            Ok(gandr_surface_agentic::Relayed::Switched(next)) => Leg::Switched(next),
             Err(error) => Leg::Ended(hub_fault(&error)),
         },
     )
@@ -2957,17 +2957,17 @@ fn reach_hub(
 /// - requires: nothing.
 /// - ensures: the hub binds `socket` through `gandr_surface_lsp::bind` and runs
 ///   as `gandr_surface_lsp::run_hub` states, with this crate's Model Context
-///   Protocol face (`gandr_surface_mcp::serve`) for connections speaking lines,
-///   its render bus reading the store [`config::store`] names when it names
-///   one, its timing lines on standard error, and exits `0` when it lingers
-///   out; a socket another hub serves exits `0` at once, noted on standard
-///   error. A socket that cannot be bound or served is noted and exits `2`.
-///   With `toolset`, the hub also serves [`toolset`]'s face beside its socket,
-///   writes the manifest's URL to the address file beside the socket and says
-///   it on standard error, and runs until it is stopped. It removes the file
-///   when it stops. An address file that names a toolset that still listens, a
-///   toolset that cannot open, a file that cannot be written, or a socket
-///   another hub serves is noted and exits `2`.
+///   Protocol face (`gandr_surface_agentic::serve`) for connections speaking
+///   lines, its render bus reading the store [`config::store`] names when it
+///   names one, its timing lines on standard error, and exits `0` when it
+///   lingers out; a socket another hub serves exits `0` at once, noted on
+///   standard error. A socket that cannot be bound or served is noted and exits
+///   `2`. With `toolset`, the hub also serves [`toolset`]'s face beside its
+///   socket, writes the manifest's URL to the address file beside the socket
+///   and says it on standard error, and runs until it is stopped. It removes
+///   the file when it stops. An address file that names a toolset that still
+///   listens, a toolset that cannot open, a file that cannot be written, or a
+///   socket another hub serves is noted and exits `2`.
 /// - provides: `gandr serve`.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -2985,7 +2985,7 @@ fn hub(
     socket: Option<PathBuf>,
     linger: Duration,
     spelling: Spelling,
-    toolset: Option<(core::net::SocketAddr, gandr_surface_mcp::Policy)>,
+    toolset: Option<(core::net::SocketAddr, gandr_surface_agentic::Policy)>,
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
@@ -2996,10 +2996,10 @@ fn hub(
         .map(|(address, policy)| {
             // A second hub of the workspace stops here, before it binds a port
             // or opens the store of calls that the first one holds.
-            let announcement = gandr_surface_mcp::Announcement::beside(&socket);
+            let announcement = gandr_surface_agentic::Announcement::beside(&socket);
             announcement.vacant()?;
             self::toolset(address, policy).map(|toolset| {
-                let verbs: alloc::sync::Arc<dyn gandr_surface_mcp::Verbs> =
+                let verbs: alloc::sync::Arc<dyn gandr_surface_agentic::Verbs> =
                     alloc::sync::Arc::new(HubVerbs { spelling });
                 (toolset.walking(verbs), announcement)
             })
@@ -3050,7 +3050,7 @@ fn hub(
                 &socket,
                 linger,
                 std::io::stderr(),
-                Some(gandr_surface_mcp::serve),
+                Some(gandr_surface_agentic::serve),
                 beside,
                 config::store().map_or_else(
                     || workspace(spelling),
@@ -3107,8 +3107,8 @@ fn hub(
 #[cfg(unix)]
 fn toolset(
     address: core::net::SocketAddr,
-    policy: gandr_surface_mcp::Policy,
-) -> std::io::Result<gandr_surface_mcp::Toolset>
+    policy: gandr_surface_agentic::Policy,
+) -> std::io::Result<gandr_surface_agentic::Toolset>
 {
     let listener = std::net::TcpListener::bind(address)?;
     let unstated =
@@ -3116,7 +3116,7 @@ fn toolset(
     let calls = config::calls().ok_or_else(unstated)?;
     let subscriptions = config::subscriptions().ok_or_else(unstated)?;
     let workspace = gandr_surface_lsp::workspace_name(&std::env::current_dir()?)?;
-    gandr_surface_mcp::Toolset::open(
+    gandr_surface_agentic::Toolset::open(
         listener,
         &calls.join(&workspace).with_extension("jsonl"),
         &subscriptions.join(&workspace).with_extension("json"),
@@ -3224,7 +3224,7 @@ impl HubVerbs
 }
 
 #[cfg(unix)]
-impl gandr_surface_mcp::Verbs for HubVerbs
+impl gandr_surface_agentic::Verbs for HubVerbs
 {
     /// Walk `paths` under `verb` on the hub's `pool`, as [`HubVerbs::walked`]
     /// walks them with no ring.

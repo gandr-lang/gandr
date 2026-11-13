@@ -26,6 +26,7 @@ members = [
   "crates/storage-schema",
   "crates/storage-store",
   "crates/storage-values",
+  "crates/surface-agentic",
   "crates/surface-corpus",
   "crates/surface-diagnostics",
   "crates/surface-dispatcher",
@@ -38,7 +39,6 @@ members = [
   "crates/surface-lowering-base",
   "crates/surface-lsp",
   "crates/surface-lsp-base",
-  "crates/surface-mcp",
   "crates/surface-parser",
   "crates/surface-pretty",
   "crates/surface-render-remote",
@@ -159,6 +159,7 @@ default-features = false
 # - storage-schema
 # - storage-store
 # - storage-values
+# - surface-agentic
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -171,7 +172,6 @@ default-features = false
 # - surface-lowering-base
 # - surface-lsp
 # - surface-lsp-base
-# - surface-mcp
 # - surface-parser
 # - surface-pretty
 # - surface-render-remote
@@ -676,6 +676,14 @@ path = "crates/storage-store"
 [workspace.dependencies.gandr-storage-values]
 path = "crates/storage-values"
 
+# The agentic face of the engine hub: the Reactive Agent Protocol's toolset
+# by default, and the Model Context Protocol for compatibility, both over
+# the hub's one table of operations.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-agentic]
+path = "crates/surface-agentic"
+
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
 # consumers:
@@ -708,10 +716,10 @@ path = "crates/surface-diagnostics"
 # pipeline over the sources a verb walks.
 # consumers:
 # - runtime-stencils (dev)
+# - surface-agentic
 # - surface-diagnostics (dev)
 # - surface-driver
 # - surface-lsp
-# - surface-mcp
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
@@ -723,9 +731,9 @@ path = "crates/surface-dispatcher"
 # The features ledger as data: the record `gandr check` reads at the toolchain
 # step, and the rows the tools list and show.
 # consumers:
+# - surface-agentic
 # - surface-dispatcher
 # - surface-driver
-# - surface-mcp
 # - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-features]
 path = "crates/surface-features"
@@ -797,8 +805,8 @@ path = "crates/surface-lowering-base"
 # Server Protocol, each request rechecking the whole document; the engine
 # hub's shared workspace.
 # consumers:
+# - surface-agentic
 # - surface-driver
-# - surface-mcp
 [workspace.dependencies.gandr-surface-lsp]
 path = "crates/surface-lsp"
 
@@ -809,13 +817,6 @@ path = "crates/surface-lsp"
 # - surface-lsp
 [workspace.dependencies.gandr-surface-lsp-base]
 path = "crates/surface-lsp-base"
-
-# The Model Context Protocol server: the hub's documents and queries served
-# to models.
-# consumers:
-# - surface-driver
-[workspace.dependencies.gandr-surface-mcp]
-path = "crates/surface-mcp"
 
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
@@ -1324,7 +1325,7 @@ default-features = false
 # features:
 # - none: a head parses without `std`
 # consumers:
-# - surface-mcp
+# - surface-agentic
 [workspace.dependencies.httparse]
 version = "1.10.1"
 default-features = false
@@ -1603,6 +1604,7 @@ default-features = false
 # - runtime-stencils (dev)
 # - storage-artifact
 # - storage-store
+# - surface-agentic (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -1613,7 +1615,6 @@ default-features = false
 # - surface-lowering-base
 # - surface-lsp
 # - surface-lsp-base
-# - surface-mcp (dev)
 # - surface-pretty
 # - surface-render-terminal
 # - surface-repl
@@ -1780,13 +1781,13 @@ features = ["alloc", "derive"]
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
 # - core-checker (dev)
+# - surface-agentic
 # - surface-diagnostics
 # - surface-dispatcher (dev)
 # - surface-driver
 # - surface-features
 # - surface-lsp
 # - surface-lsp-base
-# - surface-mcp
 # - surface-render-remote (dev)
 # - surface-render-terminal (dev)
 # - surface-tui

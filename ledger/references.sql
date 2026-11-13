@@ -712,6 +712,7 @@ INSERT INTO reference VALUES('vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e','surfa
 INSERT INTO reference VALUES('vault:01a1b53e-d768-7e62-8825-088be647563b','theory-exact-reals','recurrence','exemplar','1c8ce077c60d346ee2ad18982b90b168809e8526','2026-11-07','9d0ddffe5990a84e450a607a284c76457bf5ff76');
 INSERT INTO reference VALUES('vault:01a1b567-b34b-77a2-9ace-075796f0eb3e','core-checker-base','divergence','exemplar','4a92e372fd0ce78fd4e257276266d7c97b0d8c38','2026-11-07','5e292eca6ae863067b2f03cb2d34ab7d50ebf993');
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','core-fork','activity','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-agentic','rap::activity','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-dispatcher','meter','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-dispatcher','pool::recording','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-dispatcher','stored','anchor',NULL,NULL,NULL);
@@ -719,7 +720,6 @@ INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surfa
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','activity','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','stored','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-lsp','tier','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-mcp','rap::activity','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','activity','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','store','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-render-remote','visual','anchor',NULL,NULL,NULL);
@@ -728,14 +728,14 @@ INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surfa
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','instrument','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-session','timings','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e','surface-tui','','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8','surface-mcp','rap::activity','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8','surface-mcp','rap::jobs','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad','surface-mcp','rap::jobs','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8','surface-agentic','rap::activity','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8','surface-agentic','rap::jobs','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad','surface-agentic','rap::jobs','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','runtime-emitter','world','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','runtime-net','chunks','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','storage-store','register','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','surface-mcp','rap','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','surface-agentic','rap','lineage',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

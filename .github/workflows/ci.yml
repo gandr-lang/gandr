@@ -1180,7 +1180,7 @@ jobs:
               gandr-surface-session
           - shard: faces
             packages: &faces-shard >-
-              gandr-lang gandr-surface-mcp gandr-surface-render-terminal gandr-surface-repl
+              gandr-lang gandr-surface-agentic gandr-surface-render-terminal gandr-surface-repl
               gandr-surface-tui
           - shard: checker
             packages: &checker-shard >-

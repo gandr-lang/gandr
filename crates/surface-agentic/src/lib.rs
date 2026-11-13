@@ -1,6 +1,11 @@
-//! **The Model Context Protocol server**: the engine hub's open documents,
-//! their diagnostics and the language server's queries over them, served to
-//! models.
+//! **The agentic face of the engine hub**: the hub's open documents, their
+//! diagnostics and the language server's queries, served to agents.
+//!
+//! The Reactive Agent Protocol is the default face for an agent. On Unix, its
+//! toolset answers each call by a callback, so a long call blocks no agent,
+//! and an agent subscribes to new states. The Model Context Protocol stays for
+//! compatibility, and `gandr mcp` serves it. One table holds each operation,
+//! and both faces encode that table, so the faces cannot drift.
 //!
 //! # Models read what the editor shows
 //!
@@ -72,7 +77,7 @@
 //!
 //! ```
 //! use gandr_surface_lsp::Workspace;
-//! use gandr_surface_mcp::Connection;
+//! use gandr_surface_agentic::Connection;
 //! use serde_json::json;
 //!
 //! let mut connection = Connection::default();

@@ -1,16 +1,16 @@
 [package]
-name = "gandr-surface-mcp"
+name = "gandr-surface-agentic"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The gandr Model Context Protocol server: the engine hub's documents, diagnostics and queries served to models"
+description = "The agentic face of the gandr engine hub: the Reactive Agent Protocol's toolset, and the Model Context Protocol for compatibility"
 repository.workspace = true
 license.workspace = true
-keywords = ["gandr", "language", "mcp"]
+keywords = ["agent", "gandr", "language", "mcp"]
 categories = ["development-tools"]
 publish.workspace = true
 
-# The server reads the language server's shared workspace: its documents, the
+# The crate reads the language server's shared workspace: its documents, the
 # diagnostics last published for each, and its read-only requests answered
 # off them; and the features ledger, through gandr-surface-features. The wire
 # is newline-delimited JSON, built and read through serde_json's value tree;
@@ -40,7 +40,7 @@ serde_json = { workspace = true, features = ["std"] }
 # The tests of `subscribe_activity` read the activity ring, so the crate's own
 # targets turn its `instrument` feature on.
 [dev-dependencies]
-gandr-surface-mcp = { workspace = true, features = ["instrument"] }
+gandr-surface-agentic = { workspace = true, features = ["instrument"] }
 
 [features]
 default = []

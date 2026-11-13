@@ -1,6 +1,6 @@
-# gandr-surface-mcp
+# gandr-surface-agentic
 
-The gandr Model Context Protocol server: the documents the engine hub holds open, their diagnostics and the language server's queries over them, served to models as tools and resources.
+The agentic face of gandr's engine hub: the Reactive Agent Protocol's toolset for an agent by default, and the Model Context Protocol for compatibility, over the documents the hub holds open, their diagnostics and the language server's queries.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -14,7 +14,7 @@ The gandr Model Context Protocol server: the documents the engine hub holds open
 
 ## Synopsis
 
-**What.** `gandr-surface-mcp` serves the Model Context Protocol's tools and resources over the engine hub's shared workspace. Nine tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets), `trial` (candidate fills judged without changing the document, best first), `propose` (a fill offered to the document's editors, kept once it checks), `type_of` (the type and documentation of the declaration named at a position), and `ledger_list` and `ledger_show` (the features ledger, as `ledger list` and `ledger show` print it). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
+**What.** `gandr-surface-agentic` serves the hub's one table of operations to agents, through the Reactive Agent Protocol by default and the Model Context Protocol for compatibility, over the engine hub's shared workspace. Nine tools: `diagnostics` (the last diagnostics published for an open document), `documents` (every open document and its version), `outline` (its declarations, nested), `expected_syntax` (the syntax the parser expects at a position, as snippets), `trial` (candidate fills judged without changing the document, best first), `propose` (a fill offered to the document's editors, kept once it checks), `type_of` (the type and documentation of the declaration named at a position), and `ledger_list` and `ledger_show` (the features ledger, as `ledger list` and `ledger show` print it). One resource per open document, `gandr://<path>/diagnostics`, readable and subscribable. On Unix the hub hands it every connection whose first byte is `{`; `gandr mcp` relays a model host's standard streams to that hub.
 
 **Why.** A model writing gandr should see what the author's editor shows, at the version the editor last synchronised, without a second checker that could disagree with the first, and without re-running the pipeline on every read.
 
@@ -50,7 +50,7 @@ The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on
 
 ```rust
 use gandr_surface_lsp::Workspace;
-use gandr_surface_mcp::Connection;
+use gandr_surface_agentic::Connection;
 use serde_json::json;
 
 let mut connection = Connection::default();

@@ -140,14 +140,14 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_kernel_core::verdict::KernelIdentity;
+#[cfg(unix)]
+use gandr_surface_agentic::Policy;
+#[cfg(unix)]
+use gandr_surface_agentic::Retries;
 use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
 use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::presented;
-#[cfg(unix)]
-use gandr_surface_mcp::Policy;
-#[cfg(unix)]
-use gandr_surface_mcp::Retries;
 
 /// Whose recorded kernel verdicts a `check` believes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1238,8 +1238,8 @@ mod tests
     {
         use core::time::Duration;
 
-        use gandr_surface_mcp::Policy;
-        use gandr_surface_mcp::Retries;
+        use gandr_surface_agentic::Policy;
+        use gandr_surface_agentic::Retries;
 
         let read = |text: &str| {
             deliveries_parsed(

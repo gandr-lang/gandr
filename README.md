@@ -17,7 +17,7 @@ One principle sits under all of it: the checker's state is data. Type checking i
 - `crates/kernel-core` — the checking machine
 - `crates/core-incremental` — the machine's state checkpointed and resumed
 - `crates/surface-session` — a session over the checker, resumed and inspected
-- `crates/surface-mcp` — the Model Context Protocol face agents drive
+- `crates/surface-agentic` — the face agents drive: the Reactive Agent Protocol, and the Model Context Protocol for compatibility
 - `corpus/model/effects/domhringr.gandr` — the factory's host interfaces, in gandr
 
 ### Incremental by default
@@ -39,7 +39,7 @@ The grammar is checked data with precedence bounds. The parser resumes after an 
 The corpus is the language's record. Each directory under `corpus/model` is one subject. Each source states what it expects. Each refused program sits beside the accepted one. Every feature in the ledger is witnessed there.
 
 - `crates/surface-grammar`, `crates/surface-parser`, `crates/surface-format`
-- `crates/surface-lsp`, `crates/surface-mcp`, `crates/surface-tui`
+- `crates/surface-lsp`, `crates/surface-agentic`, `crates/surface-tui`
 - `crates/surface-corpus` — the expectation schemas and the runner
 - `ledger/features.sql`
 
