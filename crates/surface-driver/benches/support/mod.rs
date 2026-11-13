@@ -14,6 +14,7 @@ use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_evaluate::Evaluator;
 
 /// The path of a corpus source from the driver's manifest directory.
 ///
@@ -64,7 +65,7 @@ pub(crate) fn check(paths: Vec<PathBuf>)
         panic!("check dispatches a walk");
     };
     let ControlFlow::Continue(report) =
-        walk.visit(&Pool::new(width), |_step| ControlFlow::<()>::Continue(()))
+        walk.visit::<Evaluator, _, _>(&Pool::new(width), |_step| ControlFlow::<()>::Continue(()))
     else {
         panic!("the visitor never stops the walk");
     };
