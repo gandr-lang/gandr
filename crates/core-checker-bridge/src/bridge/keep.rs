@@ -85,10 +85,10 @@ quenchant_shape::reason_enum! {
             /// The record or the report has no content key for each of its
             /// declarations.
             Unkeyed,
-            /// A formation past the run reads a datatype, an atom or an
-            /// axiom by its kernel position. A walk that keeps numbers these
-            /// otherwise than a whole readmission, so the formation's name
-            /// differs.
+            /// The name of a formation past the run reads a constant with no
+            /// content key, which the formation table names by its position. A
+            /// walk that keeps numbers these otherwise than a whole
+            /// readmission, so the formation's name differs.
             Positional,
             /// A seal of the report does not stay whole. The match keeps no
             /// record entry for one of its abstract types, or the reach
@@ -483,10 +483,11 @@ fn leading_run(
 ///   declaration of the record and of `report`. The record is unchanged.
 /// - fails: never; absent as [`keeping::Absent::Unkeyed`] without keys, as
 ///   [`keeping::Absent::Positional`] when the name of a formation past the run
-///   reads a kernel position, as [`keeping::Absent::Sealed`] when a seal of
-///   `report` does not stay whole, as [`keeping::Absent::Unresumed`] when the
-///   record does not resume the run, and as [`keeping::Absent::Unranked`] when
-///   the kernel refuses the retirement or the rank rewrite.
+///   reads a constant with no content key, as [`keeping::Absent::Sealed`] when
+///   a seal of `report` does not stay whole, as [`keeping::Absent::Unresumed`]
+///   when the record does not resume the run, and as
+///   [`keeping::Absent::Unranked`] when the kernel refuses the retirement or
+///   the rank rewrite.
 /// - panics: none.
 ///
 /// # Adequacy

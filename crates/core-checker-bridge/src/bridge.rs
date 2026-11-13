@@ -1956,6 +1956,10 @@ quenchant_shape::reason_enum! {
             /// way: its environment holds the ranks of the edited source,
             /// which no leading run records.
             Kept,
+            /// A walk that keyed nothing crossed a formation, whose name
+            /// reads entry keys, so the readmission walked again with keys
+            /// and resumed nothing.
+            Unkeyed,
         }
     }
 }
@@ -2244,6 +2248,7 @@ impl Crossed
                 content: positions.content.clone(),
                 // A walk that misplaces a formation records nothing.
                 misplaced: false,
+                unkeyed: false,
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
@@ -2555,44 +2560,36 @@ impl Recall
         }
     }
 
-    /// An empty environment under this recall.
+    /// An empty environment under this recall. Under [`Keyed::Always`] it keys
+    /// each admission: a policy that rechecks every declaration becomes one
+    /// that trusts no signer, which keys each admission and recalls nothing.
     ///
     /// # Specification
-    /// trivial.
-    fn environment(&self) -> Environment
-    {
-        Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
-            .forking(self.fork.clone())
-            .speculating(self.speculation)
-    }
-
-    /// This recall, keying each admission: a policy that rechecks every
-    /// declaration becomes one that trusts no signer, which keys each
-    /// admission and recalls nothing. A kept entry stands by its key, so a
-    /// readmission that keeps entries keys each admission.
-    ///
-    /// # Specification
-    /// - ensures: under [`TrustPolicy::Recheck`], the same source and fork
-    ///   under [`TrustPolicy::Trusted`] of no signer; otherwise this recall.
-    ///   Either way it recalls what this recall recalls.
+    /// - ensures: an empty environment under this recall's source, fork and
+    ///   speculation, which recalls what this recall recalls. It keys each
+    ///   admission under [`Keyed::Always`], and as this recall's policy states
+    ///   otherwise.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a readmission that keeps entries under a recall that
-    ///   rechecks keeps them, and recalls nothing.
+    ///   rechecks keeps them, and recalls nothing; a whole readmission that
+    ///   crosses a formation names it as a readmission that keeps names it.
     /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
-    #[spec(ensures: |ret| !matches!(ret.policy, TrustPolicy::Recheck) && Arc::ptr_eq(&ret.source, &self.source))]
-    fn keyed(&self) -> Self
+    /// - witness: `bridge::tests::a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261`
+    #[spec(ensures: |ret| matches!(keyed, Keyed::AsRecalled) || ret.keying() == gandr_kernel_core::verdict::Keying::Keys)]
+    fn environment(
+        &self,
+        keyed: Keyed,
+    ) -> Environment
     {
-        match self.policy {
-            TrustPolicy::Recheck => Self {
-                policy: TrustPolicy::Trusted(BTreeSet::new()),
-                source: Arc::clone(&self.source),
-                fork: self.fork.clone(),
-                speculation: self.speculation,
-            },
-            TrustPolicy::Trusted(_) => self.clone(),
-        }
+        let policy = match (keyed, &self.policy) {
+            (Keyed::Always, &TrustPolicy::Recheck) => TrustPolicy::Trusted(BTreeSet::new()),
+            (Keyed::Always | Keyed::AsRecalled, policy) => policy.clone(),
+        };
+        Environment::recalling(policy, Arc::clone(&self.source))
+            .forking(self.fork.clone())
+            .speculating(self.speculation)
     }
 }
 
@@ -2673,6 +2670,7 @@ where
             crossed,
             recall,
             keys: &[],
+            keyed: Keyed::AsRecalled,
         },
         (retirement, stopwatch),
         fork,
@@ -2702,17 +2700,16 @@ where
 ///   entry and to the bytes of its export, and the record of every declaration
 ///   with its key; [`crossed::Absent::Unchanged`] when the run holds every
 ///   declaration of `report`, as the record given answers for it. Each
-///   admission is keyed, under a recall that rechecks too ([`Recall::keyed`]),
-///   since a kept entry stands by its key. [`Readmission::resumed`] counts the
-///   declarations of the run, and [`Readmission::kept`] those kept in place
-///   past it. A record without keys resumes its run, as [`readmit_resuming`]
-///   resumes it, and every declaration past the run crosses. With no record, a
-///   report that seals an abstract type, a record that holds a formation, or a
-///   crossing the kernel rejects, every declaration crosses, as a whole
-///   readmission crosses it, and the record carries the keys. Retired,
-///   [`Polled::Retired`] with the retirement and no record
-///   ([`crossed::Absent::Kept`]); the record given is unchanged either way.
-///   Each fork gives the same answer.
+///   admission is keyed, under a recall that rechecks too, since a kept entry
+///   stands by its key. [`Readmission::resumed`] counts the declarations of the
+///   run, and [`Readmission::kept`] those kept in place past it. A record
+///   without keys resumes its run, as [`readmit_resuming`] resumes it, and
+///   every declaration past the run crosses. With no record, a report that
+///   seals an abstract type, a record that holds a formation, or a crossing the
+///   kernel rejects, every declaration crosses, as a whole readmission crosses
+///   it, and the record carries the keys. Retired, [`Polled::Retired`] with the
+///   retirement and no record ([`crossed::Absent::Kept`]); the record given is
+///   unchanged either way. Each fork gives the same answer.
 /// - provides: an edit costs the kernel the reach of the edit, and the
 ///   readmission reads nothing of the run before the edit.
 /// - fails: never.
@@ -2745,7 +2742,6 @@ where
     Forker: Fork,
 {
     let (keys, record) = kept;
-    let recall = &recall.keyed();
     readmit_from(
         arena,
         report,
@@ -2759,6 +2755,7 @@ where
                     crossed: Maybe::Present(record),
                     recall,
                     keys,
+                    keyed: Keyed::Always,
                 }
             },
             Maybe::Present(record) => Resume::Kept {
@@ -2771,6 +2768,7 @@ where
                 crossed: Maybe::Absent(absent),
                 recall,
                 keys,
+                keyed: Keyed::Always,
             },
         },
         (retirement, stopwatch),
@@ -2808,7 +2806,9 @@ where
         arena,
         report,
         vouch,
-        Resume::Whole,
+        Resume::Whole {
+            keyed: Keyed::AsRecalled,
+        },
         (&Unretired, &mut Untimed),
         &Serial,
     )
@@ -2821,7 +2821,11 @@ where
 enum Resume<'crossed>
 {
     /// Cross every declaration, checking each, and record nothing.
-    Whole,
+    Whole
+    {
+        /// Whether the walk keys each admission.
+        keyed: Keyed,
+    },
     /// Resume what `crossed` recorded when it agrees with the report, and
     /// record what the first `boundary` declarations built.
     Leading
@@ -2835,6 +2839,8 @@ enum Resume<'crossed>
         /// The content key of each declaration of the report, which a record
         /// of all of them keeps; none when the caller has no keys.
         keys: &'crossed [DeclarationKey],
+        /// Whether the walk keys each admission whatever the recall states.
+        keyed: Keyed,
     },
     /// Keep each entry of `record` that the edit leaves, cross each other
     /// declaration at its place, and record every declaration with its key.
@@ -2847,6 +2853,49 @@ enum Resume<'crossed>
         /// The recall a crossing admits under.
         recall: &'crossed Recall,
     },
+}
+
+impl Resume<'_>
+{
+    /// This resume, keying each admission. A resumed environment keys as the
+    /// walk that recorded it did, so a leading walk resumes no record.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keyed(self) -> Self
+    {
+        match self {
+            Resume::Whole { .. } => Resume::Whole {
+                keyed: Keyed::Always,
+            },
+            Resume::Leading {
+                boundary,
+                recall,
+                keys,
+                ..
+            } => Resume::Leading {
+                boundary,
+                crossed: Maybe::Absent(crossed::Absent::Unkeyed),
+                recall,
+                keys,
+                keyed: Keyed::Always,
+            },
+            Resume::Kept { .. } => self,
+        }
+    }
+}
+
+/// Whether a walk keys each admission whatever its recall's policy states.
+///
+/// A formation's witnesses take a name that reads entry keys, so a walk that
+/// crosses a formation keys each admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Keyed
+{
+    /// As the recall's policy states.
+    AsRecalled,
+    /// Each admission, under a policy that rechecks too.
+    Always,
 }
 
 /// What one walk of a report answers: the readmission, or the finding that a
@@ -2870,6 +2919,9 @@ enum Walked<'crossed, Retired>
         /// The content key of each declaration of the report.
         keys: &'crossed [DeclarationKey],
     },
+    /// A crossing of a walk that keyed nothing read a formation, whose name
+    /// reads entry keys. The readmission walks again with keys.
+    Unkeyed,
 }
 
 /// [`walk`] under `resume`, and again as a whole readmission when a
@@ -2896,7 +2948,7 @@ enum Walked<'crossed, Retired>
 /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
 #[spec(ensures: |ret| match ret {
     Polled::Whole((ref readmission, ref recorded)) => readmission.readmitted().len() == report.judged().len()
-        && (!matches!(resume, Resume::Whole)
+        && (!matches!(resume, Resume::Whole { .. })
             || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
     Polled::Retired(..) => true,
 })]
@@ -2915,8 +2967,8 @@ where
     Forker: Fork,
 {
     let mut resume = resume;
-    // A leading or a whole walk is never misplaced, so the second walk is
-    // the last.
+    // A leading or a whole walk is never misplaced, and a walk that keys
+    // never asks for keys, so the second walk is the last.
     loop {
         match walk(
             arena,
@@ -2933,8 +2985,10 @@ where
                     crossed: Maybe::Absent(crossed::Absent::Kept),
                     recall,
                     keys,
+                    keyed: Keyed::Always,
                 };
             },
+            Walked::Unkeyed => resume = resume.keyed(),
         }
     }
 }
@@ -2979,10 +3033,11 @@ where
 /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
 #[spec(ensures: |ret| match ret {
     Walked::Done(Polled::Whole((ref readmission, ref recorded))) => readmission.readmitted().len() == report.judged().len()
-        && (!matches!(resume, Resume::Whole)
+        && (!matches!(resume, Resume::Whole { .. })
             || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
     Walked::Done(Polled::Retired(..)) => true,
     Walked::Misplaced { .. } => matches!(resume, Resume::Kept { .. }),
+    Walked::Unkeyed => matches!(resume, Resume::Whole { keyed: Keyed::AsRecalled } | Resume::Leading { keyed: Keyed::AsRecalled, .. }),
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn walk<'crossed, Vouch, Poll, Watch, Forker>(
@@ -3033,17 +3088,22 @@ where
     };
     let fresh = || Vec::with_capacity(judged_all.len());
     let (boundary, keys, keeping, (environment, positions, readmitted)) = match resume {
-        Resume::Whole => (
+        Resume::Whole { keyed } => (
             None,
             &[][..],
             None,
-            (Environment::new(), Positions::default(), fresh()),
+            (
+                Recall::recheck().environment(keyed),
+                Positions::default(),
+                fresh(),
+            ),
         ),
         Resume::Leading {
             boundary,
             crossed,
             recall,
             keys,
+            keyed,
         } => (
             Some(boundary.0),
             keys,
@@ -3053,7 +3113,7 @@ where
                 Maybe::Absent(_) => None,
             }
             .map_or_else(
-                || (recall.environment(), Positions::default(), fresh()),
+                || (recall.environment(keyed), Positions::default(), fresh()),
                 |(environment, positions, readmitted)| {
                     (recalling(environment, recall), positions, readmitted)
                 },
@@ -4153,6 +4213,11 @@ where
         {
             self.misplaced = true;
         }
+        // A crossing that reads a formation in a walk that keys nothing ends
+        // the walk, and the readmission walks again with keys.
+        if self.positions.unkeyed {
+            self.misplaced = true;
+        }
         let constant = entry.constant;
         let abstracted = self.report.abstract_types().get(&constant);
         if tail == Tail::Lone {
@@ -4228,12 +4293,13 @@ where
     ///
     /// # Specification
     /// - requires: each declaration from `from` on was released and committed.
-    /// - ensures: misplaced, [`Walked::Misplaced`] with the recall and the
-    ///   keys. Retired, the retirement and the record of the declarations
-    ///   recorded, or no record ([`crossed::Absent::Kept`]) in a walk that
-    ///   keeps. Whole, the record at the boundary when the boundary is the end
-    ///   of the report, each seal still open closed, and the readmission with
-    ///   the count of the declarations kept in place.
+    /// - ensures: unkeyed, [`Walked::Unkeyed`]. Misplaced,
+    ///   [`Walked::Misplaced`] with the recall and the keys. Retired, the
+    ///   retirement and the record of the declarations recorded, or no record
+    ///   ([`crossed::Absent::Kept`]) in a walk that keeps. Whole, the record at
+    ///   the boundary when the boundary is the end of the report, each seal
+    ///   still open closed, and the readmission with the count of the
+    ///   declarations kept in place.
     /// - panics: none.
     /// - executable: none — the record is [`Crossed::record`]'s.
     ///
@@ -4244,6 +4310,9 @@ where
     /// - witness: `bridge::tests::a_retired_keeping_readmission_leaves_its_record_whole_6846`
     fn finish(mut self) -> Walked<'crossed, Poll::Retired>
     {
+        if self.positions.unkeyed {
+            return Walked::Unkeyed;
+        }
         if self.misplaced
             && let Some(ref keeping) = self.keeping
         {
@@ -6079,10 +6148,12 @@ fn model_name(
 /// - ensures: on success `positions.formed` holds `at` and
 ///   `positions.formations` holds its key with each witness's position. The
 ///   kernel admitted every witness of a key no earlier formation held, and
-///   nothing for a key one held. In a walk that keeps, a formation whose name
-///   reads a kernel position, or a kept formation whose witnesses rank past the
-///   next rank, sets `positions.misplaced` and admits nothing. Otherwise the
-///   outcome of the first witness that did not cross.
+///   nothing for a key one held. In a walk that keys nothing, a formation sets
+///   `positions.unkeyed` and admits nothing, since its name reads entry keys.
+///   In a walk that keeps, a formation whose name reads a kernel position, or a
+///   kept formation whose witnesses rank past the next rank, sets
+///   `positions.misplaced` and admits nothing. Otherwise the outcome of the
+///   first witness that did not cross.
 /// - fails: as above.
 /// - panics: none.
 ///
@@ -6110,6 +6181,10 @@ where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    if environment.keying() == gandr_kernel_core::verdict::Keying::Rechecks {
+        positions.unkeyed = true;
+        return Err(invariant());
+    }
     let Some(&gandr_core_term::ValueType::Patched {
         base,
         ref fixed,
@@ -6326,9 +6401,9 @@ fn record_of<'label>(
 /// The table compares the words of each record it files, so two keys are
 /// equal exactly when the checks they name have equal content; a digest only
 /// selects where the table looks. The table names each constant a record
-/// reads as the environment admitted it first, so a definition reads by its
-/// content. A record that reads a datatype, an atom or an axiom reads it by
-/// its kernel position, and the key says so.
+/// reads as [`FormationTable::name`] names it: a plain definition by its
+/// content, and each other constant with an entry key by that key. A record
+/// that reaches a constant with no such name says so in its [`NameReads`].
 ///
 /// # Specification
 /// - requires: as [`stage`].
@@ -6387,25 +6462,19 @@ where
             environment.abandon(staged.declaration);
             return Err(invariant());
         };
-        if gandr_kernel_core::env::references(environment.arena(), staged.declaration.declaration())
-            .iter()
-            .any(|&constant| {
-                environment
-                    .entries()
-                    .get(usize::from(constant))
-                    .is_some_and(|entry| {
-                        matches!(
-                            entry.key_name(),
-                            gandr_kernel_core::encoding::ConstantName::Position
-                        )
-                    })
-            })
-        {
+        positions.content.name(environment.entries());
+        let named = gandr_kernel_core::env::references(
+            environment.arena(),
+            staged.declaration.declaration(),
+        );
+        if matches!(
+            positions.content.reads(environment.entries(), &named),
+            NameReads::Position
+        ) {
             reads = NameReads::Position;
         }
-        positions.content.0.name_constants(environment.entries());
         key.push(gandr_kernel_core::support_key(
-            &mut positions.content.0,
+            &mut positions.content.table,
             environment.arena(),
             gandr_kernel_core::SupportGoal::CheckValue(body, declared),
             gandr_kernel_core::encoding::Telescope::Whole(&[]),
@@ -6444,7 +6513,7 @@ fn formation_segment(
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
     let mut hasher = blake3::Hasher::new();
     for &id in key {
-        let Maybe::Present(name) = table.0.name(id)
+        let Maybe::Present(name) = table.table.name(id)
         else {
             return Err(invariant());
         };
@@ -6458,20 +6527,124 @@ fn formation_segment(
 
 /// The content table of the formation keys, which names each record by its
 /// content, for the length of one readmission and the records after it.
+///
+/// The kernel names a constant other than a plain definition by its position.
+/// The table names each such constant by the entry key that the kernel gave
+/// it, when it has one. An entry key writes each constant it reads as that
+/// constant's key, so a record's name then reads no kernel position. Two
+/// constants of one entry key take one name. A formation's witnesses then read
+/// the constant that its first reader reads, in each readmission alike.
 #[derive(Clone, Debug)]
-#[repr(transparent)]
-struct FormationTable(gandr_kernel_core::ContentTable);
+struct FormationTable
+{
+    /// The table that places and names the records.
+    table: gandr_kernel_core::ContentTable,
+    /// How many constants the table names.
+    named: usize,
+}
 
 impl Default for FormationTable
 {
-    /// A table that names its records.
+    /// A table that names its records and no constant.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn default() -> Self
     {
-        Self(gandr_kernel_core::ContentTable::named())
+        Self {
+            table: gandr_kernel_core::ContentTable::named(),
+            named: 0,
+        }
+    }
+}
+
+impl FormationTable
+{
+    /// Name the constants of `entries` past those the table names, each as
+    /// the kernel named it, and then each that the kernel names by its
+    /// position by its content key, when it has one.
+    ///
+    /// # Specification
+    /// - requires: `entries` extends the entries the table was told before, and
+    ///   no record the table placed reads a constant past them.
+    /// - ensures: the table names each constant of `entries`, and the names it
+    ///   held before are unchanged. Each new constant that the kernel names by
+    ///   its position and that has a content key takes that key as its name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`formed`].
+    /// - witness: `bridge::tests::a_formation_takes_one_name_in_each_readmission_7245`
+    #[spec(captures: before = self.named, ensures: self.named == before.max(usize::from(entries.len())))]
+    fn name(
+        &mut self,
+        entries: &gandr_kernel_core::env::Entries,
+    )
+    {
+        self.table.name_constants(entries);
+        let end = usize::from(entries.len());
+        for position in self.named .. end {
+            let constant = ConstantIndex::from(position);
+            if entries.get(position).is_some_and(|entry| {
+                matches!(
+                    entry.key_name(),
+                    gandr_kernel_core::encoding::ConstantName::Position
+                )
+            }) && let Maybe::Present(key) = entries.content(constant)
+            {
+                self.table.rename_constant(
+                    constant,
+                    gandr_kernel_core::encoding::ConstantName::Admitted { key },
+                );
+            }
+        }
+        self.named = self.named.max(end);
+    }
+
+    /// What the name of a record that reads the constants `roots` reads.
+    ///
+    /// A plain definition's name reads its content, so the search goes on
+    /// through the constants that the definition reads.
+    ///
+    /// # Specification
+    /// - requires: the table names each constant of `entries` ([`Self::name`]).
+    /// - ensures: [`NameReads::Position`] when `roots`, or a plain definition
+    ///   they reach, reads a constant that the table names by its position.
+    ///   [`NameReads::Content`] otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`formed`].
+    /// - witness: `bridge::tests::a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200`
+    #[spec(ensures: |ret| matches!(ret, NameReads::Content) || !roots.is_empty())]
+    fn reads(
+        &self,
+        entries: &gandr_kernel_core::env::Entries,
+        roots: &[ConstantIndex],
+    ) -> NameReads
+    {
+        let mut seen = BTreeSet::new();
+        let mut open = roots.to_vec();
+        while let Some(constant) = open.pop() {
+            if !seen.insert(constant) {
+                continue;
+            }
+            match self.table.constant_name(constant) {
+                Some(gandr_kernel_core::encoding::ConstantName::Definition { .. }) => {
+                    if let Some(entry) = entries.get(usize::from(constant)) {
+                        open.extend_from_slice(entry.references());
+                    }
+                },
+                Some(gandr_kernel_core::encoding::ConstantName::Admitted { .. }) => {},
+                Some(gandr_kernel_core::encoding::ConstantName::Position) | None => {
+                    return NameReads::Position;
+                },
+            }
+        }
+        NameReads::Content
     }
 }
 
@@ -6678,6 +6851,9 @@ struct Positions
     /// Whether a crossing of a walk that keeps reads a formation that its
     /// place misplaces ([`formed`]). The walk then readmits whole.
     misplaced: bool,
+    /// Whether a crossing of a walk that keys nothing reads a formation
+    /// ([`formed`]). The walk then readmits again with keys.
+    unkeyed: bool,
 }
 
 /// A formation whose witnesses the kernel admitted.
@@ -6700,9 +6876,10 @@ enum NameReads
 {
     /// The content of its records alone: one name in each readmission.
     Content,
-    /// The kernel position of a datatype, an atom or an axiom that a record
-    /// reads. A walk that keeps numbers these otherwise than a whole
-    /// readmission, so the formation keeps no witness past the run.
+    /// A constant with no entry key: a record reads it, or a plain definition
+    /// the record reads reads it. The table names it by its position, which a
+    /// walk that keeps numbers otherwise than a whole readmission, so the
+    /// formation keeps no witness past the run.
     Position,
 }
 

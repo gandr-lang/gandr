@@ -301,6 +301,11 @@ const GOAL_TAG: u8 = 0xFA;
 /// named by its declared type and body.
 const DEFINITION_TAG: u8 = 0xF9;
 
+/// The byte an admitted record reserves: a node that reads a constant named by
+/// the key that the kernel gave it at its admission. The node's own tag and
+/// the key follow it, in place of the constant's position.
+const ADMITTED_TAG: u8 = 0xFB;
+
 /// The byte that a parameters record reserves. The record names the
 /// parameters that a judgement answers under. It is the lowest reserved byte.
 /// Every node tag sits below it.
@@ -452,6 +457,14 @@ pub enum ConstantName
         /// The digest of the declared type and body, which admission compares
         /// before it compares the two exactly; no record holds it.
         digest: ContentDigest,
+    },
+    /// By the content key that the kernel gave it at its admission. Only a
+    /// table that a caller renames gives this name: the kernel names such a
+    /// constant by its position.
+    Admitted
+    {
+        /// The content key, which reads no build.
+        key: crate::verdict::EntryContentKey,
     },
 }
 
@@ -2606,8 +2619,9 @@ impl ContentTable
     ///
     /// # Specification
     /// trivial.
-    #[cfg(any(test, feature = "fixture"))]
-    pub(crate) fn constant_name(
+    #[inline]
+    #[must_use]
+    pub fn constant_name(
         &self,
         index: ConstantIndex,
     ) -> Option<ConstantName>
@@ -3195,7 +3209,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     ///   them; distinct formers write distinct tags, so no two write one
     ///   record. A reference to a constant the table names by its content
     ///   writes the definition tag, then the declared type's and the body's ids
-    ///   and the definition's rank, and no position.
+    ///   and the definition's rank, and no position. A node that reads a
+    ///   constant the table names by its entry key writes the admitted tag,
+    ///   then its own tag and the key, and no position.
     /// - provides: the value arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
@@ -3222,7 +3238,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::ListNil | Value::Variable(_) | Value::Literal(_) => true,
             Value::Constant(index) => match constant_name(&self.constants, index) {
                 ConstantName::Definition { declared, body, .. } => matches!(self.placed.get(AnyNode::ValueType(declared)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(body)), Maybe::Present(_)),
-                ConstantName::Position => true,
+                ConstantName::Position | ConstantName::Admitted { .. } => true,
             },
             Value::Tuple(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => matches!(self.placed.get(AnyNode::Value(first)), Maybe::Present(_))
@@ -3239,7 +3255,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.words.0.len(),
         ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *value {
-            Value::Constructor { .. } => gandr_kernel_term::NODE_V_CONSTRUCTOR,
+            Value::Constructor { family, .. } => lead_tag(&self.constants, (gandr_kernel_term::NODE_V_CONSTRUCTOR, family)),
             Value::Record(_) => gandr_kernel_term::NODE_V_RECORD,
             Value::Restrict { .. } => gandr_kernel_term::NODE_V_RESTRICT,
             Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
@@ -3262,6 +3278,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::Constant(index) => match constant_name(&self.constants, index) {
                 ConstantName::Definition { .. } => WireTag::from(DEFINITION_TAG),
                 ConstantName::Position => gandr_kernel_term::NODE_V_CONSTANT,
+                ConstantName::Admitted { .. } => WireTag::from(ADMITTED_TAG),
             },
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
             Value::ListCons(..) => gandr_kernel_term::NODE_V_LIST_CONS,
@@ -3288,8 +3305,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 tag,
                 ref fields,
             } => {
-                record.put_tag(gandr_kernel_term::NODE_V_CONSTRUCTOR);
-                record.put_count(ComponentCount(usize::from(family)));
+                put_constant(
+                    record,
+                    &self.constants,
+                    (gandr_kernel_term::NODE_V_CONSTRUCTOR, family),
+                );
                 record.put_count(ComponentCount(usize::from(tag)));
                 record.put_count(ComponentCount(fields.len()));
                 record.put_content(self.content_of(AnyNode::ValueType(datatype)));
@@ -3492,9 +3512,12 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(body)));
                     record.put_count(ComponentCount(rank));
                 },
-                ConstantName::Position => {
-                    record.put_tag(gandr_kernel_term::NODE_V_CONSTANT);
-                    record.put_count(ComponentCount(usize::from(index)));
+                ConstantName::Position | ConstantName::Admitted { .. } => {
+                    put_constant(
+                        record,
+                        &self.constants,
+                        (gandr_kernel_term::NODE_V_CONSTANT, index),
+                    );
                 },
             },
             Value::Literal(ref literal) => {
@@ -3875,7 +3898,10 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - requires: every child of `value_type` has already been placed.
     /// - ensures: writes the former's own node tag, then its inline payload — a
     ///   base atom, a level, or a sealed-atom position — then each child's
-    ///   content id in format order; distinct formers write distinct tags.
+    ///   content id in format order; distinct formers write distinct tags. A
+    ///   data type or an abstract type whose constant the table names by its
+    ///   entry key writes the admitted tag first, and the key in place of the
+    ///   position.
     /// - provides: the value-type arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
@@ -3905,7 +3931,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.words.0.len(),
         ensures: record.words.0.get(entry_len) == Some(&u32::from(u8::from(match *value_type {
-            ValueType::Data { .. } => gandr_kernel_term::NODE_VT_DATA,
+            ValueType::Data { declaration, .. } => lead_tag(&self.constants, (gandr_kernel_term::NODE_VT_DATA, declaration)),
             ValueType::Record(_) => gandr_kernel_term::NODE_VT_RECORD,
             ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
             ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
@@ -3922,7 +3948,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             ValueType::Thunk(..) => gandr_kernel_term::NODE_VT_THUNK,
             ValueType::Lift { .. } => gandr_kernel_term::NODE_VT_LIFT,
             ValueType::Element { .. } => gandr_kernel_term::NODE_VT_ELEMENT,
-            ValueType::Abstract(..) => gandr_kernel_term::NODE_VT_ABSTRACT,
+            ValueType::Abstract(atom) => lead_tag(&self.constants, (gandr_kernel_term::NODE_VT_ABSTRACT, atom)),
             ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI,
             ValueType::Sigma { .. } => gandr_kernel_term::NODE_VT_SIGMA,
             ValueType::Staged { .. } => record_staged(),
@@ -3939,8 +3965,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 declaration,
                 ref arguments,
             } => {
-                record.put_tag(gandr_kernel_term::NODE_VT_DATA);
-                record.put_count(ComponentCount(usize::from(declaration)));
+                put_constant(
+                    record,
+                    &self.constants,
+                    (gandr_kernel_term::NODE_VT_DATA, declaration),
+                );
                 record.put_count(ComponentCount(arguments.len()));
                 for argument in arguments {
                     record.put_content(self.content_of(AnyNode::Value(*argument)));
@@ -4067,8 +4096,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 record.put_content(self.content_of(AnyNode::Value(code)));
             },
             ValueType::Abstract(atom) => {
-                record.put_tag(gandr_kernel_term::NODE_VT_ABSTRACT);
-                record.put_count(ComponentCount(usize::from(atom)));
+                put_constant(
+                    record,
+                    &self.constants,
+                    (gandr_kernel_term::NODE_VT_ABSTRACT, atom),
+                );
             },
             ValueType::StaticPi { domain, codomain } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_STATIC_PI);
@@ -4700,6 +4732,52 @@ fn constant_name(
         .unwrap_or(ConstantName::Position)
 }
 
+/// The tag a node that reads the constant at `index` writes first: the
+/// admitted tag when `constants` names it by its content key, and `tag`
+/// otherwise.
+///
+/// # Specification
+/// trivial.
+fn lead_tag(
+    constants: &gandr_kernel_term::Family<ConstantName>,
+    (tag, index): (WireTag, ConstantIndex),
+) -> WireTag
+{
+    match constant_name(constants, index) {
+        ConstantName::Admitted { .. } => WireTag::from(ADMITTED_TAG),
+        ConstantName::Position | ConstantName::Definition { .. } => tag,
+    }
+}
+
+/// Write the head of a node of `tag` that reads the constant at `index`: the
+/// admitted tag, `tag` and the content key when `constants` names the
+/// constant by its content key, and `tag` and the position otherwise.
+///
+/// # Specification
+/// trivial.
+fn put_constant<const NAMED: bool>(
+    record: &mut RecordSink<'_, NAMED>,
+    constants: &gandr_kernel_term::Family<ConstantName>,
+    (tag, index): (WireTag, ConstantIndex),
+)
+{
+    match constant_name(constants, index) {
+        ConstantName::Admitted { key } => {
+            record.put_tag(WireTag::from(ADMITTED_TAG));
+            record.put_tag(tag);
+            let bytes: [u8; 32] = key.into();
+            let (words, _) = bytes.as_chunks::<8>();
+            for &word in words {
+                record.put_word(EncodedWord(u64::from_le_bytes(word)));
+            }
+        },
+        ConstantName::Position | ConstantName::Definition { .. } => {
+            record.put_tag(tag);
+            record.put_count(ComponentCount(usize::from(index)));
+        },
+    }
+}
+
 /// Push `node`'s children as open tasks, in the order the format writes them.
 ///
 /// # Specification
@@ -4734,7 +4812,7 @@ Value::Restrict { value: restricted, ref fixed } => opened.eq((core::iter::once(
 Value::ListNil | Value::Variable(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
 Value::Constant(index) => match constant_name(constants, index) {
     ConstantName::Definition { declared, body, .. } => opened.eq([AnyNode::ValueType(declared), AnyNode::Value(body)].into_iter().map(Some)),
-    ConstantName::Position => opened.eq((core::iter::empty()).map(Some)),
+    ConstantName::Position | ConstantName::Admitted { .. } => opened.eq((core::iter::empty()).map(Some)),
 },
 Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
@@ -4832,7 +4910,7 @@ fn push_children(
                     tasks.push(EncodeTask::Open(AnyNode::ValueType(declared)));
                     tasks.push(EncodeTask::Open(AnyNode::Value(body)));
                 },
-                ConstantName::Position => {},
+                ConstantName::Position | ConstantName::Admitted { .. } => {},
             },
             Some(&Value::Tuple(ref components)) => {
                 tasks.extend(
@@ -6257,7 +6335,9 @@ pub fn name_definition(
             {
                 Some(earlier_rank.0.saturating_add(1))
             },
-            ConstantName::Definition { .. } | ConstantName::Position => None,
+            ConstantName::Definition { .. }
+            | ConstantName::Position
+            | ConstantName::Admitted { .. } => None,
         })
         .unwrap_or(0);
     ConstantName::Definition {
@@ -7996,7 +8076,8 @@ mod tests
         );
         match crate::encoding::name_definition(table, arena, first, declared, body) {
             crate::encoding::ConstantName::Definition { digest, .. } => digest,
-            crate::encoding::ConstantName::Position => {
+            crate::encoding::ConstantName::Position
+            | crate::encoding::ConstantName::Admitted { .. } => {
                 panic!("a plain definition is named by its content")
             },
         }

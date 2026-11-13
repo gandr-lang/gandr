@@ -671,6 +671,17 @@ impl Environment
         &self.entries
     }
 
+    /// Whether the environment keys its admissions, as its policy states.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn keying(&self) -> crate::verdict::Keying
+    {
+        self.verdicts.keying()
+    }
+
     /// The positions of the live entries, in rank order.
     ///
     /// # Specification
@@ -3978,6 +3989,7 @@ impl Environment
         ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()
             && *declaration.content() == DeclarationContent::Def { declared, body },
         ConstantName::Position => true,
+        ConstantName::Admitted { .. } => false,
     })]
     fn definition_name(
         &mut self,
@@ -7237,7 +7249,11 @@ mod tests
             .map(AdmittedDeclaration::key_name)
         {
             Some(crate::encoding::ConstantName::Definition { rank, .. }) => rank,
-            Some(crate::encoding::ConstantName::Position) | None => {
+            Some(
+                crate::encoding::ConstantName::Position
+                | crate::encoding::ConstantName::Admitted { .. },
+            )
+            | None => {
                 panic!("a plain definition is named by its content")
             },
         };
@@ -8014,6 +8030,8 @@ mod tests
             crate::encoding::DefinitionRank,
             gandr_kernel_check_memo::ContentDigest,
         ),
+        /// By the content key a caller's table gives it.
+        Admitted(crate::verdict::EntryContentKey),
     }
 
     /// One entry as the release differential compares it: its rank, its key,
@@ -8076,6 +8094,9 @@ mod tests
                                 crate::encoding::ConstantName::Definition {
                                     rank, digest, ..
                                 } => Named::Definition(rank, digest),
+                                crate::encoding::ConstantName::Admitted { key } => {
+                                    Named::Admitted(key)
+                                },
                             },
                             entry.admission(),
                             alloc::boxed::Box::<[ConstantIndex]>::from(entry.references()),
