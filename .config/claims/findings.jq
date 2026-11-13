@@ -45,11 +45,12 @@
 #   `#name{ … }`, 3 an attribute `@[…]`, 4 a clause position bound to a `std`
 #   interface;
 # - `## Engineering` (#5038): a table with one row for each of `change`,
-#   `complexity`, `latency`, `parallelism`, `memory` and `failure`, the
-#   row's name in its first cell and its answer in its last: a bound, a
-#   budget or a measured number, or `n/a — <reason>` where the change has no
-#   such path (`units.md` § units-engineering). An empty answer and a bare
-#   `n/a` are refused. A `change` answer other than `n/a — <reason>` holds
+#   `complexity`, `latency`, `parallelism`, `memory`, `failure` and
+#   `streaming` (#6884), the row's name in its first cell and its answer in
+#   its last: a bound, a budget or a measured number, or `n/a — <reason>`
+#   where the change has no such path (`units.md` § units-engineering). An
+#   empty answer and a bare `n/a` are refused, and a message on `streaming`
+#   quotes its question. A `change` answer other than `n/a — <reason>` holds
 #   two parts (#5850): `unchanged:`, the work when no input of the result
 #   changes, and `edit:`, the work an edit costs. One that lacks either is
 #   refused, by the part it lacks. An issue the coordinator signed is not
@@ -104,20 +105,21 @@ def surface($labels):
   end;
 
 # What `## Engineering` lacks (#5038), on an issue the coordinator has not
-# signed: the section, a row of the six, a row's answer, or a reason beside
-# an `n/a`.
+# signed: the section, a row of the seven, a row's answer, or a reason beside
+# an `n/a`. A message on the `streaming` row quotes its question (#6884).
 def engineering_findings($labels):
   if ($labels | index("shape:signed")) != null then empty
   else
     "a bound, a budget or a measured number, or `n/a — <reason>` (`units.md` § units-engineering)" as $form
     | (section("Engineering") // null) as $lines
     | if $lines == null then
-        "`## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory` and `failure`, each \($form)"
+        "`## Engineering` is missing: write one row for each of `change`, `complexity`, `latency`, `parallelism`, `memory`, `failure` and `streaming`, each \($form)"
       else [$lines | engineering] as $rows
       | engineering_rows[] as $row
+      | (if $row == "streaming" then "; the row asks \(streaming_question)" else "" end) as $asks
       | [$rows[] | select(.row == $row) | .answer] as $answers
-      | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)"
-        elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)"
+      | if ($answers | length) == 0 then "`## Engineering` has no row for `\($row)`: write \($form)\($asks)"
+        elif all($answers[]; . == "") then "`## Engineering` leaves `\($row)` empty: write \($form)\($asks)"
         elif all($answers[]; test("^n/?a\\.?$"; "i")) then "`## Engineering` answers `\($row)` with a bare `n/a`: write `n/a — <reason>`"
         elif $row == "change"
           and all($answers[]; (test("^n/?a\\b"; "i") | not)
