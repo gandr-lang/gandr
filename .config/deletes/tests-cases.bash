@@ -9,6 +9,8 @@
 # that the base does not hold stops the run with exit 2. A relative path
 # that leaves the tree is refused. A source that a build script writes
 # under the target directory has no path in the tree and is not compared.
+# The pass reads each file once (#7045): of two tests in one file, the one
+# that changes reads as changed and the other does not.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-deletes-tests.XXXXXX")
@@ -73,5 +75,16 @@ got=$(cd "$repo" && "$here/tests.bash" "$base" "$work/normal.json" "$work/normal
 got=$(cd "$repo" && "$here/tests.bash" "$base" "$work/generated.json" "$work/generated.json")
 [[ $got == '[]' ]] || fail "#6844: a test in a source that a build script writes is not compared, and never stops the run" "$got"
 
+# Two tests in one file: the pass reads the file once and compares each.
+printf '#[test]\nfn stays() { assert!(true); }\n#[test]\nfn moves() { assert!(true); }\n' > "$repo/crates/k/src/c.rs"
+git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m two
+two=$(git -C "$repo" rev-parse HEAD)
+printf '#[test]\nfn stays() { assert!(true); }\n#[test]\nfn moves() { assert!(2 > 1); }\n' > "$repo/crates/k/src/c.rs"
+jq -n -c '[{id: "k::c::stays", kind: "fn", file: "crates/k/src/c.rs", start: 1, end: 2, test: true},
+  {id: "k::c::moves", kind: "fn", file: "crates/k/src/c.rs", start: 3, end: 4, test: true}]' > "$work/two.json"
+got=$(cd "$repo" && "$here/tests.bash" "$two" "$work/two.json" "$work/two.json")
+[[ $got == '[{"id":"k::c::moves","name":"moves"}]' ]] \
+  || fail "#7045: of two tests in one file, the one that changes reads as changed and the other does not" "$got"
+
 (( failed == 0 )) || exit 1
-echo "deletes tests OK: a #[path] test reads at its path in the tree, unchanged when untouched and changed when edited; a path the base lacks stops the run, a path that leaves the tree is refused, and a written source is not compared"
+echo "deletes tests OK: a #[path] test reads at its path in the tree, unchanged when untouched and changed when edited; a path the base lacks stops the run, a path that leaves the tree is refused, and a written source is not compared; of two tests in one file, the one that changes reads as changed"
