@@ -703,6 +703,9 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref "${GITHUB_REF:?}" --key "${u
 # until HOTPATH_RUNS (default 1) are kept: the several-run judgement of
 # `ci:hotpath-judge` reads them, and the job keeps them as the artifact
 # `hotpath-runs-<commit>` for the next push to `landing` (#6993).
+#
+# With HOTPATH_UPLOAD=0, the second set of runs (#7319), every run is kept
+# and nothing is sent: no upload, no outcome, no bytes run.
 ["ci:hotpath"]
 description = "Run a hotpath series and upload its allocation, timing and bytes reports"
 tools.jq = "1.8.1"
@@ -733,6 +736,7 @@ send() {
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
     HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
     "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
+  [[ ${HOTPATH_UPLOAD:-} != 0 ]] || return 0
   outcome=$(jq -n --arg act "${ACT:-}" --arg sent "$([[ -s $scratch/$1.json ]] && echo true)" \
     '{act: ($act == "true"), sent: ($sent == "true")}' | jq -r -f "$root/.config/hotpath/upload.jq")
   case $outcome in
@@ -755,7 +759,7 @@ more() {
   done
 }
 upload "$series" "$root/hotpath/$series-policy.toml"
-if [[ -f "$root/hotpath/$series-bytes-policy.toml" ]]; then
+if [[ -f "$root/hotpath/$series-bytes-policy.toml" && ${HOTPATH_UPLOAD:-} != 0 ]]; then
   HOTPATH_ALLOC_METRIC=bytes send "$series-bytes" "$root/hotpath/$series-bytes-policy.toml"
 fi
 
@@ -839,9 +843,18 @@ more
 # running the change's code holds no token to post a check. Arguments: each
 # series' name. GITHUB_REPOSITORY, CI_BASE_SHA, CI_HEAD_SHA and GH_TOKEN
 # describe the run.
+#
+# One set of runs fails no row (#7319): the judge writes a first set's
+# finding as a neutral check that names its suspects. With `--confirm
+# <dir>`, the directory of the first set's checks, the task judges a second
+# set: each benchmark whose first check is neutral is judged again, and a
+# row fails only when both sets find it. Every other first check goes to
+# target/hotpath/judged/ as it is, so the poster reads one whole set.
 ["ci:hotpath-judge"]
 description = "Judge a commit's hotpath runs against its base's, several a side"
+tools.jq = "1.8.1"
 usage = '''
+flag "--confirm <dir>" help="the first set's checks, when these runs are the second set"
 arg "<series>..." help="each series by name"
 '''
 run = '''
@@ -865,8 +878,16 @@ if [[ -z $run ]] || ! gh run download "$run" -R "$repo" -n "hotpath-runs-$base" 
   echo "no run kept hotpath-runs-$base: no $scope judgement"
   exit 0
 fi
+confirm=${usage_confirm:-}
 for name in "${series[@]}"; do
   for benchmark in "$name" "$name-timing"; do
+    first=()
+    if [[ -n $confirm ]]; then
+      if ! jq -e '.conclusion == "neutral"' "$confirm/$benchmark-$scope.json" > /dev/null 2>&1; then
+        continue
+      fi
+      first=(--confirm "$confirm/$benchmark-$scope.json")
+    fi
     policy="$root/hotpath/$benchmark-policy.toml"
     if [[ $benchmark == "$name-timing" ]]; then policy="$scratch/$benchmark-policy.toml"; fi
     if [[ ! -f $policy ]]; then
@@ -884,9 +905,24 @@ for name in "${series[@]}"; do
     for report in "${head_runs[@]}"; do runs+=(--head-run "$report"); done
     "$root/.config/mise/scope" cargo run --locked --quiet --profile test --package gandr-workflow-hotpath-guard --bin hotpath-judge -- \
       --repository "$repo" --head "$head" --base "$base" --benchmark "$benchmark-$scope" \
-      --policy "$policy" --output "$dir/checks/$benchmark-$scope.json" "${runs[@]}"
+      --policy "$policy" --output "$dir/checks/$benchmark-$scope.json" "${runs[@]}" "${first[@]}"
   done
 done
+if [[ -n $confirm ]]; then
+  for check in "$confirm"/*.json; do
+    [[ -e $dir/checks/$(basename "$check") ]] || cp "$check" "$dir/checks/"
+  done
+else
+  # The series of each neutral check, one line, for `hotpath-confirm`. No
+  # neutral check, no file: the second job does not start.
+  checks=("$dir"/checks/*.json)
+  if (( ${#checks[@]} > 0 )); then
+    suspects=$(jq -r -s '[.[] | select(.conclusion == "neutral") | .name | capture("^hotpath / (?<series>.+?)(-timing)?-push$").series] | unique | join(" ")' "${checks[@]}")
+    if [[ -n $suspects ]]; then
+      printf '%s\n' "$suspects" > "$dir/suspects"
+    fi
+  fi
+fi
 {% endraw %}'''
 
 # A commit's concluded `hotpath / <benchmark>` checks, filed on one issue per

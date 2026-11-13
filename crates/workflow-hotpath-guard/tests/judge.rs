@@ -18,6 +18,8 @@ struct Case
     base: &'static [u32],
     /// The commit's runs.
     head: &'static [u32],
+    /// The first set's check, when the case is a second set.
+    first: Option<&'static str>,
 }
 
 /// What a case's run left: the process's output and its scratch directory.
@@ -59,6 +61,10 @@ fn judge(case: &Case) -> Ran
     ]);
     command.arg("--policy").arg(root.join("policy.toml"));
     command.arg("--output").arg(root.join("check.json"));
+    if let Some(first) = case.first {
+        std::fs::write(root.join("first.json"), first).unwrap();
+        command.arg("--confirm").arg(root.join("first.json"));
+    }
     for (flag, side, runs) in [
         ("--base-run", "base", case.base),
         ("--head-run", "head", case.head),
@@ -91,17 +97,25 @@ fn check(ran: &Ran) -> serde_json::Value
 }
 
 #[test]
-fn a_regressed_push_writes_a_failed_check()
+fn a_regressed_push_writes_a_neutral_check()
 {
     let ran = judge(&Case {
         name: "regressed",
         base: &[81, 78, 83],
         head: &[89, 88, 90],
+        first: None,
     });
     assert!(ran.output.status.success(), "{:?}", ran.output);
     let body = check(&ran);
     assert_eq!(body["name"], "hotpath / store-timing-push");
-    assert_eq!(body["conclusion"], "failure", "{body}");
+    assert_eq!(
+        body["conclusion"], "neutral",
+        "one set of runs fails no row: {body}"
+    );
+    assert_eq!(
+        body["suspects"],
+        serde_json::json!(["Timing gandr_storage_schema::store::edit::Store::delete_part"])
+    );
     let summary = body["output"]["summary"].as_str().unwrap();
     assert!(
         summary.contains("⚠️ [`gandr_storage_schema::store::edit::Store::delete_part`]"),
@@ -115,12 +129,54 @@ fn a_regressed_push_writes_a_failed_check()
 }
 
 #[test]
+fn a_second_set_fails_only_a_row_both_sets_find()
+{
+    let flagged =
+        r#"{"suspects": ["Timing gandr_storage_schema::store::edit::Store::delete_part"]}"#;
+    let confirmed = judge(&Case {
+        name: "confirmed",
+        base: &[81, 78, 83],
+        head: &[89, 88, 90],
+        first: Some(flagged),
+    });
+    assert!(confirmed.output.status.success(), "{:?}", confirmed.output);
+    assert_eq!(
+        check(&confirmed)["conclusion"],
+        "failure",
+        "both sets find delete_part"
+    );
+    let cleared = judge(&Case {
+        name: "cleared",
+        base: &[81, 78, 91],
+        head: &[89, 88, 90],
+        first: Some(flagged),
+    });
+    assert_eq!(
+        check(&cleared)["conclusion"],
+        "success",
+        "the second set's runs overlap the base's"
+    );
+    let unflagged = judge(&Case {
+        name: "unflagged",
+        base: &[81, 78, 83],
+        head: &[89, 88, 90],
+        first: Some(r#"{"suspects": []}"#),
+    });
+    assert_eq!(
+        check(&unflagged)["conclusion"],
+        "success",
+        "the first set flagged no row"
+    );
+}
+
+#[test]
 fn a_clear_push_writes_a_passed_check()
 {
     let ran = judge(&Case {
         name: "clear",
         base: &[81, 78, 91],
         head: &[89, 88, 90],
+        first: None,
     });
     assert!(ran.output.status.success(), "{:?}", ran.output);
     assert_eq!(check(&ran)["conclusion"], "success", "overlapping runs");
