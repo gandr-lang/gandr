@@ -677,6 +677,30 @@ impl Runtime
         self.window_limit
     }
 
+    /// One past the heap region's reservation: the end that no commit
+    /// passes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn heap_end(&self) -> *mut Word
+    {
+        self.heap_end
+    }
+
+    /// One past the window region's reservation, as [`Self::heap_end`] is
+    /// the heap's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn window_end(&self) -> *mut Word
+    {
+        self.window_end
+    }
+
     /// Move the heap's top to `top`, past a host call's allocations.
     ///
     /// # Specification
