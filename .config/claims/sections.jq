@@ -331,14 +331,27 @@ def epic_refs:
     | scan("(?<![\\w/])#([0-9]+)\\b") | .[0] | tonumber]
   | reduce .[] as $n ([]; if index([$n]) then . else . + [$n] end);
 
+# The body with each fenced block dropped (#7120): the lines from an opening
+# fence, three backquotes or three tildes, to its closing fence, both fences
+# included. A fence that never closes drops the lines to the end.
+def unfenced:
+  [foreach lines[] as $line ({fenced: false, keep: null};
+     if $line | test("^\\s*(```|~~~)") then {fenced: (.fenced | not), keep: null}
+     elif .fenced then .keep = null
+     else .keep = $line
+     end;
+     .keep // empty)]
+  | join("\n");
+
 # A unit's identifiers (#7019, `units.md` § units-sources): its number
 # `$number`; each number of its `from:` line and of its epic, by
 # `epic_refs` and by `$parent`, its parent on GitHub or null; each ledger
 # row of `$rows` that the body names in backquotes; and each crate
 # directory of `$crates` that the body names as `crates/<dir>` or in
-# backquotes, with `gandr-` before it or not.
+# backquotes, with `gandr-` before it or not. Text inside a fenced block, a
+# pasted log or a listing, names nothing (#7120).
 def unit_identifiers($number; $parent; $rows; $crates):
-  . as $body
+  unfenced as $body
   | {numbers: ([$number] + ($body | epic_refs) + (if $parent == null then [] else [$parent] end) | unique),
      rows: ([$body | scan("`([a-z0-9][a-z0-9-]*)`") | .[0] | select(IN($rows[]))] | unique),
      crates: ([($body | scan("crates/([a-z0-9][a-z0-9-]*)") | .[0]), ($body | scan("`(?:gandr-)?([a-z0-9][a-z0-9-]*)`") | .[0])]
