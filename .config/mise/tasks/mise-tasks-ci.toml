@@ -1935,7 +1935,9 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # primary worktree, the caller's own and `wip/` branches stay, and so does a
 # worktree whose git directory holds the mark of a live `pr:watch`
 # (`gandr-watch-<pid>`, #3798): the watch runs its merge steps there once
-# the branch lands, and removes the tree itself after them. A
+# the branch lands, and removes the tree itself after them. A worktree that
+# a live process other than the sweep works in stays too, landed or not, and
+# keeps its caches: a gate there would lose its files (`held.bash`, #6837). A
 # scratch worktree (`restack`'s and the mutation lanes', named
 # `gandr-scratch-<pid>.`) goes once its process is gone, and an unnamed
 # detached one under a temporary directory once unchanged for 4 hours. A
@@ -2017,22 +2019,15 @@ kept=()
 pruned=()
 asked=()
 epoch=$(date +%s)
-# The directories live processes work in: a seat's shell stays in its lane's
-# tree while it builds in another, so a tree one of them works in is never
-# stale (#6183). Without `/proc` no tree reads stale.
-cwds=()
-proc_read=false
-if [[ -d /proc/self ]]; then
-  proc_read=true
-  for link in /proc/[0-9]*/cwd; do cwds+=("$(readlink "$link" 2> /dev/null || true)"); done
-fi
-in_use() {
-  local dir
-  for dir in "${cwds[@]}"; do [[ $dir == "$1" || $dir == "$1"/* ]] && return 0; done
-  return 1
-}
+# The directories live processes work in, read once (`held.bash`, #6837). A
+# seat's shell stays in its lane's tree while it builds in another, and a
+# gate runs in a tree that may land under it. A tree that a process holds is
+# never stale (#6183), and the sweep removes, releases or clears no tree that
+# a process holds. A process table that cannot be read holds every tree.
+source .config/pr-stack/held.bash
+held_read
 tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null stale=false dirty=null gitdir key mark
+  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null stale=false dirty=null held= gitdir key mark
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
@@ -2074,11 +2069,15 @@ tree() {
     && -z $(find "$path/target" -mindepth 3 -maxdepth 4 -path '*/incremental/*' -mmin -240 -print -quit 2> /dev/null) ]]; then
     idle=true
   fi
+  # Held: a live process works in the tree, read for a tree that is not the
+  # primary or the caller's (#6837). The fact is its pid, or `unread` when
+  # the process table cannot be read.
+  if [[ $primary == false && $key != "$here" ]] && held=$(tree_held "$key"); then held=${held:-unread}; else held=; fi
   # Stale: no commit at the head, no change to the index or `HEAD` in its git
   # directory, and no build under `target/` for 24 hours (#6183). A fresh
   # `wt switch` writes both files, so a tree made and not yet built is not
   # stale. Read only for a tree the sweep may release.
-  if [[ $primary == false && $key != "$here" && $watched == null && $scratch == null && -n "$gitdir" ]] && $proc_read && ! in_use "$key" \
+  if [[ $primary == false && $key != "$here" && $watched == null && $scratch == null && -n "$gitdir" && -z $held ]] \
     && (($(git -C "$path" log -1 --format=%ct HEAD 2> /dev/null || echo "$epoch") < epoch - 86400)) \
     && [[ -z $(find "$gitdir" -maxdepth 1 \( -name index -o -name HEAD \) -mmin -1440 -print -quit 2> /dev/null) ]] \
     && [[ ! -d "$path/target" || -z $(find "$path/target" -maxdepth 4 -mmin -1440 -print -quit 2> /dev/null) ]]; then
@@ -2090,7 +2089,8 @@ tree() {
     --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
     --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
     --slurpfile commits <(printf '%s\n' "$commits") --argjson ahead "$ahead" --argjson idle "$idle" --argjson stale "$stale" --argjson dirty "$dirty" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, commits: $commits[0], ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
+    --arg held "$held" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, held: (if $held == "" then null else $held end), commits: $commits[0], ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
 }
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's

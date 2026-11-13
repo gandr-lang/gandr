@@ -3,9 +3,9 @@
 # remembered to, and released when it stands idle for a day (#6183). The
 # sweep makes no safety check of its own: `wt remove` and `git worktree
 # remove` refuse a dirty or otherwise unsafe tree, and the sweep reports the
-# refusal and keeps the tree. The predicates it keeps are the landing itself
-# and a live `pr:watch` inside the tree, which runs its merge steps there
-# after the landing (#3798).
+# refusal and keeps the tree. The predicates it keeps are the landing itself,
+# a live `pr:watch` inside the tree, which runs its merge steps there after
+# the landing (#3798), and a live process that works in the tree (#6837).
 #
 # Input: an array of worktrees, each an object with
 #   path      the worktree's path;
@@ -26,6 +26,9 @@
 #             changed within 4 hours;
 #   watched   null, or the pid of a live `pr:watch` whose mark
 #             (`gandr-watch-<pid>`) the worktree's git directory holds;
+#   held      null, or the pid of a live process other than the sweep and its
+#             ancestors that works in the worktree, or `unread` when the
+#             process table cannot be read (`held.bash`);
 #   commits   null, or for a branch Worktrunk does not read merged, the
 #             `+` lines `git cherry origin/<trunk>` lists, each `{subject,
 #             on_trunk}`. `on_trunk` is true when the trunk
@@ -72,8 +75,8 @@
 #            commits off the trunk carries `attic`, the branch that keeps it;
 #   force    `git worktree remove --force`, a scratch tree nothing holds;
 #   keep     left as it is.
-# A kept worktree that is idle, and no primary, caller's, watched or scratch
-# tree, carries `clear: true`: the sweep deletes its `incremental`
+# A kept worktree that is idle, and no primary, caller's, watched, held or
+# scratch tree, carries `clear: true`: the sweep deletes its `incremental`
 # directories, caches its next build writes again (#4221).
 
 # Why the branch has landed though Worktrunk reads it unmerged, or null.
@@ -107,6 +110,8 @@ map(
     if .primary then {action: "keep", reason: "the primary worktree"}
     elif .cwd then {action: "keep", reason: "the caller's own worktree"}
     elif .watched != null then {action: "keep", reason: "held by live pr:watch \(.watched)"}
+    elif .held != null then
+      {action: "keep", reason: (if .held == "unread" then "the process table cannot be read" else "held by live process \(.held)" end)}
     elif .scratch != null then
       if .scratch.holder != null then
         if .scratch.alive then {action: "keep", reason: "scratch held by live process \(.scratch.holder)"}
@@ -132,7 +137,7 @@ map(
     end
   )
   | if .action == "keep" and $tree.idle == true and ($tree.primary | not) and ($tree.cwd | not)
-      and $tree.watched == null and $tree.scratch == null
+      and $tree.watched == null and $tree.held == null and $tree.scratch == null
     then . + {clear: true}
     else .
     end
