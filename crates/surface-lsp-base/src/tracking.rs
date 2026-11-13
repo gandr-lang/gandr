@@ -6,9 +6,9 @@
 //! the tile as written, a sentence naming what is missing, and the closing
 //! line rust-analyzer writes for an unstable feature, `The tracking issue for
 //! this is: [#N]` with its link. [`Gap`] lists the gaps in the order a
-//! position is tried; with the refusals [`crate::hover`] answers before them,
-//! they cover every tile, so the corpus sweep in its tests refuses any tile
-//! that hovers nothing.
+//! position is tried. With the refusals that the server's hover answers
+//! before them, they cover every tile, so the corpus sweep in the hover's
+//! tests refuses any tile that hovers nothing.
 
 use alloc::format;
 use alloc::string::String;
@@ -31,6 +31,7 @@ impl Gap
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn issue(self) -> TrackingIssue
     {
         match self {
@@ -44,6 +45,7 @@ impl Gap
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn closing(self) -> String
     {
         let what = match self {

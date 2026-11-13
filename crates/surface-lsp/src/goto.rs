@@ -40,6 +40,7 @@ use quenchant_shape::shape::Maybe;
 use crate::hover::Hovering;
 use crate::position::Position;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::Answer;
 use crate::protocol::DocumentUri;
 use crate::protocol::Linked;
@@ -59,23 +60,6 @@ pub enum Goto
     /// `textDocument/typeDefinition`: the families the type of the node at
     /// the position names.
     TypeDefinition,
-}
-
-/// The range `span` covers in the text `index` indexes.
-///
-/// # Specification
-/// trivial.
-pub fn ranged(
-    index: &LineIndex<'_>,
-    span: ByteSpan,
-) -> Option<Range>
-{
-    Range::of_bytes(
-        index,
-        RenderOffset::from(usize::from(span.start())),
-        RenderOffset::from(usize::from(span.end())),
-    )
-    .ok()
 }
 
 /// Where a referent is declared: the document holding it, the whole binder

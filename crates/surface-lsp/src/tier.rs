@@ -64,7 +64,6 @@ use gandr_surface_render_remote::AccountCounts;
 use gandr_surface_render_remote::AccountKey;
 #[cfg(feature = "instrument")]
 use gandr_surface_render_remote::Count;
-use gandr_surface_render_remote::Glyph;
 use gandr_surface_render_remote::KernelMark;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::Warrant;
@@ -74,16 +73,17 @@ use gandr_surface_session::CompileTier;
 use gandr_surface_session::KernelState;
 use gandr_surface_session::unrowed;
 use quenchant_shape::shape::Maybe;
-use serde::Serialize;
 
-use crate::goto::ranged;
 #[cfg(feature = "instrument")]
 use crate::position::Position;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::CodeLens;
 use crate::protocol::Command;
 use crate::protocol::DocumentUri;
 use crate::protocol::DocumentVersion;
+use crate::protocol::KernelTiersParams;
+use crate::protocol::TierMark;
 use crate::recheck::Checked;
 use crate::recheck::Declared;
 
@@ -715,32 +715,4 @@ fn shown_counts(row: &AccountRow) -> Option<AccountCounts>
 const fn shown_counts(_row: &AccountRow) -> Option<AccountCounts>
 {
     None
-}
-
-/// The parameters of `gandr/kernelTiers`: the kernel tiers of one open
-/// document at one version.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct KernelTiersParams
-{
-    /// The document.
-    pub uri: DocumentUri,
-    /// The version whose admission settled the tiers.
-    pub version: DocumentVersion,
-    /// One entry per marked declaration, in the document's order.
-    pub tiers: Vec<TierMark>,
-}
-
-/// One declaration's mark: where it is, its warrant, the warrant's glyph and
-/// the title its lens shows.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct TierMark
-{
-    /// The declaration's range.
-    pub range: Range,
-    /// Its warrant.
-    pub warrant: Warrant,
-    /// The warrant's glyph.
-    pub glyph: Glyph,
-    /// The title its lens shows.
-    pub title: String,
 }

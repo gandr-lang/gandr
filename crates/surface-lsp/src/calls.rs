@@ -28,10 +28,10 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 
-use crate::goto::ranged;
 use crate::hover::Hovering;
 use crate::position::Position;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::CallHierarchyItem;
 use crate::protocol::DocumentUri;
 use crate::protocol::IncomingCall;

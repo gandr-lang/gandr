@@ -38,8 +38,8 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 
 use crate::markup::Host;
-use crate::recheck::grammar;
-use crate::recheck::roles;
+use crate::toolkit::grammar;
+use crate::toolkit::roles;
 
 /// The byte range of each fragment of `text`, between its backquotes.
 ///
@@ -63,6 +63,8 @@ use crate::recheck::roles;
 #[spec(ensures: |ret| ret.iter().all(|range| range.start() < range.end()
     && <&str>::from(text).get(usize::from(range.start()) .. usize::from(range.end()))
         .is_some_and(|inner| !inner.contains(['\n', '\r', '`']))))]
+#[inline]
+#[must_use]
 pub fn fragments(text: SourceText<'_>) -> Vec<ByteRange>
 {
     let text = <&str>::from(text);
@@ -119,6 +121,8 @@ pub fn fragments(text: SourceText<'_>) -> Vec<ByteRange>
 /// - witness: `fragment::tests::a_fragment_is_coloured_when_it_reads_as_gandr`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|spans| spans.iter().all(|span|
     usize::from(span.range.end()) <= <&str>::from(fragment).len() && span.role != HlRole::Other)))]
+#[inline]
+#[must_use]
 pub fn coloured(fragment: SourceText<'_>) -> Option<Vec<HlSpan>>
 {
     if label(SourceFragment::from(<&str>::from(fragment)))
@@ -189,7 +193,6 @@ pub fn coloured(fragment: SourceText<'_>) -> Option<Vec<HlSpan>>
 ///   comment role around each fragment and over the path, and its name and call
 ///   take their roles. A span of code is unchanged.
 /// - witness: `fragment::tests::a_comment_is_split_at_its_coloured_fragments`
-/// - witness: `tests::session::sweeps::corpus_tokens_cover_the_highlighted_bytes`
 #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1))
     .all(|(first, second)| first.range.end() <= second.range.start()))]
 #[inline]

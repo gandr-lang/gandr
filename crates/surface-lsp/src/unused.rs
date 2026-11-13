@@ -32,8 +32,8 @@ use gandr_surface_syntax::SourceText;
 use serde::Deserialize as _;
 use serde_json::Value;
 
-use crate::goto::ranged;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::CodeAction;
 use crate::protocol::Diagnostic;
 use crate::protocol::DiagnosticTag;

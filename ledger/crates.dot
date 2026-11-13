@@ -82,6 +82,7 @@ digraph crates {
     "surface-lowering";
     "surface-lowering-base";
     "surface-lsp";
+    "surface-lsp-base";
     "surface-mcp";
     "surface-parser";
     "surface-pretty";
@@ -303,11 +304,19 @@ digraph crates {
   "surface-lsp" -> "surface-format";
   "surface-lsp" -> "surface-grammar";
   "surface-lsp" -> "surface-lowering";
+  "surface-lsp" -> "surface-lsp-base";
   "surface-lsp" -> "surface-parser";
   "surface-lsp" -> "surface-pretty";
   "surface-lsp" -> "surface-render-remote";
   "surface-lsp" -> "surface-session";
   "surface-lsp" -> "surface-syntax";
+  "surface-lsp-base" -> "surface-diagnostics";
+  "surface-lsp-base" -> "surface-grammar";
+  "surface-lsp-base" -> "surface-lowering";
+  "surface-lsp-base" -> "surface-parser";
+  "surface-lsp-base" -> "surface-pretty";
+  "surface-lsp-base" -> "surface-render-remote";
+  "surface-lsp-base" -> "surface-syntax";
   "surface-mcp" -> "core-fork";
   "surface-mcp" -> "surface-dispatcher";
   "surface-mcp" -> "surface-features";

@@ -18,6 +18,8 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_lowering::Visibility;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
+use gandr_surface_render_remote::Glyph;
+use gandr_surface_render_remote::Warrant;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -505,11 +507,12 @@ pub struct NotebookParams
     pub notebook_document: DocumentIdentifier,
 }
 
-/// The parameters of `initialize` the server reads: the client's `gandr`
-/// settings, passed as its initialization options, the HTML tags its
-/// markdown renderer keeps, whether it takes a definition as a link, whether
-/// it takes a parameter as its place in a signature's label, and the folders
-/// it opened.
+/// The parameters of `initialize` the server reads.
+///
+/// They are the client's `gandr` settings, passed as its initialization
+/// options, the HTML tags its markdown renderer keeps, whether it takes a
+/// definition as a link, whether it takes a parameter as its place in a
+/// signature's label, and the folders it opened.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams
@@ -571,6 +574,7 @@ impl FoldersChanged
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn added(&self) -> Vec<PathBuf>
     {
         absolute(self.added.iter().map(|folder| &folder.uri))
@@ -581,6 +585,7 @@ impl FoldersChanged
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn removed(&self) -> Vec<PathBuf>
     {
         absolute(self.removed.iter().map(|folder| &folder.uri))
@@ -617,6 +622,7 @@ impl InitializeParams
     /// - witness: `protocol::tests::the_folders_a_client_opened_are_its_roots`
     #[spec(ensures: |ret| ret.iter().all(|path| path.is_absolute()))]
     #[must_use]
+    #[inline]
     pub fn roots(&self) -> Vec<PathBuf>
     {
         let named = self.workspace_folders.as_ref().map_or_else(
@@ -761,8 +767,8 @@ impl InitializeParams
     /// # Adequacy
     /// - hypothesis: L3 — a client declaring no resolve support, one resolving
     ///   the tooltip alone and one resolving the label's locations, each
-    ///   asserted at the hint it is sent.
-    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+    ///   asserted at the reading of its parameters.
+    /// - witness: `protocol::tests::a_client_resolves_hint_locations_only_when_it_names_them`
     #[inline]
     #[must_use]
     pub fn resolves_hint_locations(&self) -> ResolvesHintLocations
@@ -1015,6 +1021,7 @@ impl InitializeParams
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn folder_roots(folders: &[WorkspaceFolder]) -> Vec<PathBuf>
 {
     absolute(folders.iter().map(|folder| &folder.uri))
@@ -1219,8 +1226,9 @@ impl From<HintResolveSupport> for ResolvesHintLocations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — properties naming the tooltip alone, and the tooltip
-    ///   with `label.location`, each asserted at the hint its client is sent.
-    /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
+    ///   with `label.location`, each asserted at the reading of its client's
+    ///   parameters.
+    /// - witness: `protocol::tests::a_client_resolves_hint_locations_only_when_it_names_them`
     #[inline]
     fn from(support: HintResolveSupport) -> Self
     {
@@ -2076,9 +2084,9 @@ impl TryFrom<f64> for QuietSetting
     /// [`TryFromFloatSecsError`] for a number no duration spells.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a configuration naming `0.05` holds for fifty
-    ///   milliseconds and one naming `0` holds nothing.
-    /// - witness: `tests::session::a_held_diagnostic_publishes_once_the_document_is_quiet`
+    /// - hypothesis: L3 — `0.05` holds for fifty milliseconds, `0` holds
+    ///   nothing, and a negative and an infinite number are refused.
+    /// - witness: `protocol::tests::a_quiet_setting_holds_for_the_seconds_it_names`
     #[spec(ensures: |ret| ret.is_err() || seconds >= 0.0_f64)]
     #[inline]
     fn try_from(seconds: f64) -> Result<Self, Self::Error>
@@ -2490,11 +2498,10 @@ impl InitializeResult
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the complete advertised wire object is checked
-    ///   against a pinned supported-method golden; changed encoding, sync mode,
-    ///   token legend or capability flags change that observation.
-    /// - witness: `server::tests::initialize_advertises_the_token_legend`
-    /// - witness: `tests::capabilities::advertised_capabilities_name_the_token_legend`
+    /// - hypothesis: L3 — the advertised wire object names UTF-16 positions,
+    ///   incremental synchronisation and the token legend; a changed encoding,
+    ///   sync mode or legend changes that observation.
+    /// - witness: `protocol::tests::the_advertised_capabilities_name_the_encoding_the_sync_and_the_legend`
     #[spec(ensures: |ret|
         matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
             && ret.capabilities.text_document_sync.open_close
@@ -2804,16 +2811,18 @@ pub struct CommandOptions
 /// asking the client to apply the fill's edit.
 pub const APPLY_FILL: &str = "gandr.applyFill";
 
-/// The command running the declaration a run lens stands over: its arguments
-/// are the document's URI and the position of the declaration's name. The
-/// server runs it, showing the line `gandr run` prints of the run and
-/// answering that line.
+/// The command running the declaration a run lens stands over.
+///
+/// Its arguments are the document's URI and the position of the declaration's
+/// name. The server runs it, showing the line `gandr run` prints of the run
+/// and answering that line.
 pub const RUN: &str = "gandr.run";
 
-/// The command a references lens and a shadowing lens name: its arguments
-/// are the document's URI, the name's position and the locations of the uses
-/// the lens counts. The client runs it, showing those uses; the server runs
-/// nothing for it.
+/// The command a references lens and a shadowing lens name.
+///
+/// Its arguments are the document's URI, the name's position and the locations
+/// of the uses the lens counts. The client runs it, showing those uses; the
+/// server runs nothing for it.
 pub const SHOW_REFERENCES: &str = "gandr.showReferences";
 
 /// Every command the server runs.
@@ -2913,11 +2922,16 @@ impl Unresolved
     /// - fails: the first field missing or of another shape.
     /// - panics: none.
     ///
+    /// # Errors
+    /// A [`serde_json::Error`] for the first field missing or of another
+    /// shape.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — each kind's item as listed reads; one without its
     ///   required field, and one of another kind, are refused.
     /// - witness: `protocol::tests::a_resolved_item_needs_what_its_kind_requires`
     #[spec(ensures: |ret| ret.is_err() || item.is_object())]
+    #[inline]
     pub fn read(
         self,
         item: &Value,
@@ -3422,10 +3436,12 @@ pub struct CompletionList
     pub items: Vec<CompletionItem>,
 }
 
-/// One completion: the name or keyword offered, what it is, the edit that
-/// writes it over the word at the cursor, what it is typed or declared as, and,
-/// for a declared name, the document it was offered in, where a resolution
-/// reads its documentation.
+/// One completion.
+///
+/// It holds the name or keyword offered, what it is, the edit that writes it
+/// over the word at the cursor, what it is typed or declared as, and, for a
+/// declared name, the document it was offered in, where a resolution reads its
+/// documentation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionItem
@@ -3926,9 +3942,10 @@ impl fmt::Display for HintLabel
     /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every hint's label over two corpus sources, each
+    /// - hypothesis: L3 — a label of one text and a label of four parts, each
     ///   asserted at its exact text.
-    /// - witness: `inlay::tests::each_binder_that_writes_no_type_is_hinted`
+    /// - witness: `protocol::tests::a_hint_label_draws_its_text_or_its_parts_in_order`
+    #[inline]
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -4135,6 +4152,7 @@ impl WorkspaceEdit
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn of(changes: BTreeMap<DocumentUri, Vec<TextEdit>>) -> Self
     {
         Self {
@@ -4162,14 +4180,15 @@ impl WorkspaceEdit
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a rename across a document the client holds and an
-    ///   importer it does not is answered by URI to a client that declares
+    /// - hypothesis: L3 — edits to a document the client holds and to an
+    ///   importer it does not are answered by URI to a client that declares
     ///   nothing, versioned to one that declares document changes, and
     ///   annotated as well to one that also declares annotations.
-    /// - witness: `server::tests::a_rename_is_versioned_and_annotated_as_its_client_takes_edits`
+    /// - witness: `protocol::tests::an_edit_is_shaped_as_its_client_takes_edits`
     #[spec(ensures: |ret| (!shaped.versioned || ret.changes.is_none())
         && (shaped.annotated || ret.change_annotations.is_empty()))]
     #[must_use]
+    #[inline]
     pub fn shaped<Held>(
         mut self,
         shaped: EditsShaped,
@@ -4415,9 +4434,9 @@ pub struct Diagnostic
 /// - panics: not applicable to the data item.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a list of two items with no `,` between them publishes
-///   the `,` as its repair.
-/// - witness: `server::tests::a_repair_is_offered_once_its_trial_settles_it_5474`
+/// - hypothesis: L3 — a repair and the help that names it are written under the
+///   protocol's field names, the repair's text as `newText`.
+/// - witness: `protocol::tests::a_repair_is_written_with_the_help_that_names_it`
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticData
@@ -4442,9 +4461,9 @@ impl Diagnostic
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a source the lowering refuses at no position is
-    ///   asserted at its exact diagnostic.
-    /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+    /// - hypothesis: L3 — a fault with no position is asserted at each field of
+    ///   its diagnostic.
+    /// - witness: `protocol::tests::a_fault_with_no_position_is_an_error_at_the_origin`
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
         && ret.code_description.is_none()
@@ -4608,21 +4627,70 @@ impl HighlightKind
     pub const READ: Self = Self(2);
 }
 
+/// The parameters of `gandr/kernelTiers`: the kernel tiers of one open
+/// document at one version.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct KernelTiersParams
+{
+    /// The document.
+    pub uri: DocumentUri,
+    /// The version whose admission settled the tiers.
+    pub version: DocumentVersion,
+    /// One entry per marked declaration, in the document's order.
+    pub tiers: Vec<TierMark>,
+}
+
+/// One declaration's mark: where it is, its warrant, the warrant's glyph and
+/// the title its lens shows.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TierMark
+{
+    /// The declaration's range.
+    pub range: Range,
+    /// Its warrant.
+    pub warrant: Warrant,
+    /// The warrant's glyph.
+    pub glyph: Glyph,
+    /// The title its lens shows.
+    pub title: String,
+}
+
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
+    use core::time::Duration;
     use std::path::Path;
     use std::path::PathBuf;
 
     use gandr_surface_lowering::Visibility;
+    use serde::Deserialize as _;
 
+    use super::AnnotatedEdit;
+    use super::ChangeAnnotation;
+    use super::Diagnostic;
+    use super::DiagnosticData;
+    use super::DocumentEdit;
     use super::DocumentSymbol;
     use super::DocumentSymbols;
     use super::DocumentUri;
+    use super::DocumentVersion;
+    use super::EditsShaped;
+    use super::HintLabel;
+    use super::HintLabelPart;
     use super::InitializeParams;
+    use super::InitializeResult;
+    use super::QuietSetting;
+    use super::ResolvesHintLocations;
+    use super::Severity;
     use super::SymbolKind;
+    use super::TextEdit;
+    use super::UNHELD;
     use super::Unresolved;
+    use super::WorkspaceEdit;
     use crate::position::Range;
+    use crate::tokens::TOKEN_MODIFIERS;
+    use crate::tokens::TOKEN_TYPES;
 
     #[test]
     fn a_file_uri_names_its_decoded_path()
@@ -4802,6 +4870,216 @@ mod tests
         assert!(
             !reads(Unresolved::Action, &lens) && !reads(Unresolved::Link, &action),
             "an item of another kind is refused"
+        );
+    }
+
+    #[test]
+    fn a_client_resolves_hint_locations_only_when_it_names_them()
+    {
+        let resolves = |properties: &[&str]| {
+            InitializeParams::deserialize(serde_json::json!({"capabilities": {"textDocument":
+                {"inlayHint": {"resolveSupport": {"properties": properties}}}}}))
+            .expect("the parameters decode")
+            .resolves_hint_locations()
+        };
+        let declared = InitializeParams::deserialize(serde_json::json!({}))
+            .expect("the parameters decode")
+            .resolves_hint_locations();
+        assert_eq!(
+            declared,
+            ResolvesHintLocations(false),
+            "a client that declares no resolve support"
+        );
+        assert_eq!(
+            resolves(&["tooltip"]),
+            ResolvesHintLocations(false),
+            "a client that resolves the tooltip alone"
+        );
+        assert_eq!(
+            resolves(&["tooltip", "label.location"]),
+            ResolvesHintLocations(true),
+            "a client that resolves the label's locations"
+        );
+    }
+
+    #[test]
+    fn a_quiet_setting_holds_for_the_seconds_it_names()
+    {
+        let held = |seconds: f64| QuietSetting::try_from(seconds).map(|quiet| quiet.0);
+        assert_eq!(
+            held(0.05_f64),
+            Ok(Duration::from_millis(50)),
+            "fifty milliseconds"
+        );
+        assert_eq!(held(0.0_f64), Ok(Duration::ZERO), "nothing held");
+        assert!(
+            held(-1.0_f64).is_err(),
+            "no duration spells a negative number"
+        );
+        assert!(held(f64::INFINITY).is_err(), "no duration spells infinity");
+    }
+
+    #[test]
+    fn the_advertised_capabilities_name_the_encoding_the_sync_and_the_legend()
+    {
+        let advertised =
+            serde_json::to_value(InitializeResult::advertised()).expect("the result encodes");
+        assert_eq!(
+            (
+                advertised.pointer("/capabilities/positionEncoding"),
+                advertised.pointer("/capabilities/textDocumentSync/change"),
+                advertised.pointer("/capabilities/semanticTokensProvider/legend/tokenTypes"),
+                advertised.pointer("/capabilities/semanticTokensProvider/legend/tokenModifiers"),
+            ),
+            (
+                Some(&serde_json::json!("utf-16")),
+                Some(&serde_json::json!(2_u8)),
+                Some(&serde_json::json!(TOKEN_TYPES)),
+                Some(&serde_json::json!(TOKEN_MODIFIERS)),
+            ),
+            "UTF-16 positions, incremental synchronisation and the token legend"
+        );
+    }
+
+    #[test]
+    fn a_hint_label_draws_its_text_or_its_parts_in_order()
+    {
+        let part = |value: &str| HintLabelPart {
+            value: String::from(value),
+            location: None,
+        };
+        assert_eq!(
+            HintLabel::Text(String::from(": Nat")).to_string(),
+            ": Nat",
+            "the whole text"
+        );
+        assert_eq!(
+            HintLabel::Parts(vec![part(": "), part("List"), part(" "), part("Nat")]).to_string(),
+            ": List Nat",
+            "the parts' values, in order"
+        );
+    }
+
+    #[test]
+    fn an_edit_is_shaped_as_its_client_takes_edits()
+    {
+        let held = DocumentUri::from("file:///held.gandr");
+        let importer = DocumentUri::from("file:///importer.gandr");
+        let edit = |text: &str| TextEdit {
+            range: Range::default(),
+            new_text: String::from(text),
+        };
+        let changes = BTreeMap::from([
+            (held.clone(), vec![edit("renamed")]),
+            (importer.clone(), vec![edit("import")]),
+        ]);
+        let version = |uri: &DocumentUri| (*uri == held).then_some(DocumentVersion(3));
+        assert_eq!(
+            WorkspaceEdit::of(changes.clone()).shaped(EditsShaped::BY_URI, version),
+            WorkspaceEdit::of(changes.clone()),
+            "a client that declares nothing takes the edits by URI"
+        );
+        let shaped = |annotated: bool| {
+            let edit = WorkspaceEdit::of(changes.clone()).shaped(
+                EditsShaped {
+                    versioned: true,
+                    annotated,
+                    snippets: false,
+                },
+                version,
+            );
+            let documents: Vec<_> = edit
+                .document_changes
+                .iter()
+                .map(|change| {
+                    let annotations: Vec<_> = change
+                        .edits
+                        .iter()
+                        .map(|edit| match *edit {
+                            DocumentEdit::Text(AnnotatedEdit { annotation_id, .. }) => {
+                                annotation_id
+                            },
+                            DocumentEdit::Snippet(_) => Some("snippet"),
+                        })
+                        .collect();
+                    (
+                        change.text_document.uri.clone(),
+                        change.text_document.version,
+                        annotations,
+                    )
+                })
+                .collect();
+            (edit.changes.is_none(), documents, edit.change_annotations)
+        };
+        assert_eq!(
+            shaped(false),
+            (
+                true,
+                vec![
+                    (held.clone(), Some(DocumentVersion(3)), vec![None]),
+                    (importer.clone(), None, vec![None]),
+                ],
+                BTreeMap::new()
+            ),
+            "a client that declares document changes takes each document's version"
+        );
+        assert_eq!(
+            shaped(true),
+            (
+                true,
+                vec![
+                    (held, Some(DocumentVersion(3)), vec![None]),
+                    (importer, None, vec![Some(UNHELD)]),
+                ],
+                BTreeMap::from([(UNHELD, ChangeAnnotation::UNHELD)])
+            ),
+            "a client that declares annotations confirms an edit to a document it holds no copy of"
+        );
+    }
+
+    #[test]
+    fn a_repair_is_written_with_the_help_that_names_it()
+    {
+        let data = DiagnosticData {
+            repair: TextEdit {
+                range: Range::default(),
+                new_text: String::from(","),
+            },
+            help: String::from("insert `,`"),
+        };
+        let origin = serde_json::json!({"line": 0_u32, "character": 0_u32});
+        assert_eq!(
+            serde_json::to_value(&data).expect("the data encodes"),
+            serde_json::json!({
+                "repair": {"range": {"start": origin, "end": origin}, "newText": ","},
+                "help": "insert `,`",
+            }),
+            "the repair and its help, under the protocol's field names"
+        );
+    }
+
+    #[test]
+    fn a_fault_with_no_position_is_an_error_at_the_origin()
+    {
+        let diagnostic = Diagnostic::at_origin(String::from("the source is refused"));
+        assert_eq!(
+            (
+                diagnostic.range,
+                diagnostic.severity,
+                diagnostic.code.is_none() && diagnostic.code_description.is_none(),
+                diagnostic.message.as_str(),
+                diagnostic.related_information.is_empty() && diagnostic.tags.is_empty(),
+                diagnostic.data.is_none(),
+            ),
+            (
+                Range::default(),
+                Severity::ERROR,
+                true,
+                "the source is refused",
+                true,
+                true
+            ),
+            "an error at the empty range at the origin, with no code and no related locus"
         );
     }
 }

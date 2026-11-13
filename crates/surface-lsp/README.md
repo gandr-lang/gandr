@@ -33,7 +33,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - `RENDER_BUS_PREFACE`, `Stored`, and `Workspace::greeting`, `rendered` and `storing`: the render bus on the hub's socket, with its greeting, the store's card, its reports, the stack at the editor's cursor, a resync and a detach.
 - With the `instrument` feature, `Activities`, `Cadence` and `Tick`: the hub's fold of the activity ring at its cadence, and the pool's pane on the render bus; `Workspace::trace`, `derived` and `opened`: a view's trace layer, the derivation card at the editor's cursor and a node's whole goal.
 - Incremental synchronisation: each content change applied in order and the document judged again in its session on the worker pool, molding only the forms the change touched; one log line per publication.
-- Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](src/notebook.rs)).
+- Notebook synchronisation: a Jupyter `.ipynb` of `gandr` cells judged as one document, each cell published its own diagnostics ([`notebook`](../surface-lsp-base/src/notebook.rs)).
 - `Server::admit`, `Server::admitted`, `Admissions` and `Awaiting`: the judgement each synchronisation leaves due, run on the worker pool and published once delivered, then the kernel admission it left, run once its diagnostics are published.
 - `read_frame`, `read_frame::Absent`, `write_frame`, `Body` and `TransportFault`: the base protocol's framing, with a ceiling on a header line and on a body.
 - The envelope: requests, notifications and responses told apart; a body outside the decoder-supported JSON fragment answered with a parse error; a decoded batch or other invalid message refused as an invalid request.
@@ -87,22 +87,19 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Semantic tokens | [`tokens`](src/tokens.rs) |
 | Completion | [`complete`](src/complete.rs) |
 | Signature help | [`signature`](src/signature.rs) |
-| Inline completion | [`inline`](src/inline.rs) |
 | The outline | [`outline`](src/outline.rs) |
 | Hover | [`hover`](src/hover.rs) |
 | Definitions, declarations | [`goto`](src/goto.rs) |
 | Workspace symbols | [`search`](src/search.rs) |
 | Highlights, references; rename; file moves | [`uses`](src/uses.rs); [`rename`](src/rename.rs); [`relocate`](src/relocate.rs) |
-| UTF-16 positions | [`position`](src/position.rs) |
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
 | Formatting | [`format`](src/format.rs) |
 | One hub per workspace | [`hub`](src/hub.rs) |
-| A session across builds | [`handover`](src/handover.rs) |
 | Model proposals | [`proposal`](src/proposal.rs) |
 | The render bus | [`bus`](src/bus.rs) |
 | The hub's fold of the activity ring | [`activity`](src/activity.rs) |
 | `gandr doc`'s site | [`site`](src/site.rs) |
-| The transport | [`transport`](src/transport.rs) |
+| The protocol, positions, the transport, inline completion, a session across builds | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
 
 ## References

@@ -382,6 +382,7 @@ INSERT INTO reference VALUES('doi:10.1145/604131.604151','core-checker','seal','
 INSERT INTO reference VALUES('doi:10.1145/604131.604151','surface-lowering','module::functor','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1145/604131.604151','surface-lowering','module::sealing','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.17487/rfc8089','surface-lsp','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.17487/rfc8089','surface-lsp-base','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.17487/rfc9923','surface-grammar','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.17487/rfc9923','theory-graphs','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.2140/agt.2021.21.1267','theory-decomposition-spaces','','background',NULL,NULL,NULL);

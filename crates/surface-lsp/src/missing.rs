@@ -154,8 +154,8 @@ mod tests
     use crate::protocol::DocumentUri;
     use crate::protocol::Severity;
     use crate::protocol::TextEdit;
-    use crate::recheck::grammar;
     use crate::search::declared;
+    use crate::toolkit::grammar;
 
     #[test]
     fn an_unresolved_name_is_offered_the_import_declaring_it()

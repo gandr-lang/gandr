@@ -28,6 +28,7 @@ use gandr_surface_render_remote::PosOfByteError;
 use gandr_surface_render_remote::PositionRow;
 use gandr_surface_render_remote::Utf16Column;
 use gandr_surface_render_remote::Utf16Pos;
+use gandr_surface_syntax::ByteSpan;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -184,11 +185,9 @@ impl Range
     /// [`PosOfByteError`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — corpus reports agree with their renderer ranges. L3 —
-    ///   an astral character, every protocol line terminator, reversed and
-    ///   empty ranges, and invalid endpoints distinguish swapped ends, UTF-8
-    ///   byte counts and lost or reordered projection errors.
-    /// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+    /// - hypothesis: L3 — an astral character, every protocol line terminator,
+    ///   reversed and empty ranges, and invalid endpoints distinguish swapped
+    ///   ends, UTF-8 byte counts and lost or reordered projection errors.
     /// - witness: `position::tests::ranges_preserve_endpoint_order_and_projection_failures`
     #[spec(ensures: |ret| ret.as_ref().map(|range| (range.start, range.end))
         == Position::of_byte(index, start)
@@ -205,6 +204,25 @@ impl Range
         let end = Position::of_byte(index, end)?;
         Ok(Self { start, end })
     }
+}
+
+/// The range `span` covers in the text `index` indexes.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn ranged(
+    index: &LineIndex<'_>,
+    span: ByteSpan,
+) -> Option<Range>
+{
+    Range::of_bytes(
+        index,
+        ByteOffset::from(usize::from(span.start())),
+        ByteOffset::from(usize::from(span.end())),
+    )
+    .ok()
 }
 
 #[cfg(test)]

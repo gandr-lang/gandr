@@ -35,6 +35,7 @@ members = [
   "crates/surface-lowering",
   "crates/surface-lowering-base",
   "crates/surface-lsp",
+  "crates/surface-lsp-base",
   "crates/surface-mcp",
   "crates/surface-parser",
   "crates/surface-pretty",
@@ -166,6 +167,7 @@ default-features = false
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
+# - surface-lsp-base
 # - surface-mcp
 # - surface-parser
 # - surface-pretty
@@ -241,6 +243,7 @@ default-features = false
 # - storage-values
 # - surface-corpus (dev)
 # - surface-lsp
+# - surface-lsp-base
 # - surface-parser (dev)
 # - surface-syntax
 # - theory-exact-reals
@@ -347,6 +350,7 @@ features = ["fast", "zeroize"]
 # - surface-format (dev)
 # - surface-grammar (dev)
 # - surface-lsp (dev)
+# - surface-lsp-base (dev)
 # - surface-pretty (dev)
 [workspace.dependencies.expect-test]
 version = "1.5.1"
@@ -671,6 +675,7 @@ path = "crates/surface-corpus"
 # - surface-driver
 # - surface-format
 # - surface-lsp
+# - surface-lsp-base
 # - surface-render-terminal
 # - surface-repl
 # - surface-session (dev)
@@ -725,6 +730,7 @@ path = "crates/surface-format"
 # - surface-lowering
 # - surface-lowering-base (dev)
 # - surface-lsp
+# - surface-lsp-base
 # - surface-parser
 # - surface-pretty
 # - surface-render-terminal (dev)
@@ -752,6 +758,7 @@ path = "crates/surface-layout"
 # - surface-format
 # - surface-lowering-base (dev)
 # - surface-lsp
+# - surface-lsp-base
 # - surface-render-terminal (dev)
 # - surface-session
 # - workflow-ledger-tasks
@@ -774,6 +781,14 @@ path = "crates/surface-lowering-base"
 [workspace.dependencies.gandr-surface-lsp]
 path = "crates/surface-lsp"
 
+# The base of the language server: the protocol's messages, the transport,
+# positions, the token stream, inline completion and the markup that the
+# server's families share.
+# consumers:
+# - surface-lsp
+[workspace.dependencies.gandr-surface-lsp-base]
+path = "crates/surface-lsp-base"
+
 # The Model Context Protocol server: the hub's documents and queries served
 # to models.
 # consumers:
@@ -792,6 +807,7 @@ path = "crates/surface-mcp"
 # - surface-lowering (dev)
 # - surface-lowering-base (dev)
 # - surface-lsp
+# - surface-lsp-base
 # - surface-repl
 # - surface-session
 # - workflow-ledger-tasks
@@ -805,6 +821,7 @@ path = "crates/surface-parser"
 # - surface-dispatcher
 # - surface-format
 # - surface-lsp
+# - surface-lsp-base
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-pretty]
@@ -818,6 +835,7 @@ path = "crates/surface-pretty"
 # consumers:
 # - surface-grammar
 # - surface-lsp
+# - surface-lsp-base
 # - surface-render-remote (dev)
 # - surface-repl
 # - surface-tui
@@ -861,6 +879,7 @@ path = "crates/surface-session"
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
+# - surface-lsp-base
 # - surface-parser
 # - surface-render-terminal
 # - surface-repl
@@ -1218,6 +1237,7 @@ path = "crates/workflow-ledger-tasks"
 # - surface-dispatcher (dev)
 # - surface-format (dev)
 # - surface-lsp (dev)
+# - surface-lsp-base (dev)
 # - surface-parser (dev)
 # - surface-session (dev)
 [workspace.dependencies.gandr-workflow-sweep]
@@ -1457,7 +1477,8 @@ default-features = false
 # features:
 # - alloc: the decoded path as an owned string
 # consumers:
-# - surface-lsp
+# - surface-lsp (dev)
+# - surface-lsp-base
 [workspace.dependencies.percent-encoding]
 version = "2.3.2"
 default-features = false
@@ -1570,6 +1591,7 @@ default-features = false
 # - surface-lowering
 # - surface-lowering-base
 # - surface-lsp
+# - surface-lsp-base
 # - surface-mcp (dev)
 # - surface-pretty
 # - surface-render-terminal
@@ -1712,6 +1734,7 @@ default-features = false
 # - core-checker
 # - surface-diagnostics
 # - surface-lsp
+# - surface-lsp-base
 # - surface-render-remote
 # - workflow-build-state
 # - workflow-coverage-guard
@@ -1738,6 +1761,7 @@ features = ["alloc", "derive"]
 # - surface-driver
 # - surface-features
 # - surface-lsp
+# - surface-lsp-base
 # - surface-mcp
 # - surface-render-remote (dev)
 # - surface-render-terminal (dev)

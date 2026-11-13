@@ -222,11 +222,14 @@ impl Snippet
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a closing brace, escaped, reads back as `}`, and a
-    ///   closing with a hole reads back as none.
-    /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    /// - hypothesis: L3 — a closing brace, escaped, reads back as `}`, an
+    ///   escaped `$` and `\` read back as themselves, and a tab stop reads back
+    ///   as none.
+    /// - witness: `inline::tests::a_snippet_is_plain_only_without_a_tab_stop`
+    /// - witness: `inline::tests::an_open_form_is_closed_where_its_text_ends`
     #[must_use]
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|plain| plain.len() <= self.0.len()))]
+    #[inline]
     pub fn plain(&self) -> Option<String>
     {
         let mut plain = String::with_capacity(self.0.len());
@@ -800,6 +803,7 @@ impl<'text> Labeled<'text>
     /// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
     #[must_use]
     #[spec(ensures: |ret| ret.text == text)]
+    #[inline]
     pub fn new(text: SourceText<'text>) -> Self
     {
         Self {
@@ -819,7 +823,7 @@ impl<'text> Labeled<'text>
     /// - panics: none.
     /// - economy: copies the tokens and rescans from the cut's previous line
     ///   ([`Labeling::relabel`]), never the whole text; the arm bars are marked
-    ///   in one pass over the tokens.
+    ///   in one pass over the tokens. #5041 sizes the rescan to the edit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — every cursor of a corpus source holding comments,
@@ -828,6 +832,7 @@ impl<'text> Labeled<'text>
     /// - witness: `inline::tests::a_cut_answers_as_its_text_labeled_afresh_594`
     #[must_use]
     #[spec(ensures: |ret| <&str>::from(self.text).starts_with(<&str>::from(ret.text)))]
+    #[inline]
     pub fn cut(
         &self,
         at: ByteOffset,
@@ -893,11 +898,10 @@ fn punctuation(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the server witness keeps a ghost text from absorbing a
-///   written `=` into a type hole, and the category witness reads a following
-///   declaration as a boundary; reading `=` as an operand changes them.
+/// - hypothesis: L3 — the defect rows keep a ghost text from absorbing a
+///   written `=` into a type hole, and read a following declaration as a
+///   boundary; reading `=` as an operand changes them.
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
-/// - witness: `server::tests::inline_completion_answers_the_expected_closer`
 #[spec(ensures: |ret| matches!(ret, Role::Heads | Role::Operand | Role::Keyword))]
 fn classify(
     grammar: &Pbg,
@@ -992,7 +996,7 @@ fn spelled(
     dylint_lib = "quenchant_dylints",
     expect(
         spec_clause_traversal,
-        reason = "parity: `parts` is one candidate's material, which the caller builds afresh for this call alone; the check copies it once and compares the kept prefix once, no more than building it cost"
+        reason = "parity: `parts` is one candidate's material, which the caller builds afresh for this call alone; the check copies it once and compares the kept prefix once, no more than building it cost (#104)"
     )
 )]
 #[spec(captures: before = parts.clone(), ensures: |ret| before.starts_with(parts.as_slice())
@@ -1262,6 +1266,7 @@ impl Forms
     #[must_use]
     #[spec(ensures: |ret| ret.0.len() <= grammar.form_first().len()
         && ret.0.iter().all(|form| matches!(form.material.first(), Some(&Part::Tile(_))) && trailing(&form.material) == Trailing::Clean))]
+    #[inline]
     pub fn new(grammar: &Pbg) -> Self
     {
         let state = MeldState::new(grammar);
@@ -1326,8 +1331,9 @@ impl Forms
     /// # Adequacy
     /// - hypothesis: L3 — an item slot offers `def` and `data`, a computation
     ///   slot `return` and `match`; offering a bracket or another sort's
-    ///   keyword changes the completion witnesses.
-    /// - witness: `complete::tests::each_slot_offers_its_own_names`
+    ///   keyword changes the witness.
+    /// - witness: `inline::tests::a_slot_offers_the_keywords_of_its_forms`
+    #[inline]
     pub fn keywords(
         &self,
         category: Category,
@@ -1383,11 +1389,13 @@ impl KeywordForm<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `def` inserts its declaration with a tab stop per
-    ///   hole, and a keyword that is its whole form inserts no snippet.
-    /// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+    /// - hypothesis: L3 — `def` and `return` insert their forms with a tab stop
+    ///   per hole, and `pub`, a keyword that is its whole form, inserts no
+    ///   snippet.
+    /// - witness: `inline::tests::a_slot_offers_the_keywords_of_its_forms`
     #[must_use]
     #[spec(ensures: |ret| ret.is_some() == (self.material.len() > 1_usize))]
+    #[inline]
     pub fn snippet(
         &self,
         before: SourceText<'_>,
@@ -1484,10 +1492,8 @@ fn closing_materials(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the category witness names the slot at a value, a
-///   computation, a type, a pattern and the top level; the completion witnesses
-///   offer each slot's names.
+///   computation, a type, a pattern and the top level.
 /// - witness: `inline::tests::each_category_is_named_where_its_hole_stands`
-/// - witness: `complete::tests::each_slot_offers_its_own_names`
 #[spec(ensures: |ret| slotted.is_none() || matches!(ret, Slot::Open(_)) || !matches!(slotted.and_then(<[Part]>::first), Some(&Part::Hole(_))))]
 fn slot_of(
     menu: &Continuations,
@@ -1725,6 +1731,7 @@ impl Labeled<'_>
     /// - witness: `inline::tests::sweeps::every_corpus_cursor_has_a_ghost_text`
     #[must_use]
     #[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")))]
+    #[inline]
     pub fn ghost(
         &self,
         grammar: &Pbg,
@@ -1778,6 +1785,7 @@ impl Labeled<'_>
         requires: <&str>::from(self.text).starts_with(<&str>::from(before.text)),
         ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()) && ret.0.iter().all(|snippet| !snippet.0.contains(":?}")),
     )]
+    #[inline]
     pub fn ghost_before(
         &self,
         before: &Labeled<'_>,
@@ -1863,11 +1871,12 @@ impl Labeled<'_>
     ///   candidates, one candidate spelled.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a definition's missing `}` and missing `;` are each
-    ///   closed at the point the parser reports, and a closed form offers none.
-    /// - witness: `fix::tests::a_repair_is_offered_as_the_closing_it_owes`
+    /// - hypothesis: L3 — a definition's missing `}` and missing value are each
+    ///   closed where the text ends, and a closed form offers none.
+    /// - witness: `inline::tests::an_open_form_is_closed_where_its_text_ends`
     #[must_use]
     #[spec(requires: <&str>::from(self.text).starts_with(<&str>::from(before.text)))]
+    #[inline]
     pub fn closing(
         &self,
         before: &Labeled<'_>,
@@ -1906,12 +1915,14 @@ impl Labeled<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the completion witnesses complete `de` from its start
-    ///   and offer every name after an open bracket; reading the word from its
-    ///   end, or a bracket as a word, changes them.
-    /// - witness: `complete::tests::a_prefix_offers_only_what_starts_with_it`
+    /// - hypothesis: L3 — a lowercase- and an uppercase-led word are read from
+    ///   their start, and an open bracket or a space after a word starts at the
+    ///   end; reading the word from its end, or a bracket as a word, changes
+    ///   the witness.
+    /// - witness: `inline::tests::a_word_is_read_from_its_start`
     #[must_use]
     #[spec(ensures: |ret| usize::from(ret) <= <&str>::from(self.text).len())]
+    #[inline]
     pub fn word_start(&self) -> ByteOffset
     {
         let end = <&str>::from(self.text).len();
@@ -1948,16 +1959,14 @@ impl Labeled<'_>
     ///   of its open form.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the completion witnesses read a value, a computation,
-    ///   a type, a pattern and an item slot, and a binding name's slot filled;
-    ///   a layout body and its braced spelling offer the same names; the next
-    ///   argument of a spine offers a value slot, and a statement that ends at
-    ///   its brace takes none.
-    /// - witness: `complete::tests::each_slot_offers_its_own_names`
-    /// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
-    /// - witness: `complete::tests::a_spine_offers_its_next_argument_as_a_value_slot_5197`
+    /// - hypothesis: L3 — a value, a computation, a type and an item slot are
+    ///   read, and a comment is filled; a layout body after `return` and after
+    ///   an operator reads a value slot, and so does the next argument of a
+    ///   spine.
+    /// - witness: `inline::tests::each_slot_is_read_where_the_text_ends`
     #[must_use]
     #[spec(ensures: |ret| lead(self.text, self.labeling.tokens()) == Lead::Code || ret == Slot::Filled)]
+    #[inline]
     pub fn slot(
         &self,
         grammar: &Pbg,
@@ -2010,15 +2019,14 @@ impl Labeled<'_>
 /// - fails: never.
 /// - panics: none.
 /// - economy: one copy of the tokens and one rescan from the cut's line
-///   ([`Labeling::relabel`]).
+///   ([`Labeling::relabel`]). #5041 sizes the rescan to the edit.
 /// - executable: none — a clause would relabel the text again.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Labeled::slot`]: a layout body after `return` and
-///   after an operator offers the names of its braced spelling, and a cursor at
-///   column zero after a layout source's last declaration is at the top level.
-/// - witness: `complete::tests::a_layout_body_offers_as_its_braces_do_4853`
-/// - witness: `complete::tests::a_keyword_inserts_its_form_as_a_snippet`
+///   after an operator reads a value slot, and a cursor at column zero after a
+///   layout source's last declaration is at the top level.
+/// - witness: `inline::tests::each_slot_is_read_where_the_text_ends`
 fn at_cursor(labeled: &Labeled<'_>) -> Vec<Token>
 {
     let text = <&str>::from(labeled.text);
@@ -2062,6 +2070,8 @@ const STAND_IN: &str = "x";
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
 /// - witness: `inline::tests::the_ranking_is_pinned`
 #[spec(ensures: |ret| (1 ..= SHOWN).contains(&ret.0.len()))]
+#[inline]
+#[must_use]
 pub fn ghost(
     grammar: &Pbg,
     forms: &Forms,
@@ -2083,10 +2093,9 @@ pub fn ghost(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a keyword's form and a call's parameters reach it with
-///   and without characters to escape.
+/// - hypothesis: L3 — a keyword's form reaches it with and without characters
+///   to escape.
 /// - witness: `inline::tests::the_defect_rows_answer_as_wanted`
-/// - witness: `complete::tests::a_call_fills_its_parameters_as_tab_stops`
 #[spec(
     captures: before = snippet.len(),
     ensures: before
@@ -2094,6 +2103,7 @@ pub fn ghost(
         .and_then(|grown| grown.checked_add(<&str>::from(text).matches(['$', '}', '\\']).count()))
         == Some(snippet.len()),
 )]
+#[inline]
 pub fn escape_into(
     snippet: &mut String,
     text: SourceText<'_>,
@@ -2280,10 +2290,13 @@ mod tests
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_syntax::SourceText;
 
+    use super::Category;
     use super::Fit;
     use super::Forms;
     use super::Labeled;
     use super::Part;
+    use super::Slot;
+    use super::Snippet;
     use super::Spelled;
     use super::TileLabel;
     use super::Written;
@@ -2826,6 +2839,206 @@ mod tests
               "rec { ${1:item} \\}"
         "##]]
         .assert_eq(&rendered);
+    }
+
+    /// Each slot a text ends in, braced or in layout: a value after `return`,
+    /// after an operator and after an operand of a spine, a computation in a
+    /// body, a type in a signature, an item at the top level, and none in a
+    /// comment.
+    #[test]
+    fn each_slot_is_read_where_the_text_ends()
+    {
+        let tools = tools();
+        let lines = |lines: &[&str]| lines.join("\n");
+        for (text, wanted, slot) in [
+            (
+                String::from("def x = thunk { return "),
+                Slot::Open(Category::Value),
+                "after `return`",
+            ),
+            (
+                String::from("def x = thunk { "),
+                Slot::Open(Category::Computation),
+                "in a body",
+            ),
+            (
+                String::from("def g : "),
+                Slot::Open(Category::Type),
+                "in a signature",
+            ),
+            (
+                String::new(),
+                Slot::Open(Category::Item),
+                "in an empty source",
+            ),
+            (
+                String::from("def x = 1; // a note"),
+                Slot::Filled,
+                "in a comment",
+            ),
+            (
+                lines(&["def f(p : Integer) -> -F Integer =", "  return "]),
+                Slot::Open(Category::Value),
+                "after `return` in a layout body",
+            ),
+            (
+                lines(&["def f(p : Integer) -> Integer =", "  1 + "]),
+                Slot::Open(Category::Value),
+                "after an operator in a layout body",
+            ),
+            (
+                lines(&[
+                    "def f(p : Integer, q : Integer) -> -F Integer {",
+                    "  return f p ",
+                ]),
+                Slot::Open(Category::Value),
+                "the next argument of a spine",
+            ),
+            (
+                lines(&["def f(p : Integer) -> Integer =", "  p", ""]),
+                Slot::Open(Category::Item),
+                "at column zero after a layout source's last declaration",
+            ),
+        ] {
+            assert_eq!(
+                Labeled::new(SourceText::from(text.as_str())).slot(&tools.grammar),
+                wanted,
+                "{slot}: {text:?}"
+            );
+        }
+    }
+
+    /// A word is read from its first byte, and a text that ends in no word
+    /// starts its word at its end.
+    #[test]
+    fn a_word_is_read_from_its_start()
+    {
+        let start = |text: &str| usize::from(Labeled::new(SourceText::from(text)).word_start());
+        assert_eq!(
+            (
+                start("def x = de"),
+                start("def x = Su"),
+                start("def"),
+                start("def x = f ("),
+                start("def x = de "),
+            ),
+            (8, 8, 0, 11, 11),
+            "a lowercase-led word, an uppercase-led word, a word that is the whole text, an open \
+             bracket, a space after a word"
+        );
+    }
+
+    /// An item slot offers `def` and `data`, a computation slot `return` and
+    /// `match`, each keyword its form as a snippet, and a keyword that is its
+    /// whole form no snippet.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn a_slot_offers_the_keywords_of_its_forms()
+    {
+        let tools = tools();
+        let words = |category: Category| {
+            tools
+                .forms
+                .keywords(category)
+                .map(|form| String::from(<&str>::from(form.word())))
+                .collect::<Vec<_>>()
+        };
+        let offers = |words: &[String], word: &str| words.iter().any(|written| written == word);
+        let item = words(Category::Item);
+        let computation = words(Category::Computation);
+        assert!(
+            offers(&item, "def") && offers(&item, "data") && !offers(&item, "return"),
+            "{item:?}"
+        );
+        assert!(
+            offers(&computation, "return")
+                && offers(&computation, "match")
+                && !offers(&computation, "def"),
+            "{computation:?}"
+        );
+        assert!(
+            item.iter()
+                .chain(&computation)
+                .all(|word| word.starts_with(char::is_alphabetic)),
+            "a bracket is no keyword"
+        );
+        let snippet = |category: Category, word: &str| {
+            tools
+                .forms
+                .keywords(category)
+                .find(|form| <&str>::from(form.word()) == word)
+                .expect("the slot offers the keyword")
+                .snippet(SourceText::from(""), SourceText::from(""))
+                .map(String::from)
+        };
+        assert_eq!(
+            (
+                snippet(Category::Item, "def"),
+                snippet(Category::Computation, "return"),
+                snippet(Category::Item, "pub"),
+            ),
+            (
+                Some(String::from("def ${1:identifier} : ${2:type};")),
+                Some(String::from("return ${1:value}")),
+                None,
+            ),
+            "each hole a tab stop, and no snippet for a keyword that is its whole form"
+        );
+    }
+
+    /// A definition's missing `}` and its missing value are each closed where
+    /// the text ends, and a closed form is offered nothing.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn an_open_form_is_closed_where_its_text_ends()
+    {
+        let tools = tools();
+        let closing = |text: &str, at: usize| {
+            let whole = Labeled::new(SourceText::from(text));
+            whole
+                .closing(
+                    &whole.cut(ByteOffset::from(at)),
+                    &tools.grammar,
+                    &tools.forms,
+                )
+                .map(|snippet| (snippet.plain(), String::from(snippet)))
+        };
+        let body = "def up(n : Integer) -> -F Integer { return n + 1";
+        assert_eq!(
+            closing(body, body.len()),
+            Some((Some(String::from(" }")), String::from(" \\}"))),
+            "a body's brace, escaped in the snippet and plain as text"
+        );
+        assert_eq!(
+            closing("def a = ;", 7),
+            Some((None, String::from(" ${1:value}"))),
+            "a definition's value, a hole no plain text inserts"
+        );
+        let closed = "def a : Integer ;";
+        assert_eq!(closing(closed, closed.len()), None, "a closed form");
+    }
+
+    /// A snippet with no tab stop is its text with each escape read back,
+    /// and a snippet with a tab stop has no plain text.
+    #[test]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "a snippet's tab stop is spelled `${n:name}`, which reads as a format argument"
+    )]
+    fn a_snippet_is_plain_only_without_a_tab_stop()
+    {
+        let plain = |text: &str| Snippet(String::from(text)).plain();
+        assert_eq!(
+            (plain(" \\}"), plain("\\$ \\\\"), plain(" ${1:value}")),
+            (Some(String::from(" }")), Some(String::from("$ \\")), None),
+            "an escaped brace, an escaped `$` and `\\`, and a tab stop"
+        );
     }
 
     /// The ghost-text sweep: every cursor of each corpus source, in the whole

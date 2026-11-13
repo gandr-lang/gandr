@@ -42,10 +42,10 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::goto::ranged;
 use crate::hover::Hovering;
 use crate::position::Position;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::DocumentVersion;
 use crate::protocol::MessageType;
 use crate::recheck::DocumentSession;

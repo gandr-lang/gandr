@@ -59,7 +59,7 @@ use quenchant_shape::shape::Maybe;
 use serde_json::Value;
 
 use crate::goto::Locator;
-use crate::goto::ranged;
+use crate::position::ranged;
 use crate::protocol::CodeLens;
 use crate::protocol::Command;
 use crate::protocol::Counted;

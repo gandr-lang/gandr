@@ -47,6 +47,7 @@ use std::time::SystemTime;
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Shadows;
+use gandr_surface_lsp_base::tokens::ResultId;
 use gandr_surface_pretty::Spelling;
 
 use crate::protocol::Diagnostic;
@@ -56,7 +57,6 @@ use crate::protocol::WorkspaceDiagnosticParams;
 use crate::protocol::WorkspaceDocumentReport;
 use crate::protocol::WorkspaceReport;
 use crate::rpc::RequestId;
-use crate::tokens::ResultId;
 
 /// How a file read for a judgement was when it was read.
 #[derive(Clone, Debug, Eq, PartialEq)]

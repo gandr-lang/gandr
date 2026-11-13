@@ -15,6 +15,7 @@ use crate::protocol::ApplyEditParams;
 use crate::protocol::ChoiceParams;
 use crate::protocol::ContentParams;
 use crate::protocol::CreateProgressParams;
+use crate::protocol::KernelTiersParams;
 use crate::protocol::MessageParams;
 use crate::protocol::ProgressParams;
 use crate::protocol::ProgressToken;
@@ -26,7 +27,6 @@ use crate::protocol::TraceParams;
 use crate::protocol::UnregistrationParams;
 use crate::protocol::WorkDone;
 use crate::protocol::WorkTitle;
-use crate::tier::KernelTiersParams;
 use crate::transport::Body;
 
 /// The version every envelope names.
@@ -400,7 +400,6 @@ impl Superseded
     ///   another, read after a request and after a change, are each asserted at
     ///   their answer.
     /// - witness: `rpc::tests::a_request_is_withdrawn_by_what_the_client_sent_after_it`
-    /// - witness: `server::tests::a_burst_of_changes_is_judged_once_at_its_last_version_1547`
     #[spec(ensures: |ret| matches!(ret, Self::Current) || !later.is_empty())]
     #[inline]
     #[must_use]

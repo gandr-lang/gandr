@@ -46,7 +46,7 @@ use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceText;
 
-use crate::recheck::grammar;
+use crate::toolkit::grammar;
 
 /// The scheme of the virtual documents the syntax tree view is served under.
 pub const TREE_SCHEME: &str = "gandr-tree";
@@ -84,6 +84,7 @@ struct Depth(usize);
 /// - witness: `syntax::tests::a_repaired_definition_prints_its_repairs`
 #[spec(ensures: |ret| ret.ends_with('\n'))]
 #[must_use]
+#[inline]
 pub fn printed(text: SourceText<'_>) -> String
 {
     let Ok(grammar) = grammar()

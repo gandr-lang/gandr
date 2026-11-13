@@ -2585,7 +2585,7 @@ crates/surface-lowering-base/src/prelude.gandr STE-3.2 d298eae0d2366fd5
 crates/surface-lowering-base/src/prelude.gandr STE-6.3 d298eae0d2366fd5
 crates/surface-lowering-base/src/prelude.gandr STE-8.1 03ee5363f63d56d5
 crates/surface-lowering/README.md STE-3.5 4dadac99318cc642
-crates/surface-lsp/src/fragment/unformatted/a-comment-is-split-at-its-coloured-fragments.gandr STE-4.3 d9d6638993c6ff28
+crates/surface-lsp-base/src/fragment/unformatted/a-comment-is-split-at-its-coloured-fragments.gandr STE-4.3 d9d6638993c6ff28
 crates/surface-lsp/src/hover/unformatted/a-documented-fragment-hovers-in-its-editor-colours-4919.gandr STE-4.3 8e02e3db45814cd3
 crates/surface-mcp/README.md STE-2.1 01f5fae6ccdb4e47
 crates/surface-parser/README.md STE-3.5 90c45271f11e7403

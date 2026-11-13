@@ -1,0 +1,51 @@
+[package]
+name = "gandr-surface-lsp-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The base of gandr's language server: the protocol's messages, the transport, positions, the token stream, inline completion and the markup that the server's families share"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "lsp"]
+categories = ["development-tools"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The base reads no crate of the checker's chain past the lowering: the
+# grammar and the parser mold the forms an inline completion reads, the
+# diagnostics model and the printer name the settings the protocol carries,
+# and the lowering names a declaration's visibility. The renderer seam
+# projects positions to UTF-16 and carries the token roles and the kernel
+# marks. The wire is JSON through serde; a `file` URI's path is
+# percent-decoded. The pinned anodized facade supplies the executable
+# specifications. A token stream is named by its BLAKE3 digest.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+gandr-surface-syntax.workspace = true
+percent-encoding.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# The inline completion's ranking golden is an inline snapshot; its corpus
+# sweep draws its samples through the sweep crate.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-workflow-sweep.workspace = true
+
+[lints]
+workspace = true

@@ -767,9 +767,9 @@ mod tests
     use crate::protocol::LabelsDetailed;
     use crate::protocol::TakesSnippets;
     use crate::protocol::TextEdit;
-    use crate::recheck::forms;
-    use crate::recheck::grammar;
     use crate::search::declared;
+    use crate::toolkit::forms;
+    use crate::toolkit::grammar;
 
     /// A family, a recursive function matching on it, and a function whose
     /// body is a lambda.

@@ -69,7 +69,7 @@ use gandr_surface_syntax::SourceText;
 use crate::position::Position;
 use crate::position::Range;
 use crate::protocol::TextEdit;
-use crate::recheck::grammar;
+use crate::toolkit::grammar;
 
 /// Why a document was not formatted.
 #[derive(Debug)]

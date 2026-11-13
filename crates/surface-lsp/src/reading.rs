@@ -53,7 +53,6 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::fragment::comments_coloured;
-use crate::goto::ranged;
 use crate::outline::Braces;
 use crate::outline::Declarer;
 use crate::outline::Skeleton;
@@ -62,6 +61,7 @@ use crate::outline::folds;
 use crate::outline::runs;
 use crate::position::Position;
 use crate::position::Range;
+use crate::position::ranged;
 use crate::protocol::DocumentLink;
 use crate::protocol::DocumentSymbol;
 use crate::protocol::DocumentSymbols;
@@ -70,11 +70,11 @@ use crate::protocol::FoldingRange;
 use crate::protocol::SelectionRange;
 use crate::protocol::SymbolKind;
 use crate::protocol::TextEdit;
-use crate::recheck::grammar;
-use crate::recheck::roles;
 use crate::relocate::Moves;
 use crate::relocate::PathImport;
 use crate::relocate::added;
+use crate::toolkit::grammar;
+use crate::toolkit::roles;
 
 quenchant_shape::reason_enum! {
     /// Why a text has no reading.

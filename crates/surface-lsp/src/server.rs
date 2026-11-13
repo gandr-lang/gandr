@@ -98,6 +98,8 @@ use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lsp_base::tokens::ResultId;
+use gandr_surface_lsp_base::tokens::TokenStream;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::AccountCard;
@@ -131,6 +133,8 @@ use crate::complete::Elsewhere;
 use crate::complete::Unimported;
 use crate::complete::completions;
 use crate::complete::resolved;
+use crate::edit::apply;
+use crate::edit::uncareted;
 use crate::files::Files;
 use crate::fix::checked;
 use crate::fix::fills;
@@ -155,6 +159,7 @@ use crate::missing::UNRESOLVED_NAME;
 use crate::missing::additions;
 use crate::notebook::Notebook;
 use crate::paste::copied;
+use crate::peer::Peer;
 use crate::position::Position;
 use crate::position::Range;
 use crate::proposal::Proposal;
@@ -296,8 +301,6 @@ use crate::recheck::Taken;
 use crate::recheck::Timing;
 use crate::recheck::Tried;
 use crate::recheck::admission;
-use crate::recheck::forms;
-use crate::recheck::grammar;
 use crate::recheck::judge_laid;
 use crate::recheck::lay;
 use crate::recheck::open;
@@ -362,11 +365,11 @@ use crate::sweep::Sweeping;
 use crate::syntax::printed;
 use crate::tier::Tiers;
 use crate::tokens::Resolved;
-use crate::tokens::ResultId;
-use crate::tokens::TokenStream;
 use crate::tokens::classified;
 use crate::tokens::encode;
 use crate::tokens::overlapping;
+use crate::toolkit::forms;
+use crate::toolkit::grammar;
 use crate::transport::Body;
 use crate::transport::TransportFault;
 use crate::transport::write_frame;
@@ -401,19 +404,6 @@ pub enum Window
     Whole,
     /// What overlaps a range.
     Within(Range),
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a copy has no caret.
-    mod uncareted {
-        /// The reason the caret is unknown.
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub(super) enum Absent {
-            /// The copy was opened, or its last change named no range: the
-            /// whole text arrived at once, and nothing in it is being typed.
-            Unranged,
-        }
-    }
 }
 
 /// Where a change to a file was made.
@@ -1522,31 +1512,6 @@ pub struct Reported
     pub end: Vec<Outgoing>,
 }
 
-/// One connection among those a workspace serves.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Peer(u64);
-
-impl From<u64> for Peer
-{
-    /// The connection numbered `number`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(number: u64) -> Self
-    {
-        Self(number)
-    }
-}
-
-impl Peer
-{
-    /// The peer of the face beside the hub's socket. The hub numbers its
-    /// connections from one, so no connection takes it.
-    pub const BESIDE: Self = Self(0);
-}
-
 /// What every connection to one server shares.
 ///
 /// The open documents, each with every holding connection's own copy, and
@@ -2621,7 +2586,7 @@ impl Workspace
     {
         let mut reader = Server {
             phase: Phase::Running,
-            peer: Peer(u64::MAX),
+            peer: Peer::from(u64::MAX),
             verbosity: Verbosity::User,
             quiet: QUIET,
             shadowing: ShadowingSetting::Off,
@@ -3026,7 +2991,7 @@ impl Default for Server
     #[inline]
     fn default() -> Self
     {
-        Self::new(Peer(0))
+        Self::new(Peer::from(0))
     }
 }
 
@@ -3401,7 +3366,7 @@ impl Server
     {
         let issued = token
             .0
-            .strip_prefix(&format!("gandr/{}/", self.peer.0))
+            .strip_prefix(&format!("gandr/{}/", self.peer))
             .and_then(|count| count.parse::<u64>().ok())
             .is_some_and(|count| (1_u64 ..= self.reported).contains(&count));
         if issued && !self.cancelled.contains(&token) {
@@ -4942,7 +4907,7 @@ impl Server
     ) -> Reported
     {
         self.reported = self.reported.saturating_add(1);
-        let token = ProgressToken(format!("gandr/{}/{}", self.peer.0, self.reported));
+        let token = ProgressToken(format!("gandr/{}/{}", self.peer, self.reported));
         Reported {
             begin: Vec::from(progress_begun(&token, title, about)),
             end: Vec::from([progress_ended(token)]),
@@ -6974,7 +6939,7 @@ impl Workspace
     ) -> Result<Prepared, Unran>
     {
         // No connection is numbered so, so the latest copy answers.
-        self.run_of(uri, position, Peer(u64::MAX))
+        self.run_of(uri, position, Peer::from(u64::MAX))
     }
 
     /// Each document whose latest copy `peer` holds and that keeps a fill,
@@ -9176,62 +9141,6 @@ impl Workspace
     }
 }
 
-/// `text` with `change` applied, and where the change left the caret.
-///
-/// # Specification
-/// - requires: nothing; any range is admissible input.
-/// - ensures: a change naming no range replaces the whole text and leaves no
-///   caret; a ranged one replaces the bytes between its two ends, each resolved
-///   through the line index of the text as it stands as
-///   [`crate::position::Position::byte`] states, an end before the start read
-///   as the start, and leaves the caret at the end of the text it inserted.
-/// - provides: incremental synchronisation, with full synchronisation as the
-///   change that names no range; the caret the quiet publication reads.
-/// - fails: never.
-/// - panics: none; a resolved end is always a character boundary.
-///
-/// # Adequacy
-/// - hypothesis: L3 — successive ranged changes, one after a character beyond
-///   the basic plane, an inverted range, and a rangeless change, each asserted
-///   at the exact text it leaves and the caret it leaves.
-/// - witness: `server::tests::ranged_changes_edit_the_held_text_in_order`
-#[spec(
-    captures: [length = text.len(), replaced = change.text.len(), whole = change.range.is_none()],
-    ensures: |ret| if whole { text.len() == replaced && matches!(ret, Maybe::Absent(_)) }
-        else { replaced <= text.len() && text.len() <= length.saturating_add(replaced)
-            && matches!(ret, Maybe::Present(caret) if usize::from(caret) <= text.len()) },
-)]
-fn apply(
-    text: &mut String,
-    change: ContentChange,
-) -> Maybe<ByteOffset, uncareted::Absent>
-{
-    let Some(range) = change.range
-    else {
-        *text = change.text;
-        return Maybe::Absent(uncareted::Absent::Unranged);
-    };
-    let index = LineIndex::new(text.as_str().into());
-    let start = usize::from(range.start.byte(&index));
-    let end = usize::from(range.end.byte(&index)).max(start);
-    text.replace_range(start .. end, &change.text);
-    Maybe::Present(ByteOffset::from(start.saturating_add(change.text.len())))
-}
-
-/// `text` with `change` applied, as [`apply`] states, the caret it leaves
-/// unread.
-///
-/// # Specification
-/// trivial.
-#[inline]
-pub fn edit_text(
-    text: &mut String,
-    change: ContentChange,
-)
-{
-    let _caret = apply(text, change);
-}
-
 /// The settings the `initialize` parameters `params` name in their
 /// initialization options, none when they name none or cannot be read.
 ///
@@ -10955,7 +10864,7 @@ mod tests
             let named = |kind: u32| {
                 usize::try_from(kind)
                     .ok()
-                    .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
+                    .and_then(|kind| gandr_surface_lsp_base::tokens::TOKEN_TYPES.get(kind))
                     .copied()
                     .unwrap_or("?")
             };
@@ -11080,11 +10989,13 @@ mod tests
                             "{anchored}:{column} `{spelled}` {} ",
                             usize::try_from(kind)
                                 .ok()
-                                .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
+                                .and_then(
+                                    |kind| gandr_surface_lsp_base::tokens::TOKEN_TYPES.get(kind)
+                                )
                                 .copied()
                                 .unwrap_or("?"),
                         );
-                        crate::tokens::TOKEN_MODIFIERS
+                        gandr_surface_lsp_base::tokens::TOKEN_MODIFIERS
                             .iter()
                             .zip([1_u32, 2, 4, 8])
                             .filter(|&(_, bit)| bits & bit != 0)
