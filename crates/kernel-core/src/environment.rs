@@ -3928,17 +3928,19 @@ impl CommitLog
     /// trivial.
     fn next_stale(&self) -> Option<(SourceRank, ConstantIndex)>
     {
-        match self.keyed_through {
-            Some(held) => self
-                .ranked
-                .range((
-                    core::ops::Bound::Excluded(held),
-                    core::ops::Bound::Unbounded,
-                ))
-                .next(),
-            None => self.ranked.iter().next(),
-        }
-        .map(|(&rank, &position)| (rank, position))
+        self.keyed_through
+            .map_or_else(
+                || self.ranked.iter().next(),
+                |held| {
+                    self.ranked
+                        .range((
+                            core::ops::Bound::Excluded(held),
+                            core::ops::Bound::Unbounded,
+                        ))
+                        .next()
+                },
+            )
+            .map(|(&rank, &position)| (rank, position))
     }
 
     /// Raise the watermark to `rank` when the entry there is the next one
