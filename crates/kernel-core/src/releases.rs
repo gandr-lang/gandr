@@ -49,6 +49,7 @@ use quenchant_shape::shape::Maybe;
 use crate::encoding::ConstantName;
 use crate::env::UnsettledCount;
 use crate::environment::Hold;
+use crate::verdict::EntryContentKey;
 use crate::verdict::VerdictKey;
 use crate::verdict::keyed;
 
@@ -107,7 +108,7 @@ pub struct Reservation
     sway: Sway,
     /// The content key of a generative declaration, which the entry key of a
     /// later one with the same content counts.
-    generative: Maybe<VerdictKey, generative::Absent>,
+    generative: Maybe<EntryContentKey, generative::Absent>,
     /// The name of the declaration. The name of a later plain definition
     /// with the same content counts a plain definition.
     name: ConstantName,
@@ -139,7 +140,7 @@ impl Reservation
     pub const fn new(
         rank: SourceRank,
         sway: Sway,
-        generative: Maybe<VerdictKey, generative::Absent>,
+        generative: Maybe<EntryContentKey, generative::Absent>,
         name: ConstantName,
     ) -> Self
     {
@@ -247,7 +248,7 @@ pub struct Releases
     /// The ranks that the outstanding releases reserve, with their positions.
     ranks: BTreeMap<SourceRank, ConstantIndex>,
     /// The ranks of the outstanding generative declarations, by content key.
-    generative: BTreeMap<VerdictKey, Vec<SourceRank>>,
+    generative: BTreeMap<EntryContentKey, Vec<SourceRank>>,
     /// The ranks and names of the outstanding plain definitions, by digest.
     definitions: BTreeMap<ContentDigest, Vec<(SourceRank, ConstantName)>>,
     /// How many slots from the cursor on hold a predicted rank.
@@ -590,7 +591,7 @@ impl Releases
     #[inline]
     pub fn generative(
         &self,
-        content: VerdictKey,
+        content: EntryContentKey,
         rank: SourceRank,
     ) -> Maybe<Hold, free::Absent>
     {

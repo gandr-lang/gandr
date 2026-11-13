@@ -1302,10 +1302,13 @@ pub struct AdmittedDeclaration
     /// runs a check. [`AdmittedDeclaration::census`] answers it only for a
     /// checked admission.
     census: ExpansionCensus,
-    /// Its entry key: what its admission read, each position named by its
-    /// entry's key. Absent when the policy rechecks, the bypass admitted it or
-    /// an input of it has no entry key.
+    /// Its entry key: its content key bound to the kernel's build. Absent
+    /// when the policy rechecks, the bypass admitted it or an input of it has
+    /// no entry key.
     key: Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+    /// Its content key: what its admission read, each position named by its
+    /// entry's content key, and no build. Absent exactly when its entry key is.
+    content: Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
     /// Its rank in the source of the revision that holds it: what every
     /// reader of "admitted before" compares.
     rank: SourceRank,
@@ -1344,10 +1347,13 @@ pub struct AdmittedParts
     /// runs a check. [`AdmittedDeclaration::census`] answers it only for a
     /// checked admission.
     pub census: ExpansionCensus,
-    /// Its entry key: what its admission read, each position named by its
-    /// entry's key. Absent when the policy rechecks, the bypass admitted it or
-    /// an input of it has no entry key.
+    /// Its entry key: its content key bound to the kernel's build. Absent
+    /// when the policy rechecks, the bypass admitted it or an input of it has
+    /// no entry key.
     pub key: Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+    /// Its content key: what its admission read, each position named by its
+    /// entry's content key, and no build. Absent exactly when its entry key is.
+    pub content: Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
     /// Its rank in the source of the revision that holds it: what every
     /// reader of "admitted before" compares.
     pub rank: SourceRank,
@@ -1600,6 +1606,7 @@ impl AdmittedDeclaration
             key_name,
             census,
             key,
+            content,
             rank,
             unit,
         } = parts;
@@ -1613,6 +1620,7 @@ impl AdmittedDeclaration
             key_name,
             census,
             key,
+            content,
             rank,
             unit,
         }
@@ -1626,6 +1634,18 @@ impl AdmittedDeclaration
     pub const fn key(&self) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
     {
         self.key
+    }
+
+    /// The declaration's content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn content_key(
+        &self
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
+    {
+        self.content
     }
 
     /// The declaration's rank in its source.
@@ -2227,6 +2247,24 @@ impl Entries
         )
     }
 
+    /// The content key of the live declaration at `position`, read outside
+    /// any support; absent as unkeyed for a retired entry and past the last
+    /// entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn content(
+        &self,
+        position: ConstantIndex,
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
+    {
+        self.live(position).map_or(
+            Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed),
+            AdmittedDeclaration::content_key,
+        )
+    }
+
     /// The position of the ruled definition whose body thunks the fixpoint
     /// `root`, read through the support of the check that runs.
     ///
@@ -2634,9 +2672,9 @@ impl Entries
         }
     }
 
-    /// Key the entry at `position` with `key`: the key that a fresh admission
-    /// of its closed module gives, once the seal of an atom that it reads
-    /// closes.
+    /// Key the entry at `position` with the content key `content` and the
+    /// entry key `key`: the keys that a fresh admission of its closed module
+    /// gives, once the seal of an atom that it reads closes.
     ///
     /// # Specification
     /// trivial.
@@ -2644,7 +2682,7 @@ impl Entries
     pub fn rekey(
         &mut self,
         position: ConstantIndex,
-        key: crate::verdict::VerdictKey,
+        (content, key): (crate::verdict::EntryContentKey, crate::verdict::VerdictKey),
     )
     {
         if let Some(entry) = self
@@ -2653,6 +2691,7 @@ impl Entries
             .get_mut(usize::from(position))
             .and_then(Slot::admitted_mut)
         {
+            entry.content = Maybe::Present(content);
             entry.key = Maybe::Present(key);
         }
     }
