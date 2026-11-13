@@ -1934,6 +1934,7 @@ mod tests
     use gandr_surface_grammar::Spelling;
     use gandr_surface_lsp_base::quiet::formless;
     use gandr_surface_lsp_base::tokens::TokenStream;
+    use gandr_surface_lsp_base::tokens::encode;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -1955,7 +1956,6 @@ mod tests
     use crate::protocol::Location;
     use crate::protocol::Severity;
     use crate::reading::Reading;
-    use crate::tokens::encode;
 
     /// A recheck asked about no caret.
     const UNCARETED: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent> =
