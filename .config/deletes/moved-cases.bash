@@ -4,12 +4,14 @@
 # added purpose rows to `ledger/purposes.sql`, which the change shares, and
 # the restack turned the sign-off stale (#6852). The cases build a scratch
 # repository with a signed change to a shared file and a landing below it.
-# A row that the landing adds moves no patch, so the sign-off holds. A change
-# to the change's own lines moves the patch. A file that the change starts to
-# touch after the sign-off moves too. The item's half holds the rest: a row
-# below that names the item joins its readers, and an edit below of the
-# item's own lines changes its record at the base. A head that does not hold
-# the group's base reads its change from their merge base (#6999).
+# A row that the landing adds moves no word, so the sign-off holds. An edit
+# of another cell of a line that names the item moves nothing, as the `since`
+# cells of pull request 7017 did (#7025). A change to a word that names the
+# item moves it, and so does a new file that names the item. The item's half
+# holds the rest: a row below that names the item joins its readers, and an
+# edit below of the item's own lines changes its record at the base. A head
+# that does not hold the group's base reads its change from their merge base
+# (#6999).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/moved.bash"
@@ -28,14 +30,15 @@ git -C "$repo" init --quiet --initial-branch landing
 git -C "$repo" config user.email cases@example.invalid
 git -C "$repo" config user.name cases
 commit() { git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m "$1" && git -C "$repo" rev-parse HEAD; }
-printf 'INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES (2);\nINSERT INTO purpose VALUES (3);\n' > "$repo/ledger/purposes.sql"
+printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Gone', 2);\nINSERT INTO purpose VALUES (3);\n" > "$repo/ledger/purposes.sql"
 printf 'pub enum E {\n    Kept,\n    Gone,\n}\n' > "$repo/src/error.rs"
 fork=$(commit fork)
 
-# The change: it drops a variant and edits the second row of the shared file.
+# The change: it drops a variant, and the shared file's row that names it
+# names the kept variant.
 git -C "$repo" checkout --quiet -b change
 printf 'pub enum E {\n    Kept,\n}\n' > "$repo/src/error.rs"
-printf 'INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES (20);\nINSERT INTO purpose VALUES (3);\n' > "$repo/ledger/purposes.sql"
+printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Kept', 2);\nINSERT INTO purpose VALUES (3);\n" > "$repo/ledger/purposes.sql"
 signed=$(commit change)
 
 # The landing below adds an unrelated row at the end of the shared file.
@@ -48,35 +51,48 @@ git -C "$repo" checkout --quiet -b restacked
 git -C "$repo" cherry-pick --quiet "$signed" > /dev/null
 head=$(git -C "$repo" rev-parse HEAD)
 
-got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$head" | tr '\n' ' ')
-[[ -z $got ]] || fail "#6852: a restack over a row that a landing below adds to a shared file moves no patch, so the sign-off holds" "$got"
+got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$head" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#6852: a restack over a row that a landing below adds to a shared file moves no word, so the sign-off holds" "$got"
 
-# A change to the change's own row after the sign-off moves the patch.
-printf 'INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES (21);\nINSERT INTO purpose VALUES (3);\nINSERT INTO purpose VALUES (4);\n' > "$repo/ledger/purposes.sql"
-edited=$(commit edited)
-got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$edited" | tr '\n' ' ')
-[[ $got == 'ledger/purposes.sql ' ]] || fail "#6852: a change to the change's own lines after the sign-off moves the patch of that file alone" "$got"
+# An edit of another cell of the row that named the item moves nothing.
+printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Kept', 21);\nINSERT INTO purpose VALUES (3);\nINSERT INTO purpose VALUES (4);\n" > "$repo/ledger/purposes.sql"
+celled=$(commit celled)
+got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$celled" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#7025: an edit of another cell of a line that names the item moves nothing" "$got"
 
-# A file that the change starts to touch after the sign-off moves too.
+# A change to a word that names the item after the sign-off moves it.
 git -C "$repo" checkout --quiet --detach "$head"
-printf 'pub fn more() {}\n' > "$repo/src/more.rs"
-more=$(commit more)
-got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$more" | tr '\n' ' ')
-[[ $got == 'src/more.rs ' ]] || fail "#6852: a file that the change starts to touch after the sign-off moves" "$got"
+printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Gone', 2);\nINSERT INTO purpose VALUES (3);\nINSERT INTO purpose VALUES (4);\n" > "$repo/ledger/purposes.sql"
+edited=$(commit edited)
+got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$edited" Gone | tr '\n' ' ')
+[[ $got == $'Gone\tledger/purposes.sql ' ]] || fail "#6852: a change to a word that names the item after the sign-off moves that file alone" "$got"
 
-# The item's half: a purpose row that names the variant lands below the
-# signed deletion. The change's patch holds, and the row joins the readers.
+# A file that the change starts to touch after the sign-off moves when its
+# words name the item, and moves nothing when they do not.
+git -C "$repo" checkout --quiet --detach "$head"
+printf 'pub fn more() -> E { E::Gone }\n' > "$repo/src/more.rs"
+more=$(commit more)
+got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$more" Gone | tr '\n' ' ')
+[[ $got == $'Gone\tsrc/more.rs ' ]] || fail "#6852: a new file that names the item after the sign-off moves" "$got"
+git -C "$repo" checkout --quiet --detach "$head"
+printf 'pub fn other() {}\n' > "$repo/src/other.rs"
+other=$(commit other)
+got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$other" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#7025: a new file that names the item nowhere moves nothing" "$got"
+
+# The item's half: a reader row that names the variant lands below the
+# signed deletion. The change's words hold, and the row joins the readers.
 git -C "$repo" checkout --quiet landing
-printf "INSERT INTO purpose VALUES ('Gone');\n" >> "$repo/ledger/purposes.sql"
+printf "INSERT INTO reader VALUES ('Gone');\n" > "$repo/ledger/readers.sql"
 reader=$(commit reader)
 git -C "$repo" checkout --quiet -b restacked-reader
 git -C "$repo" cherry-pick --quiet "$signed" > /dev/null
 restacked=$(git -C "$repo" rev-parse HEAD)
 fork2=$(git -C "$repo" merge-base "$signed" "$reader")
-got=$(cd "$repo" && moved "$fork2" "$signed" "$reader" "$restacked" | tr '\n' ' ')
-[[ -z $got ]] || fail "#6852: a row below that names the item moves no patch of the change" "$got"
+got=$(cd "$repo" && moved "$fork2" "$signed" "$reader" "$restacked" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#6852: a row below that names the item moves no word of the change" "$got"
 got=$(cd "$repo" && joined "$fork2" "$reader" Gone | tr '\n' ' ')
-[[ $got == 'ledger/purposes.sql ' ]] || fail "#6852: a row below that names the item joins its readers at the base, so the sign-off turns stale with that file named" "$got"
+[[ $got == 'ledger/readers.sql ' ]] || fail "#6852: a row below that names the item joins its readers at the base, so the sign-off turns stale with that file named" "$got"
 got=$(cd "$repo" && joined "$fork2" "$base" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#6852: a landing below that names the item nowhere adds no reader" "$got"
 
@@ -94,18 +110,19 @@ recast=$(commit recast)
 
 # A queue entry whose head does not hold the group's base (#6999): the
 # architect signs the change itself, and an entry ahead of it lands a file
-# that the change does not touch. The change runs from the merge base of the
-# base and the head, so that file moves no patch. Read from the base, the
-# diff holds the base's own file, as the queue read it for pull request 6995.
+# that names the item and that the change does not touch. The change runs
+# from the merge base of the base and the head, so that file moves nothing.
+# Read from the base, the diff holds the base's own file, as the queue read
+# it for pull request 6995.
 git -C "$repo" checkout --quiet landing
-printf 'pub fn ahead() {}\n' > "$repo/src/ahead.rs"
+printf 'pub fn ahead() -> E { E::Gone }\n' > "$repo/src/ahead.rs"
 ahead=$(commit ahead)
 from=$(cd "$repo" && change_base "$ahead" "$signed")
 [[ $from == "$(git -C "$repo" merge-base "$ahead" "$signed")" ]] \
   || fail "#6999: the change of a head that does not hold the base runs from their merge base" "$from"
-got=$(cd "$repo" && moved "$fork" "$signed" "$from" "$signed" | tr '\n' ' ')
-[[ -z $got ]] || fail "#6999: a file that only the group's base changes moves no patch of a head that does not hold it" "$got"
-got=$(cd "$repo" && moved "$fork" "$signed" "$ahead" "$signed" | tr '\n' ' ')
+got=$(cd "$repo" && moved "$fork" "$signed" "$from" "$signed" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#6999: a file that only the group's base changes moves nothing of a head that does not hold it" "$got"
+got=$(cd "$repo" && moved "$fork" "$signed" "$ahead" "$signed" Gone | tr '\n' ' ')
 [[ -n $got ]] || fail "#6999: the diff from the base itself holds the base's own file" "none"
 from=$(cd "$repo" && change_base "$base" "$head")
 [[ $from == "$base" ]] || fail "#6999: the change of a head that holds the base runs from the base" "$from"
@@ -174,4 +191,4 @@ git -C "$served_origin" gc --quiet --prune=now
   || fail "#7012: a signed commit that a pushed ref holds is served, so the sign-off holds" "not served"
 
 (( failed == 0 )) || exit 1
-echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; a change to its own lines or a new file moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"
+echo "deletes moved OK: a restack over rows that a landing adds keeps the sign-off; an edit of another cell of a line that names the item keeps it; a change to a word that names the item or a new file that names it moves it; a row below that names the item joins its readers; an edit below of its own lines changes its record; a head that does not hold the group's base reads its change from their merge base; a shallow clone reads the fork of a signed commit on no branch; a signed commit counts only when origin serves it"

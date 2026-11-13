@@ -140,7 +140,7 @@
           "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": ["crates/vd/tests/directed.rs"]
+          "changed": { "v::hom::DirectedHom::new": ["crates/vd/tests/directed.rs"] }
         }
       ],
       "architects": { "agent-shade": "(architect", "silvanshade": "" }
@@ -178,7 +178,7 @@
           "body": "## Deletion sign-off (architect, 2026-11-11)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": []
+          "changed": {}
         }
       ],
       "architects": { "agent-shade": "(architect" }
@@ -211,7 +211,7 @@
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": ["crates/vd/tests/directed.rs"]
+          "changed": { "v::hom::DirectedHom::new": ["crates/vd/tests/directed.rs"] }
         }
       ],
       "architects": { "agent-shade": "(architect", "silvanshade": "" }
@@ -244,12 +244,12 @@
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": ["crates/vd/src/hom.rs"]
+          "changed": { "v::hom::DirectedHom::new": ["crates/vd/src/hom.rs"] }
         }
       ],
       "architects": { "agent-shade": "(architect" }
     },
-    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the patch of `crates/vd/src/hom.rs` moves; the architect reads that and signs again"
+    "output": "the architect's sign-off of `v::hom::DirectedHom::new` is stale: the words of `crates/vd/src/hom.rs` that name the item move; the architect reads that and signs again"
   },
   {
     "name": "#6852: the patch holds, and a reader that joins at the base and a changed record of the item turn the sign-off stale, named",
@@ -277,7 +277,7 @@
           "body": "## Deletion sign-off (architect)\n\n`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": [],
+          "changed": {},
           "joined": { "v::hom::DirectedHom::new": ["ledger/purposes.sql"] },
           "reshaped": ["v::hom::DirectedHom::new"]
         }
@@ -343,7 +343,7 @@
           "body": "`v::hom::DirectedHom::new` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": []
+          "changed": {}
         }
       ],
       "architects": { "agent-shade": "(architect", "silvanshade": "" }
@@ -381,7 +381,7 @@
           "body": "## Deletion sign-off (architect)\n\n`gandr_vd::hom::DirectedHom` at 3c64291f5: signed.",
           "sha": "3c64291f5aaaa",
           "fork": "1111111aaaa",
-          "changed": []
+          "changed": {}
         }
       ],
       "architects": { "agent-shade": "(architect" }

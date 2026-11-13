@@ -26,8 +26,9 @@
 #               name it at the base
 #   signoffs    each comment of the issues the body works that says `signed`:
 #               {author, body, sha, fork, changed, joined, reshaped};
-#               `changed` holds the files whose patch moves since `sha`, or
-#               null when `sha` is no commit; `joined` maps each item to the
+#               `changed` maps each item to the files whose words that name
+#               it move since `sha` (#7025), or is null when `sha` is no
+#               commit; `joined` maps each item to the
 #               files that join its readers at the base since `fork`, and
 #               `reshaped` lists the items whose record at the base changes
 #   architects  for each login whose comments sign, the heading text that its
