@@ -114,6 +114,59 @@ def readme:
      // error("the page holds no `<!-- crate-map:begin -->` … `<!-- crate-map:end -->` block"))
   | .head + $block + "\n" + .tail;
 
+# The category of a crate's directory name, or null for one with none.
+def category_or_null: capture("^(?<c>[a-z]+)-").c? // null;
+
+# The category files of the member rows (#7215): `$listed` holds each
+# `crates/README/<category>.md` as `{file, text}`. Each gives its category
+# and the directories of its tree's rows, in their order.
+def listed:
+  ($ARGS.named.listed // error("the findings form takes the category files of crates/README/ as `$listed`"))
+  | map({
+      file,
+      category: (.file | capture("^crates/README/(?<c>[a-z]+)\\.md$").c? // null),
+      rows: [.text | splits("\n") | capture("^[├└]── (?<dir>[^/ ]+)/").dir]
+    });
+
+# The lines of `crates/README.md` § Members: each category, the file it
+# links and the count of crates it states.
+def counted:
+  $readme
+  | [splits("\n")
+     | capture("^- \\[`(?<category>[a-z]+)`\\]\\(README/(?<file>[a-z]+)\\.md\\): (?<count>[0-9]+) crates?$")
+     | .count |= tonumber];
+
+# One line for each member row out of place: a crate with no row, a row with
+# no crate, a row in another category's file, a second row, rows out of
+# order, a file of no category, and a count of § Members that its file does
+# not hold.
+def rows($graph; $order):
+  listed as $files
+  | [$graph.members[] | select(.dir | startswith("crates/")) | .crate | select(category_or_null | rank($order) != null)] as $crates
+  | [$files[] | .file as $file | .category as $category | .rows[] | {file: $file, category: $category, dir: .}] as $rows
+  | ($files[]
+     | select(.category == null or (.category | rank($order)) == null)
+     | "\(.file): not crates/README/<category>.md with a category of crates/README.md § Layering"),
+    ($crates[] as $crate
+     | select(any($rows[]; .dir == $crate) | not)
+     | "\($crate): no row in crates/README/\($crate | category_or_null).md"),
+    ($rows[]
+     | select(.dir as $dir | $crates | index($dir) | not)
+     | "\(.file): \(.dir) is a row with no crate"),
+    ($rows[]
+     | select((.dir as $dir | $crates | index($dir)) != null and (.dir | category_or_null) != .category)
+     | "\(.file): \(.dir) is a \(.dir | category_or_null) crate, whose row goes in crates/README/\(.dir | category_or_null).md"),
+    ($rows | group_by([.file, .dir])[] | select(length > 1) | "\(.[0].file): \(.[0].dir) has \(length) rows"),
+    ($files[] | select(.rows != (.rows | sort)) | "\(.file): the rows do not sort by directory"),
+    (counted as $counts
+     | $order[] as $category
+     | ([$files[] | select(.category == $category) | .rows[]] | length) as $held
+     | ([$counts[] | select(.category == $category)]) as $lines
+     | if ($lines | length) == 0 then "crates/README.md § Members: no line for \($category)"
+       elif $lines[0].file != $category then "crates/README.md § Members: \($category) links crates/README/\($lines[0].file).md"
+       elif $lines[0].count != $held then "crates/README.md § Members: \($category) counts \($lines[0].count) crates, and crates/README/\($category).md holds \($held) rows"
+       else empty end);
+
 def findings:
   graph as $graph
   | categories as $order
@@ -126,7 +179,8 @@ def findings:
     (($graph.members | map(.crate)) as $crates
      | $concerns[]
      | select(.crate as $crate | $crates | index($crate) | not)
-     | "\(.concern): a site in \(.crate), which is not a workspace crate");
+     | "\(.concern): a site in \(.crate), which is not a workspace crate"),
+    rows($graph; $order);
 
 if $form == "dot" then dot
 elif $form == "readme" then readme
