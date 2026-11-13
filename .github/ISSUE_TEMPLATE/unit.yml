@@ -128,7 +128,7 @@ body:
         every row in its last cell with a bound, a budget or a measured number, or `n/a — <reason>` where the change
         has no such path. An empty row and a bare `n/a` are refused. The `change` row has two parts,
         `unchanged: <the work when no input of the result changes>; edit: <the work an edit costs>`, or reads
-        `n/a — <reason>`.
+        `n/a — <reason>`. The `streaming` row reads `n/a — <reason>` where a result has no use before it is whole.
       value: |
         | Row | The issue states | Bound |
         | --- | ---------------- | ----- |
@@ -138,6 +138,7 @@ body:
         | parallelism | what runs at once, what serialises, where contention sits, the width left unused | |
         | memory | allocations and copies per operation, what stays resident | |
         | failure | a crash mid-operation: what is lost, what resumes, what replays | |
+        | streaming | what a consumer gets before the whole input arrives: the first result, the order of the results, what a later part can still revoke; each result that waits on a part far from it | |
     validations:
       required: true
   - type: textarea

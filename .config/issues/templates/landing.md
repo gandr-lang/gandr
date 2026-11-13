@@ -56,6 +56,7 @@ The lane that the claim names repairs `{{check}}` on `landing`, never with a rev
 | parallelism | n/a — one defect for each red check |
 | memory | n/a — the repair states its own bounds on its pull request |
 | failure | `landing:watch` reads the head again on its next move, so a lost page comes again |
+| streaming | n/a — the repair states its own bounds on its pull request |
 
 ## Ledger
 

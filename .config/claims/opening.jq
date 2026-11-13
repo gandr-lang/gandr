@@ -443,9 +443,11 @@ def refactorings:
 
 # The refusals of the body's `## Engineering` against the sections of the
 # issues it works (#5039): the section missing, or a row an issue states with
-# a bound left out, empty, `n/a`, or with no number where one is measured.
+# a bound left out, empty, `n/a`, or with no number where one is measured. A
+# `streaming` row holds two times, the first result and the whole (#6884).
 def engineering_answers:
   def na: test("^n/?a\\b"; "i");
+  def times: [scan("[0-9]+(?:[.,][0-9]+)?\\s*(?:ns|µs|us|ms|s|sec|seconds?|min|minutes?|h)\\b")] | length;
   [(.issues // [])[] | .number as $n | (.body // "" | section("Engineering")) as $lines
     | select($lines != null) | $lines | engineering | {n: $n, row, bound: (.answer | na | not)}] as $asked
   | select($asked | length > 0)
@@ -462,6 +464,7 @@ def engineering_answers:
     | if ($answers | length) == 0 then "the body's `## Engineering` has no row `\($ask.row)`, which #\($ask.n) states with a bound: answer it \($form), then run `pr:open` again"
       elif all($answers[]; . == "") then "the body's `## Engineering` leaves `\($ask.row)` empty, which #\($ask.n) states with a bound: answer it \($form), then run `pr:open` again"
       elif all($answers[]; na) then "the body's `## Engineering` answers `\($ask.row)` with `n/a`, and #\($ask.n) states it with a bound: answer it \($form), then run `pr:open` again"
+      elif $ask.row == "streaming" and all($answers[]; times < 2) then "the body's `## Engineering` answers `streaming` with fewer than two times: report the time to the first result beside the time of the whole, before and after (`units.md` § units-engineering), then run `pr:open` again"
       elif $ask.row != "failure" and all($answers[]; test("[0-9]") | not) then "the body's `## Engineering` answers `\($ask.row)` with no number: report the measurement, or the issue that names the serial step (`units.md` § units-engineering), then run `pr:open` again"
       else empty
       end

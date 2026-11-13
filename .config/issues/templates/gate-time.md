@@ -53,6 +53,7 @@ Read the record's `time` of the gate on main (`.config/gate-scope/passed.bash`).
 | parallelism | the gate's tasks run at once in its slot, and its one full test suite takes the slot's cores |
 | memory | n/a — a time report holds no resident state |
 | failure | a gate that fails records no time, so the next gate on main reads the budget again |
+| streaming | n/a — a gate gives its verdict when its last task ends |
 
 ## Ledger
 

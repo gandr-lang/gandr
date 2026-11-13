@@ -1730,6 +1730,51 @@
     "output": "the body's `## Engineering` answers `latency` with no number: report the measurement, or the issue that names the serial step (`units.md` § units-engineering), then run `pr:open` again"
   },
   {
+    "name": "#6884: a `streaming` row with one time is refused: the row reports the first result beside the whole",
+    "input": {
+      "branch": "triage-9999-engineering",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | n/a |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n| streaming | the first diagnostic at 3 ms |\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "Text.\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | an edit re-lays-out the edited declaration |\n| complexity | linear in the declaration |\n| latency | a keystroke under 16 ms at p99 |\n| parallelism | n/a — one writer per document |\n| memory | no allocation per token |\n| failure | a crash loses the edit's layout, and the next edit replays it |\n| streaming | the first diagnostic before the whole document parses |\n",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ]
+    },
+    "output": "the body's `## Engineering` answers `streaming` with fewer than two times: report the time to the first result beside the time of the whole, before and after (`units.md` § units-engineering), then run `pr:open` again"
+  },
+  {
+    "name": "#6884: a `streaming` row with the time to the first result beside the time of the whole opens",
+    "input": {
+      "branch": "triage-9999-engineering",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | n/a |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n| streaming | the first diagnostic at 3 ms, the whole at 41 ms; both at 41 ms before |\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "Text.\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | an edit re-lays-out the edited declaration |\n| complexity | linear in the declaration |\n| latency | a keystroke under 16 ms at p99 |\n| parallelism | n/a — one writer per document |\n| memory | no allocation per token |\n| failure | a crash loses the edit's layout, and the next edit replays it |\n| streaming | the first diagnostic before the whole document parses |\n",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#6884: a `streaming` row the issue answers with `n/a` asks no time of the body",
+    "input": {
+      "branch": "triage-9999-engineering",
+      "body": "Closes #9999\n\n## Engineering\n\n| Row | Measured |\n| --- | --- |\n| change | 1 declaration of 4,000 re-laid-out, 0.2 ms against 41 ms whole |\n| complexity | 0.2 ms at 1,000 lines, 0.2 ms at 16,000 |\n| latency | p50 0.1 ms, p99 0.4 ms against 16 ms; 38 ms and 41 ms before |\n| parallelism | n/a |\n| memory | 0 allocations per token, 3 before |\n| failure | the crash test `tests::a_crash_mid_edit_replays` kills the layout mid-edit |\n| streaming | n/a — the layout of a declaration comes whole |\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "Text.\n\n## Engineering\n\n| Row | Bound |\n| --- | --- |\n| change | an edit re-lays-out the edited declaration |\n| complexity | linear in the declaration |\n| latency | a keystroke under 16 ms at p99 |\n| parallelism | n/a — one writer per document |\n| memory | no allocation per token |\n| failure | a crash loses the edit's layout, and the next edit replays it |\n| streaming | n/a — the layout of a declaration has no use before it is whole |\n",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
     "name": "#5039: an issue signed before the section asks no `## Engineering` of its body",
     "input": {
       "branch": "triage-9999-engineering",

@@ -59,6 +59,7 @@ The closing comment of `stall:watch` names the event that ends the stall: the me
 | parallelism | n/a — one report for each stall |
 | memory | n/a — no change to a code path |
 | failure | `stall:watch` reads the stall again on its next run, so a lost page comes again |
+| streaming | n/a — one page for each stall, sent whole |
 
 ## Ledger
 
