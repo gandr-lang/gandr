@@ -74,14 +74,14 @@
     "output": []
   },
   {
-    "name": "#6890: a ceiling the change moves, at another indent, is not the change's ceiling",
+    "name": "#7126: an `economy:` comment that a change moves, at another indent, is not the change's ceiling",
     "file": "crates/p/src/lib.rs",
     "base": "/// economy: one minute.\npub const A: u8 = 1;\nfn f() {}\n",
     "head": "fn f() {}\nmod m {\n    /// economy: one minute.\n    pub const A: u8 = 1;\n}\n",
     "output": []
   },
   {
-    "name": "#6890: a new ceiling beside a moved one is the change's ceiling",
+    "name": "#7126: a new ceiling beside a moved one is the change's ceiling",
     "file": "crates/p/src/lib.rs",
     "base": "/// economy: one minute.\npub const A: u8 = 1;\nfn f() {}\n",
     "head": "fn f() {}\n/// economy: one minute.\npub const A: u8 = 1;\n/// economy: one hour.\npub const B: u8 = 2;\n",
@@ -94,5 +94,49 @@
         "cites": []
       }
     ]
+  },
+  {
+    "name": "#7126: a waiver that a change moves into a module, at another indent, is not the change's ceiling",
+    "file": "crates/p/src/lib.rs",
+    "base": "pub struct S;\nimpl S {\n    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\n}\n",
+    "head": "pub struct S;\nmod m {\n    pub struct T;\n    impl T {\n        #[cfg_attr(\n            dylint_lib = \"quenchant_dylints\",\n            expect(\n                spec_clause_traversal,\n                reason = \"bounded: whole\"\n            )\n        )]\n        pub fn relabel() {}\n    }\n}\n",
+    "output": []
+  },
+  {
+    "name": "#7126: a change that removes a waiver and adds one with another reason lists the new waiver",
+    "file": "crates/p/src/lib.rs",
+    "base": "pub struct S;\nimpl S {\n    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel() {}\n}\n",
+    "head": "pub struct S;\nimpl S {\n    pub fn relabel() {}\n}\nmod m {\n    pub struct T;\n    impl T {\n        #[cfg_attr(\n            dylint_lib = \"quenchant_dylints\",\n            expect(\n                spec_clause_traversal,\n                reason = \"bounded: a new reason\"\n            )\n        )]\n        pub fn other() {}\n    }\n}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 11,
+        "kind": "waiver",
+        "text": "spec_clause_traversal,",
+        "cites": []
+      }
+    ]
+  },
+  {
+    "name": "#7126: one removed ceiling matches one added ceiling at most",
+    "file": "crates/p/src/lib.rs",
+    "base": "/// economy: one minute.\npub const A: u8 = 1;\n",
+    "head": "mod m {\n    /// economy: one minute.\n    pub const A: u8 = 1;\n}\nmod n {\n    /// economy: one minute.\n    pub const A: u8 = 1;\n}\n",
+    "output": [
+      {
+        "path": "crates/p/src/lib.rs",
+        "line": 6,
+        "kind": "economy",
+        "text": "/// economy: one minute.",
+        "cites": []
+      }
+    ]
+  },
+  {
+    "name": "#7126: a whole function with its waiver, which the diff reads as removed above ten other functions and added below them, is not the change's ceiling",
+    "file": "crates/p/src/lib.rs",
+    "base": "pub struct S;\nimpl S {\n    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel(&self) {\n        let _ = self;\n    }\n    pub fn f0(&self) {\n        let _ = 0;\n    }\n    pub fn f1(&self) {\n        let _ = 1;\n    }\n    pub fn f2(&self) {\n        let _ = 2;\n    }\n    pub fn f3(&self) {\n        let _ = 3;\n    }\n    pub fn f4(&self) {\n        let _ = 4;\n    }\n    pub fn f5(&self) {\n        let _ = 5;\n    }\n    pub fn f6(&self) {\n        let _ = 6;\n    }\n    pub fn f7(&self) {\n        let _ = 7;\n    }\n    pub fn f8(&self) {\n        let _ = 8;\n    }\n    pub fn f9(&self) {\n        let _ = 9;\n    }\n}\n",
+    "head": "pub struct S;\nimpl S {\n    pub fn f0(&self) {\n        let _ = 0;\n    }\n    pub fn f1(&self) {\n        let _ = 1;\n    }\n    pub fn f2(&self) {\n        let _ = 2;\n    }\n    pub fn f3(&self) {\n        let _ = 3;\n    }\n    pub fn f4(&self) {\n        let _ = 4;\n    }\n    pub fn f5(&self) {\n        let _ = 5;\n    }\n    pub fn f6(&self) {\n        let _ = 6;\n    }\n    pub fn f7(&self) {\n        let _ = 7;\n    }\n    pub fn f8(&self) {\n        let _ = 8;\n    }\n    pub fn f9(&self) {\n        let _ = 9;\n    }\n    #[cfg_attr(\n        dylint_lib = \"quenchant_dylints\",\n        expect(\n            spec_clause_traversal,\n            reason = \"bounded: whole\"\n        )\n    )]\n    pub fn relabel(&self) {\n        let _ = self;\n    }\n}\n",
+    "output": []
   }
 ]
