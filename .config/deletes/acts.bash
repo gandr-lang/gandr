@@ -14,6 +14,13 @@
 # `#[inline]` to a small function. A false match needs an item of the head
 # with the same tokens, so the text stands in the head.
 #
+# A body of a test at the base matches a head item of either flag (#7103):
+# the library unit holds an item of a fixture module only when the run turns
+# on the feature, so a helper that moves from a test module into a fixture
+# module can read as a test at the base and as an item at the head. A body
+# of an item at the base matches only an item at the head, so an item that
+# goes from the library into test code still reads as deleted.
+#
 # `<items-base>` and `<items-head>` are the inventories of `check.bash`:
 # `{id, kind, file, start, end, test}`, each file at its path in the tree. The
 # text before comes from `<base>` in one `git cat-file --batch`, and the text
@@ -163,17 +170,17 @@ perl -e '
     my @lines = split /\n/, $text, -1;
     next if $start < 1 or $end > @lines or $start > $end;
     my $name = name_of($id);
-    my $key = join "\0", $kind, $test, body(join("\n", @lines[$start - 1 .. $end - 1]), $name);
+    my $key = join "\0", $kind, body(join("\n", @lines[$start - 1 .. $end - 1]), $name);
     if ($side eq "head") {
-      push @{$added{$key}}, $id;
+      push @{$added{"$test\0$key"}}, $id;
     } else {
-      push @left, [$id, $name, $key];
+      push @left, [$id, $name, $test, $key];
     }
   }
   close $list;
   for my $item (@left) {
-    my ($id, $name, $key) = @$item;
-    my $candidates = $added{$key} or next;
+    my ($id, $name, $test, $key) = @$item;
+    my $candidates = $added{"$test\0$key"} // ($test eq "true" ? $added{"false\0$key"} : undef) or next;
     my ($at) = sort { shared($id, $b) <=> shared($id, $a) or $a cmp $b } @$candidates;
     print join("\t", $id, name_of($at) eq $name ? "moved" : "renamed", $at), "\n";
   }

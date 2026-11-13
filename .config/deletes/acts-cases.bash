@@ -14,12 +14,20 @@
 #     each takes the one of the head whose path ends as its own path ends;
 #   - a move that adds `#[inline]` and changes the reason of a lint level in
 #     a `cfg_attr` reads as `moved`, and a move that adds `#[cfg(test)]`
-#     reads as deleted.
+#     reads as deleted;
+#   - a helper of a test module whose twin is an item of a fixture module
+#     reads as `moved` (#7103), and an item whose twin is a test still reads
+#     as deleted.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-deletes-acts.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
+# A case that fails: its name, then what it wants and what it got.
+fail() {
+  printf 'deletes acts case FAILED: %s\n  want: %s\n  got:  %s\n' "$1" "$2" "$3"
+  failed=1
+}
 
 repo=$work/repo
 mkdir -p "$repo/crates/k/src"
@@ -45,6 +53,7 @@ pub fn right(&self) -> u32 { self.right }
 #[cfg_attr(dylint_lib = "q", expect(lint, reason = "a"))]
 pub fn guarded() -> u32 { 7 }
 pub fn gated() -> u32 { 8 }
+fn seed() -> u32 { 9 }
 EOF
 printf 'pub fn idle() {}\n' > "$repo/crates/k/src/c.rs"
 git -C "$repo" add -A && git -C "$repo" commit --quiet --no-verify -m base
@@ -70,6 +79,7 @@ pub fn right(&self) -> u32 { self.right }
 pub fn guarded() -> u32 { 7 }
 #[cfg(test)]
 pub fn gated() -> u32 { 8 }
+pub fn seed() -> u32 { 9 }
 EOF
 
 item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start "$4" --argjson end "$5" --argjson test "${6:-false}" \
@@ -86,6 +96,7 @@ item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start 
   item k::a::Span::right fn crates/k/src/a.rs 14 14
   item k::a::guarded fn crates/k/src/a.rs 15 16
   item k::a::gated fn crates/k/src/a.rs 17 17
+  item k::a::tests::seed fn crates/k/src/a.rs 18 18 true
   item k::a::written fn '' 1 1
   item k::c::idle fn crates/k/src/c.rs 1 1
 } | jq -s -c . > "$work/base.json"
@@ -100,6 +111,7 @@ item() { jq -n -c --arg id "$1" --arg kind "$2" --arg file "$3" --argjson start 
   item k::b::Span::right fn crates/k/src/b.rs 14 14
   item k::b::guarded fn crates/k/src/b.rs 15 17
   item k::b::gated fn crates/k/src/b.rs 18 19
+  item k::fixture::seed fn crates/k/src/b.rs 20 20
   item k::b::written fn '' 1 1
   item k::c::idle fn crates/k/src/c.rs 1 1
 } | jq -s -c . > "$work/head.json"
@@ -113,12 +125,15 @@ want=$(jq -n -S -c '{
   "k::a::Span::left": {act: "moved", at: "k::b::Span::left"},
   "k::a::Span::right": {act: "moved", at: "k::b::Span::right"},
   "k::a::guarded": {act: "moved", at: "k::b::guarded"}}')
-if [[ $got != "$want" ]]; then
-  echo "deletes acts case FAILED: #7058: the acts of the items that leave"
-  echo "  want: $want"
-  echo "  got:  $got"
-  failed=1
+if [[ $(jq -S -c 'del(.["k::a::tests::seed"])' <<< "$got") != "$want" ]]; then
+  fail "#7058: the acts of the items that leave" "$want" "$got"
+fi
+# The helper's flag is a test at the base and an item at the head; the
+# item `helper`, whose twin is a test, stays out of the acts above.
+seed=$(jq -S -c '.["k::a::tests::seed"]' <<< "$got")
+if [[ $seed != '{"act":"moved","at":"k::fixture::seed"}' ]]; then
+  fail "#7103: a helper of a test module reads as moved into an item of a fixture module" '{"act":"moved","at":"k::fixture::seed"}' "$seed"
 fi
 
 (( failed == 0 )) || exit 1
-echo "deletes acts OK: a move reads as moved across the visibility, the comments, the lines, a use line and a module path; a new name reads as renamed; two getters alike take their own places; a changed body, an item that stands nowhere, a twin that is a test, a twin that the base holds and an item with no file read as deleted"
+echo "deletes acts OK: a move reads as moved across the visibility, the comments, the lines, a use line and a module path; a new name reads as renamed; two getters alike take their own places; a test helper reads as moved into a fixture item; a changed body, an item that stands nowhere, a twin that is a test, a twin that the base holds and an item with no file read as deleted"
