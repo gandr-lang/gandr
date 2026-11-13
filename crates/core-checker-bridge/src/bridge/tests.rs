@@ -1592,7 +1592,7 @@ fn undecided_beside_later() -> (CoreArena, ModuleReport)
 #[test]
 fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476()
 {
-    let (arena, report) = undecided_beside_later();
+    let (mut arena, report) = undecided_beside_later();
     let leading = (
         LeadingCount::from(report.judged().len().saturating_sub(1)),
         Maybe::Absent(crossed::Absent::Unasked),
@@ -1608,7 +1608,7 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
     )
     .whole();
     let (reversed, reversed_record) = readmit_retiring(
-        &mut arena.clone(),
+        &mut arena,
         &report,
         leading,
         &Recall::recheck().speculating(gandr_kernel_core::speculation::Speculation::ON),
