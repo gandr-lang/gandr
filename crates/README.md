@@ -65,13 +65,14 @@ crates/
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
-├── surface-lowering/              the molded tree into core terms, over its base
-├── surface-lowering-base/         the lowering's base: refusals, forms, names, origins, descriptions, namespaces, node tables, circuits, the module pass
+├── surface-lowering/              the molded tree into core terms
+├── surface-lowering-base/         the lowering's base: refusals, forms, names, the module pass
+├── surface-lowering-native/       the lowering's native family
 ├── surface-lsp/                   the language server: its handlers and the hub
-├── surface-lsp-base/              the protocol, positions and markup
 ├── surface-lsp-core/              the reading, hover, completion, tokens
 ├── surface-lsp-diagnostics/       the recheck, kernel tiers, fixes
 ├── surface-lsp-navigation/        references, rename, calls, hints
+├── surface-lsp-base/              the protocol, positions and markup
 ├── surface-parser/                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-pretty/                the presentation printer: a checked type or a normal-form value in its one surface spelling, laid out at a page width
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame

@@ -135,7 +135,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   mentioned, one seed per parameter type, one per observation type that
     ///   the family does not head and one value seed per argument the family
     ///   does not head, appended to `seeds`; a data declaration form is left to
-    ///   [`Self::seed_data`].
+    ///   `Native::seed_data`.
     /// - provides: the description half of [`Self::seed`].
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.

@@ -225,6 +225,7 @@ use super::exhausted;
 use super::exits;
 use super::lowered;
 use super::native;
+use super::native::Native;
 use super::native::NativeRef;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
@@ -1311,7 +1312,7 @@ impl<'source> Lowerer<'_, 'source>
             // A capitalised name the source declares no constructor by: the
             // interface it names, when a host interface bears it.
             Some((_, Former::Constructor)) => {
-                return Ok(match self.constructor_named(site, written) {
+                return Ok(match Native::new(self).constructor_named(site, written) {
                     Maybe::Present(_) => None,
                     Maybe::Absent(_) => self
                         .interface_named(target.span.start(), written)

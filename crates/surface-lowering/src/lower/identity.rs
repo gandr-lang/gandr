@@ -356,6 +356,7 @@ use super::exhausted;
 use super::exits::record_copies;
 use super::lowered;
 use super::native::Answer;
+use super::native::Native;
 use super::native::NativeRef;
 use super::native::record_since;
 use super::native::rooted;
@@ -1403,6 +1404,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_pattern_at_a_relation_splits_its_record`
     /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Maybe::Absent(_) | Maybe::Present(Layout::Isomorphism | Layout::Equivalence))))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn stated_relation(
         &mut self,
         stated: NodeIndex,
@@ -1423,7 +1428,7 @@ impl<'source> Lowerer<'_, 'source>
                 _ => return Ok(otherwise),
             }
         }
-        let Maybe::Present(written) = self.unwrapped(at)?
+        let Maybe::Present(written) = Native::new(self).unwrapped(at)?
         else {
             return Ok(otherwise);
         };
@@ -1680,7 +1685,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `Path.here(a)` and `Flow.stay(a)` stand as values reading
     ///   their point as a value at an endpoint, but `Path.here(a)` at the point
     ///   of a family's loops is the empty word of their words, as
-    ///   [`Self::looped_point`] reads it; `Path.funext(f, g)`, `equiv(f, g)`,
+    ///   `Native::looped_point` reads it; `Path.funext(f, g)`, `equiv(f, g)`,
     ///   `Path.product(p, q)`, `Flow.product(p, q)`, `cons(h, t)`,
     ///   `Path.bisim(A, B)` and `Flow.sim(A, B)` stand as values reading both
     ///   operands as values, and `Path.bisim(A, B, p)` all three; `ua(e)`
@@ -1846,13 +1851,14 @@ impl<'source> Lowerer<'_, 'source>
             (Operation::Here | Operation::Stay, 1_usize, Some(point), ..) => {
                 if operation == Operation::Here
                     && let Some(node) = self.cx.tree.node(point)
-                    && let Maybe::Present(empty) = self.looped_point(Placed::of(point, node))?
+                    && let Maybe::Present(empty) =
+                        Native::new(self).looped_point(Placed::of(point, node))?
                 {
                     let none = Stretch {
                         start: self.cx.operands.entries().len(),
                         end: self.cx.operands.entries().len(),
                     };
-                    return self.construct(site, empty, none);
+                    return Native::new(self).construct(site, empty, none);
                 }
                 self.read(point, Reading::Value(frame));
                 let _marked = self.cx.at_endpoint.insert(point);
@@ -2810,7 +2816,8 @@ impl<'source> Lowerer<'_, 'source>
     {
         if let Derivation::Cong { function, .. } = derivation
             && let Some(node) = self.cx.tree.node(function)
-            && let Maybe::Present(_) = self.constructor_head(site, Placed::of(function, node))?
+            && let Maybe::Present(_) =
+                Native::new(self).constructor_head(site, Placed::of(function, node))?
         {
             return Err(site.out(FragmentBoundary::NotAFunction));
         }

@@ -49,6 +49,7 @@ use super::Reading;
 use super::Resolved;
 use super::Sink;
 use super::Site;
+use super::native::Native;
 use super::native::NativeRef;
 use crate::attribute::names;
 use crate::error::LoweringRefusal;
@@ -480,7 +481,7 @@ impl<'source> Lowerer<'_, 'source>
             name,
         };
         let found = match home {
-            Home::Own => match self.named_constructor(site, name)? {
+            Home::Own => match Native::new(self).named_constructor(site, name)? {
                 Maybe::Present(found) => found,
                 Maybe::Absent(_) => return Err(unresolved),
             },

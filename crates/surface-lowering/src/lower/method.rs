@@ -97,6 +97,7 @@ pub(super) use gandr_surface_lowering_base::lower::method::Receiving;
 pub(super) use gandr_surface_lowering_base::lower::method::ViewBlock;
 pub(super) use gandr_surface_lowering_base::lower::method::ViewPlace;
 pub use gandr_surface_lowering_base::lower::method::unheld;
+pub use gandr_surface_lowering_base::lower::method::unindexing;
 pub use gandr_surface_lowering_base::lower::method::unviewed;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -164,23 +165,6 @@ quenchant_shape::reason_enum! {
             /// The name resolves to nothing, or to a binder that holds no
             /// slot.
             Unheld,
-        }
-    }
-}
-
-quenchant_shape::reason_enum! {
-    /// Why an instantiation is not a bare index.
-    pub mod unindexing {
-        /// The bracket of the instantiation holds static arguments.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The head is not a bare name.
-            Unnamed,
-            /// The bracket holds a termination claim, `<` or `>`.
-            Claimed,
-            /// The name resolves to no binder. Or it resolves to the binder
-            /// of a recursive function, which a claim instantiates.
-            Static,
         }
     }
 }
@@ -996,6 +980,10 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Present(span) => site.at.span.start() <= span.start() && span.end() <= site.at.span.end(),
         | Maybe::Absent(_) => true,
     }))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn bare_index(
         &mut self,
         site: Site,

@@ -201,6 +201,7 @@ use super::lowered;
 use super::multiplicity_one;
 use super::native::Answer;
 use super::native::Holds;
+use super::native::Native;
 use super::native::answered;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
@@ -707,6 +708,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::identity::tests::a_let_binder_splits_the_relation_its_call_returns_656`
     /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
     #[spec(ensures: |ret| ret.is_ok() || !matches!(ret, Err(LoweringRefusal::MalformedForm { .. })))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn scrutinee_type(
         &mut self,
         frame: Frame,
@@ -816,7 +821,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
     {
         let untyped = Maybe::Absent(binder_type::Absent::Untyped);
-        let Maybe::Present(call) = self.unwrapped(written)?
+        let Maybe::Present(call) = Native::new(self).unwrapped(written)?
         else {
             return Ok(untyped);
         };
@@ -855,7 +860,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(untyped);
         };
-        let Maybe::Present(read) = self.unwrapped(result)?
+        let Maybe::Present(read) = Native::new(self).unwrapped(result)?
         else {
             return Ok(untyped);
         };
@@ -1355,14 +1360,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   are its positional entries in written order; `stated` is the type its
     ///   value has, when written.
     /// - ensures: an entry written as a telescope type, bare or inside
-    ///   parentheses as [`Self::written_telescope`] reads it, joins
+    ///   parentheses as `Native::written_telescope` reads it, joins
     ///   [`Context::valued_telescopes`](gandr_surface_lowering_base::lower::Context::valued_telescopes)
     ///   with the component at its place when `stated` states a product of as
     ///   many positional components as `entries`, as [`Self::stated_entries`]
-    ///   reads it, and that component holds a value, as [`Self::held_at`] reads
+    ///   reads it, and that component holds a value, as `Native::held_at` reads
     ///   it. Any other entry stays as it is. No type is read when no entry is a
     ///   telescope type.
-    /// - fails: as [`Self::stated_entries`] and [`Self::unwrapped`].
+    /// - fails: as [`Self::stated_entries`] and `Native::unwrapped`.
     /// - panics: none.
     ///
     /// # Errors
@@ -1395,7 +1400,7 @@ impl<'source> Lowerer<'_, 'source>
         // telescope type.
         let mut components: Option<Vec<Entry<'source>>> = None;
         for (place, entry) in entries.iter().enumerate() {
-            let Some(telescope) = self.written_telescope(entry.held.at().node)?
+            let Some(telescope) = Native::new(self).written_telescope(entry.held.at().node)?
             else {
                 continue;
             };
@@ -1416,7 +1421,7 @@ impl<'source> Lowerer<'_, 'source>
                 .as_ref()
                 .and_then(|found| found.get(place))
                 .map(|component| component.held.at().node)
-                && let Holds::Value(held) = self.held_at(component)?
+                && let Holds::Value(held) = Native::new(self).held_at(component)?
             {
                 let _first = self.cx.valued_telescopes.insert(telescope, held);
             }
@@ -1622,6 +1627,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::stated_form`].
     /// - witness: `lower::arity::tests::an_injection_takes_its_index_from_its_label`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn stated_entries(
         &mut self,
         site: Site,
@@ -1675,6 +1684,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_reads_through_one_thunk_only`
     /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownMold { .. })))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn stated_form(
         &mut self,
         site: Site,
@@ -2479,7 +2492,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: for a name, the type its binder or declaration was written
     ///   with, a thunk, under `frame`, a binder's type owned by the declaration
     ///   the selection belongs to; for a call, the callee's written result, as
-    ///   [`Self::called_result`] reads it, a computation under the outermost
+    ///   `Native::called_result` reads it, a computation under the outermost
     ///   frame; for a chain of selections rooted at either, the family the last
     ///   link's observation returns when its written result is its own family,
     ///   as [`Self::observed_family`] reads it, each link observed off what the
@@ -2573,7 +2586,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             // A call's callee writes its result in its own declaration, at the
             // outermost frame of the source both stand in.
-            let Some(result) = self.called_result(site, frame, root)?
+            let Some(result) = Native::new(self).called_result(site, frame, root)?
             else {
                 return Ok(None);
             };
@@ -3137,6 +3150,10 @@ impl<'source> Lowerer<'_, 'source>
         | Maybe::Present(ref links) => links.contains(&Dependent(true)),
         | Maybe::Absent(_) => true,
     }))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn dependent_links(
         &mut self,
         typed: &[Entry<'source>],
@@ -3986,6 +4003,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     /// - witness: `lower::method::tests::a_view_block_lends_at_the_mode_it_asks`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |inner| inner.is_none_or(|inner| inner.span.start() >= target.span.start() && inner.span.end() <= target.span.end())))]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     pub(super) fn ungrouped_target(
         &mut self,
         mut target: Placed,
@@ -5337,7 +5358,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unstated);
             };
             match self.cx.value_type_at(declared) {
-                Maybe::Present(domain) => domains.push(Self::shared_domain(
+                Maybe::Present(domain) => domains.push(Native::<Self>::shared_domain(
                     written.get(.. index).unwrap_or_default(),
                     parameter,
                     |named| bool::from(self.names_own_binder(codomain, named.frame)),

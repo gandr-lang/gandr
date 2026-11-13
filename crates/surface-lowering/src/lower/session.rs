@@ -148,6 +148,7 @@ use super::closed;
 use super::exhausted;
 use super::exits;
 use super::lowered;
+use super::native::Native;
 use super::native::NativeRef;
 use crate::by_form::At;
 use crate::by_form::FormStretch;
@@ -983,7 +984,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut at = declared.node;
         for _name in 0 ..= self.cx.collected.slots.len() {
-            let Maybe::Present(unwrapped) = self.unwrapped(at)?
+            let Maybe::Present(unwrapped) = Native::new(self).unwrapped(at)?
             else {
                 return Ok(Stands::Other);
             };
