@@ -1989,8 +1989,9 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// Whether a record's retired entries reach its live ones. The
-/// record holds the terms of each retired entry, so a record that reached
+/// Whether a record's retired entries reach its live ones.
+///
+/// The record holds the terms of each retired entry, so a record that reached
 /// it holds more terms than a whole readmission of its live entries alone.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Outgrown
