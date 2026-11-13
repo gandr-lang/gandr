@@ -5,7 +5,9 @@
 #
 # - each of two branches reads its own branch, and a second read of a branch
 #   comes from the cache;
-# - a read that names its pull request runs once for both branches.
+# - a read that names its pull request runs once for both branches;
+# - a read that sets `GH_BUDGET_TTL=0` on its call fetches afresh while the
+#   cache holds its answer (#6253).
 #
 # The cases call the wrapper through `$word`, so `sites.awk` reads no call
 # site here.
@@ -56,6 +58,9 @@ named_two=$("$word" pr view 7 --json number)
 [[ $named == 7 && $named_two == 7 ]] || fail "#7143: the read of #7 gave $named and $named_two"
 [[ $(calls 'pr view 7 --json number') == 1 ]] \
   || fail "#7143: the read of #7 ran $(calls 'pr view 7 --json number') calls for two branches, not 1"
+GH_BUDGET_TTL=0 "$word" pr view 7 --json number > /dev/null
+[[ $(calls 'pr view 7 --json number') == 2 ]] \
+  || fail "#6253: a read with GH_BUDGET_TTL=0 on its call ran $(calls 'pr view 7 --json number') calls in all, not 2"
 
 ((failed == 0)) || exit 1
-echo "budget cases OK: two branches read their own pull request, a branch reads it again from the cache, and a read that names its pull request runs once for both"
+echo "budget cases OK: two branches read their own pull request, a branch reads it again from the cache, a read that names its pull request runs once for both, and a read with GH_BUDGET_TTL=0 fetches afresh"

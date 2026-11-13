@@ -483,6 +483,7 @@ usage = 'arg "<file>" help="the badge the guard wrote with --badge"'
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 file=${usage_file:?}
 repo=${GH_REPO:?ci:coverage-badge needs GH_REPO}
 blob=$(gh api "repos/$repo/git/blobs" -f content="$(base64 -w0 "$file")" -f encoding=base64 --jq .sha)
@@ -845,6 +846,7 @@ arg "<series>..." help="each series by name"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 shopt -s nullglob
 base=${CI_BASE_SHA:?the base commit}
 head=${CI_HEAD_SHA:?the judged commit}
@@ -927,6 +929,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 repo=${GH_REPO:?}
 ledger_title='Hotpath: the landed deltas'
 before=${HOTPATH_PUSH_BEFORE:-}
@@ -979,7 +982,7 @@ if (( landed == 0 )); then
   echo "the push merges no pull request: no hotpath verdict to read"
   exit 0
 fi
-ledger=$(gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
+ledger=$(GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
 if [[ -z $ledger && ! -s $scratch/rows ]]; then
   echo "no hotpath regression or improvement past the band in $landed landing(s), and no ledger"
@@ -988,7 +991,7 @@ fi
 if [[ -z $ledger ]]; then
   echo null > "$scratch/body.json"
 else
-  gh issue view "$ledger" --repo "$repo" --json body --jq '.body | tojson' > "$scratch/body.json"
+  GH_BUDGET_TTL=0 gh issue view "$ledger" --repo "$repo" --json body --jq '.body | tojson' > "$scratch/body.json"
 fi
 # The state of each issue the table's rows and the new ones link (#3348), in
 # one query: a row whose linked issues are all closed settles as `fixed`.
@@ -1035,11 +1038,12 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 repo=${GH_REPO:?}
 title='ci: hotpath reports not uploaded on landing'
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-gh issue list --repo "$repo" --state open --label kind:ci --search "\"$title\" in:title" --json number,title,body \
+GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state open --label kind:ci --search "\"$title\" in:title" --json number,title,body \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/issue.json"
 : "${HOTPATH_UNSENT:?}"
 jq -n --slurpfile issue "$scratch/issue.json" --arg commit "${GITHUB_SHA:?}" \
@@ -1248,6 +1252,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 report=${RECOVERY_REPORT:-target/recovery.txt}
 file=${RECOVERY_FILE:-}
 limit=${RECOVERY_LIMIT:-3}
@@ -1260,7 +1265,7 @@ fi
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 if [[ -n $repo ]]; then
-  gh issue list --repo "$repo" --state all --limit 1000 --search '"recovery:" in:title' --json number,title > "$scratch/filed.json"
+  GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state all --limit 1000 --search '"recovery:" in:title' --json number,title > "$scratch/filed.json"
 fi
 pattern='^cause: `([^`]+)` (deleted|missed): ([0-9]+) mutants in ([0-9]+) families: (.*)$'
 while IFS= read -r line; do
@@ -1313,7 +1318,7 @@ claims=$(git rev-parse --show-toplevel)/.config/claims
 jq -R 'capture("^cause: `(?<name>[^`]+)` (?<kind>deleted|missed): [0-9]+ mutants in [0-9]+ families: (?<families>.*)$")
     | .families |= (split(",") | map(gsub("^\\s+|\\s+$"; "")))' "$report" \
   | jq -s . > "$scratch/causes.json"
-gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"recovery:" in:title' --json number,title,body > "$scratch/open.json"
+GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"recovery:" in:title' --json number,title,body > "$scratch/open.json"
 jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/open.json" '{causes: $causes[0], issues: $issues[0]}' \
   | jq -c -L "$claims" -f "$claims/swept.jq" \
   | while IFS= read -r swept; do
@@ -1327,7 +1332,7 @@ jq -n --slurpfile causes "$scratch/causes.json" --slurpfile issues "$scratch/ope
       gh issue edit "$number" --repo "$repo" --body-file "$scratch/swept.md" > /dev/null
       echo "marked #$number's rows"
       if [[ $close == true ]]; then
-        landing=$(gh pr list --repo "$repo" --state merged --limit 100 --search "\"#$number\" in:body" --json number,mergedAt,body \
+        landing=$(GH_BUDGET_TTL=0 gh pr list --repo "$repo" --state merged --limit 100 --search "\"#$number\" in:body" --json number,mergedAt,body \
           | jq -r --arg n "$number" '[.[] | select(.body | test("(?i)\\badvances\\s+#\($n)\\b"))] | max_by(.mergedAt) | .number // empty')
         gh issue close "$number" --repo "$repo" --comment "The recovery sweep${GITHUB_RUN_URL:+ ($GITHUB_RUN_URL)} found no mutant of this cause, so every family is marked where it was made; $(if [[ -n $landing ]]; then echo "the landing: #$landing."; else echo "no merged pull request advances it."; fi)" > /dev/null
         echo "closed #$number${landing:+ (the landing: #$landing)}"
@@ -1357,6 +1362,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 store=${SLOW_STORE:-target/test-timing}
 budget=${SLOW_BUDGET:-30}
 run=${SLOW_RUN_ID:?}
@@ -1374,7 +1380,7 @@ trap 'rm -rf "$scratch"' EXIT
 jq -R 'split("\t") | {lane: .[0], binary: .[1], test: .[2], seconds: (.[3] | tonumber)}' "$scratch/times.tsv" \
   | jq -s . > "$scratch/times.json"
 if [[ -n $repo ]]; then
-  gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"s budget" in:title' \
+  GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state open --label collector --limit 1000 --search '"s budget" in:title' \
     --json number,title,body > "$scratch/issues.json"
 else
   echo '[]' > "$scratch/issues.json"
@@ -1464,6 +1470,7 @@ tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 repo=${GH_REPO:?}
 write=${CYCLE_FILE:-}
 root=$(git rev-parse --show-toplevel)
@@ -1817,6 +1824,7 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 repo=${GH_REPO:?}
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/integration/brake.bash"
@@ -2226,6 +2234,7 @@ flag "--remote" help="list only the remote's branches"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
 source .config/pr-stack/trunk.bash
@@ -2245,8 +2254,8 @@ fi
 # in one argument, so the pulls and the issues reach jq as files (#5220).
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]' > "$scratch/heads"
-gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]' > "$scratch/issues"
+GH_BUDGET_TTL=0 gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]' > "$scratch/heads"
+GH_BUDGET_TTL=0 gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]' > "$scratch/issues"
 reading=$(jq -n --slurpfile kept <(printf '%s\n' "$kept") --slurpfile remote <(printf '%s\n' "$remote") \
   --slurpfile local <(printf '%s\n' "$local_branches") --slurpfile heads "$scratch/heads" --slurpfile issues "$scratch/issues" \
   '{kept: $kept[0], remote: $remote[0], local: $local[0], heads: $heads[0], issues: $issues[0]}' \
@@ -2808,6 +2817,7 @@ tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 lane=${usage_lane:?}
 number=${usage_issue:?}
 root=$(git rev-parse --show-toplevel)
@@ -2817,7 +2827,7 @@ if ! lanes_has "$lane"; then
   exit 2
 fi
 repo=${GH_REPO:-'{owner}/{repo}'}
-issue=$(gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}')
+issue=$(GH_BUDGET_TTL=0 gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}')
 decision=$(jq -c --arg lane "$lane" '{step: "release", lane: $lane, issue: .}' <<< "$issue" \
   | jq -c -L "$root/.config/claims" -f "$root/.config/claims/taken.jq")
 case $(jq -r .verdict <<< "$decision") in
@@ -2853,10 +2863,11 @@ tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_issue:?}
 root=$(git rev-parse --show-toplevel)
 repo=${GH_REPO:-'{owner}/{repo}'}
-old=$(gh api "repos/$repo/issues/$number" --jq '.body // ""')
+old=$(GH_BUDGET_TTL=0 gh api "repos/$repo/issues/$number" --jq '.body // ""')
 jq -n -c -L "$root/.config/claims" --rawfile body "${usage_body:?}" --arg old "$old" '{step: "edit", old: $old, body: $body}' \
   | jq -c -L "$root/.config/claims" -f "$root/.config/claims/claimed.jq" \
   | gh api -X PATCH "repos/$repo/issues/$number" --input - > /dev/null
@@ -2891,6 +2902,7 @@ tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_issue:?}
 [[ $number =~ ^[0-9]+$ ]] || { echo "claim:take: the issue is a number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
@@ -2910,7 +2922,7 @@ if ! lanes_has "$lane"; then
   exit 2
 fi
 repo=${GH_REPO:-'{owner}/{repo}'}
-read_issue() { gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}'; }
+read_issue() { GH_BUDGET_TTL=0 gh api "repos/$repo/issues/$number" --jq '{number, state, labels: [.labels[].name], body: (.body // "")}'; }
 issue=$(read_issue)
 # A signed unit's newest frame marker and the frame now (#7018), read only
 # for an issue under `shape:signed`; a failed read leaves `signed` null.
@@ -3015,6 +3027,7 @@ env.LEDGER_READING_ROOT = "{{ config_root }}"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$LEDGER_READING_ROOT
 tables=$(mktemp -d)
 trap 'rm -rf "$tables"' EXIT
@@ -3063,6 +3076,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 list=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/private-names
 patterns=$(mktemp)
 found=$(mktemp)
@@ -3362,6 +3376,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_pr:?}
 [[ $number =~ ^[1-9][0-9]*$ ]] || { echo "refactor:file: expected a pull request number, not \`$number\`" >&2; exit 2; }
 root=$(git rev-parse --show-toplevel)
@@ -3406,7 +3421,7 @@ decide() {
   jq -n --argjson number "$number" --slurpfile pr "$scratch/pr.json" --argjson area "$area" --slurpfile issues "$1" \
     '{pr: {number: $number, body: $pr[0].body, area: $area}, issues: $issues[0]}' | jq -c -L "$claims" -f "$claims/filing.jq"
 }
-gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/issues.json"
+GH_BUDGET_TTL=0 gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/issues.json"
 printf '%s' "$pr" > "$scratch/pr.json"
 decision=$(decide "$scratch/issues.json")
 if [[ ${usage_dry_run:-false} == true ]]; then
@@ -3440,7 +3455,7 @@ case $(jq -r .act <<< "$decision") in
     # carries `from: #<pr>`, or the earliest open collector of the area, is
     # the filing. Of two runs, the later create reads after both issues
     # exist, so it closes its own issue as the earlier one's duplicate.
-    gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/after.json"
+    GH_BUDGET_TTL=0 gh issue list -R "$repo" --label kind:refactor --state all --limit 1000 --json number,state,title,body > "$scratch/after.json"
     title=$(jq -r .title <<< "$decision")
     first=$(jq -r -L "$claims" --argjson pr "$number" --arg title "$title" \
       'include "sections"; [.[] | select((.body | from_lines | any(.[]; . == $pr)) or (.state == "OPEN" and .title == $title)) | .number] | min // empty' "$scratch/after.json")
@@ -3492,6 +3507,7 @@ tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/labels.bash"
 source "$root/.config/issues/open.bash"
@@ -3507,7 +3523,7 @@ else
   (( ${#issues[@]} > 0 )) || { echo "issue:labels takes issues, or --sweep" >&2; exit 2; }
   for n in "${issues[@]}"; do
     [[ $n =~ ^[0-9]+$ ]] || { echo "issue:labels takes issue numbers, not \`$n\`" >&2; exit 2; }
-    gh api "repos/$repo/issues/$n" --jq '{number, labels: [.labels[].name]} | @json'
+    GH_BUDGET_TTL=0 gh api "repos/$repo/issues/$n" --jq '{number, labels: [.labels[].name]} | @json'
   done > "$scratch/issues"
 fi
 added=0
@@ -3918,6 +3934,7 @@ flag "--crate <dir>" help="print the body of one crate, its directory under crat
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$(git rev-parse --show-toplevel)
 rules=$root/.config/dead-weight
 source "$root/.config/issues/keep.bash"
@@ -4008,7 +4025,7 @@ if [[ -z $write ]]; then
   echo "report:dead-weight: $(jq length "$scratch/bodies.json") crates, $rows rows at ${commit::9}; nothing written" >&2
   exit 0
 fi
-gh issue list --repo "$repo" --state all --label kind:refactor --search '"dead weight" in:title' --limit 500 \
+GH_BUDGET_TTL=0 gh issue list --repo "$repo" --state all --label kind:refactor --search '"dead weight" in:title' --limit 500 \
   --json number,title,state,body > "$scratch/filed.json"
 written=0
 opened=0
@@ -4131,6 +4148,7 @@ flag "--share <percent>" default="10" help="the growth in one night past which t
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$(git rev-parse --show-toplevel)
 source "$root/.config/issues/keep.bash"
 source "$root/.config/gh/repo.bash"
@@ -4232,6 +4250,7 @@ tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 repo=${GH_REPO:-'{owner}/{repo}'}
@@ -4274,7 +4293,7 @@ period() {
 }
 # The open issue titled `$1`, or nothing.
 filed() {
-  gh issue list --state open --label collector --search "\"$1\" in:title" --json number,title \
+  GH_BUDGET_TTL=0 gh issue list --state open --label collector --search "\"$1\" in:title" --json number,title \
     | jq -r --arg title "$1" 'first(.[] | select(.title == $title)) | .number'
 }
 since=${usage_since:-$(date -u +%Y-%m-01)}
@@ -4338,6 +4357,7 @@ flag "--census <file>" help="the census an earlier run of this task wrote, taken
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 census=.config/census
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -4392,7 +4412,7 @@ if [[ -z ${REPORT_FILE:-} ]]; then
   exit 0
 fi
 title='report: bootstrap census'
-gh issue list --state all --label collector --search "\"$title\" in:title" --json number,state,title \
+GH_BUDGET_TTL=0 gh issue list --state all --label collector --search "\"$title\" in:title" --json number,state,title \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
 number=$(jq -r '.number // empty' "$scratch/filed.json")
 state=$(jq -r '.state // empty' "$scratch/filed.json")
@@ -5021,6 +5041,7 @@ arg "[number]" help="pull request number; defaults to the current branch"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_number:-}
 if [[ -z "$number" ]]; then number=$(gh pr view --json number --jq .number); fi
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
@@ -5333,13 +5354,14 @@ flag "--owner" help="the owner's hold: label it `hold:owner` as well"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(git rev-parse --show-toplevel)/.config/gh/budget.bash"
 number=${usage_number:?}
 reason=${usage_reason:?}
 [[ "$number" =~ ^[1-9][0-9]*$ ]] || { echo 'Expected a pull request number' >&2; exit 2; }
 [[ -n "${reason// }" ]] || { echo 'pr:hold needs the reason it is held' >&2; exit 2; }
 source "$(git rev-parse --show-toplevel)/.config/gh/repo.bash"
 repo=$(repo_name)
-IFS=$'\t' read -r state draft queued auto < <(gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$number" \
+IFS=$'\t' read -r state draft queued auto < <(GH_BUDGET_TTL=0 gh api graphql -F owner='{owner}' -F name='{repo}' -F number="$number" \
   -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { state isDraft isInMergeQueue autoMergeRequest { enabledAt } } } }' \
   --jq '.data.repository.pullRequest | [.state, .isDraft, .isInMergeQueue, (.autoMergeRequest != null)] | @tsv')
 case $state in

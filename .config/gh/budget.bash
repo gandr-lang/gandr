@@ -8,6 +8,11 @@
 #   seconds (default 30), keyed by its arguments, the `gh` it runs and the
 #   checkout's remote. Concurrent identical reads wait on one lock, so N
 #   seats asking at once make one request.
+# - A read whose answer decides a write of its task, such as the body that a
+#   claim edits or the issue list that a filing deduplicates, sets
+#   `GH_BUDGET_TTL=0` on its call (#6253). It waits on the lock and the
+#   budget, fetches afresh and leaves its answer for the host: a write on
+#   another host makes no cached reading on this host stale.
 # - Any write on the host makes every cached reading stale, and so does
 #   `gh_budget_stale`, which a `git push` site calls.
 # - A read or write refused for its rate limit sleeps until the limit resets
@@ -21,7 +26,6 @@
 # PATH, never this function, so nothing here can call itself.
 
 gh_budget_dir=${XDG_CACHE_HOME:-$HOME/.cache}/gandr/gh
-gh_budget_ttl=${GH_BUDGET_TTL:-30}
 
 # Whether `gh "$@"` only reads, as the router classifies it: a GraphQL call
 # whose query names no mutation, a REST call by GET or with no fields.
@@ -183,7 +187,7 @@ gh_budget_read() {
   fi
   now=$(gh_budget_now)
   fresh_after=$(cat "$gh_budget_dir/written" 2> /dev/null) || fresh_after=0
-  if [[ -r $entry.at && -r $entry.out ]] && (($(< "$entry.at") > fresh_after && now - $(< "$entry.at") < gh_budget_ttl)); then
+  if [[ -r $entry.at && -r $entry.out ]] && (($(< "$entry.at") > fresh_after && now - $(< "$entry.at") < ${GH_BUDGET_TTL:-30})); then
     cat "$entry.out"
     rm -rf "$entry.lock"
     return 0
