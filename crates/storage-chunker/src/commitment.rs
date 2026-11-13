@@ -61,6 +61,9 @@ pub enum AlgorithmVersion
     FastCdc2020,
     /// The typed scanner over caller-reported boundary events.
     TypedCdc,
+    /// The byte profile: a Gear scan whose state shifts left, over one byte
+    /// string, with no record edges.
+    GearBytes,
 }
 
 impl AlgorithmVersion
@@ -69,8 +72,9 @@ impl AlgorithmVersion
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `1` for [`AlgorithmVersion::FastCdc2020`] and `2` for
-    ///   [`AlgorithmVersion::TypedCdc`].
+    /// - ensures: `1` for [`AlgorithmVersion::FastCdc2020`], `2` for
+    ///   [`AlgorithmVersion::TypedCdc`] and `3` for
+    ///   [`AlgorithmVersion::GearBytes`].
     /// - provides: the value [`TryFrom<u16>`] reads back.
     /// - fails: never.
     /// - panics: none.
@@ -82,7 +86,7 @@ impl AlgorithmVersion
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
     /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
-    #[spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16 })]
+    #[spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16, Self::GearBytes => 3_u16 })]
     #[inline]
     #[must_use]
     pub const fn discriminator(self) -> RawDiscriminator
@@ -90,6 +94,7 @@ impl AlgorithmVersion
         match self {
             Self::FastCdc2020 => RawDiscriminator(0x0001_u16),
             Self::TypedCdc => RawDiscriminator(0x0002_u16),
+            Self::GearBytes => RawDiscriminator(0x0003_u16),
         }
     }
 }
@@ -120,6 +125,7 @@ impl TryFrom<u16> for AlgorithmVersion
     #[spec(ensures: |ret| ret == match raw {
         1 => Ok(Self::FastCdc2020),
         2 => Ok(Self::TypedCdc),
+        3 => Ok(Self::GearBytes),
         _ => Err(ChunkerError::UnsupportedProfileValue {
             field: ProfileField::Algorithm, raw: RawDiscriminator(raw),
         }),
@@ -127,7 +133,7 @@ impl TryFrom<u16> for AlgorithmVersion
     #[inline]
     fn try_from(raw: u16) -> Result<Self, Self::Error>
     {
-        [Self::FastCdc2020, Self::TypedCdc]
+        [Self::FastCdc2020, Self::TypedCdc, Self::GearBytes]
             .into_iter()
             .find(|algorithm| u16::from(algorithm.discriminator()) == raw)
             .ok_or(ChunkerError::UnsupportedProfileValue {

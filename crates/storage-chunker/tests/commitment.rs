@@ -259,6 +259,7 @@ fn raw_discriminators_round_trip_and_refuse_by_field()
         let algorithm = match raw {
             1 => Ok(AlgorithmVersion::FastCdc2020),
             2 => Ok(AlgorithmVersion::TypedCdc),
+            3 => Ok(AlgorithmVersion::GearBytes),
             _ => Err(unsupported(ProfileField::Algorithm, RawDiscriminator(raw))),
         };
         assert_eq!(AlgorithmVersion::try_from(raw), algorithm);

@@ -51,6 +51,8 @@
 
 extern crate alloc;
 
+#[cfg(unix)]
+mod entries;
 mod plane;
 mod register;
 mod roots;
@@ -58,6 +60,20 @@ mod store;
 
 pub use gandr_storage_values::ContentPtr;
 
+#[cfg(unix)]
+pub use crate::entries::EncodedEntry;
+#[cfg(unix)]
+pub use crate::entries::Entry;
+#[cfg(unix)]
+pub use crate::entries::EntryAddress;
+#[cfg(unix)]
+pub use crate::entries::EntryEncoding;
+#[cfg(unix)]
+pub use crate::entries::EntryFault;
+#[cfg(unix)]
+pub use crate::entries::Output;
+#[cfg(unix)]
+pub use crate::entries::TreeRef;
 pub use crate::plane::NodeBatch;
 pub use crate::register::Namer;
 pub use crate::register::Register;

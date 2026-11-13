@@ -305,6 +305,9 @@ pub enum StoreError
     /// The register that owns the roots is gone, so a naming reaches no
     /// owner.
     Unowned,
+    /// An entry of a built output, or the tree it names, is refused.
+    #[cfg(unix)]
+    Entry(crate::entries::EntryFault),
 }
 
 impl StoreError
@@ -368,6 +371,8 @@ impl core::fmt::Display for StoreError
                 f,
                 "the store's register is gone: keep it open while a namer names roots"
             ),
+            #[cfg(unix)]
+            Self::Entry(ref fault) => write!(f, "the store refuses an entry: {fault}"),
         }
     }
 }
@@ -611,6 +616,16 @@ impl Store
     pub fn records(&self) -> NodeBatch<'_>
     {
         NodeBatch::over(&self.nodes)
+    }
+
+    /// The record plane, for the read of an entry's tree.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(unix)]
+    pub(crate) fn nodes(&self) -> &NodeDirectory
+    {
+        &self.nodes
     }
 
     /// Admit `tree` to the record plane and publish its nodes.

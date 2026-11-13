@@ -17,19 +17,23 @@
 //! that decision and nothing else: it reads no store, hashes no chunk, and
 //! names no chunk; it returns where the cuts fall and why.
 //!
-//! # Two profiles
+//! # Three profiles
 //!
 //! - The **record-safe** profile ([`ChunkerParams`], [`chunk_record_slices`],
 //!   [`chunk_spans`]) runs a Gear rolling hash over canonical record bytes and
 //!   cuts only between complete records, under byte and record limits.
+//! - The **byte** profile ([`ByteChunkerParams`], [`chunk_bytes`]) runs a Gear
+//!   rolling hash over one byte string and may cut after any byte, under byte
+//!   limits. Its state shifts left, so a cut depends on the 64 bytes before it
+//!   alone, and an edit moves only the cuts near it.
 //! - The **typed** profile ([`TypedChunkerParams`], [`TypedChunker`]) never
 //!   sees bytes: a caller walking its own grammar reports a boundary event
 //!   wherever a cut is admissible, with the tokens since the previous event and
 //!   a residue from the caller's committed hash rule. The scanner cuts when the
 //!   residue is divisible by kappa or the pending tokens reach the cap.
 //!
-//! Both profiles are deterministic, read each input once with no lookahead,
-//! and commit their parameters as bytes ([`ParameterCommitment`]) opening with
+//! Every profile is deterministic, reads each input once with no lookahead,
+//! and commits its parameters as bytes ([`ParameterCommitment`]) opening with
 //! one domain, [`PARAMETER_DOMAIN`], so two writers that disagree on a
 //! parameter produce different roots instead of silently different cuts.
 //!
@@ -39,7 +43,7 @@
 //! panics, no arithmetic wraps where a count or position is concerned, and no
 //! operation repairs an input it was handed.
 //!
-//! See the [profiles and commitments](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#two-profiles)
+//! See the [profiles and commitments](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#three-profiles)
 //! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#references).
 //!
 //! # References
@@ -61,6 +65,7 @@
 
 extern crate alloc;
 
+pub mod byte;
 pub mod commitment;
 pub mod error;
 pub mod gear;
@@ -68,6 +73,10 @@ pub mod span;
 pub mod typed;
 pub mod units;
 
+pub use crate::byte::ByteChunkerParams;
+pub use crate::byte::ByteLimits;
+pub use crate::byte::GEAR_WINDOW;
+pub use crate::byte::chunk_bytes;
 pub use crate::commitment::AlgorithmVersion;
 pub use crate::commitment::PARAMETER_DOMAIN;
 pub use crate::commitment::ParameterCommitment;

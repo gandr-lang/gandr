@@ -9,6 +9,8 @@ extern crate alloc;
 mod common;
 
 #[cfg(test)]
+mod byte;
+#[cfg(test)]
 mod commitment;
 #[cfg(test)]
 mod gear;

@@ -40,6 +40,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
+use crate::byte::ByteLimits;
 use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
@@ -177,6 +178,58 @@ impl GearTableVersion
         match self {
             Self::V2 => RawDiscriminator(0x0002_u16),
         }
+    }
+
+    /// Cuts `bytes` under `limits` with a Gear state that shifts left: the
+    /// scan of the byte profile, which [`crate::byte::chunk_bytes`] runs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn cut_shifted(
+        self,
+        bytes: CanonicalBytes<'_>,
+        limits: &ByteLimits,
+    ) -> Result<Vec<ByteSpan>, ChunkerError>
+    {
+        let table = match self {
+            Self::V2 => &GEAR_TABLE.0,
+        };
+        let bytes = bytes.as_ref();
+        let min = u64::from(limits.min_bytes());
+        let max = u64::from(limits.max_bytes());
+        let target = u64::from(limits.target_bytes());
+        let mask = target
+            .checked_next_power_of_two()
+            .unwrap_or(u64::MAX)
+            .saturating_sub(1_u64);
+        let estimate = bytes
+            .len()
+            .checked_div(usize::try_from(target).unwrap_or(usize::MAX))
+            .unwrap_or(0_usize);
+        let mut chunks = Vec::with_capacity(estimate.saturating_add(1_usize));
+        let mut start = BytePosition::ZERO;
+        let mut length = 0_u64;
+        let mut state = 0_u64;
+        let mut at = BytePosition::ZERO;
+
+        for byte in bytes {
+            let gear = table.get(usize::from(*byte)).copied().unwrap_or(0_u64);
+            state = (state << 1_u32).wrapping_add(gear);
+            at = at.checked_advance(ByteCount::from(1_u64), ArithmeticOperation::ByteOffset)?;
+            length = length.saturating_add(1_u64);
+            if length >= max || (length >= min && state & mask == 0_u64) {
+                chunks.push(ByteSpan::new(start, at));
+                start = at;
+                length = 0_u64;
+                state = 0_u64;
+            }
+        }
+        if length > 0_u64 {
+            chunks.push(ByteSpan::new(start, at));
+        }
+
+        Ok(chunks)
     }
 }
 

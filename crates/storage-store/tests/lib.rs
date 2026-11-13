@@ -4,4 +4,7 @@
 //! belongs to (`tests::store::…`) instead of a file.
 
 #[cfg(test)]
+#[cfg(unix)]
+mod entries;
+#[cfg(test)]
 mod store;
