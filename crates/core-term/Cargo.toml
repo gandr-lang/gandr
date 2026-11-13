@@ -30,9 +30,12 @@ path = "tests/lib.rs"
 # absence. The site crate's vocabulary — degrees, shape sizes and profiles —
 # names the stratum and the descriptions univalence at a stratum reads. The
 # ordered-algebras crate's usage semiring is the measure of the hold and
-# capability grades, and its grades suite decides the semiring's laws.
+# capability grades, and its grades suite decides the semiring's laws. The
+# check memo's hash index files each arena family's nodes by their content,
+# as it files the staging arena's.
 [dependencies]
 anodized.workspace = true
+gandr-kernel-check-memo.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-levitation.workspace = true

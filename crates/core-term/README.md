@@ -25,7 +25,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `Value`, `Computation`, `ValueType` and `CompType`: core syntax, including dependent arrows, the linear arrow `CompType::LinearArrow` with its abstraction `Computation::LinearLambda`, both universe towers, quotes and decodes, static operators, nominal Data applications and constructors, structural records, dependent cases, record projections, positional tuple projections, the fixpoint `Computation::Fixpoint` with its `FixpointEvidence`, the ascription `Computation::Ascribe` that synthesises the type it checks its body against, and native `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct` and `Transport`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
 - `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes. `Relocated`, `Relocation` and `Relocated::settle`: a shift or a strengthening carried on an id, and its one write-out. `Carried` and `Sources`: a traced rewrite's report and its read-back.
-- `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`).
+- `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, the canonical node of a type (`canonical_value_type`), and `ArenaWatermark` with `CoreArena::truncate_to` and the per-family suffixes minted since a mark (`values_since`, `computations_since`, `value_types_since`, `comp_types_since`).
 - Native `List` types, `ListNil` and `ListCons` values, and an annotated, pure `ListFold`, whose binders [`syntax`](src/syntax.rs) states: the [kernel's List former](../kernel-core/src/check.rs), not a sum encoding or a nominal declaration.
 - Closed effect rows on returners carry named interfaces with typed payloads and replies; `EffectRow::EMPTY` is the pure returner. [`effect`](src/effect.rs) states the union and the inclusion, and `effect::host` the host interfaces.
 - `TypeImporter` copies the graph reachable from type roots into another arena, preserving shared children across imports. `instantiate_value_type_under` closes ambient variables while preserving a chosen number of local binders.
@@ -39,13 +39,12 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `hole::matched_thunk`, `matched_product` and `matched_sum` (answering `hole::Components`), `matched_static_pi`, `matched_list`, `matched_stack`, `matched_returner`, `matched_returns`, `matched_function` and `matched_with`, with `hole::Knowledge` and `hole::matching::Absent`: a type's former, or unknown components when the type is unknown.
 - `fill_hole`, `wrap_marks`, `substitute_environment`, `substitute_environment_value_type` and `substitute_environment_comp_type`: filling by name, marking by node, and closing a suspended body or a type over an environment.
 - `pattern::Pattern`, `pattern::Patterns`, `pattern::PatternId` and `pattern::BranchStatus`: patterns, pattern holes among them, and a branch's three answers.
-- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`. Every arena node carries its support from its mint, as [`support`](src/support.rs) states.
+- `support::Thinning`, `support::ThinningRef`, `support::Union`, `support::Scope`, `support::Crossing`, `support::Cover` and `support::check_cover`: the co-de Bruijn carrier — two-zone selections in a tiered code, their unions and covers, and placement back to the de Bruijn term, refusing an index past `u32`.
 
 ## Expected features
 
 - **One arena per run.** The caller keeps every id with the arena that minted it, which [`CoreArena`](src/arena.rs) cannot check.
 - **Admission positions and subterm-table indices from the artifact.** `ConstantIndex` and `GlobalIndex` come from `gandr-kernel-term`; the chain checks their order and does not resolve them.
-- **The specification facade's `cfg`.** `#[spec(...)]` clauses are checked at runtime only when the whole build graph is compiled with `--cfg anodized_panic`.
 
 ## Examples
 
@@ -110,6 +109,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
 - `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: identity never decides validity.
 
 ## License
 

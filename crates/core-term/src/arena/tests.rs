@@ -12,6 +12,7 @@ use super::BinderPrecedence;
 use super::CoreArena;
 use super::QubitPrecedence;
 use super::ValueId;
+use super::ValueTypeId;
 use crate::classifier::Sort;
 use crate::control::StackFrame;
 use crate::effect::capability::Region;
@@ -445,6 +446,33 @@ fn a_type_minted_before_the_first_qubit_holds_none_5739()
     );
 }
 
+/// A mark records the first node that names a region binder, or the first
+/// qubit type, and no other node. A plain value, a plain value type and a
+/// plain returner minted first leave both marks unset, so a type minted after
+/// them names no binder and holds no qubit without a walk.
+#[test]
+fn the_first_region_binder_and_qubit_types_keep_their_marks()
+{
+    let mut arena = CoreArena::new();
+    let _value = arena.value_unit();
+    let unit = arena.value_type_unit();
+    let returner = arena.comp_type_returner(unit);
+    let plain = arena.value_type_thunk(returner);
+    assert_eq!(
+        (
+            arena.value_type_binder_precedence(plain),
+            arena.comp_type_binder_precedence(returner),
+            arena.value_type_qubit_precedence(plain),
+        ),
+        (
+            BinderPrecedence::Before,
+            BinderPrecedence::Before,
+            QubitPrecedence::Before
+        ),
+        "a plain node of each family sets no mark"
+    );
+}
+
 #[test]
 fn allocation_suffixes_keep_their_family()
 {
@@ -732,6 +760,12 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         None,
         "the frozen arena never sees the clone's nodes"
     );
+    let canonical_unit = plain.canonical_value_type(second.1);
+    assert_eq!(
+        copy.canonical_value_type(second.1),
+        canonical_unit,
+        "a canonical import past the frozen rows mints alike"
+    );
 
     copy.freeze();
     assert_eq!(
@@ -757,6 +791,12 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         Some(&Value::Constant(ConstantIndex::from(1_usize))),
         "and a clone taken before keeps its nodes"
     );
+    let mut kept = before;
+    assert_eq!(
+        kept.canonical_value_type(second.1),
+        canonical_unit,
+        "and the frozen index it shares still files its canonical node"
+    );
     let again = round(&mut plain, 3, None);
     assert_eq!(
         again,
@@ -764,6 +804,76 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         "a truncated index is minted again"
     );
     assert_eq!(plain, copy);
+}
+
+/// A constructor mints an occurrence, so equal content minted twice keeps two
+/// nodes, and no probe returns either. The canonical node of a type is the
+/// interned node of its record over the canonical nodes of its children. So
+/// two occurrences of one content answer one canonical node, which neither of
+/// them is. Two equal systems over separate occurrences of their values answer
+/// one node, and a system that differs in one value answers another.
+#[test]
+fn equal_content_mints_occurrences_of_one_canonical_node()
+{
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let again = arena.value_type_base(BaseType::Integer);
+    assert_ne!(integer, again, "a constructor mints an occurrence");
+    let canonical_integer = arena
+        .canonical_value_type(integer)
+        .expect("the arena holds the type");
+    assert_eq!(
+        arena.canonical_value_type(again),
+        Some(canonical_integer),
+        "two occurrences of one content answer one canonical node"
+    );
+    assert!(
+        canonical_integer != integer && canonical_integer != again,
+        "which no probe finds among the occurrences"
+    );
+    let record = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("port"), integer),
+        (label("tls"), again),
+    ]));
+    let system = |arena: &mut CoreArena, port: usize| {
+        let fixed = arena.value_constant(ConstantIndex::from(port));
+        let meet = arena.value_constant(ConstantIndex::from(port));
+        arena.value_type_system(
+            record,
+            alloc::collections::BTreeMap::from([(label("port"), fixed)]),
+            vec![(label("port"), meet)],
+        )
+    };
+    let first = system(&mut arena, 80);
+    let second = system(&mut arena, 80);
+    let other = system(&mut arena, 443);
+    assert_ne!(first, second, "each system is an occurrence of its own");
+    let canonical = arena
+        .canonical_value_type(first)
+        .expect("the arena holds the system");
+    assert_eq!(
+        arena.canonical_value_type(second),
+        Some(canonical),
+        "two equal systems over separate occurrences answer one node"
+    );
+    let extent = arena.watermark();
+    assert_eq!(
+        arena.canonical_value_type(first),
+        Some(canonical),
+        "a second call answers the node of the first"
+    );
+    assert_eq!(arena.watermark(), extent, "and mints nothing");
+    assert_ne!(
+        arena.canonical_value_type(other),
+        Some(canonical),
+        "a system that differs in one value answers another node"
+    );
+    assert_eq!(
+        arena.canonical_value_type(ValueTypeId(u32::MAX)),
+        None,
+        "a dangling id answers none"
+    );
 }
 
 #[test]

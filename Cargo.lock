@@ -1317,6 +1317,7 @@ dependencies = [
 name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [
+ "gandr-kernel-check-memo",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",

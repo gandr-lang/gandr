@@ -824,11 +824,9 @@ pub(super) fn keeping<'record>(
     if let Some(entry) = past.first() {
         let _past = positions.admitted.split_off(&entry.constant);
     }
-    // The patched types formed name nodes of the record's arena; each
-    // crossing reads its formation again by its key. A formation whose
-    // witness retires forms again at the first of its readers that crosses.
-    // Each kept reader takes its module position in the edited source.
-    positions.formed = BTreeMap::new();
+    // A formation whose witness retires forms again at the first of its
+    // readers that crosses. Each kept reader takes its module position in
+    // the edited source.
     let renames: BTreeMap<ConstantIndex, ConstantIndex> = kept_from
         .into_iter()
         .filter(|&(old, _)| !edited.contains(&old))

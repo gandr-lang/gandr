@@ -206,6 +206,25 @@ impl Erasure<'_, '_>
                 }
             },
             CoreNode::Type(TypeNode::Value(at)) => {
+                // A patched type crosses as the record of its free fields:
+                // only those fields' types cross. Its formation crosses
+                // first, as witnesses the kernel replays (`formed`), once for
+                // its canonical node, so a later type of equal content
+                // computes no key. The declaration erased reads it.
+                if matches!(
+                    *self.arena.value_type(at).ok_or(dangling)?,
+                    ValueType::Patched { ref fixed, .. } if !fixed.is_empty()
+                ) {
+                    let canonical = self
+                        .arena
+                        .canonical_value_type(at)
+                        .ok_or(Refusal::MachineInvariant)?;
+                    if !self.positions.formed.contains_key(&canonical) {
+                        self.unseeded = Some(super::Seed::Formation(canonical));
+                        return Err(Refusal::MachineInvariant);
+                    }
+                    self.formations.push(canonical);
+                }
                 let node = self.arena.value_type(at).ok_or(dangling)?;
                 match *node {
                     ValueType::Data { ref arguments, .. } => self
@@ -214,18 +233,7 @@ impl Erasure<'_, '_>
                     ValueType::Record(ref fields) => self
                         .frames
                         .extend(fields.values().rev().copied().map(value_type)),
-                    // A patched type crosses as the record of its free fields:
-                    // only those fields' types cross. Its formation crosses
-                    // first, as witnesses the kernel replays (`formed`), and
-                    // the declaration erased reads it.
-                    ValueType::Patched { ref fixed, .. } => {
-                        if !fixed.is_empty() {
-                            if !self.positions.formed.contains_key(&at) {
-                                self.unseeded = Some(super::Seed::Formation(at));
-                                return Err(Refusal::MachineInvariant);
-                            }
-                            self.formations.push(at);
-                        }
+                    ValueType::Patched { .. } => {
                         let free = self
                             .arena
                             .element_fields(node)
