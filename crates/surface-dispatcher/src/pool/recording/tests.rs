@@ -209,17 +209,20 @@ fn a_recorded_schedule_marks_each_job_with_its_declaration()
         after: later,
     }))
     .unwrap();
-    let mut folded = Vec::new();
+    let mut committed = Vec::new();
     recording.schedule(
         &mut items,
         &fan,
-        || (),
-        |&mut (), item| *item = item.saturating_add(1),
-        |item| folded.push(*item),
+        |_position, item| gandr_core_fork::Releasing::<u32, u32>::Run(*item),
+        |job| job.saturating_add(1),
+        |_position, item, out| {
+            *item = out;
+            committed.push(out);
+        },
     );
     assert_eq!(
-        folded, [1; 64],
-        "each job runs once, before its item's fold"
+        committed, [1; 64],
+        "each job runs once, before its item's commit"
     );
     let events = events(&activity);
     let mut marked: BTreeMap<Declared, Vec<(Edge, Core)>> = BTreeMap::new();
@@ -239,7 +242,7 @@ fn a_recorded_schedule_marks_each_job_with_its_declaration()
         let [(Edge::Start, start), (Edge::End, end)] = *edges.as_slice()
         else {
             panic!(
-                "job {index} is marked once, start before end, and its fold not at all: {edges:?}"
+                "job {index} is marked once, start before end, and its release and commit not at all: {edges:?}"
             );
         };
         assert_eq!(start, end, "a job starts and ends on one thread's ring");

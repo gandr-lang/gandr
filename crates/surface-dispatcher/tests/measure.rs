@@ -293,8 +293,8 @@ fn a_component_s_schedule_waits_on_the_references_of_each_job()
             "the critical path covers the written chain"
         );
         assert!(
-            bound.critical() <= bound.folded() && bound.folded() <= bound.serial(),
-            "no schedule passes the serial cost, and the fold waits at least for the chain"
+            bound.critical() <= bound.released() && bound.released() <= bound.serial(),
+            "no schedule passes the serial cost, and the release waits at least for the chain"
         );
         assert!(
             checks.untimed().is_empty(),

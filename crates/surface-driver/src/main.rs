@@ -4376,7 +4376,7 @@ fn run(
 ///   ns` when its admission was timed, and otherwise `untimed`, `unoffered` or
 ///   `admitted in a block`. Then one line for the component's schedule:
 ///   `schedule: <path>: <n> jobs, <n> dependences, <n> untimed, serial <n> ns,
-///   critical path <n> ns, folded <n> ns, chain of <n>: <names>`, where the
+///   critical path <n> ns, released <n> ns, chain of <n>: <names>`, where the
 ///   names are the structured names of the jobs of the critical path, in chain
 ///   order, each apart by `, `, and `@<position>` names a job by its kernel
 ///   position when its declaration has no name. An artifact that does not
@@ -4449,14 +4449,14 @@ fn measured(
                     let bound = checks.bound();
                     write!(
                         stdout,
-                        "schedule: {}: {} jobs, {} dependences, {} untimed, serial {} ns, critical path {} ns, folded {} ns, chain of {}:",
+                        "schedule: {}: {} jobs, {} dependences, {} untimed, serial {} ns, critical path {} ns, released {} ns, chain of {}:",
                         path.display(),
                         checks.jobs().len(),
                         checks.dependences().edges().len(),
                         checks.untimed().len(),
                         bound.serial().as_nanos(),
                         bound.critical().as_nanos(),
-                        bound.folded().as_nanos(),
+                        bound.released().as_nanos(),
                         row.chain().len(),
                     )?;
                     let mut separator = " ";

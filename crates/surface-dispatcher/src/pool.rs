@@ -18,15 +18,17 @@
 //! the same threads, and a scope's jobs spawn there too.
 //!
 //! **A schedule counts readiness on the pool, with no rings.** The calling
-//! thread folds each item of a [`Fork::schedule`] in slice order. Each fold
-//! counts down the items that wait on the folded one, and queues each one that
-//! reaches zero. At most one task for each pool thread takes queued jobs, and
-//! a task ends when the queue is empty. While the calling thread waits for its
-//! next item, it runs a queued job itself, and it blocks only when no job is
-//! queued. The measurements of the dependence schedule found that the pool's
-//! hand-off costs at most 1.4 % of a replay node while the pool is busy, so a
-//! ring at this grain pays for nothing. The choice reverses on a measurement
-//! where a ring beats the pool at this grain.
+//! thread releases each item of a [`Fork::schedule`] in slice order, once each
+//! item that it waits on is committed, and queues the job that the release
+//! gives. It commits each job as the job returns, and each commit counts down
+//! the items that wait on the committed one. At most one task for each pool
+//! thread takes queued jobs, and a task ends when the queue is empty. While the
+//! calling thread can neither release nor commit, it runs a queued job itself,
+//! and it blocks only when no job is queued. The measurements of the
+//! dependence schedule found that the pool's hand-off costs at most 1.4 % of a
+//! replay node while the pool is busy, so a ring at this grain pays for
+//! nothing. The choice reverses on a measurement where a ring beats the pool
+//! at this grain.
 //!
 //! **One pool, not one per verb.** Before, the walk started scoped threads for
 //! each visit and the staging built a `rayon` pool for each run. A process
@@ -78,9 +80,7 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use std::sync::Mutex;
-use std::sync::MutexGuard;
 use std::sync::OnceLock;
-use std::sync::PoisonError;
 use std::sync::mpsc;
 
 use anodized::spec;
@@ -88,6 +88,7 @@ use crossbeam_queue::ArrayQueue;
 use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
+use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
 use gandr_kernel_core::fork::ForkWidth;
@@ -515,42 +516,45 @@ impl Fork for Pool
         }
     }
 
-    /// Run every job on the pool's threads once every item that it waits on is
-    /// folded, and fold each item on the calling thread in slice order.
+    /// Release each item on the calling thread in slice order, run each job
+    /// on the pool's threads, and commit each item on the calling thread as
+    /// its job returns.
     ///
     /// # Specification
     /// - ensures: as [`Fork::schedule`]. One item or none, a pool of one thread
     ///   and a pool the host refused run the serial schedule on the calling
     ///   thread, and none of them starts a thread. Otherwise the jobs run on
     ///   the pool's own threads as [`Pooled`] runs them, and on the calling
-    ///   thread while it waits; the calling thread folds every item.
-    /// - panics: a panic of `start`, `job` or `fold`, on the calling thread.
+    ///   thread while it waits; the calling thread releases and commits every
+    ///   item.
+    /// - panics: a panic of `release`, `run` or `commit`, on the calling
+    ///   thread.
     /// - executable: none — the schedule is the pool's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one item, many items and a serial pool, each
-    ///   recording the thread of every job and of every fold, distinguish a
+    ///   recording the thread of every release, job and commit, distinguish a
     ///   schedule that starts the pool for one item, a job run on a thread that
-    ///   is neither the pool's nor the caller's, and a fold off the calling
-    ///   thread.
-    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_folds_on_the_caller`
+    ///   is neither the pool's nor the caller's, and a release or a commit off
+    ///   the calling thread.
+    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
     #[inline]
-    fn schedule<Item, State, Start, Job, Fold>(
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
         items: &mut [Item],
         after: &Dependences,
-        start: Start,
-        job: Job,
-        fold: Fold,
+        release: Release,
+        run: Run,
+        commit: Commit,
     ) where
-        Item: Send,
-        State: Send,
-        Start: Fn() -> State + Sync,
-        Job: Fn(&mut State, &mut Item) + Sync,
-        Fold: FnMut(&mut Item),
+        Job: Send,
+        Out: Send,
+        Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
         if items.len() <= 1 {
-            Serial.schedule(items, after, start, job, fold);
+            Serial.schedule(items, after, release, run, commit);
             return;
         }
         match self.forked() {
@@ -559,11 +563,11 @@ impl Fork for Pool
                 workers,
                 items,
                 after,
-                start,
-                |state, _index, item| job(state, item),
-                fold,
+                release,
+                |_index, job| run(job),
+                commit,
             ),
-            Ok(Forked::Serial) | Err(_) => Serial.schedule(items, after, start, job, fold),
+            Ok(Forked::Serial) | Err(_) => Serial.schedule(items, after, release, run, commit),
         }
     }
 }
@@ -740,57 +744,62 @@ impl Fork for Pooled
         rayon::in_place_scope(|scope| body.run(&Spawning::new(scope)))
     }
 
-    /// Run every job on the pool once every item that it waits on is folded,
-    /// and fold each item on the calling thread in slice order.
+    /// Release each item on the calling thread in slice order, run each job
+    /// on the pool, and commit each item on the calling thread as its job
+    /// returns.
     ///
     /// # Specification
     /// - ensures: as [`Fork::schedule`]. Each item holds a count of the items
-    ///   that it waits on and that are not folded. Each fold counts down the
-    ///   items that wait on the folded one, and queues each one that reaches
-    ///   zero. At most one task for each pool thread takes queued jobs, and a
-    ///   task ends when the queue is empty. After a fold that queues jobs, the
-    ///   calling thread starts tasks while fewer run than jobs wait. The
-    ///   calling thread folds its next item as soon as that item has returned.
-    ///   It keeps the job of that item for itself when a fold has just queued
-    ///   it, so a chain needs no task. While it waits, it runs a queued job
-    ///   itself, and it blocks only when no job is queued. A schedule of one
-    ///   item, or a pool of one worker, runs on the calling thread. Each thread
-    ///   that runs a job keeps one state for all its jobs.
-    /// - panics: a panic of `start`, `job` or `fold`, resumed on the calling
-    ///   thread once it has returned; no queued job starts after it.
+    ///   that it waits on and that are not committed. The calling thread
+    ///   releases the next item in slice order once its count is zero and no
+    ///   release holds. It queues each job that a release gives. At most one
+    ///   task for each pool thread takes queued jobs, and a task ends when the
+    ///   queue is empty. After a release that queues a job, the calling thread
+    ///   starts tasks while fewer run than jobs wait. It commits each job as
+    ///   the job returns, and each commit counts down the items that wait on
+    ///   the committed one. A held release waits until each queued or running
+    ///   job is committed. While the calling thread can neither release nor
+    ///   commit, it runs a queued job itself, and it blocks only when no job is
+    ///   queued. A schedule of one item, or a pool of one worker, runs on the
+    ///   calling thread.
+    /// - panics: a panic of `release`, `run` or `commit`, resumed on the
+    ///   calling thread once it has returned; no queued job starts after it.
     /// - executable: none — the schedule is the pool's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — graphs with no edge, a chain and a scattered fan over
-    ///   no item, one item and many, stamping each job's start and end and each
-    ///   fold, distinguish a job run before an item that it waits on is folded,
-    ///   a skipped or repeated job, a fold out of order, before its job or off
-    ///   the calling thread, and a state made per job.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+    ///   no item, one item and many, stamping each release, each job's start
+    ///   and end and each commit, distinguish a release before an item that it
+    ///   waits on is committed, a release out of order, a skipped or repeated
+    ///   job, and a commit before its job or off the calling thread. A job that
+    ///   returns before an earlier one distinguishes a commit in slice order,
+    ///   and a held release distinguishes a release again while a job runs.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     #[inline]
-    fn schedule<Item, State, Start, Job, Fold>(
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
         items: &mut [Item],
         after: &Dependences,
-        start: Start,
-        job: Job,
-        fold: Fold,
+        release: Release,
+        run: Run,
+        commit: Commit,
     ) where
-        Item: Send,
-        State: Send,
-        Start: Fn() -> State + Sync,
-        Job: Fn(&mut State, &mut Item) + Sync,
-        Fold: FnMut(&mut Item),
+        Job: Send,
+        Out: Send,
+        Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
         schedule_indexed(
             None,
             self.0,
             items,
             after,
-            start,
-            |state, _index, item| job(state, item),
-            fold,
+            release,
+            |_index, job| run(job),
+            commit,
         );
     }
 }
@@ -878,23 +887,24 @@ fn each_indexed<Item, State, Start, Job>(
     });
 }
 
-/// Run `job` on every item and its index once the calling thread has folded
-/// every item that it waits on, on `pool` or on the pool that the calling
-/// thread runs in, with at most `workers` tasks beside the calling thread, and
-/// `fold` on every item on the calling thread in slice order. At one worker,
-/// or one item, the items run on the calling thread in slice order, from one
-/// state.
+/// Release each item on the calling thread in slice order, run each job that
+/// a release gives with its item's place, on `pool` or on the pool that the
+/// calling thread runs in, with at most `workers` tasks beside the calling
+/// thread, and commit each item on the calling thread as its job returns. At
+/// one worker, or one item, each item is released, run and committed on the
+/// calling thread in slice order.
 ///
 /// # Specification
-/// - ensures: as [`Pooled`]'s `schedule`, with the item's place in `items`
-///   handed to each job.
-/// - panics: a panic of `start`, `job` or `fold`, resumed on the calling thread
-///   once it has returned.
+/// - ensures: as [`Pooled`]'s `schedule`, with the item's place handed to each
+///   job.
+/// - panics: a panic of `release`, `run` or `commit`, resumed on the calling
+///   thread once it has returned.
 /// - executable: none — the schedule is the pool's.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-/// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+/// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+/// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
 /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -903,50 +913,57 @@ fn each_indexed<Item, State, Start, Job>(
         reason = "pool: `Fork::schedule` on the driver's pool, which its caller names or installs before it forks"
     )
 )]
-fn schedule_indexed<Item, State, Start, Job, Fold>(
+fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
     pool: Option<&rayon::ThreadPool>,
     workers: Threads,
     items: &mut [Item],
     after: &Dependences,
-    start: Start,
-    job: Job,
-    mut fold: Fold,
+    mut release: Release,
+    run: Run,
+    mut commit: Commit,
 ) where
-    Item: Send,
-    State: Send,
-    Start: Fn() -> State + Sync,
-    Job: Fn(&mut State, ItemIndex, &mut Item) + Sync,
-    Fold: FnMut(&mut Item),
+    Job: Send,
+    Out: Send,
+    Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
+    Run: Fn(ItemIndex, Job) -> Out + Sync,
+    Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
 {
     let count = items.len();
     if NonZeroUsize::from(workers).get().min(count) <= 1 {
-        let mut state = None;
         for (index, item) in items.iter_mut().enumerate() {
-            job(state.get_or_insert_with(&start), ItemIndex(index), item);
-            fold(item);
+            let position = gandr_core_fork::ItemIndex::from(index);
+            let out = match release(position, item) {
+                Releasing::Run(job) => run(ItemIndex(index), job),
+                // No job runs at a release here, so a held release commits
+                // the result that it holds.
+                Releasing::Settled(out) | Releasing::Held(out) => out,
+            };
+            commit(position, item, out);
         }
         return;
     }
     // Each job reports once, so a buffer of one slot for each item never
     // fills, and no report allocates.
     let (returned, arrivals) = mpsc::sync_channel(count);
-    let (schedule, waiting) = Scheduled::new(pool, items, after, workers, start, job, returned);
+    let schedule = Scheduled::new(items, workers, run, returned);
+    let waiting = Waiting::new(after, items);
+    let calls = (&mut release, &mut commit);
     match pool {
         Some(pool) => {
-            pool.in_place_scope(|scope| schedule.drive(scope, waiting, &arrivals, &mut fold));
+            pool.in_place_scope(|scope| schedule.drive(scope, items, waiting, &arrivals, calls));
         },
         None => {
-            rayon::in_place_scope(|scope| schedule.drive(scope, waiting, &arrivals, &mut fold));
+            rayon::in_place_scope(|scope| schedule.drive(scope, items, waiting, &arrivals, calls));
         },
     }
 }
 
-/// What a scheduled job hands back to the calling thread: its position and
-/// its item, or its panic.
-type Returned<'items, Item> = Result<(ItemIndex, &'items mut Item), Box<dyn Any + Send>>;
+/// What a scheduled job hands back to the calling thread: its item's place
+/// and its result, or its panic.
+type Returned<Out> = Result<(ItemIndex, Out), Box<dyn Any + Send>>;
 
-/// A job that may run: its item's position and the item.
-type Ready<'items, Item> = (ItemIndex, &'items mut Item);
+/// A job that may run: its item's place and the job that the release gave.
+type Ready<Job> = (ItemIndex, Job);
 
 /// Whether a schedule counted in one more task.
 ///
@@ -967,153 +984,70 @@ enum Place
 /// One schedule's shared state, read by every task of its scope.
 ///
 /// # Specification
-/// - provides: the bounded queue of the items whose jobs may run, which the
-///   calling thread alone pushes and every task pops with no lock; the count of
-///   the tasks that pop it; one state slot for each pool thread, and one for a
-///   thread outside the pool; the jobs' channel back to the calling thread.
+/// - provides: the bounded queue of the released jobs, which the calling thread
+///   alone pushes and every task pops with no lock; the count of the tasks that
+///   pop it; the jobs' channel back to the calling thread.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
-struct Scheduled<'items, 'pool, Item, State, Start, Job>
+struct Scheduled<Job, Out, Run>
 {
-    /// The pool that the scope spawns on, or the pool of the calling thread.
-    pool: Option<&'pool rayon::ThreadPool>,
     /// The most tasks that run at once: one for each pool thread.
     threads: usize,
-    /// The items whose jobs may run, in the order that they became ready, with
-    /// room for every item.
-    ready: ArrayQueue<Ready<'items, Item>>,
+    /// The released jobs that no thread runs yet, in release order, with room
+    /// for a job of every item.
+    ready: ArrayQueue<Ready<Job>>,
     /// How many tasks pop `ready` now: at most `threads`.
     running: AtomicUsize,
-    /// Each pool thread's state, then the state of a thread outside the pool.
-    /// A job takes its thread's state out and puts it back when it returns.
-    states: Vec<Mutex<Option<State>>>,
-    /// Makes a state for a thread whose slot is empty.
-    start: Start,
-    /// The job.
-    job: Job,
+    /// Runs a released job.
+    run: Run,
     /// Where every job that a task runs reports.
-    returned: mpsc::SyncSender<Returned<'items, Item>>,
+    returned: mpsc::SyncSender<Returned<Out>>,
     /// Set once the calling thread resumes a panic, so that no task starts
     /// another job.
     stopped: AtomicBool,
 }
 
-/// What the calling thread alone holds of a schedule: each item's successors,
-/// its count of the items that it waits on and that are not folded, and the
-/// items whose jobs still wait.
+/// What the calling thread alone holds of a schedule: each item's successors
+/// and its count of the items that it waits on and that are not committed.
 ///
 /// # Specification
 /// - provides: the edges within the slice, sorted by their earlier item, and
-///   where each item's edges start; a count and a held item for each item.
+///   where each item's edges start; a count for each item.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
-struct Waiting<'items, Item>
+struct Waiting
 {
     /// Every edge within the slice, sorted by its earlier item.
     edges: Vec<Dependence>,
     /// Where each item's edges start in `edges`, and one past the last.
     starts: Vec<usize>,
     /// Each item's count of the items that it waits on and that are not
-    /// folded.
+    /// committed.
     counts: Vec<usize>,
-    /// The items whose jobs still wait on an item that is not folded.
-    held: Vec<Option<&'items mut Item>>,
 }
 
-impl<'items, Item> Waiting<'items, Item>
+impl Waiting
 {
-    /// Count down every item that waits on the item at `position`. The item
-    /// right after it, when it waits on nothing more, is the calling thread's
-    /// next job. Each other item that waits on nothing more goes on `ready`,
-    /// in the order of its edges.
+    /// The counts of `items` under `after`, each before any commit.
     ///
     /// # Specification
-    /// - ensures: each successor's count falls by one; a successor that reaches
-    ///   zero leaves the held items. The answer is the item right after
-    ///   `position` when it left.
-    /// - panics: none.
-    /// - executable: none — the queue is shared with the tasks that pop it, so
-    ///   no postcondition reads it at one instant.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
-    fn release(
-        &mut self,
-        position: ItemIndex,
-        ready: &ArrayQueue<Ready<'items, Item>>,
-    ) -> Option<&'items mut Item>
-    {
-        let position = usize::from(position);
-        let successors = self
-            .starts
-            .get(position)
-            .zip(self.starts.get(position.saturating_add(1)))
-            .and_then(|(&first, &last)| self.edges.get(first .. last))
-            .unwrap_or_default();
-        let mine = position.saturating_add(1);
-        let mut kept = None;
-        for &Dependence { after: later, .. } in successors {
-            let freed = self.counts.get_mut(later).is_some_and(|waits| {
-                *waits = waits.saturating_sub(1);
-                *waits == 0
-            });
-            if let Some(item) = self
-                .held
-                .get_mut(later)
-                .filter(|_| freed)
-                .and_then(Option::take)
-            {
-                if later == mine {
-                    kept = Some(item);
-                }
-                else {
-                    // `ready` holds room for every item, and an item leaves
-                    // the held items once, so no push is refused.
-                    let refused = ready.push((ItemIndex(later), item)).is_err();
-                    debug_assert!(!refused, "a schedule's queue holds room for every item");
-                }
-            }
-        }
-        kept
-    }
-}
-
-impl<'items, 'pool, Item, State, Start, Job> Scheduled<'items, 'pool, Item, State, Start, Job>
-where
-    Item: Send,
-    State: Send,
-    Start: Fn() -> State + Sync,
-    Job: Fn(&mut State, ItemIndex, &mut Item) + Sync,
-{
-    /// A schedule of `items` under `after` with at most `workers` tasks, and
-    /// what the calling thread holds of it.
-    ///
-    /// # Specification
-    /// - ensures: an item is queued, in slice order, exactly when no edge
-    ///   within the slice ends at it; the rest are held; edges past the slice
-    ///   are dropped. The plan takes one pass over the items and the edges. The
-    ///   queue holds room for every item, so no later push allocates. No task
-    ///   runs yet.
+    /// - ensures: one count for each item: the edges within the slice that end
+    ///   at it. Edges past the slice are dropped. The plan takes one pass over
+    ///   the items and the edges.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
-    #[spec(ensures: |ret| ret.1.held.len() == ret.1.counts.len())]
-    fn new(
-        pool: Option<&'pool rayon::ThreadPool>,
-        items: &'items mut [Item],
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    #[spec(ensures: |ret| ret.counts.len() == items.len()
+        && ret.starts.len() == items.len().saturating_add(1))]
+    fn new<Item>(
         after: &Dependences,
-        workers: Threads,
-        start: Start,
-        job: Job,
-        returned: mpsc::SyncSender<Returned<'items, Item>>,
-    ) -> (Self, Waiting<'items, Item>)
+        items: &[Item],
+    ) -> Self
     {
-        let threads = NonZeroUsize::from(workers).get();
         let count = items.len();
         let edges: Vec<Dependence> = after
             .edges()
@@ -1137,119 +1071,223 @@ where
             }
             starts.push(first);
         }
-        let mut held = Vec::with_capacity(count);
-        let ready = ArrayQueue::new(count.max(1));
-        for ((position, item), &waits) in items.iter_mut().enumerate().zip(&counts) {
-            if waits == 0 {
-                // `ready` holds room for every item, so no push is refused.
-                let refused = ready.push((ItemIndex(position), item)).is_err();
-                debug_assert!(!refused, "a schedule's queue holds room for every item");
-                held.push(None);
-            }
-            else {
-                held.push(Some(item));
-            }
-        }
-        let schedule = Self {
-            pool,
-            threads,
-            ready,
-            running: AtomicUsize::new(0),
-            states: core::iter::repeat_with(|| Mutex::new(None))
-                .take(threads.saturating_add(1))
-                .collect(),
-            start,
-            job,
-            returned,
-            stopped: AtomicBool::new(false),
-        };
-        let waiting = Waiting {
+        Self {
             edges,
             starts,
             counts,
-            held,
-        };
-        (schedule, waiting)
+        }
     }
 
-    /// Start the tasks for the queued jobs, then fold every item on the
-    /// calling thread in slice order, each once its job has returned, and
-    /// release the items that wait on it.
+    /// Whether the item at `position` waits on no item that is not committed.
+    /// An item past the slice waits on nothing that can come.
     ///
     /// # Specification
-    /// - ensures: `fold` ran once on every item, in slice order. Each fold
-    ///   counts down the items that wait on the folded one, and queues each one
-    ///   that waits on nothing more. The calling thread keeps for itself the
-    ///   job of the item that it folds next, when that fold frees it, and
-    ///   queues it for no task. After a fold that queues a job, the calling
-    ///   thread starts tasks while fewer run than jobs wait and than the pool
-    ///   has threads. While the next item's job has not returned, the calling
-    ///   thread runs a queued job, or blocks until a job reports when none is
-    ///   queued.
-    /// - panics: the first panic of a job or of `fold`, after it sets the stop
-    ///   so that no queued job starts.
-    /// - executable: none — each fold is a call of the caller's closure, and
-    ///   the call returns nothing for a postcondition to compare.
+    /// trivial.
+    fn free(
+        &self,
+        position: ItemIndex,
+    ) -> Released
+    {
+        match self.counts.get(position.0).copied() {
+            Some(0) => Released::Free,
+            Some(_) => Released::Waiting,
+            None => Released::Past,
+        }
+    }
+
+    /// Count down every item that waits on the item at `position`.
+    ///
+    /// # Specification
+    /// - ensures: each successor's count falls by one.
+    /// - panics: none.
+    /// - executable: none — a count of each successor, which a postcondition
+    ///   over the whole vector would copy to compare.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    fn commit(
+        &mut self,
+        position: ItemIndex,
+    )
+    {
+        let successors = self
+            .starts
+            .get(position.0)
+            .zip(self.starts.get(position.0.saturating_add(1)))
+            .and_then(|(&first, &last)| self.edges.get(first .. last))
+            .unwrap_or_default();
+        for &Dependence { after: later, .. } in successors {
+            if let Some(waits) = self.counts.get_mut(later) {
+                *waits = waits.saturating_sub(1);
+            }
+        }
+    }
+}
+
+/// Whether the calling thread may release an item now.
+///
+/// # Specification
+/// - provides: the answer of [`Waiting::free`].
+/// - panics: none.
+/// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
+///   obligations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Released
+{
+    /// Every item that it waits on is committed.
+    Free,
+    /// An item that it waits on is not committed.
+    Waiting,
+    /// Every item is released.
+    Past,
+}
+
+impl<Job, Out, Run> Scheduled<Job, Out, Run>
+where
+    Job: Send,
+    Out: Send,
+    Run: Fn(ItemIndex, Job) -> Out + Sync,
+{
+    /// A schedule of `items` with at most `workers` tasks, whose jobs `run`
+    /// runs and report on `returned`.
+    ///
+    /// # Specification
+    /// - ensures: the queue is empty and holds room for a job of every item, so
+    ///   no later push allocates. No task runs yet.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    #[spec(ensures: |ret| ret.ready.is_empty() && ret.ready.capacity() == items.len().max(1))]
+    fn new<Item>(
+        items: &[Item],
+        workers: Threads,
+        run: Run,
+        returned: mpsc::SyncSender<Returned<Out>>,
+    ) -> Self
+    {
+        Self {
+            threads: NonZeroUsize::from(workers).get(),
+            ready: ArrayQueue::new(items.len().max(1)),
+            running: AtomicUsize::new(0),
+            run,
+            returned,
+            stopped: AtomicBool::new(false),
+        }
+    }
+
+    /// Release each item of `items` in slice order, and commit each item as
+    /// its job returns, both on the calling thread.
+    ///
+    /// # Specification
+    /// - ensures: `release` ran on every item in slice order, each first time
+    ///   once `waiting` counts no item that it waits on. A release that
+    ///   answered [`Releasing::Held`] while a released job was not committed
+    ///   ran again once every released job was committed. `commit` ran once on
+    ///   every item, with its job's result as the job returned, or with the
+    ///   result of its release. Each commit counts down the items that wait on
+    ///   the committed one. After a release that queues a job, the calling
+    ///   thread starts tasks while fewer run than jobs wait and than the pool
+    ///   has threads. While it can neither release nor commit, it runs a queued
+    ///   job, or blocks until a job reports when none is queued.
+    /// - panics: the first panic of `release`, of a job or of `commit`, after
+    ///   it sets the stop so that no queued job starts.
+    /// - executable: none — each release and commit is a call of the caller's
+    ///   closure, and the call returns nothing for a postcondition to compare.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    fn drive<'scope, Fold>(
+    fn drive<'scope, Item, Release, Commit>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
-        mut waiting: Waiting<'items, Item>,
-        arrivals: &mpsc::Receiver<Returned<'items, Item>>,
-        fold: &mut Fold,
+        items: &mut [Item],
+        mut waiting: Waiting,
+        arrivals: &mpsc::Receiver<Returned<Out>>,
+        (release, commit): (&mut Release, &mut Commit),
     ) where
-        'items: 'scope,
-        Fold: FnMut(&mut Item),
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
+        Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
     {
-        self.start_tasks(scope);
-        let count = waiting.held.len();
-        let mut arrived: Vec<Option<&mut Item>> =
-            core::iter::repeat_with(|| None).take(count).collect();
-        let mut own = None;
-        for next in 0 .. count {
-            let item = loop {
-                if let Some(item) = arrived.get_mut(next).and_then(Option::take) {
-                    break item;
+        let count = items.len();
+        // The next item to release, the released jobs that are not committed,
+        // the items committed, and whether a release holds.
+        let mut next = ItemIndex(0);
+        let mut outstanding = 0_usize;
+        let mut committed = 0_usize;
+        let mut holding = false;
+        let mut commit_one =
+            |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
+                let place = gandr_core_fork::ItemIndex::from(position.0);
+                if let Err(panic) =
+                    std::panic::catch_unwind(AssertUnwindSafe(|| commit(place, item, out)))
+                {
+                    self.stop(panic);
                 }
-                let returning = if let Some(item) = own.take() {
-                    self.run(ItemIndex(next), item)
-                }
-                else if let Ok(returning) = arrivals.try_recv() {
-                    returning
-                }
-                else if let Some((position, item)) = self.take() {
-                    self.run(position, item)
-                }
+                waiting.commit(position);
+            };
+        while committed < count {
+            while !holding && waiting.free(next) == Released::Free {
+                let Some(item) = items.get_mut(next.0)
                 else {
-                    // The calling thread alone queues jobs, so an empty queue
-                    // stays empty here. The next item's job runs on a task,
-                    // and it reports.
-                    match arrivals.recv() {
-                        Ok(returning) => returning,
-                        // The schedule holds the sender until the scope ends,
-                        // so the channel never closes here.
-                        Err(mpsc::RecvError) => return,
-                    }
+                    break;
                 };
-                match returning {
-                    Ok((position, item)) => {
-                        if let Some(slot) = arrived.get_mut(usize::from(position)) {
-                            *slot = Some(item);
-                        }
+                let place = gandr_core_fork::ItemIndex::from(next.0);
+                let released =
+                    std::panic::catch_unwind(AssertUnwindSafe(|| release(place, &mut *item)))
+                        .unwrap_or_else(|panic| self.stop(panic));
+                match released {
+                    Releasing::Run(job) => {
+                        // `ready` holds room for a job of every item, and an
+                        // item releases one job, so no push is refused.
+                        let refused = self.ready.push((next, job)).is_err();
+                        debug_assert!(!refused, "a schedule's queue holds room for every item");
+                        outstanding = outstanding.saturating_add(1);
+                        next = ItemIndex(next.0.saturating_add(1));
+                        self.start_tasks(scope);
                     },
-                    Err(panic) => self.stop(panic),
+                    Releasing::Held(_) if outstanding > 0 => holding = true,
+                    Releasing::Settled(out) | Releasing::Held(out) => {
+                        commit_one(next, item, out, &mut waiting);
+                        committed = committed.saturating_add(1);
+                        next = ItemIndex(next.0.saturating_add(1));
+                    },
+                }
+            }
+            if committed >= count {
+                break;
+            }
+            let returning = if let Ok(returning) = arrivals.try_recv() {
+                returning
+            }
+            else if let Some((position, job)) = self.take() {
+                self.run(position, job)
+            }
+            else {
+                // A release or a held release waits on a released job, so a
+                // job runs on a task, and it reports.
+                match arrivals.recv() {
+                    Ok(returning) => returning,
+                    // The schedule holds the sender until the scope ends, so
+                    // the channel never closes here.
+                    Err(mpsc::RecvError) => return,
                 }
             };
-            if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| fold(item))) {
-                self.stop(panic);
+            let (position, out) = returning.unwrap_or_else(|panic| self.stop(panic));
+            if let Some(item) = items.get_mut(position.0) {
+                commit_one(position, item, out, &mut waiting);
             }
-            own = waiting.release(ItemIndex(next), &self.ready);
-            if !self.ready.is_empty() {
-                self.start_tasks(scope);
+            committed = committed.saturating_add(1);
+            outstanding = outstanding.saturating_sub(1);
+            if outstanding == 0 {
+                holding = false;
             }
         }
     }
@@ -1283,9 +1321,9 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    fn take(&self) -> Option<Ready<'items, Item>>
+    fn take(&self) -> Option<Ready<Job>>
     {
         if self.stopped.load(Ordering::Acquire) {
             return None;
@@ -1304,13 +1342,15 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
-    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_folds_on_the_caller`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
     fn start_tasks<'scope>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
     ) where
-        'items: 'scope,
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
     {
         while self.running.load(Ordering::SeqCst) < self.ready.len()
             && self.count_in() == Place::Taken
@@ -1330,7 +1370,7 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     fn count_in(&self) -> Place
     {
         match self
@@ -1357,22 +1397,24 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
-    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_folds_on_the_caller`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
+    /// - witness: `pool::tests::a_pool_schedules_on_its_own_threads_and_commits_on_the_caller`
     fn spawn<'scope>(
         &'scope self,
         scope: &rayon::Scope<'scope>,
     ) where
-        'items: 'scope,
+        Job: 'scope,
+        Out: 'scope,
+        Run: 'scope,
     {
         scope.spawn(move |_scope| {
             loop {
-                while let Some((position, item)) = self.take() {
+                while let Some((position, job)) = self.take() {
                     // The calling thread holds the receiver until the scope
                     // ends, and the buffer holds a slot for each job, so the
                     // report never waits and is never refused.
                     self.returned
-                        .send(self.run(position, item))
+                        .send(self.run(position, job))
                         .unwrap_or_default();
                 }
                 self.running.fetch_sub(1, Ordering::SeqCst);
@@ -1386,59 +1428,27 @@ where
         });
     }
 
-    /// Run the job of the item at `position` on this thread's state.
+    /// Run the job of the item at `position`.
     ///
     /// # Specification
-    /// - ensures: the item and its position, once its job has returned; or the
-    ///   panic of `start` or of the job. The job takes its thread's state out
-    ///   of the slot, or makes one when the slot is empty, and puts it back
-    ///   when it returns. So a job that its thread runs while another job of
-    ///   that thread waits inside a nested fork gets a state of its own, and no
-    ///   state goes to two jobs at once.
-    /// - panics: none; a panic of `start` or of the job is returned, and the
-    ///   state that it held is dropped.
-    /// - executable: none — the state's ownership is a property of the
-    ///   schedule, which a postcondition over the returned item cannot observe.
+    /// - ensures: the item's place and the job's result, once the job has
+    ///   returned; or the panic of the job.
+    /// - panics: none; a panic of the job is returned.
+    /// - executable: none — the result is the caller's closure's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
-    /// - witness: `pool::tests::a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order`
+    /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     fn run(
         &self,
         position: ItemIndex,
-        item: &'items mut Item,
-    ) -> Returned<'items, Item>
+        job: Job,
+    ) -> Returned<Out>
     {
-        let thread = self.pool.map_or_else(
-            rayon::current_thread_index,
-            rayon::ThreadPool::current_thread_index,
-        );
-        let slot = thread
-            .and_then(|thread| self.states.get(thread))
-            .or_else(|| self.states.last());
-        let mut state = slot.and_then(|slot| lock(slot).take());
-        std::panic::catch_unwind(AssertUnwindSafe(|| {
-            (self.job)(state.get_or_insert_with(&self.start), position, &mut *item);
-        }))?;
-        if let (Some(slot), Some(state)) = (slot, state) {
-            let mut kept = lock(slot);
-            if kept.is_none() {
-                *kept = Some(state);
-            }
-        }
-        Ok((position, item))
+        let out = std::panic::catch_unwind(AssertUnwindSafe(|| (self.run)(position, job)))?;
+        Ok((position, out))
     }
-}
-
-/// The value that `mutex` guards, whether or not a job panicked while it held
-/// the guard: every guarded value here is whole between two statements.
-///
-/// # Specification
-/// trivial.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T>
-{
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Why the driver's pool could not start.
@@ -1484,6 +1494,7 @@ mod tests
     use gandr_core_fork::Dependence;
     use gandr_core_fork::Dependences;
     use gandr_core_fork::Fork as _;
+    use gandr_core_fork::Releasing;
     use gandr_core_fork::Scoped;
     use gandr_core_fork::Spawn;
     use gandr_core_fork::Unwound;
@@ -1965,33 +1976,32 @@ mod tests
         }
     }
 
-    /// One item of a schedule: when its job started and returned, how often
-    /// it ran, and when and where it was folded.
+    /// One item of a schedule: the clock and the thread at each of its
+    /// releases, and the clock, the thread and the job's stamps at each of
+    /// its commits.
     #[derive(Debug, Default)]
     struct Stamped
     {
-        /// The clock when the job started.
-        started: usize,
-        /// The clock when the job returned.
-        returned: usize,
-        /// How often the job ran.
-        runs: usize,
-        /// The clock and the thread at each fold.
-        folds: Vec<(usize, ThreadId)>,
+        /// The clock and the thread at each release.
+        releases: Vec<(usize, ThreadId)>,
+        /// The clock, the thread, and the clocks at the job's start and
+        /// return, at each commit.
+        commits: Vec<(usize, ThreadId, (usize, usize))>,
     }
 
     #[test]
-    fn a_schedule_runs_each_job_after_its_predecessors_and_folds_in_order()
+    fn a_schedule_releases_in_order_and_commits_each_job_as_it_returns()
     {
-        let workers = 4_usize;
         let pool = Pool::new(Width::Threads(Threads::from(
-            NonZeroUsize::new(workers).unwrap(),
+            NonZeroUsize::new(4_usize).unwrap(),
         )));
         let Ok(Forked::Pooled(threads, fork)) = pool.forked()
         else {
             panic!("a pool of four threads starts");
         };
-        for count in [0_usize, 1, 2, 7, 64] {
+        // The edges of a chain and of a scattered fan over `count` items. The
+        // fan also holds one edge past the slice.
+        let graphs = |count: usize| {
             let chain: Vec<Dependence> = (1 .. count)
                 .map(|later| Dependence {
                     before: later.checked_sub(1).unwrap(),
@@ -2021,15 +2031,19 @@ mod tests
                     after: count.checked_add(3).unwrap(),
                 }])
                 .collect();
-            for (graph, edges) in [
-                ("no edge", Vec::new()),
-                ("a chain", chain),
-                ("a scattered fan", fan),
-            ] {
-                let after = Dependences::new(edges).unwrap();
+            [
+                ("no edge", Dependences::default()),
+                ("a chain", Dependences::new(chain).unwrap()),
+                ("a scattered fan", Dependences::new(fan).unwrap()),
+            ]
+        };
+        for count in [0_usize, 1, 2, 7, 64] {
+            for (graph, after) in graphs(count) {
                 let clock = AtomicUsize::new(0);
-                let made = AtomicUsize::new(0);
                 let tick = || clock.fetch_add(1, Ordering::SeqCst);
+                let runs: Vec<AtomicUsize> = core::iter::repeat_with(|| AtomicUsize::new(0))
+                    .take(count)
+                    .collect();
                 let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default)
                     .take(count)
                     .collect();
@@ -2037,33 +2051,46 @@ mod tests
                     fork.schedule(
                         &mut items,
                         &after,
-                        || {
-                            made.fetch_add(1, Ordering::Relaxed);
+                        |position, item| {
+                            item.releases.push((tick(), std::thread::current().id()));
+                            Releasing::<usize, (usize, usize)>::Run(usize::from(position))
                         },
-                        |_state, item| {
-                            item.started = tick();
-                            item.runs = item.runs.checked_add(1).unwrap();
+                        |job| {
+                            let started = tick();
+                            runs[job].fetch_add(1, Ordering::SeqCst);
                             std::thread::yield_now();
-                            item.returned = tick();
+                            (started, tick())
                         },
-                        |item| item.folds.push((tick(), std::thread::current().id())),
+                        |_position, item, stamps| {
+                            item.commits
+                                .push((tick(), std::thread::current().id(), stamps));
+                        },
                     );
                     std::thread::current().id()
                 });
                 let case = format!("{graph} over {count} items");
                 for (position, item) in items.iter().enumerate() {
-                    assert_eq!(item.runs, 1, "{case}: item {position}'s job runs once");
-                    let [(folded, thread)] = item.folds[..]
+                    assert_eq!(
+                        runs[position].load(Ordering::SeqCst),
+                        1,
+                        "{case}: item {position}'s job runs once"
+                    );
+                    let [(released, by)] = item.releases[..]
                     else {
-                        panic!("{case}: item {position} folds once");
+                        panic!("{case}: item {position} is released once");
+                    };
+                    let [(committed, on, (started, returned))] = item.commits[..]
+                    else {
+                        panic!("{case}: item {position} is committed once");
                     };
                     assert!(
-                        folded > item.returned,
-                        "{case}: item {position} folds after its job"
+                        released < started && returned < committed,
+                        "{case}: item {position}'s job runs after its release and before its commit"
                     );
                     assert_eq!(
-                        thread, caller,
-                        "{case}: item {position} folds on the calling thread"
+                        (by, on),
+                        (caller, caller),
+                        "{case}: item {position} is released and committed on the calling thread"
                     );
                 }
                 for pair in items.windows(2) {
@@ -2072,8 +2099,8 @@ mod tests
                         panic!("{case}: a window of two holds two items");
                     };
                     assert!(
-                        first.folds[0].0 < second.folds[0].0,
-                        "{case}: folds in slice order"
+                        first.releases[0].0 < second.releases[0].0,
+                        "{case}: releases in slice order"
                     );
                 }
                 for &Dependence {
@@ -2082,18 +2109,139 @@ mod tests
                 } in after.edges().iter().filter(|edge| edge.after < count)
                 {
                     assert!(
-                        items[later].started > items[before].folds[0].0,
-                        "{case}: item {later}'s job starts after item {before} is folded"
+                        items[later].releases[0].0 > items[before].commits[0].0,
+                        "{case}: item {later} is released after item {before} is committed"
                     );
                 }
-                let made = made.load(Ordering::Relaxed);
-                assert_eq!(made == 0, count == 0, "{case}");
-                assert!(
-                    made <= workers,
-                    "{case}: {made} states on {workers} workers"
-                );
             }
         }
+    }
+
+    #[test]
+    fn a_job_that_returns_first_commits_first()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let Ok(Forked::Pooled(threads, fork)) = pool.forked()
+        else {
+            panic!("a pool of four threads starts");
+        };
+        // Item 1 is released once the job of item 0 runs on a task, so the
+        // calling thread never runs that job. The job of item 0 then waits
+        // until item 1 is committed, which a commit in slice order never
+        // reaches: there each wait gives up after five seconds.
+        let patience = Duration::from_secs(5);
+        let wait = |flag: &AtomicBool| {
+            let start = Instant::now();
+            while !flag.load(Ordering::SeqCst) {
+                if start.elapsed() > patience {
+                    return false;
+                }
+                std::thread::yield_now();
+            }
+            true
+        };
+        let (started, first) = (AtomicBool::new(false), AtomicBool::new(false));
+        let mut committed = Vec::new();
+        threads.install(|| {
+            fork.schedule(
+                &mut [(); 2],
+                &Dependences::default(),
+                |position, &mut ()| {
+                    if usize::from(position) == 1 {
+                        assert!(wait(&started), "the job of item 0 starts on a task");
+                    }
+                    Releasing::<usize, bool>::Run(usize::from(position))
+                },
+                |job| {
+                    if job == 0 {
+                        started.store(true, Ordering::SeqCst);
+                        wait(&first)
+                    }
+                    else {
+                        true
+                    }
+                },
+                |position, &mut (), saw| {
+                    if usize::from(position) == 1 {
+                        first.store(true, Ordering::SeqCst);
+                    }
+                    committed.push((usize::from(position), saw));
+                },
+            );
+        });
+        assert_eq!(
+            committed,
+            [(1, true), (0, true)],
+            "item 1 commits at its job's return, while the job of item 0 still runs"
+        );
+    }
+
+    #[test]
+    fn a_held_release_waits_until_every_running_job_is_committed()
+    {
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let Ok(Forked::Pooled(threads, fork)) = pool.forked()
+        else {
+            panic!("a pool of four threads starts");
+        };
+        let clock = AtomicUsize::new(0);
+        let tick = || clock.fetch_add(1, Ordering::SeqCst);
+        let mut items: Vec<Stamped> = core::iter::repeat_with(Stamped::default).take(6).collect();
+        // Item 0 holds with no job running, so it commits what it holds. Item
+        // 3 holds at its first release while the jobs of items 1 and 2 run.
+        threads.install(|| {
+            fork.schedule(
+                &mut items,
+                &Dependences::default(),
+                |position, item| {
+                    item.releases.push((tick(), std::thread::current().id()));
+                    let held = (usize::MAX, usize::MAX);
+                    match (usize::from(position), item.releases.len()) {
+                        (0 | 3, 1) => Releasing::<(), (usize, usize)>::Held(held),
+                        _ => Releasing::Run(()),
+                    }
+                },
+                |()| {
+                    let started = tick();
+                    std::thread::yield_now();
+                    (started, tick())
+                },
+                |_position, item, stamps| {
+                    item.commits
+                        .push((tick(), std::thread::current().id(), stamps));
+                },
+            );
+        });
+        let releases: Vec<usize> = items.iter().map(|item| item.releases.len()).collect();
+        assert_eq!(
+            releases,
+            [1, 1, 1, 2, 1, 1],
+            "item 3 is released again, and item 0, which held with no job running, is not"
+        );
+        assert_eq!(
+            items[0].commits[0].2,
+            (usize::MAX, usize::MAX),
+            "item 0 commits what its release held"
+        );
+        let again = items[3].releases[1].0;
+        for (position, item) in items.iter().enumerate().take(3).skip(1) {
+            assert!(
+                item.commits[0].0 < again,
+                "item 3 is released again after item {position} is committed"
+            );
+        }
+        assert!(
+            items[3].commits[0].2 != (usize::MAX, usize::MAX) && items[3].commits[0].2.0 > again,
+            "item 3 commits its job's result, after its release again"
+        );
+        assert!(
+            items.iter().all(|item| item.commits.len() == 1),
+            "every item is committed once"
+        );
     }
 
     #[test]
@@ -2117,9 +2265,9 @@ mod tests
                 fork.schedule(
                     &mut items,
                     &chain,
-                    || (),
-                    |_state, item| assert_ne!(*item, 13, "job 13 panics"),
-                    |_item| (),
+                    |_position, item| Releasing::<usize, ()>::Run(*item),
+                    |job| assert_ne!(job, 13, "job 13 panics"),
+                    |_position, _item, ()| (),
                 );
             });
         }));
@@ -2133,7 +2281,7 @@ mod tests
     }
 
     #[test]
-    fn a_pool_schedules_on_its_own_threads_and_folds_on_the_caller()
+    fn a_pool_schedules_on_its_own_threads_and_commits_on_the_caller()
     {
         let caller = std::thread::current().id();
         let here = || Some(std::thread::current().id());
@@ -2147,49 +2295,70 @@ mod tests
         let wide = Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::new(4_usize).unwrap(),
         )));
-        let mut one = [(None, None)];
+        let mut one = [(None, None, None)];
         wide.schedule(
             &mut one,
             &fan(1),
-            || (),
-            |_state, ran| ran.0 = here(),
-            |ran| ran.1 = here(),
+            |_position, ran| {
+                ran.0 = here();
+                Releasing::<(), Option<ThreadId>>::Run(())
+            },
+            |()| here(),
+            |_position, ran, job| {
+                ran.1 = job;
+                ran.2 = here();
+            },
         );
         assert_eq!(
             one,
-            [(Some(caller), Some(caller))],
-            "one item runs and folds on the caller"
+            [(Some(caller), Some(caller), Some(caller))],
+            "one item is released, runs and commits on the caller"
         );
         assert!(
             wide.started.get().is_none(),
             "a schedule of one item starts no thread"
         );
         let inside = || matches!(wide.forked(), Ok(Forked::Pooled(threads, _)) if threads.current_thread_index().is_some());
-        let mut many = [(false, None); 64];
+        let mut many = [(None, false, None); 64];
         wide.schedule(
             &mut many,
             &fan(64),
-            || (),
-            |_state, ran| ran.0 = inside() || here() == Some(caller),
-            |ran| ran.1 = here(),
+            |_position, ran| {
+                ran.0 = here();
+                Releasing::<(), bool>::Run(())
+            },
+            |()| inside() || here() == Some(caller),
+            |_position, ran, pooled| {
+                ran.1 = pooled;
+                ran.2 = here();
+            },
         );
         assert!(
             many.iter()
-                .all(|&(ran, folded)| ran && folded == Some(caller)),
-            "every job runs on the pool's threads or on the caller, and every fold on the caller"
+                .all(|&(released, pooled, committed)| released == Some(caller)
+                    && pooled
+                    && committed == Some(caller)),
+            "every job runs on the pool's threads or on the caller, and every release and commit on the caller"
         );
         let serial = Pool::default();
-        let mut ran = [(None, None); 8];
+        let mut ran = [(None, None, None); 8];
         serial.schedule(
             &mut ran,
             &fan(8),
-            || (),
-            |_state, ran| ran.0 = here(),
-            |ran| ran.1 = here(),
+            |_position, ran| {
+                ran.0 = here();
+                Releasing::<(), Option<ThreadId>>::Run(())
+            },
+            |()| here(),
+            |_position, ran, job| {
+                ran.1 = job;
+                ran.2 = here();
+            },
         );
         assert!(
-            ran.iter().all(|&ran| ran == (Some(caller), Some(caller))),
-            "a serial pool runs every job and every fold on the caller"
+            ran.iter()
+                .all(|&ran| ran == (Some(caller), Some(caller), Some(caller))),
+            "a serial pool releases, runs and commits every item on the caller"
         );
     }
 

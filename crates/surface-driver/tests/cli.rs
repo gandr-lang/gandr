@@ -989,7 +989,7 @@ fn check_measures_each_declaration_a_source_writes()
     let (counts, chain) = first
         .split_once(", chain of ")
         .unwrap_or_else(|| panic!("{first:?} spells its chain"));
-    let [jobs, dependences, untimed, serial, critical, folded] =
+    let [jobs, dependences, untimed, serial, critical, released] =
         *counts.split(", ").collect::<Vec<_>>().as_slice()
     else {
         panic!("{counts:?} spells three counts and three times");
@@ -1008,14 +1008,14 @@ fn check_measures_each_declaration_a_source_writes()
             "ns",
         )
     };
-    let (serial, critical, folded) = (
+    let (serial, critical, released) = (
         time(serial, "serial "),
         time(critical, "critical path "),
-        time(folded, "folded "),
+        time(released, "released "),
     );
     assert!(
-        0 < critical && critical <= folded && folded <= serial,
-        "the critical path is at most the folded bound, and that at most the serial cost: {first}"
+        0 < critical && critical <= released && released <= serial,
+        "the critical path is at most the released bound, and that at most the serial cost: {first}"
     );
     let (length, names) = chain
         .split_once(':')
