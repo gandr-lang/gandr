@@ -9,7 +9,9 @@
 //! ([`ByteChunkerParams::blob`]), the value plane keeps each piece as one
 //! value, and the blob is a record tree keyed by the piece's index, each
 //! record the piece's pointer. A tree with no record is not written: its
-//! reference holds a zero count.
+//! reference holds a zero count. The read cuts a file one buffer at a time
+//! ([`ByteScanner`]) and commits each piece at its cut, so it holds one buffer
+//! and one piece, never the file.
 //!
 //! [`Store::read_in`] reads a directory, a file or a symbolic link into the
 //! store and gives its entry. [`Store::write_out`] writes an entry out into a
@@ -34,6 +36,7 @@ use alloc::vec::Vec;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs;
+use std::io::Read as _;
 use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::FileTypeExt as _;
 use std::os::unix::fs::PermissionsExt as _;
@@ -42,8 +45,8 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_storage_chunker::ByteChunkerParams;
+use gandr_storage_chunker::ByteScanner;
 use gandr_storage_chunker::CanonicalBytes;
-use gandr_storage_chunker::chunk_bytes;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::Record;
 use gandr_storage_records::RecordCount;
@@ -89,6 +92,35 @@ const EXECUTABLE_MODE: u32 = 0o755_u32;
 
 /// The mode every other file the write makes takes.
 const PLAIN_MODE: u32 = 0o644_u32;
+
+/// The bytes a read of a file takes from the file system at once: one buffer
+/// for the whole tree, so a read holds it and one piece, never a file.
+const READ_BUFFER: usize = 0x0010_0000_usize;
+
+/// The one buffer that a read of a tree takes each file's bytes into.
+#[repr(transparent)]
+struct ReadBuffer(Vec<u8>);
+
+impl ReadBuffer
+{
+    /// A buffer of [`READ_BUFFER`] bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new() -> Self
+    {
+        Self(vec![0_u8; READ_BUFFER])
+    }
+}
+
+/// A file read into the store: its blob and the bytes it holds.
+struct Blob
+{
+    /// The record tree of the file's pieces.
+    tree: TreeRef,
+    /// The bytes of the file.
+    size: u64,
+}
 
 /// Why an entry, or the tree it names, is refused.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -785,36 +817,70 @@ impl Store
         Ok(records)
     }
 
-    /// Read the file of `bytes` into the store as a blob.
+    /// Read the open `file` at `path` into the store as a blob, through
+    /// `buffer`, and give the blob and the file's size.
+    ///
+    /// The scan cuts each buffer as it comes, and each piece goes to the value
+    /// plane at its cut. So the read holds one buffer and one piece of at most
+    /// the profile's maximum, never the file.
     ///
     /// # Specification
     /// trivial.
     fn read_blob(
         &self,
-        bytes: CanonicalBytes<'_>,
-    ) -> Result<TreeRef, StoreError>
+        file: &mut fs::File,
+        path: &Path,
+        buffer: &mut ReadBuffer,
+    ) -> Result<Blob, StoreError>
     {
+        let io = |error: std::io::Error| StoreError::io(path, &error);
         let uncut = || StoreError::Entry(EntryFault::Uncut);
-        let pieces = chunk_bytes(bytes, &ByteChunkerParams::blob()).map_err(|_overflow| uncut())?;
-        let mut keys = Vec::with_capacity(pieces.len());
-        let mut pointers = Vec::with_capacity(pieces.len());
-        for (index, piece) in (0_u64 ..).zip(&pieces) {
-            let start = usize::try_from(u64::from(piece.start())).map_err(|_wide| uncut())?;
-            let end = usize::try_from(u64::from(piece.end())).map_err(|_wide| uncut())?;
-            let piece = bytes.as_ref().get(start .. end).ok_or_else(uncut)?;
-            let pointer = self.commit(&Piece(piece.to_vec()))?;
-            // A record key sorts as its bytes, so the index is spelled most
-            // significant byte first and the pieces stand in their order.
-            #[expect(clippy::big_endian_bytes, reason = "a record key sorts as its bytes")]
-            keys.push(index.to_be_bytes());
-            pointers.push(Recorded::from(pointer));
+        let params = ByteChunkerParams::blob();
+        let mut scanner = ByteScanner::new(&params);
+        let max =
+            usize::try_from(u64::from(params.limits().max_bytes())).map_err(|_wide| uncut())?;
+        let mut piece = Piece(Vec::with_capacity(max));
+        let mut pointers = Vec::new();
+        let mut size = 0_u64;
+        loop {
+            let read = match file.read(&mut buffer.0) {
+                Ok(0) => break,
+                Ok(read) => read,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(io(error)),
+            };
+            size = size.saturating_add(u64::try_from(read).unwrap_or(u64::MAX));
+            let mut rest = buffer.0.get(.. read).ok_or_else(uncut)?;
+            while let Some(taken) = scanner.cut(CanonicalBytes::from(rest)) {
+                let (head, tail) = usize::try_from(u64::from(taken))
+                    .ok()
+                    .and_then(|taken| rest.split_at_checked(taken))
+                    .ok_or_else(uncut)?;
+                piece.0.extend_from_slice(head);
+                pointers.push(Recorded::from(self.commit(&piece)?));
+                piece.0.clear();
+                rest = tail;
+            }
+            piece.0.extend_from_slice(rest);
         }
+        if !piece.0.is_empty() {
+            pointers.push(Recorded::from(self.commit(&piece)?));
+        }
+        // A record key sorts as its bytes, so the index is spelled most
+        // significant byte first and the pieces stand in their order.
+        let keys: Vec<[u8; 8]> = (0_u64 ..)
+            .take(pointers.len())
+            .map(u64::to_be_bytes)
+            .collect();
         let records: Vec<RecordRef<'_>> = keys
             .iter()
             .zip(&pointers)
             .map(|(key, pointer)| RecordRef::new(key.as_slice(), pointer.as_ref()))
             .collect();
-        self.write_records(&records)
+        Ok(Blob {
+            tree: self.write_records(&records)?,
+            size,
+        })
     }
 
     /// Read `path` as a file or a symbolic link, whose entry is done, or as a
@@ -825,6 +891,7 @@ impl Store
     fn read_at(
         &self,
         path: &Path,
+        buffer: &mut ReadBuffer,
     ) -> Result<Reading, StoreError>
     {
         let io = |error: std::io::Error| StoreError::io(path, &error);
@@ -853,10 +920,11 @@ impl Store
         if kind.is_block_device() || kind.is_char_device() || kind.is_fifo() || kind.is_socket() {
             return Err(StoreError::Entry(EntryFault::Unkept));
         }
-        let bytes = fs::read(path).map_err(io)?;
+        let mut file = fs::File::open(path).map_err(io)?;
+        let Blob { tree, size } = self.read_blob(&mut file, path, buffer)?;
         Ok(Reading::Done(Entry::File {
-            blob: self.read_blob(CanonicalBytes::from(bytes.as_slice()))?,
-            size: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+            blob: tree,
+            size,
             executable: meta.permissions().mode() & 0o111_u32 != 0_u32,
         }))
     }
@@ -919,14 +987,15 @@ impl Store
         path: &Path,
     ) -> Result<Entry, StoreError>
     {
-        let mut opened = match self.read_at(path)? {
+        let mut buffer = ReadBuffer::new();
+        let mut opened = match self.read_at(path, &mut buffer)? {
             Reading::Done(entry) => return Ok(entry),
             Reading::Opened(opened) => opened,
         };
         let mut above: Vec<Opened> = Vec::new();
         loop {
             if let Some(next) = opened.next() {
-                match self.read_at(&next)? {
+                match self.read_at(&next, &mut buffer)? {
                     Reading::Done(entry) => opened.take(&entry),
                     Reading::Opened(inner) => above.push(core::mem::replace(&mut opened, inner)),
                 }

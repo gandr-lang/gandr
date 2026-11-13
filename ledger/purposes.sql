@@ -2145,6 +2145,7 @@ INSERT INTO purpose VALUES('storage-artifact','transport::transport_step_id','fu
 INSERT INTO purpose VALUES('storage-artifact','transport::transport_step_index','function','Resolves and re-keys every normal-form factor under its durable identity, refusing an absent cell, a width overflow or a conflicting digest before returning any index.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','byte::ByteChunkerParams','struct','The parameters of the byte profile: its Gear table and its byte limits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','byte::ByteLimits','struct','The validated byte limits of a byte scan, the minimum at least the Gear window.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-chunker','byte::ByteScanner','struct','The scan of the byte profile fed one buffer at a time, its Gear state kept between buffers, so a stream cuts as its bytes cut whole.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','byte::GEAR_WINDOW','constant','The bytes a shifted Gear state depends on, so a cut depends on the bytes of one window before it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','byte::chunk_bytes','function','Cuts one byte string into chunks under the byte profile, a cut allowed after any byte.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','commitment::AlgorithmVersion','enum','The algorithm a committed profile cuts by.',NULL,'fits','sound',NULL);
@@ -2159,6 +2160,7 @@ INSERT INTO purpose VALUES('storage-chunker','gear::CanonicalBytes','struct','Bo
 INSERT INTO purpose VALUES('storage-chunker','gear::CanonicalRecords','struct','Borrowed canonical records in their committed order, for chunk_record_slices.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','gear::ChunkLimits','struct','The validated byte and record limits of a record-safe scan.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','gear::ChunkerParams','struct','The parameters of the record-safe profile.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-chunker','gear::GearTable','struct','A Gear table, one mixing value for each byte value, which the byte profile''s scanner holds by reference.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','gear::GearTableVersion','enum','The Gear table a record-safe profile mixes bytes with.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','gear::NormalizationPolicy','enum','How the scanner treats the bytes it is handed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-chunker','gear::RecordBoundaryRule','enum','Where the scanner may place a cut.',NULL,'fits','sound',NULL);

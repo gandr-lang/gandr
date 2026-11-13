@@ -75,6 +75,7 @@ pub mod units;
 
 pub use crate::byte::ByteChunkerParams;
 pub use crate::byte::ByteLimits;
+pub use crate::byte::ByteScanner;
 pub use crate::byte::GEAR_WINDOW;
 pub use crate::byte::chunk_bytes;
 pub use crate::commitment::AlgorithmVersion;
