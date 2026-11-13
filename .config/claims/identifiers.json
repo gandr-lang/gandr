@@ -1,0 +1,217 @@
+[
+  {
+    "name": "#7019: a host with no vault reads no page and refuses nothing",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": null,
+      "texts": {},
+      "before": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#7019: a page that names the unit's number in a `###` section owes, and so does the page that a sibling `###` section of its level-two section links; a link out of the design pages owes nothing",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/area-map.md": "# Area\n\n## The map\n\n### stages\n\n| #3476 | the replay |\n\n### reanalysis\n\nThe [bracket oracle](bracket.md#the-bracket-oracle) and [a note](../research/sources/x.md).\n\n## Elsewhere\n\nSee [other](other.md).\n"
+      },
+      "before": null
+    },
+    "output": "sources: `area-map.md` names #3476 in its section `The map`: cite `area-map.md` in `## Sources`, or add the row `| `area-map.md` | not read | <why> |` (`units.md` § units-sources)\nsources: the section `The map` of `area-map.md` names #3476 and links `bracket.md`: cite `bracket.md` in `## Sources`, or add the row `| `bracket.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: a link in another level-two section than the name owes nothing",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/area-map.md": "## One\n\nnames #3476\n\n## Two\n\nSee [bracket](bracket.md).\n"
+      },
+      "before": null
+    },
+    "output": "sources: `area-map.md` names #3476 in its section `One`: cite `area-map.md` in `## Sources`, or add the row `| `area-map.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: a number with a digit after it names nothing, and a row names a page only in backquotes",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nThe row `hover`.\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\n#34760 and hover\n",
+        "plans/queue.md": "## Q\n\nthe row `hover`\n"
+      },
+      "before": null
+    },
+    "output": "sources: `queue.md` names `hover` in its section `Q`: cite `queue.md` in `## Sources`, or add the row `| `queue.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: the numbers of the `from:` line, of the epic and of the parent are the unit's identifiers",
+    "input": {
+      "number": 3476,
+      "parent": 6000,
+      "body": "from: #320 (the epic)\n\nAdvances #5000.\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\n#320\n",
+        "plans/queue.md": "## B\n\n#5000 and #6000\n",
+        "docs/programme/bracket.md": "## C\n\n#6000\n"
+      },
+      "before": null
+    },
+    "output": "sources: `bracket.md` names #6000 in its section `C`: cite `bracket.md` in `## Sources`, or add the row `| `bracket.md` | not read | <why> |` (`units.md` § units-sources)\nsources: `other.md` names #320 in its section `A`: cite `other.md` in `## Sources`, or add the row `| `other.md` | not read | <why> |` (`units.md` § units-sources)\nsources: `queue.md` names #5000, #6000 in its section `B`: cite `queue.md` in `## Sources`, or add the row `| `queue.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: a crate gives its own page alone, not each page that names it",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nThe crate `kernel-core` and `crates/core-fork/src/lib.rs`.\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\nkernel-core\n"
+      },
+      "before": null
+    },
+    "output": "sources: `kernel-core.md` is the page of the crate `kernel-core`: cite `kernel-core.md` in `## Sources`, or add the row `| `kernel-core.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: a page that `## Sources` cites by its filename, or sets aside in a `not read` row, owes nothing",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `area-map.md` § stages | secondary | the stages |\n| `bracket.md` | not read | the oracle decides nothing here |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/area-map.md": "# Area\n\n## The map\n\n### stages\n\n| #3476 | the replay |\n\n### reanalysis\n\nThe [bracket oracle](bracket.md#the-bracket-oracle) and [a note](../research/sources/x.md).\n\n## Elsewhere\n\nSee [other](other.md).\n"
+      },
+      "before": null
+    },
+    "output": ""
+  },
+  {
+    "name": "#7019: a unit signed before the rule landed, its `## Sources` as it was then, gets a note and no refusal",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\n#3476\n"
+      },
+      "before": "## Problem\n\nolder\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n"
+    },
+    "output": "note: sources: `other.md` names #3476 in its section `A`: cite `other.md` in `## Sources`, or add the row `| `other.md` | not read | <why> |` (`units.md` § units-sources); the issue was signed before this check landed, so it is not refused until its `## Sources` changes"
+  },
+  {
+    "name": "#7019: once the `## Sources` of a unit signed before the rule changes, the page is refused",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n| `y.md` | secondary | y |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\n#3476\n"
+      },
+      "before": "## Problem\n\nolder\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n"
+    },
+    "output": "sources: `other.md` names #3476 in its section `A`: cite `other.md` in `## Sources`, or add the row `| `other.md` | not read | <why> |` (`units.md` § units-sources)"
+  },
+  {
+    "name": "#7019: a heading inside a fenced block opens no section, and a name in a page's lead counts",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nx\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "#3476 leads.\n\n```\n## not a section\n```\n\n[bracket](bracket.md)\n\n## After\n\n[queue](../../plans/queue.md)\n"
+      },
+      "before": null
+    },
+    "output": "sources: the lead of `other.md` names #3476 and links `bracket.md`: cite `bracket.md` in `## Sources`, or add the row `| `bracket.md` | not read | <why> |` (`units.md` § units-sources)\nsources: `other.md` names #3476 in its lead: cite `other.md` in `## Sources`, or add the row `| `other.md` | not read | <why> |` (`units.md` § units-sources)"
+  }
+]
