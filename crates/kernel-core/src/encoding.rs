@@ -2565,6 +2565,41 @@ impl ContentTable
             .extend(entries.key_names().take(usize::from(end)).skip(named));
     }
 
+    /// Name the constant at `index` as `name`, when the table named it
+    /// already: a reserved position that a later release named by its
+    /// position before its commit came.
+    ///
+    /// # Specification
+    /// - requires: no node this table placed reads the constant at `index`,
+    ///   since no content names a reserved position before its commit.
+    /// - ensures: the table names the constant at `index` as `name` when it
+    ///   named it before; nothing changes otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a definition committed after a later release named
+    ///   its position reads by its content to the checks after it.
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    #[spec(captures: named_before = self.constants.len(),
+        ensures: self.constants.len() == named_before
+            && (usize::from(index) >= named_before || self.constants.get(usize::from(index)) == Some(&name)))]
+    pub(crate) fn rename_constant(
+        &mut self,
+        index: ConstantIndex,
+        name: ConstantName,
+    )
+    {
+        if self.constants.get(usize::from(index)) == Some(&name)
+            || usize::from(index) >= self.constants.len()
+        {
+            return;
+        }
+        if let Some(held) = Arc::make_mut(&mut self.constants).get_mut(usize::from(index)) {
+            *held = name;
+        }
+    }
+
     /// How the table names the constant at `index`, when it has named it.
     ///
     /// # Specification
@@ -6223,6 +6258,74 @@ pub(crate) fn name_definition(
         rank: DefinitionRank(rank),
         digest,
     }
+}
+
+/// Whether two plain definitions carry one declared type and one body.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Likeness
+{
+    /// One of the others carries the declared type and the body.
+    Alike,
+    /// None of the others does, or the name is no definition.
+    Unlike,
+}
+
+/// Whether one of `others` names a plain definition whose declared type and
+/// body are identical in reachable content to those `name` names, as
+/// [`name_definition`] compares a candidate.
+///
+/// # Specification
+/// - requires: every root `name` and `others` name lives in `arena`.
+/// - ensures: [`Likeness::Alike`] exactly when `name` and one of `others` are
+///   definitions with one digest whose declared types and bodies the table
+///   places alike.
+/// - provides: the hold of a release whose name an outstanding twin would
+///   count.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the comparison is the table's placement, which no
+///   predicate restates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — twins released together hold the later one, and its name
+///   counts the earlier one as the serial run's does.
+/// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+pub(crate) fn likeness(
+    table: &mut ContentTable,
+    arena: &TermArena,
+    name: ConstantName,
+    others: impl IntoIterator<Item = ConstantName>,
+) -> Likeness
+{
+    let ConstantName::Definition {
+        declared,
+        body,
+        digest,
+        ..
+    } = name
+    else {
+        return Likeness::Unlike;
+    };
+    let placed_declared = table.place(arena, AnyNode::ValueType(declared));
+    let placed_body = table.place(arena, AnyNode::Value(body));
+    for other in others {
+        if let ConstantName::Definition {
+            declared: other_declared,
+            body: other_body,
+            digest: other_digest,
+            ..
+        } = other
+            && other_digest == digest
+            && table.place(arena, AnyNode::ValueType(other_declared)) == placed_declared
+            && table.place(arena, AnyNode::Value(other_body)) == placed_body
+        {
+            return Likeness::Alike;
+        }
+    }
+    Likeness::Unlike
 }
 
 /// The session's table, lent to the fold that mints a declaration's content,

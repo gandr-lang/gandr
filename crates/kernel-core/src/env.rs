@@ -1712,13 +1712,17 @@ pub struct Entries
     horizon: Option<Horizon>,
 }
 
-/// The rank a check reads below: the rank of the declaration it admits. The
-/// check reads only the entries its source states before that declaration.
+/// The rank a check reads below, the rank of the declaration it admits, and
+/// the position of that declaration. The check reads only the entries its
+/// source states before that declaration.
 #[derive(Clone, Debug)]
 pub(crate) struct Horizon
 {
     /// The rank of the declaration the check admits.
     rank: SourceRank,
+    /// The position of the declaration the check admits: the length the
+    /// check reads, whatever the releases after it reserve.
+    end: gandr_kernel_term::ArenaLength,
     /// The presentations, as a reading below the rank sees them.
     presentations: crate::presented::Presentations,
 }
@@ -1757,15 +1761,19 @@ pub(crate) struct EntryLog
     definitions: BTreeMap<ContentDigest, Vec<ConstantIndex>>,
     /// How many slots are vacancies.
     vacancies: usize,
+    /// How many slots are reserved for a release whose commit has not come.
+    reservations: usize,
 }
 
-/// The slot at one position of the entries: an admitted declaration, or the
-/// vacancy that a refused declaration leaves.
+/// The slot at one position of the entries: an admitted declaration, the
+/// vacancy that a refused declaration leaves, or the reservation of a
+/// released declaration whose commit has not come.
 ///
 /// A refused declaration keeps its position, so no later position moves when
-/// a refusal comes after it. Its content leaves the arena, so its slot holds
-/// no declaration and no content. No read sees a vacancy, no rank table holds
-/// it, no reach holds it, and the chain passes it.
+/// a refusal comes after it. Its content leaves the arena, or stays as an
+/// orphan below later content, so its slot holds no declaration. No read sees
+/// a vacancy, no rank table holds it, no reach holds it, and the chain passes
+/// it. No read sees a reservation either, until its commit fills it.
 ///
 /// # Specification
 /// trivial.
@@ -1781,11 +1789,14 @@ pub(crate) enum Slot
     Admitted(AdmittedDeclaration),
     /// The position of a refused declaration.
     Vacant,
+    /// The position of a released declaration whose commit has not come.
+    Reserved,
 }
 
 impl Slot
 {
-    /// The admitted declaration in this slot: none for a vacancy.
+    /// The admitted declaration in this slot: none for a vacancy or a
+    /// reservation.
     ///
     /// # Specification
     /// trivial.
@@ -1794,12 +1805,12 @@ impl Slot
     {
         match *self {
             Self::Admitted(ref entry) => Some(entry),
-            Self::Vacant => None,
+            Self::Vacant | Self::Reserved => None,
         }
     }
 
     /// The admitted declaration in this slot, to change in place: none for a
-    /// vacancy.
+    /// vacancy or a reservation.
     ///
     /// # Specification
     /// trivial.
@@ -1808,7 +1819,7 @@ impl Slot
     {
         match *self {
             Self::Admitted(ref mut entry) => Some(entry),
-            Self::Vacant => None,
+            Self::Vacant | Self::Reserved => None,
         }
     }
 }
@@ -1903,8 +1914,9 @@ impl Entries
         self.family().get(offset).and_then(Slot::admitted)
     }
 
-    /// How many slots there are, each vacancy included: the position that
-    /// the next admission takes.
+    /// How many slots there are, each vacancy and each reservation included:
+    /// the position that the next admission takes. A running check reads the
+    /// position of the declaration that it admits.
     ///
     /// # Specification
     /// trivial.
@@ -1912,11 +1924,13 @@ impl Entries
     #[must_use]
     pub fn len(&self) -> gandr_kernel_term::ArenaLength
     {
-        self.family().len()
+        self.horizon
+            .as_ref()
+            .map_or_else(|| self.family().len(), |horizon| horizon.end)
     }
 
     /// How many admitted entries there are, live or retired: the slots less
-    /// each vacancy.
+    /// each vacancy and each reservation.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1935,8 +1949,11 @@ impl Entries
     pub fn admitted(&self) -> gandr_kernel_term::ArenaLength
     {
         gandr_kernel_term::ArenaLength::from(
-            usize::from(self.len())
-                .saturating_sub(self.log.as_deref().map_or(0, |log| log.vacancies)),
+            usize::from(self.len()).saturating_sub(
+                self.log
+                    .as_deref()
+                    .map_or(0, |log| log.vacancies.saturating_add(log.reservations)),
+            ),
         )
     }
 
@@ -2355,29 +2372,52 @@ impl Entries
     {
         let log = self.log_mut();
         let position = ConstantIndex::from(usize::from(log.family.len()));
-        let declaration = &entry.declaration;
-        let rank = entry.rank;
-        log.presentations.admit(
-            (position, rank),
-            declaration,
-            sort_constructors(&log.family, declaration),
-        );
-        if let DeclarationContent::Def { body, .. } = *declaration.content()
-            && !declaration.operation_rules().rules().is_empty()
-            && let Some(&Value::Thunk(root)) = arena.value(body)
-        {
-            let _previous = log.ruled.insert(root, position);
-        }
-        // Each holder is kept: a reader takes the one ranked first below
-        // it. Admission refuses a second holder, and only the bypass admits
-        // one.
-        if let Maybe::Present(role) = declaration.role() {
-            log.roles.entry(role).or_default().push(position);
-        }
-        if let ConstantName::Definition { digest, .. } = entry.key_name {
-            place_definition(&log.family, &mut log.definitions, digest, (position, rank));
-        }
+        log.index(arena, position, &entry);
         log.family.push(Slot::Admitted(entry));
+    }
+
+    /// Reserve the next position for a released declaration: a slot that no
+    /// read sees until its commit fills it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: usize::from(self.len()) == usize::from(entry_len).saturating_add(1) && self.admitted() == admitted)]
+    pub(crate) fn reserve(&mut self)
+    {
+        let log = self.log_mut();
+        log.reservations = log.reservations.saturating_add(1);
+        log.family.push(Slot::Reserved);
+    }
+
+    /// Admit `entry` at its reserved `position`, its content in `arena`.
+    ///
+    /// # Specification
+    /// - requires: the slot at `position` is reserved, and `entry` is the
+    ///   declaration released there, its content in `arena`, at a rank no entry
+    ///   holds.
+    /// - ensures: the slot holds `entry`, and the indexes hold its rows as
+    ///   [`Self::push`] states. The length is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a commit in another order than the positions fills
+    ///   each slot as the serial run admits it.
+    /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && usize::from(self.admitted()) == usize::from(admitted).saturating_add(1))]
+    pub(crate) fn fill(
+        &mut self,
+        arena: &TermArena,
+        position: ConstantIndex,
+        entry: AdmittedDeclaration,
+    )
+    {
+        let log = self.log_mut();
+        log.index(arena, position, &entry);
+        if let Some(slot) = log.family.get_mut(usize::from(position)) {
+            *slot = Slot::Admitted(entry);
+            log.reservations = log.reservations.saturating_sub(1);
+        }
     }
 
     /// Leave a vacancy at the next position: the slot of a refused
@@ -2399,6 +2439,25 @@ impl Entries
         let log = self.log_mut();
         log.vacancies = log.vacancies.saturating_add(1);
         log.family.push(Slot::Vacant);
+    }
+
+    /// Leave a vacancy at the reserved `position`: the slot of a released
+    /// declaration that its check refused.
+    ///
+    /// # Specification
+    /// trivial.
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
+    pub(crate) fn vacate_at(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let log = self.log_mut();
+        if let Some(slot) = log.family.get_mut(usize::from(position)) {
+            *slot = Slot::Vacant;
+            log.reservations = log.reservations.saturating_sub(1);
+            log.vacancies = log.vacancies.saturating_add(1);
+        }
     }
 
     /// Retire the live entry at `position`: no read sees it after, and its
@@ -2531,14 +2590,16 @@ impl Entries
         let first = ConstantIndex::from(length);
         let log = self.log_mut();
         let dropped = usize::from(log.family.len()).saturating_sub(usize::from(length));
-        let vacant = log
-            .family
-            .iter()
-            .rev()
-            .take(dropped)
-            .filter(|slot| slot.admitted().is_none())
-            .count();
+        let (vacant, reserved) = log.family.iter().rev().take(dropped).fold(
+            (0_usize, 0_usize),
+            |(vacant, reserved), slot| match *slot {
+                Slot::Admitted(_) => (vacant, reserved),
+                Slot::Vacant => (vacant.saturating_add(1), reserved),
+                Slot::Reserved => (vacant, reserved.saturating_add(1)),
+            },
+        );
         log.vacancies = log.vacancies.saturating_sub(vacant);
+        log.reservations = log.reservations.saturating_sub(reserved);
         log.family.truncate(length);
         log.presentations.forget_from(first);
         log.ruled.retain(|_, &mut position| position < first);
@@ -2583,15 +2644,17 @@ impl Entries
             .and_then(Slot::admitted_mut)
     }
 
-    /// Open a check of the declaration ranked at `rank`, whose support starts
-    /// at `roots`: each joins, with each type of words over it.
+    /// Open a check of the declaration ranked at `rank` and placed at `end`,
+    /// whose support starts at `roots`: each joins, with each type of words
+    /// over it.
     ///
     /// # Specification
-    /// - requires: no check runs over these entries.
+    /// - requires: no check runs over these entries, and `end` is at most their
+    ///   length.
     /// - ensures: until [`Self::close`], [`Self::get`] answers only the entries
     ///   in the support, which grows as the check reads, and only those ranked
     ///   below `rank`; [`Self::presentations`] and [`Self::holder`] answer only
-    ///   the rows ranked below it.
+    ///   the rows ranked below it; [`Self::len`] answers `end`.
     /// - provides: the start of a support by weakening, and the horizon that
     ///   makes a check read only what its source states before it.
     /// - fails: never.
@@ -2606,11 +2669,12 @@ impl Entries
     pub(crate) fn open(
         &mut self,
         roots: impl IntoIterator<Item = ConstantIndex>,
-        rank: SourceRank,
+        (rank, end): (SourceRank, gandr_kernel_term::ArenaLength),
     )
     {
         self.horizon = Some(Horizon {
             rank,
+            end,
             presentations: self
                 .log
                 .as_deref()
@@ -2708,6 +2772,48 @@ fn place_definition(
 
 impl EntryLog
 {
+    /// Take the rows of `entry`, admitted at `position` with its content in
+    /// `arena`: its presented type and the type of words it is over its
+    /// sort, its fixpoint, its role and its content name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn index(
+        &mut self,
+        arena: &TermArena,
+        position: ConstantIndex,
+        entry: &AdmittedDeclaration,
+    )
+    {
+        let declaration = &entry.declaration;
+        let rank = entry.rank;
+        self.presentations.admit(
+            (position, rank),
+            declaration,
+            sort_constructors(&self.family, declaration),
+        );
+        if let DeclarationContent::Def { body, .. } = *declaration.content()
+            && !declaration.operation_rules().rules().is_empty()
+            && let Some(&Value::Thunk(root)) = arena.value(body)
+        {
+            let _previous = self.ruled.insert(root, position);
+        }
+        // Each holder is kept: a reader takes the one ranked first below
+        // it. Admission refuses a second holder, and only the bypass admits
+        // one.
+        if let Maybe::Present(role) = declaration.role() {
+            self.roles.entry(role).or_default().push(position);
+        }
+        if let ConstantName::Definition { digest, .. } = entry.key_name {
+            place_definition(
+                &self.family,
+                &mut self.definitions,
+                digest,
+                (position, rank),
+            );
+        }
+    }
+
     /// Join `position` to `support`, with each type of words over it.
     ///
     /// # Specification
