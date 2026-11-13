@@ -1,12 +1,15 @@
-//! The measurement of the pool's dependence schedule: one schedule of 4,096
-//! items on the driver's pool, called from a thread outside the pool, at each
-//! width that the run names.
+//! The measurement of the pool's hand-offs: one fork of 4,096 items on the
+//! driver's pool, called from a thread outside the pool, at each width that the
+//! run names.
 //!
 //! | Row | What it times |
 //! | --- | ------------- |
-//! | `<graph>, <job> ns, <threads> threads` | one schedule of 4,096 items, given for each item: each release and each commit on the calling thread, and each job on a worker or on the calling thread |
+//! | `schedule, <graph>` | one dependence schedule: each release and each commit on the calling thread, and each job on a worker or on the calling thread |
+//! | `each` | one `Fork::each`: each item's job on a worker or on the calling thread |
+//! | `each by an atomic cursor` | the hand-written fallback of `each`: one task for each thread of a `rayon` pool of the same width, each taking the next item from one shared atomic counter |
 //!
-//! Each job spins for its time and returns nothing. The graphs:
+//! Each job spins for its time. Each figure is the time of the whole fork,
+//! given for each item. The graphs of the schedule:
 //!
 //! | Graph | The edges |
 //! | ----- | --------- |
@@ -30,6 +33,8 @@ mod support;
 
 use core::hint::black_box;
 use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::time::Instant;
 
@@ -47,7 +52,7 @@ use crate::support::Output;
 use crate::support::measure;
 use crate::support::print_row;
 
-/// The items of one schedule.
+/// The items of one fork.
 const ITEMS: usize = 4_096;
 
 /// The distance of each edge of the `stride 64` graph.
@@ -56,7 +61,7 @@ const STRIDE: usize = 64;
 /// The time each job spins for, in nanoseconds.
 const JOBS: [u64; 3] = [0, 1_000, 10_000];
 
-/// The edges of one graph of the measurement.
+/// The edges of one graph of the schedule's rows.
 #[derive(Clone, Copy)]
 enum Graph
 {
@@ -73,16 +78,16 @@ impl Graph
     /// Every graph, in the order of the table.
     const ALL: [Self; 3] = [Self::None, Self::Stride, Self::Chain];
 
-    /// The name of the graph in the table.
+    /// The name of the graph's row in the table.
     ///
     /// # Specification
     /// trivial.
-    const fn name(self) -> &'static str
+    const fn row(self) -> &'static str
     {
         match self {
-            Self::None => "none",
-            Self::Stride => "stride 64",
-            Self::Chain => "chain",
+            Self::None => "schedule, none",
+            Self::Stride => "schedule, stride 64",
+            Self::Chain => "schedule, chain",
         }
     }
 
@@ -122,6 +127,20 @@ fn spin(nanos: u64)
     }
 }
 
+/// The figures of one whole fork of [`ITEMS`] items, given for each item.
+///
+/// # Specification
+/// trivial.
+fn per_item(whole: &Figures) -> Figures
+{
+    let items = u128::try_from(ITEMS).expect("the count of items fits");
+    Figures {
+        median: whole.median.checked_div(items).expect("a nonzero count"),
+        tail: whole.tail.checked_div(items).expect("a nonzero count"),
+        allocations: whole.allocations,
+    }
+}
+
 /// The time of one schedule of [`ITEMS`] jobs that each spin for `job`
 /// nanoseconds under `after` on `pool`, given for each item.
 ///
@@ -135,7 +154,7 @@ fn scheduled(
 ) -> Figures
 {
     let mut items = vec![(); ITEMS];
-    let whole = measure(Count(1), samples, || {
+    per_item(&measure(Count(1), samples, || {
         pool.schedule(
             black_box(items.as_mut_slice()),
             after,
@@ -143,13 +162,56 @@ fn scheduled(
             |nanos| spin(black_box(nanos)),
             |_position, _item, ()| {},
         );
-    });
-    let items = u128::try_from(ITEMS).expect("the count of items fits");
-    Figures {
-        median: whole.median.checked_div(items).expect("a nonzero count"),
-        tail: whole.tail.checked_div(items).expect("a nonzero count"),
-        allocations: whole.allocations,
-    }
+    }))
+}
+
+/// The time of one `each` over [`ITEMS`] items whose jobs each spin for `job`
+/// nanoseconds on `pool`, given for each item.
+///
+/// # Specification
+/// trivial.
+fn each(
+    pool: &Pool,
+    job: u64,
+    samples: Count,
+) -> Figures
+{
+    let mut items = vec![(); ITEMS];
+    per_item(&measure(Count(1), samples, || {
+        pool.each(
+            black_box(items.as_mut_slice()),
+            || (),
+            |_state: &mut (), _item: &mut ()| spin(black_box(job)),
+        );
+    }))
+}
+
+/// The time of the hand-written fallback of `each` over [`ITEMS`] items whose
+/// jobs each spin for `job` nanoseconds: one task for each thread of
+/// `threads`, each taking the next item from one atomic counter, given for
+/// each item.
+///
+/// # Specification
+/// trivial.
+fn cursor(
+    threads: &rayon::ThreadPool,
+    job: u64,
+    samples: Count,
+) -> Figures
+{
+    let next = AtomicUsize::new(0);
+    per_item(&measure(Count(1), samples, || {
+        next.store(0, Ordering::Relaxed);
+        threads.in_place_scope(|scope| {
+            for _ in 0 .. threads.current_num_threads() {
+                scope.spawn(|_scope| {
+                    while next.fetch_add(1, Ordering::Relaxed) < ITEMS {
+                        spin(black_box(job));
+                    }
+                });
+            }
+        });
+    }))
 }
 
 /// The widths that the run names after `--bench`, or one thread and the
@@ -187,22 +249,42 @@ fn main()
         Output::Silent => Count(1),
     };
     if matches!(output, Output::Table) {
-        println!("Each figure is the time of one schedule of {ITEMS} items, given for each item.");
-        println!("The allocations are those of one schedule.");
+        println!("Each figure is the time of one fork of {ITEMS} items, given for each item.");
+        println!("The allocations are those of one fork.");
         println!();
-        println!("| Graph | Job ns | Threads | p50 ns | p99 ns | Allocations |");
-        println!("| ----- | ------ | ------- | ------ | ------ | ----------- |");
+        println!("| Fork | Job ns | Threads | p50 ns | p99 ns | Allocations |");
+        println!("| ---- | ------ | ------- | ------ | ------ | ----------- |");
     }
+    let print = |row: &str, job: u64, width: NonZeroUsize, figures: &Figures| {
+        if matches!(output, Output::Table) {
+            print_row(format_args!("{row} | {job} | {width}"), figures);
+        }
+    };
     for width in widths() {
         let pool = Pool::new(Width::Threads(Threads::from(width)));
+        let threads = rayon::ThreadPoolBuilder::new()
+            .num_threads(width.get())
+            .build()
+            .expect("the fallback's pool starts");
         for graph in Graph::ALL {
             let after = graph.dependences();
             for job in JOBS {
-                let figures = scheduled(&pool, &after, job, samples);
-                if matches!(output, Output::Table) {
-                    print_row(format_args!("{} | {job} | {width}", graph.name()), &figures);
-                }
+                print(
+                    graph.row(),
+                    job,
+                    width,
+                    &scheduled(&pool, &after, job, samples),
+                );
             }
+        }
+        for job in JOBS {
+            print("each", job, width, &each(&pool, job, samples));
+            print(
+                "each by an atomic cursor",
+                job,
+                width,
+                &cursor(&threads, job, samples),
+            );
         }
     }
 }
