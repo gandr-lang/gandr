@@ -1,26 +1,28 @@
-//! The readmissions sessions made of a revision's leading declarations, held
-//! so that a later admission leading with the same declarations resumes them
-//! rather than offering the kernel each again.
+//! The readmissions sessions made of a revision, held so that a later
+//! admission leading with the same declarations keeps or resumes them rather
+//! than offering the kernel each again.
 //!
 //! An editor rechecks a document by laying it out after its import closure and
-//! judging the whole text. A store of [`Runs`] holds what readmitting a leading
-//! run of such a text built — the kernel environment, the positions its
+//! judging the whole text. A store of [`Runs`] holds the record of a
+//! readmission of such a text — the kernel environment, the positions its
 //! declarations took and their outcomes, as [`Crossed`] records them — under
-//! the closure's text and the run's checkpoints. An admission whose closure
-//! text is held, byte for byte, and whose leading declarations' checkpoints —
-//! content, the answers each consulted and its typing — are pointwise a held
-//! run's resumes from the longest such run, and the kernel is offered the
-//! declarations past it alone: the text selects the candidate, the comparison
-//! of what the judgement recorded admits it, so nothing below the elaborator is
-//! keyed by a name, a position or a session.
+//! the closure's text and checkpoints. A record with the content key of each
+//! declaration stands under the checkpoints of the closure's declarations, and
+//! a later readmission keeps each entry of it that the edit leaves, matched by
+//! its key. A record without keys, which an admission retired part way
+//! leaves, stands under the checkpoints of its whole run. An admission whose
+//! closure text is held, byte for byte, and whose leading declarations'
+//! checkpoints — content, the answers each consulted and its typing — are
+//! pointwise the run's resumes the run. The text selects the candidate, and
+//! the keys or the comparison of what the judgement recorded admit it, so
+//! nothing below the elaborator is keyed by a name, a position or a session.
 //!
-//! The process holds the runs of closure declarations in one store every
-//! session reads ([`find`], [`keep`]): a second connection opening the
-//! document, or a session over another document importing the same closure,
-//! resumes too. A session holds the runs reaching past its closure into its
-//! own declarations in a store of its own, [`SESSION_RUNS_HELD`] of them, so
-//! the runs one document's edits make never push a closure's out. Each store
-//! lets the run asked for longest ago go.
+//! The process holds these records in one store every session reads
+//! ([`find`], [`keep`]): a second connection opening the document, or a
+//! session over another document importing the same closure, keeps or resumes
+//! too. The store lets the record asked for longest ago go. A session holds
+//! the record of the whole revision it admitted last as its own as well, so
+//! the records of other documents never push it out.
 
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -40,20 +42,16 @@ use gandr_surface_syntax::SourceText;
 /// asked for longest ago go: those of the few documents an editor has open.
 const CLOSURES_HELD: usize = 8;
 
-/// The most runs past its closure a session holds: one through the
-/// declaration its revisions keep changing, and one through every declaration
-/// for a revision that changes none.
-pub const SESSION_RUNS_HELD: usize = 2;
-
-/// A leading run's readmission, and once a commit of an export kept it, the
-/// decode of the kernel declarations the readmission admitted.
+/// A readmission's record — of a leading run, or of a whole revision with the
+/// content key of each declaration — and once a commit of an export kept it,
+/// the decode of the kernel declarations the readmission admitted.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the readmission it was kept with; the decoded prefix at most one
 ///   commit kept.
 /// - panics: none.
-/// - executable: none — a carrier; [`Runs::keep`] and
+/// - executable: none — a carrier; [`ClosureAdmission::new`] and
 ///   [`ClosureAdmission::keep_decoded`] set it.
 ///
 /// # Adequacy
@@ -70,6 +68,20 @@ pub struct ClosureAdmission
 
 impl ClosureAdmission
 {
+    /// The record `crossed`, with no decode kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(crossed: Crossed) -> Self
+    {
+        Self {
+            crossed,
+            decoded: OnceLock::new(),
+        }
+    }
+
     /// What readmitting the run's declarations built.
     ///
     /// # Specification
@@ -129,7 +141,7 @@ struct Held
 
 /// Readmissions of leading runs under the closure's text and each run's
 /// checkpoints, at most `HELD` of them: the process's store of the runs a
-/// closure's declarations make, or a session's of the runs past its closure.
+/// closure's declarations make.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -172,7 +184,9 @@ impl<const HELD: usize> Runs<HELD>
     /// - ensures: of the readmissions [`Runs::keep`] holds under a text equal
     ///   to `text` byte for byte and checkpoints equal pointwise to a leading
     ///   run of `checkpoints`, the one under the longest run, now the one asked
-    ///   for last; `None` when none is held.
+    ///   for last; `None` when none is held. A record that covers more
+    ///   declarations than `checkpoints` holds the key of each one, which a
+    ///   readmission matches by key.
     /// - provides: the candidate a session's admission resumes from.
     /// - fails: never.
     /// - panics: none.
@@ -180,7 +194,8 @@ impl<const HELD: usize> Runs<HELD>
     /// # Adequacy
     /// - hypothesis: L3 — as [`find`].
     /// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|found| usize::from(found.crossed().boundary()) <= checkpoints.len()))]
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|found| usize::from(found.crossed().boundary()) <= checkpoints.len()
+        || matches!(found.crossed().keys(), quenchant_shape::shape::Maybe::Present(_))))]
     pub fn find(
         &mut self,
         text: SourceText<'_>,
@@ -196,20 +211,21 @@ impl<const HELD: usize> Runs<HELD>
             .map(|held| Arc::clone(&held.admission))
     }
 
-    /// Hold `crossed`, the readmission of the leading declarations of a
-    /// revision laid out after the closure `text`, whose checkpoints are
-    /// `checkpoints`, in place of any held under both, letting the one asked
-    /// for longest ago go past `HELD`.
+    /// Hold `admission`, a readmission's record of a revision laid out after
+    /// the closure `text`, under `checkpoints`, in place of any held under
+    /// both, letting the one asked for longest ago go past `HELD`.
     ///
     /// # Specification
-    /// - requires: `crossed` records the readmission of declarations judged to
-    ///   `checkpoints`, laid out after `text`.
-    /// - ensures: [`Runs::find`] of `text` and `checkpoints` answers what is
-    ///   returned, holding `crossed` and no decode, until a later
-    ///   [`Runs::keep`] replaces it or lets it go; no more than `HELD` is held,
-    ///   and the run just kept stays while `HELD` is one or more.
+    /// - requires: `admission` records the readmission of declarations judged
+    ///   to `checkpoints`, laid out after `text`; it records more declarations
+    ///   after them only when it holds the key of each one it records, since a
+    ///   readmission matches those by their keys.
+    /// - ensures: [`Runs::find`] of `text` and `checkpoints` answers
+    ///   `admission` until a later [`Runs::keep`] replaces it or lets it go; no
+    ///   more than `HELD` is held, and the record just kept stays while `HELD`
+    ///   is one or more.
     /// - provides: the record a later admission leading with the same
-    ///   declarations resumes from.
+    ///   declarations resumes or keeps from.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -217,27 +233,23 @@ impl<const HELD: usize> Runs<HELD>
     /// - hypothesis: L3 — as [`find`].
     /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
     /// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
-    #[spec(requires: usize::from(crossed.boundary()) == checkpoints.len())]
+    #[spec(requires: usize::from(admission.crossed().boundary()) == checkpoints.len()
+        || matches!(admission.crossed().keys(), quenchant_shape::shape::Maybe::Present(_)) && checkpoints.len() <= usize::from(admission.crossed().boundary()))]
     pub fn keep(
         &mut self,
         text: String,
         checkpoints: Vec<ItemCheckpoint>,
-        crossed: Crossed,
-    ) -> Arc<ClosureAdmission>
+        admission: Arc<ClosureAdmission>,
+    )
     {
-        let admission = Arc::new(ClosureAdmission {
-            crossed,
-            decoded: OnceLock::new(),
-        });
         self.held.keep(
             text,
             Held {
                 checkpoints,
-                admission: Arc::clone(&admission),
+                admission,
             },
             |held, kept| held.checkpoints == kept.checkpoints,
         );
-        admission
     }
 }
 
@@ -278,27 +290,28 @@ pub fn find(
     found
 }
 
-/// Hold `crossed` in the process's store, as [`Runs::keep`] holds it.
+/// Hold `admission` in the process's store, as [`Runs::keep`] holds it.
 ///
 /// # Specification
 /// - requires: as [`Runs::keep`].
 /// - ensures: as [`Runs::keep`], the store holding at most [`CLOSURES_HELD`].
-/// - provides: the record a later admission of the same closure resumes from.
+/// - provides: the record a later admission of the same closure resumes or
+///   keeps from.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`find`].
 /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
-#[spec(requires: usize::from(crossed.boundary()) == checkpoints.len())]
+#[spec(requires: usize::from(admission.crossed().boundary()) == checkpoints.len()
+    || matches!(admission.crossed().keys(), quenchant_shape::shape::Maybe::Present(_)) && checkpoints.len() <= usize::from(admission.crossed().boundary()))]
 pub fn keep(
     text: String,
     checkpoints: Vec<ItemCheckpoint>,
-    crossed: Crossed,
-) -> Arc<ClosureAdmission>
+    admission: Arc<ClosureAdmission>,
+)
 {
     let mut closures = CLOSURES.lock().unwrap_or_else(PoisonError::into_inner);
-    let admission = closures.keep(text, checkpoints, crossed);
+    closures.keep(text, checkpoints, admission);
     drop(closures);
-    admission
 }

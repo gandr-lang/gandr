@@ -2295,6 +2295,20 @@ impl ContentKey
     }
 }
 
+impl From<ContentKey> for ContentDigest
+{
+    /// The digest that `key` is: the key of a declaration that a readmission
+    /// keeps by its content.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: ContentKey) -> Self
+    {
+        key.0
+    }
+}
+
 impl fmt::Display for ContentKey
 {
     /// Write the key as 32 lowercase hexadecimal digits: the digest's high

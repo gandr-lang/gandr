@@ -184,8 +184,9 @@ fn a_recheck_samples_each_phase_and_each_judged_declaration()
         );
         assert_eq!(
             usize::from(after.admit().held()),
-            2,
-            "the second admission offers each declaration again: {after:?}"
+            1,
+            "the second admission keeps each declaration and samples no admission of it: \
+             {after:?}"
         );
     }
 }

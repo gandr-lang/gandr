@@ -184,15 +184,13 @@ fn work(counts: &DeclarationCounts) -> Work
 /// its form, consults the checker's memo and offers it to the kernel after
 /// the prelude's declarations, so each row's kernel goals are the goals that
 /// `gandr check --measure` reads of the same declaration: as many expanded,
-/// recalled and kept. The second recheck of the same text adopts each item
-/// and molds no form, so each row counts no judged item, no memo consult and
-/// no molded form, and the admission offers each declaration to the kernel
-/// again. That readmission resumes after the prelude from its record, which
-/// hands on the outcomes that the prelude's admission kept, so each row
-/// charges the goals of the measure again. A column read at the wrong
+/// recalled and kept. The second recheck of the same text adopts each item,
+/// molds no form and keeps each declaration that the first admitted (#6847),
+/// so each row counts no judged item, no memo consult, no molded form, no
+/// offer to the kernel and no kernel goal. A column read at the wrong
 /// position, a pass that counted an adopted item as judged, a fold that added
-/// the second recheck's counts to the first's, or a record that hands on no
-/// kept outcome (#6468) changes a row.
+/// the second recheck's counts to the first's, or a readmission that offered
+/// a kept declaration again changes a row.
 #[test]
 fn a_second_recheck_counts_no_judged_item()
 {
@@ -232,15 +230,20 @@ fn a_second_recheck_counts_no_judged_item()
                 molded: 0,
                 hits: 0,
                 misses: 0,
-                crossed: 1,
+                crossed: 0,
             },
-            "a second recheck adopts each item and molds no form: {counts:?}"
+            "a second recheck adopts each item, molds no form and keeps each declaration: \
+             {counts:?}"
         );
     }
-    assert_eq!(
-        second.iter().map(kernel).collect::<Vec<_>>(),
-        walked.iter().map(|&(_, goals)| goals).collect::<Vec<_>>(),
-        "the resumed readmission charges each row the goals the measure reads: {walked:?}"
+    assert!(
+        second.iter().all(|counts| kernel(counts)
+            == Goals {
+                expanded: 0,
+                recalled: 0,
+                kept: 0,
+            }),
+        "a kept declaration charges no kernel goal: {second:?}"
     );
 }
 
@@ -287,13 +290,11 @@ fn a_second_recheck_judges_no_item_when_another_session_keeps_the_closure_6536()
 
 /// #6566: in a process that holds its kernel's verdicts, as the language
 /// server does, the first recheck of a corpus source checks each declaration,
-/// expanding goals, and records each one's verdict. The second recheck of the
-/// same text adopts each item and offers each declaration to the kernel
-/// again, and the kernel recalls each one under its own key. The third
-/// resumes the record the second kept through every declaration. So no row of
-/// either expands, recalls or keeps a goal. A readmission that read no source,
-/// a resumed one that read the source of its record, or a key that a recheck
-/// does not reproduce changes a row.
+/// expanding goals, and records each one's verdict. The second and the third
+/// recheck of the same text adopt each item and keep each declaration that
+/// the first admitted (#6847). So no row of either expands, recalls or keeps a
+/// goal. A readmission that offered a kept declaration again and checked it,
+/// or a key that a recheck does not reproduce, changes a row.
 #[test]
 fn a_held_process_expands_no_goal_for_an_adopted_declaration_6566()
 {
@@ -315,17 +316,59 @@ fn a_held_process_expands_no_goal_for_an_adopted_declaration_6566()
         recalled: 0,
         kept: 0,
     };
-    // The second readmission offers each declaration and the kernel recalls
-    // it; the third resumes the record the second kept through every one.
-    for (later, crossed) in [("second", 1), ("third", 0)] {
+    // The second and the third readmission keep each declaration the first
+    // admitted.
+    for later in ["second", "third"] {
         let rows = recheck(&mut session, (&path, Text(&text)));
         assert_eq!(rows.len(), first.len(), "the same declarations hold rows");
         for counts in &rows {
             assert_eq!(
                 (work(counts).judged, work(counts).crossed, kernel(counts)),
-                (0, crossed, none),
+                (0, 0, none),
                 "a {later} recheck adopts each item and expands no kernel goal: {counts:?}"
             );
         }
     }
+}
+
+/// #6847: a declaration inserted before the source's own declarations moves
+/// each of them one place on. The readmission keeps each of them in place and
+/// offers the kernel the inserted declaration alone. So the row of the
+/// inserted declaration counts the one offer, and no other row counts an
+/// offer or a kernel goal. A reader that counted a kept entry as offered
+/// charges each row after the insertion with the goals of its earlier check.
+#[test]
+fn an_edit_charges_the_rows_of_its_reach_alone_6847()
+{
+    let path = source();
+    let text = std::fs::read_to_string(&path).expect("the corpus source is read");
+    let mut session = session(SourceRoot::Strict);
+    let first = recheck(&mut session, (&path, Text(&text)));
+    let inserted = format!("def inserted : Integer = 1; {text}");
+    let rows = recheck(&mut session, (&path, Text(&inserted)));
+    assert_eq!(
+        rows.len(),
+        first.len().saturating_add(1),
+        "the inserted declaration holds a row"
+    );
+    let offered: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|&(_, counts)| work(counts).crossed > 0)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(
+        offered,
+        vec![0_usize],
+        "the admission offers the inserted declaration alone: {rows:?}"
+    );
+    let none = Goals {
+        expanded: 0,
+        recalled: 0,
+        kept: 0,
+    };
+    assert!(
+        rows.iter().skip(1).all(|counts| kernel(counts) == none),
+        "a kept declaration charges no kernel goal: {rows:?}"
+    );
 }

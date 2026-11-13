@@ -39,6 +39,7 @@ pub use crate::component::Member;
 use crate::compose::Composed;
 pub use crate::compose::Keeping;
 use crate::compose::LoweringCount;
+use crate::compose::Reuse;
 pub use crate::compose::inferred_runs;
 pub use crate::compose::judge_component;
 use crate::compose::judge_lowering;
@@ -61,10 +62,7 @@ use crate::walk::Standing;
 pub const HOSTING: &str = include_str!("lib/unformatted/hosting.gandr");
 
 /// A readmission that resumes nothing and records nothing.
-pub const WHOLE: (
-    bridge::LeadingCount,
-    Maybe<&bridge::Crossed, bridge::crossed::Absent>,
-) = (
+pub const WHOLE: Reuse<'static> = Reuse::Leading(
     bridge::LeadingCount::NONE,
     Maybe::Absent(bridge::crossed::Absent::Unasked),
 );

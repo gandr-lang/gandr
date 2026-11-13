@@ -1142,7 +1142,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The readmission read no clock.
             Untimed,
-            /// The kernel was never offered the declaration.
+            /// The readmission does not offer the declaration to the kernel:
+            /// it holds no kernel entry, the kernel refuses it before its
+            /// check, or the readmission keeps its entry in place.
             Unoffered,
             /// A mutual block admits its members together, so no member has
             /// a time of its own.
@@ -1675,6 +1677,33 @@ impl Readmission
         KeptCount(self.kept)
     }
 
+    /// The entries that this readmission offered to the kernel, in order:
+    /// each past the resumed run that it neither kept in place nor left
+    /// unoffered.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each entry of [`Self::readmitted`] past [`Self::resumed`]
+    ///   whose time is not [`timed::Absent::Unoffered`], in order. A kept entry
+    ///   carries that time, so no kept entry is among them.
+    /// - panics: none.
+    /// - executable: none — an iterator, which a clause may not walk.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reader that counted a kept entry as offered charges
+    ///   each declaration past an edit with a check that the kernel does not
+    ///   run.
+    /// - witness: `bridge::tests::a_kept_readmission_retires_no_suffix_6846`
+    #[inline]
+    pub fn offered(&self) -> impl Iterator<Item = &Readmitted> + '_
+    {
+        self.readmitted
+            .get(self.resumed ..)
+            .unwrap_or_default()
+            .iter()
+            .filter(|entry| entry.took != UNOFFERED)
+    }
+
     /// The artifact of every declaration that crossed, each under the
     /// structured name `names` gives its module position.
     ///
@@ -1943,6 +1972,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a record carries no content key for its entries.
+    pub mod record_keys {
+        /// The reason no keys are held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The record holds a leading run that a readmission made with no
+            /// keys. A later readmission resumes the run as it stands.
+            Leading,
+        }
+    }
+}
+
 /// The content key of one judged declaration.
 ///
 /// The key is the digest of the declaration's canonical content, as the
@@ -2091,6 +2133,35 @@ impl Crossed
     pub fn kernel_end(&self) -> ConstantIndex
     {
         ConstantIndex::from(self.positions.exports.len())
+    }
+
+    /// The content key of each of the record's entries, in order, when the
+    /// record holds one for each, so that a readmission keeps from it
+    /// ([`readmit_keeping`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one key for each entry of the record when it holds them;
+    ///   otherwise [`record_keys::Absent::Leading`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission that kept from a record without keys
+    ///   would match no entry.
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(keys) => keys.len() == self.readmitted.len(),
+        Maybe::Absent(_) => self.keys.len() != self.readmitted.len(),
+    })]
+    pub fn keys(&self) -> Maybe<&[DeclarationKey], record_keys::Absent>
+    {
+        if self.keys.len() == self.readmitted.len() {
+            Maybe::Present(&self.keys)
+        }
+        else {
+            Maybe::Absent(record_keys::Absent::Leading)
+        }
     }
 
     /// The record of `built` — the environment, positions and entries of a
@@ -2623,8 +2694,9 @@ where
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`]; each key is the [`DeclarationKey`] of
-///   the declaration at its index, and the record's keys are those of the
-///   revision it recorded.
+///   the declaration at its index, and the keys of a record with keys are those
+///   of the revision it recorded. A record without keys is the record of a
+///   leading run, which the caller compares as [`readmit_resuming`] requires.
 /// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
 ///   with the readmission a whole readmission of `report` answers, entry by
 ///   entry and to the bytes of its export, and the record of every declaration
@@ -2633,12 +2705,14 @@ where
 ///   admission is keyed, under a recall that rechecks too ([`Recall::keyed`]),
 ///   since a kept entry stands by its key. [`Readmission::resumed`] counts the
 ///   declarations of the run, and [`Readmission::kept`] those kept in place
-///   past it. With no record, a record without keys, a report that seals an
-///   abstract type, a record that holds a formation, or a crossing the kernel
-///   rejects, every declaration crosses, as a whole readmission crosses it, and
-///   the record carries the keys. Retired, [`Polled::Retired`] with the
-///   retirement and no record ([`crossed::Absent::Kept`]); the record given is
-///   unchanged either way. Each fork gives the same answer.
+///   past it. A record without keys resumes its run, as [`readmit_resuming`]
+///   resumes it, and every declaration past the run crosses. With no record, a
+///   report that seals an abstract type, a record that holds a formation, or a
+///   crossing the kernel rejects, every declaration crosses, as a whole
+///   readmission crosses it, and the record carries the keys. Retired,
+///   [`Polled::Retired`] with the retirement and no record
+///   ([`crossed::Absent::Kept`]); the record given is unchanged either way.
+///   Each fork gives the same answer.
 /// - provides: an edit costs the kernel the reach of the edit, and the
 ///   readmission reads nothing of the run before the edit.
 /// - fails: never.
@@ -2677,6 +2751,16 @@ where
         report,
         |certificate| certificate,
         match record {
+            // A record without keys is a leading run's, which a later
+            // readmission resumes as it stands.
+            Maybe::Present(record) if matches!(record.keys(), Maybe::Absent(_)) => {
+                Resume::Leading {
+                    boundary: LeadingCount(report.judged().len()),
+                    crossed: Maybe::Present(record),
+                    recall,
+                    keys,
+                }
+            },
             Maybe::Present(record) => Resume::Kept {
                 record,
                 keys,
@@ -3474,15 +3558,17 @@ where
             };
             if let Some(tail) = tail {
                 self.kept = self.kept.saturating_add(1);
-                return Releasing::Settled(Answer::Crossed(Crossing {
-                    entry: keep::keep_entry(
+                // The kernel checks no kept entry in this readmission.
+                let kept = Readmitted {
+                    took: UNOFFERED,
+                    ..keep::keep_entry(
                         &mut self.positions,
                         report,
                         (entry, judged),
                         &keeping.renames,
-                    ),
-                    tail,
-                }));
+                    )
+                };
+                return Releasing::Settled(Answer::Crossed(Crossing { entry: kept, tail }));
             }
         }
         let source = self.source;
