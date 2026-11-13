@@ -6,8 +6,9 @@
 # repository with a signed change to a shared file and a landing below it.
 # A row that the landing adds moves no word, so the sign-off holds. An edit
 # of another cell of a line that names the item moves nothing, as the `since`
-# cells of pull request 7017 did (#7025). A change to a word that names the
-# item moves it, and so does a new file that names the item. A file of the
+# cells of pull request 7017 did (#7025). One more place of a word that the
+# change holds already moves nothing (#7338). A change to a word that names
+# the item moves it, and so does a new file that names the item. A file of the
 # change names an item of a crate only as a Rust source of a crate that can
 # name it, and a row or a script does not (#7164). The item's visibility
 # bounds that reach: its module, its parent's, its crate or its package
@@ -63,6 +64,29 @@ printf "INSERT INTO purpose VALUES (1);\nINSERT INTO purpose VALUES ('Kept', 21)
 celled=$(commit celled)
 got=$(cd "$repo" && moved "$fork" "$signed" "$base" "$celled" Gone | tr '\n' ' ')
 [[ -z $got ]] || fail "#7025: an edit of another cell of a line that names the item moves nothing" "$got"
+
+# One more place of a word that the change holds already moves nothing
+# (#7338). The change gives a site the field `Gone:`. A landing below adds a
+# second site to the same file, and the restack gives it the same field, as
+# the restack of pull request 7322 gave its field `keyed:` to a site of the
+# landing.
+git -C "$repo" checkout --quiet --detach "$fork"
+printf 'fn a() -> S { S {\n} }\n' > "$repo/src/sites.rs"
+sites=$(commit sites)
+git -C "$repo" checkout --quiet --detach "$sites"
+printf 'fn a() -> S { S {\n    Gone: 0,\n} }\n' > "$repo/src/sites.rs"
+field=$(commit field)
+git -C "$repo" checkout --quiet --detach "$sites"
+printf 'fn a() -> S { S {\n} }\nfn b() -> S { S {\n} }\n' > "$repo/src/sites.rs"
+second=$(commit second)
+printf 'fn a() -> S { S {\n    Gone: 0,\n} }\nfn b() -> S { S {\n    Gone: 0,\n} }\n' > "$repo/src/sites.rs"
+repeated=$(commit repeated)
+got=$(cd "$repo" && moved "$sites" "$field" "$second" "$repeated" Gone | tr '\n' ' ')
+[[ -z $got ]] || fail "#7338: a restack that gives a site of the landing a word that the change holds already moves nothing" "$got"
+printf 'fn a() -> S { S {\n    Gone: 0,\n} }\nfn b() -> S { S {\n    Gone: 1,\n    GoneToo: 0,\n} }\n' > "$repo/src/sites.rs"
+renamed=$(commit renamed)
+got=$(cd "$repo" && moved "$sites" "$field" "$second" "$renamed" Gone | tr '\n' ' ')
+[[ $got == $'Gone\tsrc/sites.rs ' ]] || fail "#7338: a word that the change adds at the landing's site, and not before, moves that file" "$got"
 
 # A change to a word that names the item after the sign-off moves it.
 git -C "$repo" checkout --quiet --detach "$head"

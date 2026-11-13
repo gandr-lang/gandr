@@ -16,8 +16,11 @@
 # parenthesis. A common segment as `ledger` names 39 of the 45 files of
 # pull request 7017. An edit of another cell of such a line, as its `since`,
 # moves nothing. A word that the change adds, drops or renames moves the
-# sign-off. A sign-off with no fork in the clone binds neither half, and
-# `check.bash` reads it as stale.
+# sign-off. Each word counts once in each file, so one more place of a word
+# that the change holds already moves nothing: the restack of pull request
+# 7322 gave its field `keyed:` to a site that a landing below added (#7338).
+# A sign-off with no fork in the clone binds neither half, and `check.bash`
+# reads it as stale.
 moved() {
   local fork=$1 sha=$2 from=$3 head=$4
   shift 4
@@ -35,7 +38,7 @@ moved() {
           m = split(substr($0, 2), word, gap)
           for (i = 1; i <= m; i++) for (j = 1; j <= n; j++)
             if (segment[j] != "" && index(word[i], segment[j])) print segment[j] "\t" file "\t" sign word[i]
-        }' | LC_ALL=C sort
+        }' | LC_ALL=C sort -u
   }
   LC_ALL=C comm -3 <(words "$fork" "$sha" "$@") <(words "$from" "$head" "$@") \
     | awk -F'\t' '{ if ($1 == "") print $2 "\t" $3; else print $1 "\t" $2 }' | LC_ALL=C sort -u
