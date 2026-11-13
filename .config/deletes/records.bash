@@ -229,7 +229,9 @@ records_resolve() {
 }
 
 # The inputs outside the key of one package, from the run's messages `$1`
-# and the package's closure `$2`. Prints the sorted list.
+# and the package's closure `$2`. Prints the sorted list. The closure goes
+# to `jq` through a pipe: as one argument, the closure of a large package
+# passes the bound of 131,072 bytes that Linux sets (#7062).
 records_extras() {
   local messages=$1 closure=$2 file stdout package base
   local sysroot cargo_home
@@ -237,8 +239,8 @@ records_extras() {
   cargo_home=${CARGO_HOME:-$HOME/.cargo}
   {
     # The dep-info of each workspace unit that the package reaches.
-    jq -r --argjson closure "$closure" \
-      'select(.reason == "compiler-artifact" and (.package_id | IN($closure.packages[])) and (.package_id | startswith("path+file://"))) | .filenames[]' \
+    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
+      'select(.reason == "compiler-artifact" and (.package_id | IN($closure[0].packages[])) and (.package_id | startswith("path+file://"))) | .filenames[]' \
       "$messages" | while IFS= read -r file; do
         base=$(basename "$file")
         base=${base%.rmeta}
@@ -250,8 +252,8 @@ records_extras() {
           /:$/ && !/: / && !/^#/ { path = substr($0, 1, length($0) - 1); print "dep", (path ~ /^\// ? path : tree "/" path) }' "$file"
       done
     # The stdout of each build script that the package reaches.
-    jq -r --argjson closure "$closure" \
-      'select(.reason == "build-script-executed" and (.package_id | IN($closure.packages[]))) | [.package_id, .out_dir] | @tsv' \
+    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
+      'select(.reason == "build-script-executed" and (.package_id | IN($closure[0].packages[]))) | [.package_id, .out_dir] | @tsv' \
       "$messages" | while IFS=$'\t' read -r package file; do
         stdout=$(dirname "$file")/run/stdout
         [[ -f $stdout ]] || stdout=$(dirname "$file")/output
