@@ -37,6 +37,8 @@
 //! parse, as `f(x, y + 1` closed after `y` or after `1`, the nearer is taken. A
 //! place that parts an operand from the argument the melder applies it to is
 //! tried after the next place, so the `)` of `S (P x <=> x;` comes after `P x`.
+//! When the form's last written tile is its opener, the place directly after
+//! that opener is tried last, so `( -> Integer = …` takes its `)` as `()`.
 //! The melder can close the form at the end of its last written tile, before an
 //! operand that follows the tile. A closer there expels that operand, so that
 //! place is not tried. Any other tile the form may take — a member's `;`, an
@@ -1651,9 +1653,33 @@ fn holding(
         .find(|&(_, span)| span.start() < end && end <= span.end())
 }
 
+/// The spans of the tiles of `tree` that end at `end`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each tile whose span ends at `end`, in position order.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the filter.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`settled`].
+/// - witness: `parse::place::tests::a_closer_left_out_after_its_opener_is_minted_there_6323`
+fn tiles_ending_at<'tree>(
+    tree: &'tree SyntaxTree<'_>,
+    end: ByteOffset,
+) -> impl Iterator<Item = ByteSpan> + 'tree
+{
+    tree.positions()
+        .filter_map(|position| tree.node(position))
+        .filter(move |node| matches!(node.label(), NodeLabel::Tile(_)) && node.span().end() == end)
+        .map(Node::span)
+}
+
 /// The parse with `target`'s tile minted where the rest of its top-level form
 /// parses, the copy reaching as far back as `reach` says, if a place tried
-/// does: for a closer, the melder's close and the first [`PLACES`] tile ends;
+/// does: for a closer, the melder's close, the first [`PLACES`] tile ends, and,
+/// when the form's last written tile is its opener, the end of that opener;
 /// for another tile, the first [`COPIES`] copies, then, when none molds with no
 /// repair, those copies with the separator the form lost written after them
 /// ([`lost_separator`]).
@@ -1671,6 +1697,7 @@ fn holding(
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_closer_left_out_of_a_broken_declaration_is_minted_where_it_parses_5837`
 /// - witness: `parse::place::tests::a_tile_a_form_the_layout_ends_lacks_is_minted_where_one_copy_parses_5938`
+/// - witness: `parse::place::tests::a_closer_left_out_after_its_opener_is_minted_there_6323`
 fn settled<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -1791,6 +1818,22 @@ fn settled<'source>(
         previous = opening;
     }
     places.truncate(PLACES);
+    // A form whose last written tile is its opener, as the `(` of
+    // `def f : ( -> T = …`, takes its closer directly after that opener as
+    // well, after every other place: the melder's minted close holds the rest
+    // of the line inside the group, and no later place gives the source back
+    // (#6323).
+    let opener_last = target.class.is_some_and(|class| {
+        tiles_ending_at(tree, target.end).any(|span| {
+            text.get(usize::from(span.start()) .. usize::from(span.end()))
+                .is_some_and(|spelt| {
+                    ClosingClass::opening(DelimSpelling::from(spelt)) == Some(class)
+                })
+        })
+    });
+    if opener_last && target.leading != LeadingSlot::Empty && !places.contains(&target.end) {
+        places.push(target.end);
+    }
     // The melder's close goes first, unless it stands at the end of the form's
     // last written tile and a written operand follows, which a closer there
     // expels.
@@ -2740,6 +2783,37 @@ mod tests
                 "{why}: the `def` is minted, empty, at the `rec`"
             );
         }
+    }
+
+    /// #6323: a `)` left out directly after its `(`, as `()` without its `)`
+    /// in a declared type. The melder's minted close holds the rest of the
+    /// line inside the group, so no later place gives the source back. The
+    /// search tries the place directly after the opener, and the parse owes
+    /// one repair, over the `(` it closes.
+    #[test]
+    fn a_closer_left_out_after_its_opener_is_minted_there_6323()
+    {
+        let pbg = built_in().unwrap();
+        let source = include_str!(
+            "place/unformatted/a-closer-left-out-after-its-opener-is-minted-there-6323.gandr"
+        );
+        let opener = source.find(": ( ->").unwrap().saturating_add(2);
+        let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+        assert_eq!(
+            reconstruct(parsed.tree()),
+            source,
+            "the tree reconstructs the source"
+        );
+        assert!(
+            matches!(
+                parsed.obligations(),
+                [repair] if repair.class == Oblig::MissingTile
+                    && usize::from(repair.span.start()) == opener
+                    && usize::from(repair.span.end()) == opener.saturating_add(1)
+            ),
+            "one repair stands, over the `(`: {:?}",
+            parsed.obligations()
+        );
     }
 
     /// #6323: a member of a module's block whose `type` is left out. The
