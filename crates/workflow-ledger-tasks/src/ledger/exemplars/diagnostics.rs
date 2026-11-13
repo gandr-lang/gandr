@@ -532,7 +532,7 @@ impl core::fmt::Display for Subject
 ///   finding; each with a row and no file is counted owed; each with both, or
 ///   neither, is a finding; so is each row naming no subject and each file
 ///   naming none. A missing folder reads as empty.
-/// - provides: the diagnostics part of `gandr ledger exemplars <directory>`.
+/// - provides: the diagnostics part of `gandr-ledger exemplars <directory>`.
 /// - fails: a folder that exists and cannot be listed.
 /// - panics: none.
 ///

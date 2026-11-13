@@ -10,7 +10,7 @@
 //! the source it was cut from; the rules and attributes no corpus source
 //! exercises are printed, one per line. A seed is where an exemplar starts:
 //! the exemplar under `corpus/ledger/` is the seed cut down by hand to the
-//! smallest item that still shows its rule, which `gandr ledger exemplars`
+//! smallest item that still shows its rule, which `gandr-ledger exemplars`
 //! verifies.
 //!
 //! Only sources that parse with no obligation are read, so a seed never

@@ -75,6 +75,7 @@ members = [
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-ledger",
+  "crates/workflow-ledger-tasks",
   "crates/workflow-prose",
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
@@ -202,6 +203,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-tasks
 # - workflow-spec-cost
 # - workflow-sweep
 # - workflow-test-timing
@@ -277,6 +279,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-tasks
 # - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
@@ -465,6 +468,7 @@ path = "crates/core-session"
 # - surface-pretty
 # - surface-repl
 # - surface-session
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
@@ -656,6 +660,7 @@ path = "crates/storage-values"
 # - surface-render-terminal (dev)
 # - surface-repl
 # - surface-session
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
@@ -669,6 +674,7 @@ path = "crates/surface-corpus"
 # - surface-render-terminal
 # - surface-repl
 # - surface-session (dev)
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
@@ -684,6 +690,7 @@ path = "crates/surface-diagnostics"
 # - surface-repl
 # - surface-session
 # - surface-tui
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
@@ -693,6 +700,7 @@ path = "crates/surface-dispatcher"
 # - surface-dispatcher
 # - surface-driver
 # - surface-mcp
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-features]
 path = "crates/surface-features"
 
@@ -723,6 +731,7 @@ path = "crates/surface-format"
 # - surface-repl
 # - surface-session
 # - surface-tui
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
@@ -745,6 +754,7 @@ path = "crates/surface-layout"
 # - surface-lsp
 # - surface-render-terminal (dev)
 # - surface-session
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
 
@@ -784,6 +794,7 @@ path = "crates/surface-mcp"
 # - surface-lsp
 # - surface-repl
 # - surface-session
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
@@ -855,6 +866,7 @@ path = "crates/surface-session"
 # - surface-repl
 # - surface-session
 # - surface-tui
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
@@ -1031,12 +1043,12 @@ default-features = false
 # - none: alloc-only graph machinery.
 # consumers:
 # - surface-grammar
-# - surface-dispatcher
 # - surface-format
 # - surface-parser
 # - surface-diagnostics (dev)
 # - theory-decomposition-spaces
 # - theory-dynamic-graphs
+# - workflow-ledger-tasks
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
 default-features = false
@@ -1190,6 +1202,14 @@ path = "crates/workflow-github"
 # - workflow-prose
 [workspace.dependencies.gandr-workflow-ledger]
 path = "crates/workflow-ledger"
+
+# The ledger tasks of the surface: the syntax ledger's writer, the exemplars
+# gate, the recovery sweep, and the features ledger's list and show, run by
+# the `gandr-ledger` binary.
+# consumers:
+# - surface-driver (dev)
+[workspace.dependencies.gandr-workflow-ledger-tasks]
+path = "crates/workflow-ledger-tasks"
 
 # The corpus sources a sweep test visits: the stated sample under every
 # pull-request profile, the whole corpus under `sweeps`.
@@ -1571,6 +1591,7 @@ default-features = false
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-tasks
 # - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
@@ -1713,7 +1734,7 @@ features = ["alloc", "derive"]
 # consumers:
 # - core-checker (dev)
 # - surface-diagnostics
-# - surface-dispatcher
+# - surface-dispatcher (dev)
 # - surface-driver
 # - surface-features
 # - surface-lsp
@@ -1725,6 +1746,7 @@ features = ["alloc", "derive"]
 # - workflow-coverage-guard
 # - workflow-hotpath-guard
 # - workflow-lane-budget
+# - workflow-ledger-tasks
 # - workflow-prose
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]

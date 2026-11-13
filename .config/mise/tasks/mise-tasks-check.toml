@@ -1190,7 +1190,7 @@ echo 'readme pin OK: README.md is the owner-approved synopsis'
 
 # The syntax ledger is generated from the grammar, the attribute registry and
 # the committed rules' exemplars, which each rule's admission is read off
-# (`gandr-surface-dispatcher`'s `ledger` module): `ledger:syntax` regenerates
+# (`gandr-workflow-ledger-tasks`'s `ledger` module): `ledger:syntax` regenerates
 # it into a temporary directory under each case's environment in
 # `.config/ledger/syntax-cases.json`, a toolchain selection no host carries
 # among them, and `.config/ledger/syntax-cases.bash` compares it with the
@@ -1203,7 +1203,7 @@ tools.jq = "1.8.1"
 run = ".config/ledger/syntax-cases.bash"
 
 # One exemplar per committed rule of the syntax ledger and per attribute
-# (`corpus/ledger/{syntax,attributes}`), verified by the driver: the files
+# (`corpus/ledger/{syntax,attributes}`), verified by `gandr-ledger`: the files
 # and the rules match by name, each exemplar parses with no obligation and
 # holds a tile of its rule, and each attribute exemplar lowers with its
 # attribute filed. Every features exemplar states only `checks`, `runs` or
@@ -1213,7 +1213,7 @@ run = ".config/ledger/syntax-cases.bash"
 # reason or issue. Every finding is printed, `<file>: <fault>`.
 ["check:syntax-exemplars"]
 description = "One verified exemplar per committed rule and attribute of the syntax ledger, every features exemplar exhibiting, and every refusal name an exemplar or an owed row"
-run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-lang -- ledger exemplars corpus/ledger"
+run = ".config/mise/scope cargo run --locked --quiet --profile test --package gandr-workflow-ledger-tasks -- exemplars corpus/ledger"
 
 # Every exemplar under `corpus/ledger` (syntax, attributes, features and
 # diagnostics), settled as an author runs them. `ledger/` is a fixture root, so

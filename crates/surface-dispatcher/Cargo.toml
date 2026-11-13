@@ -41,10 +41,7 @@ path = "benches/reals.rs"
 # The pool's dependence schedule queues the jobs that may run in the bounded
 # queue of crossbeam-queue, which every task pops with no lock.
 # The reader maps a source above its crossover through memmap2, and rewrites
-# a mapped source through the one writer. The `ledger`
-# verb writes the syntax ledger's machine form through serde_json, and reads
-# a mold's left bound through the graph crate's `Bound` where its decision
-# table asks whether a hole faces an opener. A package's manifest
+# a mapped source through the one writer. A package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
 # tells its own file from a hand edit; its address is the BLAKE3 digest of
 # its items' content keys, which the incremental checker's program states.
@@ -98,7 +95,6 @@ gandr-surface-syntax.workspace = true
 gandr-theory-cell-complexes.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 gandr-theory-exact-reals.workspace = true
-gandr-theory-graphs.workspace = true
 gandr-theory-ordered-algebras.workspace = true
 gandr-theory-sites.workspace = true
 getrandom.workspace = true
@@ -107,7 +103,6 @@ memmap2.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true
 self_cell.workspace = true
-serde_json.workspace = true
 toml.workspace = true
 tracing = { workspace = true, optional = true }
 
@@ -118,9 +113,9 @@ tracing = { workspace = true, optional = true }
 # the allocations of each operation through allocation-counter. The test of
 # the one-time pad reads a joint distribution into a `Distribution` of
 # theory-probability, over the rationals of the sheaf crate. The corpus tests
-# of one nextest run share a walk's digest through serde (#5256). The tests
-# read the pool's recording fork, so the crate's own targets turn its
-# `instrument` feature on.
+# of one nextest run share a walk's digest through serde and serde_json
+# (#5256). The tests read the pool's recording fork, so the crate's own
+# targets turn its `instrument` feature on.
 [dev-dependencies]
 allocation-counter.workspace = true
 gandr-surface-dispatcher = { workspace = true, features = ["instrument"] }
@@ -130,6 +125,7 @@ gandr-theory-levitation.workspace = true
 gandr-theory-probability.workspace = true
 gandr-workflow-sweep.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads
 # them from sysfs with std alone.

@@ -9,9 +9,9 @@
 //!
 //! | Code | Meaning |
 //! | ---- | ------- |
-//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, a ledger was written, every exemplar held, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
-//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's or a workspace's source states no manifest, or its manifest was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; `gandr ledger exemplars` found an exemplar that does not hold; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a ledger that could not be generated, written or listed, or a source a census could not parse or lower, or that the lowering refused whole |
+//! | `0` | every declaration settled, a script's run returned a value, every staged certificate was readmitted, every source was laid out, or a census read every path; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a Model Context Protocol session whose input ended, an engine hub that lingered out or found another serving its socket, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
+//! | `1` | at least one declaration is unsettled, or a source was not read as its root expects; a package's or a workspace's source states no manifest, or its manifest was edited by hand; a manifold `check` reads deploys a world its program lacks or its site does not offer; a script's run was blamed on a goal or stopped short of a value; the kernel refused a staged certificate; `gandr fmt --check` found a source out of layout; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+//! | `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, `check`, `test` or `fmt` given no path outside every package, a user configuration file that cannot be read or names a spelling there is none of, output the driver could not write, a package manifest that could not be read or written, a language-server or Model Context Protocol stream that failed, an engine hub that could not be reached, bound or served, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, `gandr tui` without a terminal, a script that never reached the machine: unreadable, refused, declaring no name, or running into a declaration the machine carries no image of, or a staged program that could not be checked, a family admission that faulted, or a worker pool that did not start, or a source the formatter refused or could not write back, or a source a census could not parse or lower, or that the lowering refused whole |
 //!
 //! A fault outranks an unsettled declaration: a run with both exits `2`. The
 //! walk continues past a faulted path, so every fault of a run is printed.
@@ -46,9 +46,6 @@
 //! | `gandr fmt --jobs <threads> <paths>` | as `fmt`, its sources laid out on that many threads | as `fmt` |
 //! | `gandr cells <paths>` | one line per rewriting cell of each declaration a source writes, `<path>:<line>:<column>: cell <n> <provenance>, <growth>: <hole> <count>, …`, each hole with how many times the cell's right-hand side writes it (`gandr-surface-dispatcher`'s `cells` module); nothing is checked | a path that cannot be read or names no source, or a source that does not parse or lower, or that the lowering refuses whole |
 //! | `gandr doc <path> --out <directory>` | the path of each page written, one per source under the path, then the index's (`gandr-surface-lsp`'s `doc` module): each page the source's own documentation, then each public declaration's hover block under a heading naming it | a path that names no source, or a source that cannot be read or judged, or a page that cannot be written |
-//! | `gandr ledger syntax --write <directory> [--exemplars <directory>]` | the path of each file written, `syntax.md` then `syntax.json`, each committed rule's admission read off its exemplar (`gandr-surface-dispatcher`'s `ledger` module) | a ledger that cannot be generated or written, or a committed rule whose exemplar cannot be read |
-//! | `gandr ledger exemplars <directory>` | each exemplar that does not hold, `<path>: <fault>`, then the count verified and found (`gandr-surface-dispatcher`'s `ledger::exemplars` module) | an exemplar that does not hold, or a directory that cannot be listed |
-//! | `gandr ledger recovery <directory>` | the near-miss table, one line per literal tile the syntax exemplars write, then each mutant whose first error marks other bytes than its mutation, `<path>:<byte>: <tile> <mutation>: <error> at <span>, not at <site>`, then the count swept (`gandr-surface-dispatcher`'s `ledger::recovery` module) | a mutant marked elsewhere, or a directory that cannot be listed |
 //! | `gandr lsp` | the language server's frames on standard output, until `exit`, served by the workspace's hub on Unix | a session ended before `shutdown` |
 //! | `gandr lsp --standalone` | as `lsp`, served in its own process | as `lsp` |
 //! | `gandr lsp --socket <path> --linger-ms <ms>` | as `lsp`, through the hub on that socket, a hub it starts lingering that long | as `lsp` |
@@ -377,8 +374,6 @@ use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
-use gandr_surface_dispatcher::LedgerRun;
-use gandr_surface_dispatcher::LedgerTask;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Lock;
@@ -435,10 +430,7 @@ use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::schedule;
 use gandr_surface_dispatcher::timed;
-use gandr_surface_features::Area;
-use gandr_surface_features::FeatureId;
 use gandr_surface_features::FeatureLedger;
-use gandr_surface_features::Status;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
 use gandr_surface_format::PageWidth;
@@ -518,9 +510,6 @@ const REFUSED: u8 = 1;
 
 /// The exit code of `fmt --check` over a source out of layout.
 const UNFORMATTED: u8 = 1;
-
-/// The exit code of `ledger exemplars` over an exemplar that does not hold.
-const UNEXEMPLIFIED: u8 = 1;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -955,20 +944,6 @@ enum Command
         #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
-    /// Generate a ledger of the language surface and write it, verify its
-    /// exemplars, or read the features ledger.
-    ///
-    /// Prints the path of each file written, each exemplar that does not hold
-    /// and a count, or the features asked for. Exits 0 when the ledger was
-    /// written, every exemplar holds or the features were read, 1 when an
-    /// exemplar does not hold, and 2 when the ledger cannot be generated, read
-    /// or answer, or a file cannot be written or listed.
-    Ledger
-    {
-        /// The ledger to write, verify or read.
-        #[command(subcommand)]
-        ledger: LedgerName,
-    },
     /// Link, choose and list the installed toolchains the driver runs.
     ///
     /// Before any verb, the driver selects a toolchain: `GANDR_TOOLCHAIN`,
@@ -1011,67 +986,6 @@ enum ToolchainAction
     /// Print this build's version, system and the features its ledger meets,
     /// which another build reads to hold it to a package's constraint.
     Describe,
-}
-
-/// The ledgers `gandr ledger` writes, verifies or reads.
-#[derive(Debug, clap::Subcommand)]
-enum LedgerName
-{
-    /// The syntax ledger: every rule of the built-in grammar and every
-    /// attribute of the lowering's registry, under the grammar's fingerprint,
-    /// as `syntax.md` for reading and `syntax.json` for machines.
-    Syntax
-    {
-        /// The directory both files are written into, created when missing.
-        #[arg(long, value_name = "DIRECTORY")]
-        write: PathBuf,
-        /// The directory holding `syntax/`, whose exemplars each committed
-        /// rule's admission is read off; `exemplars/` under the written
-        /// directory when not given.
-        #[arg(long, value_name = "DIRECTORY")]
-        exemplars: Option<PathBuf>,
-    },
-    /// The syntax exemplars: one source per committed rule under `syntax/`
-    /// and per attribute under `attributes/`, each parsed and checked for the
-    /// form it names.
-    Exemplars
-    {
-        /// The directory holding `syntax/` and `attributes/`.
-        directory: PathBuf,
-    },
-    /// The recovery sweep: every literal tile of every syntax exemplar under
-    /// `syntax/` written as its near miss and deleted, and each mutant's first
-    /// error read against the bytes it changed.
-    Recovery
-    {
-        /// The directory holding `syntax/`.
-        directory: PathBuf,
-    },
-    /// The features ledger, one line per feature: its id, status, name and
-    /// what it is. Before writing a form, list its area.
-    List
-    {
-        /// Only the features in this area, such as `syntax`.
-        #[arg(long)]
-        area: Option<String>,
-        /// Only the features at this status.
-        #[arg(long, value_enum)]
-        status: Option<StatusName>,
-        /// The tree holding `ledger/features.sql`.
-        #[arg(long, value_name = "DIRECTORY", default_value = ".")]
-        root: PathBuf,
-    },
-    /// One feature of the features ledger: its row, each of its exemplars'
-    /// sources whole and its corpus witnesses' paths. Show each feature a form
-    /// uses before writing it.
-    Show
-    {
-        /// The feature's id, as `gandr ledger list` prints it.
-        id: String,
-        /// The tree holding `ledger/features.sql` and the paths it names.
-        #[arg(long, value_name = "DIRECTORY", default_value = ".")]
-        root: PathBuf,
-    },
 }
 
 /// The threads `check`, `test`, `stage` and `fmt` work on.
@@ -1362,43 +1276,6 @@ enum FormName
     Explicit,
     /// The surface's sugared spelling.
     Sugared,
-}
-
-/// A status `ledger list --status` names.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
-enum StatusName
-{
-    /// gandr has it.
-    Implemented,
-    /// gandr has part of it.
-    Partial,
-    /// gandr will have it.
-    Planned,
-    /// gandr will not have it.
-    Declined,
-}
-
-impl From<StatusName> for Status
-{
-    /// The status `name` names.
-    ///
-    /// # Specification
-    /// trivial.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — `--status planned` lists only the planned feature, so
-    ///   a name read as another status lists another set.
-    /// - witness: `tests::cli::the_features_ledger_lists_and_shows_1827`
-    #[inline]
-    fn from(name: StatusName) -> Self
-    {
-        match name {
-            StatusName::Implemented => Self::Implemented,
-            StatusName::Partial => Self::Partial,
-            StatusName::Planned => Self::Planned,
-            StatusName::Declined => Self::Declined,
-        }
-    }
 }
 
 /// A spelling `--spelling` names.
@@ -2230,46 +2107,6 @@ fn main() -> ExitCode
                 },
             );
         },
-        Some(Command::Ledger {
-            ledger: LedgerName::Syntax { write, exemplars },
-        }) => (
-            Invocation::Ledger(LedgerTask::Syntax {
-                exemplars: exemplars.unwrap_or_else(|| write.join("exemplars")),
-                directory: write,
-            }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Exemplars { directory },
-        }) => (
-            Invocation::Ledger(LedgerTask::Exemplars { directory }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Recovery { directory },
-        }) => (
-            Invocation::Ledger(LedgerTask::Recovery { directory }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::List { area, status, root },
-        }) => (
-            Invocation::Ledger(LedgerTask::List {
-                root,
-                area: area.map(Area),
-                status: status.map(Status::from),
-            }),
-            Verbosity::User,
-        ),
-        Some(Command::Ledger {
-            ledger: LedgerName::Show { id, root },
-        }) => (
-            Invocation::Ledger(LedgerTask::Show {
-                root,
-                id: FeatureId(id),
-            }),
-            Verbosity::User,
-        ),
         Some(Command::Toolchain { action }) => return toolchains(action),
         Some(Command::Lsp {
             capabilities: true, ..
@@ -3864,8 +3701,7 @@ fn doubled(doubled: Doubled) -> ExitCode
 ///   line on standard error: what it prints goes to standard output, what it
 ///   writes to standard error goes there beside its diagnostics, the lines it
 ///   reads come from standard input, and its run status chooses the exit. A
-///   staging follows [`stage`], a formatting [`fmt`], a ledger task [`ledger`],
-///   and a census [`cells`].
+///   staging follows [`stage`], a formatting [`fmt`], and a census [`cells`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -3960,99 +3796,7 @@ fn render(
             let pool = Pool::new(formatting.width());
             fmt(formatting, &pool, stdout, stderr)
         },
-        Outcome::Ledger(task) => ledger(&task, stdout, stderr),
         Outcome::Cells(census) => cells(census, stdout, stderr),
-    }
-}
-
-/// Run `task`: write its ledger, printing the path of each file written,
-/// verify its exemplars, printing each that does not hold, sweep them for
-/// recovery, printing each mutant marked elsewhere, or read the features
-/// ledger, printing what was asked; and choose the exit code.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: each file written is its path, as one line on standard output, in
-///   the order the task writes them, and the exit is zero. A verification
-///   prints each exemplar that does not hold as `<path>: <fault>`, then the
-///   count verified and found, on standard output; a recovery sweep prints its
-///   near-miss table, each mutant marked elsewhere, then the count swept. Each
-///   exits zero when nothing was found and one otherwise. A list prints each
-///   feature it matched as `<id> [<status>] <name>: <line>`, a show prints the
-///   feature's row, its exemplars' sources and its corpus paths, and both exit
-///   zero. A ledger that cannot be generated, written, listed, read or answer
-///   is `gandr: <fault>` on standard error and exits two.
-/// - provides: `gandr ledger syntax --write <directory>`, `gandr ledger
-///   exemplars <directory>`, `gandr ledger recovery <directory>`, `gandr ledger
-///   list` and `gandr ledger show <id>`.
-/// - fails: the first write error on either stream.
-/// - panics: none.
-///
-/// # Errors
-/// The [`std::io::Error`] of the first write that failed.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a run into a fresh directory prints both paths, exits
-///   zero and leaves files that a second run reproduces byte for byte; a
-///   directory under a file exits two naming it; the committed exemplars verify
-///   and exit zero, and a stray exemplar exits one naming it; a sweep prints
-///   its near-miss table and its count; a list and a show of a scratch ledger
-///   print their golden and exit zero, and an unknown area and id exit two
-///   naming them.
-/// - witness: `tests::cli::the_syntax_ledger_is_written_and_reproduced`
-/// - witness: `tests::cli::the_exemplars_verify_and_a_stray_one_is_named`
-/// - witness: `tests::cli::the_recovery_sweep_reports_its_table_and_count`
-/// - witness: `tests::cli::the_features_ledger_lists_and_shows_1827`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
-    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNEXEMPLIFIED) || *exit == ExitCode::from(FAULTED)))]
-fn ledger(
-    task: &LedgerTask,
-    stdout: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
-) -> std::io::Result<ExitCode>
-{
-    match task.run() {
-        Ok(LedgerRun::Written(paths)) => {
-            for path in paths {
-                writeln!(stdout, "{}", path.display())?;
-            }
-            Ok(ExitCode::SUCCESS)
-        },
-        Ok(LedgerRun::Verified(report)) => {
-            for finding in report.findings() {
-                writeln!(stdout, "{finding}")?;
-            }
-            writeln!(stdout, "{report}")?;
-            Ok(if report.findings().is_empty() {
-                ExitCode::SUCCESS
-            }
-            else {
-                ExitCode::from(UNEXEMPLIFIED)
-            })
-        },
-        Ok(LedgerRun::Swept(report)) => {
-            writeln!(stdout, "{report}")?;
-            Ok(if report.findings().is_empty() {
-                ExitCode::SUCCESS
-            }
-            else {
-                ExitCode::from(UNEXEMPLIFIED)
-            })
-        },
-        Ok(LedgerRun::Listed(features)) => {
-            for feature in features {
-                writeln!(stdout, "{feature}")?;
-            }
-            Ok(ExitCode::SUCCESS)
-        },
-        Ok(LedgerRun::Shown(shown)) => {
-            write!(stdout, "{shown}")?;
-            Ok(ExitCode::SUCCESS)
-        },
-        Err(fault) => {
-            writeln!(stderr, "gandr: {fault}")?;
-            Ok(ExitCode::from(FAULTED))
-        },
     }
 }
 

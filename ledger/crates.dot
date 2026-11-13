@@ -100,6 +100,7 @@ digraph crates {
     "workflow-hotpath-guard";
     "workflow-lane-budget";
     "workflow-ledger";
+    "workflow-ledger-tasks";
     "workflow-prose";
     "workflow-spec-cost";
     "workflow-sweep";
@@ -234,7 +235,6 @@ digraph crates {
   "surface-dispatcher" -> "theory-cell-complexes";
   "surface-dispatcher" -> "theory-coherent-resolutions";
   "surface-dispatcher" -> "theory-exact-reals";
-  "surface-dispatcher" -> "theory-graphs";
   "surface-dispatcher" -> "theory-ordered-algebras";
   "surface-dispatcher" -> "theory-sites";
   "surface-driver" -> "core-fork";
@@ -407,6 +407,16 @@ digraph crates {
   "workflow-coverage-guard" -> "workflow-github";
   "workflow-hotpath-guard" -> "workflow-github";
   "workflow-lane-budget" -> "workflow-github";
+  "workflow-ledger-tasks" -> "core-term";
+  "workflow-ledger-tasks" -> "surface-corpus";
+  "workflow-ledger-tasks" -> "surface-diagnostics";
+  "workflow-ledger-tasks" -> "surface-dispatcher";
+  "workflow-ledger-tasks" -> "surface-features";
+  "workflow-ledger-tasks" -> "surface-grammar";
+  "workflow-ledger-tasks" -> "surface-lowering";
+  "workflow-ledger-tasks" -> "surface-parser";
+  "workflow-ledger-tasks" -> "surface-syntax";
+  "workflow-ledger-tasks" -> "theory-graphs";
   "workflow-prose" -> "workflow-ledger";
   "workflow-spec-cost" -> "workflow-test-timing";
   "workflow-sweep" -> "surface-format";

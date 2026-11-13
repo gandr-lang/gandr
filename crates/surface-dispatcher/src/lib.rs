@@ -18,9 +18,7 @@
 //! builds its programs when the driver runs it. The `fmt` verb routes to a
 //! [`Formatting`], which reaches its paths as a walk does, and reads, lays out
 //! and rewrites each source as the driver advances it with
-//! [`Formatting::step`]. The `ledger` verb routes to a [`LedgerTask`], which
-//! builds its ledger and writes its files, or verifies its exemplars, when the
-//! driver runs it.
+//! [`Formatting::step`].
 //!
 //! `dispatch` reads no file and writes nothing: it builds the grammar the walk
 //! parses with, which is computation, and returns. The walk's I/O happens as
@@ -143,9 +141,9 @@
 //! destination becomes an explicit API requirement, rather than an incidental
 //! side effect of dispatch.
 
-// Module documentation that predates the shape lint: 49 headings outside the
-// vocabulary, 12 decision records, 7 issue references and 12 budgets exceeded.
-// Each allow leaves with the rewrite that clears its count.
+// Module documentation that predates the shape lint: 82 headings outside the
+// vocabulary, 20 decision records, 41 issue references and 14 budgets
+// exceeded. Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     allow(
@@ -168,7 +166,6 @@ mod exercised;
 mod format;
 mod generation;
 mod held;
-mod ledger;
 mod manifold;
 mod measure;
 mod memo;
@@ -335,16 +332,6 @@ pub use crate::generation::Retired;
 pub use crate::generation::Submitted;
 pub use crate::generation::Watch;
 pub use crate::generation::delivery;
-pub use crate::ledger::ExemplarFault;
-pub use crate::ledger::ExemplarFinding;
-pub use crate::ledger::ExemplarReport;
-pub use crate::ledger::LedgerFault;
-pub use crate::ledger::LedgerRun;
-pub use crate::ledger::LedgerTask;
-pub use crate::ledger::RecoveryFinding;
-pub use crate::ledger::RecoveryReport;
-pub use crate::ledger::RecoveryTally;
-pub use crate::ledger::SyntaxLedger;
 pub use crate::manifold::Manifold;
 pub use crate::manifold::Secreted;
 pub use crate::manifold::Secrets;
@@ -596,9 +583,6 @@ pub enum Invocation
         /// The threads the sources are laid out on.
         width: Width,
     },
-    /// `ledger`: generate a ledger of the language surface and write it, or
-    /// verify its exemplars.
-    Ledger(LedgerTask),
     /// `cells`: report the rewriting cells of the sources under `paths`, each
     /// hole with how many times its cell's right-hand side writes it, and,
     /// when `fusions` asks, each block's fusion cells with their composed
@@ -636,9 +620,6 @@ pub enum Outcome
     Stage(Staging),
     /// Sources to lay out, not yet read.
     Format(Formatting),
-    /// A ledger to generate and write, or whose exemplars to verify, not yet
-    /// run.
-    Ledger(LedgerTask),
     /// Sources whose cells to report, not yet read.
     Cells(Census),
 }
@@ -690,19 +671,18 @@ impl core::fmt::Display for StatusReport
 ///   attributes and no grant, each walk over the invocation's paths in order at
 ///   the invocation's width; `run` to a [`Script`] of its path; `stage` to a
 ///   [`Staging`] of its programs, in order, at its width; `fmt` to a
-///   [`Formatting`] of its paths, in order, at its page and rewrite; `ledger`
-///   to its [`LedgerTask`] unchanged; `cells` to a [`Census`] of its paths, in
-///   order. Routing performs no I/O of its own: a walk, a script, a formatting
-///   or a census reads nothing until it is advanced, a staging builds nothing
-///   until it runs, a ledger task builds and writes nothing until it runs, and
-///   building the grammar a walk parses with is computation. The optional
-///   `tracing` feature reports a span to the caller's subscriber.
+///   [`Formatting`] of its paths, in order, at its page and rewrite; `cells` to
+///   a [`Census`] of its paths, in order. Routing performs no I/O of its own: a
+///   walk, a script, a formatting or a census reads nothing until it is
+///   advanced, a staging builds nothing until it runs, and building the grammar
+///   a walk parses with is computation. The optional `tracing` feature reports
+///   a span to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all eight invocation variants and both goals policies
+/// - hypothesis: L3 — all seven invocation variants and both goals policies
 ///   have exact outcomes. Missing-path fixtures observe the first routed path
 ///   and the script, formatting and census paths; they do not enumerate
 ///   arbitrary path lists or prove the complete walk order, which has its own
@@ -713,7 +693,6 @@ impl core::fmt::Display for StatusReport
 /// - witness: `tests::the_run_verb_routes_to_a_script`
 /// - witness: `tests::the_stage_verb_routes_to_a_staging`
 /// - witness: `tests::the_format_verb_routes_to_a_formatting`
-/// - witness: `tests::the_ledger_verb_routes_to_its_task`
 /// - witness: `tests::the_cells_verb_routes_to_a_census`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
@@ -726,38 +705,29 @@ impl core::fmt::Display for StatusReport
             &Invocation::Check { goals, lints, width, .. } => Some((Verb::Check(goals), lints, width)),
             &Invocation::Test { width, .. } => Some((Verb::Test, Lints::default(), width)),
             &Invocation::Status | &Invocation::Run { .. } | &Invocation::Stage { .. }
-                | &Invocation::Format { .. } | &Invocation::Ledger(_) | &Invocation::Cells { .. } => None,
+                | &Invocation::Format { .. } | &Invocation::Cells { .. } => None,
         },
         staged = match &invocation {
             &Invocation::Stage { ref programs, width } => Some((programs.clone(), width)),
             &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
-                | &Invocation::Run { .. } | &Invocation::Format { .. } | &Invocation::Ledger(_)
-                | &Invocation::Cells { .. } => None,
+                | &Invocation::Run { .. } | &Invocation::Format { .. } | &Invocation::Cells { .. } => None,
         },
         formatted = match &invocation {
             &Invocation::Format { options, rewrite, width, .. } => Some((options, rewrite, width)),
             &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
-                | &Invocation::Run { .. } | &Invocation::Stage { .. } | &Invocation::Ledger(_)
-                | &Invocation::Cells { .. } => None,
-        },
-        ledgered = match &invocation {
-            &Invocation::Ledger(ref task) => Some(task.clone()),
-            &Invocation::Status | &Invocation::Check { .. } | &Invocation::Test { .. }
-                | &Invocation::Run { .. } | &Invocation::Stage { .. } | &Invocation::Format { .. }
-                | &Invocation::Cells { .. } => None,
+                | &Invocation::Run { .. } | &Invocation::Stage { .. } | &Invocation::Cells { .. } => None,
         },
     ],
     ensures: |ref ret| match *ret {
         Outcome::Status(_) => status,
         Outcome::Run { verb: routed, lints, width, .. } => Some((routed, lints, width)) == verb,
         Outcome::Script(_) => !status && !censused && verb.is_none() && staged.is_none()
-            && formatted.is_none() && ledgered.is_none(),
+            && formatted.is_none(),
         Outcome::Stage(ref staging) =>
             staged.as_ref().is_some_and(|&(ref programs, width)|
                 staging.programs() == programs.as_slice() && staging.width() == width),
         Outcome::Format(ref formatting) =>
             formatted == Some((formatting.options(), formatting.rewrite(), formatting.width())),
-        Outcome::Ledger(ref task) => ledgered.as_ref() == Some(task),
         Outcome::Cells(_) => censused,
     },
 )]
@@ -795,7 +765,6 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             rewrite,
             width,
         } => Outcome::Format(Formatting::new(paths, options, rewrite, width)),
-        Invocation::Ledger(task) => Outcome::Ledger(task),
         Invocation::Cells { paths, fusions } => Outcome::Cells(Census::new(paths, fusions)),
     }
 }
@@ -1141,26 +1110,6 @@ mod tests
             path,
             PathBuf::from("no/such/first.gandr"),
             "the formatting starts at the first path given"
-        );
-    }
-
-    /// `ledger` routes to its task unchanged, building and writing nothing.
-    #[test]
-    fn the_ledger_verb_routes_to_its_task()
-    {
-        let task = super::LedgerTask::Syntax {
-            directory: PathBuf::from("no/such/ledger"),
-            exemplars: PathBuf::from("no/such/ledger/exemplars"),
-        };
-        let outcome = dispatch(Invocation::Ledger(task.clone()));
-        let Outcome::Ledger(routed) = outcome
-        else {
-            panic!("ledger routes to its task");
-        };
-        assert_eq!(routed, task);
-        assert!(
-            !std::path::Path::new("no/such/ledger").exists(),
-            "routing writes nothing"
         );
     }
 

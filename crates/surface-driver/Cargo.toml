@@ -97,10 +97,11 @@ tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
 # The parser's report example reads the corpus the sweeps list, molds it
-# with the parser and counts the molder's decisions. Its latency workload
-# types into a language-server session through the language server's client,
-# as the hotpath bench's workloads do, and its incremental workload parses
-# each revision through the session's form store, on the serial fork. The
+# with the parser and counts the molder's decisions. Its recovery axis reads
+# the recovery sweep of the ledger tasks. Its latency workload types into a
+# language-server session through the language server's client, as the
+# hotpath bench's workloads do, and its incremental workload parses each
+# revision through the session's form store, on the serial fork. The
 # `check --activity` witness reads the activity ring, so the crate's own
 # targets turn its `instrument` feature on. The counting allocator's witness
 # reads its thread's count through the checker's `Meter`.
@@ -112,6 +113,7 @@ gandr-surface-lsp = { workspace = true, features = ["client"] }
 gandr-surface-parser.workspace = true
 gandr-surface-session.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-workflow-ledger-tasks.workspace = true
 gandr-workflow-sweep.workspace = true
 
 # The terminal face draws through crossterm, which has no WASI 0.3 terminal,

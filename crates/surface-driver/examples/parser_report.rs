@@ -8,7 +8,7 @@
 //! | ---- | ------- | --------- |
 //! | latency | each keystroke's time from its change to its settled answer, p50 and p99 | a language-server session per [`SAMPLE`] source, one line typed back a character per change |
 //! | throughput | bytes and significant tokens per second of the corpus's cold parse | each corpus source parsed [`RUNS`] times, the fastest run kept |
-//! | recovery | each mutant's fate over the syntax exemplars, and the obligations a line owes outside itself while it is typed | `gandr ledger recovery`'s sweep, and every [`STRIDE`]th indented line of each [`SAMPLE`] source typed back, indented first and at column zero |
+//! | recovery | each mutant's fate over the syntax exemplars, and the obligations a line owes outside itself while it is typed | `gandr-ledger recovery`'s sweep, and every [`STRIDE`]th indented line of each [`SAMPLE`] source typed back, indented first and at column zero |
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
 //! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
 //! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
@@ -29,9 +29,6 @@ use std::path::Path;
 use std::time::Instant;
 
 use gandr_core_fork::Serial;
-use gandr_surface_dispatcher::LedgerRun;
-use gandr_surface_dispatcher::LedgerTask;
-use gandr_surface_dispatcher::RecoveryTally;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
@@ -49,6 +46,9 @@ use gandr_surface_parser::parse;
 use gandr_surface_session::FormStore;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_workflow_ledger_tasks::LedgerRun;
+use gandr_workflow_ledger_tasks::LedgerTask;
+use gandr_workflow_ledger_tasks::RecoveryTally;
 use gandr_workflow_sweep::SweepError;
 use quenchant_shape::shape::Maybe;
 
