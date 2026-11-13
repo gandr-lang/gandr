@@ -234,6 +234,14 @@ done
 [[ $(ls "$work/taken" | wc -l) -eq 2 ]] || fail "the hit of a holds $(ls "$work/taken" | wc -l) files, and its records are 2"
 cases=$((cases + 3))
 
+# A closure past the bound of one argument gives the inputs of the closure
+# that it pads (#7062). Linux admits 131,072 bytes for one argument, and
+# macOS admits 1 MiB for all of them, so the pad passes both.
+large=$(records_closure "$work/units.json" crates/a | jq -c '.packages += [range(24000) | "registry+https://example.invalid#padding-\(.)@0.1.0"]')
+(( ${#large} > 1048576 )) || fail "the padded closure holds ${#large} bytes, not past 1048576"
+[[ $(records_extras "$work/messages.json" "$large") == "$(< "$work/extras-a")" ]] || fail "#7062: a closure of ${#large} bytes does not give the inputs of a"
+cases=$((cases + 1))
+
 echo changed > "$tree/crates/shared/data.txt" && commit
 stale "a file that a dep-info names" crates/a; valid "a file that a dep-info names" crates/k; restore "$fixture"
 echo changed > "$tree/crates/tools/gen.txt" && commit
