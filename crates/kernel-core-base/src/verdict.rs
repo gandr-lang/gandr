@@ -97,6 +97,10 @@ const KEY_CONTEXT: &str = "gandr kernel verdict key 2026-10-27";
 /// [`KEY_CONTEXT`], so no entry key is a chain key.
 const ENTRY_KEY_CONTEXT: &str = "gandr kernel entry key 2026-11-11";
 
+/// The context an entry's content key derives under. It reads no build
+/// identity, so it is neither an entry key nor a chain key.
+const CONTENT_KEY_CONTEXT: &str = "gandr kernel entry content key 2026-11-13";
+
 /// The context a receipt's message derives under.
 const RECEIPT_CONTEXT: &str = "gandr kernel verdict receipt 2026-10-27";
 
@@ -108,17 +112,16 @@ const VERDICT_VERSION: u8 = 1;
 
 /// A key for one admission.
 ///
-/// An entry key covers what the declaration reads, each position it names by
-/// that entry's key. A chain key covers the kernel's whole input: its build,
-/// and every declaration admitted up to and including this one.
+/// An entry key binds an entry's content key ([`EntryContentKey`]) to the
+/// kernel's build identity. A chain key covers the kernel's whole input: its
+/// build, and every declaration admitted up to and including this one.
 ///
 /// # Specification
 /// - ensures: two entry keys are equal exactly when, up to a BLAKE3 collision,
-///   they cover the same build identity, keyed segments, named keys, manifest
-///   atoms, types of words and generative index. Two chain keys are equal
-///   exactly when they chain the same build identity over the same canonical
-///   segments. No entry key is a chain key, because the two derive under two
-///   contexts.
+///   they bind the same build identity to the same content key. Two chain keys
+///   are equal exactly when they chain the same build identity over the same
+///   canonical segments. No entry key is a chain key, because the two derive
+///   under two contexts.
 /// - provides: the identity a recorded verdict is recalled by.
 /// - panics: none.
 /// - executable: none — collision resistance is BLAKE3's.
@@ -126,9 +129,10 @@ const VERDICT_VERSION: u8 = 1;
 /// # Adequacy
 /// - hypothesis: L3 — a recorded verdict is recalled under its own key and not
 ///   after one name changes; an edit re-keys only what reads the edited
-///   declaration.
+///   declaration; two builds give one content key and two entry keys.
 /// - witness: `gandr-kernel-core::tests::verdicts::a_verdict_is_recalled_only_under_its_own_key`
 /// - witness: `gandr-kernel-core::tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
+/// - witness: `gandr-kernel-core::environment::tests::two_builds_give_one_content_key_and_two_entry_keys_7295`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct VerdictKey([u8; 32]);
@@ -206,9 +210,68 @@ impl VerdictKey
         )
     }
 
-    /// The key of a generative entry whose content key is `self`, after
-    /// `earlier` entries with the same content key: two entries with one
-    /// content are two types, so they take two keys.
+    /// The entry key of the entry whose content key is `content`, under the
+    /// kernel's build identity `build`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn entry(
+        build: BuildIdentity,
+        content: EntryContentKey,
+    ) -> Self
+    {
+        Self(
+            *blake3::Hasher::new_derive_key(ENTRY_KEY_CONTEXT)
+                .update(&build.0)
+                .update(&content.0)
+                .finalize()
+                .as_bytes(),
+        )
+    }
+}
+
+/// An entry's content key: what its admission reads, each position it names
+/// by that entry's content key, and no build identity.
+///
+/// The key names an entry across builds and attests nothing. A verdict
+/// stands under the entry key, which binds this key to a build
+/// ([`VerdictKey::entry`]).
+///
+/// # Specification
+/// - ensures: two content keys are equal exactly when, up to a BLAKE3
+///   collision, they cover the same keyed segments, named content keys,
+///   manifest atoms, types of words and generative index.
+/// - provides: an entry's name, apart from the build that checks it.
+/// - panics: none.
+/// - executable: none — collision resistance is BLAKE3's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two builds give one content key and two entry keys.
+/// - witness: `gandr-kernel-core::environment::tests::two_builds_give_one_content_key_and_two_entry_keys_7295`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EntryContentKey([u8; 32]);
+
+impl From<EntryContentKey> for [u8; 32]
+{
+    /// The digest of `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: EntryContentKey) -> Self
+    {
+        key.0
+    }
+}
+
+impl EntryContentKey
+{
+    /// The content key of a generative entry whose unit's content key is
+    /// `self`, after `earlier` entries with the same content key: two entries
+    /// with one content are two types, so they take two keys.
     ///
     /// # Specification
     /// trivial.
@@ -216,18 +279,17 @@ impl VerdictKey
     #[must_use]
     pub fn generative(
         self,
-        build: BuildIdentity,
         earlier: KeyedCount,
     ) -> Self
     {
-        let mut keyer = EntryKeyer::tagged(build, EntryTag::Generative);
+        let mut keyer = EntryContentKeyer::tagged(EntryTag::Generative);
         keyer.key(self);
         keyer.count(earlier);
         keyer.finish()
     }
 
-    /// The key of the member at `ordinal` in the mutual block whose key is
-    /// `self`.
+    /// The content key of the member at `ordinal` in the mutual block whose
+    /// content key is `self`.
     ///
     /// # Specification
     /// trivial.
@@ -235,11 +297,10 @@ impl VerdictKey
     #[must_use]
     pub fn member(
         self,
-        build: BuildIdentity,
         ordinal: KeyedCount,
     ) -> Self
     {
-        let mut keyer = EntryKeyer::tagged(build, EntryTag::Member);
+        let mut keyer = EntryContentKeyer::tagged(EntryTag::Member);
         keyer.key(self);
         keyer.count(ordinal);
         keyer.finish()
@@ -267,8 +328,8 @@ impl From<usize> for KeyedCount
     }
 }
 
-/// What an entry key's digest starts with after the build identity, so the
-/// three forms of the key never read one another's bytes.
+/// What an entry content key's digest starts with, so the three forms of the
+/// key never read one another's bytes.
 ///
 /// # Specification
 /// trivial.
@@ -284,30 +345,27 @@ pub enum EntryTag
     Member,
 }
 
-/// An entry key as it is written: the build identity, a tag, then what the
-/// admission reads in a fixed order, with each run after its length.
+/// An entry content key as it is written: a tag, then what the admission
+/// reads in a fixed order, with each run after its length.
 ///
 /// # Specification
 /// trivial.
 #[repr(transparent)]
 #[derive(Clone, Debug)]
-pub struct EntryKeyer(blake3::Hasher);
+pub struct EntryContentKeyer(blake3::Hasher);
 
-impl EntryKeyer
+impl EntryContentKeyer
 {
-    /// A key under `tag`, over the kernel's build identity `build`.
+    /// A content key under `tag`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn tagged(
-        build: BuildIdentity,
-        tag: EntryTag,
-    ) -> Self
+    pub fn tagged(tag: EntryTag) -> Self
     {
-        let mut hasher = blake3::Hasher::new_derive_key(ENTRY_KEY_CONTEXT);
-        let _written = hasher.update(&build.0).update(&[match tag {
+        let mut hasher = blake3::Hasher::new_derive_key(CONTENT_KEY_CONTEXT);
+        let _written = hasher.update(&[match tag {
             EntryTag::Content => 0,
             EntryTag::Generative => 1,
             EntryTag::Member => 2,
@@ -351,7 +409,7 @@ impl EntryKeyer
     #[inline]
     pub fn key(
         &mut self,
-        key: VerdictKey,
+        key: EntryContentKey,
     )
     {
         let _written = self.0.update(&key.0);
@@ -363,9 +421,9 @@ impl EntryKeyer
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn finish(&self) -> VerdictKey
+    pub fn finish(&self) -> EntryContentKey
     {
-        VerdictKey(*self.0.finalize().as_bytes())
+        EntryContentKey(*self.0.finalize().as_bytes())
     }
 }
 
@@ -1360,6 +1418,9 @@ pub struct Verdicts
     /// How many admissions this kernel checked and recorded, each under
     /// every key it has.
     recorded: usize,
+    /// The build identity each entry key binds; absent when the policy
+    /// rechecks, since no admission is keyed.
+    build: Maybe<BuildIdentity, keyed::Absent>,
 }
 
 impl Default for Verdicts
@@ -1411,6 +1472,17 @@ impl Verdicts
         }
     }
 
+    /// The build identity each entry key binds: absent when the policy
+    /// rechecks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn build(&self) -> Maybe<BuildIdentity, keyed::Absent>
+    {
+        self.build
+    }
+
     /// The key the chain stands at: the key of the last keyed admission, or
     /// the start; absent with the reason once the chain keys nothing.
     ///
@@ -1441,6 +1513,7 @@ impl Verdicts
             checked: Vec::new(),
             recalls: 0,
             recorded: 0,
+            build: Maybe::Absent(keyed::Absent::Rechecking),
         }
     }
 
@@ -1465,6 +1538,7 @@ impl Verdicts
                     last: VerdictKey::start(build),
                     before: VerdictKey::start(build),
                 })),
+                build: Maybe::Present(build),
                 ..Self::rechecking(source)
             },
         }
@@ -1491,6 +1565,7 @@ impl Verdicts
             checked: Vec::new(),
             recalls: 0,
             recorded: 0,
+            build: self.build,
         }
     }
 

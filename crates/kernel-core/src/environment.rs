@@ -451,8 +451,24 @@ impl Environment
         source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
     ) -> Self
     {
+        Self::recalling_under(policy, source, crate::build_identity())
+    }
+
+    /// An empty environment that keys its admissions under the build
+    /// identity `build`, and recalls the verdicts `policy` trusts from
+    /// `source`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn recalling_under(
+        policy: crate::verdict::TrustPolicy,
+        source: alloc::sync::Arc<dyn crate::verdict::VerdictSource>,
+        build: crate::verdict::BuildIdentity,
+    ) -> Self
+    {
         Self {
-            verdicts: crate::verdict::Verdicts::under(policy, source, crate::build_identity()),
+            verdicts: crate::verdict::Verdicts::under(policy, source, build),
             ..Self::default()
         }
     }
@@ -1190,13 +1206,13 @@ impl Environment
             *declaration.content(),
             DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
         );
-        let entry_key = match content {
-            Maybe::Present(content) if generative => Maybe::Present(content.generative(
-                crate::build_identity(),
-                self.commits.generative_count(&self.entries, content, rank),
-            )),
+        let entry_content = match content {
+            Maybe::Present(content) if generative => Maybe::Present(
+                content.generative(self.commits.generative_count(&self.entries, content, rank)),
+            ),
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
+        let entry_key = self.entry_key(entry_content);
         let generative_content = match (generative, content) {
             (true, Maybe::Present(content)) => Maybe::Present(content),
             (true, Maybe::Absent(_)) => Maybe::Absent(crate::releases::generative::Absent::Unkeyed),
@@ -1276,7 +1292,7 @@ impl Environment
             Pending {
                 place: (position, rank),
                 content: (content, generative),
-                keys: (entry_key, chained),
+                keys: ((entry_content, entry_key), chained),
                 references: named,
                 marks: (content_end, rejected),
                 key_name,
@@ -1325,7 +1341,7 @@ impl Environment
     fn reads_order(
         &mut self,
         (sway, rank): (crate::releases::Sway, SourceRank),
-        generative: Maybe<crate::verdict::VerdictKey, crate::releases::generative::Absent>,
+        generative: Maybe<crate::verdict::EntryContentKey, crate::releases::generative::Absent>,
         (entry_key, key_name): (
             Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
             ConstantName,
@@ -1690,7 +1706,7 @@ impl Environment
             declaration,
             place: (position, rank),
             content: (content, generative),
-            keys: (entry_key, chained),
+            keys: ((entry_content, entry_key), chained),
             references: named,
             census,
             took,
@@ -1744,6 +1760,7 @@ impl Environment
                         key_name,
                         census,
                         key: entry_key,
+                        content: entry_content,
                         rank,
                         unit: Unit::lone(position),
                     }),
@@ -2080,6 +2097,7 @@ impl Environment
             key_name: ConstantName::Position,
             census: ExpansionCensus::new(),
             key: Maybe::Absent(crate::verdict::keyed::Absent::Bypassed),
+            content: Maybe::Absent(crate::verdict::keyed::Absent::Bypassed),
             rank,
             unit: Unit::lone(position),
         }));
@@ -2293,14 +2311,14 @@ impl Environment
                 DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
             )
         });
-        let block_key = match content {
-            Maybe::Present(content) if generative => Maybe::Present(
-                content.generative(
-                    crate::build_identity(),
-                    self.commits
-                        .generative_count(&self.entries, content, first_rank),
-                ),
-            ),
+        let block_content = match content {
+            Maybe::Present(content) if generative => {
+                Maybe::Present(content.generative(self.commits.generative_count(
+                    &self.entries,
+                    content,
+                    first_rank,
+                )))
+            },
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
         self.verdicts.end();
@@ -2379,6 +2397,13 @@ impl Environment
                 position,
                 Admission::Checked,
             );
+            let member_content = match block_content {
+                Maybe::Present(block_content) => {
+                    Maybe::Present(block_content.member(crate::verdict::KeyedCount::from(offset)))
+                },
+                Maybe::Absent(absent) => Maybe::Absent(absent),
+            };
+            let member_key = self.entry_key(member_content);
             // The block's families share one stage; a definition stands alone.
             self.enter(AdmittedDeclaration::live(AdmittedParts {
                 declaration: member.clone(),
@@ -2396,13 +2421,8 @@ impl Environment
                 // constant, so a key names each by its position.
                 key_name: ConstantName::Position,
                 census: *census,
-                key: match block_key {
-                    Maybe::Present(block_key) => Maybe::Present(block_key.member(
-                        crate::build_identity(),
-                        crate::verdict::KeyedCount::from(offset),
-                    )),
-                    Maybe::Absent(absent) => Maybe::Absent(absent),
-                },
+                key: member_key,
+                content: member_content,
                 rank,
                 unit: Unit {
                     first,
@@ -2573,7 +2593,7 @@ impl Environment
             match self
                 .entries
                 .live(ConstantIndex::from(member))
-                .map(AdmittedDeclaration::key)
+                .map(AdmittedDeclaration::content_key)
             {
                 Some(Maybe::Present(held))
                     if held == key.member(crate::verdict::KeyedCount::from(offset)) => {},
@@ -2627,10 +2647,11 @@ impl Environment
             });
         Maybe::Present(if generative {
             UnitKey {
-                key: content.generative(
-                    crate::build_identity(),
-                    self.commits.generative_count(&self.entries, content, below),
-                ),
+                key: content.generative(self.commits.generative_count(
+                    &self.entries,
+                    content,
+                    below,
+                )),
                 shape: unit.shape,
                 generative: Some(content),
             }
@@ -2642,6 +2663,27 @@ impl Environment
                 generative: None,
             }
         })
+    }
+
+    /// The entry key of an entry whose content key is `content`: the content
+    /// key bound to the build identity this environment keys under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn entry_key(
+        &self,
+        content: Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    {
+        match (content, self.verdicts.build()) {
+            (Maybe::Present(content), Maybe::Present(build)) => {
+                Maybe::Present(crate::verdict::VerdictKey::entry(build, content))
+            },
+            (Maybe::Absent(absent), _) | (Maybe::Present(_), Maybe::Absent(absent)) => {
+                Maybe::Absent(absent)
+            },
+        }
     }
 
     /// Key the atom at `atom`, closed at `extent`, and each unit in its scope
@@ -2679,10 +2721,13 @@ impl Environment
                 continue;
             };
             for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
-                self.entries.rekey(
-                    ConstantIndex::from(member),
-                    key.member(crate::verdict::KeyedCount::from(offset)),
-                );
+                let content = key.member(crate::verdict::KeyedCount::from(offset));
+                let Maybe::Present(entry) = self.entry_key(Maybe::Present(content))
+                else {
+                    continue;
+                };
+                self.entries
+                    .rekey(ConstantIndex::from(member), (content, entry));
             }
             if let Some(content) = key.generative {
                 alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
@@ -3486,7 +3531,7 @@ impl Environment
         &self,
         members: &[Declaration],
         (first, ranks): (ConstantIndex, &[SourceRank]),
-    ) -> Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
     {
         use crate::verdict::KeyedCount;
         use crate::verdict::keyed::Absent;
@@ -3497,10 +3542,8 @@ impl Environment
         let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let presentations = self.entries.presentations();
         let words = presentations.sorts().next().is_some();
-        let mut keyer = crate::verdict::EntryKeyer::tagged(
-            crate::build_identity(),
-            crate::verdict::EntryTag::Content,
-        );
+        let mut keyer =
+            crate::verdict::EntryContentKeyer::tagged(crate::verdict::EntryTag::Content);
         keyer.count(KeyedCount::from(members.len()));
         let mut reached = Vec::new();
         let mut order = Vec::new();
@@ -3515,7 +3558,7 @@ impl Environment
             keyer.segment(segment.image());
             keyer.count(KeyedCount::from(segment.named().len()));
             for &named in segment.named() {
-                let Maybe::Present(key) = self.entries.key(named)
+                let Maybe::Present(key) = self.entries.content(named)
                 else {
                     return Maybe::Absent(Absent::Unkeyed);
                 };
@@ -3555,7 +3598,7 @@ impl Environment
             if reach < usize::from(first) {
                 continue;
             }
-            let Maybe::Present(key) = self.entries.key(atom)
+            let Maybe::Present(key) = self.entries.content(atom)
             else {
                 return Maybe::Absent(Absent::Unkeyed);
             };
@@ -3603,7 +3646,7 @@ impl Environment
         registry.dedup();
         keyer.count(KeyedCount::from(registry.len()));
         for (_, word) in registry {
-            let Maybe::Present(key) = self.entries.key(word)
+            let Maybe::Present(key) = self.entries.content(word)
             else {
                 return Maybe::Absent(Absent::Unkeyed);
             };
@@ -3649,7 +3692,7 @@ impl Environment
     /// - witness: `ruled::tests::a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621`
     fn key_ranks(
         &self,
-        keyer: &mut crate::verdict::EntryKeyer,
+        keyer: &mut crate::verdict::EntryContentKeyer,
         (member, (own, rank)): (&Declaration, (ConstantIndex, SourceRank)),
         (named, (first, ranks)): (&[ConstantIndex], (ConstantIndex, &[SourceRank])),
         (order, operations): (
@@ -3708,7 +3751,7 @@ impl Environment
             for role in gandr_kernel_term::Builtin::ALL {
                 match self.entries.holder_below(role, rank) {
                     Some(holder) => {
-                        let Maybe::Present(key) = self.entries.key(holder)
+                        let Maybe::Present(key) = self.entries.content(holder)
                         else {
                             return Err(Absent::Unkeyed);
                         };
@@ -3991,35 +4034,35 @@ enum Way
     Checking(Scope, Judged),
 }
 
-/// The key of one unit, computed in place, with the shape that gives each
-/// member's key from it.
+/// The content key of one unit, computed in place, with the shape that gives
+/// each member's content key from it.
 #[derive(Clone, Copy, Debug)]
 struct UnitKey
 {
-    /// The unit's key: its content key, counted among the generative
-    /// contents ranked below it when a member is generative.
-    key: crate::verdict::VerdictKey,
+    /// The unit's content key, counted among the generative contents ranked
+    /// below it when a member is generative.
+    key: crate::verdict::EntryContentKey,
     /// Whether the unit is one declaration or a block.
     shape: UnitShape,
-    /// The unit's content key when a member is generative: the row the
-    /// generative index holds for it.
-    generative: Option<crate::verdict::VerdictKey>,
+    /// The unit's content key before the count when a member is generative:
+    /// the row the generative index holds for it.
+    generative: Option<crate::verdict::EntryContentKey>,
 }
 
 impl UnitKey
 {
-    /// The key of the member at `offset` in the unit.
+    /// The content key of the member at `offset` in the unit.
     ///
     /// # Specification
     /// trivial.
     fn member(
         self,
         offset: crate::verdict::KeyedCount,
-    ) -> crate::verdict::VerdictKey
+    ) -> crate::verdict::EntryContentKey
     {
         match self.shape {
             UnitShape::Lone => self.key,
-            UnitShape::Block => self.key.member(crate::build_identity(), offset),
+            UnitShape::Block => self.key.member(offset),
         }
     }
 }
@@ -4048,7 +4091,7 @@ struct CommitLog
     dependents: crate::dependents::Dependents,
     /// The positions of the generative admissions, by their content key:
     /// the earlier ones with one content are what a new one's key counts.
-    generative: ChunkedMap<crate::verdict::VerdictKey, Vec<ConstantIndex>>,
+    generative: ChunkedMap<crate::verdict::EntryContentKey, Vec<ConstantIndex>>,
     /// The position of the entry that holds each rank.
     ranked: ChunkedMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
@@ -4214,7 +4257,7 @@ impl CommitLog
     fn generative_count(
         &self,
         entries: &Entries,
-        content: crate::verdict::VerdictKey,
+        content: crate::verdict::EntryContentKey,
         below: SourceRank,
     ) -> crate::verdict::KeyedCount
     {
@@ -4234,7 +4277,7 @@ impl CommitLog
     #[inline]
     fn generative(
         &mut self,
-        content: crate::verdict::VerdictKey,
+        content: crate::verdict::EntryContentKey,
         position: ConstantIndex,
     )
     {
@@ -5063,6 +5106,12 @@ impl ArtifactRefusal
     }
 }
 
+/// An entry's content key and entry key, each absent with its reason.
+type EntryKeys = (
+    Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+);
+
 /// What the check of one lone declaration hands its commit: the declaration,
 /// its place, its keys, its name and its outcome. The check reads its view
 /// alone, and the commit alone writes the environment.
@@ -5072,16 +5121,13 @@ struct Lone
     declaration: Declaration,
     /// Its position and its rank.
     place: (ConstantIndex, SourceRank),
-    /// Its content key, and whether its admission is generative.
+    /// Its unit's content key, and whether its admission is generative.
     content: (
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its entry key, and how it finds its chain key.
-    keys: (
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        crate::releases::Chained,
-    ),
+    /// Its own content key and entry key, and how it finds its chain key.
+    keys: (EntryKeys, crate::releases::Chained),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// What its check charged.
@@ -5119,16 +5165,13 @@ pub struct Pending
 {
     /// Its position and its rank.
     place: (ConstantIndex, SourceRank),
-    /// Its content key, and whether its admission is generative.
+    /// Its unit's content key, and whether its admission is generative.
     content: (
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its entry key, and how it finds its chain key.
-    keys: (
-        Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-        crate::releases::Chained,
-    ),
+    /// Its own content key and entry key, and how it finds its chain key.
+    keys: (EntryKeys, crate::releases::Chained),
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// The arena's mark past its content, and the mark that a refusal
@@ -7052,6 +7095,77 @@ mod tests
             .collect();
         read.sort_by_key(|&(rank, ..)| rank);
         read
+    }
+
+    /// #7295: an entry's content key reads no build identity, and its entry
+    /// key binds that content key to the build. One source admitted under
+    /// two builds gives each entry one content key and two entry keys. The
+    /// source holds a family `a`, an axiom that names `a`, and a block of two
+    /// families: the first names `a`, and the second names the first.
+    #[test]
+    fn two_builds_give_one_content_key_and_two_entry_keys_7295()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let read = [[1_u8; 32], [2_u8; 32]].map(|build| {
+            let build = crate::verdict::BuildIdentity::from(build);
+            let mut environment = Environment::recalling_under(
+                crate::verdict::TrustPolicy::Trusted(BTreeSet::from([signer.identity()])),
+                alloc::sync::Arc::new(crate::verdict::NoVerdicts),
+                build,
+            );
+            let a = admit_generated(
+                &mut environment,
+                &Generated::Lone(Member::Data(zero, vec![])),
+                &[],
+                None,
+            )
+            .expect("`a` admits");
+            admit_generated(
+                &mut environment,
+                &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+                &a,
+                None,
+            )
+            .expect("the axiom admits");
+            admit_generated(
+                &mut environment,
+                &Generated::Block(vec![
+                    Member::Data(zero, vec![Field::Earlier(0)]),
+                    Member::Data(zero, vec![Field::Earlier(1)]),
+                ]),
+                &a,
+                None,
+            )
+            .expect("the block admits");
+            environment
+                .entries()
+                .iter()
+                .map(|entry| {
+                    let keys = (entry.content_key(), entry.key());
+                    let (Maybe::Present(content), Maybe::Present(key)) = keys
+                    else {
+                        panic!("each entry is keyed, but read {keys:?}");
+                    };
+                    assert_eq!(
+                        key,
+                        crate::verdict::VerdictKey::entry(build, content),
+                        "the entry key binds the content key to the build"
+                    );
+                    (content, key)
+                })
+                .collect::<Vec<_>>()
+        });
+        let [ref one, ref other] = read;
+        assert_eq!(one.len(), 4, "four entries under the first build");
+        assert_eq!(other.len(), 4, "four entries under the second build");
+        for (&(one_content, one_key), &(other_content, other_key)) in one.iter().zip(other) {
+            assert_eq!(
+                one_content, other_content,
+                "two builds give one content key"
+            );
+            assert_ne!(one_key, other_key, "two builds give two entry keys");
+        }
     }
 
     /// #7194: a retired entry keeps its position as a name and frees its
