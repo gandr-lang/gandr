@@ -842,12 +842,12 @@ fn a_keep_whose_precedence_changed_is_refused_6621()
     );
     // The edit puts `b` first: `b` at rank 1, `a` at rank 2.
     assert_eq!(
-        environment.rerank(&[
+        environment.rerank((rank(0_usize), &[
             (at(0_usize), rank(0_usize)),
             (at(1_usize), rank(2_usize)),
             (at(2_usize), rank(1_usize)),
             (at(3_usize), rank(3_usize)),
-        ]),
+        ])),
         Ok(()),
         "the readmission gives each entry its new rank"
     );

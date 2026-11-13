@@ -1,8 +1,11 @@
-//! A readmission that keeps each entry an edit leaves. The declarations of
-//! the edited source are matched in order to the declarations of a record by
-//! their content keys. The readmission retires the reach of each declaration
-//! that the match leaves out. Each other entry takes the rank of its place in
-//! the edited source, and the walk keeps it in place at its own key.
+//! A readmission that keeps each entry an edit leaves. The leading run that
+//! the edit leaves stands as the record holds it, as the run of a resumed
+//! readmission stands: the readmission reads, retires and ranks nothing in
+//! it. Past the run, the declarations of the edited source are matched in
+//! order to the declarations of the record by their content keys. The
+//! readmission retires the reach of each declaration that the match leaves
+//! out. Each other entry takes the rank of its place in the edited source,
+//! and the walk keeps it in place at its own key.
 //!
 //! The reach holds more than the kernel's reverse index gives. A decode or an
 //! instance of a definition crosses as the definition's body, so the entry of
@@ -37,6 +40,7 @@ use quenchant_shape::shape::Maybe;
 use super::CodeDefinitions;
 use super::Crossed;
 use super::DeclarationKey;
+use super::LeadingCount;
 use super::Outcome;
 use super::Positions;
 use super::Readmitted;
@@ -76,6 +80,9 @@ quenchant_shape::reason_enum! {
             /// The kernel refused to retire the reach or to rewrite the
             /// ranks.
             Unranked,
+            /// The record does not resume the leading run that the edit
+            /// leaves.
+            Unresumed,
         }
     }
 }
@@ -107,23 +114,29 @@ enum Agreement
     Differs,
 }
 
-/// What a readmission keeps of a record: the environment with the reach of
-/// the edit retired and each other entry at the rank of its place in the
-/// edited source, the positions with each retired seed taken out, and the
-/// record's entry that each place keeps.
+/// What a readmission keeps of a record: the leading run that the edit
+/// leaves, shared with the record as a resumed readmission shares it; the
+/// environment with the reach of the edit retired and each other entry past
+/// the run at the rank of its place in the edited source; the positions with
+/// each retired seed taken out; and the record's entry that each place past
+/// the run keeps.
 #[derive(Debug)]
 pub(super) struct Kept<'record>
 {
-    /// The record's environment, the reach retired and the rest reranked.
+    /// The record's environment, the reach retired and the entries past the
+    /// run reranked.
     pub environment: Environment,
-    /// The record's positions, with no module position, no core body and no
-    /// retired seed.
+    /// The record's positions, with the module positions and the core bodies
+    /// of the run alone, and no retired seed.
     pub positions: Positions,
+    /// The entries of the leading run, one for each of its places.
+    pub leading: Vec<Readmitted>,
     /// The record's entry each place of the edited source keeps, by place;
-    /// none for a place the walk crosses.
+    /// none for a place of the run or a place the walk crosses.
     pub held: Vec<Option<&'record Readmitted>>,
     /// The module position in the edited source of each record declaration
-    /// the readmission keeps, by its module position in the record.
+    /// the readmission keeps past the run, by its module position in the
+    /// record.
     pub renames: BTreeMap<ConstantIndex, ConstantIndex>,
 }
 
@@ -371,33 +384,90 @@ fn in_order(pairs: &[(ConstantIndex, ConstantIndex)]) -> Vec<(ConstantIndex, Con
     run
 }
 
+/// How many leading places of `report` the edit leaves as `record` holds
+/// them. Each declaration of the run carries the key of the record's entry
+/// at its index, at its module position, under a verdict of the kind the
+/// entry crossed under. A mutual block is kept whole or crossed whole, so the
+/// run ends where a unit of the record's environment ends.
+///
+/// # Specification
+/// trivial.
+fn leading_run(
+    record: &Crossed,
+    report: &ModuleReport,
+    keys: &[DeclarationKey],
+) -> LeadingCount
+{
+    let mut run = record
+        .keys
+        .iter()
+        .zip(&record.readmitted)
+        .zip(keys.iter().zip(report.judged()))
+        .take_while(|&((held, entry), (key, declaration))| {
+            matches!((*held, *key), (Maybe::Present(held), Maybe::Present(key)) if held == key)
+                && entry.constant == declaration.constant()
+                && agrees(
+                    report,
+                    (
+                        declaration.constant(),
+                        &entry.outcome,
+                        declaration.verdict(),
+                    ),
+                ) == Agreement::Agrees
+        })
+        .count();
+    if let Some(entry) = run
+        .checked_sub(1)
+        .and_then(|last| record.readmitted.get(last))
+        && let Maybe::Present(position) = position_of(&entry.outcome)
+        && let Some(unit) = record
+            .environment
+            .entries()
+            .live(position)
+            .map(gandr_kernel_core::AdmittedDeclaration::unit)
+        && usize::from(unit.end) > usize::from(position).saturating_add(1)
+    {
+        run = run.saturating_sub(
+            usize::from(position)
+                .saturating_sub(usize::from(unit.first))
+                .saturating_add(1),
+        );
+    }
+    LeadingCount(run)
+}
+
 /// What a readmission of `report`, whose declarations carry `keys`, keeps
 /// of `record`: [`Kept`], or why it keeps nothing.
 ///
 /// # Specification
 /// - requires: `keys` holds the content key of each declaration of `report`, in
 ///   order, as the record's keys hold those of its own.
-/// - ensures: when present, the record's environment handed on
-///   ([`Environment::handed_on`]) with the reach of the edit retired: the
-///   entries of each record declaration that the in-order match leaves, of each
-///   declaration whose certificates unfold an edited one, of each seed whose
-///   first reader is edited, and of each entry that reads one of them. The
-///   first reader of a seed is the record declaration whose entry ranks least
-///   past the seed. Each kept place `p` holds the record's entry it keeps, and
-///   that entry's kernel entry and the seeds below it, in their order of rank
-///   in the record, take the ranks from `p × STRIDE` on. The positions hold no
-///   module position, no core body and no retired seed. The record is
-///   unchanged.
+/// - ensures: when present, the leading run that the edit leaves, resumed from
+///   the record as [`Crossed::resume`] resumes it, and the record's environment
+///   handed on ([`Environment::handed_on`]) with the reach of the edit retired:
+///   the entries of each record declaration past the run that the in-order
+///   match leaves, of each declaration whose certificates unfold an edited one,
+///   of each seed whose first reader is edited, and of each entry that reads
+///   one of them. The first reader of a seed is the record declaration whose
+///   entry ranks least past the seed. The run keeps its ranks. Each kept place
+///   `p` past the run holds the record's entry it keeps, and that entry's
+///   kernel entry and the seeds below it, in their order of rank in the record,
+///   take the ranks from `p × STRIDE` on. The positions hold the module
+///   positions and the core bodies of the run alone, and no retired seed.
+///   Nothing past the run is read, retired or ranked when the run holds every
+///   declaration of the record and of `report`. The record is unchanged.
 /// - fails: never; absent as [`keeping::Absent::Unkeyed`] without keys, as
 ///   [`keeping::Absent::Formed`] when the record holds a formation, as
-///   [`keeping::Absent::Sealed`] when the report seals an abstract type, and as
-///   [`keeping::Absent::Unranked`] when the kernel refuses the retirement or
-///   the rank rewrite.
+///   [`keeping::Absent::Sealed`] when the report seals an abstract type, as
+///   [`keeping::Absent::Unresumed`] when the record does not resume the run,
+///   and as [`keeping::Absent::Unranked`] when the kernel refuses the
+///   retirement or the rank rewrite.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a readmission that retires the reach of an edit and keeps
-///   the rest in place answers as a whole readmission of the edited source.
+/// - hypothesis: L3 — a readmission that shares the leading run, retires the
+///   reach of an edit and keeps the rest in place answers as a whole
+///   readmission of the edited source.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
 /// - witness: `bridge::tests::a_seed_whose_first_reader_leaves_retires_6846`
 /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
@@ -421,18 +491,54 @@ pub(super) fn keeping<'record>(
     if !report.abstract_types().is_empty() {
         return Maybe::Absent(keeping::Absent::Sealed);
     }
-    // Each declaration of the edited source takes the first record
-    // declaration with its key that no earlier one took, when the kinds of
-    // their verdicts agree; the longest run of those in the order of both
-    // sources is kept.
+    // The leading run that the edit leaves stands as the record holds it, as
+    // the run of a resumed readmission stands.
+    let run = leading_run(record, report, keys);
+    let Some((mut environment, mut positions, leading)) = record.resume(report, run)
+    else {
+        return Maybe::Absent(keeping::Absent::Unresumed);
+    };
+    let LeadingCount(run) = run;
+    let rank_in_record = |position: ConstantIndex| {
+        record
+            .environment
+            .entries()
+            .get(usize::from(position))
+            .map(gandr_kernel_core::AdmittedDeclaration::rank)
+    };
+    // The run keeps its ranks, so a rank rewrite starts past the last of them.
+    let floor = record
+        .readmitted
+        .get(.. run)
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .find_map(|entry| match position_of(&entry.outcome) {
+            Maybe::Present(position) => rank_in_record(position),
+            Maybe::Absent(_) => None,
+        })
+        .map_or_else(
+            || SourceRank::from(0_usize),
+            |top| SourceRank::from(usize::from(top).saturating_add(1)),
+        );
+    let past = record.readmitted.get(run ..).unwrap_or_default();
+    // Each declaration of the edited source past the run takes the first
+    // record declaration past the run with its key that no earlier one took,
+    // when the kinds of their verdicts agree; the longest run of those in the
+    // order of both sources is kept.
     let mut by_key: BTreeMap<ContentDigest, VecDeque<&Readmitted>> = BTreeMap::new();
-    for (key, entry) in record.keys.iter().zip(&record.readmitted) {
+    for (key, entry) in record.keys.get(run ..).unwrap_or_default().iter().zip(past) {
         if let Maybe::Present(digest) = *key {
             by_key.entry(digest).or_default().push_back(entry);
         }
     }
     let mut pairs = Vec::new();
-    for (key, declaration) in keys.iter().zip(judged) {
+    for (key, declaration) in keys
+        .get(run ..)
+        .unwrap_or_default()
+        .iter()
+        .zip(judged.get(run ..).unwrap_or_default())
+    {
         if let Maybe::Present(digest) = *key
             && let Some(entry) = by_key.get_mut(&digest).and_then(VecDeque::pop_front)
             && agrees(
@@ -450,14 +556,15 @@ pub(super) fn keeping<'record>(
     let matched = in_order(&pairs);
     let kept_from: BTreeMap<ConstantIndex, ConstantIndex> =
         matched.iter().map(|&(new, old)| (old, new)).collect();
-    // The record declaration at each kernel position, by its module position,
-    // and the record declarations whose certificates unfold each one: a decode
-    // or an instance of a definition crosses as its body, so its reader's
-    // entry holds that body, and no kernel reference records the definition.
+    // The record declaration past the run at each kernel position, by its
+    // module position, and the record declarations whose certificates unfold
+    // each one: a decode or an instance of a definition crosses as its body,
+    // so its reader's entry holds that body, and no kernel reference records
+    // the definition. A declaration of the run unfolds no declaration past it.
     let mut owner_at = BTreeMap::new();
     let mut position_at = BTreeMap::new();
     let mut unfolders: BTreeMap<ConstantIndex, Vec<ConstantIndex>> = BTreeMap::new();
-    for entry in &record.readmitted {
+    for entry in past {
         if let Maybe::Present(position) = position_of(&entry.outcome) {
             owner_at.insert(position, entry.constant);
             position_at.insert(entry.constant, position);
@@ -471,7 +578,7 @@ pub(super) fn keeping<'record>(
     // A seed stands just below its first reader: the record declaration whose
     // entry ranks least past it. A crossing that read a kept seed first took
     // it below itself, so the position of a seed no longer says where it
-    // stands.
+    // stands. A seed below the floor is read first in the run.
     let seeds: BTreeSet<ConstantIndex> = record
         .positions
         .native
@@ -479,14 +586,8 @@ pub(super) fn keeping<'record>(
         .chain(record.positions.assumed.values())
         .copied()
         .chain(record.positions.models.iter().map(|model| model.position))
+        .filter(|&seed| rank_in_record(seed).is_some_and(|rank| rank >= floor))
         .collect();
-    let rank_in_record = |position: ConstantIndex| {
-        record
-            .environment
-            .entries()
-            .get(usize::from(position))
-            .map(gandr_kernel_core::AdmittedDeclaration::rank)
-    };
     let owner_by_rank: BTreeMap<SourceRank, ConstantIndex> = owner_at
         .iter()
         .filter_map(|(&position, &old)| rank_in_record(position).map(|rank| (rank, old)))
@@ -501,15 +602,13 @@ pub(super) fn keeping<'record>(
             .next()
             .map(|(_, &old)| old)
     };
-    let mut environment = record.environment.handed_on();
     let live = |environment: &Environment, position: ConstantIndex| {
         environment.entries().get(usize::from(position)).is_some()
     };
     // The edited declarations: each the match leaves, each that unfolds an
     // edited one, and each whose entry the kernel's reach of the edited
     // entries and the moved seeds holds, until none is added.
-    let mut edited: BTreeSet<ConstantIndex> = record
-        .readmitted
+    let mut edited: BTreeSet<ConstantIndex> = past
         .iter()
         .map(|entry| entry.constant)
         .filter(|constant| !kept_from.contains_key(constant))
@@ -557,72 +656,78 @@ pub(super) fn keeping<'record>(
             break reach;
         }
     };
-    let retired: Vec<ConstantIndex> = reach.iter().copied().collect();
-    if environment.retire(&retired).is_err() {
-        return Maybe::Absent(keeping::Absent::Unranked);
-    }
     // Each kept declaration's seeds take the ranks from its place's on, in
     // the order they were seeded, which is their order of rank in the record,
     // and its own entry the rank after them.
-    let mut seeded: Vec<(SourceRank, ConstantIndex)> = seeds
-        .iter()
-        .filter(|&&seed| live(&environment, seed))
-        .filter_map(|&seed| rank_in_record(seed).map(|rank| (rank, seed)))
-        .collect();
-    seeded.sort_unstable();
-    let mut below: BTreeMap<ConstantIndex, Vec<ConstantIndex>> = BTreeMap::new();
-    for (_, seed) in seeded {
-        if let Some(old) = first_reader(seed) {
-            below.entry(old).or_default().push(seed);
-        }
-    }
-    let entry_of: BTreeMap<ConstantIndex, &Readmitted> = record
-        .readmitted
-        .iter()
-        .map(|entry| (entry.constant, entry))
-        .collect();
-    let mut kept = Vec::with_capacity(judged.len());
+    let entry_of: BTreeMap<ConstantIndex, &Readmitted> =
+        past.iter().map(|entry| (entry.constant, entry)).collect();
+    let mut kept: Vec<Option<&Readmitted>> = Vec::with_capacity(judged.len());
+    kept.extend(core::iter::repeat_n(None, run));
     let mut ranks = Vec::new();
-    for (place, declaration) in judged.iter().enumerate() {
-        let held = matched
-            .binary_search_by_key(&declaration.constant(), |&(new, _)| new)
-            .ok()
-            .and_then(|at| matched.get(at))
-            .and_then(|&(_, old)| entry_of.get(&old).copied());
-        let Some(entry) = held.filter(|entry| !edited.contains(&entry.constant))
-        else {
-            kept.push(None);
-            continue;
-        };
-        let base = place.saturating_mul(STRIDE);
-        let mut offset = 0_usize;
-        for &seed in below.get(&entry.constant).map_or(&[][..], Vec::as_slice) {
-            ranks.push((seed, SourceRank::from(base.saturating_add(offset))));
-            offset = offset.saturating_add(1);
+    // A run that holds every declaration of both leaves nothing to retire or
+    // to rank.
+    if run < judged.len() || !past.is_empty() {
+        let retired: Vec<ConstantIndex> = reach.iter().copied().collect();
+        if environment.retire(&retired).is_err() {
+            return Maybe::Absent(keeping::Absent::Unranked);
         }
-        if let Maybe::Present(position) = position_of(&entry.outcome) {
-            ranks.push((position, SourceRank::from(base.saturating_add(offset))));
+        let mut seeded: Vec<(SourceRank, ConstantIndex)> = seeds
+            .iter()
+            .filter(|&&seed| live(&environment, seed))
+            .filter_map(|&seed| rank_in_record(seed).map(|rank| (rank, seed)))
+            .collect();
+        seeded.sort_unstable();
+        let mut below: BTreeMap<ConstantIndex, Vec<ConstantIndex>> = BTreeMap::new();
+        for (_, seed) in seeded {
+            if let Some(old) = first_reader(seed) {
+                below.entry(old).or_default().push(seed);
+            }
         }
-        kept.push(Some(entry));
+        for (place, declaration) in judged.iter().enumerate().skip(run) {
+            let held = matched
+                .binary_search_by_key(&declaration.constant(), |&(new, _)| new)
+                .ok()
+                .and_then(|at| matched.get(at))
+                .and_then(|&(_, old)| entry_of.get(&old).copied());
+            let Some(entry) = held.filter(|entry| !edited.contains(&entry.constant))
+            else {
+                kept.push(None);
+                continue;
+            };
+            let base = place.saturating_mul(STRIDE);
+            let mut offset = 0_usize;
+            for &seed in below.get(&entry.constant).map_or(&[][..], Vec::as_slice) {
+                ranks.push((seed, SourceRank::from(base.saturating_add(offset))));
+                offset = offset.saturating_add(1);
+            }
+            if let Maybe::Present(position) = position_of(&entry.outcome) {
+                ranks.push((position, SourceRank::from(base.saturating_add(offset))));
+            }
+            kept.push(Some(entry));
+        }
+        if environment.rerank((floor, &ranks)).is_err() {
+            return Maybe::Absent(keeping::Absent::Unranked);
+        }
     }
-    if environment.rerank(&ranks).is_err() {
-        return Maybe::Absent(keeping::Absent::Unranked);
+    // The walk files each module position past the run again.
+    if let Some(entry) = past.first() {
+        let _past = positions.admitted.split_off(&entry.constant);
     }
-    let mut positions = record.positions.clone();
-    positions.admitted = BTreeMap::new();
-    positions.definitions = CodeDefinitions::new();
-    positions
-        .native
-        .retain(|_, position| !reach.contains(position));
-    positions
-        .assumed
-        .retain(|_, position| !reach.contains(position));
-    positions
-        .models
-        .retain(|model| !reach.contains(&model.position));
+    if !reach.is_empty() {
+        positions
+            .native
+            .retain(|_, position| !reach.contains(position));
+        positions
+            .assumed
+            .retain(|_, position| !reach.contains(position));
+        positions
+            .models
+            .retain(|model| !reach.contains(&model.position));
+    }
     Maybe::Present(Kept {
         environment,
         positions,
+        leading,
         held: kept,
         renames: kept_from
             .into_iter()

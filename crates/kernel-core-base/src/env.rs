@@ -2540,7 +2540,9 @@ impl Entries
     }
 
     /// Give each live entry that `ranks` names its rank there, in the entries
-    /// and in the tables kept beside them.
+    /// and in the tables kept beside them. An entry that holds its rank there
+    /// already is not written, so a rewrite that changes no rank copies no
+    /// shared part of the log.
     ///
     /// # Specification
     /// - requires: each position `ranks` names is live, and no two take one
@@ -2555,6 +2557,7 @@ impl Entries
     /// # Adequacy
     /// - hypothesis: L3 — as `Environment::rerank`.
     /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    /// - witness: `gandr-kernel-core::environment::tests::a_rank_rewrite_above_a_floor_keeps_each_rank_below_it_7235`
     #[spec(requires: ranks.keys().all(|&position| self.live(position).is_some()),
         ensures: ranks.iter().all(|(&position, &rank)| self.rank_of(position) == Some(rank)))]
     #[inline]
@@ -2563,13 +2566,21 @@ impl Entries
         ranks: &BTreeMap<ConstantIndex, SourceRank>,
     )
     {
+        if ranks
+            .iter()
+            .all(|(&position, &rank)| self.live(position).is_none_or(|entry| entry.rank == rank))
+        {
+            return;
+        }
         let log = self.log_mut();
         for (&position, &rank) in ranks {
-            if let Some(entry) = log
+            let at = usize::from(position);
+            let moved = log
                 .family
-                .get_mut(usize::from(position))
-                .and_then(Slot::admitted_mut)
-            {
+                .get(at)
+                .and_then(Slot::admitted)
+                .is_some_and(|entry| entry.rank != rank);
+            if moved && let Some(entry) = log.family.get_mut(at).and_then(Slot::admitted_mut) {
                 entry.rank = rank;
             }
         }
