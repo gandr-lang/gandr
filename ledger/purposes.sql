@@ -1366,6 +1366,10 @@ INSERT INTO purpose VALUES('kernel-core','session::head','function','Resolve at 
 INSERT INTO purpose VALUES('kernel-core','session::payload_codes','function','Extract the finite payload-code telescope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','session::validate_graph','function','Check finite structural closure, lexical binding and contractivity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','session::view','function','Read a native session code''s finite graph and payload telescope.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','speculation::OrderReads','struct','The settings of the three reads of order that a release makes of the earlier releases.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','speculation::Rollbacks','struct','Counts the predictions that the fold found wrong and set right.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','speculation::Setting','enum','Says whether a release predicts one read or waits for the earlier commits that the read reads.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','speculation::Speculation','struct','The group of settings that says what a release behind the cursor predicts of the earlier commits.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','stage::form','function','Form a classifier and return its universe stage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','stage::infer','function','Infer a staged term under an ordinary structural telescope.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','stage::replay','function','Replay a complete certificate and return its re-derived classifier.',NULL,'fits','sound',NULL);
@@ -2753,6 +2757,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_obligation_fork','function','Installs the fork that each kernel check of a process drains its obligations through, once.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_readmission_pool','function','Installs the pool that each readmission of a process runs its checks on, once.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_speculation','function','Installs the speculation group that each readmission of a process runs under, once.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Reached','enum','What the traversal reached next, at the walk''s current path.',NULL,'fits','sound',NULL);

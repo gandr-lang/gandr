@@ -64,7 +64,7 @@ impl fmt::Display for Setting
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct Order
+pub struct OrderReads
 {
     /// The generative count over the committed set at the release.
     pub generative: Setting,
@@ -85,7 +85,7 @@ pub struct Speculation
     /// outstanding reservation, as if each outstanding release admits.
     pub rank: Setting,
     /// The three reads of order.
-    pub order: Order,
+    pub order: OrderReads,
 }
 
 impl Speculation
@@ -93,7 +93,7 @@ impl Speculation
     /// Every setting off: the release in serial order.
     pub const OFF: Self = Self {
         rank: Setting::Off,
-        order: Order {
+        order: OrderReads {
             generative: Setting::Off,
             twin: Setting::Off,
             manifest: Setting::Off,
@@ -102,7 +102,7 @@ impl Speculation
     /// Every setting on.
     pub const ON: Self = Self {
         rank: Setting::On,
-        order: Order {
+        order: OrderReads {
             generative: Setting::On,
             twin: Setting::On,
             manifest: Setting::On,
