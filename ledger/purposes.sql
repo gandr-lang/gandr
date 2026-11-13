@@ -1529,6 +1529,8 @@ INSERT INTO purpose VALUES('kernel-core-base','rewrite::unload_value','function'
 INSERT INTO purpose VALUES('kernel-core-base','seal::unseal','function','The root with every manifest atom read as its representation, recursively.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::BinderUse','enum','What a family does with its innermost binder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Discharge','enum','Whether the obligation a key names lets a recall serve: its verdict holds, or the check that recalls owes it already.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','support::DrainLedger','struct','What a drain of a check''s code obligations checked: how many obligations it took against the ceiling, and the keys whose verdicts the check records when its whole drain passes.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','support::Meeting','enum','Whether a drain meets a key for the first time.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::NodeOutcome','enum','What one goal expansion produced, as the memo stores it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::NodeSupport','struct','The complete support of one goal expansion: its question, the binders its judgement read, and the name of its goal record over them.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Opened','struct','Where an open accrual sits on its session''s stack.',NULL,'fits','sound',NULL);

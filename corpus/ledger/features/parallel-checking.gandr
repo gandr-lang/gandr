@@ -1,11 +1,18 @@
 /// `parallel-checking`: the checker runs the checks of a readmission on its
-/// pool, and forks the obligations of a long drain.
+/// pool. It forks the obligations of a long drain and the goals of a frame.
 ///
 /// Implemented: `gandr check` forks the last drain of a declaration on its pool.
 /// It forks a drain only when the drain holds 64 code obligations or more.
 /// Each run holds 16 obligations or more, and each thread takes one run.
 /// The driver installs the fork only in a run of fewer sources than threads.
 /// The forked drain gives the verdict of the serial drain.
+///
+/// A check also forks the sibling goals of one frame on the pool, one part for
+/// each goal. It forks a frame only past 256 expansions of the check, at no
+/// root and under no fixpoint body. The walk takes the first goal of a frame
+/// before it forks, so a frame forks only when two goals or more remain. The
+/// frame folds the parts in the order of the serial walk, and the check gives
+/// the verdict of the serial check.
 ///
 /// A check on more than one thread runs the checks of each readmission on its
 /// pool. The calling thread releases each declaration in module order. A
@@ -15,16 +22,21 @@
 ///
 /// Not implemented: no fork splits the arguments of an application.
 /// No fork splits the branches of a case.
+/// No fork gives each independent goal under one parent its own frame stack.
+///
 /// A run of as many sources as threads or more does not fork a drain.
 /// No edge of the schedule names the declarations that a check reads.
 /// No check starts on predicted entries.
 ///
-/// - owes: #2802 — the forks at the frames of a check
+/// - owes: #2573 — the walk that forks each independent goal under one parent
 /// - owes: #3476 — the checks that start on predicted entries
 /// - owes: #7020 — the collision edges of the schedule
 
 // `cylinderComposite2`.
 import std.math.cylinder (cylinderComposite2);
+
+// `List`.
+import std.list (List);
 
 /// Two squares of paths side by side, at identity verticals. The check of
 /// this source readmits `std.math.cylinder`. On more than one thread, its
@@ -43,3 +55,19 @@ def sideBySide(
   b : Path[.A = Path[.A = A](y, z)](g0, g1)
 ) -> Path[.A = Path[.A = A](x, z)](Path.step f0 g0, Path.step f1 g1) =
   cylinderComposite2 A x y f0 x y f1 (Path.here x) (Path.here y) a z g0 z g1 (Path.here z) b
+
+/// The numbers below 100, beside two reflexivities. The check of the list
+/// expands more than 256 goals before it reaches the reflexivities. A check on
+/// more than one thread forks the two reflexivities, one part each.
+def numbersBesideTwo(A : Type, x : A, z : A) -> *{List Integer, Path(x, x), Path(z, z)} =
+  *{
+    #[
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+      40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+      60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+      80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99
+    ],
+    Path.here x,
+    Path.here z
+  }

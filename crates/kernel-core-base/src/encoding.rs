@@ -2651,7 +2651,7 @@ impl ContentTable
     /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
     #[inline]
     #[spec(ensures: |ret| self.placed.get(node) == Maybe::Present(ret) && ret.0 < self.records)]
-    fn place(
+    pub(crate) fn place(
         &mut self,
         arena: &TermArena,
         node: AnyNode,

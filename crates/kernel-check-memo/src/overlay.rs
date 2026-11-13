@@ -235,17 +235,20 @@ where
     }
 
     /// Fold `child`'s own entries into this memo, in the order the child
-    /// recorded them, keeping each entry that `keep` answers for, when each
-    /// agrees with what this memo recorded since the child's fork.
+    /// recorded them, keeping each entry that `keep` answers for, when `agree`
+    /// answers that each agrees with what this memo recorded since the
+    /// child's fork.
     ///
     /// The entries recorded since the fork are this memo's own entries and
     /// the entries of each layer frozen after the child's newest one: the
     /// joins of earlier siblings, which the child did not read. Two entries
-    /// under one support with two outcomes do not glue. So the join refuses
-    /// them, names both, and folds nothing. A child replaces an entry of a
-    /// layer that it read, as a serial run that records it again replaces
-    /// it. The join first settles this memo, so a serial fold records each
-    /// entry once.
+    /// under one support whose outcomes `agree` refuses do not glue. So the
+    /// join refuses them, names both, and folds nothing. Two outcomes that
+    /// `agree` accepts can name one content by two nodes. The child's entry
+    /// then replaces the held one, as a serial run that records it again
+    /// replaces it. A child replaces an entry of a layer that it read in the
+    /// same way. The join first settles this memo, so a serial fold records
+    /// each entry once.
     ///
     /// # Specification
     /// - requires: `child` was forked from this memo or from a layer below it.
@@ -257,7 +260,7 @@ where
     /// - provides: the fold of a job's memo at its join or its commit, and the
     ///   agreement check of two jobs that keep one support.
     /// - fails: a kept entry of the child and an entry recorded since its fork
-    ///   answer one support with two outcomes.
+    ///   answer one support with two outcomes that `agree` refuses.
     /// - panics: none.
     /// - executable: none — the fold's order is the caller's, and the child's
     ///   entries leave with the call, so no predicate reads them after it.
@@ -268,21 +271,25 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`]; an entry that `keep` drops is
-    ///   not served after the join, and two siblings that keep two outcomes
-    ///   under one support are refused in either order.
+    ///   not served after the join, two siblings that keep two outcomes under
+    ///   one support are refused in either order, and two outcomes that `agree`
+    ///   accepts glue.
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
     /// - witness: `overlay::tests::a_join_drops_what_the_parent_does_not_keep`
     /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    /// - witness: `overlay::tests::a_join_glues_two_outcomes_that_agree`
     #[inline]
-    pub fn join<Keep>(
+    pub fn join<Keep, Agree>(
         &mut self,
         child: Self,
         mut keep: Keep,
+        mut agree: Agree,
     ) -> Result<(), Disagreement<Support, Outcome>>
     where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Agree: FnMut(&Outcome, &Outcome) -> bool,
         Support: Clone,
-        Outcome: Clone + PartialEq,
+        Outcome: Clone,
     {
         let Self { layers, own } = child;
         // The child read each layer up to its newest one. A settle never
@@ -298,7 +305,7 @@ where
                 .recall(support)
                 .or_else(|| since.iter().rev().find_map(|layer| layer.recall(support)));
             if let Some(held) = held
-                && held.outcome() != outcome
+                && !agree(held.outcome(), outcome)
             {
                 return Err(Disagreement {
                     support: support.clone(),
@@ -497,18 +504,21 @@ where
     /// - hypothesis: L3 — as [`OverlaidMemo`].
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
     /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    /// - witness: `overlay::tests::a_join_glues_two_outcomes_that_agree`
     #[inline]
-    fn join_child<Keep>(
+    fn join_child<Keep, Agree>(
         &mut self,
         child: Self,
         keep: Keep,
+        agree: Agree,
     ) -> Result<(), Disagreement<Support, Outcome>>
     where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Agree: FnMut(&Outcome, &Outcome) -> bool,
         Support: Clone,
-        Outcome: Clone + PartialEq,
+        Outcome: Clone,
     {
-        self.join(child, keep)
+        self.join(child, keep, agree)
     }
 }
 
@@ -646,7 +656,7 @@ mod tests
             };
             for (child, entries) in order {
                 parent
-                    .join(child, |_, _| true)
+                    .join(child, |_, _| true, PartialEq::eq)
                     .expect("children that answer each support alike glue");
                 record(&mut serial, &entries);
             }
@@ -693,7 +703,7 @@ mod tests
             "the parent does not read the child's entry before the join"
         );
         parent
-            .join(child, |_, _| true)
+            .join(child, |_, _| true, PartialEq::eq)
             .expect("a child that answers again an entry it read glues");
         parent.settle();
         assert_eq!([served(&parent, Named(1)), served(&parent, Named(2))], [
@@ -709,7 +719,7 @@ mod tests
         let mut child = parent.fork();
         record(&mut child, &[(Named(1), Kept(10)), (Named(2), Kept(20))]);
         parent
-            .join(child, |named, _| *named != Named(2))
+            .join(child, |named, _| *named != Named(2), PartialEq::eq)
             .expect("a lone child glues");
         parent.settle();
         assert_eq!([served(&parent, Named(1)), served(&parent, Named(2))], [
@@ -735,10 +745,10 @@ mod tests
                 (left, right, Kept(20), Kept(21), None)
             };
             parent
-                .join(first, |_, _| true)
+                .join(first, |_, _| true, PartialEq::eq)
                 .expect("the first child glues");
             let refused = parent
-                .join(second, |_, _| true)
+                .join(second, |_, _| true, PartialEq::eq)
                 .expect_err("two outcomes under one key do not glue");
             assert_eq!(
                 (*refused.support(), *refused.held(), *refused.offered()),
@@ -753,6 +763,47 @@ mod tests
                 ],
                 [Some(Kept(10)), Some(held), third],
                 "the refused child folds nothing, swapped: {swapped}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_join_glues_two_outcomes_that_agree()
+    {
+        // Two outcomes of one parity name one content by two nodes.
+        let alike = |held: &Kept, offered: &Kept| held.0 & 1 == offered.0 & 1;
+        for swapped in [false, true] {
+            let mut parent = OverlaidMemo::new();
+            let mut left = parent.fork();
+            let mut right = parent.fork();
+            let mut odd = parent.fork();
+            record(&mut left, &[(Named(2), Kept(20))]);
+            record(&mut right, &[(Named(2), Kept(22))]);
+            record(&mut odd, &[(Named(2), Kept(21))]);
+            let (first, second, later) = if swapped {
+                (right, left, Kept(20))
+            }
+            else {
+                (left, right, Kept(22))
+            };
+            parent
+                .join(first, |_, _| true, alike)
+                .expect("the first child glues");
+            parent
+                .join(second, |_, _| true, alike)
+                .expect("two outcomes that agree glue");
+            assert_eq!(
+                served(&parent, Named(2)),
+                Some(later),
+                "the later child's outcome replaces the held one, as a serial memo records it, swapped: {swapped}"
+            );
+            let refused = parent
+                .join(odd, |_, _| true, alike)
+                .expect_err("an outcome that does not agree does not glue");
+            assert_eq!(
+                (*refused.held(), *refused.offered()),
+                (later, Kept(21)),
+                "the refusal names both outcomes, swapped: {swapped}"
             );
         }
     }

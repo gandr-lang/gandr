@@ -84,17 +84,19 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
-use gandr_kernel_check_memo::CheckMemo as _;
+use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::Binders;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Reads;
+use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::WIDEST;
@@ -151,6 +153,9 @@ pub struct SupportContext
     /// The names of the keys of the obligations this declaration's check owes.
     /// Its drain checks each of them before the declaration is admitted.
     owing: BTreeSet<(RecordName, RecordName)>,
+    /// What the drains of this check's forked children checked. The check's
+    /// own drain goes on from it, and records its keys when it passes.
+    drained: DrainLedger,
 }
 
 impl Default for SupportContext
@@ -169,6 +174,7 @@ impl Default for SupportContext
             open: Vec::new(),
             kept: KeptMemo::default(),
             owing: BTreeSet::new(),
+            drained: DrainLedger::default(),
         }
     }
 }
@@ -311,6 +317,189 @@ pub enum Discharge
     Open,
 }
 
+/// Whether a drain meets a key for the first time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Meeting
+{
+    /// The drain did not meet the key before, so it checks the key now.
+    First,
+    /// The drain met the key before, so it does not check the key again.
+    Again,
+}
+
+/// What a drain of a check's code obligations checked: how many obligations
+/// it took against the ceiling, and the keys whose verdicts the check records
+/// when its whole drain passes.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub struct DrainLedger
+{
+    /// How many obligations the drain took from its worklist.
+    drained: usize,
+    /// The keys of the obligations the drain checked, each with the
+    /// parameters its verdict is kept under. A check owes obligations of its
+    /// own, so its verdict holds only when the whole drain passes.
+    passed: Vec<(NodeSupport, Option<RecordName>)>,
+    /// The names of the keys the drain met. A key it met already is not
+    /// checked again.
+    seen: BTreeSet<(RecordName, RecordName)>,
+}
+
+impl Clone for DrainLedger
+{
+    /// A copy of the count, the keys checked and the keys met.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            drained: self.drained,
+            passed: self.passed.clone(),
+            seen: self.seen.clone(),
+        }
+    }
+}
+
+impl DrainLedger
+{
+    /// How many obligations the drain took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn drained(&self) -> TableEntryCount
+    {
+        TableEntryCount(self.drained)
+    }
+
+    /// Take one more obligation, when the drain took fewer than `ceiling`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one more obligation taken, when fewer than `ceiling` were
+    ///   taken. Otherwise the count stays as it was.
+    /// - provides: the ceiling of a drain.
+    /// - fails: the drain took `ceiling` obligations already.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`crate::KernelError::CodeObligationCeiling`], naming `ceiling`, when
+    /// the drain took `ceiling` obligations already.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a drain at its ceiling refuses its next obligation.
+    /// - witness: `gandr-kernel-core::check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
+    #[spec(captures: before = self.drained, ensures: |ret| match ret {
+        Ok(()) => self.drained == before.saturating_add(1) && before < usize::from(ceiling),
+        Err(_) => self.drained == before && before >= usize::from(ceiling),
+    })]
+    #[inline]
+    pub fn take(
+        &mut self,
+        ceiling: TableEntryCount,
+    ) -> Result<(), crate::KernelError>
+    {
+        if self.drained >= usize::from(ceiling) {
+            return Err(crate::KernelError::CodeObligationCeiling { ceiling });
+        }
+        self.drained = self.drained.saturating_add(1);
+        Ok(())
+    }
+
+    /// Meet `key`: [`Meeting::First`] when the drain did not meet it before,
+    /// so it checks it now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn meets(
+        &mut self,
+        key: &NodeSupport,
+    ) -> Meeting
+    {
+        if self.seen.insert(key.names()) {
+            Meeting::First
+        }
+        else {
+            Meeting::Again
+        }
+    }
+
+    /// Hold `key`, which the drain met first and checks now, to record its
+    /// verdict under the parameters `named` when the drain passes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn pass(
+        &mut self,
+        key: NodeSupport,
+        named: Option<RecordName>,
+    )
+    {
+        self.passed.push((key, named));
+    }
+
+    /// Add what `part` checked: its count, and each key it checked that this
+    /// ledger did not meet, in the order the part checked them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn absorb(
+        &mut self,
+        part: Self,
+    )
+    {
+        self.drained = self.drained.saturating_add(part.drained);
+        self.fold(part);
+    }
+
+    /// Add each key that `part` checked and this ledger did not meet, in the
+    /// order the part checked them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fold(
+        &mut self,
+        part: Self,
+    )
+    {
+        for (key, named) in part.passed {
+            if self.seen.insert(key.names()) {
+                self.passed.push((key, named));
+            }
+        }
+    }
+
+    /// Record the verdict of each key the drain checked in `memo`, and keep it
+    /// in `session` under its parameters.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn record<M>(
+        self,
+        memo: &mut M,
+        session: &mut SupportContext,
+    ) where
+        M: CheckMemo<NodeSupport, NodeOutcome>,
+    {
+        for (key, named) in self.passed {
+            if let Some(named) = named {
+                session.keep(&key, named, &NodeOutcome::Checked);
+            }
+            let _recorded = memo.remember(key, NodeOutcome::Checked);
+        }
+    }
+}
+
 impl SupportContext
 {
     /// A session over nothing.
@@ -365,6 +554,7 @@ impl SupportContext
         self.rewrites = RewriteMemo::new();
         self.open.clear();
         self.owing.clear();
+        self.drained = DrainLedger::default();
         self.read.clear();
     }
 
@@ -420,6 +610,7 @@ impl SupportContext
             open: Vec::new(),
             kept: self.kept.fork(),
             owing: BTreeSet::new(),
+            drained: DrainLedger::default(),
         }
     }
 
@@ -460,12 +651,166 @@ impl SupportContext
     {
         let Self { table, kept, .. } = job;
         self.table.join(arena, table);
-        self.kept.join(kept, |_, _| true).map_err(|disagreement| {
-            let (key, held, offered) = disagreement.into_parts();
-            crate::KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
-                crate::error::KeptOutcomes::new(key.digest(), held, offered),
-            ))
-        })
+        // The kept memo holds checked and formed outcomes alone. They name no
+        // node, so two of them agree exactly when they are equal.
+        self.kept
+            .join(kept, |_, _| true, PartialEq::eq)
+            .map_err(|disagreement| {
+                let (key, held, offered) = disagreement.into_parts();
+                crate::KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                    crate::error::KeptOutcomes::new(key.digest(), held, offered),
+                ))
+            })
+    }
+
+    /// Open the session of a goal's child at a fork point inside a check: as
+    /// [`Self::fork`], with a mirror of the innermost open goal under the
+    /// child's own accruals. What the child reads and owes joins the mirror,
+    /// and [`Self::join_goal`] joins the mirror into that goal, as a serial
+    /// walk joins a closed subgoal into it.
+    ///
+    /// The mirror is the innermost open goal, empty, and each barrier above
+    /// it. A read past a barrier joins nothing on either walk, and an owed key
+    /// passes each barrier on both. With no goal open, the mirror is empty.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::fork`].
+    /// - ensures: as [`Self::fork`]; the child's open accruals are the mirror.
+    /// - provides: the session a goal's forked child checks in.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::fork`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::join_goal`].
+    /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    #[must_use]
+    #[inline]
+    pub fn fork_goal(
+        &mut self,
+        arena: &TermArena,
+    ) -> Self
+    {
+        let mut child = self.fork(arena);
+        let mirrored = self.open.get(self.mirrored().0 ..).unwrap_or_default();
+        child
+            .open
+            .extend(mirrored.iter().map(|accrual| match *accrual {
+                Accrual::Goal { depth, .. } => Accrual::Goal {
+                    depth,
+                    reads: Reads::closed(),
+                    owed: Vec::new(),
+                },
+                Accrual::Barrier => Accrual::Barrier,
+            }));
+        child
+    }
+
+    /// Fold `child`, a goal's child forked by [`Self::fork_goal`], into this
+    /// session: as [`Self::join`], and the mirror's reads and owed keys into
+    /// the innermost open goal, and the keys of the obligations the child owes
+    /// into this check's.
+    ///
+    /// The child's accruals above the mirror close into it first, so a child
+    /// that refused still counts what it read.
+    ///
+    /// # Specification
+    /// - requires: `child` was forked from this session by [`Self::fork_goal`],
+    ///   and this session's open accruals did not change since. `arena` is this
+    ///   session's arena.
+    /// - ensures: as [`Self::join`]. The innermost open goal gains the binders
+    ///   and the keys that the child's subgoals give it on a serial walk, and
+    ///   [`Self::owes`] holds for each obligation the child owes.
+    /// - provides: the fold of a goal's child at its join.
+    /// - fails: as [`Self::join`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::join`].
+    ///
+    /// # Errors
+    /// As [`Self::join`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child's reads and owed keys under a goal, under a
+    ///   barrier and with no goal open, against the serial walk.
+    /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    #[inline]
+    pub fn join_goal(
+        &mut self,
+        arena: &TermArena,
+        mut child: Self,
+    ) -> Result<(), crate::KernelError>
+    {
+        let mirror = self.open.len().saturating_sub(self.mirrored().0);
+        while child.open.len() > mirror {
+            let _inner = child.close_innermost();
+        }
+        let owing = core::mem::take(&mut child.owing);
+        let drained = core::mem::take(&mut child.drained);
+        let mirrored = core::mem::take(&mut child.open);
+        self.join(arena, child)?;
+        // A barrier of the mirror stopped each read, as the barrier above
+        // this session's goal stops it.
+        if let Some(Accrual::Goal { depth, reads, owed }) = mirrored.into_iter().next() {
+            accrue(&mut self.open, &reads, depth);
+            owe_into(&mut self.open, &owed);
+        }
+        self.owing.extend(owing);
+        self.drained.absorb(drained);
+        Ok(())
+    }
+
+    /// Add what the drain of a forked child checked to what this check's
+    /// children drained.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn fold_drained(
+        &mut self,
+        ledger: DrainLedger,
+    )
+    {
+        self.drained.absorb(ledger);
+    }
+
+    /// Take what this check's forked children drained, for the check's own
+    /// drain to go on from.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn take_drained(&mut self) -> DrainLedger
+    {
+        core::mem::take(&mut self.drained)
+    }
+
+    /// How many obligations the drains of this check's forked children took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn drained(&self) -> TableEntryCount
+    {
+        self.drained.drained()
+    }
+
+    /// Where the mirror of a goal's forked child starts on this session's
+    /// stack: at the innermost open goal, or past each accrual when no goal
+    /// is open.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mirrored(&self) -> Opened
+    {
+        Opened(
+            self.open
+                .iter()
+                .rposition(|accrual| matches!(*accrual, Accrual::Goal { .. }))
+                .unwrap_or(self.open.len()),
+        )
     }
 
     /// Name `parameters` in this session's table, as
@@ -924,9 +1269,9 @@ impl SupportContext
         }
     }
 
-    /// Close every accrual unjoined and forget the obligations owed, so a
-    /// declaration's check opens on an empty stack whatever an earlier refusal
-    /// left on it.
+    /// Close every accrual unjoined and forget the obligations owed and what
+    /// a forked child drained, so a declaration's check opens on an empty
+    /// stack whatever an earlier refusal left on it.
     ///
     /// # Specification
     /// trivial.
@@ -935,6 +1280,7 @@ impl SupportContext
     {
         self.open.clear();
         self.owing.clear();
+        self.drained = DrainLedger::default();
     }
 }
 
@@ -1019,6 +1365,63 @@ pub enum NodeOutcome
         /// The keys of the obligations the formation owes.
         Owed,
     ),
+}
+
+impl NodeOutcome
+{
+    /// Whether this outcome and `other` answer one goal alike.
+    ///
+    /// The arena does not share one node between two equal contents. So two
+    /// forked parts that answer one goal can name one type by two nodes, where
+    /// a serial run recalls the first. Two types agree when the session's
+    /// table places them at one content. Every other outcome agrees with an
+    /// equal outcome alone.
+    ///
+    /// # Specification
+    /// - requires: `arena` holds each type that either outcome names, and
+    ///   `session` is the session of `arena`.
+    /// - ensures: [`ContentAgreement::Agree`] exactly when the two outcomes are
+    ///   equal, or name two types of one sort that the session's table places
+    ///   at one content.
+    /// - provides: the agreement of a forked check's join.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer places both types in the table. A
+    ///   predicate could restate it only by placing them again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two types minted apart with one content agree, and
+    ///   two types of two contents do not.
+    /// - witness: `support::tests::two_types_of_one_content_agree_and_two_of_two_contents_do_not`
+    #[inline]
+    #[must_use]
+    pub fn agrees(
+        &self,
+        other: &Self,
+        arena: &TermArena,
+        session: &mut SupportContext,
+    ) -> ContentAgreement
+    {
+        let agree = match (self, other) {
+            (&Self::ValueType(held), &Self::ValueType(offered)) => {
+                held == offered
+                    || session.table.place(arena, AnyNode::ValueType(held))
+                        == session.table.place(arena, AnyNode::ValueType(offered))
+            },
+            (&Self::CompType(held), &Self::CompType(offered)) => {
+                held == offered
+                    || session.table.place(arena, AnyNode::CompType(held))
+                        == session.table.place(arena, AnyNode::CompType(offered))
+            },
+            _ => self == other,
+        };
+        if agree {
+            ContentAgreement::Agree
+        }
+        else {
+            ContentAgreement::Differ
+        }
+    }
 }
 
 /// The keys of the obligations that a formation owes the checker, each one
@@ -1948,6 +2351,36 @@ mod tests
     }
 
     #[test]
+    fn two_types_of_one_content_agree_and_two_of_two_contents_do_not()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        // The arena does not share a node between two equal contents.
+        let first = arena.value_type_product(&[unit, integer]);
+        let second = arena.value_type_product(&[unit, integer]);
+        let swapped = arena.value_type_product(&[integer, unit]);
+        assert_ne!(first, second, "the arena mints one content at two nodes");
+        let mut session = SupportContext::new();
+        let typed = super::NodeOutcome::ValueType;
+        assert_eq!(
+            typed(first).agrees(&typed(second), &arena, &mut session),
+            ContentAgreement::Agree,
+            "two nodes of one content agree"
+        );
+        assert_eq!(
+            typed(first).agrees(&typed(swapped), &arena, &mut session),
+            ContentAgreement::Differ,
+            "two contents do not agree"
+        );
+        assert_eq!(
+            typed(first).agrees(&super::NodeOutcome::Checked, &arena, &mut session),
+            ContentAgreement::Differ,
+            "a type and a check do not agree"
+        );
+    }
+
+    #[test]
     fn the_read_binders_are_placed_by_index()
     {
         let mut arena = TermArena::new();
@@ -2140,6 +2573,78 @@ mod tests
             session.close(goal),
             "a subgoal left open closes into its goal, so what it read still counts"
         );
+    }
+
+    #[test]
+    fn a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let binders = [unit_type; 4];
+        let mut keyed = SupportContext::new();
+        let key = NodeSupport::recorded(
+            &arena,
+            &mut keyed,
+            SupportGoal::Obligation(crate::encoding::ObligationGoal::Data(unit_type)),
+            &[],
+            &Reads::closed(),
+        );
+        // The child opens a subgoal under four binders, reads two of them and
+        // owes the key. It closes the subgoal, or leaves it open as a refused
+        // child does.
+        let child_walk = |session: &mut SupportContext, closes: bool| {
+            let subgoal = session.open(&binders);
+            session.read(&reading(&[1, 3]), &binders);
+            session.owe_obligation(&key);
+            if closes {
+                let _reads = session.close(subgoal);
+            }
+        };
+        for (barred, closes) in [(false, true), (false, false), (true, true)] {
+            let mut walks = [keyed.carried(), keyed.carried()].map(|mut session| {
+                let goal = session.open(&binders[.. 2]);
+                session.read(&reading(&[0]), &binders[.. 2]);
+                let barrier = barred.then(|| session.open_barrier());
+                (session, goal, barrier)
+            });
+            let [(ref mut serial, ..), (ref mut forked, ..)] = walks;
+            child_walk(serial, closes);
+            let mut child = forked.fork_goal(&arena);
+            child_walk(&mut child, closes);
+            forked
+                .join_goal(&arena, child)
+                .expect("a serial child's join glues");
+            let [serial, forked] = walks.map(|(mut session, goal, barrier)| {
+                if let Some(barrier) = barrier {
+                    let _reads = session.close(barrier);
+                }
+                let owes = session.owes(&key);
+                let (reads, owed) = session.close_owing(goal).expect("the goal is open");
+                (reads, owed.keys().to_vec(), owes)
+            });
+            assert_eq!(
+                serial, forked,
+                "a goal whose child ran forked reads, owes and holds what the serial walk gives it \
+                 (under a barrier: {barred}, the child's subgoal closed: {closes})"
+            );
+            assert_eq!(
+                super::Discharge::Held,
+                forked.2,
+                "the check owes what its forked child owes"
+            );
+            let read = if barred {
+                reading(&[0])
+            }
+            else {
+                reading(&[0, 1])
+            };
+            assert_eq!(
+                (read, alloc::vec![key.clone()]),
+                (forked.0, forked.1),
+                "the child's read joins the goal lowered past its binders unless a barrier stops \
+                 it, and its key passes the barrier"
+            );
+        }
     }
 
     #[test]
