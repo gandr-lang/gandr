@@ -194,6 +194,17 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+pub(super) use gandr_surface_lowering_base::lower::capability::Authority;
+use gandr_surface_lowering_base::lower::capability::Clause;
+pub(super) use gandr_surface_lowering_base::lower::capability::Exercised;
+use gandr_surface_lowering_base::lower::capability::Handlers;
+pub(super) use gandr_surface_lowering_base::lower::capability::Interface;
+use gandr_surface_lowering_base::lower::capability::Mint;
+use gandr_surface_lowering_base::lower::capability::Performer;
+pub(super) use gandr_surface_lowering_base::lower::capability::Scoped;
+use gandr_surface_lowering_base::lower::capability::Written;
+pub(super) use gandr_surface_lowering_base::lower::capability::WrittenRow;
+pub use gandr_surface_lowering_base::lower::capability::tail;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -201,7 +212,6 @@ use gandr_surface_syntax::SourceFragment;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
-use super::Block;
 use super::Lowered;
 use super::Lowerer;
 use super::Produced;
@@ -364,59 +374,6 @@ pub(super) fn mints(operation: &OperationName) -> Reply
     }
 }
 
-/// The operations a capability type grants, named bare.
-pub(super) type Authority = BTreeSet<OperationName>;
-
-/// What performs an operation a call `x.op(v, …)` selects.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Performer
-{
-    /// `c.op(v)`: the capability `c` names is exercised, of the theory its
-    /// scope handles where one does.
-    Capability(NodeIndex, Option<Arc<TheoryInterface>>),
-    /// `I.op(v)`: the operation of the host interface `I` is performed by
-    /// name, handled by whichever handler stands nearest when it runs — the
-    /// host's at the program's entry.
-    Interface(EffectName),
-}
-
-/// The interface a form names: a host interface, a theory a capability scope
-/// handles or a row names at the sorts it fixes, or an extern block's.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum Interface
-{
-    /// The host interface of this name.
-    Host(EffectName),
-    /// The theory a capability scope or a row reads as an interface.
-    Theory(Arc<TheoryInterface>),
-    /// The interface an extern block of the source declares, which the host
-    /// the run is offered to answers.
-    Foreign(Arc<ForeignInterface>),
-}
-
-impl Interface
-{
-    /// The name a row keys the interface's default instance by: the host
-    /// interface's, the theory's or the extern block's.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn name(&self) -> &EffectName
-    {
-        match *self {
-            Self::Host(ref name) => name,
-            Self::Theory(ref theory) => &theory.name,
-            Self::Foreign(ref foreign) => &foreign.name,
-        }
-    }
-}
-
 /// Where a theory's signature stands: where its fixed types were read, in the
 /// signature's telescope, or in the term context of a frame under it.
 ///
@@ -429,153 +386,6 @@ pub(super) enum Standing
     Read,
     /// The term context of this frame: a scope's, or an exercise's.
     Term(Frame),
-}
-
-/// An exercise `c.op(v, …)` or a perform `I.op(v, …)`, as the classification
-/// read it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct Exercised
-{
-    /// What performs the operation.
-    performer: Performer,
-    /// The interface the operation belongs to.
-    interface: Interface,
-    /// The operation exercised.
-    operation: OperationName,
-    /// The bytes of the head `c.op` that selects it.
-    head: ByteSpan,
-    /// The frame the exercise is read under.
-    frame: Frame,
-    /// The payload's values, in the lowerer's operand store.
-    payload: FormStretch,
-}
-
-quenchant_shape::reason_enum! {
-    /// Why a returner's row stands open through no tail.
-    pub mod tail {
-        /// The row is closed: it names its interfaces alone.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// The source wrote no `| t` after the interfaces.
-            Closed,
-        }
-    }
-}
-
-/// A returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`, each
-/// entry a host interface or a theory at the sorts it fixes, `[T with sort x
-/// = A]`, as the classification read it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct WrittenRow
-{
-    /// The interfaces the row names whole, each its default instance, in
-    /// name order.
-    interfaces: Vec<Interface>,
-    /// Each label `a : I` the row writes, its tile beside its interface.
-    labels: Vec<(Placed, Interface)>,
-    /// Each label's instance, its interface at the region its name resolves
-    /// to, once the row is planned under its frame.
-    placed: Vec<(Interface, Region)>,
-    /// Each type a theory entry fixes a sort to, read as the row is planned.
-    fixed: Vec<Placed>,
-    /// Each theory entry's name, beside the theory it resolves to.
-    named: Vec<(ByteSpan, ConstantIndex)>,
-    /// The operand the row stays open through, read as a row value.
-    tail: Maybe<NodeIndex, tail::Absent>,
-}
-
-/// A capability scope, as the classification read it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct Scoped
-{
-    /// The interface the scope handles.
-    interface: Interface,
-    /// The capability's binder, as written.
-    binder: NodeIndex,
-    /// The frame the scope is read under, where its manifest's types are read.
-    frame: Frame,
-    /// The subject, under the capability's binder.
-    subject: Block,
-    /// What answers the interface's operations.
-    handlers: Handlers,
-}
-
-/// What answers a capability scope's operations, as the classification read
-/// it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Handlers
-{
-    /// The clauses the scope writes, `with { … }`.
-    Written(Written),
-    /// The model answering a theory's scope: the module it names, `with N`,
-    /// or the one model in scope, for a scope writing no `with`.
-    Model(Arc<Answering>),
-}
-
-/// A capability scope's written clauses, as the classification read them.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Written
-{
-    /// The return clause's body, under its result's binder.
-    on_return: NodeIndex,
-    /// The return clause's result binder, as written.
-    result: NodeIndex,
-    /// Each operation clause, in written order.
-    clauses: Vec<Clause>,
-}
-
-/// An operation clause of a capability scope, as the classification read
-/// it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Clause
-{
-    /// The operation the clause handles.
-    operation: OperationName,
-    /// The payload's binder, as written; none for `oper op(k)`.
-    payload: Option<NodeIndex>,
-    /// The continuation's binder, as written.
-    continuation: NodeIndex,
-    /// The body, under the clause's binders.
-    body: NodeIndex,
-    /// The buffer the scope mints for the clause, for an operation that
-    /// replies one.
-    mint: Mint,
-}
-
-/// The buffer a clause's scope mints, by the names its clause gives it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Mint
-{
-    /// The operation replies no buffer: the payload binder holds the payload.
-    Unminted,
-    /// The payload binder holds the pair of the payload and the mint, split
-    /// into the payload's name and the mint's, the mint placed live.
-    Minted
-    {
-        /// The mint's name, as written.
-        mint: NodeIndex,
-    },
 }
 
 /// The host signatures the mint sweep has minted into the module's arena.

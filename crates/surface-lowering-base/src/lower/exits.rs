@@ -164,3 +164,54 @@ pub enum Returned
     /// the checker elaborates to the same body where it runs it.
     Run,
 }
+
+/// What the paths through a node do with the body it stands in.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the variants are ordered never, sometimes, always, so the greater
+///   of two children's is what a form holding both does at least.
+/// - provides: the survey's answer, which the classification reads at every
+///   statement of a block a path runs through.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computation with no exit, one with an exit in one arm
+///   and one with an exit in every arm, each at one and two depths.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Leaves
+{
+    /// No path leaves: the node holds no exit outside a body of its own.
+    #[default]
+    Never,
+    /// Some path leaves and some ends where the node stands.
+    Sometimes,
+    /// Every path leaves.
+    Always,
+}
+
+/// Where the rest of a block goes after one of its statements.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a bound rest is bound once, after the statement's computation
+///   returns; a distributed rest continues every local end of it.
+/// - provides: the statement half of the commuting.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a statement whose computation holds no exit binds its
+///   rest once, and one whose match exits in one arm continues the other.
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Rest
+{
+    /// The rest is bound once over the statement's computation.
+    Bound,
+    /// The rest continues every local end of the statement's computation,
+    /// which holds an exit.
+    Distributed,
+}

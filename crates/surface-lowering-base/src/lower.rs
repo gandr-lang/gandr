@@ -1,31 +1,90 @@
-//! The records and the parts of the lowering that read nothing of its
+//! The records of the lowering and the parts of it that read nothing of its
 //! context.
 //!
-//! They are the exits and the runs the lowering infers, the reading of a
-//! literal's own text, the spelling of reflexivity, the refusal of a `cells`
-//! node, and a theory read as a capability's interface. The lowering's
-//! families read them, and `gandr-surface-lowering` names each one at its old
-//! path.
+//! The module pass reads the exits and the runs the lowering infers, the
+//! reading of a literal's own text, and the spelling of reflexivity. The
+//! context holds the readings, the plans and the records that its families
+//! write and read: one module here for each family that defines such a type.
+//! The refusal of a `cells` node and a theory read as a capability's interface
+//! read nothing of the context. The families read these items, and
+//! `gandr-surface-lowering` names each one at its old path.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
+use gandr_core_term::ConstructorTag;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::identity::Relation;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::SessionAction;
+use gandr_core_term::world::World;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::CharacterLiteral;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::LayoutBlock;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
+use crate::by_form::FormStretch;
+use crate::error::FormFault;
+use crate::error::FragmentBoundary;
+use crate::error::FragmentSort;
+use crate::error::LoweringRefusal;
+use crate::form::Family;
+use crate::form::FormName;
 use crate::form::Former;
+use crate::form::Placed;
+use crate::form::Run;
+use crate::form::TileName;
+use crate::form::Universe;
+use crate::module::FamilyIndex;
+use crate::module::InstanceIndex;
+use crate::module::SlotIndex;
+use crate::origin::Insertion;
+use crate::origin::Origin;
+use crate::resolve::Frame;
+use crate::resolve::ScopeId;
+use crate::resolve::Telescope;
+use crate::resolve::TypeAtom;
+use crate::resolve::TypeFormer;
+use crate::unit::SourceIndex;
 use crate::written_import::decode_escapes;
 
+pub mod access;
+pub mod arity;
 pub mod capability;
 pub mod cells;
+pub mod conditional;
 pub mod exits;
+pub mod generic;
+pub mod identity;
+pub mod implicit;
+pub mod loops;
+pub mod method;
+pub mod model;
+pub mod native;
+pub mod natural;
+pub mod opening;
 pub mod runs;
+pub mod session;
+pub mod world;
 
 pub use exits::ElidableExit;
 pub use exits::Exit;
@@ -260,4 +319,1743 @@ pub fn parse_literal(
     };
 
     found.map_or(Maybe::Absent(literal::Absent::Malformed), Maybe::Present)
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a node has no lowered core node.
+    pub mod lowered {
+        /// The mint sweep produced nothing usable for the node.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node was not minted: unread, refused, or under a refusal.
+            Unminted,
+            /// The node was minted at another sort than the one asked for.
+            OtherSort,
+            /// The function tail states no type: a parameter or the result is
+            /// untyped.
+            Unstated,
+            /// The slot belongs to a functor's template, which each
+            /// application renames into declarations of its own.
+            Templated,
+            /// The constructor around a field reads as no application of a
+            /// family, so the field gives the constructor written in it no
+            /// type.
+            Unclassified,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a node sees no manifest type component.
+    pub mod scoped {
+        /// The node lies in no module signature.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No signature type encloses the node.
+            Unscoped,
+        }
+    }
+}
+
+/// How a node's position reads it.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A reading retains its positional sort and, for framed readings,
+///   the binder frame used by its children.
+/// - provides: The context for classification and insertion decisions.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The tag retains neither its source position nor its
+///   scope; sort, family, frame and require specify its projections and
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — lambda binding, forced heads and returner insertion
+///   distinguish the framed term and type positions on the listed sources.
+/// - witness: `gandr-surface-lowering::lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+/// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `gandr-surface-lowering::lower::tests::a_positive_result_gains_a_returner_once`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Reading
+{
+    /// Not read: an own tile, layout, or a node under a form that refused.
+    Unread,
+    /// Read as a value type, under the binder frame named here.
+    ValueType(Frame),
+    /// Read as a computation type, under the binder frame named here.
+    CompType(Frame),
+    /// Read as a value, under the binder frame named here.
+    Value(Frame),
+    /// Read as a computation, under the binder frame named here.
+    Computation(Frame),
+    /// Read as an application's head: a computation under the binder frame
+    /// named here, which a value standing here reaches by an inserted force.
+    Head(Frame),
+    /// Read as a function's result: a computation type under the binder frame
+    /// named here, which a value type standing here reaches by an inserted
+    /// returner.
+    Result(Frame),
+    /// Read as a function: the declaration form whose tail is one.
+    Function,
+}
+
+impl Reading
+{
+    /// The sort a refusal at this position reports.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: unread and function positions report declarations, type
+    ///   positions their own type sort, and heads/results the computation sort
+    ///   they demand.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — wrong-sort refusals distinguish the expected value,
+    ///   computation and type positions; function sites report a declaration.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_computation_codomain_of_a_box_is_refused`
+    /// - witness: `gandr-surface-lowering::lower::tests::forms_outside_the_fragment_are_unadmitted`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (Self::Unread | Self::Function, FragmentSort::Declaration)
+                    | (Self::ValueType(_), FragmentSort::ValueType)
+                    | (Self::CompType(_) | Self::Result(_), FragmentSort::CompType)
+                    | (Self::Value(_), FragmentSort::Value)
+                    | (
+                        Self::Computation(_) | Self::Head(_),
+                        FragmentSort::Computation
+                    )
+            )
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn sort(self) -> FragmentSort
+    {
+        match self {
+            Self::Unread | Self::Function => FragmentSort::Declaration,
+            Self::ValueType(_frame) => FragmentSort::ValueType,
+            Self::CompType(_frame) | Self::Result(_frame) => FragmentSort::CompType,
+            Self::Value(_frame) => FragmentSort::Value,
+            Self::Computation(_frame) | Self::Head(_frame) => FragmentSort::Computation,
+        }
+    }
+
+    /// The family of formers this reading admits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: type and result readings admit the type family, term and head
+    ///   readings the term family, and unread/function readings neither.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — term and type fixtures exercise their reading
+    ///   families; a type in value position is quoted rather than rejected as a
+    ///   wrong family.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_lambda_in_value_position_is_nested_and_marked_inserted`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (Self::Unread | Self::Function, Family::Neither)
+                    | (
+                        Self::ValueType(_) | Self::CompType(_) | Self::Result(_),
+                        Family::Type
+                    )
+                    | (
+                        Self::Value(_) | Self::Computation(_) | Self::Head(_),
+                        Family::Term
+                    )
+            )
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn family(self) -> Family
+    {
+        match self {
+            Self::Unread | Self::Function => Family::Neither,
+            Self::ValueType(_frame) | Self::CompType(_frame) | Self::Result(_frame) => Family::Type,
+            Self::Value(_frame) | Self::Computation(_frame) | Self::Head(_frame) => Family::Term,
+        }
+    }
+
+    /// The binder frame this reading is under, the outermost for a reading
+    /// that names none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: framed readings retain their frame, while unread and function
+    ///   readings use the outermost frame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda body resolves its binder at the exact index;
+    ///   a reading without a binder is interpreted in the outermost scope.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (
+                    Self::Unread
+                        | Self::Function
+                        | Self::ValueType(Frame::Outermost)
+                        | Self::CompType(Frame::Outermost)
+                        | Self::Value(Frame::Outermost)
+                        | Self::Computation(Frame::Outermost)
+                        | Self::Head(Frame::Outermost)
+                        | Self::Result(Frame::Outermost),
+                    Frame::Outermost
+                ) | (
+                    Self::ValueType(Frame::Inner(_))
+                        | Self::CompType(Frame::Inner(_))
+                        | Self::Value(Frame::Inner(_))
+                        | Self::Computation(Frame::Inner(_))
+                        | Self::Head(Frame::Inner(_))
+                        | Self::Result(Frame::Inner(_)),
+                    Frame::Inner(_)
+                )
+            )
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn frame(self) -> Frame
+    {
+        match self {
+            Self::Unread | Self::Function => Frame::Outermost,
+            Self::ValueType(frame)
+            | Self::CompType(frame)
+            | Self::Value(frame)
+            | Self::Computation(frame)
+            | Self::Head(frame)
+            | Self::Result(frame) => frame,
+        }
+    }
+
+    /// The universe a decode stands at when nothing was written to say, at
+    /// the fuss-free level: the computation types where only a computation
+    /// type is read, the value types everywhere else — a function's result
+    /// included, which takes a value type under an inserted returner.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: only a computation-type reading defaults to the computation
+    ///   universe; every other reading defaults to the value universe, all at
+    ///   level zero.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — static application decodes at the written universe or
+    ///   at the sort demanded by its position when no universe is written.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(
+        ensures: |ret| {
+            matches!(ret.level, LevelConstant::ZERO)
+                && matches!(
+                    (self, ret.sort),
+                    (Self::CompType(_), GroundSort::Computation)
+                        | (
+                            Self::Unread
+                                | Self::Function
+                                | Self::ValueType(_)
+                                | Self::Value(_)
+                                | Self::Computation(_)
+                                | Self::Head(_)
+                                | Self::Result(_),
+                            GroundSort::Value
+                        )
+                )
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn positional_universe(self) -> Universe
+    {
+        match self {
+            Self::CompType(_) => Universe {
+                sort: GroundSort::Computation,
+                level: LevelConstant::ZERO,
+            },
+            Self::Unread
+            | Self::Function
+            | Self::ValueType(_)
+            | Self::Value(_)
+            | Self::Computation(_)
+            | Self::Head(_)
+            | Self::Result(_) => Universe::FUSS_FREE,
+        }
+    }
+}
+
+/// What the mint sweep writes over a node's own core node.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A bare result is unchanged; an insertion request is interpreted
+///   against the lowered child family.
+/// - provides: The conversion to apply after the node’s own plan is minted.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The child is not retained on the tag; require selects
+///   requests and `Sink::bridge` checks the result family and provenance.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forcing, returner insertion and quotation record the
+///   inserted node while preserving the authored child’s origin.
+/// - witness: `gandr-surface-lowering::lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `gandr-surface-lowering::lower::tests::a_positive_result_gains_a_returner_once`
+/// - witness: `gandr-surface-lowering::lower::tests::a_type_where_a_value_is_read_is_quoted`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Bridge
+{
+    /// Nothing: the node's sort is the sort its position reads.
+    Bare,
+    /// The bridge from the node's sort to the one its position reads.
+    Inserted(Insertion),
+    /// A call or a selection at an application's head, nested and then forced:
+    /// the checker runs it when it returns a function, and suspends it
+    /// otherwise (#3935, #4818).
+    HeadCall,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a function's parameter or result carries no type.
+    pub mod stated {
+        /// The function tail leaves the type to a signature written apart.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source wrote no `: T` after the binder, or no `-> T` after
+            /// the parameter list.
+            Unstated,
+            /// The parameter is an instance a label of the result's row binds:
+            /// its type is the capability of the label's interface at the
+            /// label's own region (`Lowerer::instance_parameters`).
+            Instance,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a function tail closes no fixpoint.
+    pub mod recursion {
+        /// The function names nothing recursively.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration was not written `def rec`.
+            Plain,
+        }
+    }
+}
+
+/// One segment of an interpolated string, in written order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TextSegment
+{
+    /// A run of text between the quotes and the interpolations, its escapes
+    /// decoded.
+    Text(StringLiteral),
+    /// The expression an interpolation `${ e }` holds, read as a value.
+    Operand(NodeIndex),
+}
+
+/// What a block statement does with the value its computation returns, or
+/// the fork, the receive or the hold it is.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StatementBinding
+{
+    /// `let x = c ;` names the value for the rest of the block; the node is
+    /// the name's own.
+    Named(NodeIndex),
+    /// `let b = c.alloc(n) ;` names, under `b`'s linear binder, the buffer
+    /// an exercise replies, placed live over the rest of the block; the
+    /// reply's own binder is one no name reaches. The node is the name's own.
+    Placed(NodeIndex),
+    /// `let x = v ;` with `v` a value: `v` returned once and bound to `x`'s
+    /// binder, which the checker reads as `v` itself. The node is the name's
+    /// own.
+    Let(NodeIndex),
+    /// `let x : A = v ;`: as [`Self::Let`], `v` ascribed `A`.
+    TypedLet
+    {
+        /// The name's own node.
+        name: NodeIndex,
+        /// The stated type's node.
+        annotation: NodeIndex,
+    },
+    /// `c ;` discards it, splitting it as the unit under a binder no name
+    /// reaches.
+    Discarded,
+    /// `let (x, y, …) = c ;` splits the tuple it returns, under a binder no
+    /// name reaches, into one named binder per component.
+    Split
+    {
+        /// The tuple's arity.
+        arity: gandr_core_term::ComponentCount,
+        /// The tuple pattern's own node.
+        pattern: NodeIndex,
+    },
+    /// `let (q, r, …) = f(a) ;` binds each output of a call whose result is a
+    /// group, one named binder per output, the first outermost, with no
+    /// product built.
+    Outputs
+    {
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The pattern's own node.
+        pattern: NodeIndex,
+    },
+    /// `let x : A = c ;` ascribes `c` the returner `-F A`, pure as the
+    /// annotation writes no row, and names the value it returns for the rest
+    /// of the block, so a computation that returns no `A` refuses.
+    Typed
+    {
+        /// The name's own node.
+        name: NodeIndex,
+        /// The value type `A` written, read in the statement's own frame.
+        annotation: NodeIndex,
+    },
+    /// `module m = p ;` ascribes `return p` the returner of the model type
+    /// `p` is declared at, as [`Self::Typed`] does, so the checker binds `m`
+    /// as a variable of that type rather than reading it as `p`.
+    Opening
+    {
+        /// The name's own node.
+        name: NodeIndex,
+        /// The model type `p` is declared at, read in its own frame.
+        stated: NodeIndex,
+        /// The frame the statement stands in, which the type is carried to.
+        frame: Frame,
+    },
+    /// `let (x, y, …) : A = c ;` ascribes `c` the returner `-F A`, as
+    /// [`Self::Typed`] does, and splits the tuple it returns, as
+    /// [`Self::Split`] does.
+    TypedSplit
+    {
+        /// The tuple's arity.
+        arity: gandr_core_term::ComponentCount,
+        /// The tuple pattern's own node.
+        pattern: NodeIndex,
+        /// The value type `A` written, read in the statement's own frame.
+        annotation: NodeIndex,
+    },
+    /// `let d = fork (c : S) t;` runs `t`, under `c`'s linear binder, beside
+    /// the rest of the block, under `d`'s: the fork's protocol `S`, its
+    /// child `t`, and `c`, the channel's name.
+    Forked
+    {
+        /// The protocol type `S` written for the child's end.
+        protocol: NodeIndex,
+        /// The child computation.
+        child: NodeIndex,
+        /// The name `c` the child's end binds.
+        end: NodeIndex,
+    },
+    /// `let x = recv c;` receives on `c` into `x`'s linear binder, over the
+    /// rest of the block.
+    Received
+    {
+        /// The endpoint `c`, read where the statement stands.
+        endpoint: DeBruijnIndex,
+        /// The bytes `c` is written at.
+        subject: ByteSpan,
+        /// The name's own node.
+        name: NodeIndex,
+    },
+    /// `var x = e ;` holds the value `e`, under `x`'s linear binder, over the
+    /// rest of the block, at the grade `var[g]` writes, ascribed the type
+    /// `var x : T = e ;` states.
+    Held
+    {
+        /// The value held.
+        value: NodeIndex,
+        /// The grade it is held at.
+        grade: gandr_core_term::memory::HoldGrade,
+        /// The name's own node.
+        name: NodeIndex,
+        /// The value type `T` written, read in the statement's own frame.
+        stated: Maybe<NodeIndex, access::unstated::Absent>,
+    },
+    /// `var x : A at w = e ;` binds `x` to the handle the world `w` holds
+    /// `e` at, as `var x : A at w = e ;` does; the bound node is `e`.
+    Located
+    {
+        /// The handle type `A at w` written, read in the statement's own
+        /// frame.
+        annotation: NodeIndex,
+        /// The name's own node.
+        name: NodeIndex,
+    },
+    /// `let x at w = v ;` opens the handle `v`, binding `x`, an intuitionistic
+    /// hypothesis located at `w`, over the rest of the block.
+    Opened
+    {
+        /// The handle opened.
+        value: NodeIndex,
+        /// The name's own node.
+        name: NodeIndex,
+        /// The world the source writes.
+        world: World,
+    },
+}
+
+/// One `let x = c ;` or `c ;` statement of a block.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The origin position supplies the bind’s origin while the bound
+///   position supplies its computation; the rest says whether the block after
+///   the statement is bound once or continues every local end of the
+///   computation.
+/// - provides: One source-ordered block binding.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Neither the source tree nor the lowered-node table is
+///   retained; statement and `mint_block` check the coordinate roles.
+///
+/// # Adequacy
+/// - hypothesis: L3 — consecutive run bindings scope over the following
+///   computation and preserve their own source origins.
+/// - witness: `gandr-surface-lowering::lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `gandr-surface-lowering::lower::tests::a_discarded_statement_splits_its_unit`
+/// - witness: `gandr-surface-lowering::lower::tests::every_minted_node_has_an_origin`
+/// - witness: `gandr-surface-lowering::lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Statement
+{
+    /// The origin of the bind: the `let` tile, or a discarded statement's
+    /// computation.
+    pub origin: NodeIndex,
+    /// The computation whose returned value the statement binds.
+    pub bound: NodeIndex,
+    /// Whether the rest of the block names the value or discards it.
+    pub binding: StatementBinding,
+    /// Where the rest of the block goes.
+    pub rest: exits::Rest,
+}
+
+/// A block: its statements, in source order, and its last computation.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The statement range precedes one final computation, which is not
+///   replaced by an empty block result.
+/// - provides: A block plan over the shared statement store.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The statement store and child results are absent; block
+///   and `mint_block` check the range, final computation and bind order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — chained binds preserve order; a block without its final
+///   computation is refused at the arity boundary.
+/// - witness: `gandr-surface-lowering::lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `gandr-surface-lowering::lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Block
+{
+    /// The block's statements, in the lowerer's statement store.
+    pub statements: FormStretch,
+    /// The computation the block ends with.
+    pub last: NodeIndex,
+}
+
+/// One parameter of a function tail.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The binder’s origin, introduced frame and optional written type
+///   remain separate coordinates.
+/// - provides: The data a function’s lambda and signature spines are built
+///   from.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The source, scope and lowered types are not retained;
+///   function, `mint_function` and `mint_signature` interpret those
+///   coordinates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a typed parameter contributes to both spines, while an
+///   unstated type does not prevent the function body from lowering.
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `gandr-surface-lowering::lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Parameter
+{
+    /// The binder tile, the origin of the parameter's lambda and arrow.
+    pub binder: NodeIndex,
+    /// The frame the parameter binds, which says whether a type names it.
+    pub frame: ScopeId,
+    /// The parameter's type, when the source wrote one: a flattened model
+    /// implicit's model type.
+    pub declared: Maybe<NodeIndex, stated::Absent>,
+    /// The place of the component the parameter binds among its model
+    /// implicit's, when it is one of a flattened model implicit's parameters
+    /// ([`model::Flattened`]).
+    pub component: Option<model::ComponentPlace>,
+    /// Whether the tail's own parameter list writes the parameter.
+    pub listed: Listed,
+}
+impl Parameter
+{
+    /// A parameter the tail's own list writes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn own(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: Maybe<NodeIndex, stated::Absent>,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared,
+            component: None,
+            listed: Listed::Own,
+        }
+    }
+
+    /// A parameter bound outside the tail's own list.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn elsewhere(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: Maybe<NodeIndex, stated::Absent>,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared,
+            component: None,
+            listed: Listed::Elsewhere,
+        }
+    }
+
+    /// A component of a flattened model implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn component(
+        binder: NodeIndex,
+        frame: ScopeId,
+        declared: NodeIndex,
+        component: model::ComponentPlace,
+    ) -> Self
+    {
+        Self {
+            binder,
+            frame,
+            declared: Maybe::Present(declared),
+            component: Some(component),
+            listed: Listed::Elsewhere,
+        }
+    }
+}
+
+/// Where a function's parameter is written.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: [`Self::Own`] for a parameter the tail's own list writes, bound
+///   in written or in merged order; [`Self::Elsewhere`] for one an implicit
+///   group, a row label, a model's components, a telescope or a clause's
+///   columns bind.
+/// - executable: none — the record holds no tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linear tail with an implicit group takes its written
+///   parameters linearly and its implicit one intuitionistically.
+/// - witness: `gandr-surface-lowering::lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Listed
+{
+    /// The tail's own parameter list writes the parameter.
+    Own,
+    /// Something other than the tail's own list binds the parameter.
+    Elsewhere,
+}
+
+/// A label the source writes against an entry, kept while the lowering plans
+/// so the label can answer what its entry lowers to.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the label's bytes, the node of the entry it names, and how that
+///   entry is read.
+/// - executable: none — the record holds neither the tree nor the scope its
+///   coordinates are read in.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as `Lowerer::labelled`.
+/// - witness: `gandr-surface-lowering::lower::arity::tests::each_label_names_what_it_labels`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LabelSite
+{
+    /// The label's bytes.
+    pub written: ByteSpan,
+    /// The entry the label names.
+    pub held: NodeIndex,
+    /// How the entry is read.
+    pub read: LabelRead,
+}
+
+/// How the entry a label names is read.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LabelRead
+{
+    /// As a value type under the frame: the label answers at that type.
+    ValueType(Frame),
+    /// As a computation type under the frame.
+    CompType(Frame),
+    /// As a term: the label answers at the term's type.
+    Term,
+}
+
+/// What a path-shaped type's carrier is written as.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Carrier
+{
+    /// A type, the node written at the carrier's place or supplied by name.
+    Written(NodeIndex),
+    /// A universe spelled by the form's own tiles, `Path[.A = Type](A, B)`: the
+    /// endpoints are written as types.
+    Universe(Universe),
+    /// No carrier written, `Flow(a, b)`: the decoding of a hole the form
+    /// nominates, which the endpoints fix where the type forms.
+    Omitted(gandr_core_term::hole::HoleId),
+}
+
+/// The former a path-shaped type relates its endpoints by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Relating
+{
+    /// `Path[.A = A](a, b)`, element identity.
+    Path,
+    /// `Bridge[.A = A](a, b)`, relatedness: no reflexivity, transport or J.
+    Bridge,
+}
+
+impl Relating
+{
+    /// The head tile the form is written under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn head(self) -> TileName
+    {
+        match self {
+            Self::Path => TileName::PATH,
+            Self::Bridge => TileName::BRIDGE,
+        }
+    }
+}
+
+/// The code a decode reads its type from, and the head a static application
+/// applies.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A bound code retains the use frame and binder identity until
+///   telescope indexing; a constant retains its admission coordinate.
+/// - provides: The common head of static applications and decoded types.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The scope and declaration store needed for resolution
+///   are absent; `resolve_name`, `static_application` and `mint_code` check
+///   their uses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bound and declared codes decode at their written universe
+///   and static applications retain source argument order.
+/// - witness: `gandr-surface-lowering::lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+/// - witness: `gandr-surface-lowering::lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Code
+{
+    /// A binder, named from a use site under the frame `from`, whose index is
+    /// counted in `telescope` once every type has been read: the signature's,
+    /// or a body quote's (#547).
+    Bound
+    {
+        /// The use site's frame.
+        from: Frame,
+        /// The binder's frame.
+        binder: ScopeId,
+        /// The telescope the index is counted in.
+        telescope: Telescope,
+    },
+    /// A declaration at this admission position.
+    Constant(ConstantIndex),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a static lambda's position states no classifier.
+    pub mod classified {
+        /// The position fixes the static sort and states no arrow.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A transport's or a ride's motive, whose binder ranges over
+            /// the path's points.
+            Motive,
+        }
+    }
+}
+
+/// A function tail's reading: `(params) -> T? { … }`.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The parameter range, optional result and block are retained
+///   separately so an incomplete signature does not discard the body; a
+///   recursive tail retains the frame binding its own name.
+/// - provides: The two spines of a function tail.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The parameter store and lowered children are not
+///   retained; function, `mint_function` and `mint_signature` check the stored
+///   ranges and outcomes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and multiple parameters preserve the body and
+///   signature distinction, including tails with an unstated type.
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `gandr-surface-lowering::lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+/// - witness: `gandr-surface-lowering::lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Function
+{
+    /// The parameters, in the lowerer's parameter store.
+    pub parameters: FormStretch,
+    /// The result type, when the source wrote one.
+    pub result: Maybe<NodeIndex, stated::Absent>,
+    /// The body.
+    pub body: Body,
+    /// The frame binding the function's own name, between the staged
+    /// parameter and the ones before it, when the tail recurses.
+    pub recursion: Maybe<ScopeId, recursion::Absent>,
+    /// The receiver a written-through method holds over its body.
+    pub receiver: Maybe<method::HeldReceiver, method::unheld::Absent>,
+    /// The parameters at a session type its body places, in the lowerer's
+    /// endpoint store.
+    pub endpoints: FormStretch,
+    /// How the tail takes its written parameters: the arrow its result
+    /// follows.
+    pub taking: Taking,
+}
+
+/// How a function tail takes its written parameters, read off the arrow
+/// before its result.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a linear tail takes linearly each parameter its own list writes,
+///   in any order a merged telescope binds them; every other parameter stays
+///   intuitionistic.
+/// - executable: none — the parameter store is not retained.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tail at `⊸` mints the linear lambda and the linear
+///   arrow for each written parameter, and one at `->` the lambda and the
+///   arrow; an implicit group stays intuitionistic.
+/// - witness: `gandr-surface-lowering::lower::tests::a_linear_tail_takes_each_written_parameter_once_5853`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Taking
+{
+    /// `->`: each parameter is intuitionistic.
+    Unrestricted,
+    /// `⊸`: each parameter the tail's own list writes is linear, at the
+    /// multiplicity one.
+    Linear,
+}
+
+impl Taking
+{
+    /// The taking of `parameter`: linear when the tail takes its own list
+    /// linearly and that list writes `parameter`, unrestricted otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of(
+        self,
+        parameter: &Parameter,
+    ) -> Self
+    {
+        if self == Self::Linear && parameter.listed == Listed::Own {
+            Self::Linear
+        }
+        else {
+            Self::Unrestricted
+        }
+    }
+}
+
+/// A function tail's body: a block, or the decision tree its clauses compile
+/// to.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: a clause body's tree stands directly under the lambdas of the
+///   parameters its columns bind, each column one tree binder.
+/// - provides: what `Lowerer::mint_function` mints under the lambda chain.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — the statement and case stores are not retained;
+///   `function` and `mint_function` interpret the coordinates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a block body and a clause body each lower under the same
+///   lambda chain.
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `gandr-surface-lowering::lower::native::tests::clauses_match_one_column_per_arrow`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Body
+{
+    /// A block, `{ s… c }`.
+    Block(Block),
+    /// Clauses, `where { | p, … => c … }`, compiled to one match.
+    Clauses(native::CaseIndex),
+}
+
+/// What the mint sweep does for one node, decided by the classification.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The selected former retains the child coordinates and flat-store
+///   ranges needed by the later mint sweep; transparent plans adopt their
+///   child.
+/// - provides: The classification-to-minting boundary without recursive source
+///   re-reading.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The source, stores and child results are absent; the
+///   readers specify each plan and `mint_plan` checks its output family and
+///   transparent case.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the admitted term and type formers retain their concrete
+///   core structure, while grouping adds no constructor.
+/// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `gandr-surface-lowering::lower::tests::a_grouping_lowers_to_what_it_wraps`
+/// - witness: `gandr-surface-lowering::lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+/// - witness: `gandr-surface-lowering::lower::tests::a_static_lambda_binds_its_name_over_a_quoted_body`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Plan
+{
+    /// Mint nothing.
+    Unplanned,
+    /// A value hole at its source occurrence.
+    ValueHole(gandr_core_term::hole::HoleId),
+    /// A computation hole at its source occurrence.
+    CompHole(gandr_core_term::hole::HoleId),
+    /// A variable at this index, bound by the binder that entered this frame.
+    Variable(DeBruijnIndex, ScopeId),
+    /// A constant at this admission position.
+    Constant(ConstantIndex),
+    /// A table-typed native prelude thunk.
+    Primitive(gandr_core_term::primitive::Primitive),
+    /// A saturated table operation selected by source operator syntax.
+    PrimitiveCall(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<NodeIndex>,
+    ),
+    /// An interpolated string: the segments in the lowerer's segment store,
+    /// each appended after the ones before it by the prelude's
+    /// `string.append`.
+    Interpolated(gandr_core_term::primitive::Primitive, FormStretch),
+    /// A boolean literal: the unit injected into the side of `Bool` it names,
+    /// `true` the left.
+    Boolean(gandr_kernel_term::Side),
+    /// A literal, already parsed from the node's own text.
+    Literal(Literal),
+    /// A numeral annotated `(n : Nat)`, the prelude's: the binary natural
+    /// its magnitude is, over the prelude's constructors.
+    Natural(natural::Naturals, Magnitude),
+    /// A nullary type atom.
+    Atom(TypeAtom),
+    /// The atom the abstract type at this admission position declares.
+    Sealed(ConstantIndex),
+    /// The manifest type an application's instance exports: the type the
+    /// functor's body wrote at the node, renamed by the application.
+    Instantiated(InstanceIndex, NodeIndex),
+    /// A universe.
+    Universe(Universe),
+    /// The type a code denotes, in the universe it was declared at: the code
+    /// is the head applied statically to the arguments in the lowerer's
+    /// operand store, none for a bare name.
+    Decode(Code, FormStretch, Universe),
+    /// The type the code a dynamic function returns denotes: the function the
+    /// code names — a declaration at its admission position, or a binder
+    /// holding a thunk — called on the arguments in the lowerer's operand
+    /// store, its returned code decoded in the universe the position reads.
+    Unquote(Code, FormStretch, Universe),
+    /// The type the code a dynamic function's result returns denotes, `f(a)(b)`
+    /// where a type is read: the function the code names called on the first
+    /// stretch of the lowerer's operand store, the value that call returns
+    /// forced and applied to the second stretch, its returned code decoded in
+    /// the universe the position reads (#5213).
+    Reapplied(Code, FormStretch, FormStretch, Universe),
+    /// The carrier the model a binder holds gives one of its theory's
+    /// unindexed sorts, `a.C`: the binder's bundled record projected at the
+    /// sort's field — at its label off a record, along the nesting otherwise —
+    /// the projection's returned code decoded in the fuss-free universe.
+    Carrier(Code, arity::Observed, Option<FieldLabel>),
+    /// The type the model type a binder is held at fixes one of its theory's
+    /// sorts to, `a.C` for `a : Model(T) with sort C = A`: the type `A`, at the
+    /// node it is written at, raised past the binders between that type and
+    /// the reading.
+    FixedCarrier(Code, NodeIndex),
+    /// The call of a dynamic function the code names on the arguments in the
+    /// lowerer's operand store, left to right: a type-position call's argument
+    /// written as a call, which a value position nests.
+    Called(Code, FormStretch),
+    /// The force of the dynamic function the code names, called with no
+    /// argument where a type reads a value: the expression grammar's `f()`,
+    /// which a value position nests (#6787).
+    Forced(Code),
+    /// A static application of the head to the arguments in the lowerer's
+    /// operand store, left to right.
+    StaticApplication(Code, FormStretch),
+    /// A static lambda over its body.
+    StaticLambda(NodeIndex),
+    /// A type former over its argument.
+    Former(TypeFormer, NodeIndex),
+    /// An arrow over its domain and codomain.
+    Arrow(NodeIndex, NodeIndex),
+    /// A static Pi over its domain and codomain.
+    StaticPi(NodeIndex, NodeIndex),
+    /// One eager product of the value types in the lowerer's operand store,
+    /// in order: an unparenthesized `*` chain is one former, and the
+    /// positional telescope type `#{A, …}` another, of any arity.
+    Product(FormStretch),
+    /// The type over labels `#{ l : A, … }`: its fields by label, the binders
+    /// of every entry but the last in the lowerer's parameter store, each
+    /// over the entries after it, the last entry's type and where its label
+    /// is written. The record type of its fields when no later entry names an
+    /// earlier label, the dependent pairs nested to the right otherwise.
+    RecordType(
+        BTreeMap<FieldLabel, NodeIndex>,
+        FormStretch,
+        NodeIndex,
+        Option<NodeIndex>,
+    ),
+    /// The sum of the value types in the lowerer's operand store, in order,
+    /// and the labels its entries are written at, none for a positional sum.
+    Sum(FormStretch, FormStretch),
+    /// The lazy record of the computation types in the lowerer's operand
+    /// store, in order: one lazy product of them all. The labels its entries
+    /// are written at follow, none for a positional lazy record.
+    With(FormStretch, FormStretch),
+    /// A case of no arms over a scrutinee stated at no data type and no path
+    /// type: the eliminator of the empty sum.
+    EmptyCase(NodeIndex),
+    /// One tuple of the values in the lowerer's operand store, in order.
+    Tuple(FormStretch),
+    /// The native list of the values in the lowerer's operand store, in
+    /// order: their cons cells ending in the empty list.
+    List(FormStretch),
+    /// The record of the values its labels name: `#{ .l = v, … }`.
+    Record(BTreeMap<FieldLabel, NodeIndex>),
+    /// The update of its base by the record of the values its labels name:
+    /// `#{ b | l = v, … }`.
+    RecordUpdate(NodeIndex, BTreeMap<FieldLabel, NodeIndex>),
+    /// The injection of its value into the summand at this index.
+    Injection(Summand, NodeIndex),
+    /// The copattern block over the computations in the lowerer's operand
+    /// store, in order: one lazy product of them all.
+    Copattern(FormStretch),
+    /// One entry of the lazy record or the codata the node holds: a thunk
+    /// forced, when thunked, or a call run, then projected at the entry's
+    /// position.
+    Observe(NodeIndex, arity::Observed, arity::Thunked),
+    /// One entry of the record, the dependent record or the product the name
+    /// at the node holds, with the type over labels it is stated with and the
+    /// entry's label when the entry has one: projected at the label off a
+    /// record, along the nesting off a dependent record, and at the
+    /// component off a product.
+    Select(NodeIndex, arity::Observed, Option<(NodeIndex, FieldLabel)>),
+    /// The field the label names of the record the value at the node is, its
+    /// type stated nowhere: projected at the label, for the checker to read
+    /// off the record type the value synthesises.
+    Field(NodeIndex, FieldLabel),
+    /// The record of the fields the labels select off the value at the node,
+    /// `r.#{ .a, .b }`: each field projected in turn as its selection `r.a`
+    /// is, bound, and the record of the bound fields returned.
+    SubRecord(NodeIndex, Vec<arity::Selected>),
+    /// The field a label names of the data value the name at the node is,
+    /// read as the case returning it from each constructor.
+    Projected(native::ProjectedIndex),
+    /// The thunked arrow from the domains in the lowerer's operand store to
+    /// the returner of the codomain.
+    ValueFunction(FormStretch, NodeIndex),
+    /// The thunked telescope from the entries in the lowerer's parameter
+    /// store, each binding the ones after it, to the returner of the
+    /// codomain.
+    Telescope(FormStretch, NodeIndex),
+    /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
+    /// store, and its codomain.
+    DependentArrow(FormStretch, NodeIndex),
+    /// A linear arrow `(x : A) ⊸ C`: its one binder, in the parameter store,
+    /// its codomain, and whether a value type is read there, which takes the
+    /// box over it.
+    LinearArrow(FormStretch, NodeIndex, crate::form::Boxed),
+    /// A function's group of outputs read as its result, `(q : A, r : B)`:
+    /// the returner of the entries in the lowerer's parameter store, each
+    /// standing under the ones before it.
+    Returns(FormStretch),
+    /// A tuple ending a body whose result is a group of outputs: the return
+    /// of the members in the lowerer's operand store, one per output.
+    ReturnAll(FormStretch),
+    /// One output of a call whose result is a group, `f(a).l`: the call,
+    /// every output bound, and the one at `index` returned.
+    SelectedOutput
+    {
+        /// The call.
+        call: NodeIndex,
+        /// How many outputs the call returns.
+        arity: gandr_core_term::ComponentCount,
+        /// The selected output's place among them.
+        index: usize,
+    },
+    /// A plugging `left |> right`: every output of `left` bound, and `right`
+    /// applied to them in order.
+    Plugged
+    {
+        /// The plugged computation.
+        left: NodeIndex,
+        /// The function its outputs are plugged into.
+        right: NodeIndex,
+        /// How many outputs `left` returns.
+        arity: gandr_core_term::ComponentCount,
+    },
+    /// Adopt the child's lowered node unchanged.
+    Transparent(NodeIndex),
+    /// The value at the first node, ascribed the value type at the second:
+    /// `(e : T)` where no other form carries `T`.
+    Ascribed(NodeIndex, NodeIndex),
+    /// A thunk over its block.
+    Thunk(Block),
+    /// A returner over its value.
+    Return(NodeIndex),
+    /// A force over its value.
+    Force(NodeIndex),
+    /// A run over its computation, standing for the value it returns.
+    Run(NodeIndex),
+    /// A lambda over its block, and the node its parameter is written at.
+    Lambda(Block, NodeIndex),
+    /// A block's statements bound over its last computation.
+    Block(Block),
+    /// A loop's fixpoint over its body.
+    Loop(Block),
+    /// A conditional loop's fixpoint over the case of its condition: its body
+    /// when the condition holds, leaving the loop with unit when it does not.
+    While(NodeIndex, Block),
+    /// A conditional: the case of its condition over its two branches.
+    If(conditional::Conditional),
+    /// A list loop's structural fixpoint over the case of the remaining list,
+    /// applied to the list: its body on a cell, leaving the loop with unit on
+    /// the empty list.
+    For(NodeIndex, Block),
+    /// A bare `break`: the returner of unit, leaving the nearest loop.
+    Break,
+    /// A `continue`: the force of the nearest loop's fixpoint, applied to its
+    /// remaining tail in a `for`.
+    Reenter(loops::Reentry),
+    /// An application of its head to its arguments, left to right, in the
+    /// lowerer's operand store.
+    Application(NodeIndex, FormStretch),
+    /// A function tail's declared type and body.
+    Function(Function),
+    /// The nominal family declared at this admission position, over the
+    /// arguments in the lowerer's operand store, left to right.
+    Data(ConstantIndex, FormStretch),
+    /// The codata declaration at this admission position, applied to the
+    /// arguments in the lowerer's operand store, left to right: a
+    /// computation type.
+    Codata(ConstantIndex, FormStretch),
+    /// The type family member at this place of the collection's family list,
+    /// its type expanded over the arguments in the lowerer's operand store,
+    /// left to right.
+    Expansion(FamilyIndex, FormStretch),
+    /// A constructor applied to its fields.
+    Constructor(native::Constructed),
+    /// A multi-output constructor applied to its inputs and no output named:
+    /// the record of its ports, each the constructor at its tag over the
+    /// same fields, labelled by its output.
+    Ports(native::Constructed, Vec<(FieldLabel, ConstructorTag)>),
+    /// A match, compiled to the decision tree at this position of the
+    /// lowerer's match store.
+    Case(native::CaseIndex),
+    /// An element path type or a bridge type over its carrier and its two
+    /// endpoints.
+    Path(Relating, Carrier, NodeIndex, NodeIndex),
+    /// Reflexivity at its point.
+    Here(NodeIndex),
+    /// Function extensionality between its two functions.
+    Funext(NodeIndex, NodeIndex),
+    /// A universe equivalence between its two translators.
+    Equiv(NodeIndex, NodeIndex),
+    /// Univalence over its record, `ua(e)`.
+    Univalence(NodeIndex),
+    /// The native product of two universe paths.
+    PathProduct(NodeIndex, NodeIndex),
+    /// Univalence at a stratum between two descriptions, over its forward
+    /// and backward translator records.
+    Ua
+    {
+        /// The degree and catalogue bound written in the head.
+        stratum: gandr_core_term::ua::Stratum,
+        /// The two descriptions as a stratum reads them.
+        sides: Arc<gandr_core_term::ua::Sides>,
+        /// Where the two descriptions are named, the source's first.
+        named: [Origin; 2],
+        /// The forward translator record.
+        forward: NodeIndex,
+        /// The backward translator record.
+        backward: NodeIndex,
+    },
+    /// The filler generator at a stratum over a chain: its generator, read
+    /// as a computation, and its cells.
+    Fill
+    {
+        /// The stratum and the chain.
+        composite: gandr_core_term::compose::Composite,
+        /// The generator `t`.
+        generator: NodeIndex,
+        /// The cells in vertex order, in the lowerer's operand store.
+        cells: FormStretch,
+    },
+    /// `Eq.generic(T)` as a definition's whole body: nothing here, the
+    /// declaration's type and body derived whole from `T`'s signature
+    /// (`Lowerer::mint_generics`).
+    Generic,
+    /// The empty native list.
+    ListNil,
+    /// A native list cell over its head and tail.
+    ListCons(NodeIndex, NodeIndex),
+    /// Transport along a path, over the static abstraction its motive is
+    /// written as, the path, and the transported value.
+    Transport(NodeIndex, NodeIndex, NodeIndex),
+    /// A directed identity type over its carrier and its two endpoints:
+    /// `Flow[.A = A](a, b)` or `Flow(a, b)`.
+    Flow(Carrier, NodeIndex, NodeIndex),
+    /// A relation between two types written infix, over its two operands:
+    /// value types for the equivalence and the quasi-inverse, codes for the
+    /// flow.
+    Relation(Relation, NodeIndex, NodeIndex),
+    /// A theory's models as a type, `Model(S)`: the bundled record the
+    /// signature derived from `S` states.
+    Bundle(Arc<model::Bundled>),
+    /// A module packed at its model type, `pack M at Model(S)`: the bundled
+    /// record of the module's members.
+    Packed(Arc<model::Packed>),
+    /// A first-class continuation's type over the computation types it runs
+    /// from and to: `Stack(C, D)`.
+    Stack(NodeIndex, NodeIndex),
+    /// A session statement, `Path.bisim(A, B)` or `Flow.sim(A, B)`, over its
+    /// two codes, and the payload paths `Path.bisim(A, B, p)` writes.
+    SessionRelated(
+        gandr_core_term::session::SessionRelation,
+        NodeIndex,
+        NodeIndex,
+        Option<NodeIndex>,
+    ),
+    /// The identity flow at its point.
+    Stay(NodeIndex),
+    /// The forward flow of its translator.
+    Forward(NodeIndex),
+    /// The function flow over its domain and codomain flows.
+    FunctionFlow(NodeIndex, NodeIndex),
+    /// The product of two universe flows.
+    FlowProduct(NodeIndex, NodeIndex),
+    /// Two flows composed, returned: `Flow.then(f, g)` where a flow is
+    /// answered.
+    FlowThen(NodeIndex, NodeIndex),
+    /// A recorded run, its moves in order, each payload the node it was
+    /// written as.
+    Recorded(Arc<[gandr_core_term::session::RecordedMove<NodeIndex>]>),
+    /// A dialogue, its moves in log order, each beside its endpoint, each
+    /// payload the node it was written as.
+    Dialogue(Arc<[gandr_core_term::session::DialogueMove<NodeIndex>]>),
+    /// The causal web of the dialogue written at the node.
+    Decompose(NodeIndex),
+    /// A ride along a flow, over the static abstraction its motive is written
+    /// as, the flow, and the value moved.
+    Ride(NodeIndex, NodeIndex, NodeIndex),
+    /// `back`, `then` or `cong`, unfolded to the transport it derives
+    /// against the path type its position answers.
+    Derived(identity::Derived),
+    /// The dependent transport over its telescope motive.
+    TelescopeTransport(identity::Transported),
+    /// A capability type over its authority at its grade, living in its
+    /// region.
+    Capability(
+        capability::Authority,
+        gandr_core_term::effect::capability::CapabilityGrade,
+        gandr_core_term::effect::capability::Region,
+    ),
+    /// The returner of the value type at the node, its row holding these
+    /// interfaces whole, open through its tail when one is written.
+    Effectful(capability::WrittenRow, NodeIndex),
+    /// An operation exercised through a capability.
+    Exercise(capability::Exercised),
+    /// A method called off its receiver.
+    Method(method::Called),
+    /// A capability scope over its subject and clauses.
+    Scope(capability::Scoped),
+    /// The continuation at the node resumed with the reply the values in the
+    /// lowerer's operand store make.
+    Resume(NodeIndex, FormStretch),
+    /// The continuation at the node abandoned.
+    Abandon(NodeIndex),
+    /// A session type: its protocol over the payload types in the lowerer's
+    /// operand store, in slot order, standing at the protocol's root, and
+    /// every site the source writes one of its states at.
+    Session(Arc<Protocol>, FormStretch, Arc<session::Written>),
+    /// A session action over the nodes of its payload, its arms and a fork's
+    /// protocol and children, with the bytes its endpoint is written at and,
+    /// for an offer, each arm's label with the bytes its pattern is written at.
+    Action(
+        SessionAction<NodeIndex, NodeIndex, NodeIndex>,
+        ByteSpan,
+        session::ArmLabels,
+    ),
+    /// A temporary-access form: an access over its body and unwind, or an
+    /// eliminator of its view.
+    Access(access::Accessed),
+    /// A located form or type: a handle type `A at w`, a hold or a
+    /// migration.
+    World(world::Worlded),
+    /// A data type at a stage its function's telescope binds: the type and
+    /// the stage.
+    Staged(NodeIndex, gandr_kernel_term::Stage),
+    /// A record type patched by a static bracket, `T[.l = v]` or a system of
+    /// faces `T[f ↦ v, g ↦ w]`: each field of the base `T` at the type `T`
+    /// writes for it, each fixed label at the value the bracket first writes
+    /// for it, and each later face's value on a meet.
+    Patched
+    {
+        /// The base's fields, by label.
+        fields: BTreeMap<FieldLabel, NodeIndex>,
+        /// The fixed values, by label.
+        fixed: BTreeMap<FieldLabel, NodeIndex>,
+        /// Each later face's value at a label of its meet with an earlier
+        /// face, as the face poset gives the meet, in written order (#5106).
+        meets: Vec<(FieldLabel, NodeIndex)>,
+        /// Where the base is written as the name of a type member, when it
+        /// is: the printer writes the name for the base's record.
+        member: Option<NodeIndex>,
+    },
+    /// A value type kept in a region: the type and the region, a capability
+    /// scope's or a hold's by its depth, or the definition's region binder.
+    Kept(NodeIndex, gandr_core_term::effect::capability::Region),
+}
+
+/// A node's lowered core node, at the sort its own form produced.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The family tag prevents reading a value as a computation or type;
+///   a function can retain a body without a signature.
+/// - provides: A family-indexed result for later parents and declaration
+///   assembly.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Arena membership cannot be checked from numeric
+///   identifiers alone; minting functions and family accessors state the
+///   executable result relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — completed and one-sided declarations preserve their
+///   available halves, and function tails keep their body when a type is
+///   absent.
+/// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `gandr-surface-lowering::lower::tests::an_uncompleted_signature_is_the_obligation_producer`
+/// - witness: `gandr-surface-lowering::lower::tests::a_bodiless_definition_lowers_its_body_alone`
+/// - witness: `gandr-surface-lowering::lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Lowered
+{
+    /// A value.
+    Value(ValueId),
+    /// A computation.
+    Computation(ComputationId),
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation type.
+    CompType(CompTypeId),
+    /// A function tail: its declared type, when it states one, and its body.
+    Function
+    {
+        /// `+U (A1 -> … -> An -> C)`, from the parameter and result types.
+        signature: Maybe<ValueTypeId, lowered::Absent>,
+        /// `thunk (λ … λ. block)`.
+        body: ValueId,
+    },
+}
+
+/// Whether a node lies inside an attribute payload, which lowers whatever
+/// its declaration's outcome.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The flag marks nodes that remain eligible for minting despite an
+///   enclosing declaration’s refusal.
+/// - provides: The payload exception to ordinary refusal pruning.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The node and enclosing attributes are absent; seed,
+///   `inherit_payload` and `mint_at` check marking and its effect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an otherwise refused declaration retains its valid
+///   attribute payload, and invalid attributes still receive their diagnostics.
+/// - witness: `gandr-surface-lowering::lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
+/// - witness: `gandr-surface-lowering::lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct InPayload(pub bool);
+
+/// One form being classified: where it stands, what it is called, and how
+/// its position reads it.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The location, form name and positional reading stay available
+///   together when constructing a located refusal.
+/// - provides: The source context shared by the form readers.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The grammar and source tree are not retained; readers
+///   check admission and one checks the operand-count projection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — misplaced tiles, extra operands and wrong operand counts
+///   retain their distinct refusal kinds and source positions.
+/// - witness: `gandr-surface-lowering::lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+/// - witness: `gandr-surface-lowering::lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+/// - witness: `gandr-surface-lowering::lower::tests::a_juxtaposed_operand_is_refused`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Site
+{
+    /// The form.
+    pub at: Placed,
+    /// The form's kind, as a diagnostic writes it.
+    pub name: FormName,
+    /// How the form's position reads it.
+    pub reading: Reading,
+}
+
+impl Site
+{
+    /// The refusal this form earns for leaving the fragment by `boundary`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn out<'source>(
+        self,
+        boundary: FragmentBoundary,
+    ) -> LoweringRefusal<'source>
+    {
+        self.folded(self.name, boundary)
+    }
+
+    /// The refusal this form earns as the folded form `form`.
+    ///
+    /// # Specification
+    /// - requires: the site identifies the refused source form.
+    /// - ensures: the refusal retains the supplied form and boundary at the
+    ///   site, with the sort demanded by its reading.
+    /// - provides: a positional refusal for a nested former.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declined value, computation and type forms keep the
+    ///   position’s sort, distinct from the former’s own family.
+    /// - witness: `gandr-surface-lowering::lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_written_run_lowers_to_a_run_over_its_computation`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self.reading, ret),
+                (
+                    Reading::Unread | Reading::Function,
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::Declaration,
+                        ..
+                    }
+                ) | (Reading::ValueType(_), LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::ValueType,
+                    ..
+                }) | (
+                    Reading::CompType(_) | Reading::Result(_),
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::CompType,
+                        ..
+                    }
+                ) | (Reading::Value(_), LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::Value,
+                    ..
+                }) | (
+                    Reading::Computation(_) | Reading::Head(_),
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::Computation,
+                        ..
+                    }
+                )
+            )
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub const fn folded<'source>(
+        self,
+        form: FormName,
+        boundary: FragmentBoundary,
+    ) -> LoweringRefusal<'source>
+    {
+        LoweringRefusal::OutOfFragment {
+            span: self.at.span,
+            form,
+            sort: self.reading.sort(),
+            boundary,
+        }
+    }
+
+    /// The refusal this form earns for `fault` at `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn fault<'source>(
+        self,
+        span: ByteSpan,
+        fault: FormFault,
+    ) -> LoweringRefusal<'source>
+    {
+        LoweringRefusal::MalformedForm {
+            span,
+            form: self.name,
+            fault,
+        }
+    }
+
+    /// The operand a one-operand hole holds, or the fault its run earns.
+    ///
+    /// # Specification
+    /// - requires: `run` is a hole of this form.
+    /// - ensures: the operand of a one-operand run; an empty run is a missing
+    ///   operand at its gap, and a longer run an extra operand at its second.
+    /// - provides: the one-hole reading every former shares.
+    /// - fails: yields the missing-operand or extra-operand refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] for a hole not holding one form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — single-operand forms and an overfull hole distinguish
+    ///   success from an arity fault at the extra operand.
+    /// - witness: `gandr-surface-lowering::lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_juxtaposed_operand_is_refused`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (run, ret),
+                (Run::One(_), Ok(_))
+                    | (
+                        Run::Empty(_),
+                        Err(LoweringRefusal::MalformedForm {
+                            fault: FormFault::MissingOperand,
+                            ..
+                        })
+                    )
+                    | (
+                        Run::Several { .. },
+                        Err(LoweringRefusal::MalformedForm {
+                            fault: FormFault::ExtraOperand,
+                            ..
+                        })
+                    )
+            )
+        },
+    )]
+    #[inline]
+    pub const fn one<'source>(
+        self,
+        run: Run,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        match run {
+            Run::One(operand) => Ok(operand),
+            Run::Empty(gap) => Err(self.fault(gap, FormFault::MissingOperand)),
+            Run::Several { extra, .. } => Err(self.fault(extra.span, FormFault::ExtraOperand)),
+        }
+    }
+}
+
+/// A manifest type an instance exports: its template's type renamed by the
+/// application, at the template's sort.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a value type for a value template, a computation type for a
+///   computation template.
+/// - executable: none — a renamed type is data its readers match on.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a transparent functor's manifest result reads the
+///   argument's type at each instance, a computation type too.
+/// - witness: `gandr-surface-lowering::tests::modules::functors::a_transparent_result_reads_the_argument_through`
+/// - witness: `gandr-surface-lowering::tests::modules::a_type_member_names_a_computation_type_3080`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InstanceType
+{
+    /// A renamed value type.
+    Value(ValueTypeId),
+    /// A renamed computation type.
+    Computation(CompTypeId),
+}
+
+/// The groups by which hole names count the tree's blocks (#5469).
+///
+/// The record is read as far as a hole asks. A block that holds a top-level
+/// form joins the group of the block before it when one slot owns both
+/// forms, as a signature and its definition, or a declaration and its
+/// attributes. A block that holds a root joins the group before it. Each
+/// other block opens the next group.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `groups` holds one group for each block read, in order; `form` is
+///   the next top-level form no block read has passed; `owner` is the slot of
+///   the last form's block, when a slot owns its form.
+/// - executable: none — `Lowerer::hole_group` states the relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration written in one form or in two names the
+///   holes of the declaration after it alike.
+/// - witness: `gandr-surface-lowering::lower::implicit::tests::a_declaration_in_one_form_or_two_names_the_later_holes_alike_5469`
+#[derive(Clone, Debug, Default)]
+pub struct HoleGroups
+{
+    /// Each block's group, by the block's number: the number a hole's name
+    /// holds, and the group's first block.
+    pub groups: Vec<(u32, LayoutBlock)>,
+    /// The next of the tree's top-level forms whose block no block read has
+    /// passed.
+    pub form: usize,
+    /// The slot that owns the form of the last block read, when a slot owns
+    /// one.
+    pub owner: Option<SlotIndex>,
+}
+
+/// The source that a lowering is at, and where its share of each list begins.
+///
+/// A unit is lowered one source at a time, in its order. Each source's
+/// collection and each pass over it run before the next source's. So what a
+/// source lowers to does not depend on the sources after it.
+///
+/// # Specification
+/// - ensures: each mark is the length its list had when the source's collection
+///   began.
+/// - executable: none — the marks are positions into lists this record does not
+///   hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source lowers to the same declarations and the same
+///   leading arena rows whether or not another source follows it.
+/// - witness: `gandr-surface-lowering::tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Current
+{
+    /// The source.
+    pub source: SourceIndex,
+    /// Where its slots begin.
+    pub slots: usize,
+    /// Where its modules begin.
+    pub structures: usize,
+    /// Where its data declarations begin.
+    pub data: usize,
+    /// Where its words begin.
+    pub words: usize,
+    /// Where its theories' terms begin.
+    pub terms: usize,
+    /// Where its family members begin.
+    pub families: usize,
+    /// Where its functors begin.
+    pub functors: usize,
+    /// Where its functor applications begin.
+    pub instances: usize,
+    /// Where its mutual blocks begin.
+    pub blocks: usize,
+    /// Where its decorated modules begin.
+    pub decorated: usize,
+    /// Where its signature scopes begin.
+    pub scopes: usize,
+    /// Where its synthesised sites begin.
+    pub synthesised: usize,
+    /// Where its labels begin.
+    pub labels: usize,
+    /// Where its data declarations' framed sites begin.
+    pub data_frames: usize,
+    /// Where its letters begin.
+    pub lettered: usize,
+    /// Where its empty words' points begin.
+    pub pointed: usize,
 }

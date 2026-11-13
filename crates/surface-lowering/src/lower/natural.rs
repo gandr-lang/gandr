@@ -24,8 +24,9 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::ValueId;
-use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Magnitude;
+pub(super) use gandr_surface_lowering_base::lower::natural::Generator;
+pub(super) use gandr_surface_lowering_base::lower::natural::Naturals;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowered;
@@ -60,49 +61,6 @@ quenchant_shape::reason_enum! {
             OtherType,
         }
     }
-}
-
-/// A constructor as the mint reads it: its family's admission position and
-/// its tag.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) struct Generator
-{
-    /// The family's admission position.
-    family: ConstantIndex,
-    /// The constructor's tag.
-    tag: ConstructorTag,
-}
-
-/// The prelude's binary naturals: `Nat`'s admission position and the five
-/// constructors a numeral at `Nat` mints.
-///
-/// # Specification
-/// - requires: nothing to construct this data.
-/// - ensures: each field is the prelude's declaration of its name.
-/// - executable: none — positions into a module this record does not hold.
-///
-/// # Adequacy
-/// - hypothesis: L3 — zero, one and a numeral of several digits each mint the
-///   prelude's constructors.
-/// - witness: `lower::natural::tests::a_numeral_at_nat_is_its_binary_constructor_term_3287`
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(super) struct Naturals
-{
-    /// `Nat`.
-    nat: ConstantIndex,
-    /// `Zero`.
-    zero: Generator,
-    /// `Positive`.
-    positive: Generator,
-    /// `One`.
-    one: Generator,
-    /// `Bit0`.
-    bit0: Generator,
-    /// `Bit1`.
-    bit1: Generator,
 }
 
 /// A binary digit.

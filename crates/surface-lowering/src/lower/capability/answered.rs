@@ -30,6 +30,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::control::EffectClause;
 use gandr_kernel_term::DeBruijnIndex;
+pub(in crate::lower) use gandr_surface_lowering_base::lower::capability::answered::Answering;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
@@ -39,28 +40,7 @@ use crate::lower::Lowerer;
 use crate::lower::Sink;
 use crate::lower::lowered;
 use crate::lower::model::ComponentPlace;
-use crate::lower::model::ModelSlot;
-use crate::lower::model::Supplied;
 use crate::origin::Origin;
-use crate::origin::ScopeAnswer;
-
-/// The model answering a capability scope over a theory: the theory's slot,
-/// the sorts the scope's manifest fixes left out, what the module the scope
-/// names passes for it, or the holes the scope nominates for it, and the
-/// answer as the scope writes it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct Answering
-{
-    /// The theory's slot.
-    pub slot: ModelSlot,
-    /// The module's members, or the scope's holes.
-    pub supplied: Supplied,
-    /// The module the scope names, or none.
-    pub written: ScopeAnswer,
-}
 
 impl Lowerer<'_, '_>
 {
