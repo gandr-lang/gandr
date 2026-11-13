@@ -1,5 +1,51 @@
 [
   {
+    "name": "#6996: the host with the least load for each core runs the gate, as the probe's macOS host beside two loaded x86-64 hosts",
+    "program": "choose.jq",
+    "input": [
+      { "host": "first", "load": 54.45, "cores": 32, "free": 2 },
+      { "host": "idle", "load": 2.87, "cores": 16, "free": 2 },
+      { "host": "cycle", "load": 79.84, "cores": 32, "free": 2 }
+    ],
+    "output": "idle"
+  },
+  {
+    "name": "#6996: a host with no free slot is passed over, whatever its load",
+    "program": "choose.jq",
+    "input": [
+      { "host": "idle", "load": 2.87, "cores": 16, "free": 0 },
+      { "host": "first", "load": 54.45, "cores": 32, "free": 1 }
+    ],
+    "output": "first"
+  },
+  {
+    "name": "#6996: with no free slot on any host, no host is chosen",
+    "program": "choose.jq",
+    "input": [
+      { "host": "idle", "load": 2.87, "cores": 16, "free": 0 },
+      { "host": "first", "load": 54.45, "cores": 32, "free": 0 }
+    ],
+    "output": null
+  },
+  {
+    "name": "#6996: of two hosts with one load for each core, the one with more free slots runs the gate",
+    "program": "choose.jq",
+    "input": [
+      { "host": "a", "load": 16, "cores": 32, "free": 1 },
+      { "host": "b", "load": 8, "cores": 16, "free": 3 }
+    ],
+    "output": "b"
+  },
+  {
+    "name": "#6996: a host whose gh gives no token of the reader is passed over, as the macOS host in an ssh session",
+    "program": "choose.jq",
+    "input": [
+      { "host": "idle", "load": 3.48, "cores": 16, "free": 2, "token": false },
+      { "host": "first", "load": 26.33, "cores": 32, "free": 3, "token": true }
+    ],
+    "output": "first"
+  },
+  {
     "name": "#4911: a workflow-only change, #4902's paths, selects no Rust check",
     "program": "select.jq",
     "input": {

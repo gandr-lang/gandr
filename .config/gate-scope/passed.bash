@@ -39,6 +39,13 @@
 #     came from. Exits 0 when the trees are one, or once it carries; exits 2,
 #     naming why, when <gated> has no record or a patch differs. Then
 #     `pr:open` runs the gate on the new head.
+#   passed.bash admit <host> <commit>
+#     Records here the pass of a gate that ran on <host> (`gate:remote`,
+#     #6996). Standard input holds the far records of the tree of <commit>.
+#     The newest record of <commit> on that tree, carried from no other
+#     tree, is written here with `host` added. So the record names the head,
+#     the host and each check, and `require` reads it as a local one. Exits
+#     2, naming why, when standard input holds no such record.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
@@ -129,8 +136,25 @@ case ${1:-} in
     echo "$command: the gates that passed on the tree of $commit did not run $(jq -r '.missing | join(", ")' <<< "$verdict"), which its change selects; run \`mise run check\` on it, then \`$command\` again" >&2
     exit 2
     ;;
+  admit)
+    (( $# == 3 )) || { echo 'usage: passed.bash admit <host> <commit>' >&2; exit 2; }
+    host=$2
+    commit=$(git rev-parse "$3^{commit}")
+    tree=$(git rev-parse "$commit^{tree}")
+    record=$(jq -sc --arg tree "$tree" --arg commit "$commit" --arg host "$host" \
+      '[.[] | select(.tree == $tree and .commit == $commit and .carried == null)] | sort_by(.at) | last | select(. != null) | . + {host: $host}' 2> /dev/null) || record=
+    if [[ -z $record ]]; then
+      echo "gate:remote: $host gave no pass of $commit on its tree $tree, so none is recorded" >&2
+      exit 2
+    fi
+    mkdir -p "$records/$tree"
+    file=$(mktemp "$records/$tree/.record.XXXXXX")
+    printf '%s\n' "$record" > "$file"
+    mv "$file" "$records/$tree/${file##*/.record.}.json"
+    echo "gate:remote: the gate on $host passed on the tree $tree; \`pr:open\` and \`pr:land\` accept a head with this tree"
+    ;;
   *)
-    echo 'usage: passed.bash (tree | record <gate> <tree> <log> <seconds> <check>... | require <command> <commit> | carry <gated> <head> <base>)' >&2
+    echo 'usage: passed.bash (tree | record <gate> <tree> <log> <seconds> <check>... | require <command> <commit> | carry <gated> <head> <base> | admit <host> <commit>)' >&2
     exit 2
     ;;
 esac

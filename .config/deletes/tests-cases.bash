@@ -44,6 +44,7 @@ mkdir -p "$repo/crates/k/src/a" "$repo/crates/k/src/b"
 git -C "$repo" init --quiet
 git -C "$repo" config user.email cases@example.invalid
 git -C "$repo" config user.name cases
+git -C "$repo" config commit.gpgsign false
 printf '#[path = "../b/t.rs"]\nmod placed;\n' > "$repo/crates/k/src/a/tests.rs"
 printf '#[test]\nfn holds()\n{\n    assert!(true);\n}\n' > "$repo/crates/k/src/b/t.rs"
 printf 'pub fn other() {}\n' > "$repo/crates/k/src/lib.rs"

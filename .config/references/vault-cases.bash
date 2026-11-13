@@ -11,6 +11,7 @@ git init --bare --quiet "$scratch/origin"
 git init --quiet "$scratch/writer"
 git -C "$scratch/writer" config user.name test
 git -C "$scratch/writer" config user.email test@example.invalid
+git -C "$scratch/writer" config commit.gpgsign false
 git -C "$scratch/writer" remote add origin "$scratch/origin"
 printf 'mint: %s\n' "$old" > "$scratch/writer/page.md"
 git -C "$scratch/writer" add page.md
