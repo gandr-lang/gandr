@@ -8,11 +8,15 @@
 //! So the joined memo holds what a serial run holds that recorded the children
 //! in that order. Two children that answer one support with two outcomes do
 //! not glue, and the join refuses them with both outcomes named. A settle
-//! merges a frozen layer that no child reads any more back into its owner, so
-//! the layers do not grow with the forks.
+//! merges a frozen layer that no child reads any more back into its owner. A
+//! compaction merges two neighbouring layers where no open child forked
+//! between them, so the layers grow with the open forks and the logarithm of
+//! the entries, never with the forks (#7335).
 //!
 //! The layers are a flat stack, oldest first, and no layer points at another:
-//! a drop and a walk of the stack are loops.
+//! a drop and a walk of the stack are loops. Each layer carries the stamp of
+//! the freeze that made it, so a join finds the layers frozen after a child's
+//! fork by their stamps, whatever a compaction merged below them.
 //!
 //! An entry folds unchanged: a key names its content and no position of a
 //! table, so a key means one thing in the child and in the parent.
@@ -63,15 +67,135 @@ use crate::memo::MemoRecord;
 ///   records the same entries in that order.
 /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
 /// - witness: `overlay::tests::a_child_reads_the_memo_as_it_stood_at_the_fork`
-#[derive(Clone)]
 pub struct OverlaidMemo<Support, Outcome>
 where
     Support: MemoKey,
 {
     /// The layers frozen at the fork points below this memo, oldest first.
-    layers: Vec<Arc<HashedMemo<Support, Outcome>>>,
+    layers: Vec<Frozen<Support, Outcome>>,
     /// The entries recorded since the newest fork point.
     own: HashedMemo<Support, Outcome>,
+    /// How many freezes the line of this memo made: its parent's at the fork,
+    /// then its own. The stamp of the next layer is one more.
+    frozen: u64,
+    /// The stamp of the newest layer at this memo's fork. Each layer of the
+    /// parent with a higher stamp was frozen after the fork.
+    forked: u64,
+    /// The points this memo forked children at, by the stamp of the newest
+    /// layer there, in stamp order. A point is open while a child holds it.
+    points: Vec<ForkPoint>,
+    /// The point of this memo's own fork, held until its join or its drop.
+    point: Option<Arc<()>>,
+}
+
+/// One point that an [`OverlaidMemo`] forked children at: the stamp of its
+/// newest layer there, and the token that each child of the point holds.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+struct ForkPoint
+{
+    /// The stamp of the newest layer at the fork.
+    stamp: u64,
+    /// The token of the point: the memo's count, and one for each child that
+    /// holds the point.
+    open: Arc<()>,
+}
+
+impl ForkPoint
+{
+    /// Whether a child still holds the point.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn is_open(&self) -> bool
+    {
+        Arc::strong_count(&self.open) > 1
+    }
+}
+
+impl<Support, Outcome> Clone for OverlaidMemo<Support, Outcome>
+where
+    Support: MemoKey + Clone,
+    Outcome: Clone,
+{
+    /// A memo that reads what this one reads, with its own entries copied.
+    /// It forked no child, so it holds none of this memo's points, and it
+    /// holds the point of this memo's own fork.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            layers: self.layers.clone(),
+            own: self.own.clone(),
+            frozen: self.frozen,
+            forked: self.forked,
+            points: Vec::new(),
+            point: self.point.clone(),
+        }
+    }
+}
+
+/// One frozen layer of an [`OverlaidMemo`]: its entries, which each child
+/// that reads the layer shares by reference, and the stamp of the freeze of
+/// its newest entries.
+///
+/// # Specification
+/// trivial.
+struct Frozen<Support, Outcome>
+where
+    Support: MemoKey,
+{
+    /// The entries, shared by reference.
+    memo: Arc<HashedMemo<Support, Outcome>>,
+    /// The count of freezes of the memo's line at the freeze of the layer's
+    /// newest entries.
+    stamp: u64,
+}
+
+impl<Support, Outcome> Clone for Frozen<Support, Outcome>
+where
+    Support: MemoKey,
+{
+    /// The layer, shared by reference again.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            memo: Arc::clone(&self.memo),
+            stamp: self.stamp,
+        }
+    }
+}
+
+impl<Support, Outcome> core::fmt::Debug for Frozen<Support, Outcome>
+where
+    Support: MemoKey,
+    HashedMemo<Support, Outcome>: core::fmt::Debug,
+{
+    /// The layer's stamp and its entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("Frozen")
+            .field("stamp", &self.stamp)
+            .field("memo", &self.memo)
+            .finish()
+    }
 }
 
 impl<Support, Outcome> core::fmt::Debug for OverlaidMemo<Support, Outcome>
@@ -79,7 +203,7 @@ where
     Support: MemoKey,
     HashedMemo<Support, Outcome>: core::fmt::Debug,
 {
-    /// The memo's frozen layers and its own entries.
+    /// The memo's frozen layers, its own entries, its stamps and its points.
     ///
     /// # Specification
     /// trivial.
@@ -92,6 +216,10 @@ where
         f.debug_struct("OverlaidMemo")
             .field("layers", &self.layers)
             .field("own", &self.own)
+            .field("frozen", &self.frozen)
+            .field("forked", &self.forked)
+            .field("points", &self.points)
+            .field("point", &self.point)
             .finish()
     }
 }
@@ -197,6 +325,10 @@ where
         Self {
             layers: Vec::new(),
             own: HashedMemo::new(),
+            frozen: 0,
+            forked: 0,
+            points: Vec::new(),
+            point: None,
         }
     }
 
@@ -226,11 +358,34 @@ where
     {
         if self.own.entry_count() != MemoEntryCount::zero() {
             let frozen = core::mem::take(&mut self.own);
-            self.layers.push(Arc::new(frozen));
+            self.frozen = self.frozen.saturating_add(1);
+            self.layers.push(Frozen {
+                memo: Arc::new(frozen),
+                stamp: self.frozen,
+            });
         }
+        let stamp = self.layers.last().map_or(0, |newest| newest.stamp);
+        // A settle keeps each layer at or below an open point, so the newest
+        // stamp is at or above each open point, and the points stay in order.
+        self.points.retain(ForkPoint::is_open);
+        let point = match self.points.last() {
+            Some(last) if last.stamp == stamp => Arc::clone(&last.open),
+            Some(_) | None => {
+                let open = Arc::new(());
+                self.points.push(ForkPoint {
+                    stamp,
+                    open: Arc::clone(&open),
+                });
+                open
+            },
+        };
         Self {
             layers: self.layers.clone(),
             own: HashedMemo::new(),
+            frozen: self.frozen,
+            forked: stamp,
+            points: Vec::new(),
+            point: Some(point),
         }
     }
 
@@ -284,19 +439,28 @@ where
         Support: Clone,
         Outcome: Clone + PartialEq,
     {
-        let Self { layers, own } = child;
-        // The child read each layer up to its newest one. A settle never
-        // merges a layer that a child still holds, so the layers past those
-        // and this memo's own entries came after the child's fork.
-        let since = self.layers.get(layers.len() ..).unwrap_or_default();
+        let Self {
+            layers,
+            own,
+            forked,
+            ..
+        } = child;
+        // The layers stamped after the child's newest one were frozen after
+        // its fork. A settle never merges a layer that a child still holds,
+        // and a compaction never merges across a child's fork, so these
+        // layers and this memo's own entries came after the child's fork.
+        let first = self.layers.partition_point(|layer| layer.stamp <= forked);
+        let since = self.layers.get(first ..).unwrap_or_default();
         for (support, outcome) in own.entries() {
             if !keep(support, outcome) {
                 continue;
             }
-            let held = self
-                .own
-                .recall(support)
-                .or_else(|| since.iter().rev().find_map(|layer| layer.recall(support)));
+            let held = self.own.recall(support).or_else(|| {
+                since
+                    .iter()
+                    .rev()
+                    .find_map(|layer| layer.memo.recall(support))
+            });
             if let Some(held) = held
                 && held.outcome() != outcome
             {
@@ -321,28 +485,36 @@ where
 
     /// Merge each frozen layer that no child reads any more into this memo,
     /// newest first, so the frozen layers of a memo are the ones a child
-    /// still reads.
+    /// still reads. A layer stamped at or below an open fork point stays,
+    /// even when a compaction copied it, since the child of the point reads
+    /// the layers that the copy replaced.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the memo serves each support as it served it before; the
-    ///   newest frozen layer, if any, is one that another memo still reads.
+    ///   newest frozen layer, if any, is one that a child still reads.
     /// - provides: the step after a join that keeps the stack of layers as deep
     ///   as the forks still open.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — which layer another memo reads is a count of its
-    ///   holders, which no predicate over this memo reads.
+    /// - executable: none — which layer a child reads is a point that the child
+    ///   holds, which no predicate over this memo reads.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a settle after the last join leaves one layer that
     ///   counts each entry once.
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
+    /// - witness: `overlay::tests::a_compaction_keeps_what_a_child_reads_and_what_its_join_checks_7335`
     #[inline]
     pub fn settle(&mut self)
     {
-        while let Some(newest) = self.layers.pop() {
-            match Arc::try_unwrap(newest) {
+        self.points.retain(ForkPoint::is_open);
+        let guard = self.points.last().map(|point| point.stamp);
+        while let Some(newest) = self
+            .layers
+            .pop_if(|newest| guard.is_none_or(|stamp| newest.stamp > stamp))
+        {
+            match Arc::try_unwrap(newest.memo) {
                 Ok(mut layer) => {
                     for (support, outcome) in core::mem::take(&mut self.own).into_entries() {
                         // As at a join: an entry declined at the ceiling costs
@@ -352,10 +524,129 @@ where
                     self.own = layer;
                 },
                 Err(shared) => {
-                    self.layers.push(shared);
+                    self.layers.push(Frozen {
+                        memo: shared,
+                        stamp: newest.stamp,
+                    });
                     return;
                 },
             }
+        }
+    }
+
+    /// Merge each two neighbouring frozen layers where no open child forked
+    /// between them and the older holds at most twice the entries of the
+    /// newer. A layer that only this memo holds merges in place, and a layer
+    /// that a child holds is copied, so the child keeps what it read.
+    ///
+    /// Each child holds the point of its fork until its join or its drop. A
+    /// merge never takes two layers on the two sides of an open point, so a
+    /// join still finds the layers frozen after its child's fork. The halving
+    /// bound copies each entry at most once for each doubling of the layers
+    /// below it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the memo serves each support as it served it before; each
+    ///   child joins as it joined before.
+    /// - provides: the bound on the layers of a memo that forks without a
+    ///   break: the open forks, and the logarithm of the entries.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — which point a child holds is a count of the point's
+    ///   holders, which no predicate over this memo reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a memo that forks a child at each step and joins the
+    ///   child of the step before keeps few layers, serves what a serial memo
+    ///   serves, and refuses a disagreement with a layer frozen after a fork.
+    /// - witness: `overlay::tests::a_memo_that_forks_without_a_break_keeps_its_layers_to_the_open_forks_7335`
+    /// - witness: `overlay::tests::a_compaction_keeps_what_a_child_reads_and_what_its_join_checks_7335`
+    #[inline]
+    pub fn compact(&mut self)
+    where
+        Support: Clone,
+        Outcome: Clone,
+    {
+        self.points.retain(ForkPoint::is_open);
+        let mut upper = self.layers.len();
+        while let Some(lower) = upper.checked_sub(2) {
+            if self.mergeable(lower) {
+                self.merge_above(lower);
+            }
+            upper = upper.saturating_sub(1);
+        }
+    }
+
+    /// Whether the layer at `lower` and the one above it may merge: no open
+    /// point between them, the older at most twice the newer, and not a layer
+    /// of the parent beside one that this memo froze after its own fork. A
+    /// settle of that merged layer would take the parent's entries into the
+    /// own entries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mergeable(
+        &self,
+        lower: usize,
+    ) -> bool
+    {
+        let (Some(older), Some(newer)) = (
+            self.layers.get(lower),
+            self.layers.get(lower.saturating_add(1)),
+        )
+        else {
+            return false;
+        };
+        let across = older.stamp <= self.forked && newer.stamp > self.forked;
+        let parted = self.points.iter().any(|point| {
+            point.is_open() && older.stamp <= point.stamp && point.stamp < newer.stamp
+        });
+        !across
+            && !parted
+            && usize::from(older.memo.entry_count())
+                <= usize::from(newer.memo.entry_count()).saturating_mul(2)
+    }
+
+    /// Merge the layer above `lower` into the layer at `lower`, as a settle
+    /// merges own entries into a layer: a newer entry replaces an agreeing
+    /// older one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn merge_above(
+        &mut self,
+        lower: usize,
+    ) where
+        Support: Clone,
+        Outcome: Clone,
+    {
+        let Some(newer) = (lower.saturating_add(1) < self.layers.len())
+            .then(|| self.layers.remove(lower.saturating_add(1)))
+        else {
+            return;
+        };
+        let Some(older) = self.layers.get_mut(lower)
+        else {
+            return;
+        };
+        older.stamp = newer.stamp;
+        let merged = Arc::make_mut(&mut older.memo);
+        match Arc::try_unwrap(newer.memo) {
+            Ok(layer) => {
+                for (support, outcome) in layer.into_entries() {
+                    // As at a settle: an entry declined at the ceiling costs
+                    // reuse alone.
+                    let _recorded = merged.remember(support, outcome);
+                }
+            },
+            Err(shared) => {
+                for (support, outcome) in shared.entries() {
+                    let _recorded = merged.remember(support.clone(), outcome.clone());
+                }
+            },
         }
     }
 }
@@ -396,7 +687,7 @@ where
             self.layers
                 .iter()
                 .rev()
-                .flat_map(move |layer| layer.filed(digest)),
+                .flat_map(move |layer| layer.memo.filed(digest)),
         )
     }
 
@@ -439,7 +730,7 @@ where
         self.layers
             .iter()
             .fold(self.own.entry_count(), |sum, layer| {
-                sum.saturating_add(layer.entry_count())
+                sum.saturating_add(layer.memo.entry_count())
             })
     }
 
@@ -457,7 +748,7 @@ where
         self.layers
             .iter()
             .fold(self.own.plane_entry_count(plane), |sum, layer| {
-                sum.saturating_add(layer.plane_entry_count(plane))
+                sum.saturating_add(layer.memo.plane_entry_count(plane))
             })
     }
 
@@ -755,5 +1046,138 @@ mod tests
                 "the refused child folds nothing, swapped: {swapped}"
             );
         }
+    }
+
+    /// A memo that forks a child at each step, while three children stay
+    /// open, as a pool's schedule forks the environment's session. Each step
+    /// joins the oldest child. The layers stay within the open forks and the
+    /// logarithm of the steps, and the memo serves what a serial memo serves
+    /// (#7335).
+    #[test]
+    fn a_memo_that_forks_without_a_break_keeps_its_layers_to_the_open_forks_7335()
+    {
+        let steps = 1024_u64;
+        let open_at_once = 3_usize;
+        let mut parent = OverlaidMemo::new();
+        let mut serial = HashedMemo::new();
+        let mut open = alloc::collections::VecDeque::new();
+        let mut deepest = 0_usize;
+        for step in 0 .. steps {
+            parent.compact();
+            let mut child = parent.fork();
+            record(&mut child, &[(Named(step), Kept(step))]);
+            open.push_back((child, step));
+            if open.len() > open_at_once
+                && let Some((oldest, recorded)) = open.pop_front()
+            {
+                parent
+                    .join(oldest, |_, _| true)
+                    .expect("children of distinct supports glue");
+                record(&mut serial, &[(Named(recorded), Kept(recorded))]);
+            }
+            deepest = deepest.max(parent.layers.len());
+        }
+        while let Some((oldest, recorded)) = open.pop_front() {
+            parent
+                .join(oldest, |_, _| true)
+                .expect("children of distinct supports glue");
+            record(&mut serial, &[(Named(recorded), Kept(recorded))]);
+        }
+        let bound = open_at_once
+            .saturating_add(usize::try_from(steps.ilog2()).unwrap())
+            .saturating_add(2);
+        assert!(
+            deepest <= bound,
+            "the layers stay within the open forks and the logarithm of the steps, {bound}, not {deepest}"
+        );
+        let found = (0 .. steps)
+            .map(|named| served(&parent, Named(named)))
+            .collect::<Vec<_>>();
+        let expected = (0 .. steps)
+            .map(|named| served(&serial, Named(named)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found, expected,
+            "the memo serves what the serial memo serves"
+        );
+    }
+
+    /// A compaction merges layers below and above the fork of two children
+    /// and never across it. So a child still reads the memo as it stood at
+    /// its fork, an entry it answers again still glues, and an entry that
+    /// disagrees with a layer frozen after its fork is still refused (#7335).
+    #[test]
+    fn a_compaction_keeps_what_a_child_reads_and_what_its_join_checks_7335()
+    {
+        let mut parent = OverlaidMemo::new();
+        // Eight layers below the fork, which the children of that fork hold.
+        let mut early = Vec::new();
+        for step in 0 .. 8_u64 {
+            record(&mut parent, &[(
+                Named(step.saturating_add(1000)),
+                Kept(step),
+            )]);
+            early.push(parent.fork());
+        }
+        drop(early);
+        record(&mut parent, &[(Named(1), Kept(10))]);
+        let mut shadowing = parent.fork();
+        let mut disagreeing = parent.fork();
+        // Siblings forked after the fork, two open at once, so their layers
+        // stack above it until a compaction merges them.
+        let mut open = alloc::collections::VecDeque::new();
+        for step in 0 .. 64_u64 {
+            parent.compact();
+            let mut sibling = parent.fork();
+            record(&mut sibling, &[(
+                Named(step.saturating_add(2)),
+                Kept(step.saturating_add(20)),
+            )]);
+            open.push_back(sibling);
+            if open.len() > 2
+                && let Some(oldest) = open.pop_front()
+            {
+                parent
+                    .join(oldest, |_, _| true)
+                    .expect("siblings of distinct supports glue");
+            }
+        }
+        while let Some(oldest) = open.pop_front() {
+            parent
+                .join(oldest, |_, _| true)
+                .expect("siblings of distinct supports glue");
+        }
+        parent.compact();
+        assert!(
+            parent.layers.len() < 8,
+            "the compaction merged the layers, not {}",
+            parent.layers.len()
+        );
+        assert_eq!(
+            [
+                served(&shadowing, Named(1003)),
+                served(&disagreeing, Named(2))
+            ],
+            [Some(Kept(3)), None],
+            "a child reads the layers below its fork and none above it"
+        );
+        record(&mut shadowing, &[(Named(1), Kept(11))]);
+        record(&mut disagreeing, &[(Named(2), Kept(21))]);
+        parent
+            .join(shadowing, |_, _| true)
+            .expect("a child that answers again an entry it read glues");
+        let refused = parent
+            .join(disagreeing, |_, _| true)
+            .expect_err("an entry that disagrees with a layer frozen after the fork does not glue");
+        assert_eq!(
+            (*refused.support(), *refused.held(), *refused.offered()),
+            (Named(2), Kept(20), Kept(21)),
+            "the refusal names the key and both outcomes"
+        );
+        assert_eq!(
+            served(&parent, Named(1)),
+            Some(Kept(11)),
+            "the answer again replaces the entry it read"
+        );
     }
 }

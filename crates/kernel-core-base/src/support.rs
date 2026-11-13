@@ -423,6 +423,36 @@ impl SupportContext
         }
     }
 
+    /// Merge the frozen layers of this session's table and kept memo, as
+    /// [`ContentTable::compact`] and the memo's compaction merge them. A
+    /// session that forks a job at each release, while jobs stay open,
+    /// keeps its layers to the open jobs and a logarithm of its records and
+    /// outcomes, so each join and each recall reads as many (#7335).
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this session names nodes of.
+    /// - ensures: the session gives each node and record the name it gave them,
+    ///   recalls each kept outcome it recalled, and each open job joins as it
+    ///   joined before.
+    /// - provides: the bound on the layers of the environment's session.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as the table's and the memo's compactions.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the table's and the memo's compactions.
+    /// - witness: `encoding::tests::a_table_that_forks_without_a_break_keeps_its_layers_to_a_logarithm_7335`
+    /// - witness: `gandr-kernel-check-memo::overlay::tests::a_memo_that_forks_without_a_break_keeps_its_layers_to_the_open_forks_7335`
+    #[inline]
+    pub fn compact(
+        &mut self,
+        arena: &TermArena,
+    )
+    {
+        self.table.compact(arena);
+        self.kept.compact();
+    }
+
     /// Fold `job`, a session forked from this one, into it: the records it
     /// named and the outcomes it kept, in the order it named and kept them.
     /// Its rewrite memo, accruals and owed keys belong to the job and go.

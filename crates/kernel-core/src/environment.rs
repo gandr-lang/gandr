@@ -1578,6 +1578,10 @@ impl Environment
         // The session names the view's constants before the fork, so the
         // job shares the names by reference and names none.
         session.name_constants(&view);
+        // The checks of a readmission overlap without a break, so no join
+        // settles the layers that they hold. A compaction keeps the layers to
+        // the open checks and a logarithm of the session (#7335).
+        session.compact(frozen);
         let session = session.fork(frozen);
         Scope {
             view,
