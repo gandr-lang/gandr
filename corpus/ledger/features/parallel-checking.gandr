@@ -1,4 +1,5 @@
-/// `parallel-checking`: the checker forks the obligations of a long drain.
+/// `parallel-checking`: the checker runs the checks of a readmission on its
+/// pool, and forks the obligations of a long drain.
 ///
 /// Implemented: `gandr check` forks the last drain of a declaration on its pool.
 /// It forks a drain only when the drain holds 64 code obligations or more.
@@ -6,20 +7,29 @@
 /// The driver installs the fork only in a run of fewer sources than threads.
 /// The forked drain gives the verdict of the serial drain.
 ///
+/// A check on more than one thread runs the checks of each readmission on its
+/// pool. The calling thread releases each declaration in module order. A
+/// worker runs each check. A declaration that names a running declaration
+/// waits for the running checks. Each check gives the verdict of the serial
+/// check.
+///
 /// Not implemented: no fork splits the arguments of an application.
 /// No fork splits the branches of a case.
-/// A run of as many sources as threads or more does not fork.
-/// No schedule orders the checks of a component.
+/// A run of as many sources as threads or more does not fork a drain.
+/// No edge of the schedule names the declarations that a check reads.
+/// No check starts on predicted entries.
 ///
 /// - owes: #2802 — the forks at the frames of a check
-/// - owes: #3476 — the schedule of the checks of a component
+/// - owes: #3476 — the checks that start on predicted entries
+/// - owes: #7020 — the collision edges of the schedule
 
 // `cylinderComposite2`.
 import std.math.cylinder (cylinderComposite2);
 
 /// Two squares of paths side by side, at identity verticals. The check of
-/// this source readmits `std.math.cylinder`. Its composites hold last drains
-/// of 64 obligations or more. A check on more than one thread forks them.
+/// this source readmits `std.math.cylinder`. On more than one thread, its
+/// checks run on the pool. Its composites hold last drains of 64 obligations
+/// or more. A check on more than one thread forks them.
 def sideBySide(
   A : Type,
   x : A,

@@ -159,6 +159,7 @@ use crate::env::StagedMarks;
 use crate::env::Staging;
 use crate::env::Unit;
 use crate::env::UnitShape;
+use crate::env::UnsettledCount;
 use crate::env::collect_reachable;
 use crate::env::references;
 use crate::error::KernelError;
@@ -967,6 +968,17 @@ impl Environment
                 unsettled: self.releases.outstanding(),
             }),
         }
+    }
+
+    /// How many released checks of this environment are not settled.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn unsettled(&self) -> UnsettledCount
+    {
+        self.releases.outstanding()
     }
 
     /// Release the check of a lone declaration at the next position: the

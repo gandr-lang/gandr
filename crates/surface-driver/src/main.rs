@@ -3748,8 +3748,8 @@ fn render(
         },
         // The driver's pool: one per process, at the verb's width, its threads
         // started on the first fork of two items or more. Wider than one
-        // thread, the last drain of each kernel check forks its obligations
-        // on it too.
+        // thread, the checks of each readmission run on it, and the last
+        // drain of each kernel check forks its obligations on it too.
         Outcome::Run {
             verb,
             lints,
@@ -3760,13 +3760,17 @@ fn render(
             // The forked drain gains only where the pool has workers to
             // spare: in a run of fewer sources than threads. In a wider run
             // the other sources keep each worker busy. A process renders one
-            // outcome, so no fork is installed yet.
+            // outcome, so no fork or pool is installed yet.
             let threads = width.threads();
             let spare = SourceCount::from(NonZeroUsize::from(threads).get());
-            if threads != Threads::ONE && walk.sources_up_to(spare) < spare {
-                let _installed = gandr_surface_dispatcher::install_obligation_fork(
-                    gandr_kernel_core::fork::SharedFork::through(Arc::<Pool>::clone(&pool)),
-                );
+            if threads != Threads::ONE {
+                let _installed =
+                    gandr_surface_dispatcher::install_readmission_pool(Arc::<Pool>::clone(&pool));
+                if walk.sources_up_to(spare) < spare {
+                    let _installed = gandr_surface_dispatcher::install_obligation_fork(
+                        gandr_kernel_core::fork::SharedFork::through(Arc::<Pool>::clone(&pool)),
+                    );
+                }
             }
             run(
                 Pass {

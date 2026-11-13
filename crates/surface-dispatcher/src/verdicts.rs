@@ -56,7 +56,9 @@ use quenchant_shape::shape::Maybe;
 
 use crate::held::Held;
 use crate::held::HeldVerdicts;
+use crate::pool::Pool;
 use crate::receipts::StoredVerdicts;
+use crate::width::Width;
 
 /// The recall of a process that installed no cache.
 static RECHECK: LazyLock<bridge::Recall> = LazyLock::new(bridge::Recall::recheck);
@@ -72,6 +74,15 @@ static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
 // the verdict cache is. #2802 threads the fork through the admission when
 // the frames of a check fork.
 static FORKING: OnceLock<SharedFork> = OnceLock::new();
+
+/// The pool this process installed for the checks of each readmission.
+// One pool for each process: the checks of every readmission share the
+// threads of the process, read where every readmission funnels.
+static SCHEDULING: OnceLock<Arc<Pool>> = OnceLock::new();
+
+/// The pool of a process that installed none: one thread, so each
+/// readmission runs each check on the calling thread.
+static SERIAL: Pool = Pool::new(Width::SERIAL);
 
 /// Where a cache keeps the receipts its kernel signs, and reads them from.
 #[derive(Debug)]
@@ -355,6 +366,7 @@ impl VerdictCache
             &self.recall(),
             retirement,
             stopwatch,
+            scheduling(),
         );
         if let Polled::Whole((ref readmission, _)) = polled {
             self.settle(readmission);
@@ -426,6 +438,32 @@ fn forking() -> SharedFork
     FORKING.get().cloned().unwrap_or_default()
 }
 
+/// Install `pool` for the checks of each readmission this process makes.
+///
+/// A pool installed already stays. A process that installs none runs each
+/// check on the calling thread, in module order.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`AlreadyInstalled`].
+#[inline]
+pub fn install_readmission_pool(pool: Arc<Pool>) -> Result<(), AlreadyInstalled>
+{
+    SCHEDULING.set(pool).map_err(|_refused| AlreadyInstalled)
+}
+
+/// The pool this process installed for the checks of each readmission, or
+/// the serial one.
+///
+/// # Specification
+/// trivial.
+fn scheduling() -> &'static Pool
+{
+    SCHEDULING.get().map_or(&SERIAL, |pool| pool)
+}
+
 quenchant_shape::reason_enum! {
     /// Why a process has no verdict tally.
     pub mod tallied {
@@ -494,9 +532,9 @@ pub fn verdict_tally() -> Maybe<VerdictTally, tallied::Absent>
 
 /// [`bridge::readmit_retiring`] under the installed cache's recall, settling
 /// a whole readmission into the cache; under [`bridge::Recall::recheck`] when
-/// none is installed. Each admission is timed by `stopwatch`. A whole
-/// readmission adds the admitted results its kernel took to the process's
-/// tally.
+/// none is installed. The checks run on the installed readmission pool, and
+/// `stopwatch` times each one. A whole readmission adds the admitted results
+/// its kernel took to the process's tally.
 ///
 /// # Specification
 /// trivial.
@@ -522,6 +560,7 @@ where
             &RECHECK.clone().forking(forking()),
             retirement,
             stopwatch,
+            scheduling(),
         ),
     };
     if let Polled::Whole((ref readmission, _)) = polled {
@@ -714,6 +753,7 @@ mod tests
             &recall,
             &Unretired,
             &mut bridge::Untimed,
+            &gandr_core_fork::Serial,
         )
         .whole();
         let Maybe::Present(receipt) = readmission.environment().receipt(signer)

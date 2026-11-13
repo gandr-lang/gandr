@@ -132,6 +132,7 @@
 //! distinguish.
 
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use std::fs;
@@ -161,6 +162,7 @@ use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::build;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_storage_records::TreeParams;
+use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_grammar::Pbg;
@@ -552,8 +554,9 @@ fn class_of(
 
 /// The source at `path` under `root`, parsed, lowered, checked, readmitted and
 /// exported — over the siblings it imports, laid out by the dispatcher's
-/// `lay_out`, when it imports any. The readmission drains the obligations of
-/// each kernel check through `fork`, or serially when `fork` is none.
+/// `lay_out`, when it imports any. The readmission runs its checks on `pool`
+/// and drains the obligations of each one on `pool` too, or runs serially
+/// when `pool` is none.
 ///
 /// # Specification
 /// - requires: `path` is a readable UTF-8 corpus source and `pbg` is its
@@ -622,7 +625,7 @@ fn export_through(
     pbg: &Pbg,
     path: PathBuf,
     root: Root,
-    fork: Option<&SharedFork>,
+    pool: Option<&Arc<Pool>>,
 ) -> Swept
 {
     let read = fs::read_to_string(&path)
@@ -655,9 +658,9 @@ fn export_through(
             )
         })
         .collect();
-    let readmission = match fork {
+    let readmission = match pool {
         None => bridge::readmit(&mut arena, &verdicts),
-        Some(fork) => {
+        Some(pool) => {
             bridge::readmit_retiring(
                 &mut arena,
                 &verdicts,
@@ -665,9 +668,10 @@ fn export_through(
                     bridge::LeadingCount::NONE,
                     Maybe::Absent(bridge::crossed::Absent::Unasked),
                 ),
-                &bridge::Recall::recheck().forking(fork.clone()),
+                &bridge::Recall::recheck().forking(SharedFork::through(Arc::<Pool>::clone(pool))),
                 &Unretired,
                 &mut bridge::Untimed,
+                &**pool,
             )
             .whole()
             .0
@@ -840,8 +844,8 @@ struct Shard(usize);
 
 /// The sources of both roots in `shard` that the lowering reads, exported, in
 /// root and then path order: every `SHARDS`-th source of each root's listing,
-/// starting at the shard's own index. Each readmission drains the obligations
-/// of its checks through `fork`, or serially when `fork` is none.
+/// starting at the shard's own index. Each readmission runs its checks and
+/// their obligations on `pool`, or serially when `pool` is none.
 ///
 /// # Specification
 /// - requires: `shard` is below `SHARDS`; both committed corpus trees remain
@@ -885,14 +889,14 @@ struct Shard(usize);
 )]
 fn corpus(
     shard: Shard,
-    fork: Option<&SharedFork>,
+    pool: Option<&Arc<Pool>>,
 ) -> Vec<Exported>
 {
     let pbg = built_in().expect("the built-in grammar builds");
     let mut exported = Vec::new();
     for root in [Root::Strict, Root::Fixture] {
         for path in sources(root).into_iter().skip(shard.0).step_by(SHARDS) {
-            if let Swept::Exported(source) = export_through(&pbg, path, root, fork) {
+            if let Swept::Exported(source) = export_through(&pbg, path, root, pool) {
                 exported.push(source);
             }
         }
@@ -944,7 +948,6 @@ mod kernel_export_gate
     use core::num::NonZeroUsize;
 
     use anodized::spec;
-    use gandr_kernel_core::fork::SharedFork;
     use gandr_kernel_term::decode;
     use gandr_kernel_term::encode;
     use gandr_storage_records::TreeParams;
@@ -1008,10 +1011,10 @@ mod kernel_export_gate
         gate(Shard(7));
     }
 
-    /// The sources of `shard` exported twice, the second time with the
-    /// obligations of each kernel check drained apart on four threads: each
-    /// artifact is a function of its text and not of the fork, and reads back
-    /// through the record plane and the decoder as itself.
+    /// The sources of `shard` exported twice, the second time with the checks
+    /// of each readmission and the obligations of each check run on four
+    /// threads: each artifact is a function of its text and not of the pool,
+    /// and reads back through the record plane and the decoder as itself.
     ///
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
@@ -1031,12 +1034,11 @@ mod kernel_export_gate
     #[spec(requires: shard.0 < SHARDS)]
     fn gate(shard: Shard)
     {
-        let pool = Pool::new(Width::Threads(Threads::from(
+        let pool = Arc::new(Pool::new(Width::Threads(Threads::from(
             NonZeroUsize::new(4_usize).expect("four threads"),
-        )));
-        let forked = SharedFork::through(Arc::new(pool));
+        ))));
         let first = corpus(shard, None);
-        let second = corpus(shard, Some(&forked));
+        let second = corpus(shard, Some(&pool));
         assert_eq!(
             first.len(),
             second.len(),
@@ -1051,7 +1053,7 @@ mod kernel_export_gate
             );
             assert_eq!(
                 one.classes, two.classes,
-                "{path}: a forked drain gives each declaration the serial class"
+                "{path}: a scheduled readmission gives each declaration the serial class"
             );
             let (manifest, store) = commit(&one.artifact);
             let (again, _again_store) = commit(&two.artifact);
