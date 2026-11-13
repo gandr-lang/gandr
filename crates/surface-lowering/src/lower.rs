@@ -2174,7 +2174,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let documentation = lowerer.document()?;
         let inferred = lowerer.inferred_exits();
         let elidable = lowerer.elidable_exits();
-        let nested = lowerer.nested_sites(&origins, resumed);
+        // A document resumed after its closure reads the values recorded after
+        // the closure's alone.
+        let own_values = origins
+            .values()
+            .get(resumed.map_or(0, |resumed| resumed.values) ..)
+            .unwrap_or_default();
+        let nested = lowerer.nested_sites(own_values);
         let linear = lowerer.linear_runs(arena, &origins);
         // A document resumed after its closure assembles its own declarations
         // and builds its tables by declaration at them alone: the closure's

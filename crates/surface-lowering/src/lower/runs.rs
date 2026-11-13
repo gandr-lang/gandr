@@ -98,7 +98,6 @@ use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
 use super::Lowerer;
-use super::Resumed;
 use crate::attribute::AttributeEntry;
 use crate::attribute::RegisteredAttribute;
 use crate::form::Former;
@@ -106,21 +105,23 @@ use crate::form::Shape;
 use crate::form::shape_of;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
+use crate::origin::Origin;
 use crate::origin::OriginTable;
 use crate::origin::Provenance;
 
 impl Lowerer<'_, '_>
 {
-    /// The site of every nested node the values of `origins` record: those
-    /// past the mark when `resumed` gives the closure's marks.
+    /// The site of every nested node that `values` record: the document's own
+    /// origin values, past those that a closure's lowering recorded before
+    /// them.
     ///
     /// # Specification
     /// - requires: the attribute pass has run, so every asking slot is marked.
-    /// - ensures: one entry per syntax node a value of `origins` was nested at,
-    ///   a value past `resumed`'s mark when it is given, asked the widest ask
-    ///   an `explicit_runs` attribute reaching its declaration makes, or none,
-    ///   spelled parenthesised exactly when it stands at an application's head,
-    ///   and its operand grouped unless its form binds tighter than `run`.
+    /// - ensures: one entry per syntax node a value of `values` was nested at,
+    ///   asked the widest ask an `explicit_runs` attribute reaching its
+    ///   declaration makes, or none, spelled parenthesised exactly when it
+    ///   stands at an application's head, and its operand grouped unless its
+    ///   form binds tighter than `run`.
     /// - provides: the lowering's half of the join
     ///   [`LoweredModule::inferred_runs`](crate::LoweredModule::inferred_runs)
     ///   makes.
@@ -133,17 +134,13 @@ impl Lowerer<'_, '_>
     ///   bound by a statement, asserted grouped.
     /// - witness: `lower::runs::tests::an_explicit_runs_attribute_asks_within_its_form`
     /// - witness: `lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
-    #[spec(ensures: |ret| ret.len() <= origins.values().len())]
+    #[spec(ensures: |ret| ret.len() <= values.len())]
     pub(super) fn nested_sites(
         &self,
-        origins: &OriginTable,
-        resumed: Option<Resumed<'_, '_>>,
+        values: &[(ValueId, Origin)],
     ) -> BTreeMap<NodeIndex, NestedSite>
     {
-        origins
-            .values()
-            .get(resumed.map_or(0, |resumed| resumed.values) ..)
-            .unwrap_or_default()
+        values
             .iter()
             .filter(|&&(_, origin)| origin.provenance() == Provenance::Inserted(Insertion::Nested))
             .map(|&(_, origin)| {
