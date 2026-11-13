@@ -1227,9 +1227,14 @@ exit "$status"
 # Over the whole workspace, each pass keeps Cargo's messages in the build
 # directory, and `ci:prune-docs` reads them as the units that the passes
 # build (`.config/doc/check.bash`).
+#
+# Rustdoc runs with `--check`: it resolves each link and runs each lint, and
+# renders no page. No reader takes the pages, and CI keeps none in its state,
+# so each run rendered the whole workspace twice, in 302 s of a 343 s job.
+# Warm over the workspace, the two passes take 11 s against 352 s (#7241).
 ["check:doc"]
-description = "Private-item rustdoc with every rustdoc lint denied, with the default features and with every feature on"
-env.RUSTDOCFLAGS = "-D warnings"
+description = "Private-item rustdoc lints, each denied, with the default features and with every feature on, with no page rendered"
+env.RUSTDOCFLAGS = "-D warnings -Zunstable-options --check"
 env.CARGO_TARGET_DIR = "{{ env.CARGO_TARGET_DIR | default(value=config_root ~ '/target/gate-doc') }}"
 tools.jq = "1.8.1"
 run = ".config/doc/check.bash"
