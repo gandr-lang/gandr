@@ -202,6 +202,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why an environment ranks its next admission past every live entry.
+    pub mod next_rank {
+        /// The reason no next rank is set.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No readmission set a next rank, or the last one cleared it.
+            Unset,
+        }
+    }
+}
+
 /// What a release answers: the check, released at its reserved position, or
 /// the declaration handed back with the reason it holds.
 ///
@@ -1023,6 +1035,18 @@ impl Environment
             return Err(KernelError::OutstandingStagedContent { above });
         }
         let position = ConstantIndex::from(usize::from(self.entries.len()));
+        // A readmission that keeps entries in place sets the next rank: a
+        // declaration staged with no rank takes it there, where a fresh
+        // admission of the edited source ranks it ([`Self::ranking_from`]).
+        let staged_rank = staged_rank.or_else(|| {
+            match CommitLog::placed(
+                &mut self.commits,
+                position .. ConstantIndex::from(usize::from(position).saturating_add(1)),
+            ) {
+                Maybe::Present(rank) => Some(rank),
+                Maybe::Absent(_) => None,
+            }
+        });
         // The cursor stands at this release when no earlier release is
         // outstanding. Then every read of order reads the serial state.
         let alone = usize::from(self.releases.outstanding()) == 0;
@@ -1788,8 +1812,14 @@ impl Environment
         self.outstanding.resolve(content_start);
         let position = ConstantIndex::from(usize::from(self.entries.len()));
         // The bypass refuses nothing, so a held rank gives way to the rank past
-        // every live one: two entries never share a rank.
-        let rank = rank.unwrap_or_else(|| self.commits.past_ranks());
+        // every live one: two entries never share a rank. A declaration staged
+        // with no rank takes the next rank, when a readmission sets one.
+        let rank = rank.unwrap_or_else(|| {
+            CommitLog::unranked(
+                &mut self.commits,
+                position .. ConstantIndex::from(usize::from(position).saturating_add(1)),
+            )
+        });
         let rank = match self.commits.ranked(rank) {
             None => rank,
             Some(_) => self.commits.past_ranks(),
@@ -1928,9 +1958,13 @@ impl Environment
         let base = self.entries.len();
         let content_end = self.arena.watermark();
         let rejected = content_start.clamped_into(self.admission_floor, content_end);
-        // A member staged with no rank ranks past every live entry, after the
-        // members before it.
-        let past = self.commits.past_ranks();
+        // A member staged with no rank ranks past every live entry, or from
+        // the next rank a readmission set on, after the members before it.
+        let past = CommitLog::unranked(
+            &mut self.commits,
+            ConstantIndex::from(usize::from(base))
+                .. ConstantIndex::from(usize::from(base).saturating_add(staged.len())),
+        );
         let mut ranks = Vec::with_capacity(staged.len());
         for (offset, member) in staged.iter().enumerate() {
             let position = ConstantIndex::from(usize::from(base).saturating_add(offset));
@@ -2171,9 +2205,11 @@ impl Environment
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, each entry at `positions` is retired, with each
-    ///   member of its unit, and every other entry is as it was; on refusal,
-    ///   the environment is unchanged. Either way the entries keep their
-    ///   number, and the arena mints nothing.
+    ///   member of its unit, and every other entry is as it was; the key chain
+    ///   ends when `positions` names any entry, so each later admission is
+    ///   recalled by its entry key alone. On refusal, the environment is
+    ///   unchanged. Either way the entries keep their number, and the arena
+    ///   mints nothing.
     /// - provides: the first half of a readmission that keeps the entries an
     ///   edit leaves.
     /// - fails: [`KernelError::UnboundConstant`] at a position past the
@@ -2191,6 +2227,7 @@ impl Environment
     ///   fresh admission of the edited source, entry by entry.
     /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
     /// - witness: `environment::tests::a_keep_that_names_a_retired_position_is_refused_6621`
+    /// - witness: `environment::tests::an_admission_after_a_retirement_recalls_by_its_entry_key_alone_6846`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
         ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
             && (ret.is_err() || positions.iter().all(|&position| self.entries.live(position).is_none())))]
@@ -2216,6 +2253,13 @@ impl Environment
                 },
                 Some(_) => {},
             }
+        }
+        // A chain key holds each admission and no retirement, so a recall
+        // under it after a retirement could read an environment that holds the
+        // retired entries: the chain ends, and a later admission is recalled
+        // by its entry key alone.
+        if !positions.is_empty() {
+            self.verdicts.end();
         }
         for &position in positions {
             let Some(unit) = self
@@ -2313,11 +2357,7 @@ impl Environment
         let ascending = ranks
             .windows(2)
             .all(|pair| matches!(*pair, [lower, higher] if lower < higher));
-        let Some(&below) = ranks.first()
-        else {
-            return Err(unkept(KeepRefusal::Unit));
-        };
-        if unit.first != first || ranks.len() != members || !ascending {
+        if ranks.is_empty() || unit.first != first || ranks.len() != members || !ascending {
             return Err(unkept(KeepRefusal::Unit));
         }
         for &rank in ranks {
@@ -2325,6 +2365,75 @@ impl Environment
                 return Err(KernelError::RankTaken { rank, by });
             }
         }
+        self.holds_its_key(entry, (first, ranks))?;
+        for (member, &rank) in (usize::from(unit.first) .. usize::from(unit.end)).zip(ranks) {
+            let position = ConstantIndex::from(member);
+            let Some(held) = self.entries.at(member).map(AdmittedDeclaration::key_name)
+            else {
+                continue;
+            };
+            // A twin's order among the plain definitions of its content is
+            // in its name: the kept twin takes the order of its new rank.
+            let key_name = match (unit.shape, held) {
+                (UnitShape::Lone, ConstantName::Definition { declared, body, .. }) => {
+                    crate::encoding::name_definition(
+                        self.names.session_mut().table_mut(),
+                        &self.arena,
+                        (&self.entries, position, rank),
+                        declared,
+                        body,
+                    )
+                },
+                (UnitShape::Lone | UnitShape::Block, name) => name,
+            };
+            alloc::sync::Arc::make_mut(&mut self.commits).reinstate((position, rank));
+            self.entries
+                .reinstate(&self.arena, (position, rank), key_name);
+        }
+        Ok(CheckedId::new(first))
+    }
+
+    /// Whether the check of `entry`, the first member of its unit at `first`,
+    /// reads what it read at its admission with its members at `ranks`: each
+    /// position the unit names stands live and ranked below it, and the
+    /// unit's narrowed key, computed again in place over its stored content
+    /// and the entries live now, is the key each member holds.
+    ///
+    /// # Specification
+    /// - requires: `ranks` names each member of the unit, ascending.
+    /// - ensures: `Ok` exactly when every reference outside the unit is live
+    ///   below the first rank of `ranks` and each member's held key is the key
+    ///   its check reads at `ranks` now.
+    /// - fails: [`KernelError::UnboundConstant`] at a reference that is not
+    ///   live or not ranked below the unit, and [`KernelError::Unkept`] when
+    ///   the unit or its check now has no key or the key changed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::keep`] and [`Self::keep_in_place`].
+    /// - witness: `environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    #[spec(requires: ranks.windows(2).all(|pair| matches!(*pair, [lower, higher] if lower < higher)),
+        ensures: |ret| matches!(ret, Ok(()) | Err(KernelError::UnboundConstant { .. } | KernelError::Unkept { .. })))]
+    fn holds_its_key(
+        &self,
+        entry: &AdmittedDeclaration,
+        (first, ranks): (ConstantIndex, &[SourceRank]),
+    ) -> Result<(), KernelError>
+    {
+        use crate::error::KeepRefusal;
+        let unkept = |refusal| KernelError::Unkept {
+            position: first,
+            refusal,
+        };
+        let unit = entry.unit();
+        let Some(&below) = ranks.first()
+        else {
+            return Err(unkept(KeepRefusal::Unit));
+        };
         // Each position the unit names stands live and ranked below it, as a
         // fresh admission's check reads it. The members of a block share the
         // references of the whole block.
@@ -2385,29 +2494,322 @@ impl Environment
                 Some(Maybe::Absent(_)) | None => return Err(unkept(KeepRefusal::Unkeyed)),
             }
         }
-        for (member, &rank) in (usize::from(unit.first) .. usize::from(unit.end)).zip(ranks) {
-            let position = ConstantIndex::from(member);
-            let Some(held) = self.entries.at(member).map(AdmittedDeclaration::key_name)
-            else {
-                continue;
-            };
-            // A twin's order among the plain definitions of its content is
-            // in its name: the kept twin takes the order of its new rank.
-            let key_name = match (unit.shape, held) {
-                (UnitShape::Lone, ConstantName::Definition { declared, body, .. }) => {
-                    crate::encoding::name_definition(
-                        self.names.session_mut().table_mut(),
-                        &self.arena,
-                        (&self.entries, position, rank),
-                        declared,
-                        body,
-                    )
-                },
-                (UnitShape::Lone | UnitShape::Block, name) => name,
-            };
-            alloc::sync::Arc::make_mut(&mut self.commits).reinstate((position, rank));
-            self.entries
-                .reinstate(&self.arena, (position, rank), key_name);
+        Ok(())
+    }
+
+    /// Give each live entry the rank `ranks` names for it: the rank of its
+    /// place in the edited source, one word for each entry.
+    ///
+    /// A readmission rewrites the rank of every live entry before it checks
+    /// any, so each check reads the final environment below its rank. The
+    /// rewrite moves no position, checks nothing and mints nothing. A key
+    /// holds the order of the ranks it reads and no rank's value, so an entry
+    /// whose inputs keep their order keeps its key.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, each live entry holds the rank `ranks` names for
+    ///   it, and every reader of ranks reads it: the rank table, the presented
+    ///   types, the types of words over each sort and the order of the twins;
+    ///   the key chain ends, so each later admission is recalled by its entry
+    ///   key alone. On refusal, the environment is unchanged. Either way the
+    ///   entries keep their number, and the arena mints nothing.
+    /// - provides: the rank rewrite of a readmission that keeps each entry
+    ///   outside the reach of an edit live.
+    /// - fails: [`KernelError::UnboundConstant`] at a position that is not
+    ///   live; [`KernelError::RankTaken`] when two positions take one rank;
+    ///   [`KernelError::Unkept`] for [`crate::error::KeepRefusal::Ranks`] when
+    ///   a live entry is named twice or not at all; and
+    ///   [`KernelError::UnsettledReleases`] while a released check is not
+    ///   settled.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an environment whose entries take new ranks in their
+    ///   order, and whose entries are each kept in place, reads as a fresh
+    ///   admission at those ranks, entry by entry, and exports its bytes; a
+    ///   rewrite that misses a live entry is refused and changes nothing.
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    /// - witness: `environment::tests::a_rank_rewrite_that_misses_a_live_entry_is_refused_6846`
+    #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
+        ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
+            && (ret.is_err() || ranks.iter().all(|&(position, rank)| self.entries.rank_of(position) == Some(rank))))]
+    #[inline]
+    pub fn rerank(
+        &mut self,
+        ranks: &[(ConstantIndex, SourceRank)],
+    ) -> Result<(), KernelError>
+    {
+        self.settled()?;
+        let mut by_position: BTreeMap<ConstantIndex, SourceRank> = BTreeMap::new();
+        let mut taken: BTreeMap<SourceRank, ConstantIndex> = BTreeMap::new();
+        for &(position, rank) in ranks {
+            if self.entries.live(position).is_none() {
+                return Err(KernelError::UnboundConstant { index: position });
+            }
+            if let Some(&by) = taken.get(&rank) {
+                return Err(KernelError::RankTaken { rank, by });
+            }
+            if by_position.insert(position, rank).is_some() {
+                return Err(KernelError::Unkept {
+                    position,
+                    refusal: crate::error::KeepRefusal::Ranks,
+                });
+            }
+            let _fresh = taken.insert(rank, position);
+        }
+        if let Some(missing) = self
+            .commits
+            .in_rank_order()
+            .find(|position| !by_position.contains_key(position))
+        {
+            return Err(KernelError::Unkept {
+                position: missing,
+                refusal: crate::error::KeepRefusal::Ranks,
+            });
+        }
+        let length = self.entries.len();
+        alloc::sync::Arc::make_mut(&mut self.commits).rerank(&by_position, length);
+        self.entries.rerank(&by_position);
+        // The chain holds each admission at the rank it took, so a chain key
+        // after the rewrite would name an environment of other ranks: the chain
+        // ends, and a later admission is recalled by its entry key alone.
+        self.verdicts.end();
+        Ok(())
+    }
+
+    /// Rank each later admission staged with no rank from `from` on, one rank
+    /// for each entry, until [`Self::ranking_past`].
+    ///
+    /// A readmission that keeps the entries outside the reach of an edit
+    /// crosses each other declaration at its place in the edited source: it
+    /// sets the next rank at that place before the crossing, so a seed the
+    /// crossing admits ranks just below its first reader, as a fresh
+    /// admission ranks it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the next admission staged with no rank takes `from`, and each
+    ///   after it the rank past the one before. Nothing else changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission that crosses each edited declaration at
+    ///   its place reads as a fresh admission of the edited source.
+    /// - witness: `environment::tests::a_crossing_at_the_next_rank_ranks_at_its_place_6846`
+    #[spec(ensures: self.commits.next == Some(from))]
+    #[inline]
+    pub fn ranking_from(
+        &mut self,
+        from: SourceRank,
+    )
+    {
+        if self.commits.next != Some(from) {
+            alloc::sync::Arc::make_mut(&mut self.commits).next = Some(from);
+        }
+    }
+
+    /// Rank each later admission staged with no rank past every live entry,
+    /// as an environment with no next rank ranks it ([`Self::ranking_from`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no next rank is set. Nothing else changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::ranking_from`].
+    /// - witness: `environment::tests::a_crossing_at_the_next_rank_ranks_at_its_place_6846`
+    #[spec(ensures: self.commits.next.is_none())]
+    #[inline]
+    pub fn ranking_past(&mut self)
+    {
+        if self.commits.next.is_some() {
+            alloc::sync::Arc::make_mut(&mut self.commits).next = None;
+        }
+    }
+
+    /// The rank that the next admission staged with no rank takes, while a
+    /// readmission sets one ([`Self::ranking_from`]).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn next_rank(&self) -> Maybe<SourceRank, next_rank::Absent>
+    {
+        self.commits
+            .next
+            .map_or(Maybe::Absent(next_rank::Absent::Unset), Maybe::Present)
+    }
+
+    /// Move the live entry at `position` to the next rank, and the next rank
+    /// one past it.
+    ///
+    /// A readmission that keeps the entries outside the reach of an edit keeps
+    /// a seed just below its first kept reader. A crossing at an earlier place
+    /// that reads the seed takes it to the next rank, just below itself, where
+    /// a fresh admission of the edited source seeds it. Each input of the
+    /// entry's check stays below it in the same order, so the entry keeps its
+    /// key; a reader that ranks past it may now read its inputs in another
+    /// order, and its own key check in place says so.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, the entry holds the rank that was next, every
+    ///   reader of ranks reads it, the next rank is one past it, and the key
+    ///   chain ends. On refusal, the environment is unchanged. Either way the
+    ///   entries keep their number, and the arena mints nothing.
+    /// - provides: the move of a kept seed that a crossing reads first.
+    /// - fails: [`KernelError::UnboundConstant`] at a position that is not
+    ///   live; [`KernelError::RankTaken`] when a live entry holds the next
+    ///   rank; [`KernelError::Unkept`] for
+    ///   [`crate::error::KeepRefusal::NextRank`] when no next rank is set, when
+    ///   the entry ranks below it, or when an input of its check ranks at or
+    ///   past it; and [`KernelError::UnsettledReleases`] while a released check
+    ///   is not settled.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kept seed that a crossing reads first moves below
+    ///   the crossing, and the readmission answers as a whole one and keeps
+    ///   each other entry.
+    /// - witness: `environment::tests::a_seed_takes_the_next_rank_below_its_first_reader_7196`
+    #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
+        ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
+            && (ret.is_err() || self.entries.rank_of(position).is_some_and(|rank| matches!(self.next_rank(), Maybe::Present(next) if usize::from(next) == usize::from(rank).saturating_add(1)))))]
+    #[inline]
+    pub fn take_next_rank(
+        &mut self,
+        position: ConstantIndex,
+    ) -> Result<(), KernelError>
+    {
+        self.settled()?;
+        let unkept = KernelError::Unkept {
+            position,
+            refusal: crate::error::KeepRefusal::NextRank,
+        };
+        let Some(from) = self.entries.rank_of(position)
+        else {
+            return Err(KernelError::UnboundConstant { index: position });
+        };
+        let Some(to) = self.commits.next
+        else {
+            return Err(unkept);
+        };
+        if from < to
+            || self
+                .entries
+                .waits_on(position)
+                .any(|input| self.entries.rank_of(input).is_none_or(|rank| rank >= to))
+        {
+            return Err(unkept);
+        }
+        if let Some(by) = self.commits.ranked(to) {
+            return Err(KernelError::RankTaken { rank: to, by });
+        }
+        let length = self.entries.len();
+        alloc::sync::Arc::make_mut(&mut self.commits).moved((position, from), to, length);
+        self.entries.rerank(&BTreeMap::from([(position, to)]));
+        // The chain holds each admission at the rank it took, as after a rank
+        // rewrite ([`Self::rerank`]).
+        self.verdicts.end();
+        Ok(())
+    }
+
+    /// Keep the live unit whose first member stands at `first` at the ranks
+    /// it holds, when its own key says that its check reads what it read.
+    ///
+    /// After [`Self::rerank`], a readmission walks the edited source in rank
+    /// order and checks each entry outside the reach in place: its key,
+    /// computed again over the final environment below its rank, against the
+    /// key it was admitted under. The check translates and encodes nothing,
+    /// and it mints nothing. A plain definition kept alone takes the name a
+    /// fresh admission at its rank gives, since a twin of its content may have
+    /// left or joined below it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success, the unit stays live at its ranks with its keys,
+    ///   and a plain definition kept alone holds the name a fresh admission at
+    ///   its rank gives; on refusal, the environment is unchanged, and the
+    ///   caller retires the unit and offers its declaration. Either way the
+    ///   entries keep their number, and the arena mints nothing.
+    /// - provides: the key check in place of a readmission that keeps each
+    ///   entry outside the reach of an edit live.
+    /// - fails: [`KernelError::UnboundConstant`] at `first` past the entries,
+    ///   or at a position the unit names that is not live or not ranked below
+    ///   the unit; [`KernelError::KindTaken`] when the entry at `first` is
+    ///   retired; [`KernelError::Unkept`] when `first` is not the first member
+    ///   of its unit, or when the unit or its check now has no key, or when the
+    ///   key its check reads now is another key; and
+    ///   [`KernelError::UnsettledReleases`] while a released check is not
+    ///   settled.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::rerank`]; an entry that reads a retired
+    ///   one is refused in place.
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    /// - witness: `environment::tests::an_entry_that_reads_a_retired_one_is_refused_in_place_6846`
+    #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
+        ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
+            && ret.as_ref().map_or(true, |kept| self.entries.live(kept.position()).is_some()))]
+    #[inline]
+    pub fn keep_in_place(
+        &mut self,
+        first: ConstantIndex,
+    ) -> Result<CheckedId, KernelError>
+    {
+        self.settled()?;
+        let Some(entry) = self.entries.at(usize::from(first))
+        else {
+            return Err(KernelError::UnboundConstant { index: first });
+        };
+        if entry.kind() == EntryKind::Retired {
+            return Err(KernelError::KindTaken {
+                position: first,
+                kind: EntryKind::Retired,
+            });
+        }
+        let unit = entry.unit();
+        if unit.first != first {
+            return Err(KernelError::Unkept {
+                position: first,
+                refusal: crate::error::KeepRefusal::Unit,
+            });
+        }
+        let ranks: Vec<SourceRank> = (usize::from(unit.first) .. usize::from(unit.end))
+            .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
+            .collect();
+        self.holds_its_key(entry, (first, &ranks))?;
+        // A twin's order among the plain definitions of its content is in its
+        // name: the kept twin takes the order of its rank among those live now.
+        if matches!(unit.shape, UnitShape::Lone)
+            && let ConstantName::Definition { declared, body, .. } = entry.key_name()
+            && let Some(&rank) = ranks.first()
+        {
+            let held = entry.key_name();
+            let named = crate::encoding::name_definition(
+                self.names.session_mut().table_mut(),
+                &self.arena,
+                (&self.entries, first, rank),
+                declared,
+                body,
+            );
+            if named != held {
+                self.entries.rename(first, named);
+            }
         }
         Ok(CheckedId::new(first))
     }
@@ -3233,6 +3635,10 @@ struct CommitLog
     ranked: BTreeMap<SourceRank, ConstantIndex>,
     /// Whether each live entry's place in rank order is its position.
     order: Order,
+    /// The rank the next admission staged with no rank takes, while a
+    /// readmission ranks its crossings at their places in the edited source;
+    /// none for the rank past every live entry.
+    next: Option<SourceRank>,
 }
 
 impl CommitLog
@@ -3271,6 +3677,46 @@ impl CommitLog
             || SourceRank::from(0_usize),
             |(&rank, _)| SourceRank::from(usize::from(rank).saturating_add(1)),
         )
+    }
+
+    /// The next rank, while a readmission sets one, for the admissions staged
+    /// with no rank that take `positions`, each one rank past the one before:
+    /// the next rank then moves past them all.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn placed(
+        commits: &mut alloc::sync::Arc<Self>,
+        positions: core::ops::Range<ConstantIndex>,
+    ) -> Maybe<SourceRank, next_rank::Absent>
+    {
+        let Some(next) = commits.next
+        else {
+            return Maybe::Absent(next_rank::Absent::Unset);
+        };
+        let width = usize::from(positions.end).saturating_sub(usize::from(positions.start));
+        alloc::sync::Arc::make_mut(commits).next =
+            Some(SourceRank::from(usize::from(next).saturating_add(width)));
+        Maybe::Present(next)
+    }
+
+    /// The rank of the first of the admissions staged with no rank that take
+    /// `positions`: the next rank ([`Self::placed`]), or the rank past every
+    /// live entry when no next rank is set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn unranked(
+        commits: &mut alloc::sync::Arc<Self>,
+        positions: core::ops::Range<ConstantIndex>,
+    ) -> SourceRank
+    {
+        match Self::placed(commits, positions) {
+            Maybe::Present(rank) => rank,
+            Maybe::Absent(_) => commits.past_ranks(),
+        }
     }
 
     /// The place of each live position in rank order, among `length` slots:
@@ -3447,6 +3893,90 @@ impl CommitLog
     )
     {
         let _previous = self.ranked.insert(rank, position);
+    }
+
+    /// Hold each rank of `ranks` at its position, in place of every rank held
+    /// before, among `length` slots: the rank table after a readmission
+    /// rewrites the rank of each live entry.
+    ///
+    /// # Specification
+    /// - requires: `ranks` names each live entry once, and no two take one
+    ///   rank.
+    /// - ensures: the rank index holds exactly `ranks`; the order is positional
+    ///   exactly when the ranks ascend with the positions over every slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::rerank`].
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    #[spec(ensures: self.ranked.len() == ranks.len()
+        && ranks.iter().all(|(&position, &rank)| self.ranked.get(&rank) == Some(&position)))]
+    fn rerank(
+        &mut self,
+        ranks: &BTreeMap<ConstantIndex, SourceRank>,
+        length: gandr_kernel_term::ArenaLength,
+    )
+    {
+        self.ranked = ranks
+            .iter()
+            .map(|(&position, &rank)| (rank, position))
+            .collect();
+        self.order = self.order_over(length);
+    }
+
+    /// Hold `to` at `position` in place of `from`, and set the next rank one
+    /// past `to`, among `length` slots: the rank table after a crossing takes
+    /// a kept seed to the next rank, just below itself.
+    ///
+    /// # Specification
+    /// - requires: `position` holds `from`, and no live entry holds `to`.
+    /// - ensures: the rank index holds `to` at `position` and every other rank
+    ///   as before; the next rank is one past `to`; the order is positional
+    ///   exactly when the ranks ascend with the positions over every slot.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::take_next_rank`].
+    /// - witness: `environment::tests::a_seed_takes_the_next_rank_below_its_first_reader_7196`
+    #[spec(ensures: self.ranked.get(&to) == Some(&position)
+        && self.next == Some(SourceRank::from(usize::from(to).saturating_add(1))))]
+    fn moved(
+        &mut self,
+        (position, from): (ConstantIndex, SourceRank),
+        to: SourceRank,
+        length: gandr_kernel_term::ArenaLength,
+    )
+    {
+        let _from = self.ranked.remove(&from);
+        let _to = self.ranked.insert(to, position);
+        self.next = Some(SourceRank::from(usize::from(to).saturating_add(1)));
+        self.order = self.order_over(length);
+    }
+
+    /// The order of the rank index among `length` slots: positional exactly
+    /// when it ranks each slot, and the ranks ascend with the positions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn order_over(
+        &self,
+        length: gandr_kernel_term::ArenaLength,
+    ) -> Order
+    {
+        let positional = self.ranked.len() == usize::from(length)
+            && self
+                .ranked
+                .values()
+                .enumerate()
+                .all(|(at, &position)| usize::from(position) == at);
+        if positional {
+            Order::Positional
+        }
+        else {
+            Order::Ranked
+        }
     }
 
     /// Keep the rows of the first `length` slots of `entries`, which still
@@ -6980,6 +7510,601 @@ mod tests
         }
     }
 
+    /// The ranks between the first members of two admissions: room for the
+    /// members of a block.
+    const STRIDE: usize = 8;
+
+    /// Admit `source` in `environment`, in order, the members of each
+    /// admission ranked from its index times [`STRIDE`] on.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_spaced(
+        environment: &mut Environment,
+        source: &[Generated],
+    ) -> Admitted
+    {
+        let mut data = Vec::new();
+        let mut origins: Vec<Origin> = Vec::new();
+        let mut positions = Vec::with_capacity(source.len());
+        let mut scopes = Vec::with_capacity(source.len());
+        for (index, admission) in source.iter().enumerate() {
+            scopes.push(origins.clone());
+            let rank = SourceRank::from(index.saturating_mul(STRIDE));
+            let verdict = admit_generated(environment, admission, &data, Some(rank)).ok();
+            let admitted = verdict.as_deref().unwrap_or_default();
+            for (member, (generated, &position)) in
+                members(admission).iter().zip(admitted).enumerate()
+            {
+                if matches!(*generated, Member::Data(..)) {
+                    data.push(position);
+                    origins.push(Origin {
+                        admission: index,
+                        member,
+                    });
+                }
+            }
+            positions.push(verdict);
+        }
+        Admitted { positions, scopes }
+    }
+
+    /// The admissions of a source that an edit keeps in order, each read as
+    /// its index in the source.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    struct InOrder(BTreeSet<usize>);
+
+    /// The admissions of the source that `edited` keeps in order: the
+    /// longest run of edited admissions whose origins ascend. A moved
+    /// admission leaves the run, since a readmission keeps the relative order
+    /// of every two entries it keeps.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept_in_order(edited: &EditedSource) -> InOrder
+    {
+        let held: Vec<(usize, usize)> = edited
+            .origin
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &from)| from.map(|from| (index, from)))
+            .collect();
+        // The longest run that ends at each held admission, and the one
+        // before it in that run.
+        let mut longest: Vec<(usize, Option<usize>)> = Vec::with_capacity(held.len());
+        for (at, &(_, from)) in held.iter().enumerate() {
+            let best = (0 .. at)
+                .filter(|&before| held.get(before).is_some_and(|&(_, earlier)| earlier < from))
+                .max_by_key(|&before| longest.get(before).map_or(0, |&(length, _)| length));
+            let length = best
+                .and_then(|before| longest.get(before))
+                .map_or(0, |&(length, _)| length);
+            longest.push((length.saturating_add(1), best));
+        }
+        let mut kept = BTreeSet::new();
+        let mut at =
+            (0 .. longest.len()).max_by_key(|&at| longest.get(at).map(|&(length, _)| length));
+        while let Some(index) = at {
+            if let Some(&(_, from)) = held.get(index) {
+                let _fresh = kept.insert(from);
+            }
+            at = longest.get(index).and_then(|&(_, before)| before);
+        }
+        InOrder(kept)
+    }
+
+    /// Check that a readmission that retires the reach of an edit and
+    /// nothing else reads as a fresh admission of `edited`, entry by entry,
+    /// and exports its bytes. The edited admissions are those the edit
+    /// writes, moves or deletes, and each whose data types in scope change.
+    /// The readmission retires their reach. It rewrites the rank of each
+    /// live entry to the rank of its admission in the edited source. Then it
+    /// walks the edited source in order: it keeps each live admission in
+    /// place, and it offers each other admission and each one whose keep is
+    /// refused. A keep is refused only for what its check reads, and with no
+    /// edit nothing is retired or offered.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reranks_as_fresh(
+        source: &[Generated],
+        edited: &EditedSource,
+    ) -> Result<(), proptest::test_runner::TestCaseError>
+    {
+        let EditedSource {
+            ref admissions,
+            ref origin,
+        } = *edited;
+        let mut fresh = keyed();
+        let Admitted {
+            positions: answers,
+            scopes: edited_scopes,
+        } = admit_spaced(&mut fresh, admissions);
+        let mut kept = keyed();
+        let Admitted {
+            positions: admitted,
+            scopes,
+        } = admit_source(&mut kept, source);
+        let unedited = admissions.len() == source.len()
+            && origin
+                .iter()
+                .enumerate()
+                .all(|(index, &from)| from == Some(index));
+        let mut image: Vec<Option<usize>> = vec![None; source.len()];
+        for (index, &from) in origin.iter().enumerate() {
+            if let Some(slot) = from.and_then(|from| image.get_mut(from)) {
+                *slot = Some(index);
+            }
+        }
+        let in_order = kept_in_order(edited);
+        // An admission of the source stays when the edit keeps it in order
+        // and its data types in scope read as the edited source reads them.
+        let stays = |from: usize| {
+            let Some(index) = image.get(from).copied().flatten()
+            else {
+                return false;
+            };
+            let read = scopes.get(from).map(|scope| {
+                scope.iter().map(|held| {
+                    image
+                        .get(held.admission)
+                        .copied()
+                        .flatten()
+                        .map(|admission| Origin {
+                            admission,
+                            member: held.member,
+                        })
+                })
+            });
+            let expected = edited_scopes
+                .get(index)
+                .map(|scope| scope.iter().copied().map(Some));
+            in_order.0.contains(&from)
+                && read
+                    .zip(expected)
+                    .is_some_and(|(read, expected)| read.eq(expected))
+        };
+        let changed: Vec<ConstantIndex> = admitted
+            .iter()
+            .enumerate()
+            .filter(|&(from, _)| !stays(from))
+            .filter_map(|(_, positions)| positions.as_ref())
+            .flatten()
+            .copied()
+            .collect();
+        let reach = kept.reach(changed.iter().copied());
+        let reached: BTreeSet<ConstantIndex> = reach.iter().copied().collect();
+        proptest::prop_assert!(
+            changed.iter().all(|position| reached.contains(position)),
+            "the reach holds each edited entry"
+        );
+        let watermark = kept.arena().watermark();
+        proptest::prop_assert_eq!(kept.retire(&reach), Ok(()));
+        if unedited {
+            proptest::prop_assert!(reach.is_empty(), "with no edit, nothing is retired");
+        }
+        // Each live entry takes the rank of its admission in the edited
+        // source.
+        let mut ranks: Vec<(ConstantIndex, SourceRank)> = Vec::new();
+        for (from, positions) in admitted.iter().enumerate() {
+            let (Some(positions), Some(index)) =
+                (positions.as_ref(), image.get(from).copied().flatten())
+            else {
+                continue;
+            };
+            for (offset, &position) in positions.iter().enumerate() {
+                if kept.entries().get(usize::from(position)).is_some() {
+                    ranks.push((
+                        position,
+                        SourceRank::from(index.saturating_mul(STRIDE).saturating_add(offset)),
+                    ));
+                }
+            }
+        }
+        proptest::prop_assert_eq!(kept.rerank(&ranks), Ok(()));
+        let mut data: Vec<ConstantIndex> = Vec::new();
+        let mut offered = 0_usize;
+        for (index, admission) in admissions.iter().enumerate() {
+            let from = origin.get(index).copied().flatten();
+            let held = from
+                .and_then(|from| admitted.get(from).cloned().flatten())
+                .filter(|positions| {
+                    positions
+                        .first()
+                        .is_some_and(|&first| kept.entries().get(usize::from(first)).is_some())
+                });
+            let mut kept_positions = None;
+            if let Some(positions) = held {
+                let first = positions
+                    .first()
+                    .copied()
+                    .unwrap_or_else(|| ConstantIndex::from(0_usize));
+                match kept.keep_in_place(first) {
+                    Ok(_kept) => kept_positions = Some(positions),
+                    Err(refusal) => {
+                        proptest::prop_assert!(
+                            !unedited,
+                            "with no edit, every keep in place holds: {:?}",
+                            refusal
+                        );
+                        proptest::prop_assert!(
+                            matches!(
+                                refusal,
+                                KernelError::Unkept { .. } | KernelError::UnboundConstant { .. }
+                            ),
+                            "a keep in place is refused only for what its check reads: {:?}",
+                            refusal
+                        );
+                        proptest::prop_assert_eq!(kept.retire(&[first]), Ok(()));
+                    },
+                }
+            }
+            // An admission the kernel refused holds no entry to keep, so it
+            // is offered again, as a fresh admission offers it; it counts as
+            // no offer of the readmission.
+            let refused = from.is_some_and(|from| admitted.get(from).is_some_and(Option::is_none));
+            let verdict = kept_positions.or_else(|| {
+                if !refused {
+                    offered = offered.saturating_add(1);
+                }
+                let rank = SourceRank::from(index.saturating_mul(STRIDE));
+                admit_generated(&mut kept, admission, &data, Some(rank)).ok()
+            });
+            proptest::prop_assert_eq!(
+                verdict.is_some(),
+                answers.get(index).is_some_and(Option::is_some),
+                "admission {} answers as the fresh admission answers",
+                index
+            );
+            for (member, &position) in members(admission)
+                .iter()
+                .zip(verdict.as_deref().unwrap_or_default())
+            {
+                if matches!(*member, Member::Data(..)) {
+                    data.push(position);
+                }
+            }
+        }
+        if unedited {
+            proptest::prop_assert_eq!(offered, 0, "with no edit, nothing is offered");
+            proptest::prop_assert_eq!(kept.arena().watermark(), watermark);
+        }
+        proptest::prop_assert_eq!(read_by_rank(&kept), read_by_rank(&fresh));
+        proptest::prop_assert_eq!(
+            exported(&kept),
+            exported(&fresh),
+            "the kept environment exports the bytes of the fresh one"
+        );
+        Ok(())
+    }
+
+    /// A generated edit of a source of up to ten admissions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn edit() -> impl proptest::strategy::Strategy<Value = Edit>
+    {
+        use proptest::prelude::Just;
+        use proptest::strategy::Strategy as _;
+        proptest::prop_oneof![
+            ((0_usize .. 10), generated())
+                .prop_map(|(at, admission)| Edit::Replaced(at, admission)),
+            ((0_usize .. 11), generated())
+                .prop_map(|(at, admission)| Edit::Inserted(at, admission)),
+            (0_usize .. 10).prop_map(Edit::Deleted),
+            ((0_usize .. 10), (0_usize .. 10)).prop_map(|(from, to)| Edit::Moved(from, to)),
+            Just(Edit::Unedited),
+        ]
+    }
+
+    /// #6846: a rank rewrite names each live entry once. A rewrite that
+    /// leaves one out, or names one twice, is refused, and the environment
+    /// keeps its ranks.
+    #[test]
+    fn a_rank_rewrite_that_misses_a_live_entry_is_refused_6846()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let mut environment = keyed();
+        let a = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Data(zero, vec![])),
+            &[],
+            None,
+        )
+        .expect("`a` admits");
+        let b = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+            &a,
+            None,
+        )
+        .expect("`b` admits");
+        let (a, b) = (a.first().copied(), b.first().copied());
+        let (Some(a), Some(b)) = (a, b)
+        else {
+            panic!("each admission takes a position");
+        };
+        let before = read_by_rank(&environment);
+        assert_eq!(
+            environment.rerank(&[(b, SourceRank::from(9_usize))]),
+            Err(KernelError::Unkept {
+                position: a,
+                refusal: crate::error::KeepRefusal::Ranks,
+            }),
+            "the rewrite leaves `a` out"
+        );
+        assert_eq!(
+            environment.rerank(&[
+                (a, SourceRank::from(4_usize)),
+                (b, SourceRank::from(9_usize)),
+                (a, SourceRank::from(5_usize)),
+            ]),
+            Err(KernelError::Unkept {
+                position: a,
+                refusal: crate::error::KeepRefusal::Ranks,
+            }),
+            "the rewrite names `a` twice"
+        );
+        assert_eq!(
+            environment.rerank(&[
+                (a, SourceRank::from(4_usize)),
+                (b, SourceRank::from(4_usize))
+            ]),
+            Err(KernelError::RankTaken {
+                rank: SourceRank::from(4_usize),
+                by: a,
+            }),
+            "the rewrite gives two entries one rank"
+        );
+        assert_eq!(
+            read_by_rank(&environment),
+            before,
+            "a refused rewrite changes nothing"
+        );
+        assert_eq!(
+            environment.rerank(&[
+                (a, SourceRank::from(4_usize)),
+                (b, SourceRank::from(9_usize))
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            read_by_rank(&environment)
+                .iter()
+                .map(|&(rank, ..)| rank)
+                .collect::<Vec<_>>(),
+            vec![SourceRank::from(4_usize), SourceRank::from(9_usize)],
+            "each entry holds its new rank"
+        );
+        assert_eq!(environment.keep_in_place(b).map(CheckedId::position), Ok(b));
+    }
+
+    /// #6846: while a next rank is set, each admission staged with no rank
+    /// takes the next rank, a block one rank for each member, so a crossing
+    /// ranks at its place between kept entries. With no next rank, an
+    /// admission ranks past every live entry, as before.
+    #[test]
+    fn a_crossing_at_the_next_rank_ranks_at_its_place_6846()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let mut environment = keyed();
+        let lone = Generated::Lone(Member::Data(zero, vec![]));
+        for rank in [0_usize, 16] {
+            admit_generated(&mut environment, &lone, &[], Some(SourceRank::from(rank)))
+                .expect("a kept entry admits at its rank");
+        }
+        environment.ranking_from(SourceRank::from(8_usize));
+        admit_generated(&mut environment, &lone, &[], None).expect("a crossing admits");
+        admit_generated(
+            &mut environment,
+            &Generated::Block(vec![Member::Data(zero, vec![]), Member::Data(zero, vec![])]),
+            &[],
+            None,
+        )
+        .expect("a block crosses");
+        environment.ranking_past();
+        admit_generated(&mut environment, &lone, &[], None).expect("a fresh admission admits");
+        assert_eq!(
+            read_by_rank(&environment)
+                .iter()
+                .map(|&(rank, ..)| usize::from(rank))
+                .collect::<Vec<_>>(),
+            vec![0, 8, 9, 10, 16, 17],
+            "the crossings take the next ranks, the last admission the rank past them all"
+        );
+    }
+
+    /// #6846: an entry outside the reach that reads a retired entry is
+    /// refused in place, as a fresh admission refuses a reference to a
+    /// declaration it does not hold. `b` names `a`, and the readmission
+    /// retires `a` alone.
+    #[test]
+    fn an_entry_that_reads_a_retired_one_is_refused_in_place_6846()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let mut environment = keyed();
+        let a = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Data(zero, vec![])),
+            &[],
+            None,
+        )
+        .expect("`a` admits");
+        let b = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+            &a,
+            None,
+        )
+        .expect("`b` admits");
+        let (Some(&a), Some(&b)) = (a.first(), b.first())
+        else {
+            panic!("each admission takes a position");
+        };
+        assert_eq!(environment.retire(&[a]), Ok(()));
+        assert_eq!(
+            environment.keep_in_place(b),
+            Err(KernelError::UnboundConstant { index: a }),
+            "`b` reads the retired `a`"
+        );
+        assert_eq!(
+            environment.keep_in_place(a),
+            Err(KernelError::KindTaken {
+                position: a,
+                kind: EntryKind::Retired,
+            }),
+            "a retired entry is kept by `keep`, not in place"
+        );
+    }
+
+    /// #7196: a seed `s` ranks past the next rank, and its reader `b` ranks
+    /// above it. `s` takes the next rank, the next rank moves one past it,
+    /// and `b` keeps its key in place. An entry below the next rank is
+    /// refused, and so is each entry while no next rank is set.
+    #[test]
+    fn a_seed_takes_the_next_rank_below_its_first_reader_7196()
+    {
+        let zero = LevelConstant::from(0_u64);
+        let mut environment = keyed();
+        let data = Generated::Lone(Member::Data(zero, vec![]));
+        let a = admit_generated(
+            &mut environment,
+            &data,
+            &[],
+            Some(SourceRank::from(0_usize)),
+        )
+        .expect("`a` admits");
+        let s = admit_generated(
+            &mut environment,
+            &data,
+            &[],
+            Some(SourceRank::from(16_usize)),
+        )
+        .expect("`s` admits");
+        let b = admit_generated(
+            &mut environment,
+            &Generated::Lone(Member::Axiom(Field::Earlier(0))),
+            &s,
+            Some(SourceRank::from(24_usize)),
+        )
+        .expect("`b` admits");
+        let (Some(&a), Some(&s), Some(&b)) = (a.first(), s.first(), b.first())
+        else {
+            panic!("each admission takes a position");
+        };
+        assert_eq!(
+            environment.take_next_rank(s),
+            Err(KernelError::Unkept {
+                position: s,
+                refusal: crate::error::KeepRefusal::NextRank,
+            }),
+            "no next rank is set"
+        );
+        environment.ranking_from(SourceRank::from(8_usize));
+        assert_eq!(
+            environment.take_next_rank(a),
+            Err(KernelError::Unkept {
+                position: a,
+                refusal: crate::error::KeepRefusal::NextRank,
+            }),
+            "`a` ranks below the next rank"
+        );
+        assert_eq!(environment.take_next_rank(s), Ok(()));
+        assert_eq!(
+            read_by_rank(&environment)
+                .iter()
+                .map(|&(rank, ..)| usize::from(rank))
+                .collect::<Vec<_>>(),
+            vec![0, 8, 24],
+            "`s` holds the rank that was next"
+        );
+        assert_eq!(
+            environment.next_rank(),
+            Maybe::Present(SourceRank::from(9_usize))
+        );
+        assert_eq!(
+            environment.keep_in_place(b).map(CheckedId::position),
+            Ok(b),
+            "`b` reads its input in the same order, so it keeps its key"
+        );
+    }
+
+    /// A source that answers one receipt for each key its records hold.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    struct Held(alloc::sync::Arc<crate::verdict::StoredReceipt>);
+
+    impl crate::verdict::VerdictSource for Held
+    {
+        /// The receipt, when one of its records holds `key`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn receipts(
+            &self,
+            key: crate::verdict::VerdictKey,
+        ) -> &[alloc::sync::Arc<crate::verdict::StoredReceipt>]
+        {
+            if self.0.records().iter().any(|record| record.key() == key) {
+                core::slice::from_ref(&self.0)
+            }
+            else {
+                &[]
+            }
+        }
+    }
+
+    /// #6846: an admission after a retirement is recalled by its entry key
+    /// alone. `a`, `b` and `d` are equal data declarations, so the entry key
+    /// of each counts the ones ranked below it. One environment admits `d`
+    /// with `b` live and records it. One that retired `b` admits `d` at the
+    /// same rank: the chain key would be the recorded one and the entry key is
+    /// another, and it recalls nothing. The environment that recorded `d`
+    /// recalls it.
+    #[test]
+    fn an_admission_after_a_retirement_recalls_by_its_entry_key_alone_6846()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let data = Generated::Lone(Member::Data(LevelConstant::from(0_u64), vec![]));
+        let d = |environment: &mut Environment| {
+            admit_generated(environment, &data, &[], Some(SourceRank::from(10_usize)))
+                .expect("`d` admits")
+        };
+        let mut base = keyed();
+        let _a = admit_generated(&mut base, &data, &[], None).expect("`a` admits");
+        let b = admit_generated(&mut base, &data, &[], None).expect("`b` admits");
+        let Some(&b) = b.first()
+        else {
+            panic!("`b` takes a position");
+        };
+        let mut recording = base.handed_on();
+        let _d = d(&mut recording);
+        let Maybe::Present(receipt) = recording.receipt(&signer)
+        else {
+            panic!("a keyed environment gives a receipt");
+        };
+        let held: alloc::sync::Arc<dyn crate::verdict::VerdictSource> =
+            alloc::sync::Arc::new(Held(alloc::sync::Arc::new(receipt)));
+        let mut again = base.handed_on();
+        again.reading(alloc::sync::Arc::clone(&held));
+        let _d = d(&mut again);
+        assert_eq!(
+            usize::from(again.recalls()),
+            1,
+            "the environment that recorded `d` recalls it"
+        );
+        let mut retired = base.handed_on();
+        assert_eq!(retired.retire(&[b]), Ok(()));
+        retired.reading(held);
+        let _d = d(&mut retired);
+        assert_eq!(
+            usize::from(retired.recalls()),
+            0,
+            "after the retirement, the chain key recalls nothing"
+        );
+    }
+
     proptest::proptest! {
         #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
 
@@ -7090,6 +8215,18 @@ mod tests
             source in proptest::collection::vec(generated(), 1 .. 10),
         ) {
             keeps_as_fresh(&source, &edited_by(&source, &Edit::Unedited))?;
+        }
+
+        /// #6846: a readmission that retires the reach of an edit and
+        /// nothing else, rewrites the rank of each live entry and keeps it in
+        /// place, reads as a fresh admission of the edited source, entry by
+        /// entry, and exports its bytes, for each class of edit.
+        #[test]
+        fn a_reranked_environment_reads_as_a_fresh_admission_6846(
+            source in proptest::collection::vec(generated(), 1 .. 10),
+            edit in edit(),
+        ) {
+            reranks_as_fresh(&source, &edited_by(&source, &edit))?;
         }
     }
 

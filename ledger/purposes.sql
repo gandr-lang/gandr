@@ -399,6 +399,8 @@ INSERT INTO purpose VALUES('core-checker-bridge','bridge::AdmissionCost','type_a
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::AllocationCount','struct','Counts the allocations one thread made.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::ArtifactAudit','struct','What a readmitted artifact rests on: the union of its declarations'' audits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Crossed','struct','The environment once the leading declarations crossed, beside the declarations that crossed and their boundary.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker-bridge','bridge::DeclarationKey','type_alias','The content key of one judged declaration, by which a readmission matches it to a declaration of a record.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker-bridge','bridge::KeptCount','struct','Counts the declarations a readmission keeps in place from a record, with no offer to the kernel.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::LeadingCount','struct','Counts the leading declarations a readmission crosses before the rest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Meter','trait','Reads how many allocations the calling thread has made.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Metered','struct','A stopwatch that reads the caller''s clock and meter around each admission.',NULL,'fits','sound',NULL);
@@ -414,6 +416,7 @@ INSERT INTO purpose VALUES('core-checker-bridge','bridge::Stopwatch','trait','Ho
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Timed','struct','A stopwatch that reads the caller''s clock around each admission.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::Untimed','struct','A stopwatch that reads no clock.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::readmit','function','Readmits a module''s report to the kernel.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker-bridge','bridge::readmit_keeping','function','Readmits a whole revision, keeping each entry of a record that the edit leaves and offering the kernel the reach of the edit alone.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::readmit_resuming','function','Readmits a module''s report, resuming at the boundary it crossed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','bridge::readmit_retiring','function','Readmits a module''s report, resuming at the boundary it crossed and polling a retirement.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker-bridge','template::Analysis','enum','Preparation without replay, preserving malformed-family refusals.',NULL,'fits','sound',NULL);

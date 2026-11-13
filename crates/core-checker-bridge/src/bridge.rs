@@ -594,6 +594,7 @@ use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::RelatedEndpoints;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::Seam;
+use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
@@ -631,6 +632,7 @@ use crate::template::Clock;
 use crate::view::CompTypeView;
 
 mod held;
+mod keep;
 mod native;
 
 use crate::view::FragmentRefusal;
@@ -1592,6 +1594,9 @@ pub struct Readmission
     /// How many leading entries were resumed from an earlier readmission's
     /// [`Crossed`] rather than crossed again.
     resumed: usize,
+    /// How many entries [`readmit_keeping`] kept in place from a record
+    /// rather than crossed again.
+    kept: usize,
 }
 
 impl Readmission
@@ -1640,6 +1645,18 @@ impl Readmission
     pub const fn resumed(&self) -> LeadingCount
     {
         LeadingCount(self.resumed)
+    }
+
+    /// How many entries [`readmit_keeping`] kept in place from a record,
+    /// each without an offer to the kernel: none for any other readmission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn kept(&self) -> KeptCount
+    {
+        KeptCount(self.kept)
     }
 
     /// The artifact of every declaration that crossed, each under the
@@ -1885,12 +1902,58 @@ quenchant_shape::reason_enum! {
             /// The readmission crossed none of the leading declarations: it
             /// resumed them all, or there are none.
             Unchanged,
-            /// A leading declaration was neither admitted nor static.
-            Unadmitted,
+            /// The kernel rejected a declaration that the judgement accepted.
+            Rejected,
             /// The boundary falls inside a mutual block, under an open seal,
             /// or past the report's last declaration.
             Unaligned,
+            /// A readmission that keeps what an edit leaves was retired part
+            /// way: its environment holds the ranks of the edited source,
+            /// which no leading run records.
+            Kept,
         }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration carries no content key.
+    pub mod keyed {
+        /// The reason no key is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Its content holds a node with no canonical bytes.
+            Opaque,
+        }
+    }
+}
+
+/// The content key of one judged declaration.
+///
+/// The key is the digest of the declaration's canonical content, as the
+/// incremental layer files its checkpoint, together with the reference that
+/// names the declaration (its item key and occurrence). A canonical content
+/// names each constant by that reference, so two declarations with one key
+/// read the same content through names that resolve to matched declarations.
+/// A readmission that keeps what an edit leaves matches each declaration to a
+/// record's by it ([`readmit_keeping`]).
+pub type DeclarationKey = Maybe<ContentDigest, keyed::Absent>;
+
+/// How many of a report's declarations a readmission kept in place from a
+/// record, each without an offer to the kernel ([`readmit_keeping`]).
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct KeptCount(usize);
+
+impl From<KeptCount> for usize
+{
+    /// The number of declarations `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: KeptCount) -> Self
+    {
+        count.0
     }
 }
 
@@ -1982,6 +2045,11 @@ pub struct Crossed
     /// The encoding of the kernel declarations they admitted, once an export
     /// kept it ([`Readmission::export_resuming`]).
     encoded: Option<EncodedPrefix>,
+    /// The content key of each entry, in order, when the record holds every
+    /// declaration of its report and the readmission was given their keys;
+    /// empty otherwise. A readmission keeps the entries an edit leaves only
+    /// from a record with keys ([`readmit_keeping`]).
+    keys: Vec<DeclarationKey>,
 }
 
 impl Crossed
@@ -2016,16 +2084,18 @@ impl Crossed
     /// # Specification
     /// - requires: `built` is a readmission's state between two declarations.
     /// - ensures: absent as [`crossed::Absent::Unchanged`] when no entry
-    ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
-    ///   entry is neither admitted nor static; as
-    ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
-    ///   environment handed on ([`Environment::handed_on`]: its key chain and
-    ///   the outcomes its checks kept, without the verdicts this readmission
-    ///   checked or recalled, which its own receipt answers for), the entries,
-    ///   and the positions with no core body and no open seal. A record made
-    ///   freezes the readmission's environment ([`Environment::freeze`]) before
-    ///   keeping it, so the record and every readmission [`Crossed::resume`]
-    ///   starts from it share its arena.
+    ///   follows the `from` resumed; as [`crossed::Absent::Rejected`] when the
+    ///   kernel rejected an entry; as [`crossed::Absent::Unaligned`] when a
+    ///   seal is open; otherwise the environment handed on
+    ///   ([`Environment::handed_on`]: its key chain and the outcomes its checks
+    ///   kept, without the verdicts this readmission checked or recalled, which
+    ///   its own receipt answers for), the entries, and the positions with no
+    ///   core body and no open seal. A record made freezes the readmission's
+    ///   environment ([`Environment::freeze`]) before keeping it, so the record
+    ///   and every readmission [`Crossed::resume`] starts from it share its
+    ///   arena. A marked, suspended or refused entry stays in the record: a
+    ///   resume over it starts from no record, and a readmission that keeps
+    ///   crosses it again, which offers the kernel nothing.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2033,6 +2103,7 @@ impl Crossed
     /// - hypothesis: L3 — a record made over one arena resumes a readmission
     ///   over another to the answer a whole readmission gives.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref crossed) => usize::from(crossed.boundary()) == built.2.len()
             && crossed.boundary() > from && built.1.open.is_empty(),
@@ -2047,16 +2118,11 @@ impl Crossed
         if readmitted.len() <= from.0 {
             return Maybe::Absent(crossed::Absent::Unchanged);
         }
-        if !readmitted.iter().all(|entry| {
-            matches!(
-                entry.outcome,
-                Outcome::Defined { .. }
-                    | Outcome::Data { .. }
-                    | Outcome::Assumed { .. }
-                    | Outcome::Static
-            )
-        }) {
-            return Maybe::Absent(crossed::Absent::Unadmitted);
+        if readmitted
+            .iter()
+            .any(|entry| matches!(entry.outcome, Outcome::Rejected(_)))
+        {
+            return Maybe::Absent(crossed::Absent::Rejected);
         }
         if !positions.open.is_empty() {
             return Maybe::Absent(crossed::Absent::Unaligned);
@@ -2089,6 +2155,7 @@ impl Crossed
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
+            keys: Vec::new(),
         })
     }
 
@@ -2392,6 +2459,34 @@ impl Recall
         Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
             .forking(self.fork.clone())
     }
+
+    /// This recall, keying each admission: a policy that rechecks every
+    /// declaration becomes one that trusts no signer, which keys each
+    /// admission and recalls nothing. A kept entry stands by its key, so a
+    /// readmission that keeps entries keys each admission.
+    ///
+    /// # Specification
+    /// - ensures: under [`TrustPolicy::Recheck`], the same source and fork
+    ///   under [`TrustPolicy::Trusted`] of no signer; otherwise this recall.
+    ///   Either way it recalls what this recall recalls.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a readmission that keeps entries under a recall that
+    ///   rechecks keeps them, and recalls nothing.
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+    #[spec(ensures: |ret| !matches!(ret.policy, TrustPolicy::Recheck) && Arc::ptr_eq(&ret.source, &self.source))]
+    fn keyed(&self) -> Self
+    {
+        match self.policy {
+            TrustPolicy::Recheck => Self {
+                policy: TrustPolicy::Trusted(BTreeSet::new()),
+                source: Arc::clone(&self.source),
+                fork: self.fork.clone(),
+            },
+            TrustPolicy::Trusted(_) => self.clone(),
+        }
+    }
 }
 
 /// What a readmission that polls retirement answers.
@@ -2465,6 +2560,85 @@ where
             boundary,
             crossed,
             recall,
+            keys: &[],
+        },
+        (retirement, stopwatch),
+    )
+}
+
+/// [`readmit_retiring`] of a whole revision, keeping each entry of `kept`'s
+/// record that the edit leaves: `report`'s declarations carry the content
+/// keys `kept` gives, in order.
+///
+/// The declarations are matched in order to the record's by their keys. The
+/// readmission retires the reach of each record declaration the match
+/// leaves, and of each seed whose first reader it leaves. Each other entry
+/// takes the rank of its place in the edited source and is kept in place at
+/// its own key; each other declaration crosses at the ranks of its place. So
+/// the kernel is offered the reach of the edit, and nothing else.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`]; each key is the [`DeclarationKey`] of
+///   the declaration at its index, and the record's keys are those of the
+///   revision it recorded.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with the readmission a whole readmission of `report` answers, entry by
+///   entry and to the bytes of its export, and the record of every declaration
+///   with its key. Each admission is keyed, under a recall that rechecks too
+///   ([`Recall::keyed`]), since a kept entry stands by its key.
+///   [`Readmission::kept`] counts the declarations kept in place. With no
+///   record, a record without keys, a report that seals an abstract type, a
+///   record that holds a formation, or a crossing the kernel rejects, every
+///   declaration crosses, as a whole readmission crosses it, and the record
+///   carries the keys. Retired, [`Polled::Retired`] with the retirement and no
+///   record ([`crossed::Absent::Kept`]); the record given is unchanged either
+///   way.
+/// - provides: an edit costs the kernel the reach of the edit.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission that keeps what an edit leaves answers as a
+///   whole readmission of the edited source, for each class of edit, and offers
+///   the kernel only the reach of the edit.
+/// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+/// - witness: `bridge::tests::a_seed_whose_first_reader_leaves_retires_6846`
+/// - witness: `bridge::tests::a_retired_keeping_readmission_leaves_its_record_whole_6846`
+#[inline]
+#[spec(ensures: |ret| match ret {
+    Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
+    Polled::Retired(..) => true,
+})]
+pub fn readmit_keeping<Poll, Watch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    kept: (&[DeclarationKey], Maybe<&Crossed, crossed::Absent>),
+    recall: &Recall,
+    retirement: &Poll,
+    stopwatch: &mut Watch,
+) -> Readmitting<Poll::Retired>
+where
+    Poll: Retirement,
+    Watch: Stopwatch,
+{
+    let (keys, record) = kept;
+    let recall = &recall.keyed();
+    readmit_from(
+        arena,
+        report,
+        |certificate| certificate,
+        match record {
+            Maybe::Present(record) => Resume::Kept {
+                record,
+                keys,
+                recall,
+            },
+            Maybe::Absent(absent) => Resume::Leading {
+                boundary: LeadingCount(report.judged().len()),
+                crossed: Maybe::Absent(absent),
+                recall,
+                keys,
+            },
         },
         (retirement, stopwatch),
     )
@@ -2523,36 +2697,72 @@ enum Resume<'crossed>
         crossed: Maybe<&'crossed Crossed, crossed::Absent>,
         /// The recall a fresh environment admits under.
         recall: &'crossed Recall,
+        /// The content key of each declaration of the report, which a record
+        /// of all of them keeps; none when the caller has no keys.
+        keys: &'crossed [DeclarationKey],
+    },
+    /// Keep each entry of `record` that the edit leaves, cross each other
+    /// declaration at its place, and record every declaration with its key.
+    Kept
+    {
+        /// The record of every declaration of an earlier revision.
+        record: &'crossed Crossed,
+        /// The content key of each declaration of the report.
+        keys: &'crossed [DeclarationKey],
+        /// The recall a crossing admits under.
+        recall: &'crossed Recall,
     },
 }
 
-/// [`readmit_with`] under `resume`, polling `retirement` before each
-/// declaration and timing each admission by `stopwatch`: the readmission and
-/// the record of its leading declarations [`Resume::Leading`] asks for, or what
-/// it held when retired.
+/// What one walk of a report answers: the readmission, or the finding that a
+/// crossing of a readmission that keeps entries read an entry ranked past
+/// its place, after which the readmission crosses every declaration under
+/// `recall` again and records them with `keys`.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per readmission, matched at once by its caller; boxing the readmission would \
+              allocate per keystroke to shrink the rare misplaced walk"
+)]
+enum Walked<'crossed, Retired>
+{
+    /// The readmission, whole or retired.
+    Done(Readmitting<Retired>),
+    /// A crossing read an entry ranked past it, or nothing could be kept.
+    Misplaced
+    {
+        /// The recall the whole readmission admits under.
+        recall: &'crossed Recall,
+        /// The content key of each declaration of the report.
+        keys: &'crossed [DeclarationKey],
+    },
+}
+
+/// [`walk`] under `resume`, and again as a whole readmission when a
+/// readmission that keeps entries finds one misplaced.
 ///
 /// # Specification
 /// - requires: as [`readmit_resuming`].
 /// - ensures: under [`Resume::Leading`], [`readmit_retiring`]'s answer with
 ///   each certificate vouched as [`readmit_with`] vouches it; under
 ///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
-///   record, while no poll retires it.
+///   record, while no poll retires it; under [`Resume::Kept`],
+///   [`readmit_keeping`]'s answer.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`] and
-///   [`readmit_retiring`].
+/// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`],
+///   [`readmit_retiring`] and [`readmit_keeping`].
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
 /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
 #[spec(ensures: |ret| match ret {
     Polled::Whole((ref readmission, ref recorded)) => readmission.readmitted().len() == report.judged().len()
-        && (matches!(resume, Resume::Leading { .. })
+        && (!matches!(resume, Resume::Whole)
             || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
     Polled::Retired(..) => true,
 })]
-#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn readmit_from<Vouch, Poll, Watch>(
     arena: &mut CoreArena,
     report: &ModuleReport,
@@ -2560,6 +2770,73 @@ fn readmit_from<Vouch, Poll, Watch>(
     resume: Resume<'_>,
     (retirement, stopwatch): (&Poll, &mut Watch),
 ) -> Readmitting<Poll::Retired>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+    Poll: Retirement,
+    Watch: Stopwatch,
+{
+    let mut resume = resume;
+    // A leading or a whole walk is never misplaced, so the second walk is
+    // the last.
+    loop {
+        match walk(arena, report, &vouch, resume, (retirement, &mut *stopwatch)) {
+            Walked::Done(done) => return done,
+            Walked::Misplaced { recall, keys } => {
+                resume = Resume::Leading {
+                    boundary: LeadingCount(report.judged().len()),
+                    crossed: Maybe::Absent(crossed::Absent::Kept),
+                    recall,
+                    keys,
+                };
+            },
+        }
+    }
+}
+
+/// [`readmit_with`] under `resume`, polling `retirement` before each
+/// declaration and timing each admission by `stopwatch`: the readmission and
+/// the record of its leading declarations [`Resume::Leading`] asks for, or what
+/// it held when retired; or, under [`Resume::Kept`], the finding that it
+/// misplaced an entry.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`].
+/// - ensures: under [`Resume::Leading`], [`readmit_retiring`]'s answer with
+///   each certificate vouched as [`readmit_with`] vouches it, with `keys` on a
+///   record of every declaration when as many keys are given; under
+///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
+///   record, while no poll retires it. Under [`Resume::Kept`], each place the
+///   record keeps ([`keep::keeping()`]) is kept in place when the kernel keeps
+///   it ([`Environment::keep_in_place`]); a refused keep retires the entry's
+///   unit, and the place crosses as each other place does, at the rank of its
+///   place. The record of every declaration carries `keys`. A crossing the
+///   kernel rejects, or a record that keeps nothing, answers
+///   [`Walked::Misplaced`]; a poll that retires the walk answers no record.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`],
+///   [`readmit_retiring`] and [`readmit_keeping`].
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
+#[spec(ensures: |ret| match ret {
+    Walked::Done(Polled::Whole((ref readmission, ref recorded))) => readmission.readmitted().len() == report.judged().len()
+        && (!matches!(resume, Resume::Whole)
+            || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
+    Walked::Done(Polled::Retired(..)) => true,
+    Walked::Misplaced { .. } => matches!(resume, Resume::Kept { .. }),
+})]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn walk<'crossed, Vouch, Poll, Watch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    vouch: Vouch,
+    resume: Resume<'crossed>,
+    (retirement, stopwatch): (&Poll, &mut Watch),
+) -> Walked<'crossed, Poll::Retired>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
@@ -2588,48 +2865,70 @@ where
         definitions: report.definitions(),
     };
     let judged_all = report.judged();
-    let (boundary, offered, fresh, recalled) = match resume {
-        Resume::Whole => (None, None, Environment::new(), None),
+    // A resumed or a kept environment admits under the recall as a fresh one
+    // does.
+    let recalling = |environment: Environment, recall: &Recall| {
+        let mut environment = environment.forking(recall.fork.clone());
+        environment.reading(Arc::clone(&recall.source));
+        environment
+    };
+    let fresh = || Vec::with_capacity(judged_all.len());
+    let (boundary, keys, keeping, (environment, mut positions, mut readmitted)) = match resume {
+        Resume::Whole => (
+            None,
+            &[][..],
+            None,
+            (Environment::new(), Positions::default(), fresh()),
+        ),
         Resume::Leading {
             boundary,
             crossed,
             recall,
+            keys,
         } => (
             Some(boundary.0),
+            keys,
+            None,
             match crossed {
-                Maybe::Present(crossed) => Some(crossed),
+                Maybe::Present(crossed) => crossed.resume(report),
                 Maybe::Absent(_) => None,
-            },
-            recall.environment(),
-            Some(recall),
+            }
+            .map_or_else(
+                || (recall.environment(), Positions::default(), fresh()),
+                |(environment, positions, readmitted)| {
+                    (recalling(environment, recall), positions, readmitted)
+                },
+            ),
         ),
+        Resume::Kept {
+            record,
+            keys,
+            recall,
+        } => match keep::keeping(record, report, keys) {
+            Maybe::Present(keep::Kept {
+                environment,
+                positions,
+                held: kept,
+                renames,
+            }) => (
+                Some(judged_all.len()),
+                keys,
+                Some((kept, renames, recall)),
+                (recalling(environment, recall), positions, fresh()),
+            ),
+            Maybe::Absent(_) => return Walked::Misplaced { recall, keys },
+        },
     };
-    let (environment, mut positions, mut readmitted) = offered
-        .and_then(|crossed| crossed.resume(report))
-        .map_or_else(
-            || {
-                (
-                    fresh,
-                    Positions::default(),
-                    Vec::with_capacity(judged_all.len()),
-                )
-            },
-            |(environment, positions, readmitted)| {
-                let environment = match recalled {
-                    Some(recall) => {
-                        let mut environment = environment.forking(recall.fork.clone());
-                        environment.reading(Arc::clone(&recall.source));
-                        environment
-                    },
-                    None => environment,
-                };
-                (environment, positions, readmitted)
-            },
-        );
     // The kernel takes an admitted result exactly where the run that recorded
     // it ran under the policy: fresh, recalled or handed on.
     let mut environment = environment.admitting(report.admitting());
     let from = readmitted.len();
+    let mut kept_in_place = 0_usize;
+    let misplacing = keeping.as_ref().map(|&(_, _, recall)| recall);
+    let unrenamed = BTreeMap::new();
+    let renames = keeping
+        .as_ref()
+        .map_or(&unrenamed, |&(_, ref renames, _)| renames);
     let mut recorded = Maybe::Absent(if boundary.is_some() {
         crossed::Absent::Unaligned
     }
@@ -2639,24 +2938,32 @@ where
     let mut index = from;
     loop {
         if boundary == Some(index) {
+            // A record never carries the next rank of a walk that keeps.
+            environment.ranking_past();
             recorded = Crossed::record(
                 (&mut environment, &positions, readmitted.as_slice()),
                 LeadingCount(from),
             );
+            if let Maybe::Present(ref mut record) = recorded
+                && keys.len() == record.readmitted.len()
+            {
+                record.keys = keys.to_vec();
+            }
         }
         let Some(judged) = judged_all.get(index)
         else {
             break;
         };
         if let Demand::Retired(retired) = retirement.demand() {
-            return Polled::Retired(
-                retired,
-                Crossed::record(
+            return Walked::Done(Polled::Retired(retired, match keeping {
+                Some(_) => Maybe::Absent(crossed::Absent::Kept),
+                None => Crossed::record(
                     (&mut environment, &positions, readmitted.as_slice()),
                     LeadingCount(from),
                 ),
-            );
+            }));
         }
+        let place = index;
         index = index.saturating_add(1);
         let constant = judged.constant();
         // The positions between the last judged declaration and this one
@@ -2670,6 +2977,19 @@ where
                 ConstantIndex::from(skipped),
             );
         }
+        // A walk that keeps crosses each declaration, and each seed it
+        // reads first, at the ranks of its place.
+        let held = match keeping {
+            Some((ref kept, ..)) => {
+                environment.ranking_from(SourceRank::from(
+                    place
+                        .saturating_mul(keep::STRIDE)
+                        .saturating_add(keep::CROSSING),
+                ));
+                kept.get(place).copied().flatten()
+            },
+            None => None,
+        };
         // A data declaration whose fields name later declarations leads the
         // mutual block they reach, which crosses whole.
         let block = block_offers(
@@ -2681,6 +3001,42 @@ where
                 .unwrap_or_default(),
         );
         if !block.is_empty() {
+            let members = judged_all
+                .get(place ..)
+                .unwrap_or_default()
+                .get(.. block.len())
+                .unwrap_or_default();
+            if let Some((ref kept, ..)) = keeping {
+                let held = kept
+                    .get(place .. place.saturating_add(block.len()))
+                    .unwrap_or_default();
+                if let Maybe::Present(first) = keep::unit_of(held)
+                    && environment.keep_in_place(first).is_ok()
+                {
+                    for (member, entry) in members.iter().zip(held.iter().copied().flatten()) {
+                        readmitted.push(keep::keep_entry(
+                            &mut positions,
+                            report,
+                            (entry, member),
+                            renames,
+                        ));
+                    }
+                    kept_in_place = kept_in_place.saturating_add(block.len());
+                    index = place.saturating_add(block.len());
+                    if let Some(last) = members.last() {
+                        close_seals(
+                            &mut environment,
+                            &mut positions,
+                            &mut readmitted,
+                            last.constant(),
+                        );
+                    }
+                    continue;
+                }
+                for entry in held.iter().copied().flatten() {
+                    keep::retire_unit(&mut environment, entry);
+                }
+            }
             let crossed = cross_block(
                 &mut environment,
                 arena,
@@ -2689,12 +3045,10 @@ where
                 &block,
                 &vouch,
             );
-            for (member, (outcome, certificates)) in judged_all
-                .get(index.saturating_sub(1) ..)
-                .unwrap_or_default()
-                .iter()
-                .zip(crossed)
-            {
+            for (member, (outcome, certificates)) in members.iter().zip(crossed) {
+                if let (Some(recall), &Outcome::Rejected(_)) = (misplacing, &outcome) {
+                    return Walked::Misplaced { recall, keys };
+                }
                 readmitted.push(Readmitted {
                     constant: member.constant(),
                     origin: member.origin(),
@@ -2703,7 +3057,7 @@ where
                     took: Maybe::Absent(timed::Absent::Block),
                 });
             }
-            index = index.saturating_sub(1).saturating_add(block.len());
+            index = place.saturating_add(block.len());
             if let Some(last) = judged_all.get(index.saturating_sub(1)) {
                 close_seals(
                     &mut environment,
@@ -2713,6 +3067,38 @@ where
                 );
             }
             continue;
+        }
+        if let Some(entry) = held {
+            match keep::position_of(&entry.outcome) {
+                Maybe::Present(position) => {
+                    if !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
+                        && environment.keep_in_place(position).is_ok()
+                    {
+                        readmitted.push(keep::keep_entry(
+                            &mut positions,
+                            report,
+                            (entry, judged),
+                            renames,
+                        ));
+                        kept_in_place = kept_in_place.saturating_add(1);
+                        close_seals(&mut environment, &mut positions, &mut readmitted, constant);
+                        continue;
+                    }
+                    keep::retire_unit(&mut environment, entry);
+                },
+                // A static declaration holds no kernel entry: its body is
+                // all a later declaration reads of it.
+                Maybe::Absent(_) => {
+                    readmitted.push(keep::keep_entry(
+                        &mut positions,
+                        report,
+                        (entry, judged),
+                        renames,
+                    ));
+                    kept_in_place = kept_in_place.saturating_add(1);
+                    continue;
+                },
+            }
         }
         // A definition quantified over stages crosses at its plain type, the
         // stage signature beside it naming the occurrences its stages refine.
@@ -2830,6 +3216,11 @@ where
                 UNOFFERED,
             ),
         };
+        // A rejected crossing of a walk that keeps may read an entry its
+        // place misplaced, so the whole readmission answers instead.
+        if let (Some(recall), &Outcome::Rejected(_)) = (misplacing, &outcome) {
+            return Walked::Misplaced { recall, keys };
+        }
         if report.abstract_types().contains_key(&constant)
             && matches!(
                 outcome,
@@ -2866,16 +3257,17 @@ where
         ConstantIndex::from(usize::MAX),
     );
     let audit = ArtifactAudit::of(&readmitted);
-    Polled::Whole((
+    Walked::Done(Polled::Whole((
         Readmission {
             environment,
             readmitted,
             audit,
             admitted: positions.exports,
             resumed: from,
+            kept: kept_in_place,
         },
         recorded,
-    ))
+    )))
 }
 
 /// The offers of the mutual block the first of `run`, the judged declarations
@@ -3564,6 +3956,11 @@ enum Seed
     /// kernel replays its fixed values and the meets of its faces by
     /// ([`formed`]).
     Formation(ValueTypeId),
+    /// A seed that a readmission keeps, by its kernel position, ranked past
+    /// the declaration about to cross, which reads it first: the seed moves
+    /// to the next rank, just below the declaration
+    /// ([`Environment::take_next_rank`]).
+    Ahead(ConstantIndex),
 }
 
 /// Erase `offer`, the declaration at `constant`, into a staging session of
@@ -3578,7 +3975,8 @@ enum Seed
 ///   verdicts when the erasure and every certificate succeed; otherwise the
 ///   session discarded and, when the erasure stopped at a native operation
 ///   whose signature, or a handler whose free model, the environment does not
-///   hold yet, that seed; else the refusal with the verdicts replayed so far.
+///   hold yet, or at a kept seed ranked past the next rank, that seed; else the
+///   refusal with the verdicts replayed so far.
 /// - fails: never; a refusal is returned as its outcome.
 /// - panics: none.
 ///
@@ -3598,6 +3996,7 @@ enum Seed
     Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
     Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty() || *source.rows != crate::program::Rows::default(),
     Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains(&at),
+    Unstaged::Unseeded(Seed::Ahead(_)) => matches!(environment.next_rank(), Maybe::Present(_)),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn stage<Vouch>(
@@ -3616,6 +4015,7 @@ where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let next = ConstantIndex::from(environment.entries().len());
+    let ahead = positions.ahead(environment);
     let mut staging = environment.stage();
     let (erased, unseeded, covered) = {
         let restated = match offer {
@@ -3626,6 +4026,7 @@ where
         let mut erasure = Erasure::new(arena, source, positions, base)
             .crossing_block(crossing)
             .restating(restated)
+            .reading_ahead(&ahead)
             .naming(names);
         let erased = erasure
             .offer(target, offer)
@@ -4287,12 +4688,14 @@ where
 }
 
 /// Admit the declaration `seed` names, which the declaration about to cross is
-/// the first to read.
+/// the first to read, or move a kept seed it names below that declaration.
 ///
 /// # Specification
-/// - requires: as [`cross`]; the environment holds no declaration of `seed`.
+/// - requires: as [`cross`]; the environment holds no declaration of `seed`, or
+///   holds it ranked past the next rank.
 /// - ensures: a native operation's signature as [`Positions::seed`] admits it,
-///   or an effect signature's free model as [`modelled`] admits it.
+///   an effect signature's free model as [`modelled`] admits it, and a kept
+///   seed as [`Environment::take_next_rank`] moves it.
 /// - fails: [`Outcome::Rejected`] for a kernel rejection, and the refused
 ///   outcome for a free model of no operation or whose operation types do not
 ///   erase.
@@ -4304,11 +4707,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a native operation and a handled effect each seeded at
 ///   their first reader, and a readmission resumed past a prefix that read
-///   neither, answer as a whole readmission does.
+///   neither, answer as a whole readmission does; so does a readmission that
+///   moves a kept seed below the crossing that reads it first.
 /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
 /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
 /// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
-#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()) == seeded.saturating_add(1))]
+/// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
+#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()) == seeded.saturating_add(usize::from(!matches!(*seed, Seed::Ahead(_)))))]
 fn seeded<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -4328,6 +4733,9 @@ where
             modelled(environment, arena, source, positions, (row, level), vouch)
         },
         Seed::Formation(at) => formed(environment, arena, source, positions, at, vouch),
+        Seed::Ahead(position) => environment
+            .take_next_rank(position)
+            .map_err(Outcome::Rejected),
     }
 }
 
@@ -5018,12 +5426,15 @@ struct Positions
 impl Positions
 {
     /// The core position the next free model is named at: counted down from
-    /// the last position, which no module's declarations reach, by the models
-    /// admitted before it.
+    /// the last position, which no module's declarations reach, one below the
+    /// least position a held model is named at.
     ///
     /// # Specification
     /// - ensures: each model admitted reserves a position distinct from every
-    ///   earlier one's, each past any module position a declaration takes.
+    ///   held one's, each past any module position a declaration takes; with no
+    ///   model retired, the last position less the number of models. A
+    ///   readmission that keeps entries retires a model with its first reader,
+    ///   so a count of the models would name a held one's position again.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -5031,10 +5442,58 @@ impl Positions
     ///   position and crosses; a position a module declaration held would
     ///   resolve to that declaration instead.
     /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
-    #[spec(ensures: |ret| usize::from(ret) == usize::MAX.saturating_sub(self.models.len()))]
+    #[spec(ensures: |ret| usize::from(ret) <= usize::MAX.saturating_sub(self.models.len()))]
     fn reserved(&self) -> ConstantIndex
     {
-        ConstantIndex::from(usize::MAX.saturating_sub(self.models.len()))
+        self.models
+            .iter()
+            .map(|model| model.declaration)
+            .min()
+            .map_or_else(
+                || ConstantIndex::from(usize::MAX),
+                |least| ConstantIndex::from(usize::from(least).saturating_sub(1)),
+            )
+    }
+
+    /// The kernel positions of the seeds held that `environment` ranks past
+    /// its next rank, ascending: the kept seeds a crossing moves below itself
+    /// when it reads them first. None while no next rank is set.
+    ///
+    /// # Specification
+    /// - ensures: each native signature, assumption and free model held whose
+    ///   live entry ranks past the next rank, once each, ascending; empty, with
+    ///   no allocation, when the environment sets no next rank.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::take_next_rank`].
+    /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
+    fn ahead(
+        &self,
+        environment: &Environment,
+    ) -> Vec<ConstantIndex>
+    {
+        let Maybe::Present(next) = environment.next_rank()
+        else {
+            return Vec::new();
+        };
+        let mut ahead: Vec<ConstantIndex> = self
+            .native
+            .values()
+            .chain(self.assumed.values())
+            .copied()
+            .chain(self.models.iter().map(|model| model.position))
+            .filter(|&position| {
+                environment
+                    .entries()
+                    .get(usize::from(position))
+                    .is_some_and(|entry| entry.rank() > next)
+            })
+            .collect();
+        ahead.sort_unstable();
+        ahead.dedup();
+        ahead
     }
 
     /// The free model admitted for `row` at `level`, read in `arena`.
@@ -6269,6 +6728,10 @@ struct Erasure<'source, 'positions>
     /// The nodes the judgement checked in another form than written in the
     /// declaration erased, ascending, each beside the node erased in its place.
     restated: &'positions [(TermNode, TermNode)],
+    /// The kernel positions of the kept seeds ranked past the next rank,
+    /// ascending: a read of one stops the erasure, so the crossing moves the
+    /// seed below itself first.
+    ahead: &'positions [ConstantIndex],
     /// Each case a hold's reduct rebuilt, beside the node rebuilt in its
     /// place: a derivation of the match crosses at the rebuilt case's image.
     rebuilt: BTreeMap<ComputationId, ComputationId>,
@@ -6286,7 +6749,7 @@ struct Erasure<'source, 'positions>
     carrying: Vec<gandr_core_term::Carried>,
     /// The declaration the erasure met that the environment does not hold
     /// yet — a native operation's signature or a handled effect's free model
-    /// — which stops it.
+    /// — or holds ranked past the next rank, which stops it.
     unseeded: Option<Seed>,
     /// The session's table, which names each image when the fold mints it,
     /// so the kernel's keys and the naming of a definition read the names.
@@ -6327,6 +6790,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             carrying: Vec::new(),
             crossing: &[],
             restated: &[],
+            ahead: &[],
             unseeded: None,
             names: None,
         }
@@ -6363,6 +6827,49 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         self
     }
 
+    /// The same erasure stopping at a read of each kept seed of `ahead`,
+    /// ranked past the next rank, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reading_ahead(
+        mut self,
+        ahead: &'positions [ConstantIndex],
+    ) -> Self
+    {
+        self.ahead = ahead;
+        self
+    }
+
+    /// The kernel position `position` of a seed the erasure reads, or the stop
+    /// at it when it is kept and ranked past the next rank.
+    ///
+    /// # Specification
+    /// - ensures: `position` unless [`Self::ahead`] holds it.
+    /// - fails: [`Refusal::MachineInvariant`] when [`Self::ahead`] holds
+    ///   `position`; the erasure then names it as the seed it stopped at, which
+    ///   [`stage`] reports so the crossing moves it and stages again.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Environment::take_next_rank`].
+    /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
+    #[spec(ensures: |ret| ret.is_ok() == self.ahead.binary_search(&position).is_err())]
+    fn below(
+        &mut self,
+        position: ConstantIndex,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        if self.ahead.binary_search(&position).is_ok() {
+            self.unseeded = Some(Seed::Ahead(position));
+            return Err(Refusal::MachineInvariant);
+        }
+        Ok(position)
+    }
+
     /// The same erasure naming each image in the session's table `names` when
     /// it mints the image.
     ///
@@ -6385,7 +6892,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
     ///   signature of `primitive` yet; the erasure then names `primitive` as
     ///   the one it stopped at, which [`stage`] reports so the crossing seeds
-    ///   it and stages again.
+    ///   it and stages again. Also as [`Self::below`], for a kept signature
+    ///   ranked past the next rank.
     /// - panics: none.
     ///
     /// # Errors
@@ -6397,7 +6905,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   resumed past a prefix that read none answers as a whole one.
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Native(seeded)) if seeded == primitive))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Native(seeded)) if seeded == primitive) || matches!(self.unseeded, Some(Seed::Ahead(_))))]
     fn native(
         &mut self,
         primitive: gandr_core_term::primitive::Primitive,
@@ -6408,7 +6916,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             self.unseeded = Some(Seed::Native(primitive));
             return Err(Refusal::MachineInvariant);
         };
-        Ok(position)
+        self.below(position)
     }
 
     /// The core position of the free model of `row` at `level`: the effect a
@@ -6421,7 +6929,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
     ///   model of `row` at `level` yet; the erasure then names the two as the
     ///   seed it stopped at, which [`stage`] reports so the crossing admits the
-    ///   model and stages again.
+    ///   model and stages again. Also as [`Self::below`], for a kept model
+    ///   ranked past the next rank.
     /// - panics: none.
     ///
     /// # Errors
@@ -6433,7 +6942,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   through the same one; two declarations at one row read one model.
     /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
     /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Model(..))))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Model(..) | Seed::Ahead(_))))]
     fn free_model(
         &mut self,
         row: &[gandr_core_term::effect::EffectSig],
@@ -6441,7 +6950,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Result<ConstantIndex, Refusal>
     {
         match self.positions.model((row, level), self.arena) {
-            Maybe::Present(model) => Ok(model.declaration),
+            Maybe::Present(model) => {
+                let (declaration, position) = (model.declaration, model.position);
+                self.below(position).map(|_| declaration)
+            },
             Maybe::Absent(_) => {
                 self.unseeded = Some(Seed::Model(row.to_vec(), level.clone()));
                 Err(Refusal::MachineInvariant)
@@ -10213,9 +10725,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     let none = self.arena.computation_return(unit);
                     return Ok((rewritten, self.arena.computation_bind(none, rest)));
                 }
-                assumed.map_or(Err(Refusal::Session { at: node }), |position| {
-                    Ok((Frame::Assumed { at, position }, rest))
-                })
+                let Some(position) = assumed
+                else {
+                    return Err(Refusal::Session { at: node });
+                };
+                let position = self.below(position)?;
+                Ok((Frame::Assumed { at, position }, rest))
             },
             SessionAction::Offer { ref arms, .. } => {
                 let Some(&position) = self.positions.assumed.get(&Assumption::Offer(arms.len()))
@@ -10225,6 +10740,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 // The arms are copied out of the action, which borrows the
                 // arena each shift writes to, and shifted in place.
                 let mut branches = arms.values().copied().collect::<Vec<_>>();
+                let position = self.below(position)?;
                 for branch in &mut branches {
                     *branch = gandr_core_term::shift_computation_under(
                         self.arena,

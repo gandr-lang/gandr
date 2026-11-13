@@ -780,6 +780,7 @@ pub use crate::environment::AxiomReport;
 pub use crate::environment::Environment;
 pub use crate::environment::Hold;
 pub use crate::environment::Released;
+pub use crate::environment::next_rank;
 pub use crate::environment::places;
 pub use crate::error::CompTypeHead;
 pub use crate::error::CompTypeMismatch;
