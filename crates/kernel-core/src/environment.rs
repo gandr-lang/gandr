@@ -1443,8 +1443,6 @@ impl Environment
     ///   content, and the count of rollbacks grows by one for each outstanding
     ///   release dropped. Nothing changes on an error.
     /// - panics: none.
-    /// - executable: none — the state after the drop is the state before the
-    ///   later releases, which a predicate over one call would restate.
     ///
     /// # Errors
     /// [`KernelError::UnboundConstant`] at the position of `pending` when the

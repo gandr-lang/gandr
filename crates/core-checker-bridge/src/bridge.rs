@@ -3754,7 +3754,7 @@ where
             Answer::Skipped => Slot::Skipped,
             // A release holds only while a check runs, and the schedule then
             // releases it again, so no commit takes a hold.
-            Answer::Waits => self.unwaited(at).map_or(Slot::Skipped, Slot::Crossed),
+            Answer::Waits => self.unwaited(item).map_or(Slot::Skipped, Slot::Crossed),
         };
         if let Some(slot) = self.slots.get_mut(at) {
             *slot = next;
@@ -3769,12 +3769,12 @@ where
     /// trivial.
     fn unwaited(
         &self,
-        at: usize,
+        item: ItemIndex,
     ) -> Option<Crossing>
     {
         self.report
             .judged()
-            .get(self.from.saturating_add(at))
+            .get(self.from.saturating_add(usize::from(item)))
             .map(|judged| Crossing {
                 entry: Readmitted {
                     constant: judged.constant(),
@@ -4020,7 +4020,7 @@ where
         match answer {
             Answer::Crossed(crossing) => Some(crossing),
             Answer::Skipped => None,
-            Answer::Waits => self.unwaited(at),
+            Answer::Waits => self.unwaited(item),
             Answer::Ran(ran, took) => {
                 let running = self
                     .slots
@@ -4032,7 +4032,7 @@ where
                 }
                 else {
                     self.environment.discard(ran);
-                    self.unwaited(at)
+                    self.unwaited(item)
                 }
             },
         }
