@@ -99,6 +99,7 @@ digraph crates {
     "workflow-coverage-guard";
     "workflow-debt-ledger";
     "workflow-github";
+    "workflow-host-tools";
     "workflow-hotpath-guard";
     "workflow-lane-budget";
     "workflow-ledger-tasks";

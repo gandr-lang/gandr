@@ -43,7 +43,7 @@ crates/
 ├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U, guarded List observations and session-certificate replay; stage formation and replay
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
-├── runtime-emitter/               the L machine's commands lowered and copy-and-patched into native code under a content cache, or built for the portable executor, and each outcome moved into the caller's store
+├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
 ├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
@@ -55,7 +55,7 @@ crates/
 ├── surface-corpus/                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-diagnostics/           the diagnostics model: a refusal, an unsettled declaration, a goal, a warning and a ledger line built once for every face to project
 ├── surface-dispatcher/            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
-├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: `check`, `test`, `run`, `fmt`, `stage`, `lsp`, `serve`, `mcp`, `view`, `repl`, `tui` and the exit codes
+├── surface-driver/                the `gandr` driver binary, package `gandr-lang`: its verbs and their exit codes
 ├── surface-features/              the features ledger as data, read by the toolchain and the tools
 ├── surface-format/                the source formatter: a parsed source laid out at a page width, its tokens and comments kept and its meaning checked unchanged
 ├── surface-grammar/               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
@@ -102,6 +102,7 @@ crates/
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
 ├── workflow-debt-ledger/          the comment and prose gates' debt ledger
 ├── workflow-github/               the workflow binaries' one `gh` runner
+├── workflow-host-tools/           the `host-tools` binary: the tools with no binary for a host's target, cross-built once for each version
 ├── workflow-hotpath-guard/        the `hotpath-guard` binary: a commit's hotpath checks, filed on one issue per regressed function
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read

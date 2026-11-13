@@ -1,0 +1,35 @@
+[package]
+name = "gandr-workflow-host-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Builds the tools of mise.toml that publish no binary for a host's target, once for each version, on a host of another target"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["cross", "gandr", "mise", "riscv64", "tools"]
+categories = ["development-tools::build-utils"]
+publish.workspace = true
+autotests = false
+
+[[bin]]
+name = "host-tools"
+path = "src/main.rs"
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies the specification attribute; serde and
+# toml read the table, `mise.lock` and the builder's configuration; clap
+# reads the invocation.
+[dependencies]
+anodized.workspace = true
+clap.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true
