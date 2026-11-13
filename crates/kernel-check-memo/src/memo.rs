@@ -644,6 +644,28 @@ where
             .into_iter()
             .map(|entry| (entry.support, entry.outcome))
     }
+
+    /// The entries, each support beside its outcome, in recording order,
+    /// borrowed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::into_entries`], each entry borrowed from the memo.
+    /// - provides: the entries a join compares before it folds them.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the result is a lazy iterator.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::OverlaidMemo`]'s join.
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+    #[inline]
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (&Support, &Outcome)>
+    {
+        self.entries
+            .iter()
+            .map(|entry| (&entry.support, &entry.outcome))
+    }
 }
 
 impl<Support, Outcome> Default for HashedMemo<Support, Outcome>

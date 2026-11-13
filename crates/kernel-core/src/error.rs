@@ -500,6 +500,71 @@ impl UniverseViolation
     }
 }
 
+/// Two outcomes that two checks kept under one key, which do not glue: the
+/// key by its content digest, the outcome that the session kept since the
+/// job's fork, and the outcome that the job kept.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeptOutcomes
+{
+    /// The content digest of the key that both outcomes answer.
+    key: gandr_kernel_check_memo::ContentDigest,
+    /// The outcome that the session kept since the job's fork.
+    held: crate::support::NodeOutcome,
+    /// The outcome that the job kept.
+    offered: crate::support::NodeOutcome,
+}
+
+impl KeptOutcomes
+{
+    /// Pair the key's digest with the two outcomes kept under it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        key: gandr_kernel_check_memo::ContentDigest,
+        held: crate::support::NodeOutcome,
+        offered: crate::support::NodeOutcome,
+    ) -> Self
+    {
+        Self { key, held, offered }
+    }
+
+    /// The content digest of the key that both outcomes answer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn key(&self) -> &gandr_kernel_check_memo::ContentDigest
+    {
+        &self.key
+    }
+
+    /// The outcome that the session kept since the job's fork.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn held(&self) -> &crate::support::NodeOutcome
+    {
+        &self.held
+    }
+
+    /// The outcome that the job kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn offered(&self) -> &crate::support::NodeOutcome
+    {
+        &self.offered
+    }
+}
+
 /// A mismatch between two value types the checker required to convert.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValueTypeMismatch
@@ -1068,6 +1133,14 @@ pub enum KernelError
         /// The first position the check read outside its support.
         position: ConstantIndex,
     },
+    /// Two checks kept two outcomes under one key, so their records do not
+    /// glue.
+    ///
+    /// A verdict is a function of its key, so two checks that keep one key
+    /// keep one outcome. Two outcomes under one key are a refusal of the
+    /// environment: the fold names the key and both outcomes, and no rollback
+    /// repairs it.
+    KeptOutcomesDisagree(Box<KeptOutcomes>),
     /// A declaration was staged at a rank it may not take: a live entry holds
     /// the rank, or a member of the same block before it ranks at or above
     /// it. Two entries never share a rank, so the path order and every other
@@ -1364,6 +1437,9 @@ impl core::fmt::Display for KernelError
             },
             Self::OutsideSupport { .. } => {
                 f.write_str("the check read an entry its declaration's content does not reach")
+            },
+            Self::KeptOutcomesDisagree(_) => {
+                f.write_str("two checks kept two outcomes under one key, so their records do not glue")
             },
             Self::RankTaken { .. } => {
                 f.write_str("another entry holds the rank the declaration was staged at")
@@ -1695,6 +1771,14 @@ mod tests
             KernelError::OutsideSupport {
                 position: ConstantIndex::from(0_usize),
             },
+            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(super::KeptOutcomes::new(
+                gandr_kernel_check_memo::ContentDigest::new(
+                    gandr_kernel_check_memo::DigestWord::from(0_u64),
+                    gandr_kernel_check_memo::DigestWord::from(0_u64),
+                ),
+                crate::support::NodeOutcome::Checked,
+                crate::support::NodeOutcome::Checked,
+            ))),
             KernelError::RankTaken {
                 rank: gandr_kernel_term::SourceRank::from(0_usize),
                 by: ConstantIndex::from(0_usize),

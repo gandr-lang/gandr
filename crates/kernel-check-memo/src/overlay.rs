@@ -6,8 +6,10 @@
 //! reads the frozen layers by reference and copies none of them. A join folds
 //! the entries of each child into the parent, in the order of the children.
 //! So the joined memo holds what a serial run holds that recorded the children
-//! in that order. A settle merges a frozen layer that no child reads any more
-//! back into its owner, so the layers do not grow with the forks.
+//! in that order. Two children that answer one support with two outcomes do
+//! not glue, and the join refuses them with both outcomes named. A settle
+//! merges a frozen layer that no child reads any more back into its owner, so
+//! the layers do not grow with the forks.
 //!
 //! The layers are a flat stack, oldest first, and no layer points at another:
 //! a drop and a walk of the stack are loops.
@@ -20,6 +22,12 @@
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the session at a
 //!   job's release with an overlay of its own, folded at the commit in
 //!   dependence order (§ kernel-reassessment-design item 10).
+//! - `vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2` — anchor: the bracket's
+//!   support is exactly the nontrivial overlaps, so a join checks agreement on
+//!   the supports that two children both keep (§ The bracket oracle).
+//! - `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — anchor: the memo glues by
+//!   agreement on its keys, which the join computes and never asserts (§
+//!   sharing-rule-descent).
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -103,6 +111,77 @@ where
     }
 }
 
+/// Two outcomes that a join meets under one support: the outcome that the
+/// memo recorded since the child's fork, and the outcome that the child
+/// offers. The two do not glue, so the join refuses them.
+///
+/// # Specification
+/// - requires: made by [`OverlaidMemo::join`].
+/// - ensures: the support, and the two outcomes that differ under it.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by the join.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`OverlaidMemo::join`].
+/// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Disagreement<Support, Outcome>
+{
+    /// The support that both outcomes answer.
+    support: Support,
+    /// The outcome that the memo recorded since the child's fork.
+    held: Outcome,
+    /// The outcome that the child offers.
+    offered: Outcome,
+}
+
+impl<Support, Outcome> Disagreement<Support, Outcome>
+{
+    /// The support that both outcomes answer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn support(&self) -> &Support
+    {
+        &self.support
+    }
+
+    /// The outcome that the memo recorded since the child's fork.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn held(&self) -> &Outcome
+    {
+        &self.held
+    }
+
+    /// The outcome that the child offers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn offered(&self) -> &Outcome
+    {
+        &self.offered
+    }
+
+    /// The support, the held outcome and the offered outcome, by value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (Support, Outcome, Outcome)
+    {
+        (self.support, self.held, self.offered)
+    }
+}
+
 impl<Support, Outcome> OverlaidMemo<Support, Outcome>
 where
     Support: MemoKey,
@@ -156,40 +235,78 @@ where
     }
 
     /// Fold `child`'s own entries into this memo, in the order the child
-    /// recorded them, keeping each entry that `keep` answers for.
+    /// recorded them, keeping each entry that `keep` answers for, when each
+    /// agrees with what this memo recorded since the child's fork.
     ///
-    /// The caller joins the children of one fork point in their order, so a
-    /// later child's entry replaces an earlier child's agreeing one, as a
-    /// serial run that recorded them in that order replaces it. The join
-    /// first settles this memo, so a serial fold records each entry once.
+    /// The entries recorded since the fork are this memo's own entries and
+    /// the entries of each layer frozen after the child's newest one: the
+    /// joins of earlier siblings, which the child did not read. Two entries
+    /// under one support with two outcomes do not glue. So the join refuses
+    /// them, names both, and folds nothing. A child replaces an entry of a
+    /// layer that it read, as a serial run that records it again replaces
+    /// it. The join first settles this memo, so a serial fold records each
+    /// entry once.
     ///
     /// # Specification
     /// - requires: `child` was forked from this memo or from a layer below it.
-    /// - ensures: each kept entry of the child is recorded into this memo's own
-    ///   entries, as [`CheckMemo::remember`] records it; the child's hold on
-    ///   its frozen layers ends, and this memo is settled as [`Self::settle`]
-    ///   settles it.
-    /// - provides: the fold of a job's memo at its join or its commit.
-    /// - fails: never; an entry that the memo declines at its ceiling costs
-    ///   reuse alone.
+    /// - ensures: on success, each kept entry of the child is recorded into
+    ///   this memo's own entries, as [`CheckMemo::remember`] records it; the
+    ///   child's hold on its frozen layers ends, and this memo is settled as
+    ///   [`Self::settle`] settles it. On a refusal, this memo serves each
+    ///   support as it served it before the call.
+    /// - provides: the fold of a job's memo at its join or its commit, and the
+    ///   agreement check of two jobs that keep one support.
+    /// - fails: a kept entry of the child and an entry recorded since its fork
+    ///   answer one support with two outcomes.
     /// - panics: none.
     /// - executable: none — the fold's order is the caller's, and the child's
     ///   entries leave with the call, so no predicate reads them after it.
     ///
+    /// # Errors
+    /// [`Disagreement`], naming the support, the outcome that this memo holds
+    /// and the outcome that the child offers.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`]; an entry that `keep` drops is
-    ///   not served after the join.
+    ///   not served after the join, and two siblings that keep two outcomes
+    ///   under one support are refused in either order.
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
     /// - witness: `overlay::tests::a_join_drops_what_the_parent_does_not_keep`
+    /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
     #[inline]
     pub fn join<Keep>(
         &mut self,
         child: Self,
         mut keep: Keep,
-    ) where
+    ) -> Result<(), Disagreement<Support, Outcome>>
+    where
         Keep: FnMut(&Support, &Outcome) -> bool,
+        Support: Clone,
+        Outcome: Clone + PartialEq,
     {
         let Self { layers, own } = child;
+        // The child read each layer up to its newest one. A settle never
+        // merges a layer that a child still holds, so the layers past those
+        // and this memo's own entries came after the child's fork.
+        let since = self.layers.get(layers.len() ..).unwrap_or_default();
+        for (support, outcome) in own.entries() {
+            if !keep(support, outcome) {
+                continue;
+            }
+            let held = self
+                .own
+                .recall(support)
+                .or_else(|| since.iter().rev().find_map(|layer| layer.recall(support)));
+            if let Some(held) = held
+                && held.outcome() != outcome
+            {
+                return Err(Disagreement {
+                    support: support.clone(),
+                    held: held.outcome().clone(),
+                    offered: outcome.clone(),
+                });
+            }
+        }
         drop(layers);
         self.settle();
         for (support, outcome) in own.into_entries() {
@@ -199,6 +316,7 @@ where
                 let _recorded = self.own.remember(support, outcome);
             }
         }
+        Ok(())
     }
 
     /// Merge each frozen layer that no child reads any more into this memo,
@@ -458,7 +576,9 @@ mod tests
     {
         let before = [(Named(1), Kept(10))];
         let first = [(Named(2), Kept(20)), (Named(1), Kept(11))];
-        let second = [(Named(2), Kept(21)), (Named(3), Kept(30))];
+        // The two children answer `Named(2)` alike, so they glue in either
+        // order.
+        let second = [(Named(2), Kept(20)), (Named(3), Kept(30))];
         for swapped in [false, true] {
             let mut parent = OverlaidMemo::new();
             record(&mut parent, &before);
@@ -475,7 +595,9 @@ mod tests
                 [(left, first), (right, second)]
             };
             for (child, entries) in order {
-                parent.join(child, |_, _| true);
+                parent
+                    .join(child, |_, _| true)
+                    .expect("children that answer each support alike glue");
                 record(&mut serial, &entries);
             }
             parent.settle();
@@ -520,7 +642,9 @@ mod tests
             Some(Kept(10)),
             "the parent does not read the child's entry before the join"
         );
-        parent.join(child, |_, _| true);
+        parent
+            .join(child, |_, _| true)
+            .expect("a child that answers again an entry it read glues");
         parent.settle();
         assert_eq!([served(&parent, Named(1)), served(&parent, Named(2))], [
             Some(Kept(11)),
@@ -534,11 +658,52 @@ mod tests
         let mut parent = OverlaidMemo::new();
         let mut child = parent.fork();
         record(&mut child, &[(Named(1), Kept(10)), (Named(2), Kept(20))]);
-        parent.join(child, |named, _| *named != Named(2));
+        parent
+            .join(child, |named, _| *named != Named(2))
+            .expect("a lone child glues");
         parent.settle();
         assert_eq!([served(&parent, Named(1)), served(&parent, Named(2))], [
             Some(Kept(10)),
             None
         ]);
+    }
+
+    #[test]
+    fn a_join_refuses_two_outcomes_under_one_key_and_names_both()
+    {
+        for swapped in [false, true] {
+            let mut parent = OverlaidMemo::new();
+            record(&mut parent, &[(Named(1), Kept(10))]);
+            let mut left = parent.fork();
+            let mut right = parent.fork();
+            record(&mut left, &[(Named(2), Kept(20))]);
+            record(&mut right, &[(Named(2), Kept(21)), (Named(3), Kept(30))]);
+            let (first, second, held, offered, third) = if swapped {
+                (right, left, Kept(21), Kept(20), Some(Kept(30)))
+            }
+            else {
+                (left, right, Kept(20), Kept(21), None)
+            };
+            parent
+                .join(first, |_, _| true)
+                .expect("the first child glues");
+            let refused = parent
+                .join(second, |_, _| true)
+                .expect_err("two outcomes under one key do not glue");
+            assert_eq!(
+                (*refused.support(), *refused.held(), *refused.offered()),
+                (Named(2), held, offered),
+                "the refusal names the key and both outcomes, swapped: {swapped}"
+            );
+            assert_eq!(
+                [
+                    served(&parent, Named(1)),
+                    served(&parent, Named(2)),
+                    served(&parent, Named(3))
+                ],
+                [Some(Kept(10)), Some(held), third],
+                "the refused child folds nothing, swapped: {swapped}"
+            );
+        }
     }
 }

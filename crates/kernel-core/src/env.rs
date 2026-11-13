@@ -4062,6 +4062,9 @@ impl Environment
     /// # Errors
     /// The refusal of the check, or [`KernelError::OutsideSupport`] at the
     /// first position that it read outside its support.
+    /// [`KernelError::KeptOutcomesDisagree`] refuses the environment when the
+    /// check kept an outcome under a key that the environment kept with
+    /// another outcome since the release.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::release`].
@@ -4143,7 +4146,8 @@ impl Environment
     }
 
     /// Close a check's scope: fold its session back into the environment's,
-    /// forget the clone's nodes, take back the view's support, and refuse
+    /// forget the clone's nodes and take back the view's support. Refuse the
+    /// environment when the fold meets two outcomes under one key, and refuse
     /// `checked` when the check read outside its support.
     ///
     /// # Specification
@@ -4159,18 +4163,21 @@ impl Environment
             arena,
             session,
         } = scope;
-        {
+        let glued = {
             let Self {
                 arena: ref frozen,
                 ref mut names,
                 ..
             } = *self;
-            names.session_mut().join(frozen, session);
-        }
+            names.session_mut().join(frozen, session)
+        };
         // A reader that names nodes by their positions forgets the clone's.
         self.arena.dropped(&arena);
         let outside = view.close();
         self.entries.restore(view);
+        // Two outcomes under one key refuse the environment, whatever the
+        // check decided.
+        glued?;
         supported(checked, outside)
     }
 
@@ -4191,7 +4198,8 @@ impl Environment
     /// - panics: none.
     ///
     /// # Errors
-    /// The error of `check`, or [`KernelError::OutsideSupport`].
+    /// The error of `check`, [`KernelError::OutsideSupport`], or
+    /// [`KernelError::KeptOutcomesDisagree`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a read outside the support refuses the declaration,

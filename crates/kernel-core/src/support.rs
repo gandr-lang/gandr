@@ -434,25 +434,37 @@ impl SupportContext
     /// - ensures: as [`ContentTable::join`] and the kept memo's join, each of
     ///   which settles first.
     /// - provides: the fold of a job's session at its commit.
-    /// - fails: never.
+    /// - fails: the job kept an outcome under a key that this session kept with
+    ///   another outcome since the job's fork.
     /// - panics: none.
     /// - executable: none — as [`ContentTable::join`], the job's records and
     ///   outcomes leave with the fold.
+    ///
+    /// # Errors
+    /// [`crate::KernelError::KeptOutcomesDisagree`], naming the key by its
+    /// content digest and both outcomes. The session then holds the job's
+    /// records and none of its outcomes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two jobs forked at one point, each keeping an outcome
     ///   over a record the other names, folded in either order; the session
     ///   recalls each outcome under the name a serial session gives it.
     /// - witness: `support::tests::two_jobs_folded_in_either_order_recall_what_a_serial_session_recalls`
+    /// - witness: `support::tests::two_jobs_that_keep_two_outcomes_under_one_key_do_not_glue`
     pub(crate) fn join(
         &mut self,
         arena: &TermArena,
         job: Self,
-    )
+    ) -> Result<(), crate::KernelError>
     {
         let Self { table, kept, .. } = job;
         self.table.join(arena, table);
-        self.kept.join(kept, |_, _| true);
+        self.kept.join(kept, |_, _| true).map_err(|disagreement| {
+            let (key, held, offered) = disagreement.into_parts();
+            crate::KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                crate::error::KeptOutcomes::new(key.digest(), held, offered),
+            ))
+        })
     }
 
     /// Name `parameters` in this session's table, as
@@ -1850,7 +1862,9 @@ mod tests
                 jobs.reverse();
             }
             for job in jobs {
-                session.join(&arena, job);
+                session
+                    .join(&arena, job)
+                    .expect("two jobs that keep two keys glue");
             }
             for key in &keys {
                 assert_eq!(
@@ -1871,6 +1885,52 @@ mod tests
                 "the folded session names each goal as a serial session names it, swapped: {swapped}"
             );
         }
+    }
+
+    #[test]
+    fn two_jobs_that_keep_two_outcomes_under_one_key_do_not_glue()
+    {
+        let mut arena = TermArena::new();
+        let goal = SupportGoal::ValueTypeLevel(arena.value_type_unit());
+        let outcomes = [
+            super::NodeOutcome::Checked,
+            super::NodeOutcome::Formed(Level::zero(), super::Owed::none()),
+        ];
+        let mut session = SupportContext::new();
+        let mut jobs = [session.fork(&arena), session.fork(&arena)];
+        let keys = [0, 1].map(|at| {
+            let job = jobs.get_mut(at).expect("two jobs");
+            let key = NodeSupport::recorded(&arena, job, goal, &[], &Reads::closed());
+            job.keep(&key, key.names().0, outcomes.get(at).expect("two outcomes"));
+            key
+        });
+        assert_eq!(keys[0], keys[1], "the two jobs record one key");
+        let [first, second] = jobs;
+        session.join(&arena, first).expect("the first job glues");
+        let refused = session
+            .join(&arena, second)
+            .expect_err("two outcomes under one key do not glue");
+        let crate::KernelError::KeptOutcomesDisagree(kept) = refused
+        else {
+            panic!("the refusal is the disagreement of two kept outcomes: {refused:?}");
+        };
+        assert_eq!(
+            (kept.key(), kept.held(), kept.offered()),
+            (
+                &gandr_kernel_check_memo::MemoKey::digest(&super::KeptSupport {
+                    support: keys[0].clone(),
+                    parameters: keys[0].names().0,
+                }),
+                &outcomes[0],
+                &outcomes[1]
+            ),
+            "the refusal names the key, the outcome kept first and the outcome offered"
+        );
+        assert_eq!(
+            session.kept_checked(&keys[0], keys[0].names().0),
+            super::Discharge::Held,
+            "the session keeps the outcome of the first job alone"
+        );
     }
 
     #[test]
