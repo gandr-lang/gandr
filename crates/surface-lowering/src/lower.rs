@@ -689,6 +689,8 @@ use crate::import::Opening;
 use crate::import::Translation;
 use crate::layout::bracket_form;
 use crate::layout::misplaced;
+use crate::lower::exits::Exits;
+use crate::lower::exits::ExitsRef;
 use crate::lower::native::Native;
 use crate::lower::native::NativeRef;
 use crate::module::BodyScope;
@@ -2028,7 +2030,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.declare();
         self.mark_generic();
         self.seed()?;
-        self.survey()?;
+        Exits::new(self).survey()?;
         self.classify()?;
         self.refuse_unsynthesised()?;
         self.propagate_manifests();
@@ -2295,16 +2297,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut attributes = AttributeTable::new();
         lowerer.attribute(&mut attributes, arena)?;
         let documentation = lowerer.document()?;
-        let inferred = lowerer.inferred_exits();
-        let elidable = lowerer.elidable_exits();
+        let inferred = ExitsRef::new(&lowerer).inferred_exits();
+        let elidable = ExitsRef::new(&lowerer).elidable_exits();
         // A document resumed after its closure reads the values recorded after
         // the closure's alone.
         let own_values = origins
             .values()
             .get(resumed.map_or(0, |resumed| resumed.values) ..)
             .unwrap_or_default();
-        let nested = lowerer.nested_sites(own_values);
-        let linear = lowerer.linear_runs(arena, &origins);
+        let nested = ExitsRef::new(&lowerer).nested_sites(own_values);
+        let linear = ExitsRef::new(&lowerer).linear_runs(arena, &origins);
         // A document resumed after its closure assembles its own declarations
         // and builds its tables by declaration at them alone: the closure's
         // module's are shared with it.
@@ -4682,7 +4684,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && ending(former) != Ending::Exit
             && !self.cx.iterated.contains(&site.at.node)
         {
-            self.trail(site);
+            Exits::new(self).trail(site);
         }
         if self.cx.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
             let _tail = self.cx.inferred.insert(site.at.node);
@@ -4692,7 +4694,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && ending(former) != Ending::Exit
             && (self.cx.stated.contains_key(&site.at.node) || iterating(former) == Ending::Inferred)
         {
-            self.reenter(site)?;
+            Exits::new(self).reenter(site)?;
         }
         if let Some(&assignment) = self.cx.assignments.get(&site.at.node) {
             return self.assign(site, former, pieces, assignment);
@@ -4749,11 +4751,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Return => self.keyed(site, cursor, TileName::PURE),
             Former::Exit => self.keyed(site, cursor, TileName::RETURN),
             Former::Become => self.tail_call(site, cursor),
-            Former::Loop => self.looped(site, cursor),
-            Former::While => self.repeated(site, cursor),
-            Former::For => self.stepped(site, cursor),
-            Former::Break => self.broken(site, cursor),
-            Former::Continue => self.continued(site, cursor),
+            Former::Loop => Exits::new(self).looped(site, cursor),
+            Former::While => Exits::new(self).repeated(site, cursor),
+            Former::For => Exits::new(self).stepped(site, cursor),
+            Former::Break => Exits::new(self).broken(site, cursor),
+            Former::Continue => Exits::new(self).continued(site, cursor),
             Former::Force => self.keyed(site, cursor, TileName::FORCE),
             Former::Run => self.run(site, cursor),
             Former::Call => self.call(site, cursor),
@@ -7509,7 +7511,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&inherited) = self.cx.inherited.get(&site.at.node) {
             let _passed = self.cx.inherited.insert(inner.node, inherited);
         }
-        self.pass_paths(site.at.node, inner.node);
+        Exits::new(self).pass_paths(site.at.node, inner.node);
 
         self.plan(site, Plan::Transparent(inner.node));
 
@@ -8113,7 +8115,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             None => Maybe::Absent(native::answered::Absent::Unstated),
         };
-        self.open_body(site, body, answer)?;
+        Exits::new(self).open_body(site, body, answer)?;
 
         self.plan(site, Plan::Thunk(body));
 
@@ -8268,7 +8270,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             None => Maybe::Absent(native::answered::Absent::Unstated),
         };
-        self.open_body(site, body, answer)?;
+        Exits::new(self).open_body(site, body, answer)?;
 
         self.plan(site, Plan::Lambda(body, binder.node));
 
@@ -8488,9 +8490,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             None => Maybe::Absent(native::answered::Absent::Unstated),
         };
-        self.pass_paths(site.at.node, body.last);
+        Exits::new(self).pass_paths(site.at.node, body.last);
         if self.cx.exitable.contains(&site.at.node) {
-            self.paths_through(site, body, answer)?;
+            Exits::new(self).paths_through(site, body, answer)?;
         }
 
         self.plan(site, Plan::Block(body));
@@ -8874,7 +8876,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             Maybe::Absent(_) => Maybe::Absent(native::answered::Absent::Unstated),
         };
-        self.open_body(function, block, answer)?;
+        Exits::new(self).open_body(function, block, answer)?;
 
         self.plan(
             site,
@@ -9042,6 +9044,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             })
         },
     )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
+    )]
     fn block(
         &mut self,
         site: Site,
@@ -9084,7 +9090,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             let _first = self.cx.stated.insert(written.node, span);
                             closed(site, cursor, TileName::BRACE_CLOSE)?;
                             exhausted(site, cursor)?;
-                            let _rest = self.threads(site, written.node, (frame, frame))?;
+                            let _rest =
+                                Exits::new(self).threads(site, written.node, (frame, frame))?;
                             self.read(written.node, Reading::Computation(frame));
                             return Ok(Block {
                                 statements: self.cx.statements.since(start),
@@ -9099,7 +9106,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let last = site.one(run)?;
                     closed(site, cursor, TileName::BRACE_CLOSE)?;
                     exhausted(site, cursor)?;
-                    let _rest = self.threads(site, last.node, (frame, frame))?;
+                    let _rest = Exits::new(self).threads(site, last.node, (frame, frame))?;
                     self.read(last.node, Reading::Computation(frame));
                     return Ok(Block {
                         statements: self.cx.statements.since(start),
@@ -9133,7 +9140,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         };
                         match self.cx.statements.last() {
                             Some(&Statement { bound, .. }) => {
-                                self.threads(site, bound, (frame, after))?
+                                Exits::new(self).threads(site, bound, (frame, after))?
                             },
                             None => after,
                         }
@@ -9197,7 +9204,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let last = site.one(cursor.operands())?;
         closed(site, cursor, TileName::SEMICOLON)?;
         exhausted(site, cursor)?;
-        let _rest = self.threads(site, last.node, (frame, frame))?;
+        let _rest = Exits::new(self).threads(site, last.node, (frame, frame))?;
         self.read(last.node, Reading::Computation(frame));
 
         Ok(Block {
@@ -9216,7 +9223,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   recorded as a discarded statement; the frame the rest of the block
     ///   reads under, extended by a binder no name reaches and by the slots a
     ///   loop threads, is returned.
-    /// - fails: as [`Self::threads`].
+    /// - fails: as [`Exits::threads`].
     /// - panics: none.
     ///
     /// # Errors
@@ -9251,7 +9258,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             SurfaceName::from(""),
             Maybe::Absent(binder_site::Absent::Unwritten),
         ));
-        self.threads(site, discarded.node, (frame, after))
+        Exits::new(self).threads(site, discarded.node, (frame, after))
     }
 
     /// Whether the operand `first`, at the head of `cursor`, is a block-like
@@ -16222,14 +16229,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   whose exit was inferred and minted as a computation is recorded with
     ///   that exit, `return` when the bridge is the inserted one and `become`
     ///   otherwise; a `return` crossing a handler's frame is minted as the
-    ///   capture [`Self::unwind`] writes, and that capture recorded as the
+    ///   capture [`Exits::unwind`] writes, and that capture recorded as the
     ///   exit; a `break`'s returner is recorded as a break; a loop end written
-    ///   without an exit is bound and its loop run again, as [`Self::rerun`]
-    ///   writes it; a constructor awaiting its data family's application, or
-    ///   the constructor a field it stands in belongs to, is left for that
-    ///   node, which mints it first; a node with no plan, or whose plan was
-    ///   carried out, or under a refused declaration outside a payload and
-    ///   outside the types a module signature states, is left as it is.
+    ///   without an exit is bound and its loop run again, as
+    ///   [`ExitsRef::rerun`] writes it; a constructor awaiting its data
+    ///   family's application, or the constructor a field it stands in belongs
+    ///   to, is left for that node, which mints it first; a node with no plan,
+    ///   or whose plan was carried out, or under a refused declaration outside
+    ///   a payload and outside the types a module signature states, is left as
+    ///   it is.
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -16599,7 +16607,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Present(Lowered::Computation(returned))
                 if self.cx.crossing.contains(&position) =>
             {
-                Maybe::Present(Lowered::Computation(Self::unwind(sink, returned, origin)))
+                Maybe::Present(Lowered::Computation(Exits::<Self>::unwind(
+                    sink, returned, origin,
+                )))
             },
             bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
         };
@@ -16613,7 +16623,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Bridge::Bare | Bridge::Inserted(_) | Bridge::HeadCall => Exit::Become,
                 }));
             }
-            else if let Some((operand, returned)) = self.elidable_at(position) {
+            else if let Some((operand, returned)) = ExitsRef::new(self).elidable_at(position) {
                 self.cx.elidable.push((position, operand, returned));
             }
         }
@@ -16624,14 +16634,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let bridged = match (self.cx.reentered.get(&position), bridged) {
             (Some(&own), Maybe::Present(Lowered::Computation(end))) => Maybe::Present(
-                Lowered::Computation(self.rerun(position, end, own, sink, origin)),
+                Lowered::Computation(ExitsRef::new(self).rerun(position, end, own, sink, origin)),
             ),
             (_, bridged) => bridged,
         };
         let bridged = match bridged {
             Maybe::Present(Lowered::Computation(end)) if self.cx.trailing.contains(&position) => {
                 Maybe::Present(Lowered::Computation(
-                    self.conclude(position, end, sink, origin),
+                    ExitsRef::new(self).conclude(position, end, sink, origin),
                 ))
             },
             bridged @ (Maybe::Present(_) | Maybe::Absent(_)) => bridged,
@@ -17081,10 +17091,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 NativeRef::over(&self.cx).mint_projected(projected, sink, origin)
             },
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
-            Plan::Loop(body) => self.mint_loop(body, sink, origin),
-            Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
+            Plan::Loop(body) => ExitsRef::new(self).mint_loop(body, sink, origin),
+            Plan::While(condition, body) => {
+                ExitsRef::new(self).mint_while(condition, body, sink, origin)
+            },
             Plan::If(conditional) => self.mint_conditional(conditional, sink, origin),
-            Plan::For(list, body) => self.mint_for(list, body, sink, origin),
+            Plan::For(list, body) => ExitsRef::new(self).mint_for(list, body, sink, origin),
             Plan::Break => {
                 let unit = sink.arena.value_unit();
                 sink.origins.record_value(unit, origin);
@@ -18264,10 +18276,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_static_lambda(under);
                 sink.value(id, origin)
             }),
-            Plan::Thunk(body) => self.mint_body(body, sink, origin).map(|suspended| {
-                let id = sink.arena.value_thunk(suspended);
-                sink.value(id, origin)
-            }),
+            Plan::Thunk(body) => {
+                ExitsRef::new(self)
+                    .mint_body(body, sink, origin)
+                    .map(|suspended| {
+                        let id = sink.arena.value_thunk(suspended);
+                        sink.value(id, origin)
+                    })
+            },
             Plan::Return(value) => self.cx.value_at(value).and_then(|returned| {
                 let id = sink.arena.computation_return(returned);
                 let Some(&classifier) = self.cx.ascribed.get(&value)
@@ -18346,7 +18362,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     sink.value(id, origin)
                 })
             }),
-            Plan::Lambda(body, binder) => self
+            Plan::Lambda(body, binder) => ExitsRef::new(self)
                 .mint_body(body, sink, origin)
                 .and_then(|under| self.typed_parameter(binder, under, sink, origin))
                 .map(|under| {
@@ -18708,6 +18724,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
             },
         },
+    )]
+    #[expect(
+        clippy::same_name_method,
+        reason = "the host's `Families` method of this name calls it"
     )]
     fn mint_block(
         &self,
@@ -19516,7 +19536,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         let minted = match function.body {
-            Body::Block(block) => self.mint_body(block, sink, origin),
+            Body::Block(block) => ExitsRef::new(self).mint_body(block, sink, origin),
             Body::Clauses(case) => match NativeRef::over(&self.cx).mint_case(case, sink, origin) {
                 Maybe::Present(Lowered::Computation(tree)) => Maybe::Present(tree),
                 Maybe::Present(_) => Maybe::Absent(lowered::Absent::Unminted),
@@ -20057,7 +20077,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(SlotIndex::from),
                             );
                         }
-                        self.ask_runs(
+                        Exits::new(self).ask_runs(
                             &entry,
                             (usize::from(module.first) .. usize::from(module.end))
                                 .map(SlotIndex::from),
@@ -20154,7 +20174,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.cx.asked.insert(SlotIndex::from(index));
                         }
-                        self.ask_runs(&entry, [SlotIndex::from(index)]);
+                        Exits::new(self).ask_runs(&entry, [SlotIndex::from(index)]);
                         let key = self.key_at(written.decorates);
                         let attribute = entry.name();
                         let at = entry.span();
@@ -25483,7 +25503,7 @@ mod tests
     {
         lowerer.declare();
         lowerer.seed().unwrap();
-        lowerer.survey().unwrap();
+        super::Exits::new(lowerer).survey().unwrap();
         lowerer.classify().unwrap();
         lowerer.refuse_unsynthesised().unwrap();
         lowerer.propagate_manifests();
@@ -25604,7 +25624,7 @@ mod tests
                 super::Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
             lowerer.declare();
             lowerer.seed().expect("the seed stays within the allowance");
-            lowerer
+            super::Exits::new(&mut lowerer)
                 .survey()
                 .expect("the survey stays within the allowance");
             lowerer

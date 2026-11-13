@@ -466,8 +466,10 @@ INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theor
 INSERT INTO reference VALUES('vault:01a178aa-4f9c-7221-a972-619f184e507e','theory-e-graphs','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','core-term','primitive','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e','kernel-term','literal_identity','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-evaluate','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-base','','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-exits','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5497-7042-b9f4-56ce571601b1','surface-lowering-native','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-56f5-7082-acef-f7c1b85fc0a2','kernel-check-memo','overlay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7','surface-grammar','mold','lineage',NULL,NULL,NULL);

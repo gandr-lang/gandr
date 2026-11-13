@@ -118,6 +118,7 @@ use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_surface_lowering_base::lower::families::Families as _;
 pub(super) use gandr_surface_lowering_base::lower::session::ArmLabels;
 use gandr_surface_lowering_base::lower::session::Naming;
 pub(super) use gandr_surface_lowering_base::lower::session::PlacedEndpoint;

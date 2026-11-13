@@ -134,7 +134,7 @@
 //! A source `gandr run` runs is a local artifact: the endpoint of a one-role
 //! choreography, deployed as the driver's own process. It is the degenerate
 //! case of projection, which takes a choreography to one endpoint per role
-//! (`crates/README.md` § Compilation).
+//! (the crate's documentation, § Compilation).
 //!
 //! # References
 //!

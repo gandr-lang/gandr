@@ -16,6 +16,8 @@ use gandr_surface_syntax::SourceText;
 
 use super::ElidableExit;
 use super::Exit;
+use super::Exits;
+use super::ExitsRef;
 use super::Explicitness;
 use super::InferredExit;
 use super::Leaves;
@@ -96,7 +98,7 @@ pub(in crate::lower) fn assert_surveyed(
     let mut fuel = Fuel::new(LoweringBudget::DEFAULT);
     let collected = collect(&pbg, &tree, &Unit::single(), &mut fuel).expect("the module collects");
     let mut lowerer = Lowerer::new(&pbg, &tree, collected, fuel, Recognition::default());
-    lowerer
+    Exits::new(&mut lowerer)
         .survey()
         .expect("the survey stays within the allowance");
     let mut surveyed: Vec<Leaves> = Vec::new();
@@ -110,7 +112,7 @@ pub(in crate::lower) fn assert_surveyed(
                         node.span() == at && matches!(shape_of(&pbg, node), Ok(Shape::Form { .. }))
                     })
                 })
-                .map(|position| lowerer.leaves_at(position)),
+                .map(|position| ExitsRef::new(&lowerer).leaves_at(position)),
         );
         assert!(!surveyed.is_empty(), "`{needle}` is a form");
         assert!(

@@ -7,6 +7,7 @@
 
 use alloc::vec::Vec;
 
+use gandr_core_term::ComputationId;
 use gandr_core_term::hole::HoleForm;
 use gandr_core_term::hole::HoleId;
 use gandr_surface_syntax::ByteSpan;
@@ -19,6 +20,7 @@ use super::Plan;
 use super::Produced;
 use super::Reading;
 use super::Resolved;
+use super::Sink;
 use super::Site;
 use super::Stretch;
 use super::arity::Dependent;
@@ -30,6 +32,7 @@ use super::context::Context;
 use super::identity::Layout;
 use super::identity::related;
 use super::implicit::Nomination;
+use super::lowered;
 use super::method::unindexing;
 use super::model::ModelSlot;
 use super::named;
@@ -37,11 +40,13 @@ use super::native::Answer;
 use super::native::answered;
 use crate::error::LoweringRefusal;
 use crate::form::Boxed;
+use crate::form::Cursor;
 use crate::form::Former;
 use crate::form::Placed;
 use crate::module::Constructor;
 use crate::module::StructureIndex;
 use crate::module::TelescopeEntry;
+use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
@@ -136,6 +141,29 @@ pub trait Families<'run, 'source>
         &mut self,
         site: Site,
     ) -> Result<Maybe<ByteSpan, unindexing::Absent>, LoweringRefusal<'source>>;
+
+    /// Read a block, `{ s… c }`, whose first statement reads under `frame`.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn block(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        frame: Frame,
+    ) -> Result<Block, LoweringRefusal<'source>>;
 
     /// Whether the type written at `at` is the box, as `writes_box` reads it
     /// over this lowering's scratch buffer.
@@ -319,6 +347,45 @@ pub trait Families<'run, 'source>
         head: Placed,
     ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>;
 
+    /// Mint a block: its statements bound over its last computation.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn mint_block(
+        &self,
+        block: Block,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ComputationId, lowered::Absent>;
+
+    /// Mint `body`, the block of a function's, a lambda's or a thunk's body, a
+    /// copattern clause or a handled subject, with every exit put where the
+    /// body ends.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn mint_body(
+        &self,
+        body: Block,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>;
+
     /// Record that a type position at `node` names `binder`, and answer the
     /// telescope its index counts in: a type a body quotes counts in its own,
     /// leaving the signature's arrows as they are, and any other type in the
@@ -410,6 +477,30 @@ pub trait Families<'run, 'source>
         site: Site,
         body: Block,
         answer: Maybe<Answer, answered::Absent>,
+    ) -> Result<(), LoweringRefusal<'source>>;
+
+    /// Read `subject`, the block the capability scope at `site` handles, as
+    /// one a path runs through on its way through the body the scope stands
+    /// in.
+    ///
+    /// # Specification
+    /// - provides: as the host's method of the same name.
+    /// - fails: as the host's method of the same name.
+    /// - panics: as the host's method of the same name.
+    /// - executable: none — the host's method of the same name checks its
+    ///   clauses.
+    ///
+    /// # Errors
+    /// The host's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as the host's method of the same name.
+    /// - declaration-only: the host's method of the same name names the
+    ///   witnesses.
+    fn open_subject(
+        &mut self,
+        site: super::Site,
+        subject: Block,
     ) -> Result<(), LoweringRefusal<'source>>;
 
     /// The module the path `head` then `links` names from the declaration
