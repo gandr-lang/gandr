@@ -179,7 +179,7 @@ impl Signature
     /// # Adequacy
     /// - hypothesis: L3 — named parameters of a function, a family and a
     ///   constructor, the unnamed domains of a thunk, and a head with none.
-    /// - witness: `gandr-surface-lsp::complete::tests::a_call_fills_its_parameters_as_tab_stops`
+    /// - witness: `gandr-surface-lsp-core::complete::tests::a_call_fills_its_parameters_as_tab_stops`
     #[spec(ensures: |ret| ret.is_none() == self.parameters.is_empty()
         && ret.as_ref().is_none_or(|snippet| snippet.ends_with("$0")
             && snippet.matches("${").count() >= self.parameters.len()))]
@@ -380,9 +380,9 @@ pub type Head = ((SourceIndex, ByteSpan), Signature);
 /// # Adequacy
 /// - hypothesis: L3 — documented and undocumented parameters of a list and a
 ///   telescope, each asserted at its exact documentation.
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-/// - witness: `gandr-surface-lsp::hover::tests::a_documented_parameter_hovers_its_documentation_1116`
-/// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::hover::tests::a_documented_parameter_hovers_its_documentation_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 #[must_use]
 #[inline]
 pub fn parameters_documented(
@@ -422,7 +422,7 @@ pub fn parameters_documented(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Form::heads`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.0 < second.0)))]
 #[must_use]
 #[inline]
@@ -472,7 +472,7 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`heads_among`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
 #[spec(captures: before = pending.len(), ensures: pending.len() >= before)]
 fn level(
     grammar: &Pbg,
@@ -688,9 +688,9 @@ impl Form
     /// # Adequacy
     /// - hypothesis: L3 — every head of the corpus sources, each asserted at
     ///   its exact label, parameters and documentation.
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn heads(
         &self,
         grammar: &Pbg,
@@ -771,8 +771,8 @@ impl Depth
     /// # Adequacy
     /// - hypothesis: L3 — a run inside a parameter list and one before the
     ///   head, each asserted at the parameter or the head it documents.
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn after(
         self,
         written: SourceText<'_>,
@@ -796,8 +796,8 @@ impl Depth
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Form::heads`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn head(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -855,9 +855,9 @@ impl Label
     /// # Adequacy
     /// - hypothesis: L3 — heads laid over one line and over several, each
     ///   asserted at its exact label.
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
     fn copy(
         &mut self,
         text: SourceText<'_>,
@@ -925,8 +925,8 @@ impl Label
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Label::copy`].
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn space(
         &mut self,
         rest: SourceText<'_>,
@@ -948,8 +948,8 @@ impl Label
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Label::copy`].
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn verbatim(
         &mut self,
         at: ByteOffset,
@@ -975,8 +975,8 @@ impl Label
     /// # Adequacy
     /// - hypothesis: L3 — every parameter's label range, asserted as the text
     ///   it covers in the head's label.
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn place(
         &self,
         span: ByteSpan,
@@ -1010,8 +1010,8 @@ impl Label
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Label::place`].
-    /// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-    /// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+    /// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
     fn parameters(
         &self,
         entries: Vec<Entry>,
@@ -1051,8 +1051,8 @@ struct Entry
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Label::copy`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn labelled(
     tree: &SyntaxTree<'_>,
     text: SourceText<'_>,
@@ -1105,8 +1105,8 @@ fn labelled(
 /// # Adequacy
 /// - hypothesis: L3 — a run laid inside a parameter list is left out of the
 ///   label the head is answered with.
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-/// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn docs_under(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -1146,9 +1146,9 @@ fn docs_under(
 /// # Adequacy
 /// - hypothesis: L3 — a documented parameter is keyed by its name tile, read
 ///   back at that tile.
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-/// - witness: `gandr-surface-lsp::hover::tests::a_documented_parameter_hovers_its_documentation_1116`
-/// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::hover::tests::a_documented_parameter_hovers_its_documentation_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
 fn first_tile(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -1205,8 +1205,8 @@ fn spelled(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Form::heads`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn parameters(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1249,10 +1249,10 @@ fn parameters(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Form::heads`].
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
-/// - witness: `gandr-surface-lsp::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
-/// - witness: `gandr-surface-lsp::signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+/// - witness: `gandr-surface-lsp-core::signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
 fn entries(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1315,8 +1315,8 @@ fn entries(
 /// # Adequacy
 /// - hypothesis: L3 — a binder typed by a function, a constructor's telescope
 ///   and a type returning a function, each asserted at its parameters.
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
 fn domains(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1416,8 +1416,8 @@ impl<'grammar> Operands<'grammar>
 /// # Adequacy
 /// - hypothesis: L3 — a constructor's telescope, documented and not, asserted
 ///   at each parameter.
-/// - witness: `gandr-surface-lsp::signature::tests::each_head_reads_its_parameters`
-/// - witness: `gandr-surface-lsp::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
+/// - witness: `gandr-surface-lsp-core::signature::tests::each_head_reads_its_parameters`
+/// - witness: `gandr-surface-lsp-core::signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 fn telescope(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,

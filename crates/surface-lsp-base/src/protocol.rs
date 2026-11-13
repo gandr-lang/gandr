@@ -3954,7 +3954,7 @@ impl fmt::Display for HintLabel
     /// # Adequacy
     /// - hypothesis: L3 — every hint's label over two corpus sources, each
     ///   asserted at its exact text.
-    /// - witness: `gandr-surface-lsp::inlay::tests::each_binder_that_writes_no_type_is_hinted`
+    /// - witness: `gandr-surface-lsp-navigation::inlay::tests::each_binder_that_writes_no_type_is_hinted`
     #[inline]
     fn fmt(
         &self,
@@ -4473,7 +4473,7 @@ impl Diagnostic
     /// # Adequacy
     /// - hypothesis: L3 — a source the lowering refuses at no position is
     ///   asserted at its exact diagnostic.
-    /// - witness: `gandr-surface-lsp::recheck::tests::a_fault_is_published_at_the_origin`
+    /// - witness: `gandr-surface-lsp-diagnostics::recheck::tests::a_fault_is_published_at_the_origin`
     #[spec(ensures: |ret| ret.range == Range::default()
         && ret.severity == Severity::ERROR && ret.code.is_none()
         && ret.code_description.is_none()

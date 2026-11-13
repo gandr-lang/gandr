@@ -41,6 +41,9 @@ members = [
   "crates/surface-lowering-base",
   "crates/surface-lsp",
   "crates/surface-lsp-base",
+  "crates/surface-lsp-core",
+  "crates/surface-lsp-diagnostics",
+  "crates/surface-lsp-navigation",
   "crates/surface-parser",
   "crates/surface-pretty",
   "crates/surface-render-remote",
@@ -842,6 +845,32 @@ path = "crates/surface-lsp"
 # - surface-lsp
 [workspace.dependencies.gandr-surface-lsp-base]
 path = "crates/surface-lsp-base"
+
+# The core of the language server's families: the reading of a held text,
+# hover, completion, definitions, signature help, semantic tokens and the
+# files of a workspace.
+# consumers:
+# - surface-lsp
+# - surface-lsp-diagnostics
+# - surface-lsp-navigation
+[workspace.dependencies.gandr-surface-lsp-core]
+path = "crates/surface-lsp-core"
+
+# The diagnostics of the language server: the recheck of a document, the
+# kernel tiers, the repairs and fills of a hole and the checkpoints a save
+# keeps.
+# consumers:
+# - surface-lsp
+[workspace.dependencies.gandr-surface-lsp-diagnostics]
+path = "crates/surface-lsp-diagnostics"
+
+# The navigation of the language server: references, highlights, rename, the
+# call hierarchy, inlay hints, copied sources, shadowing and the
+# documentation site.
+# consumers:
+# - surface-lsp
+[workspace.dependencies.gandr-surface-lsp-navigation]
+path = "crates/surface-lsp-navigation"
 
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.

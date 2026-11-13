@@ -8,7 +8,6 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,7 +17,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are projections of the diagnostics `gandr-surface-diagnostics` builds for the dispatcher's step, the same ones the terminal lays out, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
-**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy; the copy's session judges the text on the worker pool, off the serving loop, a later change retiring it, and the server reads the judgement's step and publishes each diagnostic the model builds as one LSP diagnostic, mapped as [`recheck`](src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. Each structural request, name request and formatting request reads what the table below names.
+**How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy; the copy's session judges the text on the worker pool, off the serving loop, a later change retiring it, and the server reads the judgement's step and publishes each diagnostic the model builds as one LSP diagnostic, mapped as [`recheck`](../surface-lsp-diagnostics/src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. Each structural request, name request and formatting request reads what the table below names.
 
 ## Provided features
 
@@ -82,33 +81,12 @@ Mechanism and witnesses live in the rustdoc beside the code:
 
 | Topic | Module |
 | ----- | ------ |
-| Synchronisation, publication and admission; diagnostics as projections of the model | [`recheck`](src/recheck.rs) |
-| One parse per held text, shared by the structural requests | [`reading`](src/reading.rs) |
-| Semantic tokens | [`tokens`](src/tokens.rs) |
-| Completion | [`complete`](src/complete.rs) |
-| Signature help | [`signature`](src/signature.rs) |
-| Hover | [`hover`](src/hover.rs) |
-| Definitions, declarations | [`goto`](src/goto.rs) |
-| Workspace symbols | [`search`](src/search.rs) |
-| Highlights, references; rename; file moves | [`uses`](src/uses.rs); [`rename`](src/rename.rs); [`relocate`](src/relocate.rs) |
 | The lifecycle, its error codes, document URIs | [`server`](src/server.rs) |
-| Formatting | [`format`](src/format.rs) |
 | One hub per workspace | [`hub`](src/hub.rs) |
-| Model proposals | [`proposal`](src/proposal.rs) |
 | The render bus | [`bus`](src/bus.rs) |
-| The hub's fold of the activity ring | [`activity`](src/activity.rs) |
-| `gandr doc`'s site | [`site`](src/site.rs) |
+| The families that the server's handlers call, which their READMEs tabulate | [`gandr-surface-lsp-core`](../surface-lsp-core/README.md), [`gandr-surface-lsp-navigation`](../surface-lsp-navigation/README.md), [`gandr-surface-lsp-diagnostics`](../surface-lsp-diagnostics/README.md) |
 | The parts that read neither the dispatcher nor the session, which the base's README tabulates | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: an item slot offers `flow`.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `flow` supplies an import's translation.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming in a `flow` body is free.
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
-- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## License
 

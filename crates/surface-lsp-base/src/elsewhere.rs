@@ -85,7 +85,7 @@ pub struct Elsewhere<'held>
 /// - hypothesis: L3 — the unimported witness offers a function in a body, a
 ///   family in a type and a constructor in a pattern, and a module's member and
 ///   a private value nowhere.
-/// - witness: `gandr-surface-lsp::complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
+/// - witness: `gandr-surface-lsp-core::complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 #[must_use]
 #[inline]
 pub fn unimported_as(

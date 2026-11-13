@@ -174,12 +174,12 @@ pub enum Declarer
 ///   attribute block and its `;`, another stray and a trailing attribute block
 ///   are asserted at their exact symbols, and an import and a `rec` group
 ///   writing declarations at none.
-/// - witness: `gandr-surface-lsp::reading::tests::declarations_nest_as_symbols`
-/// - witness: `gandr-surface-lsp::reading::tests::a_deprecated_declaration_is_tagged`
-/// - witness: `gandr-surface-lsp::reading::tests::a_theory_holds_its_members`
-/// - witness: `gandr-surface-lsp::reading::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
-/// - witness: `gandr-surface-lsp::hover::tests::a_declaration_hovers_its_type_and_documentation`
-/// - witness: `gandr-surface-lsp::hover::tests::a_doc_attribute_hovers_its_declaration_3197`
+/// - witness: `gandr-surface-lsp-core::reading::tests::declarations_nest_as_symbols`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_deprecated_declaration_is_tagged`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_theory_holds_its_members`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
+/// - witness: `gandr-surface-lsp-core::hover::tests::a_declaration_hovers_its_type_and_documentation`
+/// - witness: `gandr-surface-lsp-core::hover::tests::a_doc_attribute_hovers_its_declaration_3197`
 #[spec(ensures: |ret| ret.iter().enumerate().all(|(position, found)|
     !found.1.name.is_empty() && found.1.holder.is_none_or(|holder| holder < position)))]
 #[must_use]
@@ -314,7 +314,7 @@ struct Rooted
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`declarations`]'s root forms.
-/// - witness: `gandr-surface-lsp::reading::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_root_form_that_declares_nothing_is_a_symbol_2073`
 fn rooted(
     grammar: &Pbg,
     roles: &RoleTable,
@@ -882,9 +882,9 @@ pub struct Run
 /// - hypothesis: L3 — as [`declarations`], and a theory's hover lists its
 ///   members, an `include` among them; a family and a theory written as layout
 ///   blocks hold their members as their braced spellings do.
-/// - witness: `gandr-surface-lsp::reading::tests::a_theory_holds_its_members`
-/// - witness: `gandr-surface-lsp::reading::tests::a_layout_block_holds_its_members_4853`
-/// - witness: `gandr-surface-lsp::hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_theory_holds_its_members`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_layout_block_holds_its_members_4853`
+/// - witness: `gandr-surface-lsp-core::hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(pair, [first, second] if first.span.end() <= second.span.start())))]
 #[must_use]
 #[inline]
@@ -998,8 +998,8 @@ impl Braces
     /// # Adequacy
     /// - hypothesis: L3 — as [`runs`], and a layout body's relabeled `=` ends
     ///   its declaration's head as a written `{` does (#5196).
-    /// - witness: `gandr-surface-lsp::reading::tests::a_layout_block_holds_its_members_4853`
-    /// - witness: `gandr-surface-lsp::hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
+    /// - witness: `gandr-surface-lsp-core::reading::tests::a_layout_block_holds_its_members_4853`
+    /// - witness: `gandr-surface-lsp-core::hover::tests::a_refused_declaration_hovers_what_the_lowering_kept_1201`
     #[inline]
     #[must_use]
     pub fn spelled<'tree>(
@@ -1040,8 +1040,8 @@ const BRACES: [&str; 3] = ["{", ";", "}"];
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`declarations`].
-/// - witness: `gandr-surface-lsp::reading::tests::a_theory_holds_its_members`
-/// - witness: `gandr-surface-lsp::reading::tests::declarations_nest_as_symbols`
+/// - witness: `gandr-surface-lsp-core::reading::tests::a_theory_holds_its_members`
+/// - witness: `gandr-surface-lsp-core::reading::tests::declarations_nest_as_symbols`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -1193,7 +1193,7 @@ fn member_kind(
 ///   one-line form or member, keeping the inner of two ranges starting on one
 ///   line, dropping a member, losing the comment kind, giving a comment a text
 ///   or eliding at the wrong tile changes them.
-/// - witness: `gandr-surface-lsp::reading::tests::multi_line_forms_and_documentation_fold`
+/// - witness: `gandr-surface-lsp-core::reading::tests::multi_line_forms_and_documentation_fold`
 #[spec(ensures: |ret| ret.iter().all(|fold| fold.start_line < fold.end_line)
     && ret.windows(2).all(|pair| matches!(pair, [first, second] if first.start_line < second.start_line)))]
 #[inline]
@@ -1293,7 +1293,7 @@ impl Skeleton
     ///   number inside a call, to a name, and to a theory member's name; a
     ///   skipped child, a layout bone, a reordered child or a member's bone
     ///   left out changes the chains it asserts.
-    /// - witness: `gandr-surface-lsp::reading::tests::a_selection_grows_from_the_innermost_form`
+    /// - witness: `gandr-surface-lsp-core::reading::tests::a_selection_grows_from_the_innermost_form`
     #[spec(ensures: |ret| ret.0.iter().all(|bone| bone.children.iter().all(|&child| child < ret.0.len())))]
     #[must_use]
     #[inline]
@@ -1380,7 +1380,7 @@ impl Skeleton
     ///   an operand are asserted at their exact chains. Preferring the node
     ///   ending at the position over the one holding it, repeating a span, or
     ///   stopping short of the document changes them.
-    /// - witness: `gandr-surface-lsp::reading::tests::a_selection_grows_from_the_innermost_form`
+    /// - witness: `gandr-surface-lsp-core::reading::tests::a_selection_grows_from_the_innermost_form`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|selection| !selection.ranges.is_empty()))]
     #[must_use]
     #[inline]
