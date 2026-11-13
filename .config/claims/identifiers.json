@@ -127,6 +127,28 @@
     "output": "sources: `kernel-core.md` is the page of the crate `kernel-core`: cite `kernel-core.md` in `## Sources`, or add the row `| `kernel-core.md` | not read | <why> |` (`units.md` § units-sources)"
   },
   {
+    "name": "#7120: a crate and a row named only inside fenced blocks, a pasted error and a listing, name nothing, so no page owes",
+    "input": {
+      "number": 3476,
+      "parent": null,
+      "body": "## Problem\n\nThe job fails:\n\n```\nerror[E0425]: cannot find value `x` in this scope\n --> crates/kernel-core/src/lib.rs:3:5\n```\n\n~~~text\n`hover` in `kernel-core`\n~~~\n## Sources\n\n| Source | Role | What it gives |\n| --- | --- | --- |\n| `x.md` | primary | x |\n",
+      "rows": ["parallel-checking", "hover"],
+      "crates": ["kernel-core", "core-fork"],
+      "design": [
+        "docs/programme/area-map.md",
+        "docs/programme/bracket.md",
+        "docs/programme/other.md",
+        "docs/programme/crates/kernel-core.md",
+        "plans/queue.md"
+      ],
+      "texts": {
+        "docs/programme/other.md": "## A\n\nThe row `hover`.\n"
+      },
+      "before": null
+    },
+    "output": ""
+  },
+  {
     "name": "#7019: a page that `## Sources` cites by its filename, or sets aside in a `not read` row, owes nothing",
     "input": {
       "number": 3476,
