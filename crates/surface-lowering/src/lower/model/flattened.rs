@@ -145,7 +145,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|slot| !slot.theories.is_empty())))]
-    pub(in crate::lower) fn model_slot(
+    #[inline]
+    pub fn model_slot(
         &mut self,
         site: Site,
         declared: Placed,
@@ -155,11 +156,11 @@ impl<'source> Lowerer<'_, 'source>
             at: declared,
             ..site
         };
-        let (applied, bound) = match self.cx.form_at(declared)? {
+        let (applied, bound) = match self.cx().form_at(declared)? {
             Some((_, Former::TypeApplication)) => (declared, None),
             Some((_, Former::ManifestType)) => {
                 let mut pieces = Pieces::new();
-                read_pieces(self.cx.pbg, self.cx.tree, declared.node, &mut pieces)?;
+                read_pieces(self.cx().pbg, self.cx().tree, declared.node, &mut pieces)?;
                 let mut cursor = Cursor::new(&pieces.pieces, declared.span);
                 let applied = written.one(cursor.operands())?;
                 closed(written, &mut cursor, TileName::WITH)?;
@@ -172,15 +173,17 @@ impl<'source> Lowerer<'_, 'source>
             at: applied,
             ..site
         };
-        let Ok(theory) =
-            self.stated_theory(at_applied, at_applied.out(FragmentBoundary::WrongSort))
+        let Ok(theory) = self
+            .shared()
+            .stated_theory(at_applied, at_applied.out(FragmentBoundary::WrongSort))
         else {
             return Ok(None);
         };
         let mut sorts = Vec::new();
         if let Some(bound) = bound {
             let mut scratch = Pieces::new();
-            self.bindings(written, bound, &mut scratch, &mut sorts)?;
+            self.shared()
+                .bindings(written, bound, &mut scratch, &mut sorts)?;
         }
         let named = Site {
             at: theory.last,
@@ -227,17 +230,17 @@ impl<'source> Lowerer<'_, 'source>
     {
         let node = site.at.node;
         let expected = self
-            .cx
+            .cx()
             .parameter_typed
             .get(&node)
             .map(|called| called.typed.node)
-            .or_else(|| match self.cx.inherited.get(&node) {
+            .or_else(|| match self.cx().inherited.get(&node) {
                 Some(&crate::lower::native::Classifier::Written(typed)) => Some(typed),
                 _ => None,
             })
-            .or_else(|| self.cx.classifiers.get(&node).copied());
+            .or_else(|| self.cx().classifiers.get(&node).copied());
         let Some(expected) =
-            expected.and_then(|typed| self.cx.tree.node(typed).map(|at| Placed::of(typed, at)))
+            expected.and_then(|typed| self.cx().tree.node(typed).map(|at| Placed::of(typed, at)))
         else {
             return Ok(BTreeMap::new());
         };
@@ -295,7 +298,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     /// - witness: `tests::namespace::an_imported_theory_at_a_dotted_path_is_named_wherever_a_theory_is_4514`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
-    pub(in crate::lower) fn theory_slot(
+    #[inline]
+    pub fn theory_slot(
         &mut self,
         named: Site,
         theory: &crate::form::WrittenPath,
@@ -305,7 +309,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let fixed: BTreeMap<Name, Placed> = sorts
             .iter()
-            .map(|&(sort, stated)| (Name::from(self.cx.name_at(sort).as_ref()), stated))
+            .map(|&(sort, stated)| (Name::from(self.cx().name_at(sort).as_ref()), stated))
             .collect();
         let mut theories = self.bundled(named, (at, theory))?;
         if let Some(outermost) = theories.first_mut() {
@@ -340,7 +344,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   runs, and one naming no module is refused at the name.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |supplied| matches!(*supplied, Supplied::Module(_))))]
-    pub(in crate::lower) fn named_model(
+    #[inline]
+    pub fn named_model(
         &mut self,
         site: Site,
         module: Placed,
@@ -379,7 +384,8 @@ impl<'source> Lowerer<'_, 'source>
         | Ok(Supplied::Module(_) | Supplied::Bound(_)) => false,
         | Err(_) => true,
     })]
-    pub(in crate::lower) fn answering_model(
+    #[inline]
+    pub fn answering_model(
         &mut self,
         site: Site,
         theory: SurfaceName<'source>,
@@ -388,9 +394,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let mut holes = Vec::with_capacity(slot.components().len());
         for _ in slot.components() {
-            holes.push(self.nominate(Nomination::Answering { theory })?);
+            holes.push(self.host().nominate(Nomination::Answering { theory })?);
         }
-        self.plan_slot(site, slot, holes.clone())?;
+        self.host().plan_slot(site, slot, holes.clone())?;
 
         Ok(Supplied::Nominated(holes))
     }
@@ -411,7 +417,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   it writes.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((_, id)) if sink.arena.value_type(id).is_some()))]
-    pub(in crate::lower) fn supplied_carrier(
+    #[inline]
+    pub fn supplied_carrier(
         &self,
         slot: &ModelSlot,
         supplied: &Supplied,
@@ -469,7 +476,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   state-passing carrier, as the module's members are declared.
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
-    pub(in crate::lower) fn operation_domain(
+    #[inline]
+    pub fn operation_domain(
         &self,
         slot: &ModelSlot,
         place: ComponentPlace,
@@ -523,10 +531,11 @@ impl<'source> Lowerer<'_, 'source>
     ///   its step and its reading, in order.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(
-        captures: before = self.cx.parameters.mark(),
-        ensures: |ret| ret.is_err() || usize::from(self.cx.parameters.mark()) == usize::from(before).saturating_add(slot.components().len()),
+        captures: before = self.cx().parameters.mark(),
+        ensures: |ret| ret.is_err() || usize::from(self.cx().parameters.mark()) == usize::from(before).saturating_add(slot.components().len()),
     )]
-    pub(in crate::lower) fn flatten_implicit(
+    #[inline]
+    pub fn flatten_implicit(
         &mut self,
         entry: TelescopeEntry<'source>,
         declared: Placed,
@@ -534,18 +543,18 @@ impl<'source> Lowerer<'_, 'source>
         frame: Frame,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        self.read(declared.node, Reading::ValueType(frame));
-        self.note_binder(entry.binder, frame, entry.name)?;
+        self.host().read(declared.node, Reading::ValueType(frame));
+        self.host().note_binder(entry.binder, frame, entry.name)?;
         let written = Maybe::Present(entry.binder.span);
         let mut frame = frame;
         let mut components = Vec::with_capacity(slot.components().len());
         for (place, component) in slot.components().iter().enumerate() {
             let bound = self
-                .cx
+                .cx_mut()
                 .scope
                 .extend_typed(frame, entry.name, declared.node, written);
-            self.cx.scope.mention(bound);
-            self.cx.parameters.push(Parameter::component(
+            self.cx_mut().scope.mention(bound);
+            self.cx_mut().parameters.push(Parameter::component(
                 entry.binder.node,
                 bound,
                 declared.node,
@@ -559,7 +568,7 @@ impl<'source> Lowerer<'_, 'source>
             frame = Frame::Inner(bound);
         }
         if let Frame::Inner(last) = frame {
-            let _first = self.cx.flattened.insert(last, Flattened {
+            let _first = self.cx_mut().flattened.insert(last, Flattened {
                 binder: entry.binder,
                 components,
                 fixed: slot.fixed.clone(),
@@ -586,7 +595,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   components, the first a sort.
     /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
     #[spec(ensures: |ret| ret.components.len() == slot.components().len() && ret.fixed.len() == slot.fixed.len())]
-    pub(in crate::lower) fn written_slot(
+    #[inline]
+    pub fn written_slot(
         &self,
         entry: TelescopeEntry<'source>,
         declared: Placed,
@@ -597,7 +607,7 @@ impl<'source> Lowerer<'_, 'source>
             name: entry.name,
             named: entry.binder.span,
             declared: declared.node,
-            theory: slot.theory.name(self.cx.tree),
+            theory: slot.theory.name(self.cx().tree),
             components: slot
                 .components()
                 .iter()
@@ -631,8 +641,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a model implicit named alone is refused, its
     ///   components read.
     /// - witness: `lower::implicit::tests::a_model_implicit_named_alone_is_refused_739`
-    #[spec(ensures: |ret| ret.is_ok() || matches!(resolved, Resolved::Binder(bound) if self.cx.flattened.contains_key(&bound.binder)))]
-    pub(in crate::lower) fn unflattened(
+    #[spec(ensures: |ret| ret.is_ok() || matches!(resolved, Resolved::Binder(bound) if self.cx().flattened.contains_key(&bound.binder)))]
+    #[inline]
+    pub fn unflattened(
         &self,
         site: Site,
         resolved: Resolved,
@@ -640,13 +651,13 @@ impl<'source> Lowerer<'_, 'source>
     {
         match resolved {
             Resolved::Binder(bound) => {
-                self.cx
+                self.cx()
                     .flattened
                     .get(&bound.binder)
                     .map_or(Ok(()), |flattened| {
                         Err(LoweringRefusal::ModelImplicitValue {
                             span: site.at.span,
-                            implicit: self.cx.name_at(flattened.binder),
+                            implicit: self.cx().name_at(flattened.binder),
                         })
                     })
             },
@@ -663,7 +674,7 @@ impl<'source> Lowerer<'_, 'source>
         binder: ScopeId,
     ) -> Option<Flattened>
     {
-        self.cx.flattened.get(&binder).cloned()
+        self.cx().flattened.get(&binder).cloned()
     }
 
     /// Classify `s.x`, written at `site` with the model implicit `s` at
@@ -689,7 +700,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   a fixed one.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Decode(..) | Plan::FixedCarrier(..)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Decode(..) | Plan::FixedCarrier(..)))))]
     pub(in crate::lower) fn flattened_sort(
         &mut self,
         site: Site,
@@ -699,7 +710,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
         let frame = site.reading.frame();
-        let name = self.cx.name_at(member);
+        let name = self.cx().name_at(member);
         let Some(first) = flattened
             .components
             .first()
@@ -712,10 +723,10 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .find(|&(sort, _)| sort.as_ref() == name.as_ref())
         {
-            let _frame = self.require(site, Produced::ValueType)?;
-            self.cx.fixed_carriers.push(written);
-            let telescope = self.telescope_at(site.at.node);
-            self.plan(
+            let _frame = self.host().require(site, Produced::ValueType)?;
+            self.cx_mut().fixed_carriers.push(written);
+            let telescope = self.host().telescope_at(site.at.node);
+            self.host().plan(
                 site,
                 Plan::FixedCarrier(
                     Code::Bound {
@@ -735,16 +746,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnknownMember {
                 span: member.span,
-                module: self.cx.name_at(head),
+                module: self.cx().name_at(head),
                 member: name,
             });
         };
         if !component.sort {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
-        let _frame = self.require(site, Produced::ValueType)?;
-        let telescope = self.name_in_type(site.at.node, component.frame);
-        self.plan(
+        let _frame = self.host().require(site, Produced::ValueType)?;
+        let telescope = self.host().name_in_type(site.at.node, component.frame);
+        self.host().plan(
             site,
             Plan::Decode(
                 Code::Bound {
@@ -783,7 +794,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a counter's step and reading read off its model
     ///   implicit and run.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx.plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(..)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.cx().plans.get(site.at.node), Some(&(Plan::Variable(..) | Plan::StaticApplication(..)))))]
     pub(in crate::lower) fn flattened_member(
         &mut self,
         site: Site,
@@ -792,7 +803,7 @@ impl<'source> Lowerer<'_, 'source>
         flattened: &Flattened,
     ) -> Result<arity::Planned, LoweringRefusal<'source>>
     {
-        let name = self.cx.name_at(selected);
+        let name = self.cx().name_at(selected);
         if flattened
             .fixed
             .iter()
@@ -807,7 +818,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(LoweringRefusal::UnknownMember {
                 span: selected.span,
-                module: self.cx.name_at(target),
+                module: self.cx().name_at(target),
                 member: name,
             });
         };
@@ -815,10 +826,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(arity::Planned(false));
         };
-        let frame = self.require(site, Produced::Value)?;
-        self.resolved(target.span, Resolved::Binder(bound));
-        let plan = if self.cx.in_type.contains(&site.at.node) {
-            let telescope = self.name_in_type(site.at.node, component.frame);
+        let frame = self.host().require(site, Produced::Value)?;
+        self.host().resolved(target.span, Resolved::Binder(bound));
+        let plan = if self.cx().in_type.contains(&site.at.node) {
+            let telescope = self.host().name_in_type(site.at.node, component.frame);
             Plan::StaticApplication(
                 Code::Bound {
                     from: frame,
@@ -838,7 +849,7 @@ impl<'source> Lowerer<'_, 'source>
                 u32::from(bound.index).saturating_add(u32::try_from(behind).unwrap_or(u32::MAX));
             Plan::Variable(DeBruijnIndex::from(index), component.frame)
         };
-        self.plan(site, plan);
+        self.host().plan(site, plan);
 
         Ok(arity::Planned(true))
     }
@@ -873,7 +884,8 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Supplied::Bound(ref variables)) => variables.len() == slot.components().len(),
         Ok(Supplied::Module(_) | Supplied::Nominated(_)) | Err(_) => true,
     })]
-    pub(in crate::lower) fn supply_model(
+    #[inline]
+    pub fn supply_model(
         &mut self,
         site: Site,
         frame: Frame,
@@ -881,7 +893,7 @@ impl<'source> Lowerer<'_, 'source>
         value: NodeIndex,
     ) -> Result<Supplied, LoweringRefusal<'source>>
     {
-        let Some(node) = self.cx.tree.node(value)
+        let Some(node) = self.cx().tree.node(value)
         else {
             return Err(LoweringRefusal::ModelImplicitValue {
                 span: site.at.span,
@@ -893,22 +905,22 @@ impl<'source> Lowerer<'_, 'source>
             span: resident.span,
             implicit,
         };
-        match self.cx.form_at(resident)? {
+        match self.cx().form_at(resident)? {
             Some((_, Former::Constructor | Former::TypeHead)) => {
                 let packed = self.packed_module(site, resident, &slot.theory, &slot.fixed)?;
                 Ok(Supplied::Module(Arc::new(packed)))
             },
             Some((_, Former::Name)) => {
-                let name = self.cx.name_at(resident);
-                let Maybe::Present(bound) =
-                    self.cx.scope.resolve(frame, name, &mut self.cx.fuel)?
+                let name = self.cx().name_at(resident);
+                let cx = self.cx_mut();
+                let Maybe::Present(bound) = cx.scope.resolve(frame, name, &mut cx.fuel)?
                 else {
                     return Err(LoweringRefusal::UnresolvedName {
                         span: resident.span,
                         name,
                     });
                 };
-                let Some(flattened) = self.flattened_at(bound.binder)
+                let Some(flattened) = self.shared().flattened_at(bound.binder)
                 else {
                     return Err(unnamed);
                 };
@@ -924,7 +936,7 @@ impl<'source> Lowerer<'_, 'source>
                         return Err(LoweringRefusal::UnknownMember {
                             span: resident.span,
                             module: name,
-                            member: self.cx.name_at(component.named),
+                            member: self.cx().name_at(component.named),
                         });
                     };
                     let behind = count.saturating_sub(place).saturating_sub(1);
@@ -932,7 +944,7 @@ impl<'source> Lowerer<'_, 'source>
                         .saturating_add(u32::try_from(behind).unwrap_or(u32::MAX));
                     variables.push((DeBruijnIndex::from(index), own.frame));
                 }
-                self.resolved(resident.span, Resolved::Binder(bound));
+                self.host().resolved(resident.span, Resolved::Binder(bound));
                 Ok(Supplied::Bound(variables))
             },
             _ => Err(unnamed),
@@ -961,20 +973,21 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(_, ref supplied)| matches!(*supplied, Supplied::Module(_)))))]
     #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
-    pub(in crate::lower) fn model_candidates(
+    #[inline]
+    pub fn model_candidates(
         &mut self,
         site: Site,
         slot: &ModelSlot,
     ) -> Result<Vec<(SurfaceName<'source>, Supplied)>, LoweringRefusal<'source>>
     {
-        let (wanted, _) = self.cx.collected.presented_theory_in(
+        let (wanted, _) = self.cx().collected.presented_theory_in(
             slot.theory.last.span.start(),
-            &self.theory_prefix(&slot.theory),
+            &self.shared().theory_prefix(&slot.theory),
             slot.theory.last.span,
-            self.cx.name_at(slot.theory.last),
+            self.cx().name_at(slot.theory.last),
         )?;
         let mut answering = BTreeSet::from([wanted]);
-        for (&theory, included) in &self.cx.collected.included {
+        for (&theory, included) in &self.cx().collected.included {
             for &(reached, _) in included {
                 if reached == wanted {
                     let _fresh = answering.insert(theory);
@@ -982,7 +995,7 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         let modules: Vec<(StructureIndex, ByteSpan, SurfaceName<'source>)> = self
-            .cx
+            .cx()
             .collected
             .structures
             .iter()
@@ -993,7 +1006,7 @@ impl<'source> Lowerer<'_, 'source>
                     && structure.declared_by.span.end() <= site.at.span.start()
                     && match structure.model {
                         Maybe::Present(model) => self
-                            .cx
+                            .cx()
                             .collected
                             .model_theories
                             .get(&model)
@@ -1039,7 +1052,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::supply_model`].
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value(id).is_some()))]
-    pub(in crate::lower) fn mint_supplied(
+    #[inline]
+    pub fn mint_supplied(
         &self,
         supplied: &Supplied,
         place: ComponentPlace,
@@ -1087,7 +1101,9 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return unminted;
                 };
-                let id = sink.arena.value_variable(self.cx.scope.zone(binder), index);
+                let id = sink
+                    .arena
+                    .value_variable(self.cx().scope.zone(binder), index);
                 sink.origins.record_value(id, inserted);
                 let raised = if under == Binders::NONE {
                     id
@@ -1104,11 +1120,11 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 let id = sink.arena.value_hole(hole);
                 sink.origins.record_value(id, inserted);
-                if let Some(&Nomination::Answering { theory }) = self.cx.nominations.get(&hole) {
+                if let Some(&Nomination::Answering { theory }) = self.cx().nominations.get(&hole) {
                     sink.origins.record_omitted(id, Omitted::Scope {
                         theory: String::from(theory.as_ref()),
                         candidates: self
-                            .cx
+                            .cx()
                             .model_candidates
                             .get(&hole)
                             .cloned()
@@ -1145,7 +1161,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   the code of its fixed type and each candidate's own.
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     /// - witness: `lower::implicit::tests::an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317`
-    pub(in crate::lower) fn mint_model(
+    #[inline]
+    pub fn mint_model(
         &mut self,
         planned: PlannedModel<'source>,
         sink: &mut Sink<'_>,
@@ -1155,7 +1172,7 @@ impl<'source> Lowerer<'_, 'source>
         let inserted = origin.inserted(Insertion::Implicit);
         let mut fixed = Vec::with_capacity(planned.fixed.len());
         for &(_, stated) in &planned.fixed {
-            let Maybe::Present(ty) = self.cx.value_type_at(stated.node)
+            let Maybe::Present(ty) = self.cx().value_type_at(stated.node)
             else {
                 return;
             };
@@ -1167,7 +1184,7 @@ impl<'source> Lowerer<'_, 'source>
         for &(_, ref supplied) in &planned.candidates {
             let mut components = Vec::with_capacity(planned.holes.len());
             for place in 0 .. planned.holes.len() {
-                match self.mint_supplied(
+                match self.shared().mint_supplied(
                     supplied,
                     ComponentPlace::from(place),
                     Binders::NONE,
@@ -1186,7 +1203,7 @@ impl<'source> Lowerer<'_, 'source>
             for &(ref name, _) in &planned.fixed {
                 let code = module.and_then(|module| {
                     let sort = self
-                        .cx
+                        .cx()
                         .collected
                         .structures
                         .get(usize::from(module))?
@@ -1194,7 +1211,7 @@ impl<'source> Lowerer<'_, 'source>
                         .iter()
                         .find(|component| component.name.as_ref() == name.as_ref())?
                         .name;
-                    self.packed_sort(module, sort, sink, inserted)
+                    self.shared().packed_sort(module, sort, sink, inserted)
                 });
                 let Some(code) = code
                 else {
@@ -1207,7 +1224,7 @@ impl<'source> Lowerer<'_, 'source>
                 fixed: own,
             });
         }
-        self.cx
+        self.cx_mut()
             .models
             .entry(planned.caller)
             .or_default()
@@ -1241,7 +1258,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   universe, then its zero, step and reading over the sort's variable.
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(ref domains) if !domains.is_empty()))]
-    pub(in crate::lower) fn flattened_domains(
+    #[inline]
+    pub fn flattened_domains(
         &self,
         declared: NodeIndex,
         sink: &mut Sink<'_>,
@@ -1251,7 +1269,7 @@ impl<'source> Lowerer<'_, 'source>
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
         let mut node = declared;
         let bundled = loop {
-            match self.cx.plans.get(node) {
+            match self.cx().plans.get(node) {
                 Some(&Plan::Transparent(inner)) => node = inner,
                 Some(&Plan::Bundle(ref bundled)) => break Arc::clone(bundled),
                 _ => return unminted,
@@ -1261,7 +1279,7 @@ impl<'source> Lowerer<'_, 'source>
             .manifests
             .iter()
             .map(
-                |&(ref name, defined)| match self.cx.value_type_at(defined) {
+                |&(ref name, defined)| match self.cx().value_type_at(defined) {
                     Maybe::Present(id) => Some((name, id)),
                     Maybe::Absent(_) => None,
                 },
@@ -1271,7 +1289,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return unminted;
         };
-        let below = match self.cx.origin_at(bundled.named) {
+        let below = match self.cx().origin_at(bundled.named) {
             Maybe::Present(named) => named.inserted(Insertion::Model),
             Maybe::Absent(_) => origin.inserted(Insertion::Model),
         };

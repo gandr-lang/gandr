@@ -1532,6 +1532,94 @@ impl<'source> Lowerer<'_, 'source>
     }
 }
 
+/// The native family's calls that a body of the identity, model or arity
+/// family makes through its host, while the body stands in the lowering.
+impl<'source> Lowerer<'_, 'source>
+{
+    /// The native family's `called_result`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn called_result(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        call: Placed,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        Native::new(self).called_result(site, frame, call)
+    }
+
+    /// The native family's `construct`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn construct(
+        &mut self,
+        site: Site,
+        constructor: Constructor,
+        fields: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        Native::new(self).construct(site, constructor, fields)
+    }
+
+    /// The native family's `constructor_head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn constructor_head(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).constructor_head(site, head)
+    }
+
+    /// The native family's `held_at`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn held_at(
+        &mut self,
+        stated: NodeIndex,
+    ) -> Result<native::Holds, LoweringRefusal<'source>>
+    {
+        Native::new(self).held_at(stated)
+    }
+
+    /// The native family's `looped_point`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn looped_point(
+        &mut self,
+        point: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        Native::new(self).looped_point(point)
+    }
+
+    /// The native family's `written_telescope`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn written_telescope(
+        &mut self,
+        node: NodeIndex,
+    ) -> Result<Option<NodeIndex>, LoweringRefusal<'source>>
+    {
+        Native::new(self).written_telescope(node)
+    }
+}
+
 /// The tables a closure's own module finishes with that a document's module
 /// resumed after the closure leads with: the binders in scope, the
 /// resolutions and the nested sites, built once when the closure's lowering
