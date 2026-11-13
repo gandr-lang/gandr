@@ -244,10 +244,10 @@ cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-too
 # The push (#7008): the builds of `tools:build` for the target of each
 # receiver that the builder's configuration names. Each key goes into the
 # mise install directory of the receivers of its target when its build ends.
-# mise comes to the pin on the builder and on each receiver. A marker records
-# each push, so a key goes to a host once. With no receiver it does nothing.
-# The follower runs it at each reading (`follow_tools` in
-# `.config/follow/follow.bash`).
+# mise comes to the pin on the builder and on each receiver, and each receiver
+# of keys turns mise's automatic installs off. A marker records each push, so
+# a key goes to a host once. With no receiver it does nothing. The follower
+# runs it at each reading (`follow_tools` in `.config/follow/follow.bash`).
 ["tools:push"]
 description = "Build the keys of each receiver's target, copy each key to its receivers and bring mise to the pin on each host"
 usage = '''
@@ -261,4 +261,22 @@ data=${XDG_DATA_HOME:-$HOME/.local/share}
 into=${usage_into:-$data/gandr/host-tools}
 cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
   push --into "$into" --mise-version "$pin"
+'''
+
+# The refusal (#7008): the tools of the checkout that this host lacks. A tool
+# lacks when mise holds no install of it, when its install holds no program,
+# or when a program of it is an ELF file of another machine. Each lack prints
+# one line with the tool, its version and the host's platform, and the lines
+# go into `$XDG_STATE_HOME/gandr/host-tools-needs.txt`, the need for the
+# builder. A tool whose backend needs a tool that the host disables stays out,
+# as `npm:` where `node` is off. The check also prints the host's mise against
+# the pin. A job on a host that receives keys runs it first.
+["tools:check"]
+description = "Name each tool of the checkout that this host lacks or holds for another machine, and the host's mise against the pin"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pin=$(mise run --quiet mise:pin)
+cargo run --quiet --release --locked -p gandr-workflow-host-tools --bin host-tools -- \
+  check --mise-version "$pin"
 '''

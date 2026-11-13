@@ -10,9 +10,7 @@
 //!
 //! # Items
 //!
-//! - [`names`] wraps each name a build reads and writes: a tool's key, a
-//!   version, a target, an install name, a program, a placeholder, a repository
-//!   and a template of a version.
+//! - [`names`] wraps each name a build, a push and a check read and write.
 //! - [`input`] reads a file whole and parses its TOML, with the file's path for
 //!   a refusal.
 //! - [`recipe`] reads the tree's table of the tools to build and how each one
@@ -30,7 +28,10 @@
 //!   tool's other versions, and the scratch of the builds when no build holds
 //!   it.
 //! - [`mod@push`] copies a key into mise's install directory on each host that
-//!   receives it, and brings mise to the pin on each host.
+//!   receives it, turns automatic installs off there, and brings mise to the
+//!   pin on each host.
+//! - [`lack`] reads the tools of a checkout that a host lacks: no install, no
+//!   program, or a program of another machine.
 //!
 //! # Boundaries
 //!
@@ -52,6 +53,7 @@ pub mod error;
 pub mod host;
 pub mod input;
 pub mod jobs;
+pub mod lack;
 pub mod lock;
 pub mod names;
 pub mod push;
@@ -71,12 +73,21 @@ pub use crate::host::Receiver;
 pub use crate::input::Input;
 pub use crate::jobs::Job;
 pub use crate::jobs::plan;
+pub use crate::lack::Lack;
+pub use crate::lack::Listing;
+pub use crate::lack::Machine;
+pub use crate::lack::disabled;
+pub use crate::lack::inspect;
+pub use crate::lack::lacks;
 pub use crate::lock::Lock;
+pub use crate::names::Json;
+pub use crate::names::Platform;
 pub use crate::names::Target;
 pub use crate::names::ToolKey;
 pub use crate::names::Version;
 pub use crate::push::Pushed;
 pub use crate::push::push;
+pub use crate::push::settle;
 pub use crate::push::update;
 pub use crate::recipe::Builds;
 pub use crate::recipe::Recipe;

@@ -23,12 +23,13 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies the specification attribute; serde and
-# toml read the table, `mise.lock` and the builder's configuration; clap
-# reads the invocation.
+# toml read the table, `mise.lock` and the builder's configuration; serde_json
+# reads mise's listing of a checkout's tools; clap reads the invocation.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 
 [lints]

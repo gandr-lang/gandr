@@ -1,7 +1,9 @@
-//! The names that a build reads and writes, each a wrapper of its text.
+//! The names that a build, a push and a check read and write, each a wrapper
+//! of its text.
 //!
 //! A tool's key, a version, a target triple, an install name, a program's
-//! name, a placeholder, a repository and a template of a version.
+//! name, a placeholder, a repository, a template of a version, a host, a path
+//! on a host, a platform and a text of JSON.
 
 use core::fmt;
 use std::path::Path;
@@ -146,6 +148,17 @@ name! {
     /// A path on a receiver, relative to its home directory, as
     /// `.local/share/mise`.
     RemotePath
+}
+
+name! {
+    /// A host's platform: its system and its architecture as Rust names them,
+    /// as `linux-riscv64`.
+    Platform
+}
+
+name! {
+    /// A text of JSON, as mise prints it.
+    Json
 }
 
 /// Go's name of an architecture that the hosts run.
