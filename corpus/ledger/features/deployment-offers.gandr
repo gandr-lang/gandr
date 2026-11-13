@@ -11,22 +11,24 @@
 /// each requiring world's row entry by entry: a label by its module taken as a
 /// functor's argument at `Model(T)` and the row's sorts, refused naming both
 /// types at other sorts, and a host interface by the site's `Authority`
-/// attenuated to its operations.
-/// Not implemented: code at a world typed against its row, and the offer as the
-/// world's authority at run.
+/// attenuated to its operations; code at a world is typed against its row;
+/// the host serving a world answers a migration's body from its own
+/// authority, attenuated to the host interfaces of the row.
+/// Not implemented: a label of the row at run, answered by the offer's model,
+/// and the endpoint a translation hosts.
 ///
 /// The requirement travels with the program and the offer stays with the site,
-/// so the check is the deployment's: nothing of it enters the program's
-/// identity or a run.
+/// so nothing of the deployment enters the program's identity.
 ///
-/// - owes: #3545 — code at a world typed against its row
-/// - owes: #3546 — the offer as the world's authority at run
+/// - owes: #6546 — a label of the row at run, answered by the offer's model
+/// - owes: #6271 — the endpoint a translation hosts
 /// - see: corpus/model/deployments/offers.site.gandr
 /// - see: corpus/model/deployments/offers.manifold.gandr
 /// - see: corpus/pathological/worlds/offers.gandr
 /// - see: corpus/pathological/worlds/offered.gandr
 /// - see: corpus/pathological/worlds/requires.gandr
 /// - see: crates/surface-driver/tests/cli.rs
+/// - see: crates/surface-driver/tests/net.rs
 
 // The console's host interface.
 import std.io;
