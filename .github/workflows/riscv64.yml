@@ -117,6 +117,13 @@ jobs:
       # target path that the binaries name.
       - name: link the extracted target directory at the target path of the archive
         run: ln -sfn "$RUNNER_TEMP/riscv64-tests/target" "$GANDR_RISCV64_TARGET_DIR"
+      # Two workspace tests run `cargo tree --offline --locked` against the
+      # runner's own cargo home. The archive holds no source, so a git
+      # revision that the lockfile pins after the last fetch on this runner
+      # is absent, and those tests fail (#7117). The step fetches every
+      # source of the lockfile; a cache that holds them all fetches nothing.
+      - name: fetch the sources of the lockfile
+        run: cargo fetch --locked --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml"
       # The riscv64 host also runs timed measures, each under the host lock
       # `par` (`bench:scaling`, #6879). A test run beside a measure loads the
       # host past the tests' timeouts, and the measure times the run's load
