@@ -112,8 +112,11 @@ use gandr_surface_lsp_base::quiet::QUIET;
 use gandr_surface_lsp_base::quiet::formless;
 use gandr_surface_lsp_base::quiet::publishable;
 use gandr_surface_lsp_base::session_trace::SessionTrace;
+use gandr_surface_lsp_base::tokens::Resolved;
 use gandr_surface_lsp_base::tokens::ResultId;
 use gandr_surface_lsp_base::tokens::TokenStream;
+use gandr_surface_lsp_base::tokens::encode;
+use gandr_surface_lsp_base::tokens::overlapping;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use gandr_surface_render_remote::AccountCard;
@@ -365,10 +368,7 @@ use crate::sweep::Sweep;
 use crate::sweep::Sweeping;
 use crate::syntax::printed;
 use crate::tier::Tiers;
-use crate::tokens::Resolved;
 use crate::tokens::classified;
-use crate::tokens::encode;
-use crate::tokens::overlapping;
 use crate::toolkit::forms;
 use crate::toolkit::grammar;
 use crate::transport::Body;
@@ -10821,7 +10821,7 @@ mod tests
                 .clone();
             let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
             let index = gandr_surface_render_remote::LineIndex::new(text.as_str().into());
-            let written = crate::tokens::encode(
+            let written = gandr_surface_lsp_base::tokens::encode(
                 &index,
                 crate::reading::Reading::of(gandr_surface_syntax::SourceText::from(text.as_str()))
                     .spans(),
