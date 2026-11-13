@@ -3361,9 +3361,10 @@ echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases re
 # (`.config/deletes/policy-cases.bash`), of the cache of records
 # (`.config/deletes/records-cases.bash`), of the reading of each changed
 # test (`.config/deletes/tests-cases.bash`), of the act of each item that
-# leaves (`.config/deletes/acts-cases.bash`), of the patches that moved
-# since a sign-off (`.config/deletes/moved-cases.bash`) and of the queue's
-# walk, its bodies and its commit rules (`.config/queue/cases.bash`).
+# leaves (`.config/deletes/acts-cases.bash`), of the origin of each thing
+# that leaves (`.config/deletes/origin-cases.bash`, #7259), of the patches
+# that moved since a sign-off (`.config/deletes/moved-cases.bash`) and of the
+# queue's walk, its bodies and its commit rules (`.config/queue/cases.bash`).
 ["check:deletes"]
 description = "A body accounts for each item, test, ledger row and file its change takes out, with the architect's sign-off for each item whose body stands nowhere in the head; with no body, the rule's cases"
 tools.jq = "1.8.1"
@@ -3382,6 +3383,7 @@ if [[ -z ${usage_body:-} ]]; then
   .config/deletes/records-cases.bash
   .config/deletes/tests-cases.bash
   .config/deletes/acts-cases.bash
+  .config/deletes/origin-cases.bash
   .config/deletes/moved-cases.bash
   .config/queue/cases.bash
   echo "deletes check OK: $(jq length .config/deletes/cases.json) cases read as recorded"

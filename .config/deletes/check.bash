@@ -228,26 +228,21 @@ if [[ $mode == full ]]; then
   watched() { git ls-tree -r --name-only "$1" -- corpus docs ledger crates | awk '!/^crates\// || /^crates\/[^\/]+\/README\.md$/' | sort -u; }
   watched "$base" > "$scratch/files-base"
   watched HEAD > "$scratch/files-head"
-  # The pull request of the commit that adds a text to a file at the base:
-  # the oldest commit whose change adds or removes the text, and the number
-  # its subject ends with.
-  origin() {
-    local text=$1 file=$2 subject
-    subject=$(git log --reverse --format=%s -S"$text" "$base" -- "$file" 2> /dev/null | awk 'NR == 1')
-    [[ $subject =~ \(#([0-9]+)\)$ ]] && echo "${BASH_REMATCH[1]}" || echo null
-  }
-  added() {
-    local subject
-    subject=$(git log --diff-filter=A --format=%s "$base" -- "$1" 2> /dev/null | awk 'END { print }')
-    [[ $subject =~ \(#([0-9]+)\)$ ]] && echo "${BASH_REMATCH[1]}" || echo null
-  }
+  # The pull request that adds each thing that leaves: an item by its own
+  # lines, a ledger row and a kept line by their text, and a file by its first
+  # commit (`origin.bash`, #7259).
+  origin() { "$here/origin.bash" "$base" text "$2" "$1"; }
+  added() { "$here/origin.bash" "$base" file "$1"; }
   left=$({
     jq -c --slurpfile head "$scratch/items-head.json" '($head[0] | map(.id)) as $h | .[] | select(.id | IN($h[]) | not)' "$scratch/items-base.json" \
       | while IFS= read -r item; do
-          id=$(jq -r .id <<< "$item")
-          file=$(jq -r .file <<< "$item")
-          segment=$(sed -E 's/.*:://; s/[<>]//g' <<< "$id")
-          jq -c --argjson origin "$(origin "$segment" "$file")" --slurpfile acts "$scratch/acts.json" \
+          IFS=$'\t' read -r id file start end < <(jq -r '[.id, .file, (.start // ""), (.end // "")] | @tsv' <<< "$item")
+          if [[ $start =~ ^[0-9]+$ && $end =~ ^[0-9]+$ ]]; then
+            found=$("$here/origin.bash" "$base" span "$file" "$start" "$end")
+          else
+            found=$(origin "$(sed -E 's/.*:://; s/[<>]//g' <<< "$id")" "$file")
+          fi
+          jq -c --argjson origin "$found" --slurpfile acts "$scratch/acts.json" \
             '{id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}' <<< "$item"
         done
     comm -23 "$scratch/ledger-base" "$scratch/ledger-head" | while IFS= read -r key; do
