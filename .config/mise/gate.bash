@@ -17,14 +17,15 @@
 # gate waits for its first, while another lane's gate takes the free slot. The
 # lane is the longest lane of the factory's lane table
 # (`.config/claims/lanes.bash`) that the worktree's name equals or starts with
-# before a `-`, a leading `lane-` dropped: `lane-flex-a` and
-# `flex-a-6699-gate-slots` are both the lane `flex-a`, and `lane-flex-b` is
-# another lane (#6699). A name that no lane of the table gives, or a host with
-# no table, gives the name up to its first `-`: `surface-4911-gate-scope` is
-# the lane `surface`. A heavy `check:*` task run alone (`check:doc`,
-# `check:clippy*`, `check:dylint`, `check:tests*`) takes its lane's lock and a
-# slot as the gate does, through `.config/mise/gated`; inside a gate, which
-# exports `GANDR_GATE_SLOT`, it takes none.
+# before a `-`, a leading `<repository>.` and a leading `lane-` dropped:
+# `lane-flex-a`, `gandr.lane-flex-a` and `flex-a-6699-gate-slots` are all the
+# lane `flex-a`, and `lane-flex-b` is another lane (#6699, #7046). A name that
+# no lane of the table gives, or a host with no table, gives the name up to
+# its first `-`: `surface-4911-gate-scope` is the lane `surface`. A heavy
+# `check:*` task run alone (`check:doc`, `check:clippy*`, `check:dylint`,
+# `check:tests*`) takes its lane's lock and a slot as the gate does, through
+# `.config/mise/gated`; inside a gate, which exports `GANDR_GATE_SLOT`, it
+# takes none.
 #
 # A slot is the host lock `gate` (`host-lock.bash`, #3105): `gate.<n>.lock`
 # under `gandr/` in the user's runtime directory, held with `flock(2)` for the
@@ -53,13 +54,21 @@ gate_cores=$(getconf _NPROCESSORS_ONLN)
 gate_slots=${GANDR_GATE_SLOTS:-$(( gate_cores / 8 > 1 ? gate_cores / 8 : 1 ))}
 
 # The lane of the worktree the gate runs in: the longest lane of the lane
-# table that the worktree's name equals or starts with before a `-`, a leading
-# `lane-` dropped, else the name up to its first `-`. Outside a worktree, the
-# working directory's name stands for it.
+# table that the worktree's name equals or starts with before a `-`, else the
+# name up to its first `-`. The name drops a leading `<repository>.` and then
+# a leading `lane-`. A worktree that `wt` makes is `<repository>.<branch>`, and
+# the repository is the directory that holds the common git directory: with
+# that name kept, every lane's worktree `gandr.flex-…` read as the one lane
+# `gandr.flex` (#7046). Outside a worktree, the working directory's name
+# stands for it.
 gate_lane() {
-  local top name lane best=
+  local top name lane best= common
   top=$(git rev-parse --show-toplevel 2> /dev/null) || top=$PWD
   name=${top##*/}
+  if common=$(git rev-parse --path-format=absolute --git-common-dir 2> /dev/null); then
+    common=${common%/.git}
+    name=${name#"${common##*/}".}
+  fi
   name=${name#lane-}
   while IFS= read -r lane; do
     if [[ $name == "$lane" || $name == "$lane"-* ]] && (( ${#lane} > ${#best} )); then best=$lane; fi
