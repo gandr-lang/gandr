@@ -1448,8 +1448,8 @@ struct Recording<'session, M>
 
 /// What a walk of the checker machine carries from one goal to the next,
 /// beside its frames, its context and its [`Recording`]. A goal's child that
-/// runs on a frame stack of its own walks on from its parent's walk, and
-/// gives its walk back at the join.
+/// runs on a frame stack of its own starts from a copy of its parent's walk,
+/// and its own walk ends with it.
 struct Walk
 {
     /// The stages this run's structural fixpoints and their cases mint, from
@@ -5442,6 +5442,35 @@ where
             };
             match frame {
                 Frame::Pending(mut goals, result) => {
+                    if let Some(fork) = sibling_fork(
+                        judgement,
+                        goals.len(),
+                        census,
+                        matches!(root, Maybe::Absent(_)) && staged_bodies == 0,
+                    ) && siblings_forked(
+                        arena,
+                        judgement,
+                        fork,
+                        &Siblings {
+                            context: &context,
+                            goals: &goals,
+                            field: None,
+                            stages: &stages,
+                            root,
+                            staged_bodies,
+                            own_fixpoint,
+                            parameters,
+                        },
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )? {
+                        produced = result;
+                        continue;
+                    }
                     if let Some(next) = goals.pop() {
                         frames.push(Frame::Pending(goals, result));
                         goal = next;
@@ -5454,6 +5483,35 @@ where
                     holder,
                     begun,
                 } => {
+                    if let Some(fork) = sibling_fork(
+                        judgement,
+                        remaining.len(),
+                        census,
+                        matches!(root, Maybe::Absent(_)) && staged_bodies == 0,
+                    ) && siblings_forked(
+                        arena,
+                        judgement,
+                        fork,
+                        &Siblings {
+                            context: &context,
+                            goals: &remaining,
+                            field: Some((holder, begun)),
+                            stages: &stages,
+                            root,
+                            staged_bodies,
+                            own_fixpoint,
+                            parameters,
+                        },
+                        Recording {
+                            memo,
+                            session,
+                            census,
+                            owed,
+                        },
+                    )? {
+                        produced = Produced::Checked;
+                        continue;
+                    }
                     if let Some(next) = remaining.pop() {
                         frames.push(Frame::Fields {
                             remaining,
@@ -8820,6 +8878,307 @@ where
         }
     }
     Ok(passed.then_some(ledger))
+}
+
+/// The fewest sibling goals of one frame that a check forks.
+const FORKED_SIBLINGS: usize = 2;
+
+/// The fewest goals a check expands before it forks a frame's sibling goals.
+/// A check that expanded fewer is small, and its siblings cost less to check
+/// on the calling thread than a part costs to fork and to join.
+const FORKED_AFTER: u64 = 256;
+
+/// The fork through which a frame of `count` sibling goals checks them apart,
+/// if the check forks them: the check holds a fork of more than one worker,
+/// the frame holds two goals or more, the walk stands at no root and under no
+/// fixpoint body (`unrooted`), and the check expanded [`FORKED_AFTER`] goals
+/// or more. The decision reads counts alone, so each run at one width forks
+/// the same frames.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn sibling_fork<'session>(
+    judgement: Judgement<'session>,
+    count: usize,
+    census: &ExpansionCensus,
+    unrooted: bool,
+) -> Option<&'session dyn crate::fork::ObligationFork>
+{
+    let fork = judgement.forking.fork()?;
+    (unrooted
+        && count >= FORKED_SIBLINGS
+        && NonZeroUsize::from(fork.workers()).get() > 1
+        && u64::from(census.expansions()) >= FORKED_AFTER)
+        .then_some(fork)
+}
+
+/// The sibling goals of one frame, as [`siblings_forked`] reads them, and the
+/// walk the frame stands in, at no root and under no fixpoint body.
+struct Siblings<'frame>
+{
+    /// The context the goals are checked in.
+    context: &'frame [ValueTypeId],
+    /// The goals, the next last.
+    goals: &'frame [Goal],
+    /// The holder of a `Fields` frame and how many of its fields began, or
+    /// none for a `Pending` frame.
+    field: Option<(ValueId, usize)>,
+    /// The walk's stages.
+    stages: &'frame StageOrder,
+    /// The walk's root.
+    root: Maybe<(ComputationId, respect::Reading), respect::root::Absent>,
+    /// The fixpoint bodies the walk stands under.
+    staged_bodies: usize,
+    /// The declaration's own fixpoint, while it is in scope.
+    own_fixpoint: Maybe<(usize, ValueTypeId), recursion::Unowned>,
+    /// The walk's kept parameters.
+    parameters: KeptParameters,
+}
+
+/// One sibling goal of a frame, checked apart from its siblings: on a clone
+/// of the frame's frozen arena, through overlays of the frame's memo and
+/// session, from a copy of the frame's walk. It drains the obligations it
+/// owes on its own clone, so none of them names a node the join leaves out.
+struct SiblingPart<'part>
+{
+    /// The judgement of the frame.
+    judgement: Judgement<'part>,
+    /// Set by the first part that refuses: a part that has not started then
+    /// does not start, since the frame checks its goals inline after.
+    refused: &'part AtomicBool,
+    /// A clone of the frame's frozen arena, which the part mints into.
+    arena: TermArena,
+    /// An overlay of the frame's memo.
+    memo: DefaultMemo,
+    /// The frame's session, forked at its innermost open goal.
+    session: SupportContext,
+    /// The goals the part expanded and recalled.
+    census: ExpansionCensus,
+    /// The context the goal is checked in, until the part runs.
+    context: Vec<ValueTypeId>,
+    /// The goal.
+    goal: Goal,
+    /// The part's walk, a copy of the frame's.
+    walk: Walk,
+    /// The holder of the field the goal checks, and how many of its fields
+    /// began with this one, so a refusal names the field.
+    field: Option<(ValueId, usize)>,
+    /// The part's answer, once it ran.
+    answer: Option<Result<(), KernelError>>,
+}
+
+impl crate::fork::Job for SiblingPart<'_>
+{
+    /// Check the part's goal, then drain the obligations it owes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run(&mut self)
+    {
+        if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
+            return;
+        }
+        let answer = self.check();
+        if answer.is_err() {
+            self.refused.store(true, Ordering::Relaxed);
+        }
+        self.answer = Some(answer);
+    }
+}
+
+impl SiblingPart<'_>
+{
+    /// Check the part's goal on a frame stack of its own, with its field's
+    /// frame at the bottom, and drain what the goal owes into the session's
+    /// ledger.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn check(&mut self) -> Result<(), KernelError>
+    {
+        let mut frames = Vec::new();
+        if let Some((holder, begun)) = self.field {
+            frames.push(Frame::Fields {
+                remaining: Vec::new(),
+                holder,
+                begun,
+            });
+        }
+        let mut owed = Vec::new();
+        let _produced = machine(
+            &mut self.arena,
+            self.judgement,
+            core::mem::take(&mut self.context),
+            self.goal,
+            &mut self.walk,
+            Recording {
+                memo: &mut self.memo,
+                session: &mut self.session,
+                census: &mut self.census,
+                owed: &mut owed,
+            },
+            &mut frames,
+        )
+        .map_err(|refusal| field_refused(&self.arena, &frames, refusal))?;
+        if owed.is_empty() {
+            return Ok(());
+        }
+        let mut ledger = DrainLedger::default();
+        drain_into(
+            &mut self.arena,
+            self.judgement,
+            &mut self.memo,
+            &mut self.session,
+            &mut self.census,
+            owed,
+            &mut ledger,
+        )?;
+        self.session.fold_drained(ledger);
+        Ok(())
+    }
+}
+
+/// Check the sibling goals of one frame apart, one part for each goal,
+/// through `fork`, and fold the parts in the serial order of the goals.
+///
+/// # Specification
+/// - requires: `frame` holds the goals of a frame and the walk it stands in, at
+///   no root and under no fixpoint body; `recording` is the frame's.
+/// - ensures: true when each part passed. The arena, the memo, the session and
+///   the census then hold the parts' folds; the memo keeps no outcome that
+///   names a node of a part's own; the session's innermost open goal holds what
+///   each part read and owed, and its ledger what each part drained. False when
+///   the memo cannot fork, or when a part refused or did not run. The arena's
+///   nodes, the memo's answers, the session's accruals and the census are then
+///   as the call found them, and the frame checks its goals inline, so a
+///   refusal is the serial run's.
+/// - provides: the fork of a frame's sibling goals.
+/// - fails: two parts that keep two outcomes under one key, which do not glue.
+/// - panics: a panic of a part.
+///
+/// # Errors
+/// [`KernelError::KeptOutcomesDisagree`], naming the key by its content digest
+/// and both outcomes, when the memo or the session of a part keeps an outcome
+/// under a key that an earlier part kept with another outcome.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declarations whose frames pass and refuse, checked at
+///   width one, in the reverse order and on threads of their own, against the
+///   unforked check.
+/// - witness: `check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
+#[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
+fn siblings_forked<M>(
+    arena: &mut TermArena,
+    judgement: Judgement<'_>,
+    fork: &dyn crate::fork::ObligationFork,
+    frame: &Siblings<'_>,
+    recording: Recording<'_, M>,
+) -> Result<bool, KernelError>
+where
+    M: CheckMemo<NodeSupport, NodeOutcome>,
+{
+    let Recording {
+        memo,
+        session,
+        census,
+        ..
+    } = recording;
+    let &Siblings {
+        context,
+        goals,
+        field,
+        stages,
+        root,
+        staged_bodies,
+        own_fixpoint,
+        parameters,
+    } = frame;
+    let mut memos = Vec::with_capacity(goals.len());
+    for _goal in goals {
+        let Some(child) = memo.fork_child()
+        else {
+            return Ok(false);
+        };
+        memos.push(child);
+    }
+    let taken = judgement.taking.taken();
+    arena.freeze();
+    let refused = AtomicBool::new(false);
+    // The serial run checks the goals last first, as the frame pops them.
+    let mut parts: Vec<SiblingPart<'_>> = goals
+        .iter()
+        .rev()
+        .zip(memos)
+        .zip(1_usize ..)
+        .map(|((&goal, part_memo), position)| SiblingPart {
+            judgement,
+            refused: &refused,
+            arena: arena.clone(),
+            memo: part_memo,
+            session: session.fork_goal(arena),
+            census: ExpansionCensus::new(),
+            context: context.to_vec(),
+            goal,
+            walk: Walk {
+                stages: stages.clone(),
+                root,
+                staged_bodies,
+                own_fixpoint,
+                parameters,
+            },
+            field: field.map(|(holder, begun)| (holder, begun.saturating_add(position))),
+            answer: None,
+        })
+        .collect();
+    {
+        let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
+            .iter_mut()
+            .map(|part| -> &mut dyn crate::fork::Job { part })
+            .collect();
+        fork.run_jobs(&mut jobs);
+    }
+    let passed = parts.iter().all(|part| matches!(part.answer, Some(Ok(()))));
+    if !passed {
+        judgement.taking.reset(taken);
+    }
+    // A reader that names nodes by their positions forgets each part's own
+    // before any fold, so a refused fold leaves none of them behind.
+    for part in &parts {
+        arena.dropped(&part.arena);
+    }
+    for part in parts {
+        let SiblingPart {
+            memo: part_memo,
+            session: part_session,
+            census: part_census,
+            ..
+        } = part;
+        // A refused fork folds no entry: the join only lets the memo settle
+        // its frozen layer. An outcome that names a node of the part's own
+        // names a node that the join leaves out, so the memo does not keep it.
+        memo.join_child(part_memo, |_, outcome| {
+            passed
+                && match *outcome {
+                    NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                    NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                    NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                }
+        })
+        .map_err(|disagreement| {
+            let (key, held, offered) = disagreement.into_parts();
+            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                crate::error::KeptOutcomes::new(key.digest(), held, offered),
+            ))
+        })?;
+        if passed {
+            session.join_goal(arena, part_session)?;
+            census.absorb(&part_census);
+        }
+    }
+    Ok(passed)
 }
 
 /// Check a closed value without admitting a declaration or retaining a memo.
