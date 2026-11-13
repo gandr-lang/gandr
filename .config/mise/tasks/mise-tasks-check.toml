@@ -2459,6 +2459,10 @@ run = ".config/landing/rebase-cases.bash"
 # and as a lane's gate run it. `.config/integration/each-red-cases.bash`
 # (#6750): the watcher's reading of a head with two red tests in two packages
 # gives one line for each test, and a lane's scope keeps fail-fast.
+# `.config/integration/fill-cases.bash` (#6861): the watcher fills the
+# records cache of `check:deletes` over each package that the move to a green
+# head touches, one at a time and in the background, and a newer green head
+# stops the fill.
 ["check:integration"]
 description = "The integration cycle's step, known-red list, brake and runner, and the head watcher's search, owner and gap, give each recorded case its output"
 tools.jq = "1.8.1"
@@ -2472,6 +2476,7 @@ set -euo pipefail
 .config/integration/repaired-cases.bash
 .config/integration/environment-cases.bash
 .config/integration/each-red-cases.bash
+.config/integration/fill-cases.bash
 echo "integration check OK: $(jq length .config/integration/cases.json) cases read as recorded"
 '''
 
@@ -3098,11 +3103,11 @@ echo "dead-weight check OK: $(jq length .config/dead-weight/cases.json) cases re
 # below it. Each entry's body is read once (`.config/queue/bodies.bash`,
 # #6883) and serves the ledger's check too. Each side's records come from a
 # cache keyed by each input that they read (`.config/deletes/records.bash`,
-# #6823), and the misses build in one run. With no body, as in the gate, it
-# runs the cases of `deletes.jq` (`.config/deletes/cases.json`), of the
-# record run's settings (`.config/deletes/policy-cases.bash`), of the cache
-# of records (`.config/deletes/records-cases.bash`), of the reading of each
-# changed test (`.config/deletes/tests-cases.bash`), of the patches that
+# #6823), and each miss builds in a run of its own (#6861). With no body, as
+# in the gate, it runs the cases of `deletes.jq` (`.config/deletes/cases.json`),
+# of the record run's settings (`.config/deletes/policy-cases.bash`), of the
+# cache of records (`.config/deletes/records-cases.bash`), of the reading of
+# each changed test (`.config/deletes/tests-cases.bash`), of the patches that
 # moved since a sign-off (`.config/deletes/moved-cases.bash`) and of the
 # queue's walk, its bodies and its commit rules (`.config/queue/cases.bash`).
 ["check:deletes"]

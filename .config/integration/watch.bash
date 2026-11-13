@@ -23,6 +23,15 @@
 # that fails there fails for the host, and the watcher pages the fixer and
 # files nothing.
 #
+# After a green head, the next reading fills the records cache of
+# `check:deletes` for it (#6861, `watch_fill`). The fill runs
+# `.config/deletes/records.bash` of the head over each package that the move
+# since the last filled head touches, in a worktree of its own,
+# `watch-records`, at niceness 19. Then the first check of a pull request on
+# that head reads its base from the cache. The cache is on this host alone.
+# Its state is `watch_fill_state`: `filled`, the last head whose fill ends,
+# and beside it the process of the fill that runs.
+#
 # The watcher calls GitHub only for a red head: one read of the culprit's
 # pull request, one read of the open `landing:` defects, and the writes of
 # one defect, its claim and its page. A green head and an unmoved one call
@@ -44,6 +53,8 @@ watch_dir="$(git rev-parse --show-toplevel)/.config/integration"
 watch_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-watch.json"
 watch_tree="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-landing"
 watch_home="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-service"
+watch_records="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/watch-records"
+watch_fill_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/landing-fill.json"
 watch_limit=45
 watch_interval=60
 source "$watch_dir/../stall/stall.bash"
@@ -366,6 +377,73 @@ watch_gate() {
   jq -c --arg head "$head" '.checked = $head' <<< "$memory"
 }
 
+# The packages whose directories the move from `$2` to `$3` touches in the
+# tree `$1`, one `<package>=crates/<directory>` pair a line. A directory with
+# no `Cargo.toml` holds no package.
+watch_touched() {
+  local tree=$1 dir name
+  git -C "$tree" diff --no-renames --name-only "$2" "$3" -- crates/ | awk -F/ 'NF > 2 { print $2 }' | sort -u | while IFS= read -r dir; do
+    [[ -f $tree/crates/$dir/Cargo.toml ]] || continue
+    name=$(awk -F'"' '/^\[/ { package = ($0 == "[package]"); next } package && /^name *=/ { print $2; exit }' "$tree/crates/$dir/Cargo.toml")
+    if [[ -n $name ]]; then echo "$name=crates/$dir"; fi
+  done
+}
+
+# Fills the records cache of `check:deletes` for the green head `$1` (#6861).
+# The fill runs `records.bash` over each package that the move from `$2`
+# touches, one package at a time. It runs in the worktree `watch_records` at
+# the head, so a checkout of the gate never moves the tree under a run. It
+# runs at niceness 19 and in no gate slot, as the gate of the watcher runs
+# (#6638). A newer green head in the state stops the fill before its next
+# package, and the next fill starts from the last filled head. A package that
+# does not build leaves its miss to the checks. A head whose tree holds no
+# `records.bash` fills nothing.
+watch_fill() {
+  local head=$1 from=$2 pair out
+  if [[ -e $watch_records/.git ]]; then
+    git -C "$watch_records" checkout --quiet --force --detach "$head" || return 1
+    git -C "$watch_records" clean --quiet --force -d || return 1
+  else
+    git -C "$watch_tree" worktree add --quiet --detach "$watch_records" "$head" || return 1
+  fi
+  mise trust --quiet "$watch_records" > /dev/null 2>&1 || :
+  if [[ -x $watch_records/.config/deletes/records.bash ]]; then
+    out=$(mktemp -d)
+    while IFS= read -r pair; do
+      if [[ $(jq -r '.green // empty' <<< "$(watch_memory)") != "$head" ]]; then
+        echo "landing:watch: a newer green head stops the fill of ${head::9}" >&2
+        rm -rf "$out"
+        return 0
+      fi
+      (cd "$watch_records" && nice -n 19 mise exec -- .config/deletes/records.bash "$watch_records" "$watch_records/target/deletes" "$out" "$pair") >&2 \
+        || echo "landing:watch: the records of ${pair%%=*} at ${head::9} do not build" >&2
+    done < <(watch_touched "$watch_records" "$from" "$head")
+    rm -rf "$out"
+  fi
+  jq -n -c --arg head "$head" '{filled: $head}' > "$watch_fill_state.tmp"
+  mv "$watch_fill_state.tmp" "$watch_fill_state"
+}
+
+# Starts the fill of the green head `$1` in the background, when no fill runs
+# and the last fill holds another head (#6861). The move starts at the last
+# filled head when that head comes before `$1`, and else at the first parent
+# of `$1`. The fill writes its log to `landing-fill.log` beside the state.
+watch_prefill() {
+  local green=$1 filled pid=
+  [[ -n $green ]] || return 0
+  if [[ -f $watch_fill_state.pid ]]; then pid=$(< "$watch_fill_state.pid"); fi
+  if [[ -n $pid ]] && kill -0 "$pid" 2> /dev/null; then return 0; fi
+  filled=$(jq -r '.filled // empty' "$watch_fill_state" 2> /dev/null) || filled=
+  [[ $filled != "$green" ]] || return 0
+  if [[ -z $filled ]] || ! git -C "$watch_tree" merge-base --is-ancestor "$filled" "$green" 2> /dev/null; then
+    filled=$(git -C "$watch_tree" rev-parse --verify --quiet "$green^") || return 0
+  fi
+  mkdir -p "$(dirname "$watch_fill_state")"
+  nohup bash -c 'source "$1/watch.bash" && watch_fill "$2" "$3"' _ "$watch_dir" "$green" "$filled" \
+    >> "$(dirname "$watch_fill_state")/landing-fill.log" 2>&1 < /dev/null &
+  echo "$!" > "$watch_fill_state.pid"
+}
+
 # One reading: the gap, then the gate on the newest head when it moved.
 # Prints the new state.
 watch_once() {
@@ -377,6 +455,8 @@ watch_once() {
     return 0
   fi
   head=$(git -C "$watch_tree" rev-parse refs/watch/landing)
+  # The fill of the last green head runs beside the gate of the next one.
+  watch_prefill "$(jq -r '.green // empty' <<< "$memory")"
   if [[ $(jq -r '.checked // empty' <<< "$memory") == "$head" ]]; then printf '%s\n' "$memory"; return 0; fi
   # A gate and the search of a red head can run an hour (#6944). So they run
   # in the background, and each interval meanwhile reads the gap again, pages
