@@ -2543,9 +2543,9 @@ impl ContentTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::name_constants`], and a kept unit reads as
-    ///   a fresh admission of it.
-    /// - witness: `gandr-kernel-core::environment::tests::a_kept_environment_reads_as_a_fresh_admission_6621`
+    /// - hypothesis: L3 — as [`Self::name_constants`], and a unit kept in place
+    ///   reads as a fresh admission of it.
+    /// - witness: `gandr-kernel-core::environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     #[spec(captures: named_before = self.constants.len(),
         ensures: self.constants.len()
             == named_before.max(usize::from(entries.len()).min(usize::from(end))))]

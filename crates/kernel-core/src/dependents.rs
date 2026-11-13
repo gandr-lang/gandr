@@ -164,6 +164,74 @@ impl Dependents
         self.last.truncate(usize::from(first));
     }
 
+    /// Keep the rows that come from an entry `live` holds and name a position
+    /// it holds, in their order: the reverse index after a readmission
+    /// retires entries.
+    ///
+    /// A row holds no position that it names, so one walk of each position's
+    /// rows finds it. The kept rows move down in place, and the vector gives
+    /// back the room of the rest.
+    ///
+    /// # Specification
+    /// - requires: an entry that `live` holds and that names one it does not
+    ///   hold leaves `live` before the next walk.
+    /// - ensures: [`Self::of`] gives, for each position that `live` holds, the
+    ///   entries that it gave before and that `live` holds, in their order; for
+    ///   any other position it gives nothing.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clauses state the rows of each position before
+    ///   and after, which a predicate may not capture whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the reach of an edit after a readmission that retires
+    ///   entries holds each live entry whose support holds an edited one.
+    /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    #[inline]
+    pub fn retain<Live>(
+        &mut self,
+        live: Live,
+    ) where
+        Live: Fn(ConstantIndex) -> bool,
+    {
+        // The position whose rows hold each row.
+        let mut named = alloc::vec![NONE; self.rows.len()];
+        for (position, &last) in self.last.iter().enumerate() {
+            let mut at = last;
+            while let Some(row) = self.rows.get(at) {
+                if let Some(slot) = named.get_mut(at) {
+                    *slot = position;
+                }
+                at = row.next;
+            }
+        }
+        self.last.fill(NONE);
+        let mut kept = 0_usize;
+        for at in 0 .. self.rows.len() {
+            let (Some(&row), Some(&position)) = (self.rows.get(at), named.get(at))
+            else {
+                continue;
+            };
+            if !live(row.dependent) || !live(ConstantIndex::from(position)) {
+                continue;
+            }
+            let Some(last) = self.last.get_mut(position)
+            else {
+                continue;
+            };
+            let next = core::mem::replace(last, kept);
+            if let Some(slot) = self.rows.get_mut(kept) {
+                *slot = Row {
+                    dependent: row.dependent,
+                    next,
+                };
+            }
+            kept = kept.saturating_add(1);
+        }
+        self.rows.truncate(kept);
+        self.rows.shrink_to_fit();
+    }
+
     /// The entries that name `position`, newest first.
     ///
     /// # Specification

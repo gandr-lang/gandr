@@ -4655,8 +4655,8 @@ fn an_export_names_each_crossed_declaration_at_its_position()
 /// #6845: a readmission that keeps its entries at new ranks exports the
 /// bytes of a fresh readmission of the edited module. The module is
 /// `def x : Type = Integer ; def n : Integer = 0 ; def m : Integer = n ;`,
-/// and the edit deletes `x`. The readmission retires the three entries, and
-/// keeps `n` at the rank 0 and `m` at the rank 1. Its export lists the live
+/// and the edit deletes `x`. The readmission retires `x`, gives `n` the rank
+/// 0 and `m` the rank 1, and keeps both in place. Its export lists the live
 /// entries in rank order, and writes `n` at its place 0.
 #[test]
 fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
@@ -4728,18 +4728,25 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
         Maybe::Absent(gandr_kernel_core::places::Absent::InOrder),
         "a whole readmission builds no places"
     );
+    let (Some(&x), Some(&n), Some(&m)) = (positions.first(), positions.get(1), positions.get(2))
+    else {
+        panic!("the module admits three entries");
+    };
+    assert_eq!(kept.environment.retire(&[x]), Ok(()), "`x` retires");
+    let rank = gandr_kernel_term::SourceRank::from;
     assert_eq!(
-        kept.environment.retire(&positions),
+        kept.environment
+            .rerank(&[(n, rank(0_usize)), (m, rank(1_usize))]),
         Ok(()),
-        "the three entries retire"
+        "`n` takes the rank 0 and `m` the rank 1"
     );
-    for (rank, &position) in positions.iter().skip(1).enumerate() {
+    for position in [n, m] {
         assert_eq!(
             kept.environment
-                .keep((position, &[gandr_kernel_term::SourceRank::from(rank)]))
+                .keep_in_place(position)
                 .map(gandr_kernel_core::CheckedId::position),
             Ok(position),
-            "the entry at {position:?} is kept at the rank {rank}"
+            "the entry at {position:?} is kept in place"
         );
     }
     let kept_names = BTreeMap::from([
