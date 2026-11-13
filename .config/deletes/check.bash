@@ -297,8 +297,7 @@ signoffs=$(jq -c '.[]' <<< "$signoffs" | while IFS= read -r c; do
   while IFS= read -r item; do
     [[ -n $item ]] || continue
     jq -e --arg item "$item" '.body | contains($item)' <<< "$c" > /dev/null || continue
-    name=$(sed -E 's/.*:://; s/[<>]//g' <<< "$item")
-    joins=$(joined "$fork" "$base" "$name" | jq -R . | jq -s -c --argjson j "$joins" --arg item "$item" '$j + {($item): .}')
+    joins=$(joined "$fork" "$base" "$item" | jq -R . | jq -s -c --slurpfile j <(printf '%s' "$joins") --arg item "$item" '$j[0] + {($item): .}')
     [[ -f $scratch/items-base.json ]] || continue
     while IFS=$'\t' read -r file start end; do
       if reshaped "$fork" "$base" "$file" "$start" "$end"; then
