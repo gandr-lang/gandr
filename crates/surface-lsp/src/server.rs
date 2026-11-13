@@ -13277,11 +13277,12 @@ mod tests
     /// its declaration in the latest recheck, the checker's and the kernel's
     /// apart. A first recheck judges each declaration and molds the forms of
     /// its two halves; the admission offers it to the kernel, whose check
-    /// charges goals. A second recheck of the same text adopts each item and
-    /// molds no form, so each card counts no judged item, no memo consult and
-    /// no molded form, and the lowering's nodes again. The kernel's goals split
-    /// between expanded and kept by what earlier admissions of the process
-    /// kept, so the witness reads their sum.
+    /// charges goals. A second recheck of the same text adopts each item,
+    /// molds no form and keeps each declaration that the first admitted
+    /// (#6847). So each card counts no judged item, no memo consult, no molded
+    /// form, no offer to the kernel and no kernel goal, and the lowering's
+    /// nodes again. The kernel's goals split between expanded and kept by what
+    /// earlier admissions of the process kept, so the witness reads their sum.
     #[cfg(feature = "instrument")]
     #[test]
     fn a_counted_document_shows_its_counts_on_each_card_6289()
@@ -13349,8 +13350,8 @@ mod tests
         );
         assert_eq!(
             counts(&connected),
-            [Some(([0, 0, 2, 0, 0, 1, 0], true)); 2],
-            "a second recheck adopts each item and molds no form"
+            [Some(([0, 0, 2, 0, 0, 0, 0], false)); 2],
+            "a second recheck adopts each item, molds no form and keeps each declaration"
         );
     }
 
