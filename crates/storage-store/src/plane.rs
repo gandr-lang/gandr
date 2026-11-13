@@ -21,17 +21,6 @@
 //! a load refused stands refused, and the next batch that takes its name
 //! writes the object over the file.
 //!
-//! # Shards
-//!
-//! A shard is a directory of the calling thread's own beside the planes, and
-//! the publication goes through `gandr_core_publish` with its temporary there.
-//! So the plane's directory sees one rename for each object, and the creation
-//! of each temporary touches only the thread's shard. The producers of a pool
-//! contend on no directory to create a temporary. The union of the shards is
-//! set union by digest, and that one rename is all of it. An object is in the
-//! plane before the call that put it returns, so a read after that call finds
-//! the object in the plane.
-//!
 //! # Boundaries
 //!
 //! An object that a batch publishes after the store opened is not listed, so
@@ -796,6 +785,15 @@ where
 
     /// Write each object the batch took to its file, through the shard of the
     /// calling thread.
+    ///
+    /// A shard is a directory of the calling thread's own beside the planes,
+    /// and each publication goes through `gandr_core_publish` with its
+    /// temporary there. So the plane's directory sees one rename for each
+    /// object, and the creation of each temporary touches only the thread's
+    /// shard. The producers of a pool contend on no directory to create a
+    /// temporary. The union of the shards is set union by digest, and that one
+    /// rename is all of it. An object is in the plane before the call that put
+    /// it returns, so a read after that call finds the object in the plane.
     ///
     /// # Specification
     /// - requires: nothing.
