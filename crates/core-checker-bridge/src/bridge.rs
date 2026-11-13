@@ -1,0 +1,11619 @@
+//! The kernel bridge: every declaration the judgement accepts, re-derived by
+//! the certified kernel.
+//!
+//! # Entry points
+//!
+//! `readmit` readmits a whole report as a `Readmission`, and `export` gives
+//! its canonical form. `readmit_resuming`, `Crossed` and `export_resuming`
+//! resume a prefix from a record. `Readmitted`, `Outcome`, `ArtifactAudit`,
+//! `Replayed` and `Refusal` give each origin's account and its time.
+//!
+//! # The kernel is the oracle, and the bridge is untrusted
+//!
+//! [`readmit`] erases each accepted declaration of a [`ModuleReport`] into a
+//! fresh kernel [`Environment`] and offers it through
+//! [`Environment::add_decl`], the kernel's one checked entry, which re-derives
+//! every typing obligation and grants the bridge no credence. A judgement that
+//! agrees only with itself is blind to a fault it shares with its own oracle;
+//! the kernel's checker is a separate machine over a separate vocabulary, so an
+//! acceptance the kernel does not repeat is reported as [`Outcome::Rejected`]
+//! rather than trusted.
+//!
+//! The judgement and the bridge both sit outside the trusted base. The property
+//! `every_fixture_the_checker_accepts_is_readmitted` asks the kernel to repeat
+//! every acceptance over the checker's own fixture set, and
+//! `every_checked_function_definition_is_readmitted` over generated function
+//! definitions in the shape a lowered function tail takes: a thunked chain of
+//! lambdas over a chain of binds, declared at `U` over the arrows into a
+//! returner. The verdict carries the body it judged, so the bridge reads the
+//! report alone and never pairs a verdict with a declaration it could disagree
+//! with. The alternative was a second checker over the core vocabulary, which
+//! doubles what must be trusted instead of reducing it to the kernel. The
+//! choice reverses only in scope: a former whose erasure needs machinery the
+//! bridge lacks — a level parameter — lands as its own change with its own
+//! witnesses, and the oracle stays.
+//!
+//! # Erasure is an id remapping
+//!
+//! The core vocabulary reuses the kernel's leaves — literals, base types, de
+//! Bruijn indices, admission positions, levels and sorts — so erasing a node
+//! mints the kernel node of the same former over its children's images. Two
+//! things are remapped: a node to the node its image is in the kernel arena,
+//! and a module's admission position to the position its declaration took in
+//! the kernel environment, which differs once an earlier declaration did not
+//! cross. Erasure covers the fragment the judgement has rules for — universes,
+//! quotes, lifts, decodes and the dependent arrow among them — reads types
+//! through the same views the judgement does, and refuses every other former
+//! by name. Each distinct node is erased once per declaration, so the kernel
+//! sees the sharing the producer built and no more.
+//!
+//! Element identity erases one for one: the core's path type, reflexivity,
+//! returned endpoint and element transport mirror the kernel's identity
+//! nodes, so each mints the kernel node of the same former over its
+//! children's images, and the kernel re-derives formation at a closed
+//! carrier, endpoint conversion — reading a returned endpoint by its own
+//! reduction — and transport in its motive itself. The alternative, erasing
+//! reflexivity to its point and a path type to the fibre the recursion
+//! classifies, has the kernel re-derive a program other than the one the
+//! judgement accepted; erasing a returned endpoint to the value the
+//! normaliser computed for it makes that normaliser trusted.
+//!
+//! A function extensionality erases to the kernel's higher evaluation, which
+//! has no core counterpart: per input of the coverage the judgement recorded,
+//! the values the two functions return, the diagonal evidence that they
+//! agree, and the machine's two traces with their anchors forgotten. The
+//! functions themselves do not cross in it; the kernel regenerates the
+//! coverage from the path type and replays every trace with the admitted
+//! definitions unfoldable, so a recorded component the kernel would not
+//! derive is refused there. The alternative, a kernel `funext` node over the
+//! two functions, would have the kernel search the domain itself, which its
+//! identity at a function type does not ask of it.
+//!
+//! The bridge builds the position map from the admissions themselves, the only
+//! map that cannot disagree with the environment it indexes. The alternative to
+//! remapping was keeping module positions verbatim and admitting a placeholder
+//! axiom for each declaration that did not cross, which puts assumptions in the
+//! audit that the ledger never owed. The choice reverses when declarations are
+//! admitted into an environment shared across modules, where the environment
+//! assigns positions and the map becomes its own.
+//!
+//! # A sealed atom binds to its kernel admission
+//!
+//! An abstract type crosses as the kernel's abstract-type declaration, staged
+//! with its seal open, and answers [`Outcome::Data`]: it is nominal, and no
+//! axiom stands at its position. Its atom then erases to the kernel atom at
+//! the position the declaration took, through the same position map as a
+//! constant. The bridge closes the seal in the kernel once the module
+//! position its extent reaches has been processed, or, when the judgement
+//! skipped that position — a type alias or a session type the checker keeps
+//! on its side crosses nothing — before the first declaration past it
+//! crosses. So the kernel reads the atom through to its representation for
+//! exactly the declarations the judgement did, and the export records the
+//! extent the kernel drew. An atom whose abstract type did not cross has no
+//! kernel position and is refused by name, never minted at a guessed one:
+//! withheld, as any nominal head that did not cross, when its abstract type
+//! was itself withheld — refused by the judgement, or naming a declaration
+//! that did not cross, such as a refused law — and refused as a former the
+//! kernel lacks otherwise. The alternatives were an axiom per atom, which
+//! puts an assumption in the audit for every sealed component, and a sealed
+//! outcome of its own, which every consumer of the outcome would have to
+//! learn while carrying the same receipt and audit; the choice reverses if an
+//! atom ever needs a receipt a data declaration does not have.
+//!
+//! # A lift the judgement recorded is written where it stands
+//!
+//! A code the judgement checked at a universe above its own carries a
+//! recorded lift. Its image is the kernel's explicit lift, quoted: the code
+//! decoded at its own level, lifted to the universe it was checked at. The
+//! kernel has no cumulativity of its own to rediscover the crossing with.
+//!
+//! # A code constant is unfolded at export, and every unfolding replays
+//!
+//! The kernel's types hold no reducible decode: a decode of a code constant
+//! that crossed with a body is erased as the type its body denotes. A code
+//! constant standing as a term — the argument a polymorphic function is
+//! instantiated at — is erased as the quote it unfolds to, because the
+//! kernel's instantiation would otherwise mint the decode of a constant that
+//! no export could reach. Each unfolding is a [`Certificate`] from the
+//! normaliser's conversion machine that the constant converts to its body;
+//! before the declaration is staged for admission, the kernel replays every
+//! certificate's trace against its own image of the constant and of the body,
+//! unfolding only what the kernel itself admitted. A trace that does not
+//! replay to convertible refuses the declaration as
+//! [`Refusal::CertificateDeclined`], and the environment is left as it was.
+//! The replayed verdicts travel on each [`Readmitted`].
+//!
+//! Only the argument position unfolds: a constant elsewhere in a term, a code
+//! alias's own body among them, crosses as the constant, so the certificate for
+//! an alias of an alias still compares the constant it names. A declined
+//! certificate is `Refusal::CertificateDeclined { unfolded, reason }`, which
+//! keeps the kernel's `ReplayDecline` and stays an engine fault, a refused
+//! trace classed by `ReplayRefusal::class`; a certification that produces no
+//! dialogue records `ReplayDecline::EngineDeclined`. The kernel admits a code
+//! constant's lifted, elaborated body, read back to normal form, so the
+//! constant it unfolds is the constant the judgement unfolded.
+//! `every_checked_universe_declaration_is_readmitted` and
+//! `every_readmission_certificate_replays` ask this of generated modules of
+//! universe declarations, codes, aliases and lifts;
+//! `a_code_constant_argument_unfolds_at_export` asks it of a polymorphic
+//! identity instantiated at a code alias.
+//!
+//! The alternatives were giving the kernel cumulativity and static δ-reduction
+//! in its own conversion, which widens the trusted base for what a replayed
+//! trace already certifies; trusting the normaliser's readback unreplayed,
+//! which leaves the exported declaration related to its source by an unchecked
+//! step; and unfolding every constant in term position, which rewrites a code
+//! alias's body to its target so that the alias's certificate compares the
+//! wrong pair. The certificate records one step for the reason the judgement's
+//! does; one trace per code replaces the steps when the machine decides codes
+//! under quotes, and the argument unfolding goes when the kernel's conversion
+//! unfolds what it admitted.
+//!
+//! # A static operator crosses as its static normal form
+//!
+//! The kernel has no static lambda and reduces no static application, so the
+//! bridge hands it neither. A definition whose type is a static Pi is
+//! [`Outcome::Static`]: the kernel is offered nothing, and its body stays for
+//! the instances that name it. Every static application the bridge erases is
+//! reduced — a saturated instance of a static definition by δ then β, a
+//! static lambda's redex by β — and the reduct, minted into the core arena,
+//! is erased in its place, until the term is a static normal form: a rigid
+//! head, an operator a hole owes or a variable, applied to normal arguments,
+//! which is the kernel's neutral static application. Each step is a
+//! [`Certificate`] the kernel replays, one per distinct instance a declaration
+//! meets, naming what it unfolded ([`Replayed::unfolded`]) and the content
+//! digest of the instance it reduced ([`Replayed::redex`]). A static step
+//! names operators the kernel's terms cannot hold, so each is numbered as a
+//! constant above the module's positions and given its body, verbatim, for
+//! that replay alone; a static lambda that reaches a binder outside itself
+//! stands for no closed constant and is refused as
+//! [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::StaticLambda`]. The
+//! unfolding of a definition that crossed replays as the kernel's own δ-step
+//! at the constant it admitted, closed on the two normal forms, because the
+//! body it admitted is already normal.
+//!
+//! A hole of static Pi type is an opaque operator and crosses as an axiom. One
+//! certificate is kept per distinct instance a declaration meets, keyed by what
+//! the step unfolded and the content digest of the kernel's image of its redex:
+//! the same instance written twice is replayed once, and one definition at two
+//! instances is replayed twice.
+//! `one_static_definition_at_two_instances_records_two_certificates` and
+//! `every_checked_static_declaration_is_readmitted` assert it, the second over
+//! the relative monad's operators written with and without the static spelling;
+//! `a_static_lambda_crosses_only_as_a_closed_operator` asserts both arms of the
+//! open-lambda refusal. The skip drops nothing: a replay's verdict is a
+//! function of the content it replays, so the repeat replayed on its own, in
+//! a declaration of its own, records the step and the verdict the kept one did;
+//! only its redex's digest differs, since each declaration numbers the static
+//! operators it names from its own position
+//! (`a_skipped_repeat_records_what_its_own_replay_records_528`). The
+//! definition's normal body and the normaliser's trace differ because the
+//! trace walks the unnormalized body and names operators absent from the
+//! normal form.
+//!
+//! Each step is certified and replayed on its own, by rules the kernel already
+//! has, because the machine produces no trace under a quote. The alternatives
+//! were static reduction in the kernel's conversion, which widens the trusted
+//! base for what a replayed step certifies; a certificate per occurrence rather
+//! than per instance, which replays one derivation once per mention; and
+//! refusing static definitions at the bridge, which leaves every declaration
+//! that names one uncrossed. The per-step certificates give way to one trace
+//! per code when the machine decides codes under quotes; the open-lambda
+//! refusal lifts with lambda lifting over the binders the lambda reaches, which
+//! numbers it as an operator closed over them.
+//!
+//! # An uncompleted signature enters as an axiom
+//!
+//! An owed hole is a declaration with a type and no body, which is exactly the
+//! kernel's bodiless declaration: it is staged through [`Staging::axiom`], and
+//! the hole never becomes a term. A hole the judgement refused — in synthesis
+//! position, where its refusal names the hole, or under a signature that did
+//! not form — crosses as nothing. An axiom's constant is rigid: no decode of
+//! it unfolds.
+//!
+//! The kernel reports the assumption in the audit of the hole and of every
+//! declaration that reads it. A hole here owes a formed type, so the kernel can
+//! assume it; a hole in synthesis position has no type to assume, and the
+//! judgement has refused it already. The alternatives were refusing a module
+//! until its ledger is empty, which withholds the kernel's verdict on every
+//! complete declaration until the last hole is filled, and a placeholder term
+//! in the hole, which the kernel would check as if the author had written it.
+//!
+//! # A mark crosses as nothing
+//!
+//! A refused declaration carries its refusal as its mark, and the bridge offers
+//! the kernel nothing for it: not its body, which the kernel may accept where
+//! the judgement did not, and not its signature as an axiom, which would put an
+//! assumption in the artifact's audit that the ledger never owed. A later
+//! declaration reading it is [`Refusal::Withheld`], located at the reference.
+//!
+//! A reader of a marked declaration is withheld even when it checked against
+//! that declaration's stated contract. The alternative was offering a marked
+//! declaration's signature as an axiom so its dependents cross, which makes the
+//! audit disagree with the ledger; the choice reverses only together with the
+//! audit's.
+//!
+//! # A term hole is refused where it stands, and a mark is erased
+//!
+//! The kernel admits no incomplete term. A term hole the judgement accepted
+//! is [`Refusal::Hole`], located at the hole's node and, through the
+//! [`Readmitted`] row it stands on, at the declaration's origin; the unknown
+//! type, which only an incomplete elaboration mints, is [`Refusal::Unknown`].
+//! Both are user absences: the author has a hole left to fill, and filling it
+//! is what lets the declaration cross. A mark is erased to the term it marks,
+//! as Hazelnut's mark erasure recovers the unmarked program (Omar et al.,
+//! POPL 2017, doi:10.1145/3009837.3009900): the kernel re-derives what was
+//! marked, so a mark can never make it accept what it would refuse. The
+//! kernel's own input invariant is unchanged; it never sees a hole, a mark or
+//! the unknown type.
+//!
+//! The differential witness
+//! `a_hole_is_refused_where_it_stands_and_its_filling_is_admitted` shows, in
+//! one artifact, the refusal, the same declaration with its hole filled
+//! admitted as a definition, a mark around a good body admitted, and a mark
+//! around a bad one rejected by the kernel. The alternative was an axiom per
+//! term hole, abstracted over the hole's context, so a declaration with a hole
+//! would cross and its audit would name the assumption; it is chosen when an
+//! artifact must cross before its holes are filled. A term mark is not a
+//! refused declaration, whose outcome is [`Outcome::Marked`] and which crosses
+//! as nothing.
+//!
+//! # The audit exposes source and runtime assumptions
+//!
+//! The kernel's audit names every axiom a declaration transitively rests on.
+//! The artifact unions those reports. Without native operations, these are
+//! exactly the owed source holes. Native rows additionally cross as named,
+//! typed opaque axioms; their dependents retain those assumptions in the audit.
+//! The kernel checks the native signatures but executes no host arithmetic.
+//!
+//! [`ArtifactAudit`] unions the kernel's reports over the source module, an
+//! axiom's own position included. Without native operations its axioms are
+//! exactly the positions the owed holes took, and it is empty exactly when the
+//! ledger is; with native operations it also records their typed runtime
+//! assumptions, even when no source hole is owed. The union adds no kernel-side
+//! audit mechanism and never hides a native assumption, so sealedness and
+//! runtime trust are separate observations. The alternatives were gating
+//! readmission on an empty ledger, which hides the kernel's verdict on complete
+//! declarations behind incomplete ones, and an artifact audit inside the
+//! kernel, which widens the trusted surface for a fold any caller can compute.
+//! The choice reverses when a publishing or dependency boundary arrives: a
+//! module offered to another then needs its audit empty, and that boundary
+//! gates on this report.
+//!
+//! # The bridge owns its staging, so it owns the rollback
+//!
+//! Each declaration is erased into a staging session the bridge opened, and a
+//! refused erasure or a declined certificate discards it; a rejected admission
+//! is truncated by the kernel's choke point. A declaration that does not cross
+//! leaves the environment as it found it.
+//!
+//! `a_refused_declaration_leaves_the_environment_unchanged` asserts it by the
+//! kernel arena's watermark against the same module without the refused
+//! declaration. The alternative was leaving partially erased content in the
+//! arena as unreachable nodes, which every later reader of the arena would have
+//! to step over; there is no reversal while staging has an explicit discard.
+//!
+//! # One machine, no recursion
+//!
+//! Erasure is a machine of goals and frames over an explicit stack. A node is
+//! open while its frame waits, so a node that is its own descendant —
+//! constructible only from ids of another arena — is refused instead of erased
+//! forever.
+//!
+//! Erasure charges no allowance: each distinct node is erased once and refused
+//! if revisited while open, so a run is bounded by the arena it reads. The
+//! alternative was charging the judgement's `CheckBudget`, which bounds work
+//! the memo bounds already; the choice reverses if erasure ever erases one node
+//! under two contexts, as a level instantiation would.
+//!
+//! # A split crosses as its projection binds
+//!
+//! The kernel has no split. Erasure mints the split's reduct into the core
+//! arena and erases it in the split's place: one bind per component, component
+//! zero outermost, each of the projection of the scrutinee shifted past the
+//! binds before it, ending in the body, so the body reads the components at the
+//! indices the split gave them and a split of no components crosses as its
+//! body. The kernel then judges the projections and binds by its own rules.
+//! `tests::native_formers::a_split_crosses_as_its_projection_binds`
+//! crosses a split of a variable pair, which a wrong shift would project from
+//! its first component, a split of a closed triple and a split of the unit.
+//!
+//! The alternatives were a kernel split, which widens the trusted base by a
+//! binder former the projection already expresses, and refusing the split at
+//! the bridge, which leaves every program that discards a unit uncrossed. A
+//! split of a neutral compares in the normaliser by its arity and bodies, and
+//! those verdicts are not replayed: the kernel never sees a split, only the
+//! binds it judges itself. The choice reverses if the kernel gains a split of
+//! its own.
+//!
+//! A split under a motive does not cross as binds: the binds' body would
+//! answer the motive at the scrutinee, not at the pair of its components, so
+//! the projections would not type it. It crosses as the kernel's dependent
+//! split (`SigmaSplit`, tag `0x6B`), scrutinee, motive and body each erased in
+//! turn, and the kernel judges the motive at the scrutinee itself.
+//! `bridge::tests::a_dependent_pair_and_its_identity_are_readmitted` crosses
+//! one under a motive that reads its scrutinee's first projection.
+//!
+//! # A deep handler crosses as the fold of its free model
+//!
+//! The kernel is pure and has no effect former; readmission simulates effects
+//! instead. A handler or a capability scope of an effect's operations
+//! crosses as its reduct, minted into the core arena and erased in its place
+//! as a split's is. The handled body is read along its bind spine as a
+//! program of the effect's free model `Free(a)`, a data type with `Return(a)`
+//! and, for each operation `opᵢ : Aᵢ ↠ Bᵢ` in the order the signature
+//! enumerates them, `opᵢ(Aᵢ, U(Bᵢ → F Free(a)))`: each request of an
+//! operation becomes its constructor holding its payload and the rest of the
+//! spine as its continuation, and the spine ends in `Return`. The clauses
+//! become a structural fold of that program at the answer the judgement
+//! checked the handler at ([`gandr_core_checker_base::Handled`]), one case for
+//! each operation's clause, each resumption read as the rest folded again, so
+//! the fold handles deeply. The judgement's coverage leaves one clause for each
+//! operation, so the fold is total over the model. The free model is a data
+//! declaration the kernel admits ahead of the first declaration that reads
+//! it, named `effect.free.<ℓ>.<row>` by its level and the names of its row's
+//! interfaces, and named in the core arena at a position counted down from
+//! the last, which no module declaration takes; a later handler of the same
+//! signature folds the same model. Its parameter ranges over the universe the
+//! subject's result inhabits, at the level the judgement recorded
+//! ([`gandr_core_checker_base::Handled`]), and the model stands at that level:
+//! a subject returning a type, as a handler into predicate transformers does,
+//! folds a model one level up, admitted beside the smaller one.
+//!
+//! A declaration at a row of operations crosses the same way, as a program of
+//! the row's free model (#6642). The row names its interfaces by their
+//! default labels, with no tail and no divergence ([`crate::program`]), and
+//! its model holds `Return` and one constructor for each operation of the
+//! row, interface by interface. `(F^ε A)•` is `F Free_ε(A)•`, so a host
+//! operation, such as a draw or a network call, is a constructor of the model
+//! and the kernel sees no host code. Each node the judgement checked at the
+//! row crosses one step at a time: a return returns `Return`, a request
+//! returns its operation's constructor around the rest of the spine, and a
+//! call of a declaration at the row, or at a smaller row, has its program
+//! folded into the rest by a structural fold over its own model, which
+//! injects one row into the other in the same pass
+//! ([`Erasure::programmed_reduct`]). The fold takes the call and the rest as
+//! thunks, so no node the judgement recorded is copied past a binder. Two
+//! declarations at one row read one model, and the row and the level fix its
+//! name, so every session names it alike.
+//!
+//! A handler inside a declaration at a row crosses as the same fold (#6672).
+//! A step of its subject whose image is a program, such as a call of a
+//! declaration at the handled row, folds into the subject's program. The
+//! clauses and the answer stand at the outer row, so each clause returns a
+//! program of the outer row's model, and the fold answers that program. Each
+//! resumption of a clause's stack calls the thunk of the rest of the fold.
+//! The module check judges a body that holds a nested run twice: once as
+//! written, and once with each run bound before its region. The bridge
+//! crosses the second body, and one node can stand in both bodies beneath
+//! other binders. So the module check forgets the rows records of the first
+//! run before the second run starts (`Rows::forget`).
+//!
+//! The checker decides a handled body's row by its sealed-set arithmetic, and
+//! the kernel re-derives it by typing the program: the program is a value of
+//! the handled effect's model alone, so a payload of another type than its
+//! operation's, or a resumption at another type than its reply, is the
+//! kernel's type error at the handler's declaration, not a fact the bridge
+//! vouches for. The two can disagree only where the bridge leaves a request
+//! unread, which it then erases as it stands and refuses; it never drops one.
+//! Every form past this one — a request off the spine, a reset or a shallow
+//! handler, control and stacks, a row with a tail, an instance or divergence
+//! — is refused `OutOfFragment` under
+//! [`TrackingIssue::KERNEL_EFFECTS`]. The witness
+//! `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+//! crosses a handler that resumes and one that answers through one model,
+//! `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
+//! a handler of two operations through a model of three constructors, and
+//! `bridge::tests::two_declarations_at_one_row_read_one_model_6642` two
+//! declarations at one row through one model.
+//!
+//! The alternatives were a kernel effect former, which widens the trusted base
+//! by what a data type and a fold already express, and a fold fused into the
+//! body's continuations, which the kernel would type without ever seeing the
+//! program, so the row claim would be the bridge's. A model per handler would
+//! keep a module's positions independent of its handlers' order, at a data
+//! declaration per handler. The choice reverses if the kernel gains effect
+//! rows of its own.
+//!
+//! # A hold crosses as its state-passing reduct
+//!
+//! The kernel has no store, so readmission simulates memory. A hold crosses
+//! as its reduct, which the erasure mints into the core arena and erases in
+//! its place, as it erases a handler's. The reduct reads the hold's block
+//! along its spine and passes the held value along it as a value. An
+//! exclusive access answers its result beside the value that its view
+//! leaves: `resume` sets that value, and `abort` runs the unwind and keeps the
+//! held value. The steps after the access read the value left. A shared view
+//! and a consuming read answer the held value. The reduct keeps no linear
+//! binder of a slot, and the kernel types it: a reduct that leaves the wrong
+//! value is the kernel's type error, not a fact that the bridge vouches for.
+//! The checker alone decides linear use, and the reduct relies on its verdict
+//! that each view ends once on each path.
+//!
+//! The reduct reads the lexical case alone: each access stands on the spine
+//! of a block that holds its slot, at the whole place, and each read of a
+//! slot stands in a step's own values, under no binder. A case's arms and a
+//! bound block are blocks of their own beneath the same slots. A slot that
+//! the rest reads after such a form is fixed in it, so the case keeps its
+//! motive. A fork's parent runs as the rest of the spine, and the reduct keeps
+//! the end the fork opens. Any other memory form refuses the hold whole as
+//! `OutOfFragment` under [`TrackingIssue::KERNEL_MEMORY`]. The witness
+//! `bridge::tests::a_lexical_hold_crosses_as_its_state_passing_reduct_6609`
+//! crosses an access that resumes, one that aborts, a shared view and a
+//! consuming read.
+//! `bridge::tests::a_hold_read_across_a_case_s_arms_crosses_as_its_reduct_6641`
+//! crosses a hold read across a case's arms, in a bound block and past a
+//! fork's end.
+//! `bridge::tests::a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609`
+//! and `bridge::tests::an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641`
+//! forge reducts that the kernel refuses.
+//!
+//! # The export carries the producer's names
+//!
+//! [`Readmission::export`] encodes the environment the kernel built: each
+//! declaration that crossed, in kernel admission order, marked checked and
+//! carrying the `StructuredName` the producer gives its module position. The
+//! bridge keeps each declaration as it staged it, because the kernel's
+//! environment exposes an admitted declaration's audit and not its content, and
+//! names it only when it is written out. A flattened structure member is
+//! therefore exported as one declaration named by its segments, a declaration
+//! that did not cross is not in the artifact, and every reference in it is
+//! still the kernel position its target took; the name is never read.
+//!
+//! The alternatives were names on the checker's `Declaration`, which makes the
+//! judgement carry a surface fact it never reads, and a name table beside the
+//! artifact, which leaves the exported members nameless to anything reading the
+//! artifact alone. The choice reverses if a renamed module must export a
+//! byte-identical artifact; the names then move to that side table and the
+//! export writes none.
+//!
+//! # A readmission resumes the leading declarations it was handed
+//!
+//! [`readmit_resuming`] records what its first declarations built — the
+//! kernel environment with the outcomes its checks kept, the positions they
+//! took, their kernel bodies, exports and outcomes, as a [`Crossed`] — and a
+//! later readmission of a report that leads with the same declarations starts
+//! from that record rather than crossing them again, its declarations after
+//! the boundary answered from those kept outcomes as a whole readmission
+//! answers them. An editor's recheck readmits a document laid out after
+//! its import closure, and an edit to the document leaves the closure's
+//! declarations as they were; on the λ-calculus closure of #776 readmitting
+//! them took 85 ms of each recheck with specifications enforced, the
+//! document's own a few.
+//!
+//! The kernel is not asked to trust anything it did not do: the record holds
+//! the environment the kernel itself built when it admitted those
+//! declarations, and the declarations after the boundary are offered to it as
+//! ever. Which declarations are the same is the caller's to establish, by
+//! content — the session compares the closure's text and its declarations'
+//! checkpoints pointwise — because a report keys nothing by content. The
+//! bridge checks what it can read: each leading declaration stands at the
+//! recorded position under a verdict of the kind its outcome crossed. A
+//! native operation's signature is seeded at the first declaration that reads
+//! it, so the record holds the ones its leading declarations read at the
+//! positions every readmission leading with them gives them, whatever native
+//! operations the declarations after the boundary read; so is an effect's free
+//! model, at the first declaration that handles it. The core bodies a
+//! later declaration unfolds name nodes of the arena the record was made over,
+//! so the record keeps none and the resumption defines them again from its own
+//! report, in the order crossing them did. A record is made only at a boundary
+//! the readmission reaches between declarations — no mutual block or open
+//! seal across it — where every leading declaration was admitted or static, so
+//! no later step rewrites a recorded entry.
+//!
+//! The alternatives were a memo of each declaration's admission keyed by its
+//! content digest, which the kernel's admission entry takes no memo for and
+//! which would still rebuild the environment one declaration at a time, and
+//! an environment shared across modules, where the environment assigns
+//! positions; the first is the per-declaration reuse an edit to an imported
+//! source would want, and both wait on each imported source being composed
+//! once. The choice reverses then: a source's readmission is kept beside its
+//! own composition, and resuming a whole prefix goes.
+//!
+//! # References
+//!
+//! - `Plotkin-2013-handling_algebraic_effects` — background: §§ 1.1–1.2 read
+//!   handling as the homomorphism the universal property of the free model
+//!   induces from the return clause, which the fold of a handled body's program
+//!   is for a theory of operations and no equations.
+//! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: §
+//!   kernel-verdict-reuse — a recorded readmission hands its environment on
+//!   without the verdicts it recalled, so a resumed run's receipt attests only
+//!   its own checks.
+//! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: keys across the
+//!   bridge (§ kernel-reassessment-design item 1): the fold names each image in
+//!   the session's table when it mints the image, so the kernel's key walks no
+//!   image.
+//!
+//! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
+
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::fmt;
+use core::time::Duration;
+
+use anodized::spec;
+use gandr_core_nbe::TraceNode;
+use gandr_core_term::BinderDepth;
+use gandr_core_term::Binders;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::FailureClass;
+use gandr_core_term::SplitMotive;
+use gandr_core_term::TrackingIssue;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::hole::HoleId;
+use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_core::AxiomReport;
+use gandr_kernel_core::CheckedId;
+use gandr_kernel_core::EngineClaim;
+use gandr_kernel_core::Environment;
+use gandr_kernel_core::KernelError;
+use gandr_kernel_core::KernelVerdict;
+use gandr_kernel_core::ParameterCount;
+use gandr_kernel_core::Presentations;
+use gandr_kernel_core::ReplayBudget;
+use gandr_kernel_core::ReplayDecline;
+use gandr_kernel_core::ReplayNode;
+use gandr_kernel_core::ReplaySides;
+use gandr_kernel_core::Unfoldable;
+use gandr_kernel_core::Unfoldings;
+use gandr_kernel_core::content_digest;
+use gandr_kernel_core::fork::SharedFork;
+use gandr_kernel_core::places;
+use gandr_kernel_core::read_step;
+use gandr_kernel_core::replay;
+use gandr_kernel_core::verdict::NoVerdicts;
+use gandr_kernel_core::verdict::TrustPolicy;
+use gandr_kernel_core::verdict::VerdictSource;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::AdmissionMark;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Declaration as KernelDeclaration;
+use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::EncodedPrefix;
+use gandr_kernel_term::EndpointDialogues;
+use gandr_kernel_term::EvaluationComponent;
+use gandr_kernel_term::EvaluationDialogues;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Places;
+use gandr_kernel_term::QuantifiedStep;
+use gandr_kernel_term::RelatedEndpoints;
+use gandr_kernel_term::SealScope;
+use gandr_kernel_term::Seam;
+use gandr_kernel_term::StructuredName;
+use gandr_kernel_term::Summand;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::encode;
+use gandr_kernel_term::encode_after;
+use gandr_kernel_term::encode_placed;
+use gandr_kernel_term::encode_prefix;
+use quenchant_shape::shape::Maybe;
+
+use crate::code::Certificate;
+use crate::code::CodeDefinitions;
+use crate::code::Derivation;
+use crate::code::EndpointRelation;
+use crate::code::Lift;
+use crate::code::Reflexivity;
+use crate::code::Unfolded;
+use crate::code::loose_reach;
+use crate::code::unfolding;
+use crate::declaration::AbstractType;
+use crate::declaration::OriginToken;
+use crate::funext::Funext;
+use crate::funext::Step as FunextStep;
+use crate::refusal::CheckRefusal;
+use crate::refusal::CoreNode;
+use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
+use crate::refusal::UnadmittedFormer;
+use crate::report::ModuleReport;
+use crate::report::Verdict;
+use crate::retire::Demand;
+use crate::retire::Polled;
+use crate::retire::Retirement;
+use crate::retire::Unretired;
+use crate::template::Clock;
+use crate::view::CompTypeView;
+
+mod held;
+mod native;
+
+use crate::view::FragmentRefusal;
+use crate::view::ValueTypeView;
+use crate::view::comp_type_view;
+use crate::view::value_type_view;
+
+quenchant_shape::reason_enum! {
+    /// Why a certificate was not replayed again.
+    mod replay_entry {
+        /// The reason no verdict was recorded.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// An earlier certificate of the declaration unfolded the same
+            /// step at an instance of the same content.
+            Met,
+        }
+    }
+}
+
+/// The bridge's refusal for a fault the judgement's step machinery reported.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a dangling node stays a dangling node, naming the same node;
+///   every other refusal is a machine invariant, since a step over a judged
+///   arena meets nothing else.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms, separated by a dangling node and a refusal of
+///   another variant, each asserted exactly.
+/// - witness: `bridge::tests::a_step_fault_keeps_only_a_dangling_node`
+#[spec(ensures: |ret| match refusal {
+    | CheckRefusal::DanglingNode { node } => ret == Refusal::DanglingNode { node },
+    | _ => ret == Refusal::MachineInvariant,
+})]
+fn fault(refusal: CheckRefusal) -> Refusal
+{
+    if let CheckRefusal::DanglingNode { node } = refusal {
+        Refusal::DanglingNode { node }
+    }
+    else {
+        Refusal::MachineInvariant
+    }
+}
+
+/// Why the bridge offered the kernel nothing for a declaration the judgement
+/// accepted.
+///
+/// # Specification
+/// - provides: a located reason the declaration cannot cross. A declined
+///   certificate retains both its unfolded step and the kernel's exact
+///   [`ReplayDecline`]; certification without a dialogue records
+///   [`ReplayDecline::EngineDeclined`]. Its [`Self::classify`] result is
+///   [`FailureClass::EngineFault`] for every decline reason.
+///
+/// # Adequacy
+/// - hypothesis: L3 — corrupted certificates retain their replay refusal on the
+///   declaration instead of becoming an accepted definition.
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Refusal
+{
+    /// A nominal head — a data or codata type, or a sealed atom whose abstract
+    /// type was withheld — names a declaration that did not cross.
+    WithheldData
+    {
+        /// The source nominal type.
+        at: TypeNode,
+        /// Its source declaration identity.
+        constant: ConstantIndex,
+    },
+    /// A constant names a declaration of the module that did not cross into
+    /// the kernel: one the judgement refused, or one the bridge or the kernel
+    /// turned away. The declaration it names carries its own reason.
+    Withheld
+    {
+        /// The constant value.
+        at: ValueId,
+        /// The module position it names.
+        constant: ConstantIndex,
+    },
+    /// A former the fragment has no rule for.
+    OutOfFragment
+    {
+        /// The node carrying the former.
+        at: CoreNode,
+        /// The former.
+        former: UnadmittedFormer,
+    },
+    /// A receive, an offer, or a linear variable a receive bound: the kernel
+    /// replays what a session computes but has no value for what a peer sends
+    /// or picks, so a declaration that names one stays on the checker's side,
+    /// as a declaration whose former the kernel lacks does.
+    Session
+    {
+        /// The node.
+        at: CoreNode,
+    },
+    /// A located form, a handle or capability type, or a world: the kernel has
+    /// no worlds, so a declaration that names one stays on the checker's side,
+    /// as one naming a session does.
+    Located
+    {
+        /// The node.
+        at: CoreNode,
+    },
+    /// An id names no node of the arena: the caller paired the report with
+    /// another arena.
+    DanglingNode
+    {
+        /// The id.
+        node: CoreNode,
+    },
+    /// A node is its own descendant, which only ids taken from another arena
+    /// can build.
+    Cyclic
+    {
+        /// The node met again while its own erasure waited.
+        node: CoreNode,
+    },
+    /// A step of static reduction was not certified: the normaliser's
+    /// conversion did not answer convertible, or the kernel's replay of its
+    /// trace did not re-derive it.
+    CertificateDeclined
+    {
+        /// What the step unfolded.
+        unfolded: Unfolded,
+        /// The replay's reason, or no dialogue when certification produced
+        /// none.
+        reason: ReplayDecline,
+    },
+    /// The machine's own bookkeeping disagreed with itself: a frame received
+    /// an image of another family than it awaits. Unreachable while the
+    /// machine's own pushes are the only source of frames; reported rather
+    /// than asserted.
+    MachineInvariant,
+    /// A term hole: the kernel admits no incomplete term.
+    Hole
+    {
+        /// The hole's node.
+        at: CoreNode,
+        /// The hole.
+        hole: HoleId,
+    },
+    /// The unknown type, which only an incomplete elaboration mints.
+    Unknown
+    {
+        /// The type's node.
+        at: CoreNode,
+    },
+}
+
+impl Refusal
+{
+    /// Whose fact this refusal records.
+    ///
+    /// # Specification
+    /// - requires: nothing; the function is total over the vocabulary.
+    /// - ensures: the class is a function of the variant alone, but for a
+    ///   former outside the fragment, whose class is its former's at the kernel
+    ///   ([`readmitted`]). A withheld constant is malformed source, since the
+    ///   declaration it names was turned away for a reason its own entry
+    ///   reports; a world is unimplemented, naming the issue tracking it; a
+    ///   session the bridge cannot cross, a dangling id, a cyclic node, a
+    ///   declined certificate and a machine invariant are engine faults,
+    ///   because a judged term from the judged arena holds none of them — a
+    ///   session action crosses once the judgement records its payload and
+    ///   admits its assumption (#1319) — and an unfolding holds by definition;
+    ///   a term hole and the unknown type are user absences.
+    /// - provides: the fact a report groups by, in the same four classes the
+    ///   judgement's refusals answer to.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a withheld definition, an unsupported former and a
+    ///   machine fault remain distinct at readmission rather than acquiring a
+    ///   kernel receipt or becoming an obligation.
+    /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    /// - witness: `bridge::tests::a_hole_is_refused_where_it_stands_and_its_filling_is_admitted`
+    #[spec(ensures: |ret| match *self {
+        | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::OutOfFragment { former, .. } => ret == readmitted(former),
+        | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::Session { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
+            | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
+        | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn classify(&self) -> FailureClass
+    {
+        match *self {
+            Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
+            Self::OutOfFragment { former, .. } => readmitted(former),
+            Self::Located { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_WORLD),
+            Self::Session { .. }
+            | Self::DanglingNode { .. }
+            | Self::Cyclic { .. }
+            | Self::CertificateDeclined { .. }
+            | Self::MachineInvariant => FailureClass::EngineFault,
+            Self::Hole { .. } | Self::Unknown { .. } => FailureClass::UserAbsence,
+        }
+    }
+}
+
+/// Whose fact the bridge's refusal of `former` records.
+///
+/// # Specification
+/// - requires: nothing; the function is total over the formers.
+/// - ensures: a former the pure kernel has no reading for is unimplemented,
+///   naming the kernel's issue for its feature: effects and control,
+///   capabilities, memory and buffers, runs, sealed abstract types, static
+///   lambdas left unnormalised and staged types in a term; a numeric literal,
+///   the numeric atom, a value lift and a universe over a sort parameter are
+///   unimplemented as the judgement's refusal of them is; a universe at the
+///   greatest level and a lift that does not raise, which the bridge never
+///   meets in an accepted declaration, are engine faults.
+/// - provides: the class of [`Refusal::OutOfFragment`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every former is pinned to its class by a census row.
+/// - witness: `bridge::tests::each_former_the_kernel_refuses_names_its_issue`
+#[spec(ensures: |ret| match former {
+    | UnadmittedFormer::EffectRow | UnadmittedFormer::Reify | UnadmittedFormer::Stack | UnadmittedFormer::Perform | UnadmittedFormer::Handle | UnadmittedFormer::Resume | UnadmittedFormer::Reset | UnadmittedFormer::Shift | UnadmittedFormer::Abandon => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_EFFECTS)),
+    | UnadmittedFormer::Capability | UnadmittedFormer::Exercise | UnadmittedFormer::Scope => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_CAPABILITY)),
+    | UnadmittedFormer::Memory | UnadmittedFormer::Buffer => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)),
+    | UnadmittedFormer::Run => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN)),
+    | UnadmittedFormer::Abstract => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT)),
+    | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
+    | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
+    | UnadmittedFormer::Qubit => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT)),
+    | UnadmittedFormer::EndpointLoop => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP)),
+    | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
+    | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
+})]
+#[must_use]
+const fn readmitted(former: UnadmittedFormer) -> FailureClass
+{
+    match former {
+        UnadmittedFormer::EffectRow
+        | UnadmittedFormer::Reify
+        | UnadmittedFormer::Stack
+        | UnadmittedFormer::Perform
+        | UnadmittedFormer::Handle
+        | UnadmittedFormer::Resume
+        | UnadmittedFormer::Reset
+        | UnadmittedFormer::Shift
+        | UnadmittedFormer::Abandon => FailureClass::Unimplemented(TrackingIssue::KERNEL_EFFECTS),
+        UnadmittedFormer::Capability | UnadmittedFormer::Exercise | UnadmittedFormer::Scope => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_CAPABILITY)
+        },
+        UnadmittedFormer::Memory | UnadmittedFormer::Buffer => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_MEMORY)
+        },
+        UnadmittedFormer::Run => FailureClass::Unimplemented(TrackingIssue::KERNEL_RUN),
+        UnadmittedFormer::Abstract => FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT),
+        UnadmittedFormer::StaticLambda => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)
+        },
+        UnadmittedFormer::Stage => FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE),
+        UnadmittedFormer::Qubit => FailureClass::Unimplemented(TrackingIssue::KERNEL_QUBIT),
+        UnadmittedFormer::EndpointLoop => {
+            FailureClass::Unimplemented(TrackingIssue::KERNEL_ENDPOINT_LOOP)
+        },
+        UnadmittedFormer::NumericLiteral
+        | UnadmittedFormer::NumericAtom
+        | UnadmittedFormer::ValueLift
+        | UnadmittedFormer::SortParameter => former.judged(),
+        UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => FailureClass::EngineFault,
+    }
+}
+
+impl From<FragmentRefusal> for Refusal
+{
+    /// The bridge's refusal for a type node the fragment's views cannot read.
+    ///
+    /// # Specification
+    /// - ensures: each variant becomes the [`Refusal`] variant of the same
+    ///   name, with the same payload.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unsupported type formers and a missing type id expose
+    ///   the exact refusal and payload; wrong family or diagnostic substitution
+    ///   changes the observed erasure, within those fragment boundaries.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match refusal {
+        | FragmentRefusal::DanglingNode { node } => ret == Self::DanglingNode { node },
+        | FragmentRefusal::OutOfFragment { at, former } => ret == Self::OutOfFragment { at, former },
+    })]
+    #[inline]
+    fn from(refusal: FragmentRefusal) -> Self
+    {
+        match refusal {
+            FragmentRefusal::DanglingNode { node } => Self::DanglingNode { node },
+            FragmentRefusal::OutOfFragment { at, former } => Self::OutOfFragment { at, former },
+        }
+    }
+}
+
+/// What became of one declaration at the kernel boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Outcome
+{
+    /// The kernel admitted a nominal declaration, not an axiom: a native data
+    /// declaration, or a sealed abstract type — its atom — at the kernel
+    /// position every later reference to the atom erases to.
+    Data
+    {
+        /// The declaration's kernel identity.
+        admitted: CheckedId,
+        /// Dependencies of its parameter and constructor signatures, or of its
+        /// kind and representation.
+        audit: AxiomReport,
+    },
+    /// The kernel admitted the declaration as a definition.
+    Defined
+    {
+        /// The kernel's receipt, naming the position the declaration took.
+        admitted: CheckedId,
+        /// The axioms the definition transitively rests on.
+        audit: AxiomReport,
+    },
+    /// The kernel admitted the uncompleted signature as an axiom.
+    Assumed
+    {
+        /// The kernel's receipt, naming the position the axiom took.
+        admitted: CheckedId,
+        /// The audit of the axiom, which names the axiom itself.
+        audit: AxiomReport,
+    },
+    /// The judgement refused the declaration: the refusal is its mark, and the
+    /// kernel was offered nothing.
+    Marked(CheckRefusal),
+    /// The judgement suspended the declaration on owed holes: nothing is
+    /// offered until a fill resumes it, and a reader of it is withheld.
+    Suspended,
+    /// The declaration is static: a type operator, classified by a static
+    /// Pi, whose body normalizes away at every use, or a world, whose
+    /// identity no kernel term carries. The kernel was offered nothing; each
+    /// instance of an operator a later declaration reaches is reduced, and its
+    /// certificate replayed, there.
+    Static,
+    /// The bridge refused to offer the declaration.
+    Refused(Refusal),
+    /// The kernel rejected the erased declaration: the judgement accepted what
+    /// the kernel does not, the disagreement the oracle exists to report.
+    Rejected(KernelError),
+}
+
+/// One certificate the kernel replayed for a declaration: what its step
+/// unfolded, the content of the instance it fired at, and the kernel's
+/// verdict on its trace.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Replayed
+{
+    /// What the step unfolded: a definition by its module position, or a
+    /// static lambda by its node.
+    unfolded: Unfolded,
+    /// The kernel content digest of the instance's image, read as it stands.
+    redex: ContentDigest,
+    /// The kernel's verdict on the certificate's trace.
+    verdict: KernelVerdict,
+}
+
+impl Replayed
+{
+    /// What the step unfolded.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn unfolded(&self) -> Unfolded
+    {
+        self.unfolded
+    }
+
+    /// The kernel content digest of the instance the step fired at: with
+    /// [`Self::unfolded`], the certificate's address within its declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn redex(&self) -> ContentDigest
+    {
+        self.redex
+    }
+
+    /// The kernel's verdict on the certificate's trace.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn verdict(&self) -> KernelVerdict
+    {
+        self.verdict
+    }
+}
+
+/// One declaration's outcome, beside the position and origin the judgement
+/// echoed, the certificates its erasure replayed and how long the kernel's
+/// admission of it took.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Readmitted
+{
+    /// The declaration's module position.
+    constant: ConstantIndex,
+    /// The declaration's origin, echoed back.
+    origin: OriginToken,
+    /// What became of it.
+    outcome: Outcome,
+    /// The certificates the kernel replayed before the declaration was
+    /// offered, in the order the erasure met the unfoldings.
+    certificates: Vec<Replayed>,
+    /// What the kernel's admission of it spent, or why no time was read.
+    took: AdmissionCost,
+}
+
+impl Readmitted
+{
+    /// The declaration's module position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// The declaration's origin: the location a driver resolves a refusal to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn origin(&self) -> OriginToken
+    {
+        self.origin
+    }
+
+    /// What became of the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn outcome(&self) -> &Outcome
+    {
+        &self.outcome
+    }
+
+    /// The certificates the kernel replayed for the declaration, each
+    /// convertible unless the outcome is [`Refusal::CertificateDeclined`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn certificates(&self) -> &[Replayed]
+    {
+        &self.certificates
+    }
+
+    /// What [`Environment::add_decl`] spent to admit or reject the
+    /// declaration, by the readmission's [`Stopwatch`], or why no time was
+    /// read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn took(&self) -> AdmissionCost
+    {
+        self.took
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a readmitted declaration carries no admission time.
+    pub mod timed {
+        /// The reason no time was read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The readmission read no clock.
+            Untimed,
+            /// The kernel was never offered the declaration.
+            Unoffered,
+            /// A mutual block admits its members together, so no member has
+            /// a time of its own.
+            Block,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a timed span of work carries no allocation count.
+    pub mod metered {
+        /// The reason none was counted.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A clock timed the span, and no meter counted its allocations.
+            Unmetered,
+        }
+    }
+}
+
+/// How many allocations one thread made: its running count, or the count of
+/// one span of its work.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AllocationCount(u64);
+
+impl From<u64> for AllocationCount
+{
+    /// The count of `allocations` allocations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(allocations: u64) -> Self
+    {
+        Self(allocations)
+    }
+}
+
+impl From<AllocationCount> for u64
+{
+    /// The count as a number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: AllocationCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl AllocationCount
+{
+    /// The allocations made between the running count `earlier` and this one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn since(
+        self,
+        earlier: Self,
+    ) -> Self
+    {
+        Self(self.0.saturating_sub(earlier.0))
+    }
+}
+
+/// What one span of work spent: its wall, and its thread's allocations.
+///
+/// The allocations hold a count only when a meter counts them. A readmission
+/// keeps one for the kernel's admission of each declaration, and the editor's
+/// timings layer keeps one for each phase it samples. The wall keeps its
+/// nanoseconds in one word, so a [`Readmitted`] that a fault carries stays
+/// within 128 bytes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Spent
+{
+    /// How long the span took, in nanoseconds.
+    nanos: u64,
+    /// How many allocations its thread made, or why none were counted.
+    allocations: Maybe<AllocationCount, metered::Absent>,
+}
+
+impl Spent
+{
+    /// `wall`, with the allocations `allocations`. A wall past `u64::MAX`
+    /// nanoseconds, some 584 years, keeps that many.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        wall: Duration,
+        allocations: Maybe<AllocationCount, metered::Absent>,
+    ) -> Self
+    {
+        Self {
+            nanos: u64::try_from(wall.as_nanos()).unwrap_or(u64::MAX),
+            allocations,
+        }
+    }
+
+    /// How long the span took.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn wall(&self) -> Duration
+    {
+        Duration::from_nanos(self.nanos)
+    }
+
+    /// How many allocations the span's thread made, or why none were
+    /// counted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn allocations(&self) -> Maybe<AllocationCount, metered::Absent>
+    {
+        self.allocations
+    }
+}
+
+/// What the kernel's admission of one declaration spent, or why no time was
+/// read.
+pub type AdmissionCost = Maybe<Spent, timed::Absent>;
+
+/// The cost of a declaration the kernel was never offered.
+const UNOFFERED: AdmissionCost = Maybe::Absent(timed::Absent::Unoffered);
+
+/// How a readmission times the kernel's admission of each declaration: by a
+/// [`Clock`] the caller supplies, beside a [`Meter`] when it counts the
+/// allocations too, or not at all.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Self::stop`] answers the time since the [`Self::start`] it is
+///   given, with the allocations since then when the stopwatch meters them, or
+///   why it read no time.
+/// - provides: the seam a measured walk times the kernel through; the checker
+///   reads no clock and no meter of its own, and an untimed readmission reads
+///   none.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the trait has no body, and each reading is the clock's
+///   or the meter's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission under a ticking clock times each
+///   declaration it admits alone and none it does not, and an untimed one times
+///   none; under a ticking meter it counts the allocations of each one it
+///   admits.
+/// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+/// - witness: `bridge::tests::a_metered_readmission_counts_the_allocations_of_each_admission`
+pub trait Stopwatch
+{
+    /// What a start leaves for its stop to read against.
+    type Started: Copy;
+
+    /// Begin timing one admission.
+    ///
+    /// # Specification
+    /// trivial.
+    fn start(&mut self) -> Self::Started;
+
+    /// End timing the admission `started` began.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stop(
+        &mut self,
+        started: Self::Started,
+    ) -> AdmissionCost;
+}
+
+/// The stopwatch that reads no clock: every admission untimed.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Untimed;
+
+impl Stopwatch for Untimed
+{
+    type Started = ();
+
+    /// Read nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self)
+    {
+    }
+
+    /// Answer that no clock was read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn stop(
+        &mut self,
+        (): (),
+    ) -> AdmissionCost
+    {
+        Maybe::Absent(timed::Absent::Untimed)
+    }
+}
+
+/// The stopwatch that reads its clock around each admission.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Timed<C>(C);
+
+impl<C> Timed<C>
+{
+    /// A stopwatch reading `clock`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn by(clock: C) -> Self
+    {
+        Self(clock)
+    }
+}
+
+impl<C> Stopwatch for Timed<C>
+where
+    C: Clock,
+{
+    type Started = Duration;
+
+    /// The clock's reading at the start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self) -> Duration
+    {
+        self.0.now()
+    }
+
+    /// The time since `started`, zero if the clock went back, with no
+    /// allocation count.
+    ///
+    /// # Specification
+    /// - ensures: present, the difference of a fresh reading and `started`,
+    ///   zero if the clock went back, and [`metered::Absent::Unmetered`].
+    /// - panics: none.
+    /// - executable: none — the fresh reading is the clock's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Stopwatch`].
+    /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+    #[inline]
+    fn stop(
+        &mut self,
+        started: Duration,
+    ) -> AdmissionCost
+    {
+        Maybe::Present(Spent::new(
+            self.0.now().saturating_sub(started),
+            Maybe::Absent(metered::Absent::Unmetered),
+        ))
+    }
+}
+
+/// The running count of the allocations the calling thread made, which a
+/// metered stopwatch reads around each admission. The checker counts no
+/// allocation of its own, so the caller supplies the meter.
+pub trait Meter
+{
+    /// The calling thread's allocations so far.
+    ///
+    /// # Specification
+    /// trivial.
+    fn allocations(&mut self) -> AllocationCount;
+}
+
+/// The stopwatch that reads its clock and its meter around each admission.
+#[derive(Clone, Copy, Debug)]
+pub struct Metered<C, M>
+{
+    /// The clock it reads.
+    clock: C,
+    /// The meter it reads.
+    meter: M,
+}
+
+impl<C, M> Metered<C, M>
+{
+    /// A stopwatch reading `clock` and `meter`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn by(
+        clock: C,
+        meter: M,
+    ) -> Self
+    {
+        Self { clock, meter }
+    }
+}
+
+impl<C, M> Stopwatch for Metered<C, M>
+where
+    C: Clock,
+    M: Meter,
+{
+    type Started = (Duration, AllocationCount);
+
+    /// The clock's and the meter's readings at the start.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn start(&mut self) -> (Duration, AllocationCount)
+    {
+        (self.clock.now(), self.meter.allocations())
+    }
+
+    /// The time and the allocations since `started`, each zero if its reading
+    /// went back.
+    ///
+    /// # Specification
+    /// - ensures: present, the difference of a fresh clock reading and the
+    ///   started one, and the difference of a fresh meter reading and the
+    ///   started one, each zero if its reading went back.
+    /// - panics: none.
+    /// - executable: none — the fresh readings are the clock's and the meter's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Stopwatch`].
+    /// - witness: `bridge::tests::a_metered_readmission_counts_the_allocations_of_each_admission`
+    #[inline]
+    fn stop(
+        &mut self,
+        (wall, allocations): (Duration, AllocationCount),
+    ) -> AdmissionCost
+    {
+        let wall = self.clock.now().saturating_sub(wall);
+        Maybe::Present(Spent::new(
+            wall,
+            Maybe::Present(self.meter.allocations().since(allocations)),
+        ))
+    }
+}
+
+/// What a readmitted artifact rests on: the union of its declarations'
+/// audits.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ArtifactAudit
+{
+    /// The kernel positions of the axioms any declaration rests on, ascending.
+    axioms: Vec<ConstantIndex>,
+    /// The kernel positions of the unchecked admissions any declaration rests
+    /// on, ascending.
+    unchecked: Vec<ConstantIndex>,
+}
+
+impl ArtifactAudit
+{
+    /// The union of the audits of every declaration the kernel admitted.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the axioms and the unchecked admissions named by the audit of
+    ///   any [`Outcome::Defined`] or [`Outcome::Assumed`] entry, each ascending
+    ///   and without repetition; entries that did not cross contribute nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty ledgers, repeated uses of axioms and refused
+    ///   entries expose the exact sorted dependency union; missing, duplicated
+    ///   or spurious axioms change that audit. No unchecked admission is
+    ///   introduced.
+    /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    #[spec(ensures: |ret| ret.axioms.iter().zip(ret.axioms.iter().skip(1)).all(|(a,b)| a < b)
+        && ret.unchecked.iter().zip(ret.unchecked.iter().skip(1)).all(|(a,b)| a < b)
+        && readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } =>
+                audit.axioms().iter().all(|at| ret.axioms.binary_search(at).is_ok())
+                && audit.unchecked_admissions().iter().all(|at| ret.unchecked.binary_search(at).is_ok()),
+            | _ => true,
+        })
+        && ret.axioms.len() <= readmitted.iter().map(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.axioms().len(),
+            | _ => 0,
+        }).sum::<usize>()
+        && ret.unchecked.len() <= readmitted.iter().map(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Data { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.unchecked_admissions().len(),
+            | _ => 0,
+        }).sum::<usize>())]
+    fn of(readmitted: &[Readmitted]) -> Self
+    {
+        let mut axioms = BTreeSet::new();
+        let mut unchecked = BTreeSet::new();
+        for entry in readmitted {
+            if let Outcome::Defined { ref audit, .. }
+            | Outcome::Data { ref audit, .. }
+            | Outcome::Assumed { ref audit, .. } = entry.outcome
+            {
+                axioms.extend(audit.axioms().iter().copied());
+                unchecked.extend(audit.unchecked_admissions().iter().copied());
+            }
+        }
+        Self {
+            axioms: axioms.into_iter().collect(),
+            unchecked: unchecked.into_iter().collect(),
+        }
+    }
+
+    /// The kernel positions of the axioms the artifact rests on, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn axioms(&self) -> &[ConstantIndex]
+    {
+        &self.axioms
+    }
+
+    /// The kernel positions of the unchecked admissions the artifact rests on,
+    /// ascending. The bridge admits nothing unchecked.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn unchecked_admissions(&self) -> &[ConstantIndex]
+    {
+        &self.unchecked
+    }
+}
+
+/// A module's readmission: the kernel environment it built, one outcome per
+/// declaration, the artifact's audit, and the declarations the kernel admitted.
+#[derive(Clone, Debug)]
+pub struct Readmission
+{
+    /// The environment every crossing declaration was admitted into.
+    environment: Environment,
+    /// One entry per judged declaration, in the report's order.
+    readmitted: Vec<Readmitted>,
+    /// The union of the admitted declarations' audits.
+    audit: ArtifactAudit,
+    /// The declarations the kernel admitted, as they were staged, in kernel
+    /// admission order; those a record froze are shared with it.
+    admitted: gandr_kernel_term::Family<KernelDeclaration>,
+    /// How many leading entries were resumed from an earlier readmission's
+    /// [`Crossed`] rather than crossed again.
+    resumed: usize,
+}
+
+impl Readmission
+{
+    /// The environment every crossing declaration was admitted into, and
+    /// nothing else.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn environment(&self) -> &Environment
+    {
+        &self.environment
+    }
+
+    /// One entry per judged declaration, in the report's order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn readmitted(&self) -> &[Readmitted]
+    {
+        &self.readmitted
+    }
+
+    /// What the artifact rests on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn audit(&self) -> &ArtifactAudit
+    {
+        &self.audit
+    }
+
+    /// How many leading entries [`readmit_resuming`] resumed from an earlier
+    /// readmission rather than crossed again: none for [`readmit`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn resumed(&self) -> LeadingCount
+    {
+        LeadingCount(self.resumed)
+    }
+
+    /// The artifact of every declaration that crossed, each under the
+    /// structured name `names` gives its module position.
+    ///
+    /// # Specification
+    /// - requires: `names` is keyed by module position, the positions the
+    ///   judged declarations carry; each crossed position indexes `admitted`.
+    /// - ensures: the canonical encoding of the environment's arena and the
+    ///   live admitted declarations, in rank order, each marked checked and
+    ///   carrying the name `names` holds at its module position, or no name
+    ///   where it holds none. Each position is written as its place in rank
+    ///   order. A declaration that did not cross, or whose entry is retired, is
+    ///   not in the artifact, and a reference in it reads the place its target
+    ///   took, never a name.
+    /// - provides: the export a reader decodes: a flattened member is named by
+    ///   its segments, and is still referred to by position.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module whose first declaration is marked, whose
+    ///   later ones read earlier ones, and whose last has no name, decoded and
+    ///   asserted at each declaration's exact name and the kernel position each
+    ///   reference reads; a nominal declaration decoded under its own name.
+    /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times"
+        )
+    )]
+    #[spec(
+        requires: self.readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
+            | _ => true,
+        }),
+        captures: [before = names.len(), named = self.readmitted.iter().filter(|entry|
+            matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) && names.contains_key(&entry.constant)).count()],
+        ensures: before.checked_sub(names.len()) == Some(named) && self.readmitted.iter().all(|entry|
+            !matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) || !names.contains_key(&entry.constant)),
+    )]
+    #[inline]
+    #[must_use]
+    pub fn export(
+        &self,
+        mut names: BTreeMap<ConstantIndex, StructuredName>,
+    ) -> EncodedArtifact
+    {
+        let places = self.environment.places();
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+        match places {
+            Maybe::Present(ref places) => encode_placed(self.environment.arena(), &marked, places),
+            Maybe::Absent(places::Absent::InOrder) => encode(self.environment.arena(), &marked),
+        }
+    }
+
+    /// [`export`](Self::export), encoding only the declarations after the
+    /// leading ones `crossed` holds when this readmission resumed them from it
+    /// and `crossed` keeps their encoding; and keeping in `recorded` the
+    /// encoding of the leading declarations it holds, for a later export to
+    /// resume.
+    ///
+    /// # Specification
+    /// - requires: as [`export`](Self::export); `crossed` is the record
+    ///   [`readmit_resuming`] was given and `recorded` the one it answered, and
+    ///   `names` names the leading declarations `crossed` holds as it named
+    ///   them when their encoding was kept.
+    /// - ensures: [`export`](Self::export)'s artifact. When `recorded` is
+    ///   present and no seal among its declarations is open, it keeps their
+    ///   encoding, which ends where its declarations do in the kernel, so the
+    ///   record a later export resumes holds its own. Otherwise, when this
+    ///   readmission resumed every declaration of `crossed` and `crossed` keeps
+    ///   their encoding, only the declarations after them are encoded. An
+    ///   environment whose places differ from its positions resumes no encoding
+    ///   and keeps none: its export is encoded whole.
+    /// - provides: an editor's export of a document laid out after its import
+    ///   closure, which encodes the closure once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission of a laid-out document resumed from the
+    ///   record of another revision's admission exports, byte for byte, what a
+    ///   whole admission exports, and the record it answers keeps the encoding
+    ///   of its declarations.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102`
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries once"
+        )
+    )]
+    #[spec(
+        requires: self.readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
+            | _ => true,
+        }),
+        ensures: |ret| match *recorded {
+            Maybe::Present(ref record) => record.encoded.as_ref().is_none_or(|prefix|
+                usize::from(prefix.end()) == record.positions.exports.len()),
+            Maybe::Absent(_) => true,
+        },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn export_resuming(
+        &self,
+        mut names: BTreeMap<ConstantIndex, StructuredName>,
+        crossed: Maybe<&Crossed, crossed::Absent>,
+        recorded: &mut Maybe<Crossed, crossed::Absent>,
+    ) -> EncodedArtifact
+    {
+        let arena = self.environment.arena();
+        let places = self.environment.places();
+        if let Maybe::Present(ref placed) = places {
+            if let Maybe::Present(ref mut record) = *recorded {
+                record.encoded = None;
+            }
+            let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+            return encode_placed(arena, &marked, placed);
+        }
+        let resumable = match crossed {
+            Maybe::Present(crossed) if self.resumed == crossed.readmitted.len() => {
+                crossed.encoded.as_ref()
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        let Maybe::Present(ref mut record) = *recorded
+        else {
+            return match resumable {
+                Some(prefix) => encode_after(
+                    prefix,
+                    arena,
+                    &self.marked(&mut names, prefix.end(), &places),
+                ),
+                None => encode(
+                    arena,
+                    &self.marked(&mut names, ConstantIndex::from(0_usize), &places),
+                ),
+            };
+        };
+        let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+        if let Some((leading, after)) =
+            marked.split_at_checked(usize::from(record.positions.exports.len()))
+            && let Maybe::Present(prefix) = encode_prefix(arena, leading)
+        {
+            let artifact = encode_after(&prefix, arena, after);
+            record.encoded = Some(prefix);
+            return artifact;
+        }
+        match resumable.and_then(|prefix| Some((prefix, marked.get(usize::from(prefix.end()) ..)?)))
+        {
+            Some((prefix, after)) => encode_after(prefix, arena, after),
+            None => encode(arena, &marked),
+        }
+    }
+
+    /// The admitted declarations from kernel position `from` on, each marked
+    /// checked and named as `names` names its module position, every name read
+    /// taken out of `names`: in kernel admission order while `places` is
+    /// absent, and the live ones in rank order otherwise.
+    ///
+    /// # Specification
+    /// - requires: each crossed position indexes `admitted`; `places` is the
+    ///   environment's own.
+    /// - ensures: while `places` is absent, one declaration per admitted
+    ///   declaration at `from` or later, in kernel admission order; otherwise
+    ///   one per live entry at `from` or later, in rank order. Each carries the
+    ///   name `names` held at its module position, or none; each name read is
+    ///   removed from `names`, and none of a declaration before `from` is read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`export`](Self::export) and
+    ///   [`export_resuming`](Self::export_resuming).
+    /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    #[spec(ensures: |ret| matches!(*places, Maybe::Present(_)) || ret.len() == usize::from(self.admitted.len()).saturating_sub(usize::from(from)))]
+    fn marked(
+        &self,
+        names: &mut BTreeMap<ConstantIndex, StructuredName>,
+        from: ConstantIndex,
+        places: &Maybe<Places, places::Absent>,
+    ) -> Vec<MarkedDeclaration>
+    {
+        let mut kernel_names = BTreeMap::new();
+        for entry in &self.readmitted {
+            if let Outcome::Defined { admitted, .. }
+            | Outcome::Assumed { admitted, .. }
+            | Outcome::Data { admitted, .. } = entry.outcome
+                && admitted.position() >= from
+            {
+                kernel_names.insert(
+                    admitted.position(),
+                    names.remove(&entry.constant).unwrap_or_default(),
+                );
+            }
+        }
+        let mut mark = |(position, declaration): (ConstantIndex, &KernelDeclaration)| {
+            let mut declaration = declaration.clone();
+            if let Some(name) = kernel_names.remove(&position) {
+                declaration = declaration.named(name);
+            }
+            MarkedDeclaration::new(AdmissionMark::Checked, declaration)
+        };
+        match *places {
+            Maybe::Absent(places::Absent::InOrder) => self
+                .admitted
+                .iter()
+                .enumerate()
+                .skip(usize::from(from))
+                .map(|(position, declaration)| mark((ConstantIndex::from(position), declaration)))
+                .collect(),
+            Maybe::Present(_) => self
+                .environment
+                .in_rank_order()
+                .filter(|&position| position >= from)
+                .filter_map(|position| Some((position, self.admitted.get(usize::from(position))?)))
+                .map(mark)
+                .collect(),
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a readmission has no record of its leading declarations to resume
+    /// from or to keep.
+    pub mod crossed {
+        /// The reason no record is at hand.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No record was asked for, or none is held.
+            Unasked,
+            /// The readmission crossed none of the leading declarations: it
+            /// resumed them all, or there are none.
+            Unchanged,
+            /// A leading declaration was neither admitted nor static.
+            Unadmitted,
+            /// The boundary falls inside a mutual block, under an open seal,
+            /// or past the report's last declaration.
+            Unaligned,
+        }
+    }
+}
+
+/// How many of a report's declarations, counted from its first: those a
+/// readmission resumed, or the leading ones a record holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LeadingCount(usize);
+
+impl LeadingCount
+{
+    /// No declaration.
+    pub const NONE: Self = Self(0_usize);
+}
+
+impl From<usize> for LeadingCount
+{
+    /// The first `declarations` declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(declarations: usize) -> Self
+    {
+        Self(declarations)
+    }
+}
+
+impl From<LeadingCount> for usize
+{
+    /// The number of declarations `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: LeadingCount) -> Self
+    {
+        count.0
+    }
+}
+
+impl fmt::Display for LeadingCount
+{
+    /// Writes the number of declarations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+/// What readmitting a module's leading declarations built.
+///
+/// The kernel environment, the positions they took, their kernel bodies,
+/// exports and entries, kept so that a later readmission of a module leading
+/// with the same declarations resumes from it rather than crossing them again.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the parts of one readmission at one boundary: the environment and
+///   positions it had built once its first [`Crossed::boundary`] entries were
+///   recorded, and those entries; no core body, since a core body names a node
+///   of the arena the record was made over, and a resuming readmission reads
+///   each from its own report. Once an export kept it, the encoding of the
+///   kernel declarations they admitted.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by
+///   [`Crossed::record`] and [`Readmission::export_resuming`], whose
+///   specifications state them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit_resuming`].
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+#[derive(Clone, Debug)]
+pub struct Crossed
+{
+    /// The environment once the leading declarations crossed.
+    environment: Environment,
+    /// The positions they took, with no core body.
+    positions: Positions,
+    /// Their entries, in order.
+    readmitted: Vec<Readmitted>,
+    /// The encoding of the kernel declarations they admitted, once an export
+    /// kept it ([`Readmission::export_resuming`]).
+    encoded: Option<EncodedPrefix>,
+}
+
+impl Crossed
+{
+    /// How many leading declarations the record holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn boundary(&self) -> LeadingCount
+    {
+        LeadingCount(self.readmitted.len())
+    }
+
+    /// The kernel position the first declaration after the record's takes:
+    /// how many kernel declarations the environment holds once they crossed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn kernel_end(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(self.positions.exports.len())
+    }
+
+    /// The record of `built` — the environment, positions and entries of a
+    /// readmission that resumed `from` entries, once it reached its boundary —
+    /// when it holds one.
+    ///
+    /// # Specification
+    /// - requires: `built` is a readmission's state between two declarations.
+    /// - ensures: absent as [`crossed::Absent::Unchanged`] when no entry
+    ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
+    ///   entry is neither admitted nor static; as
+    ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
+    ///   environment handed on ([`Environment::handed_on`]: its key chain and
+    ///   the outcomes its checks kept, without the verdicts this readmission
+    ///   checked or recalled, which its own receipt answers for), the entries,
+    ///   and the positions with no core body and no open seal. A record made
+    ///   freezes the readmission's environment ([`Environment::freeze`]) before
+    ///   keeping it, so the record and every readmission [`Crossed::resume`]
+    ///   starts from it share its arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record made over one arena resumes a readmission
+    ///   over another to the answer a whole readmission gives.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref crossed) => usize::from(crossed.boundary()) == built.2.len()
+            && crossed.boundary() > from && built.1.open.is_empty(),
+        Maybe::Absent(_) => true,
+    })]
+    fn record(
+        built: (&mut Environment, &Positions, &[Readmitted]),
+        from: LeadingCount,
+    ) -> Maybe<Self, crossed::Absent>
+    {
+        let (environment, positions, readmitted) = built;
+        if readmitted.len() <= from.0 {
+            return Maybe::Absent(crossed::Absent::Unchanged);
+        }
+        if !readmitted.iter().all(|entry| {
+            matches!(
+                entry.outcome,
+                Outcome::Defined { .. }
+                    | Outcome::Data { .. }
+                    | Outcome::Assumed { .. }
+                    | Outcome::Static
+            )
+        }) {
+            return Maybe::Absent(crossed::Absent::Unadmitted);
+        }
+        if !positions.open.is_empty() {
+            return Maybe::Absent(crossed::Absent::Unaligned);
+        }
+        environment.freeze();
+        Maybe::Present(Self {
+            environment: environment.handed_on(),
+            positions: Positions {
+                native: positions.native.clone(),
+                assumed: positions.assumed.clone(),
+                admitted: positions.admitted.clone(),
+                models: positions.models.clone(),
+                definitions: CodeDefinitions::new(),
+                unfoldings: positions.unfoldings.clone(),
+                exports: {
+                    // Every resume clones the record's positions; frozen,
+                    // the clones share its exports rather than copy them.
+                    let mut exports = positions.exports.clone();
+                    exports.freeze();
+                    exports
+                },
+                open: Vec::new(),
+                withheld: BTreeSet::new(),
+                presentations: positions.presentations.clone(),
+                formed: positions.formed.clone(),
+                // The keys name content in the table, so the two carry on
+                // together; a resumed formation's export name counts past them.
+                formations: positions.formations.clone(),
+                content: positions.content.clone(),
+            },
+            readmitted: readmitted.to_vec(),
+            encoded: None,
+        })
+    }
+
+    /// The environment, positions and entries a readmission of `report`
+    /// resumes from the record, when the record agrees with it.
+    ///
+    /// # Specification
+    /// - requires: the record's declarations were judged as `report`'s leading
+    ///   ones were ([`readmit_resuming`]).
+    /// - ensures: `None` unless `report` has at least [`Crossed::boundary`]
+    ///   declarations, each at the position of the record's entry at its index
+    ///   under a verdict of the kind that entry's outcome crossed: a body for
+    ///   [`Outcome::Defined`], a body or a world for [`Outcome::Static`], a
+    ///   nominal declaration for [`Outcome::Data`], a signed one for
+    ///   [`Outcome::Assumed`]. Then the record's environment as
+    ///   [`Environment::handed_on`] copies it, with the outcomes its run kept,
+    ///   its positions with each core body defined and each data signature
+    ///   presented again from `report` in order, as crossing them did, and its
+    ///   entries with `report`'s origins. The native signatures and the free
+    ///   models the record holds are the ones its declarations read, each
+    ///   seeded at its first reader, so the native operations and the effects
+    ///   of the arena past them do not enter the agreement.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record resumes a readmission over another arena to
+    ///   a whole readmission's answer, whatever native operations follow its
+    ///   leading declarations, and one whose verdicts disagree with the report
+    ///   is not resumed.
+    /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(self.boundary())
+        && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
+            entry.constant == judged.constant() && entry.origin == judged.origin())))]
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
+    fn resume(
+        &self,
+        report: &ModuleReport,
+    ) -> Option<(Environment, Positions, Vec<Readmitted>)>
+    {
+        let leading = report.judged().get(.. self.boundary().0)?;
+        let mut definitions = CodeDefinitions::new();
+        let mut readmitted = Vec::with_capacity(report.judged().len());
+        for (entry, judged) in self.readmitted.iter().zip(leading) {
+            let constant = judged.constant();
+            if entry.constant != constant {
+                return None;
+            }
+            let defined =
+                |body: ValueId| report.definitions().get(&constant).copied().unwrap_or(body);
+            match (&entry.outcome, judged.verdict()) {
+                (
+                    &(Outcome::Defined { .. } | Outcome::Static),
+                    Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. },
+                ) => definitions.define(constant, defined(body)),
+                (&Outcome::Static, Verdict::Data) if report.worlds().contains(&constant) => {},
+                (&Outcome::Data { .. }, Verdict::Data) => {
+                    if let Some(signature) = report.data_signatures().get(&constant) {
+                        definitions.present(constant, signature);
+                    }
+                },
+                (
+                    &Outcome::Assumed { .. },
+                    Verdict::Owed(_) | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                ) => {},
+                _ => return None,
+            }
+            readmitted.push(Readmitted {
+                constant,
+                origin: judged.origin(),
+                outcome: entry.outcome.clone(),
+                certificates: entry.certificates.clone(),
+                took: entry.took,
+            });
+        }
+        let mut positions = self.positions.clone();
+        positions.definitions = definitions;
+        Some((self.environment.handed_on(), positions, readmitted))
+    }
+}
+
+/// Re-derive every declaration `report` accepted in a fresh kernel
+/// environment.
+///
+/// # Specification
+/// - requires: `report` was judged over `arena`; a report paired with another
+///   arena is admissible input, its unresolvable ids refused rather than read.
+/// - ensures: one [`Readmitted`] per judged declaration, in order, echoing its
+///   position and origin. A checked declaration is offered as a definition at
+///   its declared type, an unsigned one at its synthesised type, and an owed
+///   hole as an axiom at the type it owes; each crosses as [`Outcome::Defined`]
+///   or [`Outcome::Assumed`] when the kernel admits it. A definition whose type
+///   is a static Pi is [`Outcome::Static`]: the kernel is offered nothing, and
+///   its body stays for later instances to reduce. A refused declaration is
+///   [`Outcome::Marked`] with its refusal, and the kernel is offered nothing
+///   for it. An offer whose erasure refuses, or one of whose certificates the
+///   kernel does not replay to convertible, is [`Outcome::Refused`], one the
+///   kernel rejects [`Outcome::Rejected`], and each leaves the environment as
+///   it was. A constant naming a declaration that crossed is erased to the
+///   kernel position that declaration took; a code recorded with a lift is
+///   erased to the kernel's lift of its decode; a decode of a constant that
+///   crossed as a definition is erased as the decode of its body; a static
+///   application at a saturated instance of a static definition or at a static
+///   lambda is erased as its reduct, minted into `arena`, until none remains —
+///   each step certified and replayed once per distinct instance.
+/// - provides: the declarations that crossed, the signature of each native
+///   operation they read and the free model of each effect they handle, each
+///   seeded at its first reader, and an audit exposing every source-hole or
+///   native assumption on which an admitted source declaration depends.
+/// - fails: never; every declaration gets an outcome.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — the kernel is the external oracle: every declaration
+///   the judgement accepts over the generated well-typed and free fixture sets
+///   and over generated universe and static declarations crosses, every
+///   certificate a generated code constant's readmission records replays, and
+///   the artifact's axioms agree with the ledger in the pure fragment. Native
+///   signatures additionally expose named runtime assumptions. The L3 residues
+///   are one artifact holding a marked body and a marked signed hole the kernel
+///   alone admits, a hole in synthesis position and a reference to a marked
+///   declaration, beside a checked and an owed positive control; the position
+///   remapping, separated by a module whose later references would misresolve
+///   under any other map; the rollback, separated by a refusal met after part
+///   of a body was minted; a sorted universe, a lifted code and a code
+///   constant's unfolding, each readmitted; one static definition at two
+///   instances, two certificates; and a certificate whose trace was emptied,
+///   refused.
+/// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+/// - witness: `bridge::tests::every_checked_universe_declaration_is_readmitted`
+/// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`
+/// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+/// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+/// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+/// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::a_lowered_computation_definition_admits`
+/// - witness: `bridge::tests::a_constant_reference_across_declarations_admits`
+/// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+/// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+/// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+/// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.readmitted().len() == report.judged().len())]
+pub fn readmit(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+) -> Readmission
+{
+    readmit_with(arena, report, |certificate| certificate)
+}
+
+/// [`readmit`] of `report`, resuming its leading declarations from `crossed`.
+///
+/// `crossed` is what an earlier readmission recorded for them, resumed when it
+/// agrees with `report`; this readmission records what its first `boundary`
+/// declarations built for a later one to resume.
+///
+/// # Specification
+/// - requires: as [`readmit`]; `crossed`, when present, was recorded by a
+///   readmission of a report whose first [`Crossed::boundary`] declarations the
+///   judgement judged alike — the same content, consulting the same answers —
+///   which the caller compares: a report keys nothing by content.
+/// - ensures: as [`readmit`]. The entries `crossed` holds are resumed rather
+///   than crossed again when each names the position the report's declaration
+///   at its index carries, under a verdict of the kind its outcome crossed: its
+///   outcome, certificates and admission time as recorded, its origin the
+///   report's, and the core bodies a later declaration unfolds read from the
+///   report; [`Readmission::resumed`] counts them, none when `crossed` is
+///   absent or disagrees. The record is present when this readmission crossed
+///   at least one of the first `boundary` declarations, every one of them was
+///   admitted or static, and no mutual block or open seal spans the boundary;
+///   absent otherwise.
+/// - provides: the language server's recheck of a document laid out after its
+///   import closure: the closure's declarations cross once, and each later
+///   revision of the document resumes them.
+/// - fails: never; every declaration gets an outcome.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module readmitted whole and the same module resumed
+///   from a record of its leading declarations made over another arena answer
+///   the same entries, audit and artifact; a record whose verdicts disagree
+///   with the report is not resumed, and answers as a whole readmission does.
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+#[inline]
+#[spec(ensures: |ret| ret.0.readmitted().len() == report.judged().len()
+    && usize::from(ret.0.resumed()) <= report.judged().len())]
+pub fn readmit_resuming(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    boundary: LeadingCount,
+    crossed: Maybe<&Crossed, crossed::Absent>,
+) -> (Readmission, Maybe<Crossed, crossed::Absent>)
+{
+    readmit_retiring(
+        arena,
+        report,
+        (boundary, crossed),
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+    )
+    .whole()
+}
+
+/// Whose recorded verdicts a fresh readmission believes, and where it reads
+/// them.
+///
+/// # Specification
+/// - ensures: a readmission under [`Recall::recheck`] checks every declaration
+///   it admits through the checked entry; under [`Recall::trusting`] it admits
+///   one on a verdict the source answers under a receipt from a signer the
+///   policy lists, as [`Environment::add_decl`] does. A readmission resumed
+///   from a [`Crossed`] record keeps the policy and the key chain that record
+///   was made under, and reads its own recall's source, which holds what the
+///   runs after the record recorded.
+/// - executable: none — the policy and the source are data the kernel reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a module readmitted under the receipt of its own cold
+///   readmission recalls every declaration that one checked, to the same
+///   artifact, and recalls nothing under another signer's key; resumed from a
+///   record made under no source, it recalls from its own.
+/// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
+/// - witness: `bridge::tests::a_resumed_readmission_recalls_from_its_own_source_6566`
+#[derive(Clone, Debug)]
+pub struct Recall
+{
+    /// Whose receipts are believed.
+    policy: TrustPolicy,
+    /// Where receipts are read.
+    source: Arc<dyn VerdictSource>,
+    /// The fork that each check's last drain runs its obligations through.
+    fork: SharedFork,
+}
+
+impl Recall
+{
+    /// Check every declaration, recalling nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn recheck() -> Self
+    {
+        Self {
+            policy: TrustPolicy::Recheck,
+            source: Arc::new(NoVerdicts),
+            fork: SharedFork::serial(),
+        }
+    }
+
+    /// Recall the verdicts `source` answers under receipts `policy` trusts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn trusting(
+        policy: TrustPolicy,
+        source: Arc<dyn VerdictSource>,
+    ) -> Self
+    {
+        Self {
+            policy,
+            source,
+            fork: SharedFork::serial(),
+        }
+    }
+
+    /// The same recall, each kernel check running the obligations of its
+    /// last drain as `fork` states. The fork changes no verdict.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forking(
+        self,
+        fork: SharedFork,
+    ) -> Self
+    {
+        Self { fork, ..self }
+    }
+
+    /// An empty environment under this recall.
+    ///
+    /// # Specification
+    /// trivial.
+    fn environment(&self) -> Environment
+    {
+        Environment::recalling(self.policy.clone(), Arc::clone(&self.source))
+            .forking(self.fork.clone())
+    }
+}
+
+/// What a readmission that polls retirement answers.
+///
+/// Whole, the readmission beside the record of its leading declarations
+/// [`readmit_resuming`] answers; retired, the retirement beside the record of
+/// the declarations it crossed before it.
+pub type Readmitting<Retired> = Polled<
+    (Readmission, Maybe<Crossed, crossed::Absent>),
+    Retired,
+    Maybe<Crossed, crossed::Absent>,
+>;
+
+/// [`readmit_resuming`] under `recall`, polling `retirement` before each
+/// declaration it crosses: retired, it stops there and answers the record of
+/// the declarations before it.
+///
+/// It times each admission by `stopwatch`.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`], of `leading`'s boundary and record.
+/// - ensures: while every poll answers [`Demand::Wanted`], [`Polled::Whole`]
+///   with [`readmit_resuming`]'s answer, each declaration a fresh environment
+///   admits admitted under `recall`. Retired before the declaration at index
+///   `k`, [`Polled::Retired`] with the retirement and the record of the first
+///   `k` declarations, made as [`readmit_resuming`] makes one at a boundary of
+///   `k`: present when it crossed at least one of them beyond those it resumed,
+///   every one was admitted or static, and no seal is open at `k`; absent
+///   otherwise. A mutual block crosses whole, so `k` never falls inside one; a
+///   poll is read only before a declaration, so `k` is always one of the
+///   report's. Each declaration the kernel admitted or rejected alone carries
+///   the time `stopwatch` read around its [`Environment::add_decl`], a resumed
+///   one the time the readmission that admitted it read; a member of a mutual
+///   block and one the kernel was never offered carry the reason none was read.
+/// - provides: an admission a newer revision overtakes stops at its next
+///   declaration, and the next one resumes what it crossed.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readmission retired part way, then resumed from its
+///   record, answers what a whole readmission answers; one under the receipt of
+///   its own cold run recalls what that run checked.
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+/// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
+/// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
+#[inline]
+#[spec(ensures: |ret| match ret {
+    Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
+    Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < report.judged().len(),
+    Polled::Retired(_, Maybe::Absent(_)) => true,
+})]
+pub fn readmit_retiring<Poll, Watch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    leading: (LeadingCount, Maybe<&Crossed, crossed::Absent>),
+    recall: &Recall,
+    retirement: &Poll,
+    stopwatch: &mut Watch,
+) -> Readmitting<Poll::Retired>
+where
+    Poll: Retirement,
+    Watch: Stopwatch,
+{
+    let (boundary, crossed) = leading;
+    readmit_from(
+        arena,
+        report,
+        |certificate| certificate,
+        Resume::Leading {
+            boundary,
+            crossed,
+            recall,
+        },
+        (retirement, stopwatch),
+    )
+}
+
+/// [`readmit`], with every certificate passed through `vouch` before the
+/// kernel replays it.
+///
+/// # Specification
+/// - requires: as [`readmit`].
+/// - ensures: as [`readmit`], with each certificate replaced by what `vouch`
+///   returns for it; the identity gives [`readmit`] exactly.
+/// - provides: the seam a test corrupts a certificate through, to observe the
+///   kernel decline it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit`], with the seam separated by the identity
+///   and by a certificate whose trace was emptied, refused.
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+#[spec(ensures: |ret| ret.readmitted().len() == report.judged().len())]
+fn readmit_with<Vouch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    vouch: Vouch,
+) -> Readmission
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    readmit_from(
+        arena,
+        report,
+        vouch,
+        Resume::Whole,
+        (&Unretired, &mut Untimed),
+    )
+    .whole()
+    .0
+}
+
+/// How a readmission treats its report's leading declarations.
+#[derive(Clone, Copy, Debug)]
+enum Resume<'crossed>
+{
+    /// Cross every declaration, checking each, and record nothing.
+    Whole,
+    /// Resume what `crossed` recorded when it agrees with the report, and
+    /// record what the first `boundary` declarations built.
+    Leading
+    {
+        /// How many leading declarations to record.
+        boundary: LeadingCount,
+        /// An earlier readmission's record, when the caller holds one.
+        crossed: Maybe<&'crossed Crossed, crossed::Absent>,
+        /// The recall a fresh environment admits under.
+        recall: &'crossed Recall,
+    },
+}
+
+/// [`readmit_with`] under `resume`, polling `retirement` before each
+/// declaration and timing each admission by `stopwatch`: the readmission and
+/// the record of its leading declarations [`Resume::Leading`] asks for, or what
+/// it held when retired.
+///
+/// # Specification
+/// - requires: as [`readmit_resuming`].
+/// - ensures: under [`Resume::Leading`], [`readmit_retiring`]'s answer with
+///   each certificate vouched as [`readmit_with`] vouches it; under
+///   [`Resume::Whole`], [`readmit_with`]'s readmission, nothing resumed, and no
+///   record, while no poll retires it.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`] and
+///   [`readmit_retiring`].
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
+#[spec(ensures: |ret| match ret {
+    Polled::Whole((ref readmission, ref recorded)) => readmission.readmitted().len() == report.judged().len()
+        && (matches!(resume, Resume::Leading { .. })
+            || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
+    Polled::Retired(..) => true,
+})]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn readmit_from<Vouch, Poll, Watch>(
+    arena: &mut CoreArena,
+    report: &ModuleReport,
+    vouch: Vouch,
+    resume: Resume<'_>,
+    (retirement, stopwatch): (&Poll, &mut Watch),
+) -> Readmitting<Poll::Retired>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+    Poll: Retirement,
+    Watch: Stopwatch,
+{
+    let source = Source {
+        lifts: report.lifts(),
+        funexts: report.funexts(),
+        coercions: report.coercions(),
+        equivalences: report.equivalences(),
+        flows: report.flows(),
+        directed: report.directed(),
+        motives: report.motives(),
+        payloads: report.payloads(),
+        handled: report.handled(),
+        rows: report.rows(),
+        reflexivities: report.reflexivities(),
+        relations: report.relations(),
+        restatements: report.restatements(),
+        laws: report.laws(),
+        operation_rules: report.operation_rules(),
+        covers: report.covers(),
+        builtins: report.builtins(),
+        stage_signatures: report.stage_signatures(),
+        natives: report.natives(),
+        definitions: report.definitions(),
+    };
+    let judged_all = report.judged();
+    let (boundary, offered, fresh, recalled) = match resume {
+        Resume::Whole => (None, None, Environment::new(), None),
+        Resume::Leading {
+            boundary,
+            crossed,
+            recall,
+        } => (
+            Some(boundary.0),
+            match crossed {
+                Maybe::Present(crossed) => Some(crossed),
+                Maybe::Absent(_) => None,
+            },
+            recall.environment(),
+            Some(recall),
+        ),
+    };
+    let (environment, mut positions, mut readmitted) = offered
+        .and_then(|crossed| crossed.resume(report))
+        .map_or_else(
+            || {
+                (
+                    fresh,
+                    Positions::default(),
+                    Vec::with_capacity(judged_all.len()),
+                )
+            },
+            |(environment, positions, readmitted)| {
+                let environment = match recalled {
+                    Some(recall) => {
+                        let mut environment = environment.forking(recall.fork.clone());
+                        environment.reading(Arc::clone(&recall.source));
+                        environment
+                    },
+                    None => environment,
+                };
+                (environment, positions, readmitted)
+            },
+        );
+    // The kernel takes an admitted result exactly where the run that recorded
+    // it ran under the policy: fresh, recalled or handed on.
+    let mut environment = environment.admitting(report.admitting());
+    let from = readmitted.len();
+    let mut recorded = Maybe::Absent(if boundary.is_some() {
+        crossed::Absent::Unaligned
+    }
+    else {
+        crossed::Absent::Unasked
+    });
+    let mut index = from;
+    loop {
+        if boundary == Some(index) {
+            recorded = Crossed::record(
+                (&mut environment, &positions, readmitted.as_slice()),
+                LeadingCount(from),
+            );
+        }
+        let Some(judged) = judged_all.get(index)
+        else {
+            break;
+        };
+        if let Demand::Retired(retired) = retirement.demand() {
+            return Polled::Retired(
+                retired,
+                Crossed::record(
+                    (&mut environment, &positions, readmitted.as_slice()),
+                    LeadingCount(from),
+                ),
+            );
+        }
+        index = index.saturating_add(1);
+        let constant = judged.constant();
+        // The positions between the last judged declaration and this one
+        // were skipped and cross nothing, so a seal ending among them closes
+        // before this declaration crosses.
+        if let Some(skipped) = usize::from(constant).checked_sub(1) {
+            close_seals(
+                &mut environment,
+                &mut positions,
+                &mut readmitted,
+                ConstantIndex::from(skipped),
+            );
+        }
+        // A data declaration whose fields name later declarations leads the
+        // mutual block they reach, which crosses whole.
+        let block = block_offers(
+            arena,
+            report,
+            source,
+            judged_all
+                .get(index.saturating_sub(1) ..)
+                .unwrap_or_default(),
+        );
+        if !block.is_empty() {
+            let crossed = cross_block(
+                &mut environment,
+                arena,
+                source,
+                &mut positions,
+                &block,
+                &vouch,
+            );
+            for (member, (outcome, certificates)) in judged_all
+                .get(index.saturating_sub(1) ..)
+                .unwrap_or_default()
+                .iter()
+                .zip(crossed)
+            {
+                readmitted.push(Readmitted {
+                    constant: member.constant(),
+                    origin: member.origin(),
+                    outcome,
+                    certificates,
+                    took: Maybe::Absent(timed::Absent::Block),
+                });
+            }
+            index = index.saturating_sub(1).saturating_add(block.len());
+            if let Some(last) = judged_all.get(index.saturating_sub(1)) {
+                close_seals(
+                    &mut environment,
+                    &mut positions,
+                    &mut readmitted,
+                    last.constant(),
+                );
+            }
+            continue;
+        }
+        // A definition quantified over stages crosses at its plain type, the
+        // stage signature beside it naming the occurrences its stages refine.
+        let definition = match judged.verdict() {
+            Verdict::Checked { declared, body, .. } => Some((
+                source.stage_signatures.get(&constant).map_or_else(
+                    || declared.id(),
+                    |signature| {
+                        crate::quantified::split(arena, declared.id(), signature.bounds())
+                            .map_or_else(|_refused| declared.id(), |(plain, _)| plain)
+                    },
+                ),
+                body,
+            )),
+            Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
+            Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => None,
+        };
+        // A type operator — a definition whose type views as a static Pi — stays
+        // on the checker's side; a type the view refuses is not one, and its
+        // own erasure refuses it.
+        let (outcome, certificates, took) = match (definition, judged.verdict()) {
+            (None, Verdict::Data) => {
+                let offer = match (
+                    report.data_signatures().get(&constant),
+                    report.codata_signatures().get(&constant),
+                    report.abstract_types().get(&constant),
+                ) {
+                    (Some(signature), ..) => Offer::Data(signature),
+                    (None, Some(signature), _) => Offer::Codata(signature),
+                    (None, None, Some(&declared)) => Offer::Abstract(declared),
+                    (None, None, None) if report.worlds().contains(&constant) => {
+                        readmitted.push(Readmitted {
+                            constant,
+                            origin: judged.origin(),
+                            outcome: Outcome::Static,
+                            certificates: Vec::new(),
+                            took: UNOFFERED,
+                        });
+                        continue;
+                    },
+                    (None, None, None) => {
+                        readmitted.push(Readmitted {
+                            constant,
+                            origin: judged.origin(),
+                            outcome: Outcome::Refused(Refusal::MachineInvariant),
+                            certificates: Vec::new(),
+                            took: UNOFFERED,
+                        });
+                        continue;
+                    },
+                };
+                cross(
+                    &mut environment,
+                    arena,
+                    source,
+                    &mut positions,
+                    constant,
+                    offer,
+                    (&vouch, &mut *stopwatch),
+                )
+            },
+            (Some((declared, body)), _)
+                if matches!(
+                    value_type_view(arena, declared),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                let defined = source.definitions.get(&constant).copied().unwrap_or(body);
+                positions.definitions.define(constant, defined);
+                (Outcome::Static, Vec::new(), UNOFFERED)
+            },
+            (Some((declared, body)), _) => cross(
+                &mut environment,
+                arena,
+                source,
+                &mut positions,
+                constant,
+                Offer::Definition {
+                    declared,
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    restated: source
+                        .restatements
+                        .get(&constant)
+                        .map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
+                },
+                (&vouch, &mut *stopwatch),
+            ),
+            (None, Verdict::Owed(entry)) => cross(
+                &mut environment,
+                arena,
+                source,
+                &mut positions,
+                constant,
+                Offer::Axiom {
+                    declared: entry.absence().declared().id(),
+                },
+                (&vouch, &mut *stopwatch),
+            ),
+            (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new(), UNOFFERED),
+            (None, Verdict::Suspended(_)) => (Outcome::Suspended, Vec::new(), UNOFFERED),
+            (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => (
+                Outcome::Refused(Refusal::MachineInvariant),
+                Vec::new(),
+                UNOFFERED,
+            ),
+        };
+        if report.abstract_types().contains_key(&constant)
+            && matches!(
+                outcome,
+                Outcome::Marked(_)
+                    | Outcome::Refused(Refusal::Withheld { .. } | Refusal::WithheldData { .. })
+            )
+        {
+            let _fresh = positions.withheld.insert(constant);
+        }
+        if let (&Outcome::Data { admitted, .. }, Some(declared)) =
+            (&outcome, report.abstract_types().get(&constant))
+        {
+            positions.open.push(OpenSeal {
+                end: ConstantIndex::from(
+                    usize::from(constant).saturating_add(usize::from(declared.extent())),
+                ),
+                atom: admitted,
+                readmitted: readmitted.len(),
+            });
+        }
+        readmitted.push(Readmitted {
+            constant,
+            origin: judged.origin(),
+            outcome,
+            certificates,
+            took,
+        });
+        close_seals(&mut environment, &mut positions, &mut readmitted, constant);
+    }
+    close_seals(
+        &mut environment,
+        &mut positions,
+        &mut readmitted,
+        ConstantIndex::from(usize::MAX),
+    );
+    let audit = ArtifactAudit::of(&readmitted);
+    Polled::Whole((
+        Readmission {
+            environment,
+            readmitted,
+            audit,
+            admitted: positions.exports,
+            resumed: from,
+        },
+        recorded,
+    ))
+}
+
+/// The offers of the mutual block the first of `run`, the judged declarations
+/// from it on, leads: its run of data declarations and the definitions after
+/// them, up to the furthest position the run's fields reach, when that is past
+/// the leader and every member crosses; nothing otherwise.
+///
+/// # Specification
+/// - requires: `run` is a suffix of `report`'s judged declarations, which are
+///   in module order.
+/// - ensures: empty unless the first of `run` is data whose fields reach a
+///   later position; then one offer per position from it to the reached end,
+///   each data declaration of the leading run offered at its signature and each
+///   later member a crossing definition — and empty when any member is not one,
+///   so the declarations cross one by one and the kernel withholds what names a
+///   later one.
+/// - provides: the measurement the bridge crosses a block by, the checker's
+///   schedule's and the kernel replay's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lone family offers nothing, and a universe naming its
+///   decoder offers the two.
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret.is_empty() || ret.len() >= 2)]
+fn block_offers<'report>(
+    arena: &CoreArena,
+    report: &'report ModuleReport,
+    source: Source<'report>,
+    run: &'report [crate::report::Judged],
+) -> Vec<(ConstantIndex, Offer<'report>)>
+{
+    let Some(leader) = run.first()
+    else {
+        return Vec::new();
+    };
+    let first = usize::from(leader.constant());
+    let mut end = first.saturating_add(1);
+    let mut families = true;
+    let mut members = Vec::new();
+    for member in run {
+        let constant = member.constant();
+        if usize::from(constant) >= end {
+            break;
+        }
+        let offer = match (member.verdict(), report.data_signatures().get(&constant)) {
+            (Verdict::Data, Some(signature)) if families => {
+                end = end.max(usize::from(crate::occurrence::reach(
+                    arena, constant, signature,
+                )));
+                Offer::Data(signature)
+            },
+            (Verdict::Checked { declared, body, .. }, _)
+                if !matches!(
+                    value_type_view(arena, declared.id()),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                families = false;
+                Offer::Definition {
+                    declared: declared.id(),
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    restated: source
+                        .restatements
+                        .get(&constant)
+                        .map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
+                }
+            },
+            (Verdict::Synthesised { body, synthesised }, _)
+                if !matches!(
+                    value_type_view(arena, synthesised.produced().id()),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                families = false;
+                Offer::Definition {
+                    declared: synthesised.produced().id(),
+                    body,
+                    relations: source.relations.get(&constant).map_or(&[], Vec::as_slice),
+                    restated: source
+                        .restatements
+                        .get(&constant)
+                        .map_or(&[], Vec::as_slice),
+                    laws: source.laws.get(&constant).map_or(&[], Vec::as_slice),
+                    operation_rules: source
+                        .operation_rules
+                        .get(&constant)
+                        .map_or(&[], gandr_kernel_term::OperationRules::rules),
+                    covers: source.covers.get(&constant).map_or(&[], Vec::as_slice),
+                    stages: source
+                        .stage_signatures
+                        .get(&constant)
+                        .unwrap_or(&UNQUANTIFIED),
+                }
+            },
+            (
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_)
+                | Verdict::Refused(_),
+                _,
+            ) => return Vec::new(),
+        };
+        if usize::from(constant) != first.saturating_add(members.len()) {
+            return Vec::new();
+        }
+        members.push((constant, offer));
+    }
+    if members.len() < 2 || members.len() != end.saturating_sub(first) {
+        return Vec::new();
+    }
+    members
+}
+
+/// An atom the kernel admitted with its seal open, and where the seal ends.
+#[derive(Clone, Copy, Debug)]
+struct OpenSeal
+{
+    /// The last module position the seal reaches.
+    end: ConstantIndex,
+    /// The atom's kernel admission.
+    atom: CheckedId,
+    /// Its index among the readmitted declarations.
+    readmitted: usize,
+}
+
+/// Close, in minting order, every open seal that ends at or before the module
+/// position `reached`.
+///
+/// # Specification
+/// - requires: every open seal names an atom the kernel admitted
+///   [`SealScope::Open`] and has not closed, with its readmitted index; the
+///   exports are indexed by kernel position.
+/// - ensures: no open seal ends at or before `reached`; each one closed is
+///   closed in the kernel, so later admissions read its atom as rigid, and its
+///   export carries the extent the kernel drew, so a replay of the artifact
+///   seals it at the same place. A seal the kernel refuses to close turns its
+///   atom's outcome into the rejection.
+/// - fails: never; a refusal is recorded, as above.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sealed module's export replays with the atom closed
+///   over its members, and a client past the seal reads the atom rigid.
+/// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        spec_clause_traversal,
+        reason = "parity: the body partitions every open seal once; the check reads each it kept once"
+    )
+)]
+#[spec(ensures: positions.open.iter().all(|seal| seal.end > reached))]
+fn close_seals(
+    environment: &mut Environment,
+    positions: &mut Positions,
+    readmitted: &mut [Readmitted],
+    reached: ConstantIndex,
+)
+{
+    let (closing, open): (Vec<OpenSeal>, Vec<OpenSeal>) = core::mem::take(&mut positions.open)
+        .into_iter()
+        .partition(|seal| seal.end <= reached);
+    positions.open = open;
+    for seal in closing {
+        match environment.seal(seal.atom) {
+            Ok(extent) => {
+                if let Some(export) = positions.exports.get_mut(usize::from(seal.atom.position())) {
+                    *export = export.clone().closed(extent);
+                }
+            },
+            Err(error) => {
+                if let Some(entry) = readmitted.get_mut(seal.readmitted) {
+                    entry.outcome = Outcome::Rejected(error);
+                }
+            },
+        }
+    }
+}
+
+/// What every erasure reads besides the arena and the positions: the lifts,
+/// function extensionalities, universe equivalences, reflexivities and endpoint
+/// relations the judgement recorded and the bodies it defined its constants
+/// as.
+#[derive(Clone, Copy, Debug)]
+struct Source<'source>
+{
+    /// The codes the judgement checked above their own universe, by node.
+    lifts: &'source BTreeMap<ValueId, Lift>,
+    /// The function extensionalities the judgement decided, by node.
+    funexts: &'source BTreeMap<ValueId, Funext>,
+    /// The values the judgement coerced in to a patched type, by node, each
+    /// with the fixed fields it compared.
+    coercions: &'source BTreeMap<ValueId, crate::conversion::Coercion>,
+    /// The universe equivalences the judgement decided, by node.
+    equivalences: &'source BTreeMap<ValueId, crate::equiv::Equivalence>,
+    /// The session statements the judgement decided, by node.
+    flows: &'source BTreeMap<ValueId, crate::flow::Statement>,
+    /// The forward and function flows the judgement decided, by node.
+    directed: &'source BTreeMap<ValueId, crate::forward::Directed>,
+    /// The family each transport or ride above level zero formed its motive
+    /// as, by node.
+    motives: &'source BTreeMap<ComputationId, ValueTypeId>,
+    /// The payload type each send and each receive the judgement checked
+    /// moves, by node.
+    payloads: &'source BTreeMap<ComputationId, ValueTypeId>,
+    /// The types each handler and capability scope the judgement checked was
+    /// judged at, by node: what its translation through its free model is
+    /// checked at.
+    handled: &'source BTreeMap<ComputationId, crate::handler::Handled>,
+    /// The computations the judgement checked or synthesised at a returner
+    /// over a row of operations: what each crosses as a program of the row's
+    /// free model by.
+    rows: &'source crate::program::Rows,
+    /// The reflexivities the judgement checked against a path type, by node.
+    reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
+    /// The path endpoint pairs each accepted declaration's conversions
+    /// related, by position.
+    relations: &'source BTreeMap<ConstantIndex, Vec<EndpointRelation>>,
+    /// The nodes each accepted declaration's judgement checked in another form
+    /// than written, by position, each beside the node the kernel reads.
+    restatements: &'source BTreeMap<ConstantIndex, Vec<(TermNode, TermNode)>>,
+    /// The laws each lawful declaration's folds rest on, by position.
+    laws: &'source BTreeMap<ConstantIndex, Vec<ConstantIndex>>,
+    /// The rules of the operation each ruled declaration lowered from, by
+    /// position.
+    operation_rules: &'source BTreeMap<ConstantIndex, gandr_kernel_term::OperationRules>,
+    /// The built-in role each holder holds, by position.
+    builtins: &'source BTreeMap<ConstantIndex, gandr_kernel_term::Builtin>,
+    /// The matches of each declaration's body with their derivations, by
+    /// position.
+    covers: &'source BTreeMap<ConstantIndex, Vec<(ComputationId, gandr_kernel_term::cover::Cover)>>,
+    /// The stage signature of each definition quantified over stages, by
+    /// position.
+    stage_signatures: &'source BTreeMap<ConstantIndex, gandr_kernel_term::StageSignature>,
+    /// The native path each univalence statement the judgement decided
+    /// derives, each path product it judged elaborates to, and the value each
+    /// fill's induction returns, by node.
+    natives: &'source BTreeMap<ValueId, ValueId>,
+    /// The body each accepted declaration defines its constant as, elaborated
+    /// to the universe it was declared at.
+    definitions: &'source BTreeMap<ConstantIndex, ValueId>,
+}
+
+/// The stage signature of a definition quantified over no stage.
+static UNQUANTIFIED: gandr_kernel_term::StageSignature =
+    gandr_kernel_term::StageSignature::UNQUANTIFIED;
+
+/// What an accepted declaration offers the kernel.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Offer<'signature>
+{
+    /// A native nominal declaration's checked signature.
+    Data(&'signature gandr_core_term::DataSignature),
+    /// A codata declaration's checked signature.
+    Codata(&'signature gandr_core_term::CodataSignature),
+    /// A sealed abstract type: its kind and its representation.
+    Abstract(AbstractType),
+    /// A definition: a body at the type it was judged at.
+    Definition
+    {
+        /// The type the body was judged at.
+        declared: ValueTypeId,
+        /// The body.
+        body: ValueId,
+        /// The path endpoint pairs its conversions related.
+        relations: &'signature [EndpointRelation],
+        /// The nodes its judgement checked in another form than written,
+        /// ascending, each beside the node the kernel reads in its place.
+        restated: &'signature [(TermNode, TermNode)],
+        /// The laws its folds rest on, by module position.
+        laws: &'signature [ConstantIndex],
+        /// The rules of the operation it lowered from, over module positions.
+        operation_rules: &'signature [gandr_kernel_term::OperationRule],
+        /// The matches of its body, each by the root of its tree with the
+        /// derivation that covers it.
+        covers: &'signature [(ComputationId, gandr_kernel_term::cover::Cover)],
+        /// The stages it is quantified over and the occurrences of its plain
+        /// declared type each binder's stage refines.
+        stages: &'signature gandr_kernel_term::StageSignature,
+    },
+    /// An axiom: the type an owed hole owes.
+    Axiom
+    {
+        /// The type owed.
+        declared: ValueTypeId,
+    },
+}
+
+/// An offer's image in the kernel arena.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Erased
+{
+    /// A native signature's images, owned once by the staging declaration.
+    Data
+    {
+        /// The parameter telescope.
+        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        /// The index telescope, under the parameters.
+        indices: Vec<gandr_kernel_term::ValueTypeId>,
+        /// Constructor fields under the parameter telescope.
+        constructors: Vec<Vec<gandr_kernel_term::ValueTypeId>>,
+        /// Each constructor's stated indices, under the parameters and its
+        /// fields.
+        results: Vec<Vec<gandr_kernel_term::ValueId>>,
+        /// The positive universe.
+        kind: gandr_kernel_term::ValueTypeId,
+    },
+    /// A definition's declared type and body.
+    Definition
+    {
+        /// The declared type's image.
+        declared: gandr_kernel_term::ValueTypeId,
+        /// The body's image.
+        body: gandr_kernel_term::ValueId,
+        /// The related endpoint pairs' images, each with its dialogue.
+        related: Vec<RelatedEndpoints>,
+        /// The kernel positions of the laws its folds rest on.
+        laws: Vec<ConstantIndex>,
+    },
+    /// An axiom's declared type.
+    Axiom
+    {
+        /// The declared type's image.
+        declared: gandr_kernel_term::ValueTypeId,
+    },
+    /// A sealed abstract type's kind, representation and interface.
+    Abstract
+    {
+        /// The kind's image.
+        kind: gandr_kernel_term::ValueTypeId,
+        /// The representation's image.
+        representation: gandr_kernel_term::ValueTypeId,
+        /// The interface's image, when the atom states one.
+        interface: Option<gandr_kernel_term::AtomInterface>,
+    },
+    /// A codata signature's images.
+    Codata
+    {
+        /// The parameter telescope.
+        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        /// The observations, under the parameters.
+        observations: Vec<gandr_kernel_term::CompTypeId>,
+        /// The computation universe.
+        kind: gandr_kernel_term::ValueTypeId,
+    },
+}
+
+/// Erase `offer`, the declaration at `constant`, into a staging session of
+/// `environment`, replay its certificates, and admit it.
+///
+/// # Specification
+/// - requires: `positions` holds the kernel position, and for a definition the
+///   bodies, of every module declaration that crossed so far, the bodies of the
+///   static definitions before it, and the declarations they crossed as, in
+///   kernel admission order.
+/// - ensures: the offer erased into one staging session, every reduct its
+///   static normal form needed minted into `arena`; every distinct certificate
+///   the erasure collected, passed through `vouch`, replayed by the kernel in
+///   that session against its static operators, numbered from past the
+///   environment's last position; and, when each replays to convertible, the
+///   offer admitted: [`Outcome::Defined`] for a definition,
+///   [`Outcome::Assumed`] for an axiom and [`Outcome::Data`] for a nominal
+///   declaration — an abstract type staged with its seal open — each with the
+///   kernel's receipt and audit, when the kernel admits it, recorded in
+///   `positions` with its staged declaration appended to the exports. A refused
+///   erasure or a declined certificate discards the session and a rejection is
+///   truncated by the kernel, so the environment is as it was on every outcome
+///   but an admission, save what is admitted first: the assumptions for the
+///   values its receives read and the choices its offers take, the signature of
+///   each native operation it is the first declaration to read, each an axiom
+///   the audit of whatever reads it names, the free model of each effect it is
+///   the first declaration to handle, and the witnesses of the formation of
+///   each patched type it is the first declaration to hold, each one entry and
+///   one export and at least one for each such type. A formation that fails
+///   keeps the witnesses that crossed before it. The replayed verdicts are
+///   returned beside the outcome, and beside them the time `stopwatch` read
+///   around the kernel's admission of the offer: [`timed::Absent::Unoffered`]
+///   when the offer never reached [`Environment::add_decl`]. A native signature
+///   or a free model the kernel rejects is the declaration's
+///   [`Outcome::Rejected`], its offer never made. A pair the kernel reports
+///   undecided ([`gandr_kernel_core::IdentityError::EndpointsUndecided`]) is
+///   answered by its second certificate ([`answered`]), and the offer is made
+///   again. When no reflexivity answers the report, the rejection stands.
+/// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
+///   [`Outcome::Rejected`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — definitions, owed axioms, refused erasures and declined
+///   certificates expose exact outcomes, receipts and environment contents;
+///   partial publication or confusing an axiom with a definition changes them.
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+/// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+#[spec(
+    captures: [entries = environment.entries().admitted(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), formations = positions.formations.len()],
+    ensures: |ret| {
+        let fresh = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms);
+        let grew = usize::from(environment.entries().admitted()).checked_sub(usize::from(entries));
+        let counted = |own: usize, exact: bool| grew == usize::from(positions.exports.len()).checked_sub(usize::from(exports))
+            && match (fresh, positions.formations.len().checked_sub(formations), grew) {
+                | (Some(fresh), Some(0), Some(grew)) if exact => grew == fresh.saturating_add(own),
+                | (Some(fresh), Some(formed), Some(grew)) => grew >= fresh.saturating_add(formed).saturating_add(own),
+                | _ => false,
+            };
+        match ret.0 {
+            | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
+                counted(1, true)
+                && positions.admitted.len().checked_sub(crossed) == Some(1)
+                && positions.admitted.get(&constant) == Some(&admitted.position())
+                && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+                && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible)
+                && ret.2 != UNOFFERED,
+            | Outcome::Refused(_) | Outcome::Rejected(_) =>
+                counted(0, false)
+                && positions.admitted.len() == crossed
+                && (matches!(ret.0, Outcome::Rejected(_)) || ret.2 == UNOFFERED),
+            | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
+        }
+    },
+)]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn cross<Vouch, Watch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    constant: ConstantIndex,
+    offer: Offer<'_>,
+    (vouch, stopwatch): (&Vouch, &mut Watch),
+) -> (Outcome, Vec<Replayed>, AdmissionCost)
+where
+    Vouch: Fn(Certificate) -> Certificate,
+    Watch: Stopwatch,
+{
+    // The reflexivities whose second certificates answered the pairs the
+    // kernel reported undecided; none until it reports one.
+    let mut answers: Option<BTreeMap<ValueId, Reflexivity>> = None;
+    loop {
+        let source = answers.as_ref().map_or(source, |reflexivities| Source {
+            reflexivities,
+            ..source
+        });
+        let staged = loop {
+            let next = ConstantIndex::from(environment.entries().len());
+            let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+            let own = [(constant, next)];
+            let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+                Offer::Data(_) | Offer::Codata(_) => &own,
+                Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+            };
+            match stage(
+                environment,
+                arena,
+                (source, &*positions),
+                offer,
+                vouch,
+                (crossing, base, held(source, constant)),
+            ) {
+                Ok(staged) => break staged,
+                Err(Unstaged::Unseeded(seed)) => {
+                    if let Err(outcome) =
+                        seeded(environment, arena, source, positions, &seed, vouch)
+                    {
+                        return (outcome, Vec::new(), UNOFFERED);
+                    }
+                },
+                Err(Unstaged::Refused(outcome, replayed)) => {
+                    if let Maybe::Absent(_) =
+                        assumed_for(environment, arena, source, positions, &outcome, vouch)
+                    {
+                        return (outcome, replayed, UNOFFERED);
+                    }
+                },
+            }
+        };
+        let staged_as = staged.declaration.declaration().clone();
+        let started = stopwatch.start();
+        let admitted = admit(environment, staged.declaration);
+        let took = stopwatch.stop(started);
+        let admitted = match admitted {
+            Ok(admitted) => admitted,
+            Err(error) => {
+                // A pair the kernel's own evaluation leaves undecided is
+                // answered by the machine's dialogue for that pair alone, and
+                // the offer is made again.
+                let next = ConstantIndex::from(environment.entries().len());
+                let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+                let own = [(constant, next)];
+                let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+                    Offer::Data(_) | Offer::Codata(_) => &own,
+                    Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+                };
+                if let KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
+                    point,
+                    side,
+                    ..
+                }) = error
+                    && let Some(fresh) = answered(
+                        arena,
+                        (source, &*positions),
+                        (offer, crossing, base),
+                        (point, side),
+                    )
+                {
+                    answers = Some(fresh);
+                    continue;
+                }
+                return (Outcome::Rejected(error), staged.replayed, took);
+            },
+        };
+        let outcome = settle(
+            environment,
+            source,
+            positions,
+            (constant, offer, staged.image),
+            (staged_as, admitted),
+        );
+        return (outcome, staged.replayed, took);
+    }
+}
+
+/// The reflexivities of `source`, with each pair the kernel reported
+/// undecided answered by its second certificate: the machine's dialogue for
+/// that pair alone.
+///
+/// A candidate is a reflexivity whose pair on `side` the tier met. Its point is
+/// erased on its own into a scratch arena, and it answers the report when the
+/// point's content digest is `point`. A candidate the machine does not convert
+/// stays as the judgement recorded it.
+///
+/// # Specification
+/// - requires: `positions` holds the definitions crossed before the offer, as
+///   the judgement held them; `crossing` and `base` are the ones the offer
+///   staged under.
+/// - ensures: `source`'s reflexivities with each candidate whose point's digest
+///   is `point` and whose pair the machine converts carrying the machine's
+///   dialogue on `side`, and with no met pair on `side`; nothing when no
+///   candidate answers.
+/// - provides: the second certificate the readmission sends for a pair the
+///   kernel reports undecided. Each answer takes one pair the tier met, so the
+///   offers of one declaration end.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reflexivity whose pair the kernel's evaluation runs
+///   past its budget crosses with the machine's dialogue for that pair, and its
+///   other pair keeps `Evaluate`.
+/// - witness: `bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|answers| answers.len() == source.reflexivities.len()
+    && answers.iter().any(|(at, answer)| answer.met(side).is_none()
+        && source.reflexivities.get(at).is_some_and(|recorded| recorded.met(side).is_some()))))]
+fn answered(
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &Positions),
+    (offer, crossing, base): (Offer<'_>, &[(ConstantIndex, ConstantIndex)], ConstantIndex),
+    (point, side): (ContentDigest, gandr_kernel_core::EndpointSide),
+) -> Option<BTreeMap<ValueId, Reflexivity>>
+{
+    let restated = match offer {
+        Offer::Definition { restated, .. } => restated,
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
+    };
+    let mut scratch = TermArena::new();
+    let matching: Vec<ValueId> = source
+        .reflexivities
+        .iter()
+        .filter_map(|(&at, reflexivity)| {
+            let met = reflexivity.met(side)?;
+            let image = Erasure::new(arena, source, positions, base)
+                .crossing_block(crossing)
+                .restating(restated)
+                .value(&mut scratch, met.point())
+                .ok()?;
+            (content_digest(&scratch, AnyNode::Value(image)) == point).then_some(at)
+        })
+        .collect();
+    let mut answers = source.reflexivities.clone();
+    let mut answered = false;
+    for at in matching {
+        let Some(reflexivity) = answers.get(&at)
+        else {
+            continue;
+        };
+        let Some(decisions) = reflexivity
+            .met(side)
+            .and_then(|met| met.certified(&positions.definitions, arena))
+        else {
+            continue;
+        };
+        let answer = reflexivity.answering(side, decisions);
+        let _recorded = answers.insert(at, answer);
+        answered = true;
+    }
+    answered.then_some(answers)
+}
+
+/// Offer one staged declaration to the kernel through
+/// [`Environment::add_decl`], measured on its own so a profile reads the
+/// kernel's admission apart from the erasure that staged it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn admit(
+    environment: &mut Environment,
+    staged: gandr_kernel_core::StagedDeclaration,
+) -> Result<CheckedId, KernelError>
+{
+    environment.add_decl(staged)
+}
+
+/// One offer erased and staged, not yet admitted.
+struct Staged
+{
+    /// The staged declaration.
+    declaration: gandr_kernel_core::StagedDeclaration,
+    /// A definition's body image.
+    image: Maybe<gandr_kernel_term::ValueId, staged::Absent>,
+    /// The replayed verdicts of its certificates.
+    replayed: Vec<Replayed>,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a staged offer carries no body image.
+    mod staged {
+        /// The offer is no definition.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A nominal declaration or an axiom has no body.
+            Bodiless,
+        }
+    }
+}
+
+/// Why an offer did not stage.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+enum Unstaged
+{
+    /// The erasure or a certificate refused it: the refused outcome and the
+    /// verdicts replayed before it.
+    Refused(Outcome, Vec<Replayed>),
+    /// It reads a native operation whose signature, or handles an effect
+    /// whose free model, the environment does not hold yet: seeded, the offer
+    /// stages again.
+    Unseeded(Seed),
+}
+
+/// A declaration an erasure stopped for, which the environment does not hold
+/// yet and the crossing seeds before staging the offer again.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+enum Seed
+{
+    /// The signature of a native operation.
+    Native(gandr_core_term::primitive::Primitive),
+    /// The free model of a row of operations, its interfaces' signatures in
+    /// the row's label order, at the level of the universe its programs'
+    /// results inhabit.
+    Model(Vec<gandr_core_term::effect::EffectSig>, Level),
+    /// The formation of a patched type, by its core node: the witnesses the
+    /// kernel replays its fixed values and the meets of its faces by
+    /// ([`formed`]).
+    Formation(ValueTypeId),
+}
+
+/// Erase `offer`, the declaration at `constant`, into a staging session of
+/// `environment` and replay its certificates, beside the members of
+/// `crossing`, numbering static operators from `base`.
+///
+/// # Specification
+/// - requires: as [`cross`]; `crossing` names each member crossing with this
+///   one at the kernel position it is about to take, and `base` is past all of
+///   them.
+/// - ensures: the staged declaration, its body's image and the replayed
+///   verdicts when the erasure and every certificate succeed; otherwise the
+///   session discarded and, when the erasure stopped at a native operation
+///   whose signature, or a handler whose free model, the environment does not
+///   hold yet, that seed; else the refusal with the verdicts replayed so far.
+/// - fails: never; a refusal is returned as its outcome.
+/// - panics: none.
+///
+/// # Errors
+/// [`Unstaged::Unseeded`] with the declaration to seed, or
+/// [`Unstaged::Refused`] with the refused outcome and the verdicts replayed
+/// before it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cross`] and [`cross_block`].
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|unstaged| match *unstaged {
+    Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
+    Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
+    Unstaged::Unseeded(Seed::Model(..)) => !source.handled.is_empty() || *source.rows != crate::program::Rows::default(),
+    Unstaged::Unseeded(Seed::Formation(at)) => !positions.formed.contains(&at),
+}))]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn stage<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &Positions),
+    offer: Offer<'_>,
+    vouch: &Vouch,
+    (crossing, base, role): (
+        &[(ConstantIndex, ConstantIndex)],
+        ConstantIndex,
+        Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>,
+    ),
+) -> Result<Staged, Unstaged>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let next = ConstantIndex::from(environment.entries().len());
+    let mut staging = environment.stage();
+    let (erased, unseeded, covered) = {
+        let restated = match offer {
+            Offer::Definition { restated, .. } => restated,
+            Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => &[],
+        };
+        let (target, names) = staging.minting();
+        let mut erasure = Erasure::new(arena, source, positions, base)
+            .crossing_block(crossing)
+            .restating(restated)
+            .naming(names);
+        let erased = erasure
+            .offer(target, offer)
+            .map_err(|refusal| (refusal, Vec::new()))
+            .and_then(|erased| {
+                erasure
+                    .replay_certificates(target, vouch)
+                    .map(|replayed| (erased, replayed))
+            });
+        // Each match's derivation crosses at its root's image, its families
+        // at their kernel positions.
+        let covered = match offer {
+            Offer::Definition { covers, .. } => erasure.covered(covers),
+            Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+                Vec::new()
+            },
+        };
+        (erased, erasure.unseeded, covered)
+    };
+    let (erased, replayed) = match (erased, unseeded) {
+        (Ok(crossing), _) => crossing,
+        (Err(_), Some(seed)) => {
+            staging.discard();
+            return Err(Unstaged::Unseeded(seed));
+        },
+        (Err((refusal, replayed)), None) => {
+            staging.discard();
+            return Err(Unstaged::Refused(Outcome::Refused(refusal), replayed));
+        },
+    };
+    let image = match erased {
+        Erased::Definition { ref body, .. } => Maybe::Present(*body),
+        Erased::Data { .. }
+        | Erased::Codata { .. }
+        | Erased::Axiom { .. }
+        | Erased::Abstract { .. } => Maybe::Absent(staged::Absent::Bodiless),
+    };
+    // An operation's rules name module positions: its own crosses at the
+    // position it is about to take, every other at the position it crossed
+    // at, and one that did not cross withholds the definition.
+    let operation_rules = match offer {
+        Offer::Definition {
+            body: offered,
+            operation_rules,
+            ..
+        } => match kernel_rules(operation_rules, positions, next) {
+            Ok(rules) => rules,
+            Err(constant) => {
+                staging.discard();
+                return Err(Unstaged::Refused(
+                    Outcome::Refused(Refusal::Withheld {
+                        at: offered,
+                        constant,
+                    }),
+                    replayed,
+                ));
+            },
+        },
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+            gandr_kernel_term::OperationRules::default()
+        },
+    };
+    let stages = match offer {
+        Offer::Definition { stages, .. } => stages.clone(),
+        Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
+            gandr_kernel_term::StageSignature::default()
+        },
+    };
+    let declaration = match erased {
+        Erased::Data {
+            parameters,
+            indices,
+            constructors,
+            results,
+            kind,
+        } => {
+            let staged = staging.indexed(
+                LevelSignature::monomorphic(),
+                parameters,
+                (indices, constructors, results),
+                kind,
+            );
+            // The rules name constructor tags and pattern variables only, so
+            // they cross unchanged. A type of words names its sort by
+            // position, so the sort crosses at its kernel position; a sort
+            // that did not cross is named by the words' own position, which
+            // the kernel refuses as no earlier sort.
+            match offer {
+                Offer::Data(signature) => {
+                    let presentation = signature.presentation();
+                    staged.presented(presentation.cells().map_or_else(
+                        || presentation.clone(),
+                        |cells| {
+                            let sort = positions
+                                .admitted
+                                .get(&cells.sort())
+                                .copied()
+                                .unwrap_or(next);
+                            gandr_kernel_term::Presentation::new(presentation.rules().to_vec())
+                                .carrying(
+                                    gandr_kernel_term::FreeCells::new(sort, cells.cells().to_vec())
+                                        .wrapped(cells.reflexivities()),
+                                )
+                        },
+                    ))
+                },
+                Offer::Abstract(_)
+                | Offer::Codata(_)
+                | Offer::Definition { .. }
+                | Offer::Axiom { .. } => staged,
+            }
+        },
+        Erased::Definition {
+            declared,
+            body,
+            related,
+            laws,
+        } => staging
+            .def(LevelSignature::monomorphic(), declared, body)
+            .relating(related)
+            .lawful(laws)
+            .ruled(operation_rules)
+            .staged(stages)
+            .covered(covered),
+        Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
+        Erased::Codata {
+            parameters,
+            observations,
+            kind,
+        } => staging.codata(
+            LevelSignature::monomorphic(),
+            parameters,
+            observations,
+            kind,
+        ),
+        Erased::Abstract {
+            kind,
+            representation,
+            interface,
+        } => {
+            let staged = staging.abstract_type(
+                LevelSignature::monomorphic(),
+                kind,
+                representation,
+                SealScope::Open,
+            );
+            match interface {
+                Some(interface) => staged.interfaced(interface),
+                None => staged,
+            }
+        },
+    };
+    // A holder crosses carrying its role, for the kernel to validate.
+    let declaration = match role {
+        Maybe::Present(role) => declaration.held(role),
+        Maybe::Absent(_) => declaration,
+    };
+    Ok(Staged {
+        declaration,
+        image,
+        replayed,
+    })
+}
+
+/// No built-in role: what a seeded native or model holds.
+const UNHELD: Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent> =
+    Maybe::Absent(gandr_kernel_term::builtin_role::Absent::Unmarked);
+
+/// The built-in role the module declaration at `constant` holds.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn held(
+    source: Source<'_>,
+    constant: ConstantIndex,
+) -> Maybe<gandr_kernel_term::Builtin, gandr_kernel_term::builtin_role::Absent>
+{
+    source
+        .builtins
+        .get(&constant)
+        .copied()
+        .map_or(UNHELD, Maybe::Present)
+}
+
+/// An operation's rules over module positions, read at kernel positions.
+///
+/// # Specification
+/// - requires: `positions` maps every declaration crossed before; `next` is the
+///   position the ruled definition is about to take.
+/// - ensures: `Ok` with every node unchanged but its position: the head
+///   operation's position, the definition's own, read as `next`, and every
+///   other position as the one it crossed at. `Err` naming the first position
+///   that did not cross.
+/// - panics: none.
+///
+/// # Errors
+/// As `- ensures:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus's operations cross with their rules and the
+///   kernel admits them.
+/// - witness: `bridge::tests::an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|crossed| crossed.rules().len() == rules.len()) || ret.is_err())]
+fn kernel_rules(
+    rules: &[gandr_kernel_term::OperationRule],
+    positions: &Positions,
+    next: ConstantIndex,
+) -> Result<gandr_kernel_term::OperationRules, ConstantIndex>
+{
+    use gandr_kernel_term::OperationNode;
+    let own = rules
+        .first()
+        .and_then(|rule| rule.left().first())
+        .and_then(|&head| match head {
+            OperationNode::Operation { constant, .. } => Some(constant),
+            OperationNode::Constructor { .. }
+            | OperationNode::Results(_)
+            | OperationNode::Variable(_) => None,
+        });
+    let at = |constant: ConstantIndex| {
+        if Some(constant) == own {
+            Ok(next)
+        }
+        else {
+            positions.admitted.get(&constant).copied().ok_or(constant)
+        }
+    };
+    let side = |nodes: &[OperationNode]| {
+        nodes
+            .iter()
+            .map(|&node| {
+                Ok(match node {
+                    OperationNode::Operation { constant, arity } => OperationNode::Operation {
+                        constant: at(constant)?,
+                        arity,
+                    },
+                    OperationNode::Constructor { family, tag } => OperationNode::Constructor {
+                        family: at(family)?,
+                        tag,
+                    },
+                    OperationNode::Results(_) | OperationNode::Variable(_) => node,
+                })
+            })
+            .collect::<Result<alloc::boxed::Box<[OperationNode]>, ConstantIndex>>()
+    };
+    rules
+        .iter()
+        .map(|rule| {
+            Ok(gandr_kernel_term::OperationRule::new(
+                side(rule.left())?,
+                side(rule.right())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, ConstantIndex>>()
+        .map(gandr_kernel_term::OperationRules::new)
+}
+
+/// Record an offer the kernel admitted: its export, its position and, for a
+/// definition, its bodies on either side.
+///
+/// # Specification
+/// - requires: `admitted` is the kernel's receipt for `staged_as`, the
+///   declaration `offer` staged at `constant`.
+/// - ensures: the export appended, the position declared or defined, and the
+///   outcome naming the receipt and its audit: [`Outcome::Defined`] for a
+///   definition, [`Outcome::Data`] for a nominal declaration and
+///   [`Outcome::Assumed`] otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`cross`].
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+#[spec(ensures: |ret| matches!(ret, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))]
+fn settle(
+    environment: &Environment,
+    source: Source<'_>,
+    positions: &mut Positions,
+    (constant, offer, image): (
+        ConstantIndex,
+        Offer<'_>,
+        Maybe<gandr_kernel_term::ValueId, staged::Absent>,
+    ),
+    (staged_as, admitted): (KernelDeclaration, CheckedId),
+) -> Outcome
+{
+    positions.exports.push(staged_as);
+    let audit = environment.audit(admitted);
+    match (offer, image) {
+        (Offer::Definition { body, .. }, Maybe::Present(image)) => {
+            let defined = source.definitions.get(&constant).copied().unwrap_or(body);
+            positions.define(constant, admitted, defined, image);
+            Outcome::Defined { admitted, audit }
+        },
+        (Offer::Data(signature), _) => {
+            positions.declare(constant, admitted);
+            positions.definitions.present(constant, signature);
+            if !signature.presentation().rules().is_empty() {
+                positions.presentations = Presentations::of(environment.entries());
+            }
+            Outcome::Data { admitted, audit }
+        },
+        (Offer::Abstract(_) | Offer::Codata(_), _) => {
+            positions.declare(constant, admitted);
+            Outcome::Data { admitted, audit }
+        },
+        (Offer::Axiom { .. } | Offer::Definition { .. }, _) => {
+            positions.declare(constant, admitted);
+            Outcome::Assumed { admitted, audit }
+        },
+    }
+}
+
+/// Erase the members of a mutual block, each at the kernel position it is
+/// about to take, replay their certificates, and admit them as one block.
+///
+/// # Specification
+/// - requires: as [`cross`]; `members` are the block's offers in order, every
+///   one crossing.
+/// - ensures: one outcome per member, in order: each admitted as [`cross`]
+///   records an admission when the kernel admits the block, and otherwise every
+///   member sharing the refusal or rejection of the member that failed, the
+///   environment as it was but for the assumptions, the native signatures and
+///   the free models admitted as [`cross`] admits them. A pair the kernel
+///   reports undecided is answered as [`cross`] answers it, and the block is
+///   offered again.
+/// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
+///   [`Outcome::Rejected`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe and its decoder cross and are admitted
+///   together; a block one member of which is refused crosses nothing.
+/// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+#[spec(captures: [entries = environment.entries().admitted(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
+    && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
+        || usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
+fn cross_block<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    members: &[(ConstantIndex, Offer<'_>)],
+    vouch: &Vouch,
+) -> Vec<(Outcome, Vec<Replayed>)>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    // As in `cross`: the reflexivities whose second certificates answered the
+    // pairs the kernel reported undecided; none until it reports one.
+    let mut answers: Option<BTreeMap<ValueId, Reflexivity>> = None;
+    loop {
+        let source = answers.as_ref().map_or(source, |reflexivities| Source {
+            reflexivities,
+            ..source
+        });
+        let staged = 'block: loop {
+            let next = usize::from(environment.entries().len());
+            let crossing = members
+                .iter()
+                .enumerate()
+                .map(|(offset, &(constant, _))| {
+                    (constant, ConstantIndex::from(next.saturating_add(offset)))
+                })
+                .collect::<Vec<_>>();
+            let base = ConstantIndex::from(next.saturating_add(members.len()));
+            let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
+            for &(constant, offer) in members {
+                match stage(
+                    environment,
+                    arena,
+                    (source, &*positions),
+                    offer,
+                    vouch,
+                    (&crossing, base, held(source, constant)),
+                ) {
+                    Ok(member) => staged.push(member),
+                    Err(unstaged) => {
+                        // The block crosses whole or not at all: what staged is
+                        // abandoned, latest first, and every member shares the
+                        // refusal, unless a native signature, a free model or an
+                        // assumption it waited on is admitted and the block staged
+                        // again past it.
+                        for member in staged.into_iter().rev() {
+                            environment.abandon(member.declaration);
+                        }
+                        let (outcome, replayed) = match unstaged {
+                            Unstaged::Unseeded(seed) => {
+                                match seeded(environment, arena, source, positions, &seed, vouch) {
+                                    Ok(()) => continue 'block,
+                                    Err(outcome) => (outcome, Vec::new()),
+                                }
+                            },
+                            Unstaged::Refused(outcome, replayed) => {
+                                if let Maybe::Present(_) = assumed_for(
+                                    environment,
+                                    arena,
+                                    source,
+                                    positions,
+                                    &outcome,
+                                    vouch,
+                                ) {
+                                    continue 'block;
+                                }
+                                (outcome, replayed)
+                            },
+                        };
+                        return members
+                            .iter()
+                            .map(|&(member, _)| {
+                                if member == constant {
+                                    (outcome.clone(), replayed.clone())
+                                }
+                                else {
+                                    (outcome.clone(), Vec::new())
+                                }
+                            })
+                            .collect();
+                    },
+                }
+            }
+            break staged;
+        };
+        let exported = staged
+            .iter()
+            .map(|member| member.declaration.declaration().clone())
+            .collect::<Vec<_>>();
+        let mut images = Vec::with_capacity(staged.len());
+        let mut declarations = Vec::with_capacity(staged.len());
+        for member in staged {
+            images.push((member.image, member.replayed));
+            declarations.push(member.declaration);
+        }
+        match environment.add_block(declarations) {
+            Ok(admitted) => {
+                return members
+                    .iter()
+                    .zip(exported)
+                    .zip(admitted)
+                    .zip(images)
+                    .map(
+                        |(((&(constant, offer), staged_as), admitted), (image, replayed))| {
+                            let outcome = settle(
+                                environment,
+                                source,
+                                positions,
+                                (constant, offer, image),
+                                (staged_as, admitted),
+                            );
+                            (outcome, replayed)
+                        },
+                    )
+                    .collect();
+            },
+            Err(error) => {
+                // A member's pair the kernel leaves undecided is answered by its
+                // second certificate, erased as that member staged.
+                let next = usize::from(environment.entries().len());
+                let crossing = members
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, &(constant, _))| {
+                        (constant, ConstantIndex::from(next.saturating_add(offset)))
+                    })
+                    .collect::<Vec<_>>();
+                let base = ConstantIndex::from(next.saturating_add(members.len()));
+                if let KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
+                    point,
+                    side,
+                    ..
+                }) = error
+                    && let Some(fresh) = members.iter().find_map(|&(_, offer)| {
+                        answered(
+                            arena,
+                            (source, &*positions),
+                            (offer, &crossing, base),
+                            (point, side),
+                        )
+                    })
+                {
+                    answers = Some(fresh);
+                    continue;
+                }
+                return images
+                    .into_iter()
+                    .map(|(_, replayed)| (Outcome::Rejected(error.clone()), replayed))
+                    .collect();
+            },
+        }
+    }
+}
+
+/// What the kernel assumes for a session action whose result the peer
+/// decides.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Assumption
+{
+    /// A received value, of the type its receive opened its slot at.
+    Receive(ValueTypeId),
+    /// An offer's choice among this many arms.
+    Offer(usize),
+}
+
+/// The assumption the session action at `at` crosses under, if it is one.
+///
+/// # Specification
+/// - ensures: for a receive the judgement recorded a value's type for, that
+///   type received; for an offer, its choice among its arms; otherwise none — a
+///   received endpoint names no value, and a received buffer does not cross.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a received value and an offered choice each cross under
+///   their assumption, and a received endpoint crosses with none.
+/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+#[spec(ensures: |ret| ret.is_none() || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
+fn wanted(
+    arena: &CoreArena,
+    source: Source<'_>,
+    at: CoreNode,
+) -> Option<Assumption>
+{
+    use gandr_core_term::session::SessionAction;
+    let CoreNode::Term(TermNode::Computation(at)) = at
+    else {
+        return None;
+    };
+    let Some(&Computation::Session(ref action)) = arena.computation(at)
+    else {
+        return None;
+    };
+    match *action {
+        SessionAction::Receive { .. } => {
+            let &opened = source.payloads.get(&at)?;
+            let view = value_type_view(arena, opened).ok()?;
+            (!matches!(view, ValueTypeView::Session(_) | ValueTypeView::Buffer))
+                .then_some(Assumption::Receive(opened))
+        },
+        SessionAction::Offer { ref arms, .. } => Some(Assumption::Offer(arms.len())),
+        SessionAction::Send { .. }
+        | SessionAction::Select { .. }
+        | SessionAction::Close { .. }
+        | SessionAction::Fork { .. }
+        | SessionAction::Place { .. } => None,
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a refusal admitted no session assumption.
+    mod assumption {
+        /// The reason no axiom was admitted.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The refusal is not a session action's.
+            Unsessioned,
+            /// The action reads no assumption: a received endpoint, a receive
+            /// the judgement recorded no type for, or an action that is neither
+            /// a receive nor an offer.
+            Unwanted,
+            /// The assumption the action reads is admitted already.
+            Admitted,
+            /// The axiom's type did not erase.
+            Unstaged,
+            /// The kernel refused the axiom.
+            Refused,
+        }
+    }
+}
+
+/// Admit the assumption a session refusal `refused` waits on, when it is one
+/// not admitted yet.
+///
+/// # Specification
+/// - requires: as [`cross`].
+/// - ensures: the kernel position of the axiom admitted exactly when `refused`
+///   refuses a session action whose assumption ([`wanted`]) was missing and is
+///   now admitted, so staging again gets past that action; the environment
+///   grown by that axiom alone.
+/// - provides: a position or [`Absent`]: `Unsessioned` for another refusal,
+///   `Unwanted` for an action that reads no assumption, `Admitted` for one
+///   already admitted, and `Unstaged` or `Refused` for an axiom the erasure or
+///   the kernel refused.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration reading a received value, and one taking an
+///   offer's choice, are each admitted once their assumption is, and every
+///   assumption one receive's type or one arm count needs is admitted once.
+/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+///
+/// [`Absent`]: assumption::Absent
+#[spec(
+    captures: [entries = environment.entries().admitted(), assumed = positions.assumed.len()],
+    ensures: |ret| matches!(ret, Maybe::Present(_)) == (positions.assumed.len() > assumed)
+        && usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().checked_sub(assumed),
+)]
+fn assumed_for<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    refused: &Outcome,
+    vouch: &Vouch,
+) -> Maybe<ConstantIndex, assumption::Absent>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let &Outcome::Refused(Refusal::Session { at }) = refused
+    else {
+        return Maybe::Absent(assumption::Absent::Unsessioned);
+    };
+    let Some(wanted) = wanted(arena, source, at)
+    else {
+        return Maybe::Absent(assumption::Absent::Unwanted);
+    };
+    if positions.assumed.contains_key(&wanted) {
+        return Maybe::Absent(assumption::Absent::Admitted);
+    }
+    let (result, action) = match wanted {
+        Assumption::Receive(payload) => (payload, "receive"),
+        Assumption::Offer(arms) => {
+            let unit = arena.value_type_unit();
+            let choices = core::iter::repeat_n(unit, arms).collect::<Vec<_>>();
+            (arena.value_type_sum(&choices), "offer")
+        },
+    };
+    let returner = arena.comp_type_returner(result);
+    let declared = arena.value_type_thunk(returner);
+    let base = ConstantIndex::from(usize::from(environment.entries().len()).saturating_add(1));
+    let Ok(staged) = stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Axiom { declared },
+        vouch,
+        (&[], base, UNHELD),
+    )
+    else {
+        return Maybe::Absent(assumption::Absent::Unstaged);
+    };
+    let ordinal = positions.assumed.len();
+    let ordinal = crate::alloc::format!("{ordinal}");
+    let name = StructuredName::from(
+        ["session", action, ordinal.as_str()]
+            .into_iter()
+            .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+            .collect::<Vec<_>>(),
+    );
+    let declaration = staged.declaration.declaration().clone().named(name);
+    let Ok(admitted) = admit(environment, staged.declaration)
+    else {
+        return Maybe::Absent(assumption::Absent::Refused);
+    };
+    positions.assumed.insert(wanted, admitted.position());
+    positions.exports.push(declaration);
+    Maybe::Present(admitted.position())
+}
+
+/// Admit the declaration `seed` names, which the declaration about to cross is
+/// the first to read.
+///
+/// # Specification
+/// - requires: as [`cross`]; the environment holds no declaration of `seed`.
+/// - ensures: a native operation's signature as [`Positions::seed`] admits it,
+///   or an effect signature's free model as [`modelled`] admits it.
+/// - fails: [`Outcome::Rejected`] for a kernel rejection, and the refused
+///   outcome for a free model of no operation or whose operation types do not
+///   erase.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a native operation and a handled effect each seeded at
+///   their first reader, and a readmission resumed past a prefix that read
+///   neither, answer as a whole readmission does.
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+/// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
+#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()) == seeded.saturating_add(1))]
+fn seeded<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    seed: &Seed,
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    match *seed {
+        Seed::Native(primitive) => positions
+            .seed(environment, primitive)
+            .map_err(Outcome::Rejected),
+        Seed::Model(ref row, ref level) => {
+            modelled(environment, arena, source, positions, (row, level), vouch)
+        },
+        Seed::Formation(at) => formed(environment, arena, source, positions, at, vouch),
+    }
+}
+
+/// Admit the free model of `row` at `level`, the row of operations a handler
+/// or a declaration about to cross is the first to read at that level: the
+/// data type of the programs over the row's operations.
+///
+/// # Specification
+/// - requires: as [`cross`]; `row` holds one signature for each interface of a
+///   row of operations, in the row's label order, each operation's payload and
+///   reply mention no binder, `level` mentions no level variable, and no model
+///   admitted so far is `row`'s at `level`.
+/// - ensures: one data declaration at the next kernel position, appended to the
+///   exports: `Free(a : Typeₗ) : Typeₗ` at `level` `ℓ`, whose tag zero
+///   `Return(a)` is a program that returns, and whose tag `i + 1`, for the
+///   `i`-th operation `opᵢ : Aᵢ ↠ Bᵢ` of the row, interface by interface in the
+///   row's order and each interface's in the order [`EffectSig::operations`]
+///   enumerates them, `opᵢ(Aᵢ, U(Bᵢ → F Free(a)))` performs that operation and
+///   continues with its reply. Its name is `effect.free.<ℓ>` followed by the
+///   segments of each interface's name, an empty segment between two interfaces
+///   ([`model_name`]): the row and the level fix it, so every session names one
+///   model alike. The core arena names it at the position
+///   [`Model::declaration`] reserves, which [`Positions::model`] answers for
+///   `row` at `level`.
+/// - provides: the free model a handler is translated to a fold of, and a
+///   declaration at a row to a program of: the kernel types the tree, so an
+///   operation outside the row is a kernel type error.
+/// - fails: [`Refusal::MachineInvariant`] for a row of no operation; the
+///   refused outcome when a payload or a reply does not erase, and
+///   [`Outcome::Rejected`] when the kernel refuses the declaration.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two handlers of one effect share one model, admitted once
+///   ahead of the first as a data type over the subject's result with a
+///   `Return` of one field and the operation of two; a model of two operations
+///   carries one constructor of two fields for each, in the signature's order;
+///   a subject returning a type crosses through a model one level up; two
+///   declarations at one row share one model, named alike in two sessions. A
+///   model with another field count, another constructor count, at another
+///   level or admitted twice changes the export or is the kernel's rejection.
+/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+/// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
+/// - witness: `bridge::tests::a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750`
+/// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+///
+/// [`EffectSig::operations`]: gandr_core_term::effect::EffectSig::operations
+#[spec(captures: models = positions.models.len(), ensures: |ret| ret.is_err() || positions.models.len() == models.saturating_add(1))]
+fn modelled<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    (row, level): (&[gandr_core_term::effect::EffectSig], &Level),
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let operations: usize = row
+        .iter()
+        .map(|signature| signature.operations().len())
+        .sum();
+    if operations == 0 {
+        return Err(Outcome::Refused(Refusal::MachineInvariant));
+    }
+    let declaration = positions.reserved();
+    let universe = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Value),
+        level.clone(),
+    );
+    // The fields stand under the parameter, each continuation under its
+    // payload too.
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.value_type_element(parameter, level.clone());
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let tree = arena.value_type_data(declaration, Vec::from([parameter]));
+    let rest = arena.comp_type_returner(tree);
+    let mut constructors = Vec::with_capacity(operations.saturating_add(1));
+    constructors.push(Vec::from([returned]));
+    for operation in row
+        .iter()
+        .flat_map(gandr_core_term::effect::EffectSig::operations)
+    {
+        let payload = gandr_core_term::shift_value_type(
+            arena,
+            operation.payload,
+            gandr_core_term::Binders::from(1_u32),
+        )
+        .settle(arena);
+        let reply = gandr_core_term::shift_value_type(
+            arena,
+            operation.reply,
+            gandr_core_term::Binders::from(2_u32),
+        )
+        .settle(arena);
+        let continuation = arena.comp_type_arrow(reply, rest);
+        let continuation = arena.value_type_thunk(continuation);
+        constructors.push(Vec::from([payload, continuation]));
+    }
+    let model = gandr_core_term::DataSignature::new(Vec::from([universe]), constructors, universe);
+    let next = ConstantIndex::from(environment.entries().len());
+    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+    let staged = match stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Data(&model),
+        vouch,
+        (&[(declaration, next)], base, UNHELD),
+    ) {
+        Ok(staged) => staged,
+        Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+    };
+    let exported = staged
+        .declaration
+        .declaration()
+        .clone()
+        .named(model_name(row, level));
+    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    positions.models.push(Model {
+        row: row.to_vec(),
+        level: level.clone(),
+        declaration,
+        position: admitted.position(),
+    });
+    positions.exports.push(exported);
+    Ok(())
+}
+
+/// The name of the free model of `row` at `level`: `effect.free.<ℓ>`, then
+/// the segments of each interface's name in the row's order, an empty
+/// segment between two interfaces.
+///
+/// # Specification
+/// - requires: `level` mentions no level variable.
+/// - ensures: two rows of the same interfaces at one level read one name, and
+///   rows of other interfaces or at other levels read other names: no
+///   interface's name holds an empty segment, so the empty segment parts two
+///   interfaces alone.
+/// - panics: none.
+/// - executable: none — the clause compares the names of two calls, and one
+///   call reads one row.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two declarations at one row read one model, named alike
+///   in two sessions.
+/// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+fn model_name(
+    row: &[gandr_core_term::effect::EffectSig],
+    level: &Level,
+) -> StructuredName
+{
+    let level = crate::alloc::format!("{}", u64::from(level.constant_part()));
+    let mut segments =
+        Vec::from(["effect", "free", level.as_str()].map(alloc::string::String::from));
+    for (index, signature) in row.iter().enumerate() {
+        if index != 0 {
+            segments.push(alloc::string::String::new());
+        }
+        segments.extend(
+            signature
+                .name()
+                .as_ref()
+                .split('.')
+                .map(alloc::string::String::from),
+        );
+    }
+    StructuredName::from(
+        segments
+            .into_iter()
+            .filter_map(gandr_kernel_term::NameSegment::from_text)
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// Admit the witnesses of the formation of the patched type `at`, the first
+/// time a declaration about to cross holds it, so the kernel replays the check
+/// of each fixed value at its field's type and the agreement of each meet.
+///
+/// The meets cross in rounds: round `k` holds the `k`-th meet at each label.
+/// Each round is a record definition at the base record's field types. Round
+/// zero holds every fixed field, the later face's value at each meet and the
+/// fixed value at each other field. A later round holds only its meets. The
+/// kernel checks each value at its field's type. A round with meets also
+/// crosses the restriction of its record at the glued fixed values, declared
+/// at the record of the fields it keeps. The kernel's restriction rule checks
+/// each glued value at its field's type, then converts once per meet field.
+///
+/// The fixed values and the meets of each round hold the whole formation:
+/// each record definition and each restriction follows from them. So the
+/// formation's key is the content of the record of the fixed values, then of
+/// the record of each round's meets, as the kernel would check each
+/// ([`formation_key`]). A patched type whose key an earlier formation holds
+/// crosses no witness: the kernel replayed that formation already.
+///
+/// # Specification
+/// - requires: `at` names a patched type of `arena`, whose base is a record
+///   type that holds each fixed label.
+/// - ensures: on success `positions.formed` holds `at` and
+///   `positions.formations` holds its key. The kernel admitted every witness of
+///   a key no earlier formation held, and nothing for a key one held. Otherwise
+///   the outcome of the first witness that did not cross.
+/// - fails: as above.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Rejected`] with the kernel's refusal of a witness, or
+/// [`Outcome::Refused`] with its erasure's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a system whose faces agree, one whose meet value differs,
+///   and one whose glued value has another type than its field's separate the
+///   arms. Two equal systems at two core nodes cross one formation, and two
+///   systems that differ in one fixed value cross two.
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
+#[spec(captures: formed = positions.formed.len(), ensures: |ret| ret.is_err() || positions.formed.len() == formed.saturating_add(1))]
+fn formed<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    at: ValueTypeId,
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let Some(&gandr_core_term::ValueType::Patched {
+        base,
+        ref fixed,
+        ref meets,
+    }) = arena.value_type(at)
+    else {
+        return Err(invariant());
+    };
+    let (fixed, meets) = (fixed.clone(), meets.clone());
+    let Some(&gandr_core_term::ValueType::Record(ref fields)) = arena.value_type(base)
+    else {
+        return Err(invariant());
+    };
+    let fields = fields.clone();
+    let mut rounds: Vec<BTreeMap<gandr_core_term::FieldLabel, ValueId>> =
+        Vec::from([BTreeMap::new()]);
+    let mut depth: BTreeMap<&gandr_core_term::FieldLabel, usize> = BTreeMap::new();
+    for &(ref label, value) in &meets {
+        let round = depth.entry(label).or_insert(0);
+        if rounds.len() <= *round {
+            rounds.push(BTreeMap::new());
+        }
+        rounds
+            .get_mut(*round)
+            .ok_or_else(invariant)?
+            .insert(label.clone(), value);
+        *round = round.saturating_add(1);
+    }
+    let fixed_record = record_of(
+        arena,
+        &fields,
+        fixed.iter().map(|(label, &value)| (label, value)),
+    )?;
+    let mut records = Vec::with_capacity(rounds.len().saturating_add(1));
+    records.push(fixed_record.clone());
+    for round in rounds.iter().filter(|round| !round.is_empty()) {
+        records.push(record_of(
+            arena,
+            &fields,
+            round.iter().map(|(label, &value)| (label, value)),
+        )?);
+    }
+    let key = formation_key(
+        environment,
+        arena,
+        (source, &mut *positions),
+        &records,
+        vouch,
+    )?;
+    if positions.formations.contains(&key) {
+        positions.formed.insert(at);
+        return Ok(());
+    }
+    let ordinal = crate::alloc::format!("{}", positions.formations.len());
+    let name = |part: &str, round: usize| {
+        let round = crate::alloc::format!("{round}");
+        StructuredName::from(
+            ["formation", ordinal.as_str(), part, round.as_str()]
+                .into_iter()
+                .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+                .collect::<Vec<_>>(),
+        )
+    };
+    for (index, round) in rounds.iter().enumerate() {
+        // Round zero is the fixed record with its meets in place; a later
+        // round is its meets' record, which the key holds already.
+        let FormationRecord {
+            declared,
+            body,
+            types,
+        } = match (index, round.is_empty()) {
+            (0, true) => fixed_record.clone(),
+            (0, false) => record_of(
+                arena,
+                &fields,
+                fixed
+                    .iter()
+                    .map(|(label, &value)| (label, round.get(label).copied().unwrap_or(value))),
+            )?,
+            _ => records
+                .get(index.saturating_add(1))
+                .cloned()
+                .ok_or_else(invariant)?,
+        };
+        let record = witness(
+            environment,
+            arena,
+            (source, &mut *positions),
+            (declared, body),
+            &[],
+            (vouch, name("record", index)),
+        )?;
+        if round.is_empty() {
+            continue;
+        }
+        // The record's restriction at the glued values crosses through the
+        // coercion-in path: the record's constant, coerced in at them.
+        let reserved = positions.reserved();
+        let named = arena.value_constant(reserved);
+        let glued = round
+            .keys()
+            .map(|label| {
+                fixed
+                    .get(label)
+                    .map(|&value| (label.clone(), value))
+                    .ok_or_else(invariant)
+            })
+            .collect::<Result<crate::conversion::Coercion, _>>()?;
+        let coerced = BTreeMap::from([(named, glued)]);
+        // The restriction keeps the record's other fields, at their types.
+        let kept = types
+            .into_iter()
+            .filter(|&(ref label, _)| !round.contains_key(label))
+            .collect();
+        let declared = arena.value_type_record(kept);
+        witness(
+            environment,
+            arena,
+            (
+                Source {
+                    coercions: &coerced,
+                    ..source
+                },
+                &mut *positions,
+            ),
+            (declared, named),
+            &[(reserved, record)],
+            (vouch, name("meets", index)),
+        )?;
+    }
+    positions.formations.insert(key);
+    positions.formed.insert(at);
+    Ok(())
+}
+
+/// One record definition of a formation: its declared record type, its body
+/// and the type of each of its labels.
+#[derive(Clone, Debug)]
+struct FormationRecord
+{
+    /// The record type at the base record's field types.
+    declared: ValueTypeId,
+    /// The record of the values.
+    body: ValueId,
+    /// The type of each label, from the base record.
+    types: BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>,
+}
+
+/// The record definition of `entries`, each at its field's type in `fields`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// [`Refusal::MachineInvariant`] when `fields` lacks a label of `entries`.
+fn record_of<'label>(
+    arena: &mut CoreArena,
+    fields: &BTreeMap<gandr_core_term::FieldLabel, ValueTypeId>,
+    entries: impl IntoIterator<Item = (&'label gandr_core_term::FieldLabel, ValueId)>,
+) -> Result<FormationRecord, Outcome>
+{
+    let mut types = BTreeMap::new();
+    let mut values = BTreeMap::new();
+    for (label, value) in entries {
+        let field = *fields
+            .get(label)
+            .ok_or(Outcome::Refused(Refusal::MachineInvariant))?;
+        types.insert(label.clone(), field);
+        values.insert(label.clone(), value);
+    }
+    Ok(FormationRecord {
+        declared: arena.value_type_record(types.clone()),
+        body: arena.value_record(values),
+        types,
+    })
+}
+
+/// The key of a formation: the content of each of `records` as the kernel
+/// would check it, in order, named in the readmission's content table.
+///
+/// Each record is staged and then abandoned, so the kernel admits nothing.
+/// The table compares the words of each record it files, so two keys are
+/// equal exactly when the checks they name have equal content; a digest only
+/// selects where the table looks.
+///
+/// # Specification
+/// - requires: as [`stage`].
+/// - ensures: on success one content id for each record, in order; the
+///   environment's entries end as they began.
+/// - fails: the erasure's refusal of a record.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Refused`] with the erasure's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formed`].
+/// - witness: `module::tests::equal_patched_types_share_one_formation_5748`
+#[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |key| key.len() == records.len()))]
+fn formation_key<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &mut Positions),
+    records: &[FormationRecord],
+    vouch: &Vouch,
+) -> Result<Vec<gandr_kernel_core::ContentId>, Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let invariant = || Outcome::Refused(Refusal::MachineInvariant);
+    let mut key = Vec::with_capacity(records.len());
+    for record in records {
+        let next = ConstantIndex::from(environment.entries().len());
+        let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+        let staged = match stage(
+            environment,
+            arena,
+            (source, &*positions),
+            Offer::Definition {
+                declared: record.declared,
+                body: record.body,
+                relations: &[],
+                restated: &[],
+                laws: &[],
+                operation_rules: &[],
+                covers: &[],
+                stages: &UNQUANTIFIED,
+            },
+            vouch,
+            (&[], base, UNHELD),
+        ) {
+            Ok(staged) => staged,
+            Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+            Err(Unstaged::Unseeded(_)) => return Err(invariant()),
+        };
+        let gandr_kernel_term::DeclarationContent::Def { declared, body } =
+            *staged.declaration.declaration().content()
+        else {
+            environment.abandon(staged.declaration);
+            return Err(invariant());
+        };
+        key.push(gandr_kernel_core::support_key(
+            &mut positions.content,
+            environment.arena(),
+            gandr_kernel_core::SupportGoal::CheckValue(body, declared),
+            gandr_kernel_core::encoding::Telescope::Whole(&[]),
+        ));
+        environment.abandon(staged.declaration);
+    }
+    Ok(key)
+}
+
+/// Stage and admit the definition `body : declared`, with `crossing` naming
+/// the definitions it reads that no module position holds, and export it
+/// under `name`.
+///
+/// # Specification
+/// - requires: as [`stage`].
+/// - ensures: on success the kernel position the definition took, its export
+///   recorded; otherwise the erasure's or the kernel's refusal.
+/// - fails: as above.
+/// - panics: none.
+///
+/// # Errors
+/// [`Outcome::Refused`] with the erasure's refusal, or [`Outcome::Rejected`]
+/// with the kernel's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`formed`].
+/// - witness: `module::tests::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
+#[spec(captures: exports = positions.exports.len(), ensures: |ret| ret.is_err() || positions.exports.len() != exports)]
+fn witness<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    (source, positions): (Source<'_>, &mut Positions),
+    (declared, body): (ValueTypeId, ValueId),
+    crossing: &[(ConstantIndex, ConstantIndex)],
+    (vouch, name): (&Vouch, StructuredName),
+) -> Result<ConstantIndex, Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let next = ConstantIndex::from(environment.entries().len());
+    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+    let staged = match stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Definition {
+            declared,
+            body,
+            relations: &[],
+            restated: &[],
+            laws: &[],
+            operation_rules: &[],
+            covers: &[],
+            stages: &UNQUANTIFIED,
+        },
+        vouch,
+        (crossing, base, UNHELD),
+    ) {
+        Ok(staged) => staged,
+        Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+    };
+    let exported = staged.declaration.declaration().clone().named(name);
+    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    positions.exports.push(exported);
+    Ok(admitted.position())
+}
+
+/// The free model of one row of operations at one level the kernel admitted.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+struct Model
+{
+    /// The signatures of the row's interfaces it models, in the row's label
+    /// order: one for a handler's model.
+    row: Vec<gandr_core_term::effect::EffectSig>,
+    /// The level of the universe its parameter, the programs' result, ranges
+    /// over, and its own.
+    level: Level,
+    /// The position the core arena names it at, reserved past every module
+    /// position ([`Positions::reserved`]).
+    declaration: ConstantIndex,
+    /// Its kernel position.
+    position: ConstantIndex,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no free model answers a row of operations.
+    mod model {
+        /// The reason no model answers.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No model admitted so far is of the row.
+            Unadmitted,
+        }
+    }
+}
+
+/// How the image of a computation stands to a row of operations.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+enum Imaged
+{
+    /// Its image returns a value.
+    Pure,
+    /// Its image is a program of the free model of a row of operations.
+    Program(Programmed),
+}
+
+/// The program a returner over a row of operations stands for.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+struct Programmed
+{
+    /// The returner's result, in the context it was judged in.
+    result: ValueTypeId,
+    /// The signatures of its row's interfaces, in the row's label order.
+    row: Vec<gandr_core_term::effect::EffectSig>,
+    /// The level of the universe its result inhabits, and its model's.
+    level: Level,
+}
+
+/// The tag of the operation `operation` of the interface `interface` in the
+/// free model of `row`: one past the operations of the interfaces before
+/// it, and the operation's place in its interface.
+///
+/// # Specification
+/// - ensures: the tag of the constructor [`modelled`] gives the operation; none
+///   when `row` names no such operation.
+/// - panics: none.
+/// - executable: none — [`modelled`] mints the constructors elsewhere, so a
+///   predicate here restates the count the body makes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Erasure::programmed_reduct`].
+/// - witness: `bridge::tests::a_program_at_another_operation_is_the_kernels_refusal_6642`
+fn tag(
+    row: &[gandr_core_term::effect::EffectSig],
+    interface: &gandr_core_term::effect::EffectName,
+    operation: &gandr_core_term::effect::OperationName,
+) -> Option<gandr_kernel_term::ConstructorTag>
+{
+    let mut before = 1_usize;
+    for signature in row {
+        if signature.name() == interface {
+            let place = signature
+                .operations()
+                .position(|held| held.name == *operation)?;
+            return before
+                .checked_add(place)
+                .map(gandr_kernel_term::ConstructorTag::from);
+        }
+        before = before.checked_add(signature.operations().len())?;
+    }
+    None
+}
+
+/// The kernel position each module declaration that crossed took, and the
+/// bodies the crossed and the static definitions unfold to on either side.
+#[derive(Clone, Debug, Default)]
+struct Positions
+{
+    /// Native rows cross as explicitly audited, typed opaque constants.
+    native: BTreeMap<gandr_core_term::primitive::Primitive, ConstantIndex>,
+    /// The kernel position of each assumption a received value or an
+    /// offered choice crosses under, admitted the first time one is read.
+    assumed: BTreeMap<Assumption, ConstantIndex>,
+    /// Module position to kernel position.
+    admitted: BTreeMap<ConstantIndex, ConstantIndex>,
+    /// The free model of each effect signature a handler crossed through,
+    /// admitted the first time one is handled, in admission order.
+    models: Vec<Model>,
+    /// The crossed and the static definitions' core bodies, by module
+    /// position: what a decode of a code naming one, or an instance of one,
+    /// reduces to, and what its certificate is asked over.
+    definitions: CodeDefinitions,
+    /// The crossed definitions' kernel bodies, by kernel position: what the
+    /// kernel's replay may unfold.
+    unfoldings: BTreeMap<ConstantIndex, gandr_kernel_term::ValueId>,
+    /// The declarations the kernel admitted, as they were staged — an
+    /// abstract type's scope closed once its seal ends — in kernel admission
+    /// order.
+    exports: gandr_kernel_term::Family<KernelDeclaration>,
+    /// The atoms admitted whose seals have not ended, in minting order.
+    open: Vec<OpenSeal>,
+    /// The atoms whose abstract types were withheld: refused by the
+    /// judgement, or naming a declaration that did not cross. A reader of
+    /// one is withheld as a reader of any nominal head that did not cross.
+    withheld: BTreeSet<ConstantIndex>,
+    /// The presented types the kernel admitted, whose terms its replay reads
+    /// by their normal forms.
+    presentations: Presentations,
+    /// The patched types whose formation the kernel replayed, by core node:
+    /// each crosses its witnesses once, or stands on an equal formation's
+    /// ([`formed`]).
+    formed: BTreeSet<ValueTypeId>,
+    /// The key of each formation whose witnesses the kernel admitted: the
+    /// content of its records ([`formation_key`]).
+    formations: BTreeSet<Vec<gandr_kernel_core::ContentId>>,
+    /// The content of the checks the formation keys name, for the length of
+    /// one readmission.
+    content: gandr_kernel_core::ContentTable,
+}
+
+impl Positions
+{
+    /// The core position the next free model is named at: counted down from
+    /// the last position, which no module's declarations reach, by the models
+    /// admitted before it.
+    ///
+    /// # Specification
+    /// - ensures: each model admitted reserves a position distinct from every
+    ///   earlier one's, each past any module position a declaration takes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler's fold names its model at the reserved
+    ///   position and crosses; a position a module declaration held would
+    ///   resolve to that declaration instead.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[spec(ensures: |ret| usize::from(ret) == usize::MAX.saturating_sub(self.models.len()))]
+    fn reserved(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(usize::MAX.saturating_sub(self.models.len()))
+    }
+
+    /// The free model admitted for `row` at `level`, read in `arena`.
+    ///
+    /// # Specification
+    /// - ensures: the model whose row holds as many signatures as `row`, each
+    ///   the signature at its place in `row` by name, operations and type
+    ///   syntax ([`gandr_core_term::effect::EffectSig::inclusion`]), and whose
+    ///   level is `level`, the first admitted when several are; absent when
+    ///   none is.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two handlers of one effect share one model, and a
+    ///   handler of it whose subject returns a type crosses through another;
+    ///   two declarations at one row share one model.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750`
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(model) => model.level == *level && model.row.len() == row.len(),
+        Maybe::Absent(model::Absent::Unadmitted) => true,
+    })]
+    fn model(
+        &self,
+        (row, level): (&[gandr_core_term::effect::EffectSig], &Level),
+        arena: &CoreArena,
+    ) -> Maybe<&Model, model::Absent>
+    {
+        self.models
+            .iter()
+            .find(|model| {
+                model.level == *level
+                    && model.row.len() == row.len()
+                    && model.row.iter().zip(row).all(|(held, wanted)| {
+                        held.inclusion(wanted, arena)
+                            == gandr_core_term::row::RowInclusion::Included
+                    })
+            })
+            .map_or(Maybe::Absent(model::Absent::Unadmitted), Maybe::Present)
+    }
+
+    /// Admit the signature of the native operation `primitive`, which the
+    /// declaration about to cross is the first to read, without adding an
+    /// evaluator to the kernel.
+    ///
+    /// # Specification
+    /// - requires: the environment holds no signature of `primitive` yet.
+    /// - ensures: one checked declaration of `primitive`'s table signature,
+    ///   named after it, at the next kernel position and appended to the
+    ///   exports: a literal identity test for a row that is one, which the
+    ///   kernel computes on two literals, and an axiom for every other row.
+    ///   Seeded at its first reader, a native signature's position depends on
+    ///   the declarations before that reader alone, so a readmission resumed
+    ///   past a prefix holds the prefix's positions whatever native operations
+    ///   follow it.
+    /// - fails: propagates a kernel rejection; no unchecked admission is used.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A kernel rejection of the native signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native operations cross and retain their named
+    ///   assumptions in a decoded artifact, and a resumed readmission seeds the
+    ///   ones its prefix never read as a whole readmission does.
+    /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+    #[spec(ensures: |ret| ret.is_err() || self.native.contains_key(&primitive))]
+    fn seed(
+        &mut self,
+        environment: &mut Environment,
+        primitive: gandr_core_term::primitive::Primitive,
+    ) -> Result<(), KernelError>
+    {
+        use gandr_core_term::primitive::PrimitiveType;
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let classifier = |arena: &mut TermArena, ty: PrimitiveType| match ty {
+            PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
+            PrimitiveType::Boolean => {
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[unit, unit])
+            },
+            PrimitiveType::Text => arena.value_type_base(BaseType::String),
+            PrimitiveType::Float64 => arena.value_type_base(BaseType::Float64),
+            PrimitiveType::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
+        };
+        let result = classifier(arena, primitive.result());
+        let mut computation = arena.comp_type_returner(result);
+        for &argument in primitive.arguments().iter().rev() {
+            let domain = classifier(arena, argument);
+            computation = arena.comp_type_arrow(domain, computation);
+        }
+        let declared = arena.value_type_thunk(computation);
+        let staged = match primitive.literal_identity() {
+            Some(test) => staging.literal_identity(LevelSignature::monomorphic(), declared, test),
+            None => staging.axiom(LevelSignature::monomorphic(), declared),
+        };
+        let name = StructuredName::from(
+            primitive
+                .name()
+                .as_ref()
+                .split('.')
+                .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+                .collect::<Vec<_>>(),
+        );
+        let declaration = staged.declaration().clone().named(name);
+        let admitted = admit(environment, staged)?;
+        self.native.insert(primitive, admitted.position());
+        self.exports.push(declaration);
+        Ok(())
+    }
+
+    /// Record that the module definition at `constant`, of core body `body`,
+    /// crossed as `admitted` with kernel body `image`.
+    ///
+    /// # Specification
+    /// - requires: `constant` follows every prior crossed or static definition;
+    ///   `admitted` is a fresh kernel position.
+    /// - ensures: the crossed table answers `admitted`'s position for
+    ///   `constant`; a decode of a code naming `constant` unfolds to `body`;
+    ///   the kernel's replay may unfold `admitted` to `image`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — references to prior definitions and a defined code
+    ///   expose the remapped position and replayed unfolding; wrong-side bodies
+    ///   or retaining module positions change admission and certificate replay.
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    #[spec(
+        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+            && !self.unfoldings.contains_key(&admitted.position()),
+        ensures: self.admitted.get(&constant) == Some(&admitted.position())
+            && self.unfoldings.get(&admitted.position()) == Some(&image),
+    )]
+    fn define(
+        &mut self,
+        constant: ConstantIndex,
+        admitted: CheckedId,
+        body: ValueId,
+        image: gandr_kernel_term::ValueId,
+    )
+    {
+        self.admitted.insert(constant, admitted.position());
+        self.definitions.define(constant, body);
+        self.unfoldings.insert(admitted.position(), image);
+    }
+
+    /// Record a bodiless kernel admission: an owed axiom or native data
+    /// signature, without inventing a value unfolding.
+    ///
+    /// # Specification
+    /// - requires: `constant` follows every prior crossed or static definition;
+    ///   `admitted` is a fresh kernel position.
+    /// - ensures: the crossed table answers `admitted`'s position for
+    ///   `constant`, which stays rigid on both sides.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — owed declarations and their dependent uses expose
+    ///   axiom receipts and an exact artifact audit; inventing a definition for
+    ///   an axiom or failing to remap its position changes those observations.
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
+    /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
+    #[spec(
+        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+            && !self.unfoldings.contains_key(&admitted.position()),
+        captures: unfolded = self.unfoldings.len(),
+        ensures: self.admitted.get(&constant) == Some(&admitted.position())
+            && !self.unfoldings.contains_key(&admitted.position()) && self.unfoldings.len() == unfolded,
+    )]
+    fn declare(
+        &mut self,
+        constant: ConstantIndex,
+        admitted: CheckedId,
+    )
+    {
+        self.admitted.insert(constant, admitted.position());
+    }
+
+    /// The definitions the kernel's replay may unfold, by kernel position:
+    /// the crossed definitions' bodies, and the static operators one crossing
+    /// numbered past them.
+    ///
+    /// # Specification
+    /// - requires: no position of `operators` is a crossed definition's.
+    /// - ensures: [`Unfoldable::Body`] at each crossed definition's kernel
+    ///   position, the entry `operators` holds at each of its positions, and
+    ///   [`Unfoldable::Opaque`] at every other position below the highest.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop over the merged entries, and the `while` loop
+    ///   padding up to each, not recursion.
+    /// - measure: the entries left, then the gap below the next.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a crossed definition alone and beside
+    ///   the static operators of one crossing.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body merges every crossed definition and operator once; the check reads each once more"
+        )
+    )]
+    #[spec(ensures: |ret| operators.iter().all(|(&position, &entry)| {
+        self.unfoldings.contains_key(&position) || ret.unfolding(position) == entry
+    }) && self.unfoldings.iter().all(|(&position, &body)| {
+        ret.unfolding(position) == Unfoldable::Body(body)
+    }))]
+    fn unfoldings(
+        &self,
+        operators: &BTreeMap<ConstantIndex, Unfoldable>,
+    ) -> Unfoldings
+    {
+        let mut entries: BTreeMap<ConstantIndex, Unfoldable> = operators.clone();
+        for (&position, &body) in &self.unfoldings {
+            entries.insert(position, Unfoldable::Body(body));
+        }
+        let mut bodies = Vec::new();
+        for (position, entry) in entries {
+            while bodies.len() < usize::from(position) {
+                bodies.push(Unfoldable::Opaque);
+            }
+            bodies.push(entry);
+        }
+        Unfoldings::new(bodies)
+            .presenting(self.presentations.clone())
+            .testing_at(
+                self.native
+                    .iter()
+                    .filter_map(|(primitive, &position)| {
+                        primitive.literal_identity().map(|test| (position, test))
+                    })
+                    .collect(),
+            )
+    }
+
+    /// The decision the kernel's replay reads for the normaliser's `decision`:
+    /// a constant that crossed at its kernel position, a static definition at
+    /// the position `operators` numbered it at, and every other node opaque to
+    /// the replay.
+    ///
+    /// # Specification
+    /// - requires: nothing; unavailable constants become opaque replay nodes.
+    /// - ensures: the decision's kind, side and position survive; each constant
+    ///   uses its admitted position before its operator position, and every
+    ///   other trace node becomes opaque.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all decision variants over admitted, operator and
+    ///   unavailable nodes expose exact replay decisions; overlapping mappings
+    ///   separate admitted-position precedence, and side or position loss
+    ///   differs.
+    /// - witness: `bridge::tests::replay_decisions_preserve_shape_and_position_precedence`
+    #[spec(ensures: |ret| {
+        let mapped = |source: TraceNode, target: ReplayNode| match source {
+            | TraceNode::Constant(constant) => match self.admitted.get(&constant).copied()
+                .or_else(|| operators.get(&Unfolded::Definition(constant)).copied()) {
+                | Some(position) => target == ReplayNode::Constant(position),
+                | None => target == ReplayNode::Other,
+            },
+            | TraceNode::Value(_) | TraceNode::Computation(_) => target == ReplayNode::Other,
+        };
+        match (decision, ret) {
+            | (ConversionDecision::ReduceLeft { redex: a }, ConversionDecision::ReduceLeft { redex: b })
+            | (ConversionDecision::ReduceRight { redex: a }, ConversionDecision::ReduceRight { redex: b })
+            | (ConversionDecision::ConstShortcut { constant: a }, ConversionDecision::ConstShortcut { constant: b })
+            | (ConversionDecision::Unfold { constant: a }, ConversionDecision::Unfold { constant: b })
+            | (ConversionDecision::Postpone { constant: a }, ConversionDecision::Postpone { constant: b })
+            | (ConversionDecision::Force { thunk: a }, ConversionDecision::Force { thunk: b }) => mapped(a,b),
+            | (ConversionDecision::Freeze { constant: a, side: x }, ConversionDecision::Freeze { constant: b, side: y })
+            | (ConversionDecision::EtaExpand { side: x, variable: a }, ConversionDecision::EtaExpand { side: y, variable: b }) => x == y && mapped(a,b),
+            | (ConversionDecision::ReturnEta { side: x }, ConversionDecision::ReturnEta { side: y })
+            | (ConversionDecision::Reassociate { side: x }, ConversionDecision::Reassociate { side: y })
+            | (ConversionDecision::Discard { side: x }, ConversionDecision::Discard { side: y }) => x == y,
+            | (ConversionDecision::ComparedShared { left: a, right: b }, ConversionDecision::ComparedShared { left: c, right: d }) => mapped(a,c) && mapped(b,d),
+            | (ConversionDecision::NegativeSubgoal { position: a }, ConversionDecision::NegativeSubgoal { position: b }) => a == b,
+            | (ConversionDecision::Decompose, ConversionDecision::Decompose) => true,
+            | _ => false,
+        }
+    })]
+    fn kernel_decision(
+        &self,
+        operators: &BTreeMap<Unfolded, ConstantIndex>,
+        decision: ConversionDecision<TraceNode>,
+    ) -> ConversionDecision<ReplayNode>
+    {
+        decision.map(|node: TraceNode| match node {
+            TraceNode::Constant(constant) => match self.admitted.get(&constant) {
+                Some(&position) => ReplayNode::Constant(position),
+                None => match operators.get(&Unfolded::Definition(constant)) {
+                    Some(&position) => ReplayNode::Constant(position),
+                    None => ReplayNode::Other,
+                },
+            },
+            TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+        })
+    }
+}
+
+/// A node's image in the kernel arena while one declaration is erased.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Image<Erased>
+{
+    /// The node's frame waits on its children.
+    Open,
+    /// The node is erased, to this kernel node.
+    Erased(Erased),
+}
+
+/// Which identity an identity frame erases: the symmetric path or the
+/// directed flow, whose kernel formers share their shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Family
+{
+    /// `Path`, `here`, transport.
+    Path,
+    /// `Flow`, `stay`, `ride`.
+    Flow,
+}
+
+/// Which former a type frame erases: the three that relate two endpoints of
+/// one carrier, whose kernel formers share their shape.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Relating
+{
+    /// `Path[.A = A](a, b)`.
+    Path,
+    /// `Flow[.A = A](a, b)`.
+    Flow,
+    /// `Bridge[.A = A](a, b)`.
+    Bridge,
+}
+
+/// A forward flow part-way through erasure: its flow type and translator
+/// crossed, its images crossing in coverage order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ForwardErasure
+{
+    /// The forward flow.
+    at: ValueId,
+    /// The flow type's image.
+    flow_type: gandr_kernel_term::ValueTypeId,
+    /// The translator's image.
+    translator: gandr_kernel_term::ValueId,
+    /// The decided images, in coverage order.
+    images: alloc::sync::Arc<[ValueId]>,
+    /// The images crossed so far.
+    erased: Vec<gandr_kernel_term::ValueId>,
+    /// The decided dialogues, in coverage order.
+    dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+}
+
+/// A value coerced in to a patched type part-way through erasure: the value
+/// crosses first, then each fixed value in label order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Restriction
+{
+    /// The coerced value.
+    at: ValueId,
+    /// The fixed fields still to cross, the next one last.
+    pending: Vec<(gandr_core_term::FieldLabel, ValueId)>,
+    /// The fixed values crossed so far, by label.
+    crossed: BTreeMap<gandr_core_term::FieldLabel, gandr_kernel_term::ValueId>,
+}
+
+/// A rule waiting on the image of a child.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Frame
+{
+    /// Visit the next native child, retaining its image in the memo.
+    NativeNext(CoreNode),
+    /// Assemble a native former once every child has crossed.
+    NativeBuild(CoreNode),
+    /// Await a native cell's head.
+    ListHead
+    {
+        /// Source cell.
+        at: ValueId,
+        /// Source tail.
+        tail: ValueId,
+    },
+    /// Await the image of a coerced value, crossed as written.
+    RestrictedValue(Restriction),
+    /// Await the image of the value a coerced value's patched type fixes at
+    /// `label`.
+    RestrictedField
+    {
+        /// The restriction under way.
+        restriction: Restriction,
+        /// The coerced value's image.
+        value: gandr_kernel_term::ValueId,
+        /// The label whose fixed value is crossing.
+        label: gandr_core_term::FieldLabel,
+    },
+    /// Await a native cell's tail.
+    ListTail
+    {
+        /// Source cell.
+        at: ValueId,
+        /// Lowered head.
+        head: gandr_kernel_term::ValueId,
+    },
+    /// Await a fold's element annotation.
+    ListElement
+    {
+        /// Source fold.
+        at: ComputationId,
+    },
+    /// Await a fold's result annotation.
+    ListResult
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+    },
+    /// Await a fold's list.
+    ListInput
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+    },
+    /// Await a fold's empty branch.
+    ListNil
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+    },
+    /// Await a fold's cell branch.
+    ListCons
+    {
+        /// Source fold.
+        at: ComputationId,
+        /// Lowered element annotation.
+        element: gandr_kernel_term::ValueTypeId,
+        /// Lowered result annotation.
+        result: gandr_kernel_term::ValueTypeId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+        /// Lowered empty branch.
+        on_nil: gandr_kernel_term::ComputationId,
+    },
+    /// Await a list case's list.
+    ListCaseList
+    {
+        /// Source list case.
+        at: ComputationId,
+    },
+    /// Await a list case's empty branch.
+    ListCaseNil
+    {
+        /// Source list case.
+        at: ComputationId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+    },
+    /// Await a list case's cell branch.
+    ListCaseCons
+    {
+        /// Source list case.
+        at: ComputationId,
+        /// Lowered list.
+        list: gandr_kernel_term::ValueId,
+        /// Lowered empty branch.
+        on_nil: gandr_kernel_term::ComputationId,
+    },
+    /// Await the element type of a finite list.
+    ListType
+    {
+        /// The source list type.
+        at: ValueTypeId,
+    },
+    /// A binary native call, awaiting its first argument.
+    NativeFirst
+    {
+        /// The saturated source call.
+        at: ComputationId,
+        /// The forced native axiom.
+        head: gandr_kernel_term::ComputationId,
+        /// The second source operand.
+        second: ValueId,
+    },
+    /// Await a reflexivity endpoint.
+    PathRefl
+    {
+        /// The reflexivity value.
+        at: ValueId,
+    },
+    /// Await an equivalence classifier.
+    PathEquivType
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The forward map.
+        forward: ValueId,
+        /// The inverse map.
+        backward: ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await a forward translator.
+    PathEquivForward
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The classifier image.
+        path_type: gandr_kernel_term::ValueTypeId,
+        /// The inverse map.
+        backward: ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await an inverse translator.
+    PathEquivBackward
+    {
+        /// The equivalence.
+        at: ValueId,
+        /// The classifier image.
+        path_type: gandr_kernel_term::ValueTypeId,
+        /// The forward map image.
+        forward: gandr_kernel_term::ValueId,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Await the image of a univalence's record.
+    UnivalenceRecord
+    {
+        /// The univalence.
+        at: ValueId,
+    },
+    /// Await the first product path.
+    PathProductFirst
+    {
+        /// The product path.
+        at: ValueId,
+        /// The second path.
+        second: ValueId,
+    },
+    /// Await the second product path.
+    PathProductSecond
+    {
+        /// The product path.
+        at: ValueId,
+        /// The first path image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// Await a transport path.
+    TransportPath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The operand.
+        value: ValueId,
+    },
+    /// Await a transport operand.
+    TransportValue
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+    },
+    /// Await the source code of a path classifier.
+    PathSource
+    {
+        /// The classifier.
+        at: ValueTypeId,
+        /// The target code.
+        target_code: ValueId,
+    },
+    /// Await the target code of a path classifier.
+    PathTarget
+    {
+        /// The classifier.
+        at: ValueTypeId,
+        /// The source code image.
+        source: gandr_kernel_term::ValueId,
+    },
+    /// Await the source code of a universe flow type.
+    FlowSource
+    {
+        /// The flow type.
+        at: ValueTypeId,
+        /// The target code.
+        target_code: ValueId,
+    },
+    /// Await the target code of a universe flow type.
+    FlowTarget
+    {
+        /// The flow type.
+        at: ValueTypeId,
+        /// The source code image.
+        source: gandr_kernel_term::ValueId,
+    },
+    /// Await the native classifier of a session statement, then mint the
+    /// kernel's session certificate over the engine's pairs.
+    SessionCertificate
+    {
+        /// The statement, stay or composite.
+        at: ValueId,
+        /// Bisimilarity or simulation.
+        relation: gandr_core_term::session::SessionRelation,
+        /// The engine's pairs.
+        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+        /// The tuple of native certificates a bisimilarity's payload paths
+        /// elaborated to, absent when it owes none.
+        payloads: Option<ValueId>,
+    },
+    /// Await a bisimilarity's payload paths, then mint its certificate.
+    SessionPayloads
+    {
+        /// The statement.
+        at: ValueId,
+        /// The native classifier.
+        classifier: gandr_kernel_term::ValueTypeId,
+        /// The engine's pairs.
+        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+    },
+    /// Await the carrier of an element path, flow or bridge type.
+    PathCarrier
+    {
+        /// The path, flow or bridge type.
+        at: ValueTypeId,
+        /// The source endpoint.
+        left: ValueId,
+        /// The target endpoint.
+        right: ValueId,
+        /// Which former the type is.
+        former: Relating,
+    },
+    /// Await the source endpoint of an element path, flow or bridge type.
+    PathLeft
+    {
+        /// The path, flow or bridge type.
+        at: ValueTypeId,
+        /// The carrier image.
+        carrier: gandr_kernel_term::ValueTypeId,
+        /// The target endpoint.
+        right: ValueId,
+        /// Which former the type is.
+        former: Relating,
+    },
+    /// Await the target endpoint of an element path, flow or bridge type.
+    PathRight
+    {
+        /// The path, flow or bridge type.
+        at: ValueTypeId,
+        /// The carrier image.
+        carrier: gandr_kernel_term::ValueTypeId,
+        /// The source endpoint image.
+        left: gandr_kernel_term::ValueId,
+        /// Which former the type is.
+        former: Relating,
+    },
+    /// Await the point of a reflexivity `here(a)` or a stay `stay(a)`.
+    Here
+    {
+        /// The reflexivity or stay.
+        at: ValueId,
+        /// Which identity the point inhabits.
+        family: Family,
+    },
+    /// Await the motive of an element transport or a ride.
+    PathTransportMotive
+    {
+        /// The transport or ride.
+        at: ComputationId,
+        /// The path or flow.
+        path: ValueId,
+        /// The operand.
+        value: ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
+    },
+    /// Await the path or flow of an element transport or a ride.
+    PathTransportPath
+    {
+        /// The transport or ride.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::ValueTypeId,
+        /// The operand.
+        value: ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
+    },
+    /// Await the operand of an element transport or a ride.
+    PathTransportValue
+    {
+        /// The transport or ride.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::ValueTypeId,
+        /// The path or flow image.
+        path: gandr_kernel_term::ValueId,
+        /// Which identity the operand moves along.
+        family: Family,
+    },
+    /// Await the first leg of a composite flow.
+    ThenFirst
+    {
+        /// The composite.
+        at: ValueId,
+        /// The second leg.
+        second: ValueId,
+    },
+    /// Await the second leg of a composite flow.
+    ThenSecond
+    {
+        /// The composite.
+        at: ValueId,
+        /// The first leg's image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// Await the first component of a flow product.
+    FlowProductFirst
+    {
+        /// The product.
+        at: ValueId,
+        /// The second component.
+        second: ValueId,
+    },
+    /// Await the second component of a flow product.
+    FlowProductSecond
+    {
+        /// The product.
+        at: ValueId,
+        /// The first component's image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// Await the flow type a forward flow was decided at.
+    ForwardType
+    {
+        /// The forward flow.
+        at: ValueId,
+        /// The translator.
+        translator: ValueId,
+        /// The decided images, in coverage order.
+        images: alloc::sync::Arc<[ValueId]>,
+        /// The decided dialogues, in coverage order.
+        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+    },
+    /// Await the translator of a forward flow.
+    ForwardTranslator
+    {
+        /// The forward flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The decided images, in coverage order.
+        images: alloc::sync::Arc<[ValueId]>,
+        /// The decided dialogues, in coverage order.
+        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+    },
+    /// Await the next image of a forward flow.
+    ForwardImages(ForwardErasure),
+    /// Await the flow type a function flow was decided at.
+    FunctionFlowType
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The domain boundary.
+        domain: ValueId,
+        /// The codomain boundary.
+        codomain: ValueId,
+    },
+    /// Await the domain boundary of a function flow.
+    FunctionFlowDomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The codomain boundary.
+        codomain: ValueId,
+    },
+    /// Await the codomain boundary of a function flow.
+    FunctionFlowCodomain
+    {
+        /// The function flow.
+        at: ValueId,
+        /// The flow type's image.
+        flow_type: gandr_kernel_term::ValueTypeId,
+        /// The domain boundary's image.
+        domain: gandr_kernel_term::ValueId,
+    },
+    /// Await the motive of a telescope transport.
+    TelescopeMotive
+    {
+        /// The transport.
+        at: ComputationId,
+    },
+    /// Await the path of a telescope transport.
+    TelescopePath
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+    },
+    /// Await the start of a telescope transport.
+    TelescopeStart
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+    },
+    /// Await the identity over the path of a telescope transport.
+    TelescopeOver
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+        /// The start image.
+        start: gandr_kernel_term::ValueId,
+    },
+    /// Await the operand of a telescope transport.
+    TelescopeValue
+    {
+        /// The transport.
+        at: ComputationId,
+        /// The motive image.
+        motive: gandr_kernel_term::CompTypeId,
+        /// The path image.
+        path: gandr_kernel_term::ValueId,
+        /// The start image.
+        start: gandr_kernel_term::ValueId,
+        /// The image of the identity over the path.
+        over: gandr_kernel_term::ValueId,
+    },
+    /// Await a sum injection payload.
+    Injection
+    {
+        /// The injection.
+        at: ValueId,
+        /// The summand injected into.
+        summand: gandr_kernel_term::Summand,
+    },
+    /// Assemble a function extensionality once every normal form it records
+    /// has crossed.
+    FunextBuild(ValueId),
+    /// A thunk, awaiting its body's computation.
+    Thunk
+    {
+        /// The thunk.
+        at: ValueId,
+    },
+    /// A returned endpoint, awaiting its computation.
+    Returned
+    {
+        /// The returned endpoint.
+        at: ValueId,
+    },
+    /// A quote, awaiting its value type.
+    Quote
+    {
+        /// The quote.
+        at: ValueId,
+    },
+    /// A quote of a computation type, awaiting it.
+    QuoteComputation
+    {
+        /// The quote.
+        at: ValueId,
+    },
+    /// A code the judgement recorded a lift at, awaiting the lift of its
+    /// decode, which it quotes.
+    LiftedCode
+    {
+        /// The code.
+        at: ValueId,
+    },
+    /// A marked value, awaiting the image of the value it marks, which is its
+    /// own: a mark is erased.
+    UnmarkedValue
+    {
+        /// The mark.
+        at: ValueId,
+    },
+    /// A marked computation, awaiting the image of the computation it marks.
+    UnmarkedComputation
+    {
+        /// The mark.
+        at: ComputationId,
+    },
+    /// A split or a session action, awaiting the image of the computation the
+    /// bridge rewrote it to.
+    Rewritten
+    {
+        /// The split, the session action or the returned composite.
+        at: ComputationId,
+    },
+    /// A received value or an offered choice, awaiting the image of what
+    /// reads it: bound to the assumption the kernel admitted for it.
+    Assumed
+    {
+        /// The receive or the offer.
+        at: ComputationId,
+        /// The assumption's kernel position.
+        position: ConstantIndex,
+    },
+    /// A dependent split, awaiting its scrutinee's image.
+    SigmaSplitScrutinee
+    {
+        /// The split.
+        at: ComputationId,
+        /// Its motive, erased next.
+        motive: CompTypeId,
+        /// Its body, erased after the motive.
+        body: ComputationId,
+    },
+    /// A dependent split, awaiting its motive's image.
+    SigmaSplitMotive
+    {
+        /// The split.
+        at: ComputationId,
+        /// The scrutinee's image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// Its body, erased next.
+        body: ComputationId,
+    },
+    /// A dependent split, awaiting its body's image.
+    SigmaSplitBody
+    {
+        /// The split.
+        at: ComputationId,
+        /// The scrutinee's image.
+        scrutinee: gandr_kernel_term::ValueId,
+        /// The motive's image.
+        motive: gandr_kernel_term::CompTypeId,
+    },
+    /// A force, awaiting its value.
+    Force
+    {
+        /// The force.
+        at: ComputationId,
+    },
+    /// An application, awaiting its head's computation.
+    ApplicationHead
+    {
+        /// The application.
+        at: ComputationId,
+        /// The argument, erased next.
+        argument: ValueId,
+    },
+    /// An application, awaiting its argument's value.
+    ApplicationArgument
+    {
+        /// The application.
+        at: ComputationId,
+        /// The head's image.
+        head: gandr_kernel_term::ComputationId,
+    },
+    /// A lambda, awaiting its body's computation.
+    Lambda
+    {
+        /// The lambda.
+        at: ComputationId,
+    },
+    /// A fixpoint, awaiting its body's computation.
+    Fixpoint
+    {
+        /// The fixpoint.
+        at: ComputationId,
+        /// The claim it carries across unchanged.
+        evidence: gandr_kernel_term::FixpointEvidence,
+    },
+    /// A return, awaiting its value.
+    Return
+    {
+        /// The return.
+        at: ComputationId,
+    },
+    /// A bind, awaiting its bound computation.
+    BindBound
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The body, erased next.
+        body: ComputationId,
+    },
+    /// A bind, awaiting its body.
+    BindBody
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The bound computation's image.
+        bound: gandr_kernel_term::ComputationId,
+    },
+    /// A projection of a lazy product, awaiting the projected computation.
+    Project
+    {
+        /// The projection.
+        at: ComputationId,
+        /// The component it observes.
+        component: gandr_kernel_term::Component,
+    },
+    /// A thunk type, awaiting its computation type.
+    ThunkType
+    {
+        /// The thunk type.
+        at: ValueTypeId,
+    },
+    /// A lift of a value type, awaiting the type.
+    TypeLift
+    {
+        /// The lift.
+        at: ValueTypeId,
+    },
+    /// The lift a recorded crossing adds over a decode, awaiting the decode
+    /// at the code's own level.
+    DecodeLift
+    {
+        /// The universe level the code was checked at.
+        target: Level,
+    },
+    /// A decode, awaiting the type its code denotes.
+    Decoded
+    {
+        /// The decode.
+        at: TypeNode,
+    },
+    /// A returner, awaiting its value type.
+    Returner
+    {
+        /// The returner.
+        at: CompTypeId,
+    },
+    /// An arrow, awaiting its domain's value type.
+    ArrowDomain
+    {
+        /// The arrow.
+        at: CompTypeId,
+        /// The codomain, erased next.
+        codomain: CompTypeId,
+    },
+    /// An arrow, awaiting its codomain's computation type.
+    ArrowCodomain
+    {
+        /// The arrow.
+        at: CompTypeId,
+        /// The domain's image.
+        domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A dependent arrow, awaiting its domain's value type.
+    PiDomain
+    {
+        /// The dependent arrow.
+        at: CompTypeId,
+        /// The codomain, erased next.
+        codomain: CompTypeId,
+    },
+    /// A dependent arrow, awaiting its codomain's computation type.
+    PiCodomain
+    {
+        /// The dependent arrow.
+        at: CompTypeId,
+        /// The domain's image.
+        domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A static application at a reducible head, a `ua`, or a constructor the
+    /// judgement restated, erased as its reduct, its derived path or its
+    /// restatement, awaiting that value's image.
+    Reduced
+    {
+        /// The static application, the `ua` or the constructor.
+        at: ValueId,
+    },
+    /// A static application at a rigid head, awaiting its head's value.
+    StaticHead
+    {
+        /// The static application.
+        at: ValueId,
+        /// The argument, erased next.
+        argument: ValueId,
+    },
+    /// A static application at a rigid head, awaiting its argument's value.
+    StaticArgument
+    {
+        /// The static application.
+        at: ValueId,
+        /// The head's image.
+        head: gandr_kernel_term::ValueId,
+    },
+    /// A static Pi, awaiting its domain.
+    StaticPiDomain
+    {
+        /// The static Pi.
+        at: ValueTypeId,
+        /// The codomain, erased next.
+        codomain: ValueTypeId,
+    },
+    /// A static Pi, awaiting its codomain.
+    StaticPiCodomain
+    {
+        /// The static Pi.
+        at: ValueTypeId,
+        /// The domain's image.
+        domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A dependent pair, awaiting its first factor.
+    SigmaFirst
+    {
+        /// The dependent pair.
+        at: ValueTypeId,
+        /// The second factor, erased next.
+        second: ValueTypeId,
+    },
+    /// A dependent pair, awaiting its second factor.
+    SigmaSecond
+    {
+        /// The dependent pair.
+        at: ValueTypeId,
+        /// The first factor's image.
+        first: gandr_kernel_term::ValueTypeId,
+    },
+    /// A decode of a code that is a static application at a rigid head,
+    /// awaiting the code's value.
+    DecodeOf
+    {
+        /// The level the code is decoded at.
+        level: Level,
+        /// The sort of the universe the code inhabits.
+        sort: GroundSort,
+    },
+}
+
+/// The machine's next move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Step
+{
+    /// Erase a node.
+    Descend(CoreNode),
+    /// Hand a finished node's image to the innermost frame.
+    Ascend(AnyNode),
+}
+
+/// How an erasure reads static content.
+///
+/// # Judgement
+/// - direction: an offer is erased normalizing, so the kernel receives static
+///   normal forms; a certificate's sides are erased verbatim, so the kernel's
+///   replay re-derives each step the trace names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mode
+{
+    /// A static application at a reducible head is erased as its reduct, its
+    /// step certified; a decode of a constant with a body as the decode of
+    /// the body.
+    Normalizing,
+    /// Every node is erased as it stands: a static definition and a closed
+    /// static lambda as a static operator numbered past the environment.
+    Verbatim,
+}
+
+/// Every node one mode of an erasure reached, and its image.
+#[derive(Debug, Default)]
+struct Memo
+{
+    /// The value nodes reached, and their images.
+    values: BTreeMap<ValueId, Image<gandr_kernel_term::ValueId>>,
+    /// The computation nodes reached, and their images.
+    computations: BTreeMap<ComputationId, Image<gandr_kernel_term::ComputationId>>,
+    /// The value-type nodes reached, and their images.
+    value_types: BTreeMap<ValueTypeId, Image<gandr_kernel_term::ValueTypeId>>,
+    /// The computation-type nodes reached, and their images.
+    comp_types: BTreeMap<CompTypeId, Image<gandr_kernel_term::CompTypeId>>,
+}
+
+/// One declaration's erasure: what it reads, the positions constants resolve
+/// through, the frames waiting, every node's image so far in each mode, the
+/// certificates of the steps it took and the static operators its
+/// certificates' sides name.
+struct Erasure<'source, 'positions>
+{
+    /// The arena every id resolves in, and every reduct is minted into.
+    arena: &'source mut CoreArena,
+    /// The recorded lifts and the definitions.
+    source: Source<'source>,
+    /// The kernel positions and bodies of the declarations that crossed before
+    /// this one, and the static definitions' bodies.
+    positions: &'positions Positions,
+    /// How static content is read now.
+    mode: Mode,
+    /// The rules waiting on children, innermost last.
+    frames: Vec<Frame>,
+    /// The images the normalizing mode minted.
+    normalized: Memo,
+    /// The images the verbatim mode minted.
+    verbatim: Memo,
+    /// The certificates of the steps taken and not yet replayed.
+    certificates: Vec<Certificate>,
+    /// The first position a static operator is numbered at.
+    base: ConstantIndex,
+    /// The position each static operator a side names was numbered at.
+    operators: BTreeMap<Unfolded, ConstantIndex>,
+    /// The operators numbered whose bodies are not yet erased: the position,
+    /// the body beneath its static lambdas, and how many those are.
+    pending: Vec<(ConstantIndex, ValueId, u32)>,
+    /// The replay's entry at each operator position whose body is erased.
+    bodies: BTreeMap<ConstantIndex, Unfoldable>,
+    /// The declarations crossing with this one, ascending: each module
+    /// position and the kernel position it is about to take, which no crossed
+    /// declaration holds yet — a data declaration's own, or every member of
+    /// its mutual block.
+    crossing: &'positions [(ConstantIndex, ConstantIndex)],
+    /// The nodes the judgement checked in another form than written in the
+    /// declaration erased, ascending, each beside the node erased in its place.
+    restated: &'positions [(TermNode, TermNode)],
+    /// Each case a hold's reduct rebuilt, beside the node rebuilt in its
+    /// place: a derivation of the match crosses at the rebuilt case's image.
+    rebuilt: BTreeMap<ComputationId, ComputationId>,
+    /// The program each node crosses as where the judgement recorded no
+    /// check: the body of a bind or a split whose reduct read it as a
+    /// program, beside the program the bind or the split stands for, past
+    /// their binders.
+    assigned: BTreeMap<ComputationId, Programmed>,
+    /// Each returner over a row of operations that a reduct copied past
+    /// binders, beside the returner it copies: the copy's result inhabits the
+    /// universe the original's does, so the copy reads the original's level.
+    copied: BTreeMap<CompTypeId, CompTypeId>,
+    /// The pairs the last shift carried, kept so each shift reuses one
+    /// buffer ([`Self::shifted`]).
+    carrying: Vec<gandr_core_term::Carried>,
+    /// The declaration the erasure met that the environment does not hold
+    /// yet — a native operation's signature or a handled effect's free model
+    /// — which stops it.
+    unseeded: Option<Seed>,
+    /// The session's table, which names each image when the fold mints it,
+    /// so the kernel's keys and the naming of a definition read the names.
+    names: Option<gandr_kernel_core::MintNames<'source>>,
+}
+
+impl<'source, 'positions> Erasure<'source, 'positions>
+{
+    /// A normalizing erasure over `arena`, reading `source`, resolving
+    /// constants through `positions` and numbering static operators from
+    /// `base`, with nothing reached.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        arena: &'source mut CoreArena,
+        source: Source<'source>,
+        positions: &'positions Positions,
+        base: ConstantIndex,
+    ) -> Self
+    {
+        Self {
+            arena,
+            source,
+            positions,
+            mode: Mode::Normalizing,
+            frames: Vec::new(),
+            normalized: Memo::default(),
+            verbatim: Memo::default(),
+            certificates: Vec::new(),
+            base,
+            operators: BTreeMap::new(),
+            pending: Vec::new(),
+            bodies: BTreeMap::new(),
+            rebuilt: BTreeMap::new(),
+            assigned: BTreeMap::new(),
+            copied: BTreeMap::new(),
+            carrying: Vec::new(),
+            crossing: &[],
+            restated: &[],
+            unseeded: None,
+            names: None,
+        }
+    }
+
+    /// The same erasure crossing beside `crossing`, ascending by module
+    /// position: each member's module position resolves to the kernel position
+    /// it is about to take, so the block's members name each other.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn crossing_block(
+        mut self,
+        crossing: &'positions [(ConstantIndex, ConstantIndex)],
+    ) -> Self
+    {
+        self.crossing = crossing;
+        self
+    }
+
+    /// The same erasure reading each node of `restated` as the node beside it:
+    /// an arm or a case the judgement refined by a solved variable, or a
+    /// constructor it restated at its stated application, which the kernel
+    /// checks in that form while the core body keeps it as written.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn restating(
+        mut self,
+        restated: &'positions [(TermNode, TermNode)],
+    ) -> Self
+    {
+        self.restated = restated;
+        self
+    }
+
+    /// The same erasure naming each image in the session's table `names` when
+    /// it mints the image.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn naming(
+        mut self,
+        names: gandr_kernel_core::MintNames<'source>,
+    ) -> Self
+    {
+        self.names = Some(names);
+        self
+    }
+
+    /// The kernel position of the signature of the native operation
+    /// `primitive`.
+    ///
+    /// # Specification
+    /// - ensures: the position the environment's signature of `primitive` took.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   signature of `primitive` yet; the erasure then names `primitive` as
+    ///   the one it stopped at, which [`stage`] reports so the crossing seeds
+    ///   it and stages again.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a native operation crosses as its audited assumption,
+    ///   seeded the first time a declaration reads it, and a readmission
+    ///   resumed past a prefix that read none answers as a whole one.
+    /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Native(seeded)) if seeded == primitive))]
+    fn native(
+        &mut self,
+        primitive: gandr_core_term::primitive::Primitive,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        let Some(&position) = self.positions.native.get(&primitive)
+        else {
+            self.unseeded = Some(Seed::Native(primitive));
+            return Err(Refusal::MachineInvariant);
+        };
+        Ok(position)
+    }
+
+    /// The core position of the free model of `row` at `level`: the effect a
+    /// handler being erased handles, or the row of operations a program
+    /// being erased stands at, and the level its result inhabits.
+    ///
+    /// # Specification
+    /// - ensures: the position [`Positions::model`] answers for `row` at
+    ///   `level`.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   model of `row` at `level` yet; the erasure then names the two as the
+    ///   seed it stopped at, which [`stage`] reports so the crossing admits the
+    ///   model and stages again.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler crosses through the model admitted at its
+    ///   declaration's first staging, and a second handler of the effect
+    ///   through the same one; two declarations at one row read one model.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Model(..))))]
+    fn free_model(
+        &mut self,
+        row: &[gandr_core_term::effect::EffectSig],
+        level: &Level,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        match self.positions.model((row, level), self.arena) {
+            Maybe::Present(model) => Ok(model.declaration),
+            Maybe::Absent(_) => {
+                self.unseeded = Some(Seed::Model(row.to_vec(), level.clone()));
+                Err(Refusal::MachineInvariant)
+            },
+        }
+    }
+
+    /// The images the current mode minted.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn memo(&mut self) -> &mut Memo
+    {
+        match self.mode {
+            Mode::Normalizing => &mut self.normalized,
+            Mode::Verbatim => &mut self.verbatim,
+        }
+    }
+
+    /// Erase `offer` into `target`: its declared type, then a definition's
+    /// body; or an abstract type's kind, then its representation, then its
+    /// interface's relation, reflexivity and law.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: the images of the offer's declared type and, for a
+    ///   definition, of its body, or of an abstract type's kind, representation
+    ///   and stated interface, as [`Self::erase`] gives them.
+    /// - fails: the first refusal either erasure gives; the body is not erased
+    ///   once the type is refused.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value_type`] or [`Self::value`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked definition and an owed declaration expose
+    ///   the exact offered family at admission; a refused declared type
+    ///   prevents the body from publishing. Wrong family or skipped erasure
+    ///   changes this.
+    /// - witness: `bridge::tests::a_lowered_value_definition_admits`
+    /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+    #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
+if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind, .. }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
+ else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related, ref laws }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
+    && matches!(matched_left_value, Offer::Definition { relations, laws: named, .. } if relations.len() == related.len() && named.len() == laws.len())
+    && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
+ else if matches!(matched_left_value, Offer::Axiom { .. }) && let Ok(Erased::Axiom { ref declared }) = *matched_right_value { target.value_type(*declared).is_some() }
+ else if let Offer::Abstract(declared) = matched_left_value && let Ok(Erased::Abstract { ref kind, ref representation, ref interface }) = *matched_right_value { target.value_type(*kind).is_some() && target.value_type(*representation).is_some() && matches!(declared.interface(), Maybe::Present(_)) == interface.is_some() && interface.as_ref().is_none_or(|stated| target.value(stated.relation()).is_some() && target.value(stated.reflexivity()).is_some()) }
+ else if let Offer::Codata(signature) = matched_left_value && let Ok(Erased::Codata { ref parameters, ref observations, ref kind }) = *matched_right_value { parameters.len() == signature.parameters().len() && observations.len() == signature.observations().len() && target.value_type(*kind).is_some() }
+ else { (*matched_right_value).is_err() }
+})]
+    fn offer(
+        &mut self,
+        target: &mut TermArena,
+        offer: Offer<'_>,
+    ) -> Result<Erased, Refusal>
+    {
+        match offer {
+            Offer::Data(signature) => {
+                let parameters = signature
+                    .parameters()
+                    .iter()
+                    .map(|&parameter| self.value_type(target, parameter))
+                    .collect::<Result<_, _>>()?;
+                let constructors = signature
+                    .constructors()
+                    .iter()
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .map(|&field| self.value_type(target, field))
+                            .collect()
+                    })
+                    .collect::<Result<_, _>>()?;
+                let indices = signature
+                    .indices()
+                    .iter()
+                    .map(|&index| self.value_type(target, index))
+                    .collect::<Result<_, _>>()?;
+                let results = signature
+                    .results()
+                    .iter()
+                    .map(|stated| {
+                        stated
+                            .iter()
+                            .map(|&value| self.value(target, value))
+                            .collect()
+                    })
+                    .collect::<Result<_, _>>()?;
+                let kind = self.value_type(target, signature.kind())?;
+                Ok(Erased::Data {
+                    parameters,
+                    indices,
+                    constructors,
+                    results,
+                    kind,
+                })
+            },
+            Offer::Definition {
+                declared,
+                body,
+                relations,
+                laws,
+                ..
+            } => {
+                let offered = body;
+                let declared = self.value_type(target, declared)?;
+                let body = self.value(target, body)?;
+                // The relations after the body, so their endpoints reuse the
+                // images the declared type already minted.
+                let mut related = Vec::with_capacity(relations.len());
+                for relation in relations {
+                    let left = self.value(target, relation.left())?;
+                    let right = self.value(target, relation.right())?;
+                    related.push(RelatedEndpoints {
+                        left,
+                        right,
+                        dialogue: relation
+                            .decisions()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                    });
+                }
+                // A law crossed before the fold that rests on it, at its
+                // kernel position.
+                let laws = laws
+                    .iter()
+                    .map(|&law| {
+                        self.positions
+                            .admitted
+                            .get(&law)
+                            .copied()
+                            .ok_or(Refusal::Withheld {
+                                at: offered,
+                                constant: law,
+                            })
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Erased::Definition {
+                    declared,
+                    body,
+                    related,
+                    laws,
+                })
+            },
+            Offer::Axiom { declared } => {
+                let declared = self.value_type(target, declared)?;
+                Ok(Erased::Axiom { declared })
+            },
+            Offer::Abstract(declared) => {
+                let kind = self.value_type(target, declared.kind())?;
+                let representation = self.value_type(target, declared.representation())?;
+                let interface = match declared.interface() {
+                    Maybe::Present(stated) => {
+                        let relation = self.value(target, stated.relation())?;
+                        let reflexivity = self.value(target, stated.reflexivity())?;
+                        let interface =
+                            gandr_kernel_term::AtomInterface::new(relation, reflexivity);
+                        Some(match stated.law() {
+                            Maybe::Present(law) => interface.lawful(self.value(target, law)?),
+                            Maybe::Absent(_) => interface,
+                        })
+                    },
+                    Maybe::Absent(_) => None,
+                };
+                Ok(Erased::Abstract {
+                    kind,
+                    representation,
+                    interface,
+                })
+            },
+            Offer::Codata(signature) => {
+                let parameters = signature
+                    .parameters()
+                    .iter()
+                    .map(|&parameter| self.value_type(target, parameter))
+                    .collect::<Result<_, _>>()?;
+                let observations = signature
+                    .observations()
+                    .iter()
+                    .map(|&observation| self.comp_type(target, observation))
+                    .collect::<Result<_, _>>()?;
+                let kind = self.value_type(target, signature.kind())?;
+                Ok(Erased::Codata {
+                    parameters,
+                    observations,
+                    kind,
+                })
+            },
+        }
+    }
+
+    /// Replay every distinct certificate the erasure collected, each passed
+    /// through `vouch`, against the kernel's images of its redex and its
+    /// reduct.
+    ///
+    /// # Specification
+    /// - requires: the offer was erased into `target`, the staging arena the
+    ///   declaration is admitted from.
+    /// - ensures: one [`Replayed`] per certificate whose step and instance —
+    ///   what it unfolds and the content of its redex's image — no earlier
+    ///   certificate of this declaration had, in the order the erasure met the
+    ///   steps, the certificates erasing a reduct collects replayed after it. A
+    ///   step unfolding a definition that crossed replays between the kernel
+    ///   constant and the reduct erased normalizing, as the kernel admitted the
+    ///   body, by the kernel's own δ-step at that constant closed on the two
+    ///   α-equal normal forms: the body the kernel holds is that normal form,
+    ///   so the step is the whole derivation, where the normaliser's trace
+    ///   walks the unnormalized body and names operators absent from the normal
+    ///   form. Any other step replays between its redex and its reduct each
+    ///   erased verbatim, every static operator they name numbered and its body
+    ///   erased verbatim, the certificate's trace read at the kernel's
+    ///   positions, a static lambda's step prefixed by the unfolding of its
+    ///   operator. Each replays as a convertibility claim. A certificate whose
+    ///   step and instance an earlier one had is skipped: by the purity clause
+    ///   of [`replay`](fn@gandr_kernel_core::replay), its replay's verdict is a
+    ///   function of the content the earlier one replayed, so it would record
+    ///   the same [`Replayed`]. `target` holds the images minted and nothing
+    ///   the replay minted.
+    /// - fails: [`Refusal::CertificateDeclined`] naming the first declined
+    ///   certificate and preserving its [`ReplayDecline`], beside the verdicts
+    ///   replayed up to it; the refusal erasing a side gives. An impossible
+    ///   certified negative for a positive claim is
+    ///   [`Refusal::MachineInvariant`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above, beside the verdicts replayed before it.
+    ///
+    /// # Termination
+    /// - reason: the `loop` drains the certificate queue, and the `for` loop
+    ///   walks one batch, not recursion.
+    /// - measure: the reductions the normalizing erasure has left to take: a
+    ///   batch's reducts are erased in a memo shared with the offer, and each
+    ///   step consumes a redex of a well-formed code.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — the kernel's replay is the oracle: every
+    ///   certificate a readmission over generated code constants and static
+    ///   declarations records replays; the residue is one instance met twice,
+    ///   replayed once, two instances, replayed twice, and an emptied trace,
+    ///   declined.
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    /// - witness: `bridge::tests::a_skipped_repeat_records_what_its_own_replay_records_528`
+    /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref entries) => {
+            self.certificates.is_empty()
+                && entries.iter().all(|entry| entry.verdict == KernelVerdict::Convertible)
+        },
+        | Err(_) => true,
+    })]
+    fn replay_certificates<Vouch>(
+        &mut self,
+        target: &mut TermArena,
+        vouch: &Vouch,
+    ) -> Result<Vec<Replayed>, (Refusal, Vec<Replayed>)>
+    where
+        Vouch: Fn(Certificate) -> Certificate,
+    {
+        let mut replayed = Vec::new();
+        let mut met = BTreeSet::new();
+        loop {
+            let pending = core::mem::take(&mut self.certificates);
+            if pending.is_empty() {
+                return Ok(replayed);
+            }
+            for certificate in pending {
+                let certificate = vouch(certificate);
+                let unfolded = certificate.unfolded();
+                match self.replay_one(target, &certificate, &mut met) {
+                    Ok(Maybe::Present(entry)) => {
+                        replayed.push(entry);
+                        match entry.verdict {
+                            KernelVerdict::Convertible => {},
+                            KernelVerdict::Declined(reason) => {
+                                return Err((
+                                    Refusal::CertificateDeclined { unfolded, reason },
+                                    replayed,
+                                ));
+                            },
+                            KernelVerdict::NotConvertible => {
+                                return Err((Refusal::MachineInvariant, replayed));
+                            },
+                        }
+                    },
+                    Ok(Maybe::Absent(_)) => {},
+                    Err(refusal) => return Err((refusal, replayed)),
+                }
+            }
+        }
+    }
+
+    /// Replay `certificate`, unless `met` holds its step and instance.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::replay_certificates`].
+    /// - ensures: as [`Self::replay_certificates`] states of one certificate;
+    ///   `met` gains its step and instance; nothing when `met` held them.
+    /// - fails: the refusal erasing a side gives.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — a side did not erase.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — as [`Self::replay_certificates`].
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.pending.is_empty())]
+    fn replay_one(
+        &mut self,
+        target: &mut TermArena,
+        certificate: &Certificate,
+        met: &mut BTreeSet<(Unfolded, ContentDigest)>,
+    ) -> Result<Maybe<Replayed, replay_entry::Absent>, Refusal>
+    {
+        let unfolded = certificate.unfolded();
+        let crossed = match unfolded {
+            Unfolded::Definition(constant) => self.positions.admitted.get(&constant).copied(),
+            Unfolded::Abstraction(_) | Unfolded::Returned(_) => None,
+        };
+        let left = match crossed {
+            Some(position) => target.value_constant(position),
+            None => self.value_in(Mode::Verbatim, target, certificate.redex())?,
+        };
+        let redex = content_digest(target, AnyNode::Value(left));
+        if !met.insert((unfolded, redex)) {
+            return Ok(Maybe::Absent(replay_entry::Absent::Met));
+        }
+        let right = match crossed {
+            Some(_) => self.value_in(Mode::Normalizing, target, certificate.reduct())?,
+            None => self.value_in(Mode::Verbatim, target, certificate.reduct())?,
+        };
+        self.erase_operators(target)?;
+        if certificate.derivation() == Derivation::Reading {
+            let verdict = read_step(
+                target,
+                &self.positions.unfoldings(&self.bodies),
+                left,
+                right,
+                ReplayBudget::DEFAULT,
+            );
+            return Ok(Maybe::Present(Replayed {
+                unfolded,
+                redex,
+                verdict,
+            }));
+        }
+        let decisions = if let Some(position) = crossed {
+            Vec::from([
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(position),
+                },
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(position),
+                },
+                ConversionDecision::ComparedShared {
+                    left: ReplayNode::Other,
+                    right: ReplayNode::Other,
+                },
+            ])
+        }
+        else {
+            let mut decisions = Vec::new();
+            if let Unfolded::Abstraction(_) = unfolded
+                && let Some(&position) = self.operators.get(&unfolded)
+            {
+                decisions.push(ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(position),
+                });
+                decisions.push(ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(position),
+                });
+            }
+            decisions.extend(
+                certificate
+                    .decisions()
+                    .iter()
+                    .map(|&decision| self.positions.kernel_decision(&self.operators, decision)),
+            );
+            decisions
+        };
+        let verdict = replay(
+            target,
+            &self.positions.unfoldings(&self.bodies),
+            ReplaySides::Values(left, right),
+            EngineClaim::Convertible,
+            decisions,
+            ReplayBudget::DEFAULT,
+        );
+        Ok(Maybe::Present(Replayed {
+            unfolded,
+            redex,
+            verdict,
+        }))
+    }
+
+    /// Erase the value `root` into `target` in `mode`, then return to the
+    /// mode the machine was in.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: as [`Self::value`], read in `mode`.
+    /// - fails: as [`Self::value`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both modes, reached by one certificate whose sides
+    ///   are erased verbatim beside an offer erased normalizing.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(captures: entry = self.mode, ensures: self.mode == entry)]
+    fn value_in(
+        &mut self,
+        mode: Mode,
+        target: &mut TermArena,
+        root: ValueId,
+    ) -> Result<gandr_kernel_term::ValueId, Refusal>
+    {
+        let previous = core::mem::replace(&mut self.mode, mode);
+        let image = self.value(target, root);
+        self.mode = previous;
+        image
+    }
+
+    /// Erase the body of every static operator numbered and not yet erased,
+    /// verbatim, into the replay's entry at its position.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::value`].
+    /// - ensures: every numbered operator has its entry: a body beneath no
+    ///   static lambda an [`Unfoldable::Body`], any other an
+    ///   [`Unfoldable::Operator`] over as many parameters as lambdas.
+    /// - fails: the refusal erasing a body gives.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value`] gives.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop drains a queue, not recursion.
+    /// - measure: the static operators not yet numbered, finite since each
+    ///   definition and each node is numbered once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator with parameters and one
+    ///   without, each replayed. The predicate compares the two tables' sizes:
+    ///   each operator is numbered at a fresh position and an entry is written
+    ///   only at a numbered position, so equal sizes mean every numbered
+    ///   operator has its entry, read without walking either table.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    #[spec(ensures: |ret| ret.is_err()
+        || (self.pending.is_empty() && self.bodies.len() == self.operators.len()))]
+    fn erase_operators(
+        &mut self,
+        target: &mut TermArena,
+    ) -> Result<(), Refusal>
+    {
+        while let Some((position, body, parameters)) = self.pending.pop() {
+            let image = self.value_in(Mode::Verbatim, target, body)?;
+            let entry = if parameters == 0 {
+                Unfoldable::Body(image)
+            }
+            else {
+                Unfoldable::Operator {
+                    parameters: ParameterCount::from(parameters),
+                    body: image,
+                }
+            };
+            self.bodies.insert(position, entry);
+        }
+        Ok(())
+    }
+
+    /// The position the static operator `unfolded`, of body `body`, is
+    /// numbered at: its first numbering queues its body, beneath its static
+    /// lambdas, for erasure.
+    ///
+    /// # Specification
+    /// - requires: `body` is the definition's body, or the static lambda
+    ///   itself.
+    /// - ensures: the same position for the same operator; a fresh one, past
+    ///   every other this erasure numbered, the first time.
+    /// - fails: [`Refusal::MachineInvariant`] past the position ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal::MachineInvariant`] — the position overflowed.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop strips a lambda chain, not recursion.
+    /// - measure: the arena position of the body, which a lambda holds below
+    ///   its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a first numbering and a repeat, separated by one
+    ///   operator named by both sides of a certificate.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(ensures: |ret| ret.is_err() || self.operators.get(&unfolded).copied() == ret.ok())]
+    fn operator(
+        &mut self,
+        unfolded: Unfolded,
+        body: ValueId,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        if let Some(&position) = self.operators.get(&unfolded) {
+            return Ok(position);
+        }
+        let mut stripped = body;
+        let mut parameters = 0_u32;
+        while let Some(&Value::StaticLambda(inner)) = self.arena.value(stripped) {
+            stripped = inner;
+            parameters = parameters.checked_add(1).ok_or(Refusal::MachineInvariant)?;
+        }
+        let position = usize::from(self.base)
+            .checked_add(self.operators.len())
+            .map(ConstantIndex::from)
+            .ok_or(Refusal::MachineInvariant)?;
+        self.operators.insert(unfolded, position);
+        self.pending.push((position, stripped, parameters));
+        Ok(position)
+    }
+
+    /// The kernel position the constant `at` names in the current mode: the
+    /// position its declaration crossed at, the one a member of the crossing
+    /// block is about to take, or, read verbatim, the static operator a
+    /// static definition is numbered at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as above.
+    /// - fails: [`Refusal::Withheld`] at `at` for a constant that neither
+    ///   crossed, nor crosses in this block, nor, read verbatim, names a static
+    ///   definition.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal::Withheld`], or [`Self::operator`]'s refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four arms, separated by a crossed constant, a decoder
+    ///   its universe's fields name in their block, a static definition read
+    ///   verbatim, and one read normalizing, withheld.
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.positions.admitted.get(&constant).copied() == ret.ok()
+        || self.crossing.binary_search_by_key(&constant, |&(member, _)| member).is_ok_and(|found| self.crossing.get(found).map(|&(_, kernel)| kernel) == ret.as_ref().ok().copied())
+        || (self.mode == Mode::Verbatim
+            && self.operators.get(&Unfolded::Definition(constant)).copied() == ret.ok()))]
+    fn constant_position(
+        &mut self,
+        at: ValueId,
+        constant: ConstantIndex,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        if let Some(&position) = self.positions.admitted.get(&constant) {
+            return Ok(position);
+        }
+        if let Ok(found) = self
+            .crossing
+            .binary_search_by_key(&constant, |&(member, _)| member)
+            && let Some(&(_, kernel)) = self.crossing.get(found)
+        {
+            return Ok(kernel);
+        }
+        match (self.mode, self.positions.definitions.body(constant)) {
+            (Mode::Verbatim, Maybe::Present(body)) => {
+                self.operator(Unfolded::Definition(constant), body)
+            },
+            (Mode::Verbatim | Mode::Normalizing, _) => Err(Refusal::Withheld { at, constant }),
+        }
+    }
+
+    /// Each of `covers`' derivations at its root's image in the kernel arena,
+    /// each family and loop it names at the kernel position its declaration
+    /// crossed at or is about to take; a root a hold's reduct rebuilt crosses
+    /// at the rebuilt case's image. A derivation whose root this erasure did
+    /// not reach, or that names a declaration no position holds, is left out.
+    ///
+    /// # Specification
+    /// - requires: the erasure has run over the definition `covers` belongs to.
+    /// - ensures: one derivation for each of `covers` whose root was erased and
+    ///   whose constants resolve, in the order given, its steps minted in the
+    ///   order they were.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a match's derivation crosses at its root's image and
+    ///   the kernel replays it, and a held match's derivation crosses at the
+    ///   case its hold's reduct rebuilds.
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    /// - witness: `bridge::tests::a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641`
+    #[spec(ensures: |ret| ret.len() <= covers.len())]
+    fn covered(
+        &self,
+        covers: &[(ComputationId, gandr_kernel_term::cover::Cover)],
+    ) -> Vec<gandr_kernel_term::cover::Covered>
+    {
+        covers
+            .iter()
+            .filter_map(|&(root, ref cover)| {
+                let root = self.rebuilt.get(&root).copied().unwrap_or(root);
+                let Some(&Image::Erased(image)) = self.normalized.computations.get(&root)
+                else {
+                    return None;
+                };
+                Some(gandr_kernel_term::cover::Covered {
+                    root: image,
+                    cover: self.kernel_cover(cover)?,
+                })
+            })
+            .collect()
+    }
+
+    /// `cover` with each family and loop it names at its kernel position, or
+    /// nothing when one has none.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the same steps in the same order, each constant replaced by
+    ///   the position [`Positions::admitted`] or the crossing block gives it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::covered`].
+    /// - witness: `bridge::tests::a_matches_derivation_crosses_and_the_kernel_replays_it_5104`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|kernel| kernel.steps().count() == cover.steps().count()))]
+    fn kernel_cover(
+        &self,
+        cover: &gandr_kernel_term::cover::Cover,
+    ) -> Option<gandr_kernel_term::cover::Cover>
+    {
+        use gandr_kernel_term::cover::Cases;
+        use gandr_kernel_term::cover::Loop;
+        use gandr_kernel_term::cover::Step;
+        let position = |constant: ConstantIndex| {
+            self.positions.admitted.get(&constant).copied().or_else(|| {
+                self.crossing
+                    .binary_search_by_key(&constant, |&(member, _)| member)
+                    .ok()
+                    .and_then(|found| self.crossing.get(found))
+                    .map(|&(_, kernel)| kernel)
+            })
+        };
+        let mut kernel = gandr_kernel_term::cover::Cover::new();
+        for (_id, step) in cover.steps() {
+            let step = match *step {
+                Step::Split {
+                    cases:
+                        Cases::Data {
+                            family,
+                            ref constructors,
+                            ref loops,
+                        },
+                    ref branches,
+                } => Step::Split {
+                    cases: Cases::Data {
+                        family: position(family)?,
+                        constructors: constructors.clone(),
+                        loops: loops
+                            .iter()
+                            .map(|owed| Some(Loop::new(position(owed.words())?, owed.cell())))
+                            .collect::<Option<Vec<Loop>>>()?,
+                    },
+                    branches: branches.clone(),
+                },
+                ref other @ (Step::Var(_) | Step::Compose(_) | Step::Split { .. }) => other.clone(),
+            };
+            let _id = kernel.mint(step);
+        }
+        Some(kernel)
+    }
+
+    /// One certified step at `code`'s head, its certificate collected.
+    ///
+    /// # Specification
+    /// - requires: every body the positions hold lives in the arena.
+    /// - ensures: the reduct [`CodeDefinitions::reduce`] gives, minted, with
+    ///   the step's certificate queued for replay; nothing for a rigid code.
+    /// - fails: [`Refusal::CertificateDeclined`] with
+    ///   [`ReplayDecline::EngineDeclined`] when certification yields no
+    ///   dialogue; [`Refusal::DanglingNode`] for a node the arena does not
+    ///   hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three arms, separated by a saturated instance, a
+    ///   rigid code, and a step the normaliser declines.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(reduct)) => {
+            self.certificates.last().is_some_and(|certificate| certificate.reduct() == reduct)
+        },
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn step(
+        &mut self,
+        code: ValueId,
+    ) -> Result<Maybe<ValueId, unfolding::Absent>, Refusal>
+    {
+        let reduction = self
+            .positions
+            .definitions
+            .reduce(self.arena, code)
+            .map_err(fault)?;
+        let Maybe::Present(reduction) = reduction
+        else {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        };
+        let unfolded = reduction.unfolded();
+        let certificate = self
+            .positions
+            .definitions
+            .certify(self.arena, reduction)
+            .map_err(|_undecided| Refusal::CertificateDeclined {
+                unfolded,
+                reason: ReplayDecline::EngineDeclined,
+            })?;
+        let reduct = certificate.reduct();
+        self.certificates.push(certificate);
+        Ok(Maybe::Present(reduct))
+    }
+
+    /// Erase the value type `root` into `target`.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: the image of `root`, as [`Self::erase`] gives it.
+    /// - fails: as [`Self::erase`]; [`Refusal::MachineInvariant`] when the
+    ///   image is not a value type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::erase`] gives.
+    /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — base, returner-containing and universe types expose
+    ///   their exact kernel formers or named refusal; returning an unrelated
+    ///   family or an unminted image changes this bounded erasure evidence.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.value_type(image).is_some()
+        && self.reached().value_types.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
+    fn value_type(
+        &mut self,
+        target: &mut TermArena,
+        root: ValueTypeId,
+    ) -> Result<gandr_kernel_term::ValueTypeId, Refusal>
+    {
+        let image = self.erase(target, CoreNode::Type(TypeNode::Value(root)))?;
+        match image {
+            AnyNode::ValueType(erased) => Ok(erased),
+            AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::CompType(_) => {
+                Err(Refusal::MachineInvariant)
+            },
+        }
+    }
+
+    /// Erase the computation type `root` into `target`.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: the image of `root`, as [`Self::erase`] gives it.
+    /// - fails: as [`Self::erase`]; [`Refusal::MachineInvariant`] when the
+    ///   image is not a computation type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::erase`] gives.
+    /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream's observations cross as their kernel
+    ///   computation types, its tail naming its own kernel position.
+    /// - witness: `tests::codata::a_stream_is_admitted_observed_and_adopted`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.comp_type(image).is_some()
+        && self.reached().comp_types.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
+    fn comp_type(
+        &mut self,
+        target: &mut TermArena,
+        root: CompTypeId,
+    ) -> Result<gandr_kernel_term::CompTypeId, Refusal>
+    {
+        let image = self.erase(target, CoreNode::Type(TypeNode::Computation(root)))?;
+        match image {
+            AnyNode::CompType(erased) => Ok(erased),
+            AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::ValueType(_) => {
+                Err(Refusal::MachineInvariant)
+            },
+        }
+    }
+
+    /// Erase the value `root` into `target`.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: the image of `root`, as [`Self::erase`] gives it.
+    /// - fails: as [`Self::erase`]; [`Refusal::MachineInvariant`] when the
+    ///   image is not a value.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::erase`] gives.
+    /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — literals, bound variables, named constants and shared
+    ///   subterms expose exact kernel images or refusal; wrong remapping,
+    ///   duplicated sharing and an unminted result differ on these finite
+    ///   forms.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_bound_variable_resolves_to_a_de_bruijn_index`
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.value(image).is_some()
+        && self.reached().values.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
+    fn value(
+        &mut self,
+        target: &mut TermArena,
+        root: ValueId,
+    ) -> Result<gandr_kernel_term::ValueId, Refusal>
+    {
+        let image = self.erase(target, CoreNode::Term(TermNode::Value(root)))?;
+        match image {
+            AnyNode::Value(erased) => Ok(erased),
+            AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_) => {
+                Err(Refusal::MachineInvariant)
+            },
+        }
+    }
+
+    /// Erase `root` and everything it reaches into `target`.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused, so no node
+    ///   is left open.
+    /// - ensures: the kernel node of the same former as `root` over the images
+    ///   of its children, recursively, with every literal, base type, level,
+    ///   sort and de Bruijn index carried unchanged and every constant replaced
+    ///   by the kernel position its declaration took. A code the judgement
+    ///   recorded a lift at is the quote of the kernel's lift of its decode at
+    ///   its own level; a decode of a constant that crossed with a body is the
+    ///   decode of that body, its certificate collected for replay; a decode of
+    ///   any other code is the kernel's decode of its image. A node already
+    ///   erased by this machine is not minted again. An erasure that names its
+    ///   images names each image the fold ascends, after its children.
+    /// - fails: [`Refusal::Withheld`] for a constant whose declaration did not
+    ///   cross; [`Refusal::OutOfFragment`] for a former the fragment has no
+    ///   rule for; [`Refusal::Session`] for a receive, an offer or a
+    ///   linear-zone variable; [`Refusal::DanglingNode`] for an id `source`
+    ///   does not hold; [`Refusal::Cyclic`] for a node reached again while its
+    ///   own erasure waits; [`Refusal::CertificateDeclined`] for an unfolding
+    ///   the normaliser does not certify. Nodes minted before the refusal stay
+    ///   in `target`; the caller owns the arena and its rollback.
+    /// - panics: none.
+    /// - intension: one kernel node is minted per distinct core node reached,
+    ///   so sharing in the source is sharing in the image.
+    ///
+    /// # Errors
+    /// - [`Refusal::Withheld`], [`Refusal::OutOfFragment`],
+    ///   [`Refusal::Session`], [`Refusal::DanglingNode`], [`Refusal::Cyclic`],
+    ///   [`Refusal::CertificateDeclined`] — as above.
+    /// - [`Refusal::MachineInvariant`] — a frame received an image of another
+    ///   family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the per-former table and
+    ///   the memo, separated by one node of every former of the core
+    ///   vocabulary, each erased to its exact image or refused with its exact
+    ///   former, a shared subterm asserted to be one kernel node, and the
+    ///   linear, dangling and cyclic faults each asserted exactly.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_bound_variable_resolves_to_a_de_bruijn_index`
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+    /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match ret {
+        | Ok(image) => self.frames.is_empty() && match (root,image) {
+            | (CoreNode::Term(TermNode::Value(at)), AnyNode::Value(held)) => target.value(held).is_some() && self.reached().values.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Term(TermNode::Computation(at)), AnyNode::Computation(held)) => target.computation(held).is_some() && self.reached().computations.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Type(TypeNode::Value(at)), AnyNode::ValueType(held)) => target.value_type(held).is_some() && self.reached().value_types.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Type(TypeNode::Computation(at)), AnyNode::CompType(held)) => target.comp_type(held).is_some() && self.reached().comp_types.get(&at) == Some(&Image::Erased(held)),
+            | _ => false,
+        },
+        | Err(_) => true,
+    })]
+    fn erase(
+        &mut self,
+        target: &mut TermArena,
+        root: CoreNode,
+    ) -> Result<AnyNode, Refusal>
+    {
+        let mut step = Step::Descend(root);
+        loop {
+            step = match step {
+                Step::Descend(node) => self.descend(target, node)?,
+                Step::Ascend(image) => {
+                    if let Some(ref mut names) = self.names {
+                        names.name(target, image);
+                    }
+                    match self.frames.pop() {
+                        Some(frame) => self.resume(target, frame, image)?,
+                        None => return Ok(image),
+                    }
+                },
+            };
+        }
+    }
+
+    /// Start erasing `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a node already erased ascends its image; a leaf is minted and
+    ///   ascends; a node with children opens its frame and descends to its
+    ///   first child.
+    /// - fails: as [`Self::erase`], for the node itself.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each term/type family, a shared child and recursive
+    ///   back-edges expose exact images or cyclic faults; dispatching to
+    ///   another family or losing the continuation changes these observations.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| self.frames.len() >= before && match ret {
+            | Ok(Step::Descend(_)) => self.frames.len() > before,
+            | Ok(Step::Ascend(image)) => matches!((node,image),
+                (CoreNode::Term(TermNode::Value(_)), AnyNode::Value(_))
+                | (CoreNode::Term(TermNode::Computation(_)), AnyNode::Computation(_))
+                | (CoreNode::Type(TypeNode::Value(_)), AnyNode::ValueType(_))
+                | (CoreNode::Type(TypeNode::Computation(_)), AnyNode::CompType(_))),
+            | Err(_) => true,
+        },
+    )]
+    fn descend(
+        &mut self,
+        target: &mut TermArena,
+        node: CoreNode,
+    ) -> Result<Step, Refusal>
+    {
+        match node {
+            CoreNode::Term(TermNode::Value(at)) => self.descend_value(target, at),
+            CoreNode::Term(TermNode::Computation(at)) => self.descend_computation(target, at),
+            CoreNode::Type(TypeNode::Value(at)) => self.descend_value_type(target, at),
+            CoreNode::Type(TypeNode::Computation(at)) => self.descend_comp_type(target, at),
+        }
+    }
+
+    /// Start erasing the value `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::descend`]: a constructor the judgement restated at
+    ///   its stated application opens the frame awaiting its restatement; a
+    ///   code with a recorded lift opens its frame and decodes at its own
+    ///   level; otherwise an intuitionistic variable, a constant that crossed,
+    ///   the unit value and an integer or string literal are minted, and a
+    ///   thunk, a returned endpoint, a quote and a pair open their frames. A
+    ///   value ascription crosses as the value its ascribed return returns, so
+    ///   the kernel replays its stated type wherever it synthesises. A static
+    ///   application at a reducible head, read normalizing, takes its certified
+    ///   step and opens the frame awaiting its reduct; any other opens the
+    ///   frames of a kernel static application. Read verbatim, a constant
+    ///   naming a static definition and a closed static lambda are minted as
+    ///   the static operators they are numbered at. On success the current
+    ///   mode's memo holds `at`.
+    /// - fails: [`Refusal::Cyclic`] for an open value;
+    ///   [`Refusal::DanglingNode`]; [`Refusal::Session`];
+    ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
+    ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
+    ///   literal, an injection, a value lift, and a static lambda read
+    ///   normalizing or open.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::erase`], whose per-former table this is,
+    ///   with the static formers separated by a saturated instance erased to
+    ///   its reduct, a rigid instance erased as a kernel static application,
+    ///   and a certificate's side numbering its operators.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `tests::native_formers::a_constructor_annotated_at_a_call_meets_its_stated_index_3627`
+    #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
+    fn descend_value(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(at));
+        match self.memo().values.get(&at) {
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::Value(erased))),
+            Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
+            None => {},
+        }
+        // A value the judgement coerced in to a patched type crosses as its
+        // restriction to the free fields: the value as written, then each
+        // value the type fixes, which the kernel converts with its field.
+        if let Some(fixed) = self.source.coercions.get(&at) {
+            self.frames.push(Frame::RestrictedValue(Restriction {
+                at,
+                pending: fixed
+                    .iter()
+                    .rev()
+                    .map(|(label, &held)| (label.clone(), held))
+                    .collect(),
+                crossed: BTreeMap::new(),
+            }));
+        }
+        // A constructor the judgement restated at its stated application
+        // crosses as that restatement, which the kernel checks; the core body
+        // keeps the constructor as written, which the machine runs.
+        if let Ok(place) = self
+            .restated
+            .binary_search_by_key(&TermNode::Value(at), |&(node, _)| node)
+            && let Some(&(_, restated)) = self.restated.get(place)
+        {
+            self.memo().values.insert(at, Image::Open);
+            self.frames.push(Frame::Reduced { at });
+            return Ok(Step::Descend(CoreNode::Term(restated)));
+        }
+        if let Some(lift) = self.source.lifts.get(&at) {
+            self.memo().values.insert(at, Image::Open);
+            self.frames.push(Frame::LiftedCode { at });
+            self.frames.push(Frame::DecodeLift {
+                target: lift.target().clone(),
+            });
+            return self.decode(target, at, lift.natural().clone(), GroundSort::Value);
+        }
+        let Some(value) = self.arena.value(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
+        let (frame, child) = match *value {
+            Value::Constructor { .. } | Value::Record(_) | Value::Ascribe { .. } => {
+                return self.prepare_native(target, node);
+            },
+            Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
+            Value::Row(_) => return Err(unadmitted(UnadmittedFormer::EffectRow)),
+            Value::ListNil => return Ok(self.erased_value(at, target.value_list_nil())),
+            Value::ListCons(head, tail) => (
+                Frame::ListHead { at, tail },
+                CoreNode::Term(TermNode::Value(head)),
+            ),
+            Value::Primitive { primitive, .. } => {
+                let position = self.native(primitive)?;
+                return Ok(self.erased_value(at, target.value_constant(position)));
+            },
+            Value::PathRefl(code) => (
+                Frame::PathRefl { at },
+                CoreNode::Term(TermNode::Value(code)),
+            ),
+            Value::PathProduct(first, second) => match self.source.natives.get(&at) {
+                Some(&native) if native != at => {
+                    self.memo().values.insert(at, Image::Open);
+                    self.frames.push(Frame::Reduced { at });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(native))));
+                },
+                Some(_) | None => (
+                    Frame::PathProductFirst { at, second },
+                    CoreNode::Term(TermNode::Value(first)),
+                ),
+            },
+            Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ref evidence,
+            } => (
+                Frame::PathEquivType {
+                    at,
+                    forward,
+                    backward,
+                    evidence: alloc::sync::Arc::clone(evidence),
+                },
+                CoreNode::Type(TypeNode::Value(path_type)),
+            ),
+            Value::Variable {
+                zone: Zone::Intuitionistic,
+                index,
+            } => return Ok(self.erased_value(at, target.value_variable(index))),
+            Value::Variable {
+                zone: Zone::Linear, ..
+            } => {
+                return Err(Refusal::Session {
+                    at: CoreNode::Term(TermNode::Value(at)),
+                });
+            },
+            Value::Constant(constant) => {
+                let position = self.constant_position(at, constant)?;
+                return Ok(self.erased_value(at, target.value_constant(position)));
+            },
+            Value::Literal(ref literal) => match literal.base_type() {
+                BaseType::Integer
+                | BaseType::String
+                | BaseType::Character
+                | BaseType::Float64
+                | BaseType::Fixed(_) => {
+                    return Ok(self.erased_value(at, target.value_literal(literal.clone())));
+                },
+                BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
+            },
+            Value::Thunk(body) => (
+                Frame::Thunk { at },
+                CoreNode::Term(TermNode::Computation(body)),
+            ),
+            Value::Quote(quoted) => (Frame::Quote { at }, CoreNode::Type(TypeNode::Value(quoted))),
+            Value::QuoteComputation(quoted) => (
+                Frame::QuoteComputation { at },
+                CoreNode::Type(TypeNode::Computation(quoted)),
+            ),
+            Value::Tuple(_) => return self.prepare_native(target, node),
+            Value::Injection(summand, body) => (
+                Frame::Injection { at, summand },
+                CoreNode::Term(TermNode::Value(body)),
+            ),
+            Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
+            Value::StaticLambda(_) => {
+                let position = self.abstraction(at)?;
+                return Ok(self.erased_value(at, target.value_constant(position)));
+            },
+            Value::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            Value::Here(point) => (
+                Frame::Here {
+                    at,
+                    family: Family::Path,
+                },
+                CoreNode::Term(TermNode::Value(point)),
+            ),
+            Value::Funext(..) => return self.prepare_funext(target, at),
+            Value::Equiv(forward, backward) => {
+                let Some(decided) = self.source.equivalences.get(&at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                (
+                    Frame::PathEquivType {
+                        at,
+                        forward,
+                        backward,
+                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                )
+            },
+            // The forward map is the lowering's derived copy of the record's
+            // first projection, and the record's type names the identity; the
+            // kernel derives both from the record, so only the record crosses.
+            Value::Univalence(record, _) => (
+                Frame::UnivalenceRecord { at },
+                CoreNode::Term(TermNode::Value(record)),
+            ),
+            Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..)
+                if self.source.flows.contains_key(&at) =>
+            {
+                let Some(decided) = self.source.flows.get(&at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                let payloads = if let Value::SessionRelated { payloads, .. } = *value
+                    && !decided.evidence().payloads.is_empty()
+                {
+                    let Some(&natives) = self.source.natives.get(&payloads)
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    Some(natives)
+                }
+                else {
+                    None
+                };
+                (
+                    Frame::SessionCertificate {
+                        at,
+                        relation: decided.relation(),
+                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                        payloads,
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                )
+            },
+            Value::Stay(point) => (
+                Frame::Here {
+                    at,
+                    family: Family::Flow,
+                },
+                CoreNode::Term(TermNode::Value(point)),
+            ),
+            Value::Then(first, second) => (
+                Frame::ThenFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
+            Value::FlowProduct(first, second) => (
+                Frame::FlowProductFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
+            Value::Forward(translator) => match self.source.directed.get(&at) {
+                Some(&crate::forward::Directed::Forward(ref decided)) => (
+                    Frame::ForwardType {
+                        at,
+                        translator,
+                        images: alloc::sync::Arc::from(decided.images()),
+                        dialogues: alloc::sync::Arc::from(decided.dialogues()),
+                    },
+                    CoreNode::Type(TypeNode::Value(decided.classifier())),
+                ),
+                Some(&crate::forward::Directed::Function(_)) | None => {
+                    return Err(Refusal::MachineInvariant);
+                },
+            },
+            Value::FunctionFlow(domain, codomain) => match self.source.directed.get(&at) {
+                Some(&crate::forward::Directed::Function(classifier)) => (
+                    Frame::FunctionFlowType {
+                        at,
+                        domain,
+                        codomain,
+                    },
+                    CoreNode::Type(TypeNode::Value(classifier)),
+                ),
+                Some(&crate::forward::Directed::Forward(_)) | None => {
+                    return Err(Refusal::MachineInvariant);
+                },
+            },
+            Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) => {
+                return Err(unadmitted(UnadmittedFormer::Run));
+            },
+            // A univalence statement crosses as the native path it derives,
+            // and a fill as the value its induction returns: elaboration
+            // stands a fill in a body as that induction, and a fill a type
+            // holds crosses as it here.
+            Value::Ua { .. } | Value::Fill { .. } => {
+                let Some(&path) = self.source.natives.get(&at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.memo().values.insert(at, Image::Open);
+                self.frames.push(Frame::Reduced { at });
+                return Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))));
+            },
+            // Elaboration replaces every nested computation, written run and
+            // record update before a verdict's body is answered, so none
+            // reaches the kernel; a session statement is always recorded.
+            Value::Nested(_)
+            | Value::Run(_)
+            | Value::RecordUpdate { .. }
+            | Value::SessionRelated { .. } => {
+                return Err(Refusal::MachineInvariant);
+            },
+            // A composite crosses as its realisation, which the kernel replays.
+            Value::Returned(computation)
+            | Value::Compose {
+                realised: computation,
+                ..
+            } => (
+                Frame::Returned { at },
+                CoreNode::Term(TermNode::Computation(computation)),
+            ),
+            Value::Mark { body, .. } => (
+                Frame::UnmarkedValue { at },
+                CoreNode::Term(TermNode::Value(body)),
+            ),
+            Value::StaticApplication(head, argument) => {
+                if self.mode == Mode::Normalizing
+                    && let Maybe::Present(reduct) = self.step(at)?
+                {
+                    self.memo().values.insert(at, Image::Open);
+                    self.frames.push(Frame::Reduced { at });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(reduct))));
+                }
+                (
+                    Frame::StaticHead { at, argument },
+                    CoreNode::Term(TermNode::Value(head)),
+                )
+            },
+        };
+        self.memo().values.insert(at, Image::Open);
+        self.frames.push(frame);
+        Ok(Step::Descend(child))
+    }
+
+    /// Queue the normal forms the function extensionality `at` records, and
+    /// the data types its returned constructors name, so each crosses on the
+    /// machine's own stack before its evaluation is assembled.
+    ///
+    /// # Specification
+    /// - requires: the judgement accepted `at` as a function extensionality.
+    /// - ensures: `at` is open; every application step's two normal forms, and
+    ///   every data type a returned constructor names that has not crossed, are
+    ///   visited before [`Self::funext`] assembles the evaluation; a record of
+    ///   returns naming no uncrossed data type assembles at once.
+    /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded
+    ///   nothing at `at`; as [`Self::funext`] when it assembles at once.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the quantified witness erases its normal forms before
+    ///   its evaluation and the kernel replays it; a record of returns alone
+    ///   crosses as a higher evaluation.
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    #[spec(ensures: |ret| ret.is_err() || !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
+    fn prepare_funext(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let source = self.source;
+        let Some(record) = source.funexts.get(&at)
+        else {
+            return Err(Refusal::MachineInvariant);
+        };
+        self.memo().values.insert(at, Image::Open);
+        self.frames.push(Frame::FunextBuild(at));
+        let mut datatypes = BTreeSet::new();
+        for step in record.steps().iter().rev() {
+            match *step {
+                FunextStep::Apply {
+                    ref left,
+                    ref right,
+                    ..
+                } => {
+                    self.frames.extend(
+                        [right.normal(), left.normal()].map(|normal| {
+                            Frame::NativeNext(CoreNode::Term(TermNode::Value(normal)))
+                        }),
+                    );
+                },
+                FunextStep::Return {
+                    ref left,
+                    ref right,
+                } => {
+                    let mut pending = Vec::from([left.returned(), right.returned()]);
+                    while let Some(node) = pending.pop() {
+                        match self.arena.value(node) {
+                            Some(&Value::Constructor {
+                                datatype,
+                                ref fields,
+                                ..
+                            }) => {
+                                datatypes.insert(datatype);
+                                pending.extend(fields.iter().copied());
+                            },
+                            Some(&Value::Tuple(ref parts)) => pending.extend(parts.iter().copied()),
+                            Some(&(Value::Injection(_, body) | Value::Mark { body, .. })) => {
+                                pending.push(body);
+                            },
+                            _ => {},
+                        }
+                    }
+                },
+            }
+        }
+        for datatype in datatypes {
+            if !self.reached().value_types.contains_key(&datatype) {
+                self.frames
+                    .push(Frame::NativeNext(CoreNode::Type(TypeNode::Value(datatype))));
+            }
+        }
+        match self.frames.pop() {
+            Some(Frame::NativeNext(child)) => Ok(Step::Descend(child)),
+            Some(Frame::FunextBuild(node)) => self.funext(target, node),
+            _ => Err(Refusal::MachineInvariant),
+        }
+    }
+
+    /// Erase the function extensionality `at` into the kernel's higher
+    /// evaluation when every step returns, and into its quantified evaluation
+    /// otherwise: per return the value each function returns, the diagonal
+    /// evidence that the two agree and the machine's two traces; per
+    /// application each function's closed normal form and the machine's two
+    /// traces; every trace with its anchors forgotten.
+    ///
+    /// # Specification
+    /// - requires: the judgement accepted `at` as a function extensionality;
+    ///   every application step's normal forms have crossed in the current
+    ///   mode.
+    /// - ensures: when every recorded step returns, one kernel component per
+    ///   step, in order, each carrying the images of the two returned values
+    ///   and the diagonal of the first — the unit value at the unit type, a
+    ///   base atom and a sum's absent payload, a pair at a pair, an injection's
+    ///   payload's diagonal at an injection — and one dialogue pair per
+    ///   component, the machine's decisions with every anchor erased. Otherwise
+    ///   one kernel step per recorded step, in order: a return as a component
+    ///   is, its three children in that order; an application with its fibre
+    ///   and the images its two normal forms crossed as. The two functions are
+    ///   not erased: the kernel reads them from the identity type it checks the
+    ///   evaluation at.
+    /// - provides: the evidence the kernel's higher or quantified evaluation
+    ///   replays, the core's decision recomputed rather than trusted.
+    /// - fails: [`Refusal::MachineInvariant`] when the judgement recorded no
+    ///   steps at `at`, a returned value is not first order or a normal form
+    ///   has no image; [`Refusal::Hole`] at a hole a returned value holds; a
+    ///   constant's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: a `for` loop over the recorded steps and, per value, a `while
+    ///   let` worklist over its finite tree, not recursion; the normal forms
+    ///   crossed on the machine's own stack before.
+    /// - measure: the steps left, then the nodes left to visit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `funext(not ∘ not, id)` over a binary sum of units
+    ///   crosses as a higher evaluation and the kernel replays it; a dropped
+    ///   component or a swapped trace is refused by the kernel; `λf. f(true)`
+    ///   related to its bind form crosses as a quantified evaluation the kernel
+    ///   replays.
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `bridge::tests::a_quantified_funext_crosses_as_a_quantified_evaluation`
+    #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
+    fn funext(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let source = self.source;
+        let Some(record) = source.funexts.get(&at)
+        else {
+            return Err(Refusal::MachineInvariant);
+        };
+        let forget = |decisions: &[ConversionDecision<TraceNode>]| {
+            decisions
+                .iter()
+                .map(|decision| decision.map(|_| ()))
+                .collect::<Vec<_>>()
+        };
+        let quantified = record
+            .steps()
+            .iter()
+            .any(|step| matches!(step, FunextStep::Apply { .. }));
+        let image = if quantified {
+            let mut steps = Vec::with_capacity(record.steps().len());
+            let mut children = Vec::new();
+            for step in record.steps() {
+                match *step {
+                    FunextStep::Return {
+                        ref left,
+                        ref right,
+                    } => {
+                        let (left_image, evidence) = self.returned(target, left.returned())?;
+                        let (right_image, _) = self.returned(target, right.returned())?;
+                        steps.push(QuantifiedStep::Return(EvaluationDialogues {
+                            left: forget(left.decisions()),
+                            right: forget(right.decisions()),
+                        }));
+                        children.extend([left_image, right_image, evidence]);
+                    },
+                    FunextStep::Apply {
+                        fibre,
+                        ref left,
+                        ref right,
+                    } => {
+                        let [left_image, right_image] =
+                            [left.normal(), right.normal()].map(|normal| {
+                                match self.reached().values.get(&normal) {
+                                    Some(&Image::Erased(image)) => Ok(image),
+                                    _ => Err(Refusal::MachineInvariant),
+                                }
+                            });
+                        steps.push(QuantifiedStep::Apply {
+                            fibre,
+                            dialogues: EvaluationDialogues {
+                                left: forget(left.decisions()),
+                                right: forget(right.decisions()),
+                            },
+                        });
+                        children.extend([left_image?, right_image?]);
+                    },
+                }
+            }
+            target.value_quantified_evaluation(
+                alloc::sync::Arc::from(steps),
+                children.into_boxed_slice(),
+            )
+        }
+        else {
+            let mut dialogues = Vec::with_capacity(record.steps().len());
+            let mut components = Vec::with_capacity(record.steps().len());
+            for step in record.steps() {
+                let FunextStep::Return {
+                    ref left,
+                    ref right,
+                } = *step
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                let (left_image, evidence) = self.returned(target, left.returned())?;
+                let (right_image, _) = self.returned(target, right.returned())?;
+                dialogues.push(EvaluationDialogues {
+                    left: forget(left.decisions()),
+                    right: forget(right.decisions()),
+                });
+                components.push(EvaluationComponent {
+                    left: left_image,
+                    right: right_image,
+                    evidence,
+                });
+            }
+            target.value_higher_evaluation(
+                alloc::sync::Arc::from(dialogues),
+                components.into_boxed_slice(),
+            )
+        };
+        Ok(self.erased_value(at, image))
+    }
+
+    /// The kernel image of `value`, a first-order value a function returned,
+    /// beside its diagonal evidence at the identity of its type.
+    ///
+    /// # Specification
+    /// - requires: `value` is a normal form of a type built from the unit type,
+    ///   the base atoms, binary sums and products and data types, each data
+    ///   type a constructor names already crossed.
+    /// - ensures: the image, with tuples, injections, constructors,
+    ///   intuitionistic variables, literals and constants rebuilt as they stand
+    ///   and marks read through; the evidence as [`Self::funext`] states it, a
+    ///   constructor's the right-nested pair of its fields', the unit value for
+    ///   a constructor without fields.
+    /// - fails: [`Refusal::Hole`] at a hole; [`Refusal::MachineInvariant`] at
+    ///   any other former; a constant's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: a `while let` worklist over the value's finite tree, not
+    ///   recursion.
+    /// - measure: the nodes left to visit, each replaced by its children.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both injections of a binary sum of units cross with
+    ///   unit evidence, and the kernel accepts the evidence at their fibre.
+    /// - witness: `bridge::tests::a_funext_crosses_as_a_higher_evaluation`
+    /// - witness: `bridge::tests::a_funext_returning_a_literal_crosses_with_the_literal`
+    /// - witness: `bridge::tests::a_funext_returning_a_pair_or_a_constant_crosses_with_it`
+    /// - witness: `bridge::tests::a_funext_returning_a_constructor_crosses_with_it`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|(image, evidence)| target.value(image).is_some() && target.value(evidence).is_some()))]
+    fn returned(
+        &mut self,
+        target: &mut TermArena,
+        value: ValueId,
+    ) -> Result<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId), Refusal>
+    {
+        /// One step of the walk.
+        #[derive(Clone, Copy)]
+        enum Task
+        {
+            /// Rebuild the node.
+            Visit(ValueId),
+            /// Pair the two images on top.
+            Pair,
+            /// Inject the image on top.
+            Inject(Summand),
+            /// Apply the constructor of this family, at this data type and tag,
+            /// to this many images on top, the last field on top.
+            Construct(
+                gandr_kernel_term::ConstantIndex,
+                gandr_kernel_term::ValueTypeId,
+                gandr_kernel_term::ConstructorTag,
+                usize,
+            ),
+        }
+        let mut tasks = Vec::from([Task::Visit(value)]);
+        let mut built: Vec<(gandr_kernel_term::ValueId, gandr_kernel_term::ValueId)> = Vec::new();
+        while let Some(task) = tasks.pop() {
+            match task {
+                Task::Visit(node) => {
+                    let Some(former) = self.arena.value(node)
+                    else {
+                        return Err(Refusal::DanglingNode {
+                            node: CoreNode::Term(TermNode::Value(node)),
+                        });
+                    };
+                    let image = match *former {
+                        Value::Tuple(ref parts) => match **parts {
+                            [] => target.value_unit(),
+                            [first, second] => {
+                                tasks.extend([Task::Pair, Task::Visit(second), Task::Visit(first)]);
+                                continue;
+                            },
+                            _ => return Err(Refusal::MachineInvariant),
+                        },
+                        Value::Injection(summand, body) => {
+                            tasks.extend([Task::Inject(summand), Task::Visit(body)]);
+                            continue;
+                        },
+                        Value::Mark { body, .. } | Value::Ascribe { value: body, .. } => {
+                            tasks.push(Task::Visit(body));
+                            continue;
+                        },
+                        Value::Constructor {
+                            family,
+                            datatype,
+                            tag,
+                            ref fields,
+                        } => {
+                            let Some(&Image::Erased(image)) =
+                                self.reached().value_types.get(&datatype)
+                            else {
+                                return Err(Refusal::MachineInvariant);
+                            };
+                            let position = self
+                                .data_position(family)
+                                .ok_or(Refusal::MachineInvariant)?;
+                            tasks.push(Task::Construct(position, image, tag, fields.len()));
+                            tasks.extend(fields.iter().rev().copied().map(Task::Visit));
+                            continue;
+                        },
+                        Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index,
+                        } => target.value_variable(index),
+                        Value::Literal(ref literal)
+                            if matches!(
+                                literal.base_type(),
+                                BaseType::Integer
+                                    | BaseType::String
+                                    | BaseType::Character
+                                    | BaseType::Fixed(_)
+                            ) =>
+                        {
+                            target.value_literal(literal.clone())
+                        },
+                        Value::Constant(constant) => {
+                            let position = self.constant_position(node, constant)?;
+                            target.value_constant(position)
+                        },
+                        Value::Hole(hole) => {
+                            return Err(Refusal::Hole {
+                                at: CoreNode::Term(TermNode::Value(node)),
+                                hole,
+                            });
+                        },
+                        Value::Primitive { .. }
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Here(_)
+                        | Value::Funext(..)
+                        | Value::Equiv(..)
+                        | Value::Univalence(..)
+                        | Value::Ua { .. }
+                        | Value::Compose { .. }
+                        | Value::Fill { .. }
+                        | Value::SessionRelated { .. }
+                        | Value::Stay(_)
+                        | Value::Then(..)
+                        | Value::FlowProduct(..)
+                        | Value::Forward(_)
+                        | Value::FunctionFlow(..)
+                        | Value::Recorded(_)
+                        | Value::Dialogue(_)
+                        | Value::Web(_)
+                        | Value::Returned(_)
+                        | Value::Nested(_)
+                        | Value::Run(_)
+                        | Value::RecordUpdate { .. }
+                        | Value::Variable { .. }
+                        | Value::Literal(_)
+                        | Value::ListNil
+                        | Value::ListCons(..)
+                        | Value::Thunk(_)
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)
+                        | Value::StaticLambda(_)
+                        | Value::StaticApplication(..)
+                        | Value::Record(_)
+                        | Value::Reify(_)
+                        | Value::Row(_) => return Err(Refusal::MachineInvariant),
+                    };
+                    let unit = target.value_unit();
+                    built.push((image, unit));
+                },
+                Task::Pair => {
+                    let (Some(second), Some(first)) = (built.pop(), built.pop())
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    let image = target.value_tuple(&[first.0, second.0]);
+                    let evidence = target.value_tuple(&[first.1, second.1]);
+                    built.push((image, evidence));
+                },
+                Task::Inject(summand) => {
+                    let Some((payload, evidence)) = built.pop()
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    built.push((target.value_injection(summand, payload), evidence));
+                },
+                Task::Construct(family, datatype, tag, arity) => {
+                    let start = built
+                        .len()
+                        .checked_sub(arity)
+                        .ok_or(Refusal::MachineInvariant)?;
+                    let parts = built.get(start ..).ok_or(Refusal::MachineInvariant)?;
+                    let evidence = parts.iter().rev().fold(None, |rest, &(_, field)| {
+                        Some(rest.map_or(field, |rest| target.value_tuple(&[field, rest])))
+                    });
+                    let evidence = evidence.unwrap_or_else(|| target.value_unit());
+                    let images = parts.iter().map(|&(image, _)| image).collect();
+                    built.truncate(start);
+                    built.push((
+                        target.value_constructor(family, datatype, tag, images),
+                        evidence,
+                    ));
+                },
+            }
+        }
+        match (built.pop(), built.is_empty()) {
+            (Some(image), true) => Ok(image),
+            _ => Err(Refusal::MachineInvariant),
+        }
+    }
+
+    /// The static operator the static lambda `at` is numbered at, read
+    /// verbatim.
+    ///
+    /// # Specification
+    /// - requires: `at` is a static lambda.
+    /// - ensures: [`Self::operator`]'s position for the lambda, whose body
+    ///   beneath its lambda chain is the operator's.
+    /// - fails: [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::StaticLambda`] when read normalizing — the kernel
+    ///   has no static lambda, and a static normal form holds none — or when
+    ///   the lambda reaches a binder outside itself, which no closed operator
+    ///   can stand for; the reach's fault, converted.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three arms, separated by a closed lambda read
+    ///   verbatim, an open one, and one read normalizing.
+    /// - witness: `bridge::tests::a_static_lambda_crosses_only_as_a_closed_operator`
+    #[spec(ensures: |ret| ret.is_err()
+        || (self.mode == Mode::Verbatim
+            && self.operators.get(&Unfolded::Abstraction(at)).copied() == ret.ok()))]
+    fn abstraction(
+        &mut self,
+        at: ValueId,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        let node = CoreNode::Term(TermNode::Value(at));
+        let refused = Refusal::OutOfFragment {
+            at: node,
+            former: UnadmittedFormer::StaticLambda,
+        };
+        if self.mode == Mode::Normalizing
+            || loose_reach(self.arena, node).map_err(fault)? != BinderDepth::default()
+        {
+            return Err(refused);
+        }
+        self.operator(Unfolded::Abstraction(at), at)
+    }
+
+    /// The images the current mode minted, read.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reached(&self) -> &Memo
+    {
+        match self.mode {
+            Mode::Normalizing => &self.normalized,
+            Mode::Verbatim => &self.verbatim,
+        }
+    }
+
+    /// Start erasing the computation `at`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a node the judgement refined opens the frame of its
+    ///   refinement; ordinary computations open one continuation; a native case
+    ///   queues its motive and every branch after the scrutinee; a sum case
+    ///   queues every branch after the scrutinee; a lazy product queues every
+    ///   component after the first, and the empty one assembles at once. A
+    ///   split at the ambient motive, a send, a select, a close or a fork, and
+    ///   a handler or a capability scope, open the frame of the computation
+    ///   they rewrite to ([`Self::handler_reduct`]).
+    /// - fails: [`Refusal::Cyclic`] for an open computation or
+    ///   [`Refusal::DanglingNode`] for an absent source; [`Refusal::Session`]
+    ///   for a receive or an offer; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Memory`] for a placed buffer, and the handler
+    ///   reduct's refusals for a handler outside the form it translates.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted computation formers, a shared child and a
+    ///   back-edge expose exact images or cyclic refusal. Missing open marks,
+    ///   wrong cache hits and absent continuation frames change these answers.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
+    /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
+    #[spec(
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = if self.restated.binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node).is_ok() { Some(1_usize) } else { self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::ReturnAll(ref values) => Some(values.len()), Computation::Ascribe { .. } | Computation::BindAll { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::LinearLambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) }) }],
+        ensures: |ret| match held {
+            | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
+            | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
+            | None => ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len().checked_sub(before) == continuations
+                && self.reached().computations.get(&at) == Some(&Image::Open))
+                || (continuations == Some(0) && matches!(ret, Ok(Step::Ascend(AnyNode::Computation(_)))) && self.frames.len() == before),
+        },
+    )]
+    fn descend_computation(
+        &mut self,
+        target: &mut TermArena,
+        at: ComputationId,
+    ) -> Result<Step, Refusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        match self.memo().computations.get(&at) {
+            Some(&Image::Erased(erased)) => {
+                return Ok(Step::Ascend(AnyNode::Computation(erased)));
+            },
+            Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
+            None => {},
+        }
+        // A node the judgement refined by a solved variable crosses as its
+        // refinement, which the kernel checks; the core body keeps it as
+        // written, which the evaluator and the machine run.
+        if let Ok(place) = self
+            .restated
+            .binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node)
+            && let Some(&(_, refined)) = self.restated.get(place)
+        {
+            self.memo().computations.insert(at, Image::Open);
+            self.frames.push(Frame::Rewritten { at });
+            return Ok(Step::Descend(CoreNode::Term(refined)));
+        }
+        // A node that stands for a program of a row's free model crosses as
+        // one (#6642).
+        if let Some(reduct) = self.programmed_reduct(at)? {
+            self.memo().computations.insert(at, Image::Open);
+            self.frames.push(Frame::Rewritten { at });
+            return Ok(Step::Descend(CoreNode::Term(TermNode::Computation(reduct))));
+        }
+        let Some(computation) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
+        let (frame, child) = match *computation {
+            Computation::DataCase { .. }
+            | Computation::RecordProjection(..)
+            | Computation::TupleProjection(..)
+            | Computation::Ascribe { .. }
+            | Computation::With(_)
+            | Computation::ReturnAll(_)
+            | Computation::BindAll { .. }
+            | Computation::Case { .. } => {
+                return self.prepare_native(target, node);
+            },
+            Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
+            Computation::Handle { .. } | Computation::Scope { .. } => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.handler_reduct(at)?),
+            ),
+            // A handler clause binds its stack, a variable, to the thunk of
+            // the rest of its fold, which a resumption calls (#6672); a
+            // stack no clause binds holds a former of its own, which is
+            // refused where it stands.
+            Computation::Resume(stack, resumed)
+                if matches!(
+                    self.arena.value(stack),
+                    Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        ..
+                    })
+                ) =>
+            {
+                (
+                    Frame::Rewritten { at },
+                    TermNode::Computation(self.resumption_reduct(at, (stack, resumed))?),
+                )
+            },
+            Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
+            Computation::Abandon(stack)
+                if matches!(
+                    self.arena.value(stack),
+                    Some(&Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        ..
+                    })
+                ) =>
+            {
+                (
+                    Frame::Rewritten { at },
+                    TermNode::Computation(self.abandonment_reduct(at)?),
+                )
+            },
+            Computation::Abandon(_) => return Err(unadmitted(UnadmittedFormer::Abandon)),
+            Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
+            Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
+            Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
+            Computation::Memory(gandr_core_term::memory::MemoryForm::Hold { .. }) => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.hold_reduct(at)?),
+            ),
+            Computation::Memory(_) => return Err(unadmitted(UnadmittedFormer::Memory)),
+            Computation::Decompose(_) => return Err(unadmitted(UnadmittedFormer::Run)),
+            Computation::World(_) => return Err(Refusal::Located { at: node }),
+            Computation::Ride {
+                motive,
+                flow,
+                value,
+            } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::PathTransportMotive {
+                    at,
+                    path: flow,
+                    value,
+                    family: Family::Flow,
+                });
+                let motive = self.source.motives.get(&at).copied().unwrap_or(motive);
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
+            },
+            Computation::Project(component, product) => (
+                Frame::Project { at, component },
+                TermNode::Computation(product),
+            ),
+            Computation::ListFold { element, .. } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::ListElement { at });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(element))));
+            },
+            Computation::ListCase { list, .. } => {
+                (Frame::ListCaseList { at }, TermNode::Value(list))
+            },
+            Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                use gandr_core_term::primitive::Arguments;
+                let position = self.native(primitive)?;
+                let value = target.value_constant(position);
+                let head = target.computation_force(value);
+                match arguments {
+                    Arguments::Unary(argument) => (
+                        Frame::ApplicationArgument { at, head },
+                        TermNode::Value(argument),
+                    ),
+                    Arguments::Binary([first, second]) => (
+                        Frame::NativeFirst { at, head, second },
+                        TermNode::Value(first),
+                    ),
+                }
+            },
+            Computation::Transport(path, value) => {
+                (Frame::TransportPath { at, value }, TermNode::Value(path))
+            },
+            Computation::PathTransport {
+                motive,
+                path,
+                value,
+            } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::PathTransportMotive {
+                    at,
+                    path,
+                    value,
+                    family: Family::Path,
+                });
+                let motive = self.source.motives.get(&at).copied().unwrap_or(motive);
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(motive))));
+            },
+            Computation::TelescopeTransport { motive, .. } => {
+                self.memo().computations.insert(at, Image::Open);
+                self.frames.push(Frame::TelescopeMotive { at });
+                return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))));
+            },
+            // A linear lambda crosses as the lambda it reads as: the kernel
+            // holds the host, and the supply is the checker's.
+            Computation::Lambda(body) | Computation::LinearLambda(body) => {
+                (Frame::Lambda { at }, TermNode::Computation(body))
+            },
+            // An endpoint loop never returns, and every call the kernel's
+            // returner types does: it crosses no term, the receiving loop as
+            // the send-only one.
+            Computation::Fixpoint { body, evidence } => {
+                if matches!(evidence, gandr_kernel_term::FixpointEvidence::Partial)
+                    && crate::divergence::follows(self.arena, body)
+                        .map_err(|_unopened| Refusal::DanglingNode { node })?
+                        == crate::divergence::Protocol::Followed
+                {
+                    return Err(unadmitted(UnadmittedFormer::EndpointLoop));
+                }
+                (
+                    Frame::Fixpoint { at, evidence },
+                    TermNode::Computation(body),
+                )
+            },
+            Computation::Application(head, argument) => (
+                Frame::ApplicationHead { at, argument },
+                TermNode::Computation(head),
+            ),
+            // A returned composite crosses as its realisation, the fold that
+            // returns its path, so the kernel replays what the chain written
+            // with `then` gives it.
+            Computation::Return(value) => match self.arena.value(value) {
+                Some(&Value::Compose { realised, .. }) => {
+                    (Frame::Rewritten { at }, TermNode::Computation(realised))
+                },
+                Some(_) | None => (Frame::Return { at }, TermNode::Value(value)),
+            },
+            Computation::Force(value) => (Frame::Force { at }, TermNode::Value(value)),
+            Computation::Bind(bound, body) => {
+                (Frame::BindBound { at, body }, TermNode::Computation(bound))
+            },
+            Computation::Split {
+                scrutinee,
+                motive: SplitMotive::Scrutinee(motive),
+                body,
+                ..
+            } => (
+                Frame::SigmaSplitScrutinee { at, motive, body },
+                TermNode::Value(scrutinee),
+            ),
+            Computation::Split {
+                scrutinee,
+                arity,
+                motive: SplitMotive::Ambient,
+                body,
+            } => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
+            ),
+            Computation::Session(_) => {
+                let (frame, reduct) = self.session_reduct(at)?;
+                (frame, TermNode::Computation(reduct))
+            },
+            Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
+            Computation::Mark { body, .. } => (
+                Frame::UnmarkedComputation { at },
+                TermNode::Computation(body),
+            ),
+        };
+        self.memo().computations.insert(at, Image::Open);
+        self.frames.push(frame);
+        Ok(Step::Descend(CoreNode::Term(child)))
+    }
+
+    /// Start erasing the value type `at`, read through the fragment's view.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::descend`]: the integer, string and character
+    ///   atoms, the unit type and a universe are minted; a sealed atom is
+    ///   minted at the kernel position its abstract type was admitted at; a
+    ///   thunk type, a lift, an eager product and a static Pi open their
+    ///   frames; a decode opens its frame and decodes its code; a flow whose
+    ///   carrier is the level-zero value universe opens the frames of the
+    ///   kernel's universe flow over its two codes, and a flow at any other
+    ///   carrier, a universe above level zero included, those of the kernel's
+    ///   flow at that carrier.
+    /// - fails: [`Refusal::Cyclic`] for an open value type;
+    ///   [`Refusal::WithheldData`] naming a sealed atom whose abstract type was
+    ///   withheld, refused by the judgement or naming a declaration that did
+    ///   not cross; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Abstract`] for a sealed atom whose abstract type
+    ///   did not cross otherwise, so nothing is minted at a guessed position,
+    ///   and naming [`UnadmittedFormer::Stage`] for a staged type, whose stage
+    ///   the kernel never reads from a term; whatever the view or the decode
+    ///   refuses, converted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — atom, compound, universe and decode types expose
+    ///   their exact kernel images; a sealed atom bound and unbound separates
+    ///   the position map; a flow at the universe one level up crosses as the
+    ///   kernel's flow at that universe; a value-type back-edge is refused.
+    ///   Wrong family, absent memo publication, a refused or level-zero image
+    ///   of the higher flow or dropped cycle detection differs.
+    /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
+    /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
+    /// - witness: `bridge::tests::a_reader_of_an_atom_withheld_with_its_law_is_withheld_1959`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
+    /// - witness: `flow::tests::a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
+        | Ok(Step::Ascend(_)) => false,
+        | Err(Refusal::Cyclic { node }) => node == CoreNode::Type(TypeNode::Value(at)),
+        | Err(_) => true,
+    })]
+    fn descend_value_type(
+        &mut self,
+        target: &mut TermArena,
+        at: ValueTypeId,
+    ) -> Result<Step, Refusal>
+    {
+        match self.memo().value_types.get(&at) {
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::ValueType(erased))),
+            Some(&Image::Open) => {
+                return Err(Refusal::Cyclic {
+                    node: CoreNode::Type(TypeNode::Value(at)),
+                });
+            },
+            None => {},
+        }
+        let (frame, child) = match value_type_view(self.arena, at)? {
+            ValueTypeView::Data { .. }
+            | ValueTypeView::Record(_)
+            | ValueTypeView::Patched { .. }
+            | ValueTypeView::Sum(_)
+            | ValueTypeView::Product(_)
+            | ValueTypeView::Session(_) => {
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
+            },
+            ValueTypeView::Flow {
+                carrier,
+                source,
+                target: target_code,
+            } => {
+                if !matches!(
+                    value_type_view(self.arena, carrier),
+                    Ok(ValueTypeView::Universe {
+                        sort: GroundSort::Value,
+                        level,
+                    }) if *level == Level::zero()
+                ) {
+                    self.memo().value_types.insert(at, Image::Open);
+                    self.frames.push(Frame::PathCarrier {
+                        at,
+                        left: source,
+                        right: target_code,
+                        former: Relating::Flow,
+                    });
+                    return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(carrier))));
+                }
+                (
+                    Frame::FlowSource { at, target_code },
+                    CoreNode::Term(TermNode::Value(source)),
+                )
+            },
+            ValueTypeView::World(_) => {
+                return Err(Refusal::Located {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                });
+            },
+            ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Run,
+                });
+            },
+            ValueTypeView::Stack { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Stack,
+                });
+            },
+            ValueTypeView::Capability { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Capability,
+                });
+            },
+            ValueTypeView::Buffer => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Buffer,
+                });
+            },
+            ValueTypeView::Qubit => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Qubit,
+                });
+            },
+            ValueTypeView::Row | ValueTypeView::RowTail(_) => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::EffectRow,
+                });
+            },
+            ValueTypeView::List(element) => (
+                Frame::ListType { at },
+                CoreNode::Type(TypeNode::Value(element)),
+            ),
+            ValueTypeView::PathUniverse(source, target_code) => (
+                Frame::PathSource { at, target_code },
+                CoreNode::Term(TermNode::Value(source)),
+            ),
+            ValueTypeView::Path {
+                carrier,
+                left,
+                right,
+            } => (
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    former: Relating::Path,
+                },
+                CoreNode::Type(TypeNode::Value(carrier)),
+            ),
+            ValueTypeView::Bridge {
+                carrier,
+                left,
+                right,
+            } => (
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    former: Relating::Bridge,
+                },
+                CoreNode::Type(TypeNode::Value(carrier)),
+            ),
+            ValueTypeView::Integer => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
+            },
+            ValueTypeView::String => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::String)));
+            },
+            ValueTypeView::Character => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Character)));
+            },
+            ValueTypeView::Float64 => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Float64)));
+            },
+            ValueTypeView::Fixed(width) => {
+                return Ok(
+                    self.erased_value_type(at, target.value_type_base(BaseType::Fixed(width)))
+                );
+            },
+            ValueTypeView::Unit => {
+                return Ok(self.erased_value_type(at, target.value_type_unit()));
+            },
+            ValueTypeView::Universe { sort, level } => {
+                let erased = target.value_type_universe(sort, level.clone());
+                return Ok(self.erased_value_type(at, erased));
+            },
+            ValueTypeView::Abstract(atom) => {
+                let Some(&position) = self.positions.admitted.get(&atom)
+                else {
+                    return Err(if self.positions.withheld.contains(&atom) {
+                        Refusal::WithheldData {
+                            at: TypeNode::Value(at),
+                            constant: atom,
+                        }
+                    }
+                    else {
+                        Refusal::OutOfFragment {
+                            at: CoreNode::Type(TypeNode::Value(at)),
+                            former: UnadmittedFormer::Abstract,
+                        }
+                    });
+                };
+                return Ok(self.erased_value_type(at, target.value_type_abstract(position)));
+            },
+            ValueTypeView::Staged { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Stage,
+                });
+            },
+            ValueTypeView::Kept { .. } => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::Scope,
+                });
+            },
+            ValueTypeView::Thunk(body) => (
+                Frame::ThunkType { at },
+                CoreNode::Type(TypeNode::Computation(body)),
+            ),
+            ValueTypeView::Lift { inner, .. } => (
+                Frame::TypeLift { at },
+                CoreNode::Type(TypeNode::Value(inner)),
+            ),
+            ValueTypeView::Element { .. } | ValueTypeView::Unknown => {
+                let Some(&gandr_core_term::ValueType::Element {
+                    code,
+                    target: ref level,
+                }) = self.arena.value_type(at)
+                else {
+                    return Err(Refusal::Unknown {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                    });
+                };
+                let level = level.clone();
+                self.memo().value_types.insert(at, Image::Open);
+                self.frames.push(Frame::Decoded {
+                    at: TypeNode::Value(at),
+                });
+                return self.decode(target, code, level, GroundSort::Value);
+            },
+            ValueTypeView::StaticPi { domain, codomain } => (
+                Frame::StaticPiDomain { at, codomain },
+                CoreNode::Type(TypeNode::Value(domain)),
+            ),
+            ValueTypeView::Sigma { first, second } => (
+                Frame::SigmaFirst { at, second },
+                CoreNode::Type(TypeNode::Value(first)),
+            ),
+        };
+        self.memo().value_types.insert(at, Image::Open);
+        self.frames.push(frame);
+        Ok(Step::Descend(child))
+    }
+
+    /// Start erasing the computation type `at`, read through the fragment's
+    /// view.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::descend`]: a returner, an arrow, a dependent arrow
+    ///   and a lazy product open their frames; a decode opens its frame and
+    ///   decodes its code.
+    /// - fails: [`Refusal::Cyclic`] for an open computation type; whatever the
+    ///   view or the decode refuses, converted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returners, arrows, lazy products and decodes expose
+    ///   their exact kernel family; a computation-type back-edge is refused.
+    ///   Wrong family, missing memo publication and lost cycle detection change
+    ///   these results.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `bridge::tests::a_lazy_product_crosses_as_its_kernel_nodes`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Step::Ascend(AnyNode::CompType(_)) | Step::Descend(_)) => self.reached().comp_types.contains_key(&at),
+        | Ok(Step::Ascend(_)) => false,
+        | Err(Refusal::Cyclic { node }) => node == CoreNode::Type(TypeNode::Computation(at)),
+        | Err(_) => true,
+    })]
+    fn descend_comp_type(
+        &mut self,
+        target: &mut TermArena,
+        at: CompTypeId,
+    ) -> Result<Step, Refusal>
+    {
+        match self.memo().comp_types.get(&at) {
+            Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::CompType(erased))),
+            Some(&Image::Open) => {
+                return Err(Refusal::Cyclic {
+                    node: CoreNode::Type(TypeNode::Computation(at)),
+                });
+            },
+            None => {},
+        }
+        let (frame, child) = match comp_type_view(self.arena, at)? {
+            CompTypeView::Returner { result, effects } => {
+                // A returner over a row of operations returns a program of the
+                // row's free model: `(F^ε A)•` is `F Free_ε(A)•` (#6642).
+                if effects.purity() == gandr_core_term::effect::Purity::Pure {
+                    (Frame::Returner { at }, result)
+                }
+                else {
+                    let Imaged::Program(program) = self.programmed(at)?
+                    else {
+                        return Err(Refusal::MachineInvariant);
+                    };
+                    let model = self.free_model(&program.row, &program.level)?;
+                    let code = self.arena.value_quote(result);
+                    let tree = self.arena.value_type_data(model, Vec::from([code]));
+                    (Frame::Returner { at }, tree)
+                }
+            },
+            CompTypeView::Arrow { domain, codomain } => {
+                (Frame::ArrowDomain { at, codomain }, domain)
+            },
+            // `((x : A) ˆ m ⊸ B)•` is `(x : A•) → B•`: the kernel reads the
+            // linear arrow as the dependent arrow, and drops the multiplicity.
+            CompTypeView::Pi { domain, codomain }
+            | CompTypeView::LinearArrow {
+                domain, codomain, ..
+            } => (Frame::PiDomain { at, codomain }, domain),
+            CompTypeView::Returns { effects, .. } => {
+                if effects.purity() != gandr_core_term::effect::Purity::Pure {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Computation(at)),
+                        former: UnadmittedFormer::EffectRow,
+                    });
+                }
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Computation(at)));
+            },
+            CompTypeView::With(_) | CompTypeView::Codata { .. } => {
+                return self.prepare_native(target, CoreNode::Type(TypeNode::Computation(at)));
+            },
+            CompTypeView::Element { .. } | CompTypeView::Unknown => {
+                let Some(&gandr_core_term::CompType::Element {
+                    code,
+                    target: ref level,
+                }) = self.arena.comp_type(at)
+                else {
+                    return Err(Refusal::Unknown {
+                        at: CoreNode::Type(TypeNode::Computation(at)),
+                    });
+                };
+                let level = level.clone();
+                self.memo().comp_types.insert(at, Image::Open);
+                self.frames.push(Frame::Decoded {
+                    at: TypeNode::Computation(at),
+                });
+                return self.decode(target, code, level, GroundSort::Computation);
+            },
+        };
+        self.memo().comp_types.insert(at, Image::Open);
+        self.frames.push(frame);
+        Ok(Step::Descend(CoreNode::Type(TypeNode::Value(child))))
+    }
+
+    /// Erase the decode of `code` at `level` into the type of `sort` it
+    /// denotes: read normalizing, step the code at its head, collecting each
+    /// certificate, until it is a quote, whose type is erased, or rigid, whose
+    /// decode is minted.
+    ///
+    /// # Specification
+    /// - requires: `code` was checked at the universe of `sort` at `level`.
+    /// - ensures: for a quote of a type of `sort`, the descent into that type;
+    ///   for a variable or a constant, the kernel's decode of its image at
+    ///   `level`; for a static application or a returned code, the descent into
+    ///   its image with the decode awaiting it. Read normalizing, a constant
+    ///   with a body, a reducible static application or a closed returned code
+    ///   first takes its certified step, and the reduct is decoded in its place
+    ///   — the judgement defined a constant's body at the constant's own
+    ///   universe, a step preserves the type, and a returned code's run returns
+    ///   a code of the universe its call returns, so at `level` still. A minted
+    ///   decode is of `sort`'s family.
+    /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
+    ///   not certify; [`Refusal::Withheld`] for a constant that did not cross;
+    ///   [`Refusal::Session`]; [`Refusal::DanglingNode`];
+    ///   [`Refusal::MachineInvariant`] for a code that is no code.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `loop` takes one certified step per turn, not recursion.
+    /// - measure: the code's distance to its static normal form, which each δ-
+    ///   or β-step of a well-formed code shortens; the admission order bounds a
+    ///   constant's unfolding chain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the arms, separated by a quote, a rigid constant, a
+    ///   code constant unfolded, a saturated instance reduced, a rigid instance
+    ///   decoded, a closed returned code run, and a code of the wrong sort.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
+    /// - witness: `bridge::tests::an_unquoted_function_call_crosses_with_its_run_certified`
+    #[spec(ensures: |ret| match ret {
+        | Err(_) | Ok(Step::Descend(_)) => true,
+        | Ok(Step::Ascend(AnyNode::ValueType(_))) => sort == GroundSort::Value,
+        | Ok(Step::Ascend(AnyNode::CompType(_))) => sort == GroundSort::Computation,
+        | Ok(Step::Ascend(AnyNode::Value(_) | AnyNode::Computation(_))) => false,
+    })]
+    fn decode(
+        &mut self,
+        target: &mut TermArena,
+        code: ValueId,
+        level: Level,
+        sort: GroundSort,
+    ) -> Result<Step, Refusal>
+    {
+        let mut code = code;
+        loop {
+            let Some(node) = self.arena.value(code).cloned()
+            else {
+                return Err(Refusal::DanglingNode {
+                    node: CoreNode::Term(TermNode::Value(code)),
+                });
+            };
+            if self.mode == Mode::Normalizing
+                && let Value::Constant(_) | Value::StaticApplication(..) | Value::Returned(_) = node
+                && let Maybe::Present(reduct) = self.step(code)?
+            {
+                code = reduct;
+                continue;
+            }
+            let image = match (node, sort) {
+                (Value::Reify(_), _) => {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        former: UnadmittedFormer::Reify,
+                    });
+                },
+                (Value::Row(_), _) => {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        former: UnadmittedFormer::EffectRow,
+                    });
+                },
+                (Value::Quote(quoted), GroundSort::Value) => {
+                    return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(quoted))));
+                },
+                (Value::QuoteComputation(quoted), GroundSort::Computation) => {
+                    return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(quoted))));
+                },
+                (
+                    Value::Variable {
+                        zone: Zone::Intuitionistic,
+                        index,
+                    },
+                    _,
+                ) => target.value_variable(index),
+                (
+                    Value::Variable {
+                        zone: Zone::Linear, ..
+                    },
+                    _,
+                ) => {
+                    return Err(Refusal::Session {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                    });
+                },
+                (Value::Constant(constant), _) => {
+                    let position = self.constant_position(code, constant)?;
+                    target.value_constant(position)
+                },
+                (Value::StaticApplication(..) | Value::Returned(_), _) => {
+                    self.frames.push(Frame::DecodeOf { level, sort });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))));
+                },
+                (Value::Hole(hole), _) => {
+                    return Err(Refusal::Hole {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        hole,
+                    });
+                },
+                (Value::Mark { body, .. } | Value::Ascribe { value: body, .. }, _) => {
+                    code = body;
+                    continue;
+                },
+                (Value::Quote(_), GroundSort::Computation)
+                | (Value::QuoteComputation(_), GroundSort::Value)
+                | (
+                    Value::PathRefl(_)
+                    | Value::Here(_)
+                    | Value::Funext(..)
+                    | Value::Equiv(..)
+                    | Value::Univalence(..)
+                    | Value::Ua { .. }
+                    | Value::Compose { .. }
+                    | Value::Fill { .. }
+                    | Value::Nested(_)
+                    | Value::Run(_)
+                    | Value::RecordUpdate { .. }
+                    | Value::Constructor { .. }
+                    | Value::Record(_)
+                    | Value::Primitive { .. }
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
+                    | Value::Tuple(_)
+                    | Value::Literal(_)
+                    | Value::Thunk(_)
+                    | Value::ListNil
+                    | Value::ListCons(..)
+                    | Value::Injection(..)
+                    | Value::Lift { .. }
+                    | Value::StaticLambda(_)
+                    | Value::SessionRelated { .. }
+                    | Value::Stay(_)
+                    | Value::Then(..)
+                    | Value::FlowProduct(..)
+                    | Value::Forward(_)
+                    | Value::FunctionFlow(..)
+                    | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_),
+                    _,
+                ) => return Err(Refusal::MachineInvariant),
+            };
+            return Ok(Step::Ascend(decoded(target, image, level, sort)));
+        }
+    }
+
+    /// Start erasing `argument`, the value an application passes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: read normalizing, for a code constant without a recorded lift
+    ///   whose unfolding chain reaches a quote or a static application, one
+    ///   certificate per constant on the chain, outermost first, and the
+    ///   descent into the code the chain ends at, which records no image for
+    ///   the constant; for any other value, and read verbatim, its descent.
+    ///   Every success descends into a value.
+    /// - provides: an instantiation at a code substitutes the type the code
+    ///   stands for, so the kernel's types hold no decode of a constant with a
+    ///   body.
+    /// - fails: [`Refusal::CertificateDeclined`] for an unfolding the
+    ///   normaliser does not certify.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: two `loop`s over the unfolding chain, not recursion: the first
+    ///   finds its end without collecting, so a chain ending at a rigid
+    ///   constant certifies nothing.
+    /// - measure: the admission position of the constant reached, which a body
+    ///   names only below its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a code constant unfolding to a quote, a
+    ///   chain ending at a rigid constant, and a lifted argument.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `bridge::tests::a_code_constant_argument_crosses_as_written_in_a_run`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(CoreNode::Term(TermNode::Value(_))))))]
+    fn argument(
+        &mut self,
+        argument: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let descend = Step::Descend(CoreNode::Term(TermNode::Value(argument)));
+        if self.mode == Mode::Verbatim || self.source.lifts.contains_key(&argument) {
+            return Ok(descend);
+        }
+        let mut reached = argument;
+        loop {
+            match self.arena.value(reached) {
+                Some(
+                    &(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..)),
+                ) => break,
+                Some(&Value::Constant(constant)) => {
+                    match self.positions.definitions.body(constant) {
+                        Maybe::Present(body) => reached = body,
+                        Maybe::Absent(_) => return Ok(descend),
+                    }
+                },
+                _ => return Ok(descend),
+            }
+        }
+        let mut code = argument;
+        while let Some(&Value::Constant(_)) = self.arena.value(code) {
+            let Maybe::Present(reduct) = self.step(code)?
+            else {
+                return Err(Refusal::MachineInvariant);
+            };
+            code = reduct;
+        }
+        Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))))
+    }
+
+    /// Cross the next image of the forward flow `erasure` holds, or mint the
+    /// kernel's forward flow once every image has crossed.
+    ///
+    /// # Specification
+    /// - requires: `erasure` holds the images crossed so far, in coverage
+    ///   order.
+    /// - ensures: while an image remains, the erasure waits on it and the next
+    ///   image is the next goal; once none remains, the kernel's forward flow
+    ///   over the flow type, the translator, every image in order and the
+    ///   decided dialogues is recorded at the flow and ascends.
+    /// - panics: none.
+    /// - executable: none — the kernel node is minted into the target arena the
+    ///   frame stack hands back later, out of the predicate's reach.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as [`Self::argument`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a migration's forward flow crosses with one image per
+    ///   pattern and replays in the kernel.
+    /// - witness: `forward::tests::directed_statements_cross_and_replay`
+    fn forward_images(
+        &mut self,
+        target: &mut TermArena,
+        erasure: ForwardErasure,
+    ) -> Result<Step, Refusal>
+    {
+        if let Some(&next) = erasure.images.get(erasure.erased.len()) {
+            self.frames.push(Frame::ForwardImages(erasure));
+            return self.argument(next);
+        }
+        let ForwardErasure {
+            at,
+            flow_type,
+            translator,
+            erased,
+            dialogues,
+            ..
+        } = erasure;
+        let image =
+            target.value_forward_flow(flow_type, translator, erased.into_boxed_slice(), dialogues);
+        Ok(self.erased_value(at, image))
+    }
+
+    /// Cross the next value that the patched type of `restriction`'s coerced
+    /// value fixes, or mint the kernel's restriction of `value` once every
+    /// fixed value has crossed.
+    ///
+    /// # Specification
+    /// - requires: `value` is the image of the coerced value, and `restriction`
+    ///   holds the fixed values crossed so far.
+    /// - ensures: while a fixed value remains, the restriction waits on it and
+    ///   the fixed value is the next goal; once none remains, the kernel's
+    ///   restriction of `value` at every crossed fixed value is recorded at the
+    ///   coerced value and ascends.
+    /// - panics: none.
+    /// - executable: none — the kernel node is minted into the target arena the
+    ///   frame stack hands back later, out of the predicate's reach.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as [`Self::argument`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configuration coerced in to a patched type crosses
+    ///   as its restriction at both fixed fields, and the kernel admits it.
+    /// - witness: `module::tests::a_base_value_at_a_patched_type_crosses_as_a_restriction_5578`
+    fn restricted(
+        &mut self,
+        target: &mut TermArena,
+        mut restriction: Restriction,
+        value: gandr_kernel_term::ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        if let Some((label, fixed)) = restriction.pending.pop() {
+            self.frames.push(Frame::RestrictedField {
+                restriction,
+                value,
+                label,
+            });
+            return self.argument(fixed);
+        }
+        let Restriction { at, crossed, .. } = restriction;
+        Ok(self.erased_value(at, target.value_restrict(value, crossed)))
+    }
+
+    /// Hand `image` to the rule `frame` holds.
+    ///
+    /// # Specification
+    /// - requires: `frame` was pushed by this machine.
+    /// - ensures: a frame awaiting its last child mints its node over the
+    ///   children's images, records the image and ascends it; an application, a
+    ///   bind, a lazy pairing, an arrow, a dependent arrow, a lazy product, a
+    ///   pair, an eager product, a static Pi or a rigid static application
+    ///   awaiting its first child descends to its second; a decode records the
+    ///   type its code denotes; a lift a crossing added wraps the decode
+    ///   beneath it; a static application erased as its reduct records the
+    ///   reduct's image as its own. A descent always leaves the frame awaiting
+    ///   it on the stack.
+    /// - fails: [`Refusal::MachineInvariant`] when `image` is not of the family
+    ///   the frame awaits.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::erase`], whose frame table this is, with
+    ///   the static frames reached by a readmitted static instance, a rigid
+    ///   instance and an eager pair.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    /// - witness: `bridge::tests::a_lazy_product_crosses_as_its_kernel_nodes`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
+    fn resume(
+        &mut self,
+        target: &mut TermArena,
+        frame: Frame,
+        image: AnyNode,
+    ) -> Result<Step, Refusal>
+    {
+        match (frame, image) {
+            (Frame::NativeNext(child), _) => Ok(Step::Descend(child)),
+            (Frame::NativeBuild(root), _) => self.finish_native(target, root),
+            (Frame::FunextBuild(at), _) => self.funext(target, at),
+            (Frame::ListHead { at, tail }, AnyNode::Value(head)) => {
+                self.frames.push(Frame::ListTail { at, head });
+                self.argument(tail)
+            },
+            (Frame::ListTail { at, head }, AnyNode::Value(tail)) => {
+                Ok(self.erased_value(at, target.value_list_cons(head, tail)))
+            },
+            (Frame::RestrictedValue(restriction), AnyNode::Value(value)) => {
+                self.restricted(target, restriction, value)
+            },
+            (
+                Frame::RestrictedField {
+                    mut restriction,
+                    value,
+                    label,
+                },
+                AnyNode::Value(image),
+            ) => {
+                restriction.crossed.insert(label, image);
+                self.restricted(target, restriction, value)
+            },
+            (Frame::ListElement { at }, AnyNode::ValueType(element)) => {
+                let Some(&Computation::ListFold { result, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListResult { at, element });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(result))))
+            },
+            (Frame::ListResult { at, element }, AnyNode::ValueType(result)) => {
+                let Some(&Computation::ListFold { list, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListInput {
+                    at,
+                    element,
+                    result,
+                });
+                self.argument(list)
+            },
+            (
+                Frame::ListInput {
+                    at,
+                    element,
+                    result,
+                },
+                AnyNode::Value(list),
+            ) => {
+                let Some(&Computation::ListFold { on_nil, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListNil {
+                    at,
+                    element,
+                    result,
+                    list,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(on_nil))))
+            },
+            (
+                Frame::ListNil {
+                    at,
+                    element,
+                    result,
+                    list,
+                },
+                AnyNode::Computation(on_nil),
+            ) => {
+                let Some(&Computation::ListFold { on_cons, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCons {
+                    at,
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_cons,
+                ))))
+            },
+            (
+                Frame::ListCons {
+                    at,
+                    element,
+                    result,
+                    list,
+                    on_nil,
+                },
+                AnyNode::Computation(on_cons),
+            ) => Ok(self.erased_computation(
+                at,
+                target.computation_list_fold(element, result, list, on_nil, on_cons),
+            )),
+            (Frame::ListCaseList { at }, AnyNode::Value(list)) => {
+                let Some(&Computation::ListCase { on_nil, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCaseNil { at, list });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(on_nil))))
+            },
+            (Frame::ListCaseNil { at, list }, AnyNode::Computation(on_nil)) => {
+                let Some(&Computation::ListCase { on_cons, .. }) = self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::ListCaseCons { at, list, on_nil });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(
+                    on_cons,
+                ))))
+            },
+            (Frame::ListCaseCons { at, list, on_nil }, AnyNode::Computation(on_cons)) => Ok(
+                self.erased_computation(at, target.computation_list_case(list, on_nil, on_cons))
+            ),
+            (Frame::PathRefl { at }, AnyNode::Value(code)) => {
+                Ok(self.erased_value(at, target.value_path_refl(code)))
+            },
+            (Frame::PathProductFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::PathProductSecond { at, first });
+                self.argument(second)
+            },
+            (Frame::PathProductSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_path_product(first, second)))
+            },
+            (
+                Frame::PathEquivType {
+                    at,
+                    forward,
+                    backward,
+                    evidence,
+                },
+                AnyNode::ValueType(path_type),
+            ) => {
+                self.frames.push(Frame::PathEquivForward {
+                    at,
+                    path_type,
+                    backward,
+                    evidence,
+                });
+                self.argument(forward)
+            },
+            (
+                Frame::PathEquivForward {
+                    at,
+                    path_type,
+                    backward,
+                    evidence,
+                },
+                AnyNode::Value(forward),
+            ) => {
+                self.frames.push(Frame::PathEquivBackward {
+                    at,
+                    path_type,
+                    forward,
+                    evidence,
+                });
+                self.argument(backward)
+            },
+            (
+                Frame::PathEquivBackward {
+                    at,
+                    path_type,
+                    forward,
+                    evidence,
+                },
+                AnyNode::Value(backward),
+            ) => Ok(self.erased_value(
+                at,
+                target.value_path_equiv(path_type, forward, backward, evidence),
+            )),
+            (Frame::UnivalenceRecord { at }, AnyNode::Value(record)) => {
+                Ok(self.erased_value(at, target.value_univalence(record)))
+            },
+            (Frame::PathSource { at, target_code }, AnyNode::Value(source)) => {
+                self.frames.push(Frame::PathTarget { at, source });
+                self.argument(target_code)
+            },
+            (Frame::PathTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+                self.erased_value_type(at, target.value_type_path_universe(source, target_code))
+            ),
+            (Frame::FlowSource { at, target_code }, AnyNode::Value(source)) => {
+                self.frames.push(Frame::FlowTarget { at, source });
+                self.argument(target_code)
+            },
+            (Frame::FlowTarget { at, source }, AnyNode::Value(target_code)) => Ok(
+                self.erased_value_type(at, target.value_type_flow_universe(source, target_code))
+            ),
+            (
+                Frame::SessionCertificate {
+                    at,
+                    relation,
+                    ref evidence,
+                    payloads,
+                },
+                AnyNode::ValueType(classifier),
+            ) => {
+                let evidence = alloc::sync::Arc::clone(evidence);
+                if let Some(payloads) = payloads {
+                    self.frames.push(Frame::SessionPayloads {
+                        at,
+                        classifier,
+                        evidence,
+                    });
+                    return self.argument(payloads);
+                }
+                let unit = target.value_tuple(&[]);
+                let image = match relation {
+                    gandr_core_term::session::SessionRelation::Equivalence => {
+                        target.value_session_path(classifier, evidence, unit)
+                    },
+                    gandr_core_term::session::SessionRelation::Subtyping => {
+                        target.value_session_flow(classifier, evidence, unit)
+                    },
+                };
+                Ok(self.erased_value(at, image))
+            },
+            (
+                Frame::SessionPayloads {
+                    at,
+                    classifier,
+                    ref evidence,
+                },
+                AnyNode::Value(paths),
+            ) => {
+                let evidence = alloc::sync::Arc::clone(evidence);
+                Ok(self.erased_value(at, target.value_session_path(classifier, evidence, paths)))
+            },
+            (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
+                Ok(self.erased_value(at, target.value_injection(summand, body)))
+            },
+            (Frame::TransportPath { at, value }, AnyNode::Value(path)) => {
+                self.frames.push(Frame::TransportValue { at, path });
+                self.argument(value)
+            },
+            (Frame::TransportValue { at, path }, AnyNode::Value(value)) => {
+                Ok(self.erased_computation(at, target.computation_transport(path, value)))
+            },
+            (
+                Frame::PathCarrier {
+                    at,
+                    left,
+                    right,
+                    former,
+                },
+                AnyNode::ValueType(carrier),
+            ) => {
+                self.frames.push(Frame::PathLeft {
+                    at,
+                    carrier,
+                    right,
+                    former,
+                });
+                self.argument(left)
+            },
+            (
+                Frame::PathLeft {
+                    at,
+                    carrier,
+                    right,
+                    former,
+                },
+                AnyNode::Value(left),
+            ) => {
+                self.frames.push(Frame::PathRight {
+                    at,
+                    carrier,
+                    left,
+                    former,
+                });
+                self.argument(right)
+            },
+            (
+                Frame::PathRight {
+                    at,
+                    carrier,
+                    left,
+                    former,
+                },
+                AnyNode::Value(right),
+            ) => {
+                let image = match former {
+                    Relating::Path => target.value_type_path(carrier, left, right),
+                    Relating::Flow => target.value_type_flow(carrier, left, right),
+                    Relating::Bridge => target.value_type_bridge(carrier, left, right),
+                };
+                Ok(self.erased_value_type(at, image))
+            },
+            // A reflexivity checked against a path type carries the
+            // dialogues relating its point to each endpoint; one only
+            // synthesised relates it to itself and carries none.
+            (Frame::Here { at, family }, AnyNode::Value(point)) => {
+                let dialogues = self.source.reflexivities.get(&at).map(|reflexivity| {
+                    alloc::sync::Arc::new(EndpointDialogues {
+                        left: reflexivity
+                            .left()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                        right: reflexivity
+                            .right()
+                            .iter()
+                            .map(|decision| decision.map(|_| ()))
+                            .collect(),
+                    })
+                });
+                let image = match (family, dialogues) {
+                    (Family::Path, Some(dialogues)) => target.value_here_relating(point, dialogues),
+                    (Family::Path, None) => target.value_here(point),
+                    (Family::Flow, Some(dialogues)) => target.value_stay_relating(point, dialogues),
+                    (Family::Flow, None) => target.value_stay(point),
+                };
+                Ok(self.erased_value(at, image))
+            },
+            (
+                Frame::PathTransportMotive {
+                    at,
+                    path,
+                    value,
+                    family,
+                },
+                AnyNode::ValueType(motive),
+            ) => {
+                self.frames.push(Frame::PathTransportPath {
+                    at,
+                    motive,
+                    value,
+                    family,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
+            },
+            (
+                Frame::PathTransportPath {
+                    at,
+                    motive,
+                    value,
+                    family,
+                },
+                AnyNode::Value(path),
+            ) => {
+                self.frames.push(Frame::PathTransportValue {
+                    at,
+                    motive,
+                    path,
+                    family,
+                });
+                self.argument(value)
+            },
+            (
+                Frame::PathTransportValue {
+                    at,
+                    motive,
+                    path,
+                    family,
+                },
+                AnyNode::Value(value),
+            ) => {
+                let image = match family {
+                    Family::Path => target.computation_path_transport(motive, path, value),
+                    Family::Flow => target.computation_ride(motive, path, value),
+                };
+                Ok(self.erased_computation(at, image))
+            },
+            (Frame::ThenFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::ThenSecond { at, first });
+                self.argument(second)
+            },
+            (Frame::ThenSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_then(first, second, Seam::Sequence)))
+            },
+            (Frame::FlowProductFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::FlowProductSecond { at, first });
+                self.argument(second)
+            },
+            (Frame::FlowProductSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_flow_product(first, second)))
+            },
+            (
+                Frame::ForwardType {
+                    at,
+                    translator,
+                    images,
+                    dialogues,
+                },
+                AnyNode::ValueType(flow_type),
+            ) => {
+                self.frames.push(Frame::ForwardTranslator {
+                    at,
+                    flow_type,
+                    images,
+                    dialogues,
+                });
+                self.argument(translator)
+            },
+            (
+                Frame::ForwardTranslator {
+                    at,
+                    flow_type,
+                    images,
+                    dialogues,
+                },
+                AnyNode::Value(translator),
+            ) => self.forward_images(target, ForwardErasure {
+                at,
+                flow_type,
+                translator,
+                images,
+                erased: Vec::new(),
+                dialogues,
+            }),
+            (Frame::ForwardImages(mut erasure), AnyNode::Value(image)) => {
+                erasure.erased.push(image);
+                self.forward_images(target, erasure)
+            },
+            (
+                Frame::FunctionFlowType {
+                    at,
+                    domain,
+                    codomain,
+                },
+                AnyNode::ValueType(flow_type),
+            ) => {
+                self.frames.push(Frame::FunctionFlowDomain {
+                    at,
+                    flow_type,
+                    codomain,
+                });
+                self.argument(domain)
+            },
+            (
+                Frame::FunctionFlowDomain {
+                    at,
+                    flow_type,
+                    codomain,
+                },
+                AnyNode::Value(domain),
+            ) => {
+                self.frames.push(Frame::FunctionFlowCodomain {
+                    at,
+                    flow_type,
+                    domain,
+                });
+                self.argument(codomain)
+            },
+            (
+                Frame::FunctionFlowCodomain {
+                    at,
+                    flow_type,
+                    domain,
+                },
+                AnyNode::Value(codomain),
+            ) => Ok(self.erased_value(at, target.value_function_flow(flow_type, domain, codomain))),
+            (Frame::TelescopeMotive { at }, AnyNode::CompType(motive)) => {
+                let Some(&Computation::TelescopeTransport { path, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopePath { at, motive });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(path))))
+            },
+            (Frame::TelescopePath { at, motive }, AnyNode::Value(path)) => {
+                let Some(&Computation::TelescopeTransport { start, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeStart { at, motive, path });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(start))))
+            },
+            (Frame::TelescopeStart { at, motive, path }, AnyNode::Value(start)) => {
+                let Some(&Computation::TelescopeTransport { over, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeOver {
+                    at,
+                    motive,
+                    path,
+                    start,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(over))))
+            },
+            (
+                Frame::TelescopeOver {
+                    at,
+                    motive,
+                    path,
+                    start,
+                },
+                AnyNode::Value(over),
+            ) => {
+                let Some(&Computation::TelescopeTransport { value, .. }) =
+                    self.arena.computation(at)
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                self.frames.push(Frame::TelescopeValue {
+                    at,
+                    motive,
+                    path,
+                    start,
+                    over,
+                });
+                self.argument(value)
+            },
+            (
+                Frame::TelescopeValue {
+                    at,
+                    motive,
+                    path,
+                    start,
+                    over,
+                },
+                AnyNode::Value(value),
+            ) => Ok(self.erased_computation(
+                at,
+                target.computation_telescope_transport(motive, path, start, over, value),
+            )),
+            (Frame::Thunk { at }, AnyNode::Computation(body)) => {
+                Ok(self.erased_value(at, target.value_thunk(body)))
+            },
+            (Frame::Returned { at }, AnyNode::Computation(computation)) => {
+                Ok(self.erased_value(at, target.value_returned(computation)))
+            },
+            (Frame::Quote { at } | Frame::LiftedCode { at }, AnyNode::ValueType(quoted)) => {
+                Ok(self.erased_value(at, target.value_quote(quoted)))
+            },
+            (Frame::QuoteComputation { at }, AnyNode::CompType(quoted)) => {
+                Ok(self.erased_value(at, target.value_quote_computation(quoted)))
+            },
+            (Frame::Force { at }, AnyNode::Value(value)) => {
+                Ok(self.erased_computation(at, target.computation_force(value)))
+            },
+            (Frame::NativeFirst { at, head, second }, AnyNode::Value(first)) => {
+                let head = target.computation_application(head, first);
+                self.frames.push(Frame::ApplicationArgument { at, head });
+                self.argument(second)
+            },
+            (Frame::ApplicationHead { at, argument }, AnyNode::Computation(head)) => {
+                self.frames.push(Frame::ApplicationArgument { at, head });
+                self.argument(argument)
+            },
+            (Frame::ApplicationArgument { at, head }, AnyNode::Value(argument)) => {
+                Ok(self.erased_computation(at, target.computation_application(head, argument)))
+            },
+            (Frame::Lambda { at }, AnyNode::Computation(body)) => {
+                Ok(self.erased_computation(at, target.computation_lambda(body)))
+            },
+            (Frame::Fixpoint { at, evidence }, AnyNode::Computation(body)) => {
+                Ok(self.erased_computation(at, target.computation_fixpoint(body, evidence)))
+            },
+            (Frame::Return { at }, AnyNode::Value(value)) => {
+                Ok(self.erased_computation(at, target.computation_return(value)))
+            },
+            (Frame::BindBound { at, body }, AnyNode::Computation(bound)) => {
+                self.frames.push(Frame::BindBody { at, bound });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
+            },
+            (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
+                Ok(self.erased_computation(at, target.computation_bind(bound, body)))
+            },
+            (Frame::Project { at, component }, AnyNode::Computation(product)) => {
+                Ok(self.erased_computation(at, target.computation_project(component, product)))
+            },
+            (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
+                Ok(self.erased_value_type(at, target.value_type_thunk(body)))
+            },
+            (Frame::TypeLift { at }, AnyNode::ValueType(inner)) => {
+                let ValueTypeView::Lift { target: level, .. } = value_type_view(self.arena, at)?
+                else {
+                    return Err(Refusal::MachineInvariant);
+                };
+                let erased = target.value_type_lift(inner, level.clone());
+                Ok(self.erased_value_type(at, erased))
+            },
+            (Frame::DecodeLift { target: level }, AnyNode::ValueType(inner)) => Ok(Step::Ascend(
+                AnyNode::ValueType(target.value_type_lift(inner, level)),
+            )),
+            (
+                Frame::Decoded {
+                    at: TypeNode::Value(at),
+                },
+                AnyNode::ValueType(decoded),
+            ) => Ok(self.erased_value_type(at, decoded)),
+            (
+                Frame::Decoded {
+                    at: TypeNode::Computation(at),
+                },
+                AnyNode::CompType(decoded),
+            ) => Ok(self.erased_comp_type(at, decoded)),
+            (Frame::Returner { at }, AnyNode::ValueType(result)) => {
+                Ok(self.erased_comp_type(at, target.comp_type_returner(result)))
+            },
+            (Frame::ArrowDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+                self.frames.push(Frame::ArrowCodomain { at, domain });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(
+                    codomain,
+                ))))
+            },
+            (Frame::ArrowCodomain { at, domain }, AnyNode::CompType(codomain)) => {
+                Ok(self.erased_comp_type(at, target.comp_type_arrow(domain, codomain)))
+            },
+            (Frame::PiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+                self.frames.push(Frame::PiCodomain { at, domain });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(
+                    codomain,
+                ))))
+            },
+            (Frame::PiCodomain { at, domain }, AnyNode::CompType(codomain)) => {
+                Ok(self.erased_comp_type(at, target.comp_type_pi(domain, codomain)))
+            },
+            (Frame::Reduced { at } | Frame::UnmarkedValue { at }, AnyNode::Value(reduct)) => {
+                Ok(self.erased_value(at, reduct))
+            },
+            (
+                Frame::UnmarkedComputation { at } | Frame::Rewritten { at },
+                AnyNode::Computation(image),
+            ) => Ok(self.erased_computation(at, image)),
+            (Frame::Assumed { at, position }, AnyNode::Computation(image)) => {
+                let assumption = target.value_constant(position);
+                let assumed = target.computation_force(assumption);
+                Ok(self.erased_computation(at, target.computation_bind(assumed, image)))
+            },
+            (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
+                self.frames.push(Frame::SigmaSplitMotive {
+                    at,
+                    scrutinee,
+                    body,
+                });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(motive))))
+            },
+            (
+                Frame::SigmaSplitMotive {
+                    at,
+                    scrutinee,
+                    body,
+                },
+                AnyNode::CompType(motive),
+            ) => {
+                self.frames.push(Frame::SigmaSplitBody {
+                    at,
+                    scrutinee,
+                    motive,
+                });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
+            },
+            (
+                Frame::SigmaSplitBody {
+                    at,
+                    scrutinee,
+                    motive,
+                },
+                AnyNode::Computation(body),
+            ) => Ok(self
+                .erased_computation(at, target.computation_sigma_split(scrutinee, motive, body))),
+            (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
+                self.frames.push(Frame::StaticArgument { at, head });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
+            },
+            (Frame::StaticArgument { at, head }, AnyNode::Value(argument)) => {
+                Ok(self.erased_value(at, target.value_static_application(head, argument)))
+            },
+            (Frame::ListType { at }, AnyNode::ValueType(element)) => {
+                Ok(self.erased_value_type(at, target.value_type_list(element)))
+            },
+            (Frame::StaticPiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+                self.frames.push(Frame::StaticPiCodomain { at, domain });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(codomain))))
+            },
+            (Frame::StaticPiCodomain { at, domain }, AnyNode::ValueType(codomain)) => {
+                Ok(self.erased_value_type(at, target.value_type_static_pi(domain, codomain)))
+            },
+            (Frame::SigmaFirst { at, second }, AnyNode::ValueType(first)) => {
+                self.frames.push(Frame::SigmaSecond { at, first });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
+            },
+            (Frame::SigmaSecond { at, first }, AnyNode::ValueType(second)) => {
+                Ok(self.erased_value_type(at, target.value_type_sigma(first, second)))
+            },
+            (Frame::DecodeOf { level, sort }, AnyNode::Value(code)) => {
+                Ok(Step::Ascend(decoded(target, code, level, sort)))
+            },
+            (
+                Frame::ListNil { .. }
+                | Frame::ListCons { .. }
+                | Frame::ListCaseNil { .. }
+                | Frame::ListCaseCons { .. }
+                | Frame::Thunk { .. }
+                | Frame::Returned { .. }
+                | Frame::ApplicationHead { .. }
+                | Frame::Lambda { .. }
+                | Frame::Fixpoint { .. }
+                | Frame::BindBound { .. }
+                | Frame::BindBody { .. }
+                | Frame::Project { .. }
+                | Frame::UnmarkedComputation { .. }
+                | Frame::Rewritten { .. }
+                | Frame::Assumed { .. }
+                | Frame::SigmaSplitBody { .. },
+                AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
+            )
+            | (
+                Frame::ThunkType { .. }
+                | Frame::QuoteComputation { .. }
+                | Frame::ArrowCodomain { .. }
+                | Frame::PiCodomain { .. }
+                | Frame::SigmaSplitMotive { .. }
+                | Frame::TelescopeMotive { .. }
+                | Frame::Decoded {
+                    at: TypeNode::Computation(_),
+                },
+                AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::ValueType(_),
+            )
+            | (
+                Frame::PathRefl { .. }
+                | Frame::PathProductFirst { .. }
+                | Frame::PathProductSecond { .. }
+                | Frame::PathEquivForward { .. }
+                | Frame::PathEquivBackward { .. }
+                | Frame::UnivalenceRecord { .. }
+                | Frame::PathSource { .. }
+                | Frame::PathTarget { .. }
+                | Frame::FlowSource { .. }
+                | Frame::FlowTarget { .. }
+                | Frame::PathLeft { .. }
+                | Frame::PathRight { .. }
+                | Frame::Here { .. }
+                | Frame::TransportPath { .. }
+                | Frame::TransportValue { .. }
+                | Frame::PathTransportPath { .. }
+                | Frame::PathTransportValue { .. }
+                | Frame::TelescopePath { .. }
+                | Frame::TelescopeStart { .. }
+                | Frame::TelescopeOver { .. }
+                | Frame::TelescopeValue { .. }
+                | Frame::Injection { .. }
+                | Frame::ListHead { .. }
+                | Frame::RestrictedValue(_)
+                | Frame::RestrictedField { .. }
+                | Frame::ListTail { .. }
+                | Frame::ListInput { .. }
+                | Frame::ListCaseList { .. }
+                | Frame::Force { .. }
+                | Frame::ApplicationArgument { .. }
+                | Frame::NativeFirst { .. }
+                | Frame::Return { .. }
+                | Frame::Reduced { .. }
+                | Frame::UnmarkedValue { .. }
+                | Frame::StaticHead { .. }
+                | Frame::StaticArgument { .. }
+                | Frame::DecodeOf { .. }
+                | Frame::ThenFirst { .. }
+                | Frame::ThenSecond { .. }
+                | Frame::FlowProductFirst { .. }
+                | Frame::FlowProductSecond { .. }
+                | Frame::ForwardTranslator { .. }
+                | Frame::ForwardImages(_)
+                | Frame::FunctionFlowDomain { .. }
+                | Frame::FunctionFlowCodomain { .. }
+                | Frame::SigmaSplitScrutinee { .. }
+                | Frame::SessionPayloads { .. },
+                AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
+            )
+            | (
+                Frame::PathEquivType { .. }
+                | Frame::SessionCertificate { .. }
+                | Frame::ListType { .. }
+                | Frame::PathCarrier { .. }
+                | Frame::PathTransportMotive { .. }
+                | Frame::ListElement { .. }
+                | Frame::ListResult { .. }
+                | Frame::Quote { .. }
+                | Frame::LiftedCode { .. }
+                | Frame::TypeLift { .. }
+                | Frame::DecodeLift { .. }
+                | Frame::Returner { .. }
+                | Frame::ArrowDomain { .. }
+                | Frame::PiDomain { .. }
+                | Frame::StaticPiDomain { .. }
+                | Frame::StaticPiCodomain { .. }
+                | Frame::SigmaFirst { .. }
+                | Frame::SigmaSecond { .. }
+                | Frame::ForwardType { .. }
+                | Frame::FunctionFlowType { .. }
+                | Frame::Decoded {
+                    at: TypeNode::Value(_),
+                },
+                AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::CompType(_),
+            ) => Err(Refusal::MachineInvariant),
+        }
+    }
+
+    /// Record `erased` as the image of the value `at`, and ascend it.
+    ///
+    /// # Specification
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().values.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::Value(erased)))]
+    fn erased_value(
+        &mut self,
+        at: ValueId,
+        erased: gandr_kernel_term::ValueId,
+    ) -> Step
+    {
+        self.memo().values.insert(at, Image::Erased(erased));
+        Step::Ascend(AnyNode::Value(erased))
+    }
+
+    /// Record `erased` as the image of the computation `at`, and ascend it.
+    ///
+    /// # Specification
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().computations.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::Computation(erased)))]
+    fn erased_computation(
+        &mut self,
+        at: ComputationId,
+        erased: gandr_kernel_term::ComputationId,
+    ) -> Step
+    {
+        self.memo().computations.insert(at, Image::Erased(erased));
+        Step::Ascend(AnyNode::Computation(erased))
+    }
+
+    /// The computation a session action is erased to, minted into the source
+    /// arena, with the frame that awaits its image: the kernel replays what the
+    /// action computes and none of the discipline the checker judged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `send c v` is `(return v : F T) to _. return ()`, `T` the
+    ///   payload type the judgement checked `v` at, so the payload still
+    ///   crosses and the kernel checks it there — unascribed where no type is
+    ///   recorded — and `return ()` for an endpoint sent; a select and a close
+    ///   are `return ()`; a fork is its child, then its parent under the bind's
+    ///   one new binder; a receive of an endpoint, and the placement of a
+    ///   parameter's endpoint, is `return () to _.` its body — each awaited as
+    ///   rewritten. A receive of a value is its body reading the payload as the
+    ///   bind's variable, and an offer a case on that variable over its arms in
+    ///   label order, each arm past the bind's and the case's binders — each
+    ///   awaited bound to the assumption admitted for it. An endpoint names no
+    ///   value, and the linear binders bind none.
+    /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
+    ///   not a session action; [`Refusal::Session`] for a receive the judgement
+    ///   recorded no type for, or a received value or an offer whose assumption
+    ///   is not admitted; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Memory`] for a placed or a received buffer, or a
+    ///   placement the judgement recorded no endpoint for.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork whose parent reads a variable bound outside it
+    ///   crosses and the kernel admits it; an unshifted parent reads the
+    ///   child's result instead, and a dropped payload leaves a send's value
+    ///   unchecked. A returned received value, the seat exchange's receives and
+    ///   offers, and a delegation each cross, the first two bound to their
+    ///   assumptions and the delegation to none.
+    /// - witness: `bridge::tests::a_session_action_crosses_as_what_it_computes_1319`
+    /// - witness: `judgement::session::tests::a_fork_crosses_as_its_child_then_its_parent_1319`
+    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    /// - witness: `judgement::session::tests::a_placed_endpoint_is_spent_by_its_body_1862`
+    #[spec(ensures: |ret| match ret {
+        | Ok((ref frame, reduct)) => self.arena.computation(reduct).is_some()
+            && matches!(*frame, Frame::Rewritten { at: site } | Frame::Assumed { at: site, .. } if site == at),
+        | Err(Refusal::Session { at: site } | Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory } | Refusal::DanglingNode { node: site }) =>
+            site == CoreNode::Term(TermNode::Computation(at)),
+        | Err(_) => false,
+    })]
+    fn session_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<(Frame, ComputationId), Refusal>
+    {
+        use gandr_core_term::session::SessionAction;
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let Some(&Computation::Session(ref action)) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        let rewritten = Frame::Rewritten { at };
+        match *action {
+            SessionAction::Send { payload, .. } => {
+                let unit = self.arena.value_unit();
+                let done = self.arena.computation_return(unit);
+                if matches!(
+                    self.arena.value(payload),
+                    Some(&Value::Variable {
+                        zone: gandr_core_term::Zone::Linear,
+                        ..
+                    })
+                ) {
+                    return Ok((rewritten, done));
+                }
+                let mut sent = self.arena.computation_return(payload);
+                if let Some(&moved) = self.source.payloads.get(&at) {
+                    let returner = self.arena.comp_type_returner(moved);
+                    sent = self.arena.computation_ascribe(sent, returner);
+                }
+                Ok((rewritten, self.arena.computation_bind(sent, done)))
+            },
+            SessionAction::Select { .. } | SessionAction::Close { .. } => {
+                let unit = self.arena.value_unit();
+                Ok((rewritten, self.arena.computation_return(unit)))
+            },
+            SessionAction::Fork { child, parent, .. } => {
+                let parent = gandr_core_term::shift_computation_under(
+                    self.arena,
+                    parent,
+                    gandr_core_term::Binders::NONE,
+                    gandr_core_term::Binders::from(1_u32),
+                )
+                .settle(self.arena);
+                Ok((rewritten, self.arena.computation_bind(child, parent)))
+            },
+            SessionAction::Receive { body, .. } => {
+                let Some(&opened) = self.source.payloads.get(&at)
+                else {
+                    return Err(Refusal::Session { at: node });
+                };
+                let view = value_type_view(self.arena, opened)?;
+                if matches!(view, ValueTypeView::Buffer) {
+                    return Err(Refusal::OutOfFragment {
+                        at: node,
+                        former: UnadmittedFormer::Memory,
+                    });
+                }
+                let endpoint = matches!(view, ValueTypeView::Session(_));
+                let assumed = self
+                    .positions
+                    .assumed
+                    .get(&Assumption::Receive(opened))
+                    .copied();
+                let rest = gandr_core_term::delinearise(self.arena, body);
+                if endpoint {
+                    let unit = self.arena.value_unit();
+                    let none = self.arena.computation_return(unit);
+                    return Ok((rewritten, self.arena.computation_bind(none, rest)));
+                }
+                assumed.map_or(Err(Refusal::Session { at: node }), |position| {
+                    Ok((Frame::Assumed { at, position }, rest))
+                })
+            },
+            SessionAction::Offer { ref arms, .. } => {
+                let Some(&position) = self.positions.assumed.get(&Assumption::Offer(arms.len()))
+                else {
+                    return Err(Refusal::Session { at: node });
+                };
+                // The arms are copied out of the action, which borrows the
+                // arena each shift writes to, and shifted in place.
+                let mut branches = arms.values().copied().collect::<Vec<_>>();
+                for branch in &mut branches {
+                    *branch = gandr_core_term::shift_computation_under(
+                        self.arena,
+                        *branch,
+                        gandr_core_term::Binders::NONE,
+                        gandr_core_term::Binders::from(2_u32),
+                    )
+                    .settle(self.arena);
+                }
+                let choice = self.arena.value_variable(
+                    gandr_core_term::Zone::Intuitionistic,
+                    gandr_kernel_term::DeBruijnIndex::from(0_u32),
+                );
+                Ok((
+                    Frame::Assumed { at, position },
+                    self.arena.computation_case(choice, &branches),
+                ))
+            },
+            SessionAction::Place { body, .. } => {
+                // The checker records the head a placed endpoint opens at;
+                // a placed buffer records none and stays outside the
+                // fragment.
+                let placed = match self.source.payloads.get(&at) {
+                    Some(&opened) => value_type_view(self.arena, opened)?,
+                    None => ValueTypeView::Buffer,
+                };
+                if !matches!(placed, ValueTypeView::Session(_)) {
+                    return Err(Refusal::OutOfFragment {
+                        at: node,
+                        former: UnadmittedFormer::Memory,
+                    });
+                }
+                let rest = gandr_core_term::delinearise(self.arena, body);
+                let unit = self.arena.value_unit();
+                let none = self.arena.computation_return(unit);
+                Ok((rewritten, self.arena.computation_bind(none, rest)))
+            },
+        }
+    }
+
+    /// The computation a deep handler or a capability scope is erased to,
+    /// minted into the source arena: its subject read as a program of the
+    /// handled effect's free model, and its clauses as the fold of that
+    /// program, one case for each operation. The kernel gains no effect
+    /// former: it types the program and the fold, which re-derives the row
+    /// claim.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a handler of the operations `op₁ : A₁ ↠ B₁, …, opₙ : Aₙ ↠
+    ///   Bₙ`, `n ≥ 1`, in the order the signature enumerates them, none of
+    ///   whose payloads and replies mentions a binder, judged with subject
+    ///   result `R` and answer `C` ([`Source::handled`]), the computation
+    ///   `((λs. λr. λh₁. … λhₙ. t ← force s; ((fix f. λt. case t of Return(x) ⇒
+    ///   force r x | opᵢ(v, κ) ⇒ force hᵢ v (thunk(λy. t′ ← force κ y; force f
+    ///   t′))) : Free(R) → C) t) : U(F Free(R)) → U(R → C) → U(A₁ → U(B₁ → C) →
+    ///   C) → … → U(Aₙ → U(Bₙ → C) → C) → C) (thunk T) (thunk(λx. r))
+    ///   (thunk(λp. λk. u₁)) … (thunk(λp. λk. uₙ))`. `T` is the subject read
+    ///   along its bind spine, a split at the ambient motive read as the
+    ///   projection binds it reduces to: a request of `opᵢ`, performed by the
+    ///   interface's name or exercised through a scope's own capability, is
+    ///   `return opᵢ(v, thunk(λy. K))`, `K` the rest of the spine; a step `M`
+    ///   whose image is a program of the handled effect, as a call of a
+    ///   declaration at its row is, folds into `K` ([`Self::fold`]); any other
+    ///   step runs as `y ← M; K`, the subject's last step ascribed its result,
+    ///   `y ← (M : F R); K`, as the judgement checked it there; the spine ends
+    ///   in `return Return(x)`. A scope's capability is bound to the unit,
+    ///   which none but its own requests read. The return clause `r` and each
+    ///   operation clause `uᵢ` stand beneath their own binders, so the reduct
+    ///   copies none of them and each crosses at the records the judgement
+    ///   keeps for it. A clause's stack `k` is the thunk of the rest of the
+    ///   fold, and each resumption of it calls that thunk
+    ///   ([`Self::resumption_reduct`]). An answer at a row of operations is the
+    ///   program of that row's model, `F Free'(A)` (#6672). A request off the
+    ///   spine, a step at another row, or a type the fold does not inhabit is
+    ///   left to the erasure, which refuses it, or to the kernel, whose type
+    ///   error it is.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Handle`]
+    ///   for a handler of no operation, one an operation of whose payload or
+    ///   reply mentions a binder, one whose subject's result inhabits a
+    ///   universe at a level that mentions a level variable, one whose answer
+    ///   is a returner over a row the model does not translate, one whose
+    ///   subject holds a step at another row, or one the judgement recorded no
+    ///   types for; [`Refusal::MachineInvariant`] for clauses that do not cover
+    ///   the operations exactly once, which the judgement's coverage rules out,
+    ///   and when the environment holds no free model of the handled effect or
+    ///   of the answer's row at that level yet, which the erasure names as the
+    ///   seed it stopped at; [`Refusal::DanglingNode`] for an absent source or
+    ///   one that is no handler.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` over the subject's bind spine, not recursion.
+    /// - measure: the binds and ambient splits of the spine not yet entered,
+    ///   plus the bound computations waiting: entering a bind replaces it by
+    ///   its body and one waiting computation, a split by its projection binds
+    ///   and its body, and a step consumes one waiting computation; the arena
+    ///   is finite and acyclic, and a split's reduct holds no split.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler whose clause resumes and one whose clause
+    ///   answers each cross and the kernel admits them; a handler of two
+    ///   operations of distinct payloads and replies, one clause resuming and
+    ///   one answering, crosses through one model, so each request and each
+    ///   clause stands at its own operation's tag; a subject whose last step
+    ///   returns a function crosses, checked at its result; a scope judged at
+    ///   no type is refused by name at its node; a handler over a call of a
+    ///   declaration at the handled row, whose clauses return functions into
+    ///   another row, crosses, and a fold of that call at another operation's
+    ///   tag is the kernel's refusal. A clause at another parameter, a request
+    ///   or a clause at another operation's tag, a last step left to be
+    ///   synthesised, or a fold over the wrong model is the kernel's rejection
+    ///   instead.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
+    /// - witness: `bridge::tests::a_handled_subject_returning_a_function_crosses_checked_at_its_result_2750`
+    /// - witness: `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`
+    /// - witness: `bridge::tests::each_effect_former_is_refused_by_name_where_it_stands`
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    /// - witness: `bridge::tests::a_handled_call_folded_at_another_operation_is_the_kernels_refusal_6672`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.computation(reduct).is_some(),
+        | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Handle } | Refusal::DanglingNode { node: site }) =>
+            site == CoreNode::Term(TermNode::Computation(at)),
+        | Err(Refusal::MachineInvariant) => matches!(self.unseeded, Some(Seed::Model(..))) || self.source.handled.contains_key(&at),
+        | Err(_) => false,
+    })]
+    fn handler_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<ComputationId, Refusal>
+    {
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let uncovered = Refusal::OutOfFragment {
+            at: node,
+            former: UnadmittedFormer::Handle,
+        };
+        let scoped = matches!(self.arena.computation(at), Some(Computation::Scope { .. }));
+        let Some(
+            &(Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }),
+        ) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        let (signature, clauses) = (signature.clone(), alloc::sync::Arc::clone(clauses));
+        let Some(handled) = self.source.handled.get(&at)
+        else {
+            return Err(uncovered);
+        };
+        // The model stands at the top level, where no level variable is bound.
+        if signature.operations().len() == 0 || handled.level.atoms().next().is_some() {
+            return Err(uncovered);
+        }
+        for operation in signature.operations() {
+            for ty in [operation.payload, operation.reply] {
+                let reach =
+                    loose_reach(self.arena, CoreNode::Type(TypeNode::Value(ty))).map_err(fault)?;
+                if reach != BinderDepth::default() {
+                    return Err(uncovered);
+                }
+            }
+        }
+        // The fold's cases in the model's constructor order, one clause for
+        // each operation.
+        let by_operation: BTreeMap<_, _> = clauses
+            .iter()
+            .map(|clause| (&clause.operation, clause.body))
+            .collect();
+        if clauses.len() != signature.operations().len() || by_operation.len() != clauses.len() {
+            return Err(Refusal::MachineInvariant);
+        }
+        let mut bodies = Vec::with_capacity(clauses.len());
+        for operation in signature.operations() {
+            let Some(&body) = by_operation.get(&operation.name)
+            else {
+                return Err(Refusal::MachineInvariant);
+            };
+            bodies.push(body);
+        }
+        let model = self.free_model(core::slice::from_ref(&signature), &handled.level)?;
+        // An answer at a row of operations is a program of that row's model.
+        let outer = match crate::program::programmed(self.arena, handled.answer) {
+            Maybe::Present(_) => match self
+                .programmed(handled.answer)
+                .map_err(|_outside| uncovered)?
+            {
+                Imaged::Program(answer) => {
+                    Some((self.free_model(&answer.row, &answer.level)?, answer))
+                },
+                Imaged::Pure => None,
+            },
+            Maybe::Absent(_) => None,
+        };
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        // `Free(R)`, in the handler's context.
+        let program = Programmed {
+            result: handled.subject,
+            row: Vec::from([signature.clone()]),
+            level: handled.level.clone(),
+        };
+        let binder = u32::from(scoped);
+        let past = |depth: u32| binder.checked_add(depth).ok_or(Refusal::MachineInvariant);
+        // The rest of the spine past the step at hand, once a step stands:
+        // the spine's end is minted where its step stands, so no shift
+        // copies its types.
+        let mut continuation: Option<ComputationId> = None;
+        // Each bound computation waits, at its depth, for the program its
+        // bind's body reads as, which is its own continuation.
+        let mut waiting: Vec<(ComputationId, u32)> = Vec::new();
+        let (mut current, mut depth) = (subject, 0_u32);
+        let tree = loop {
+            if let Some(&Computation::Bind(bound, rest)) = self.arena.computation(current) {
+                waiting.push((bound, depth));
+                if let Some(later) = continuation {
+                    continuation = Some(
+                        gandr_core_term::shift_computation_under(
+                            self.arena,
+                            later,
+                            Binders::from(1_u32),
+                            Binders::from(1_u32),
+                        )
+                        .settle(self.arena),
+                    );
+                }
+                current = rest;
+                depth = depth.checked_add(1).ok_or(Refusal::MachineInvariant)?;
+                continue;
+            }
+            // A split at the ambient motive is the projection binds it
+            // reduces to, and a split of the unit, as a statement's `;`
+            // writes one, is its body.
+            if let Some(&Computation::Split {
+                scrutinee,
+                arity,
+                motive: SplitMotive::Ambient,
+                body: split,
+            }) = self.arena.computation(current)
+            {
+                current = self.split_reduct(scrutinee, arity, split);
+                continue;
+            }
+            // A request of the handled effect, at its operation's position.
+            let request = match self.arena.computation(current) {
+                Some(&Computation::Perform {
+                    signature: ref performed,
+                    operation: ref requested,
+                    payload,
+                }) if performed.name() == signature.name() => signature
+                    .operations()
+                    .position(|operation| operation.name == *requested)
+                    .map(|index| (index, payload)),
+                Some(&Computation::Exercise {
+                    capability,
+                    operation: ref requested,
+                    payload,
+                    ..
+                }) if scoped
+                    && matches!(
+                        self.arena.value(capability),
+                        Some(&Value::Variable { zone: Zone::Intuitionistic, index })
+                            if u32::from(index) == depth
+                    ) =>
+                {
+                    signature
+                        .operations()
+                        .position(|operation| operation.name == *requested)
+                        .map(|index| (index, payload))
+                },
+                _ => None,
+            };
+            // The first step the spine reaches is the subject's last, and its
+            // rest is the spine's end, beneath the binder of the value it
+            // returns.
+            let tail = continuation.is_none();
+            let next = if let Some(later) = continuation {
+                later
+            }
+            else {
+                let returned = variable(self.arena, 0);
+                let beneath = past(depth)?
+                    .checked_add(1)
+                    .ok_or(Refusal::MachineInvariant)?;
+                self.returning(model, &program, (returned, Binders::from(beneath)))
+            };
+            let step = match request {
+                Some((index, payload)) => {
+                    let tag = index.checked_add(1).ok_or(Refusal::MachineInvariant)?;
+                    let rest = self.arena.computation_lambda(next);
+                    let rest = self.arena.value_thunk(rest);
+                    let datatype = self.answer(model, &program, Binders::from(past(depth)?));
+                    let requested = self.arena.value_constructor(
+                        model,
+                        datatype,
+                        gandr_kernel_term::ConstructorTag::from(tag),
+                        Vec::from([payload, rest]),
+                    );
+                    self.arena.computation_return(requested)
+                },
+                None => match self.imaged(current).map_err(|_outside| uncovered)? {
+                    // A step whose image is a program of the handled effect,
+                    // as a call of a declaration at its row is, folds into
+                    // the rest of the subject's program (#6672).
+                    Imaged::Program(inner) => {
+                        if inner.row.iter().any(|held| held.name() != signature.name()) {
+                            return Err(uncovered);
+                        }
+                        let here = Programmed {
+                            result: self.shifted(handled.subject, Binders::from(past(depth)?)),
+                            row: program.row.clone(),
+                            level: program.level.clone(),
+                        };
+                        self.fold((current, &inner), next, (model, &here))?
+                    },
+                    // The subject's last step is checked at its result, as
+                    // the judgement checked it; a bound step is synthesised,
+                    // as the judgement synthesised it.
+                    Imaged::Pure if tail => {
+                        let result = self.shifted(handled.subject, Binders::from(past(depth)?));
+                        let returner = self.arena.comp_type_returner(result);
+                        let typed = self.arena.computation_ascribe(current, returner);
+                        self.arena.computation_bind(typed, next)
+                    },
+                    Imaged::Pure => self.arena.computation_bind(current, next),
+                },
+            };
+            match waiting.pop() {
+                Some((bound, at_depth)) => {
+                    (current, depth, continuation) = (bound, at_depth, Some(step));
+                },
+                None => break step,
+            }
+        };
+        let tree = if scoped {
+            let unit = self.arena.value_unit();
+            let capability = self.arena.computation_return(unit);
+            self.arena.computation_bind(capability, tree)
+        }
+        else {
+            tree
+        };
+        // `C` beneath `depth` binders past the handler's context.
+        let answered = |this: &mut Self, depth: u32| match outer {
+            Some((outside, ref answer)) => {
+                let tree = this.answer(outside, answer, Binders::from(depth));
+                this.arena.comp_type_returner(tree)
+            },
+            None => this.shifted_computation(handled.answer, Binders::from(depth)),
+        };
+        let operations =
+            u32::try_from(bodies.len()).map_err(|_overflow| Refusal::MachineInvariant)?;
+        // Past the parameters: the subject's thunk, the return clause's and
+        // one for each operation clause, outermost first.
+        let beneath = |extra: u32| {
+            operations
+                .checked_add(extra)
+                .ok_or(Refusal::MachineInvariant)
+        };
+        let answer = answered(self, 0);
+        // The case stands beneath the parameters, the program's binder, the
+        // fold's and its argument's, and its motive beneath the scrutinee's.
+        let motive = answered(self, beneath(6)?);
+        // Beneath the returned value, the return clause is the second
+        // parameter.
+        let on_returned = variable(self.arena, beneath(4)?);
+        let on_returned = self.arena.computation_force(on_returned);
+        let value = variable(self.arena, 0);
+        let on_returned = self.arena.computation_application(on_returned, value);
+        // Beneath the reply: the continuation field is one, the fold five
+        // once the rest's binder stands. Every clause resumes through it.
+        let later = variable(self.arena, 1);
+        let later = self.arena.computation_force(later);
+        let reply = variable(self.arena, 0);
+        let resumed = self.arena.computation_application(later, reply);
+        let fold = variable(self.arena, 5);
+        let fold = self.arena.computation_force(fold);
+        let rest = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, rest);
+        let resumed = self.arena.computation_bind(resumed, folded);
+        let resumed = self.arena.computation_lambda(resumed);
+        let resumed = self.arena.value_thunk(resumed);
+        let mut branches = Vec::with_capacity(bodies.len().saturating_add(1));
+        let mut fields = Vec::with_capacity(bodies.len().saturating_add(1));
+        let mut parameters = Vec::with_capacity(bodies.len());
+        branches.push(self.arena.computation_lambda(on_returned));
+        fields.push(gandr_kernel_term::FieldCount::from(1_usize));
+        for (clause, operation) in (0_u32 ..).zip(signature.operations()) {
+            // Beneath the payload and the continuation field, clause `i` is
+            // the parameter `n + 4 - i` binders out.
+            let handler = beneath(4)?
+                .checked_sub(clause)
+                .ok_or(Refusal::MachineInvariant)?;
+            let handler = variable(self.arena, handler);
+            let handler = self.arena.computation_force(handler);
+            let payload = variable(self.arena, 1);
+            let answered = self.arena.computation_application(handler, payload);
+            let answered = self.arena.computation_application(answered, resumed);
+            let answered = self.arena.computation_lambda(answered);
+            branches.push(self.arena.computation_lambda(answered));
+            fields.push(gandr_kernel_term::FieldCount::from(2_usize));
+            // `U(Aᵢ → U(Bᵢ → C) → C)`, in the handler's context.
+            let stack = self.arena.comp_type_arrow(operation.reply, answer);
+            let stack = self.arena.value_type_thunk(stack);
+            let parameter = self.arena.comp_type_arrow(stack, answer);
+            let parameter = self.arena.comp_type_arrow(operation.payload, parameter);
+            parameters.push(self.arena.value_type_thunk(parameter));
+        }
+        let scrutinee = variable(self.arena, 0);
+        let case = self
+            .arena
+            .computation_data_case(scrutinee, motive, branches, fields);
+        let fold = self.arena.computation_lambda(case);
+        let fold = self
+            .arena
+            .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+        // The fold's classifier stands beneath the parameters and the
+        // program's binder.
+        let domain = self.answer(model, &program, Binders::from(beneath(3)?));
+        let codomain = answered(self, beneath(3)?);
+        let classifier = self.arena.comp_type_arrow(domain, codomain);
+        let fold = self.arena.computation_ascribe(fold, classifier);
+        let bound = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, bound);
+        // Beneath the parameters, the subject's thunk is the outermost.
+        let ran = variable(self.arena, beneath(1)?);
+        let ran = self.arena.computation_force(ran);
+        let mut head = self.arena.computation_bind(ran, folded);
+        for _parameter in 0 .. beneath(2)? {
+            head = self.arena.computation_lambda(head);
+        }
+        let mut classifier = answer;
+        for &parameter in parameters.iter().rev() {
+            classifier = self.arena.comp_type_arrow(parameter, classifier);
+        }
+        let on_return_type = self.arena.comp_type_arrow(handled.subject, answer);
+        let on_return_type = self.arena.value_type_thunk(on_return_type);
+        classifier = self.arena.comp_type_arrow(on_return_type, classifier);
+        let subject_type = self.answer(model, &program, Binders::from(0_u32));
+        let subject_type = self.arena.comp_type_returner(subject_type);
+        let subject_type = self.arena.value_type_thunk(subject_type);
+        classifier = self.arena.comp_type_arrow(subject_type, classifier);
+        let head = self.arena.computation_ascribe(head, classifier);
+        // Each argument stands in the handler's context, beneath its own
+        // binders.
+        let tree = self.arena.value_thunk(tree);
+        let mut reduct = self.arena.computation_application(head, tree);
+        let on_return = self.arena.computation_lambda(on_return);
+        let on_return = self.arena.value_thunk(on_return);
+        reduct = self.arena.computation_application(reduct, on_return);
+        for body in bodies {
+            let clause = self.arena.computation_lambda(body);
+            let clause = self.arena.computation_lambda(clause);
+            let clause = self.arena.value_thunk(clause);
+            reduct = self.arena.computation_application(reduct, clause);
+        }
+        Ok(reduct)
+    }
+
+    /// The reduct of the resumption `resume(k, M)` at `at` of a handler
+    /// clause's stack `k`, which the handler's reduct binds to the thunk of
+    /// the rest of its fold ([`Self::handler_reduct`]): `force k v` for `M`
+    /// the return of `v`; `y ← M; force k y` for any other `M`, or the fold
+    /// of `M` into `force k y` when the image of `M` is a program.
+    ///
+    /// # Specification
+    /// - requires: `at` is `resume(stack, resumed)`.
+    /// - ensures: the reduct above. A returned value stands where it stands in
+    ///   `at`, and the kernel checks it at the stack's reply, as a returned
+    ///   list must be. Past the reply's binder, `k` reads one binder past where
+    ///   `at` stands; `M` stands where it stands in `at`, so it keeps its
+    ///   records.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Resume`]
+    ///   at `at` for a program fed to a stack where `at` stands for no program,
+    ///   which the judgement's rows rule out; as [`Self::imaged`],
+    ///   [`Self::program_of`] and [`Self::fold`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::handler_reduct`]: a clause that resumes
+    ///   crosses as a call of the rest of the fold, which the kernel types.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn resumption_reduct(
+        &mut self,
+        at: ComputationId,
+        (stack, resumed): (ValueId, ComputationId),
+    ) -> Result<ComputationId, Refusal>
+    {
+        if let Some(&Computation::Return(value)) = self.arena.computation(resumed) {
+            let later = self.arena.computation_force(stack);
+            return Ok(self.arena.computation_application(later, value));
+        }
+        let stack = gandr_core_term::shift_value(self.arena, stack, Binders::from(1_u32))
+            .settle(self.arena);
+        let later = self.arena.computation_force(stack);
+        let reply = self
+            .arena
+            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let continued = self.arena.computation_application(later, reply);
+        match self.imaged(resumed)? {
+            Imaged::Pure => Ok(self.arena.computation_bind(resumed, continued)),
+            Imaged::Program(inner) => {
+                let Some(program) = self.program_of(at)?
+                else {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Computation(at)),
+                        former: UnadmittedFormer::Resume,
+                    });
+                };
+                let model = self.free_model(&program.row, &program.level)?;
+                self.fold((resumed, &inner), continued, (model, &program))
+            },
+        }
+    }
+
+    /// The reduct of the abandonment `abandon(k)` at `at` of a handler
+    /// clause's stack: the unit returned, as a program when `at` stands for
+    /// one.
+    ///
+    /// # Specification
+    /// - ensures: `return Return(())` of the model of the program
+    ///   [`Self::program_of`] reads at `at`; `return ()` when it reads none.
+    /// - fails: as [`Self::program_of`] and [`Self::free_model`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a clause that abandons its stack crosses, and the
+    ///   kernel admits it.
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn abandonment_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<ComputationId, Refusal>
+    {
+        let unit = self.arena.value_unit();
+        match self.program_of(at)? {
+            Some(program) => {
+                let model = self.free_model(&program.row, &program.level)?;
+                Ok(self.returning(model, &program, (unit, Binders::from(0_u32))))
+            },
+            None => Ok(self.arena.computation_return(unit)),
+        }
+    }
+
+    /// How the image of `at` stands to a row of operations: a program of the
+    /// row's free model when the judgement checked `at` at a returner over a
+    /// row of operations, or synthesised one for it; a returned value
+    /// otherwise.
+    ///
+    /// # Specification
+    /// - ensures: the returner `at` was checked at, else the one it
+    ///   synthesised, read as [`Self::programmed`] reads it; [`Imaged::Pure`]
+    ///   when the judgement recorded neither.
+    /// - fails: as [`Self::programmed`].
+    /// - panics: none.
+    /// - executable: none — the image is the one [`Self::programmed`] reads, so
+    ///   a predicate restates the body.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn imaged(
+        &self,
+        at: ComputationId,
+    ) -> Result<Imaged, Refusal>
+    {
+        self.source
+            .rows
+            .checked(at)
+            .or_else(|| self.source.rows.synthesised(at))
+            .map_or(Ok(Imaged::Pure), |ty| self.programmed(ty))
+    }
+
+    /// The program `ty` stands for: its result, its row and its level, when
+    /// `ty` is a returner over a row of operations.
+    ///
+    /// # Specification
+    /// - ensures: [`Imaged::Program`] for a returner over a row of operations
+    ///   ([`crate::program::programmed`]) whose level the judgement recorded,
+    ///   or recorded for the returner a reduct copied it from
+    ///   ([`Self::shifted`]), that mentions no level variable, and whose
+    ///   operations' payloads and replies mention no binder; [`Imaged::Pure`]
+    ///   for a pure returner.
+    /// - fails: [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::EffectRow`] at `ty` for any other type.
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's level record and
+    ///   the binder reach of each operation, which a predicate recomputes as
+    ///   the body does.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn programmed(
+        &self,
+        ty: CompTypeId,
+    ) -> Result<Imaged, Refusal>
+    {
+        let outside = Refusal::OutOfFragment {
+            at: CoreNode::Type(TypeNode::Computation(ty)),
+            former: UnadmittedFormer::EffectRow,
+        };
+        let (result, row) = match crate::program::programmed(self.arena, ty) {
+            Maybe::Present(programmed) => programmed,
+            Maybe::Absent(crate::program::unprogrammed::Absent::Pure) => return Ok(Imaged::Pure),
+            Maybe::Absent(_) => return Err(outside),
+        };
+        // A copy a reduct shifted reads the level of the type it copies.
+        let Some(level) = self.level_of(ty)
+        else {
+            return Err(outside);
+        };
+        // The model stands at the top level, where no level variable and no
+        // binder is bound.
+        if level.atoms().next().is_some() {
+            return Err(outside);
+        }
+        for operation in row
+            .signatures()
+            .flat_map(gandr_core_term::effect::EffectSig::operations)
+        {
+            for ty in [operation.payload, operation.reply] {
+                let reach =
+                    loose_reach(self.arena, CoreNode::Type(TypeNode::Value(ty))).map_err(fault)?;
+                if reach != BinderDepth::default() {
+                    return Err(outside);
+                }
+            }
+        }
+        Ok(Imaged::Program(Programmed {
+            result,
+            row: row.signatures().cloned().collect(),
+            level: level.clone(),
+        }))
+    }
+
+    /// The request of the operation at `tag` of the model at `model`, with
+    /// `payload`, that continues with `continued`: `return opₜ(payload,
+    /// thunk(λy. continued))`, a program of the row `program` reads.
+    ///
+    /// # Specification
+    /// - requires: `payload` stands in the context of `program`, and
+    ///   `continued` beneath one binder more, the reply.
+    /// - ensures: the request above, minted into the source arena.
+    /// - panics: none.
+    /// - executable: none — the request is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn requested(
+        &mut self,
+        (model, program): (ConstantIndex, &Programmed),
+        (tag, payload): (gandr_kernel_term::ConstructorTag, ValueId),
+        continued: ComputationId,
+    ) -> ComputationId
+    {
+        let continued = self.arena.computation_lambda(continued);
+        let continued = self.arena.value_thunk(continued);
+        let datatype = self.answer(model, program, Binders::from(0_u32));
+        let requested =
+            self.arena
+                .value_constructor(model, datatype, tag, Vec::from([payload, continued]));
+        self.arena.computation_return(requested)
+    }
+
+    /// The fold that runs `step`, whose image is a program of the row `inner`
+    /// reads, and binds its value into `continued`, a program of the row
+    /// `program` reads: `((λc. λk. p ← force c; ((fix f. λt. case t of
+    /// Return(x) ⇒ force k x | opᵢ(v, κ) ⇒ return opⱼ(v, thunk(λy. t′ ←
+    /// force κ y; force f t′))) : Free'(A′) → F Free(A)) p) : U(F Free'(A′))
+    /// → U(A′ → F Free(A)) → F Free(A)) (thunk step) (thunk(λx.
+    /// continued))`, each operation of `inner`'s row at the tag `j` of the
+    /// same operation in `program`'s.
+    ///
+    /// # Specification
+    /// - requires: `step` stands in the context of `program`, and `continued`
+    ///   beneath one binder more, the value the program returns; `model` is the
+    ///   position of `program`'s model.
+    /// - ensures: the fold above, a structural recursion over `inner`'s model
+    ///   that the kernel replays: bind for one row, and the injection of a
+    ///   smaller row into a larger one, in one. `step` and `continued` stand in
+    ///   their own contexts, so the fold shifts neither, and each crosses at
+    ///   the records the judgement keeps for it.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   model of `inner`'s row yet, which the erasure names as the seed it
+    ///   stopped at, or for an operation outside `program`'s row, which the
+    ///   judgement's row inclusion rules out.
+    /// - panics: none.
+    /// - executable: none — the fold is a new term, and the kernel's replay of
+    ///   the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a declaration at the row bound to the rest,
+    ///   and one at a smaller row at the end, each cross through their fold and
+    ///   the kernel admits them.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn fold(
+        &mut self,
+        (step, inner): (ComputationId, &Programmed),
+        continued: ComputationId,
+        (model, program): (ConstantIndex, &Programmed),
+    ) -> Result<ComputationId, Refusal>
+    {
+        let source = self.free_model(&inner.row, &inner.level)?;
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        // The case stands beneath the two parameters, the program's binder,
+        // the fold's and its argument's; its motive beneath the scrutinee
+        // too.
+        let answer = self.answer(model, program, Binders::from(6_u32));
+        let motive = self.arena.comp_type_returner(answer);
+        // Beneath the returned value, the continuation is the fifth binder.
+        let continuation = variable(self.arena, 4);
+        let continuation = self.arena.computation_force(continuation);
+        let returned = variable(self.arena, 0);
+        let returned = self.arena.computation_application(continuation, returned);
+        let operations = inner
+            .row
+            .iter()
+            .map(|signature| signature.operations().len())
+            .sum::<usize>();
+        let mut branches = Vec::with_capacity(operations.saturating_add(1));
+        let mut fields = Vec::with_capacity(operations.saturating_add(1));
+        branches.push(self.arena.computation_lambda(returned));
+        fields.push(gandr_kernel_term::FieldCount::from(1_usize));
+        for signature in &inner.row {
+            for operation in signature.operations() {
+                let tag = tag(&program.row, signature.name(), &operation.name)
+                    .ok_or(Refusal::MachineInvariant)?;
+                // Beneath the payload, the continuation and the reply: the
+                // continuation is one and the fold four; beneath the folded
+                // rest too, the fold is five.
+                let later = variable(self.arena, 1);
+                let later = self.arena.computation_force(later);
+                let reply = variable(self.arena, 0);
+                let resumed = self.arena.computation_application(later, reply);
+                let again = variable(self.arena, 5);
+                let again = self.arena.computation_force(again);
+                let rest = variable(self.arena, 0);
+                let again = self.arena.computation_application(again, rest);
+                let resumed = self.arena.computation_bind(resumed, again);
+                let resumed = self.arena.computation_lambda(resumed);
+                let resumed = self.arena.value_thunk(resumed);
+                let payload = variable(self.arena, 1);
+                let datatype = self.answer(model, program, Binders::from(7_u32));
+                let requested = self.arena.value_constructor(
+                    model,
+                    datatype,
+                    tag,
+                    Vec::from([payload, resumed]),
+                );
+                let requested = self.arena.computation_return(requested);
+                let requested = self.arena.computation_lambda(requested);
+                branches.push(self.arena.computation_lambda(requested));
+                fields.push(gandr_kernel_term::FieldCount::from(2_usize));
+            }
+        }
+        let scrutinee = variable(self.arena, 0);
+        let case = self
+            .arena
+            .computation_data_case(scrutinee, motive, branches, fields);
+        let fold = self.arena.computation_lambda(case);
+        let fold = self
+            .arena
+            .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+        // The fold's classifier stands beneath the two parameters and the
+        // program's binder.
+        let result = self.shifted(inner.result, Binders::from(3_u32));
+        let code = self.arena.value_quote(result);
+        let domain = self.arena.value_type_data(source, Vec::from([code]));
+        let codomain = self.answer(model, program, Binders::from(3_u32));
+        let codomain = self.arena.comp_type_returner(codomain);
+        let classifier = self.arena.comp_type_arrow(domain, codomain);
+        let fold = self.arena.computation_ascribe(fold, classifier);
+        let tree = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, tree);
+        // Beneath the continuation, the computation is the second binder.
+        let ran = variable(self.arena, 1);
+        let ran = self.arena.computation_force(ran);
+        let body = self.arena.computation_bind(ran, folded);
+        let body = self.arena.computation_lambda(body);
+        let body = self.arena.computation_lambda(body);
+        let code = self.arena.value_quote(inner.result);
+        let ran = self.arena.value_type_data(source, Vec::from([code]));
+        let ran = self.arena.comp_type_returner(ran);
+        let ran = self.arena.value_type_thunk(ran);
+        let answered = self.answer(model, program, Binders::from(0_u32));
+        let answered = self.arena.comp_type_returner(answered);
+        let continuation = self.arena.comp_type_arrow(inner.result, answered);
+        let continuation = self.arena.value_type_thunk(continuation);
+        let classifier = self.arena.comp_type_arrow(continuation, answered);
+        let classifier = self.arena.comp_type_arrow(ran, classifier);
+        let body = self.arena.computation_ascribe(body, classifier);
+        let step = self.arena.value_thunk(step);
+        let applied = self.arena.computation_application(body, step);
+        let continued = self.arena.computation_lambda(continued);
+        let continued = self.arena.value_thunk(continued);
+        Ok(self.arena.computation_application(applied, continued))
+    }
+
+    /// `Free(A)` of the model at `model`, `A` the result `program` reads,
+    /// `depth` binders past its context.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answer(
+        &mut self,
+        model: ConstantIndex,
+        program: &Programmed,
+        depth: Binders,
+    ) -> ValueTypeId
+    {
+        let result = self.shifted(program.result, depth);
+        let code = self.arena.value_quote(result);
+        self.arena.value_type_data(model, Vec::from([code]))
+    }
+
+    /// `ty` shifted past `depth` binders, each returner over a row of
+    /// operations the shift copies reading the level of the returner it
+    /// copies.
+    ///
+    /// # Specification
+    /// - ensures: [`gandr_core_term::shift_value_type`] of `ty` by `depth`;
+    ///   [`Self::programmed`] reads at each returner the shift copies the level
+    ///   it reads at the original.
+    /// - panics: none.
+    /// - executable: none — the copies are records the erasure keeps, and the
+    ///   witness crosses them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler whose subject returns a function into a row
+    ///   of operations crosses: its fold's types are copies of that function's
+    ///   type past the fold's binders.
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn shifted(
+        &mut self,
+        ty: ValueTypeId,
+        depth: Binders,
+    ) -> ValueTypeId
+    {
+        let mut carried = core::mem::take(&mut self.carrying);
+        carried.clear();
+        let shifted = gandr_core_term::shift_value_type(self.arena, ty, depth)
+            .settle_traced(self.arena, &mut carried);
+        self.carry(&carried);
+        self.carrying = carried;
+        shifted
+    }
+
+    /// [`Self::shifted`] of the computation type `ty`.
+    ///
+    /// # Specification
+    /// - ensures: [`gandr_core_term::shift_comp_type`] of `ty` by `depth`, the
+    ///   copies recorded as [`Self::shifted`] records them.
+    /// - panics: none.
+    /// - executable: none — as [`Self::shifted`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::shifted`].
+    /// - witness: `bridge::tests::a_handler_whose_clauses_return_programs_crosses_6672`
+    fn shifted_computation(
+        &mut self,
+        ty: CompTypeId,
+        depth: Binders,
+    ) -> CompTypeId
+    {
+        let mut carried = core::mem::take(&mut self.carrying);
+        carried.clear();
+        let shifted = gandr_core_term::shift_comp_type(self.arena, ty, depth)
+            .settle_traced(self.arena, &mut carried);
+        self.carry(&carried);
+        self.carrying = carried;
+        shifted
+    }
+
+    /// Record each computation type a shift wrote beside the computation type
+    /// it held, so the copy reads the level of the original.
+    ///
+    /// # Specification
+    /// trivial.
+    fn carry(
+        &mut self,
+        carried: &[gandr_core_term::Carried],
+    )
+    {
+        for &copied in carried {
+            if let gandr_core_term::Carried::CompType(held, written) = copied
+                && held != written
+            {
+                let _first = self.copied.entry(written).or_insert(held);
+            }
+        }
+    }
+
+    /// The level the judgement recorded for the returner `ty`, or for the
+    /// returner that `ty` copies, through each copy in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    fn level_of(
+        &self,
+        ty: CompTypeId,
+    ) -> Option<&Level>
+    {
+        let mut at = ty;
+        // Each copy is minted after the returner it copies, so a chain of
+        // copies holds no cycle and ends within the count of copies.
+        for _copy in 0 ..= self.copied.len() {
+            if let Some(level) = self.source.rows.level(at) {
+                return Some(level);
+            }
+            at = *self.copied.get(&at)?;
+        }
+        None
+    }
+
+    /// `return Return(value)` of the model at `model`, `depth` binders past
+    /// the context of `program`: the program that returns `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn returning(
+        &mut self,
+        model: ConstantIndex,
+        program: &Programmed,
+        (value, depth): (ValueId, Binders),
+    ) -> ComputationId
+    {
+        let datatype = self.answer(model, program, depth);
+        let returned = self.arena.value_constructor(
+            model,
+            datatype,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::from([value]),
+        );
+        self.arena.computation_return(returned)
+    }
+
+    /// The node the judgement refined `at` to, or `at` itself.
+    ///
+    /// # Specification
+    /// - ensures: the refinement [`Erasure::restated`] holds for `at`, when it
+    ///   is a computation; `at` otherwise.
+    /// - panics: none.
+    /// - executable: none — the refinement is the judgement's record, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
+    fn refined(
+        &self,
+        at: ComputationId,
+    ) -> ComputationId
+    {
+        match self
+            .restated
+            .binary_search_by_key(&TermNode::Computation(at), |&(node, _)| node)
+            .ok()
+            .and_then(|place| self.restated.get(place))
+        {
+            Some(&(_, TermNode::Computation(refined))) => refined,
+            Some(_) | None => at,
+        }
+    }
+
+    /// The program `at` stands for, when it stands for one: the returner the
+    /// judgement checked it at, else the program a bind or a split assigned
+    /// it, else, for a bind, a request or a split at the ambient motive, the
+    /// returner the judgement synthesised it at as a bound computation.
+    ///
+    /// # Specification
+    /// - ensures: the program [`Self::programmed`] reads at the first of the
+    ///   records above that `at` holds; none at a pure returner, or when `at`
+    ///   holds none of them.
+    /// - fails: as [`Self::programmed`].
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's records, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    fn program_of(
+        &self,
+        at: ComputationId,
+    ) -> Result<Option<Programmed>, Refusal>
+    {
+        let recorded = if let Some(checked) = self.source.rows.checked(at) {
+            checked
+        }
+        else {
+            if let Some(assigned) = self.assigned.get(&at) {
+                return Ok(Some(assigned.clone()));
+            }
+            let spine = matches!(
+                self.arena.computation(at),
+                Some(
+                    Computation::Bind(..)
+                        | Computation::Perform { .. }
+                        | Computation::Split {
+                            motive: SplitMotive::Ambient,
+                            ..
+                        }
+                )
+            );
+            match self.source.rows.synthesised(at) {
+                Some(synthesised) if spine => synthesised,
+                Some(_) | None => return Ok(None),
+            }
+        };
+        match self.programmed(recorded)? {
+            Imaged::Program(program) => Ok(Some(program)),
+            Imaged::Pure => Ok(None),
+        }
+    }
+
+    /// Assign `program`, past `binders` binders, to `body`, when the
+    /// judgement recorded no check of it.
+    ///
+    /// # Specification
+    /// - requires: `body` stands `binders` binders past the context of
+    ///   `program`.
+    /// - ensures: [`Self::program_of`] reads `program` at `body`'s refinement,
+    ///   its result shifted past `binders`, when the judgement checked that
+    ///   refinement at nothing; nothing changes otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause reads the judgement's records, which a
+    ///   predicate reads as the body does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::programmed_reduct`].
+    /// - witness: `bridge::tests::a_call_folds_into_a_rest_that_reads_a_parameter_6642`
+    fn assign(
+        &mut self,
+        body: ComputationId,
+        (program, binders): (&Programmed, Binders),
+    )
+    {
+        let body = self.refined(body);
+        if self.source.rows.checked(body).is_some() {
+            return;
+        }
+        let result = self.shifted(program.result, binders);
+        self.assigned.insert(body, Programmed {
+            result,
+            row: program.row.clone(),
+            level: program.level.clone(),
+        });
+    }
+
+    /// The program reduct of `at`, when `at` stands for a program of a row's
+    /// free model ([`Self::program_of`]) and does not cross as it stands.
+    ///
+    /// # Specification
+    /// - ensures: for the model `Free` of the program's row at its level, whose
+    ///   result is `A`, one step of `at` read as a program, its children left
+    ///   to cross at their own records: `return Return(v)` for `return v`;
+    ///   `return opᵢ(v, thunk(λy. return Return(y)))` for a request of the
+    ///   row's `i`-th operation; `return opᵢ(v, thunk(λx. K))` for `x ← opᵢ v;
+    ///   K`; the fold ([`Self::fold`]) of `M` into `K` for `x ← M; K` whose
+    ///   step `M` is a program of a row inside the row. For a call, a force or
+    ///   a native operation whose image the judgement synthesised at a pure
+    ///   returner or at a smaller row, a copy of `at`, which the judgement
+    ///   recorded nothing for, bound or folded into `return Return(x)`. None
+    ///   for a bind whose step returns a value and for a split at the ambient
+    ///   motive, whose body crosses at the program past their binders, and for
+    ///   any other node the judgement checked, whose children carry their own
+    ///   records. A node the judgement refined is read as its refinement. No
+    ///   original node is shifted, so each keeps its records.
+    /// - fails: [`Refusal::Session`] for a session action, because its reduct
+    ///   returns the unit or copies its continuation without its records (#6746
+    ///   crosses it); [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::EffectRow`] for a node assigned a program whose
+    ///   image the judgement did not record, and for a returned composite;
+    ///   [`Refusal::MachineInvariant`] when the environment holds no model yet,
+    ///   which the erasure names as the seed it stopped at, or for a request of
+    ///   an operation outside the row, which the judgement rules out; as
+    ///   [`Self::program_of`] and [`Self::fold`].
+    /// - panics: none.
+    /// - executable: none — the reduct is a new term, and the kernel's replay
+    ///   of the declaration checks it.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration that requests an operation, binds a
+    ///   call of another at the row and returns crosses and the kernel admits
+    ///   it; a program built at another operation's tag is the kernel's
+    ///   rejection instead; a declaration at a row whose body calls a
+    ///   declaration at a smaller row crosses through the fold that injects one
+    ///   row into the other.
+    /// - witness: `bridge::tests::two_declarations_at_one_row_read_one_model_6642`
+    /// - witness: `bridge::tests::a_program_at_another_operation_is_the_kernels_refusal_6642`
+    fn programmed_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<Option<ComputationId>, Refusal>
+    {
+        let Some(program) = self.program_of(at)?
+        else {
+            return Ok(None);
+        };
+        let outside = Refusal::OutOfFragment {
+            at: CoreNode::Term(TermNode::Computation(at)),
+            former: UnadmittedFormer::EffectRow,
+        };
+        let checked = self.source.rows.checked(at).is_some();
+        let model = self.free_model(&program.row, &program.level)?;
+        let returned = |this: &mut Self| {
+            let value = this
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            this.returning(model, &program, (value, Binders::from(1_u32)))
+        };
+        match self.arena.computation(at) {
+            Some(&Computation::Return(value)) => {
+                if matches!(self.arena.value(value), Some(Value::Compose { .. })) {
+                    return Err(outside);
+                }
+                return Ok(Some(self.returning(
+                    model,
+                    &program,
+                    (value, Binders::from(0_u32)),
+                )));
+            },
+            Some(&Computation::Perform {
+                ref signature,
+                ref operation,
+                payload,
+            }) => {
+                let tag = tag(&program.row, signature.name(), operation)
+                    .ok_or(Refusal::MachineInvariant)?;
+                let rest = returned(self);
+                return Ok(Some(self.requested(
+                    (model, &program),
+                    (tag, payload),
+                    rest,
+                )));
+            },
+            Some(&Computation::Bind(bound, body)) => {
+                self.assign(body, (&program, Binders::from(1_u32)));
+                let step = self.refined(bound);
+                if self.source.rows.checked(step).is_none()
+                    && let Some(&Computation::Perform {
+                        ref signature,
+                        ref operation,
+                        payload,
+                    }) = self.arena.computation(step)
+                {
+                    let tag = tag(&program.row, signature.name(), operation)
+                        .ok_or(Refusal::MachineInvariant)?;
+                    return Ok(Some(self.requested(
+                        (model, &program),
+                        (tag, payload),
+                        body,
+                    )));
+                }
+                return match self.imaged(step)? {
+                    Imaged::Pure => Ok(None),
+                    Imaged::Program(inner) => self
+                        .fold((bound, &inner), body, (model, &program))
+                        .map(Some),
+                };
+            },
+            Some(&Computation::Split {
+                arity,
+                motive: SplitMotive::Ambient,
+                body,
+                ..
+            }) => {
+                let binders = u32::try_from(usize::from(arity)).map_err(|_overflow| outside)?;
+                self.assign(body, (&program, Binders::from(binders)));
+                return Ok(None);
+            },
+            Some(
+                &(Computation::Force(_)
+                | Computation::Application(..)
+                | Computation::Primitive { .. }),
+            ) => {},
+            Some(&Computation::Session(_)) => {
+                return Err(Refusal::Session {
+                    at: CoreNode::Term(TermNode::Computation(at)),
+                });
+            },
+            // A clause's resumption and abandonment cross at their own
+            // reducts, which read the program here (#6672).
+            Some(&(Computation::Resume(..) | Computation::Abandon(_))) => return Ok(None),
+            Some(_) | None if checked => return Ok(None),
+            Some(_) | None => return Err(outside),
+        }
+        let Some(synthesised) = self.source.rows.synthesised(at)
+        else {
+            return if checked { Ok(None) } else { Err(outside) };
+        };
+        let imaged = self.programmed(synthesised)?;
+        // A call at the row itself crosses as it stands.
+        if let Imaged::Program(ref inner) = imaged
+            && inner.row.len() == program.row.len()
+            && inner
+                .row
+                .iter()
+                .zip(&program.row)
+                .all(|(one, other)| one.name() == other.name())
+        {
+            return Ok(None);
+        }
+        let copy = match self.arena.computation(at) {
+            Some(&Computation::Force(value)) => self.arena.computation_force(value),
+            Some(&Computation::Application(head, argument)) => {
+                self.arena.computation_application(head, argument)
+            },
+            Some(&Computation::Primitive {
+                primitive,
+                arguments,
+            }) => self.arena.computation_primitive(primitive, arguments),
+            Some(_) | None => return Err(Refusal::MachineInvariant),
+        };
+        let rest = returned(self);
+        match imaged {
+            Imaged::Pure => Ok(Some(self.arena.computation_bind(copy, rest))),
+            Imaged::Program(inner) => self.fold((copy, &inner), rest, (model, &program)).map(Some),
+        }
+    }
+
+    /// The projection binds a split of `scrutinee` into `body` reduces to,
+    /// minted into the source arena: component zero is bound outermost, each
+    /// projection reading the scrutinee shifted past the binds before it, so a
+    /// split of no components is its body.
+    ///
+    /// # Specification
+    /// - requires: `body` is scoped under `arity` binders beyond `scrutinee`.
+    /// - ensures: a chain of `arity` binds, each of the next component, ending
+    ///   in `body`; the kernel has no split, and every component crosses as the
+    ///   projection the kernel already judges.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split reading each of three components crosses as
+    ///   the binds that read them, and a split of the unit crosses as its body;
+    ///   a wrong shift or order changes the kernel's verdict.
+    /// - witness: `tests::native_formers::a_split_crosses_as_its_projection_binds`
+    #[spec(ensures: |ret| usize::from(arity) != 0_usize || ret == body)]
+    fn split_reduct(
+        &mut self,
+        scrutinee: ValueId,
+        arity: gandr_core_term::ComponentCount,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        (0_usize .. usize::from(arity))
+            .rev()
+            .fold(body, |rest, component| {
+                let shift = u32::try_from(component).unwrap_or(u32::MAX);
+                let read = gandr_core_term::shift_value(
+                    self.arena,
+                    scrutinee,
+                    gandr_core_term::Binders::from(shift),
+                )
+                .settle(self.arena);
+                let projected = self.arena.computation_tuple_projection(
+                    read,
+                    gandr_core_term::Component::from(component),
+                );
+                self.arena.computation_bind(projected, rest)
+            })
+    }
+
+    /// Record `erased` as the image of the value type `at`, and ascend it.
+    ///
+    /// # Specification
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().value_types.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::ValueType(erased)))]
+    fn erased_value_type(
+        &mut self,
+        at: ValueTypeId,
+        erased: gandr_kernel_term::ValueTypeId,
+    ) -> Step
+    {
+        self.memo().value_types.insert(at, Image::Erased(erased));
+        Step::Ascend(AnyNode::ValueType(erased))
+    }
+
+    /// Record `erased` as the image of the computation type `at`, and ascend
+    /// it.
+    ///
+    /// # Specification
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().comp_types.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::CompType(erased)))]
+    fn erased_comp_type(
+        &mut self,
+        at: CompTypeId,
+        erased: gandr_kernel_term::CompTypeId,
+    ) -> Step
+    {
+        self.memo().comp_types.insert(at, Image::Erased(erased));
+        Step::Ascend(AnyNode::CompType(erased))
+    }
+}
+
+/// The kernel's decode of the code `image` at `level`, in `sort`'s family.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value type for the value sort and a computation type for the
+///   computation sort, each the decode of `image` at `level`, minted.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms, one per sort, each reached by a decode of a
+///   rigid code of that sort.
+/// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+/// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+#[spec(ensures: |ret| match sort {
+    | GroundSort::Value => matches!(ret, AnyNode::ValueType(_)),
+    | GroundSort::Computation => matches!(ret, AnyNode::CompType(_)),
+})]
+fn decoded(
+    target: &mut TermArena,
+    image: gandr_kernel_term::ValueId,
+    level: Level,
+    sort: GroundSort,
+) -> AnyNode
+{
+    match sort {
+        GroundSort::Value => AnyNode::ValueType(target.value_type_element(image, level)),
+        GroundSort::Computation => AnyNode::CompType(target.comp_type_element(image, level)),
+    }
+}
+
+#[cfg(test)]
+mod tests;

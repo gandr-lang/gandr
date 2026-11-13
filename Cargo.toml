@@ -2,6 +2,8 @@
 resolver = "3"
 members = [
   "crates/core-checker",
+  "crates/core-checker-base",
+  "crates/core-checker-bridge",
   "crates/core-fork",
   "crates/core-incremental",
   "crates/core-nbe",
@@ -389,6 +391,22 @@ default-features = false
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
+
+# The base of the checking judgement: the faces, the declaration input, the
+# module run, the verdicts, the obligation ledger and the refusal vocabulary.
+# consumers:
+# - core-checker
+# - core-checker-bridge
+[workspace.dependencies.gandr-core-checker-base]
+path = "crates/core-checker-base"
+
+# The kernel bridge of the checking judgement: readmission through the
+# kernel's one checked entry, and the staging templates.
+# consumers:
+# - core-checker
+# - core-checker-base (dev)
+[workspace.dependencies.gandr-core-checker-bridge]
+path = "crates/core-checker-bridge"
 
 # The fork a check hands its independent jobs to, and its serial reference.
 # consumers:

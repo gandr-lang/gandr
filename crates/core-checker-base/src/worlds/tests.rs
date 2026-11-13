@@ -1,0 +1,1362 @@
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::DataSignature;
+use gandr_core_term::LinearUse;
+use gandr_core_term::LinearZone;
+use gandr_core_term::Sort;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::capability::CapabilityGrade;
+use gandr_core_term::effect::capability::Region;
+use gandr_core_term::session::PayloadCount;
+use gandr_core_term::session::Protocol;
+use gandr_core_term::session::ProtocolState;
+use gandr_core_term::session::ProtocolSyntax;
+use gandr_core_term::session::SessionType;
+use gandr_core_term::world::WorldForm;
+use gandr_core_term::world::WorldType;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::SealExtent;
+use gandr_kernel_term::Stage;
+use gandr_kernel_term::StageId;
+use quenchant_shape::shape::Maybe;
+
+use super::Crossed;
+use super::Crossing;
+use super::Entry;
+use super::HostEntry;
+use super::LocatedDefect;
+use super::Mobility;
+use super::Predicate;
+use super::WorldMove;
+use super::crosses;
+use crate::CheckBudget;
+use crate::CheckRefusal;
+use crate::CheckingContext;
+use crate::CoreNode;
+use crate::Declaration;
+use crate::DeclarationContent;
+use crate::Judged;
+use crate::OriginToken;
+use crate::TermNode;
+use crate::TypeNode;
+use crate::Typings;
+use crate::Verdict;
+use crate::body;
+use crate::check_module;
+use crate::declaration::AbstractType;
+use crate::fixture::worlds::At;
+use crate::fixture::worlds::OPERATOR;
+use crate::fixture::worlds::SEAT;
+use crate::fixture::worlds::Spelled;
+use crate::fixture::worlds::computation;
+use crate::fixture::worlds::entry_point;
+use crate::fixture::worlds::located;
+use crate::fixture::worlds::migrate;
+use crate::fixture::worlds::operating;
+use crate::fixture::worlds::text;
+use crate::fixture::worlds::world;
+use crate::fixture::worlds::worlds;
+use crate::seal::ComponentOrdinal;
+use crate::seal::SealSite;
+use crate::seal::SealingSite;
+use crate::session::Capture;
+use crate::type_module;
+
+/// `world operator ;` and `world seat requires [ rand ] ;`, at their
+/// positions.
+///
+/// # Specification
+/// trivial.
+fn drawing_seat(rand: &gandr_core_term::effect::EffectSig) -> [Declaration; 2]
+{
+    [
+        Declaration::world(OPERATOR.constant(), EffectRow::EMPTY, OPERATOR.origin()),
+        Declaration::world(
+            SEAT.constant(),
+            EffectRow::singleton(rand.clone()),
+            SEAT.origin(),
+        ),
+    ]
+}
+
+/// The body of the value declaration `declaration`.
+///
+/// # Specification
+/// trivial.
+fn body_of(declaration: &Declaration) -> ValueId
+{
+    match *declaration.content() {
+        DeclarationContent::Value {
+            body: Maybe::Present(body),
+            ..
+        } => body,
+        DeclarationContent::Value { .. }
+        | DeclarationContent::Data(_)
+        | DeclarationContent::Codata(_)
+        | DeclarationContent::Abstract(_)
+        | DeclarationContent::World(_) => panic!("the fixture reads the body of a defined value"),
+    }
+}
+
+/// The declaration at `position` owing a value of `declared`.
+///
+/// # Specification
+/// trivial.
+fn owed(
+    position: At,
+    declared: ValueTypeId,
+) -> Declaration
+{
+    Declaration::new(
+        position.constant(),
+        Maybe::Present(declared),
+        Maybe::Absent(body::Absent::Hole),
+        position.origin(),
+    )
+}
+
+/// The abstract type at `position`, sealing `representation` at the value
+/// universe for no later position, marked `mobility`.
+///
+/// # Specification
+/// trivial.
+fn sealed(
+    arena: &mut CoreArena,
+    position: At,
+    representation: ValueTypeId,
+    mobility: Mobility,
+) -> Declaration
+{
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    Declaration::abstract_type(
+        position.constant(),
+        AbstractType::new(
+            small,
+            representation,
+            SealExtent::from(0_usize),
+            SealSite::new(
+                SealingSite::from(position.0),
+                ComponentOrdinal::from(0_usize),
+            ),
+        )
+        .marked(mobility),
+        position.origin(),
+    )
+}
+
+/// The verdicts of `module`, judged in order under the host's entry `host`.
+///
+/// # Specification
+/// trivial.
+fn verdicts(
+    arena: &mut CoreArena,
+    host: HostEntry,
+    module: &[Declaration],
+) -> Vec<Verdict>
+{
+    let mut context = CheckingContext::new(arena, CheckBudget::DEFAULT);
+    context.enter_at(host);
+    check_module(&mut context, module)
+        .judged()
+        .iter()
+        .map(Judged::verdict)
+        .collect()
+}
+
+/// The node of the value `term`.
+///
+/// # Specification
+/// trivial.
+const fn value(term: ValueId) -> CoreNode
+{
+    CoreNode::Term(TermNode::Value(term))
+}
+
+/// The pure session `end`.
+///
+/// # Specification
+/// trivial.
+fn ended(arena: &mut CoreArena) -> ValueTypeId
+{
+    let protocol = Protocol::new(
+        vec![ProtocolSyntax::End],
+        ProtocolState::from(0_usize),
+        PayloadCount::from(0_usize),
+    )
+    .unwrap();
+    let session = SessionType::new(Arc::new(protocol), Arc::from([])).unwrap();
+    arena.value_type_session(session)
+}
+
+#[test]
+fn mobility_is_decided_on_every_former()
+{
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let unit = arena.value_type_unit();
+    let returns = arena.comp_type_returner(string);
+    let thunk = arena.value_type_thunk(returns);
+    let pair = arena.value_type_product(&[integer, string]);
+    let holding = arena.value_type_product(&[integer, thunk]);
+    let either = arena.value_type_sum(&[unit, string]);
+    let either_holding = arena.value_type_sum(&[unit, thunk]);
+    let record = arena.value_type_record(BTreeMap::from([(
+        FieldLabel::from(String::from("report")),
+        string,
+    )]));
+    let record_holding = arena.value_type_record(BTreeMap::from([(
+        FieldLabel::from(String::from("later")),
+        thunk,
+    )]));
+    let list = arena.value_type_list(string);
+    let list_holding = arena.value_type_list(thunk);
+    let one = Level::zero().succ().unwrap();
+    let lifted = arena.value_type_lift(string, one.clone());
+    let staged = arena.value_type_staged(integer, Stage::At(StageId::from(0_usize)));
+    let sigma = arena.value_type_sigma(integer, string);
+    let sigma_holding = arena.value_type_sigma(integer, thunk);
+    let handle = arena.value_type_world(WorldType::At {
+        inner: string,
+        world: world(SEAT),
+    });
+    let handle_holding = arena.value_type_world(WorldType::At {
+        inner: thunk,
+        world: world(SEAT),
+    });
+    let session = ended(&mut arena);
+    let endpoint_handle = arena.value_type_world(WorldType::At {
+        inner: session,
+        world: world(SEAT),
+    });
+    let capability = arena.value_type_world(WorldType::Capability(world(SEAT)));
+    let effects =
+        arena.value_type_capability(EffectRow::default(), CapabilityGrade::Durable, Region::Held);
+    let stack = arena.value_type_stack(returns, returns);
+    let code = arena.value_quote(integer);
+    let static_pi = arena.value_type_static_pi(small, small);
+    let path_universe = arena.value_type_path_universe(code, code);
+    let path = arena.value_type_path(integer, code, code);
+    let flow = arena.value_type_flow(small, code, code);
+    let run = arena.value_type_run(code);
+    let unknown = arena.value_type_unknown();
+    let decoded = arena.value_type_element(code, Level::zero());
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let opaque = arena.value_type_element(bound, Level::zero());
+    // `Box (a : Type) = box (El a)` at 0, `Nat = zero | succ Nat` at 1,
+    // `Later = later (U (F String))` at 2, `Dependent = mk (a : Type, x : El a)`
+    // at 3, an unmarked abstract integer at 4 and a marked one at 5.
+    let boxes = Arc::new(DataSignature::new(vec![small], vec![vec![opaque]], small));
+    let thunk_code = arena.value_quote(thunk);
+    let boxed = arena.value_type_data(ConstantIndex::from(0_usize), vec![code]);
+    let boxed_holding = arena.value_type_data(ConstantIndex::from(0_usize), vec![thunk_code]);
+    let nat = arena.value_type_data(ConstantIndex::from(1_usize), vec![]);
+    let nats = Arc::new(DataSignature::new(vec![], vec![vec![], vec![nat]], small));
+    let laters = Arc::new(DataSignature::new(vec![], vec![vec![thunk]], small));
+    let later = arena.value_type_data(ConstantIndex::from(2_usize), vec![]);
+    let one_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), one);
+    let dependents = Arc::new(DataSignature::new(
+        vec![],
+        vec![vec![small, opaque]],
+        one_universe,
+    ));
+    let dependent = arena.value_type_data(ConstantIndex::from(3_usize), vec![]);
+    let site =
+        |position| SealSite::new(SealingSite::from(position), ComponentOrdinal::from(0_usize));
+    let unmarked = AbstractType::new(small, integer, SealExtent::from(0_usize), site(4_usize));
+    let marked = AbstractType::new(small, integer, SealExtent::from(0_usize), site(5_usize))
+        .marked(Mobility::Mobile);
+    let unmarked_atom = arena.value_type_abstract(ConstantIndex::from(4_usize));
+    let marked_atom = arena.value_type_abstract(ConstantIndex::from(5_usize));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    for (position, signature) in [boxes, nats, laters, dependents].into_iter().enumerate() {
+        context
+            .adopt_data(ConstantIndex::from(position), signature)
+            .expect("the fixture's datatypes form");
+    }
+    context
+        .adopt_abstract(ConstantIndex::from(4_usize), unmarked)
+        .expect("the unmarked atom forms");
+    context
+        .adopt_abstract(ConstantIndex::from(5_usize), marked)
+        .expect("the marked atom forms");
+    context.binders().open(Zone::Intuitionistic, small);
+    let stays = |former, predicate| Crossing::Stays { former, predicate };
+    let mobile = Predicate::Mobile;
+    let decisions = [
+        (integer, Crossing::Crosses, "an integer"),
+        (string, Crossing::Crosses, "a string"),
+        (unit, Crossing::Crosses, "the unit"),
+        (pair, Crossing::Crosses, "a product of crossing components"),
+        (holding, stays(thunk, mobile), "a product holding a thunk"),
+        (either, Crossing::Crosses, "a sum of crossing summands"),
+        (
+            either_holding,
+            stays(thunk, mobile),
+            "a sum holding a thunk",
+        ),
+        (record, Crossing::Crosses, "a record of crossing fields"),
+        (
+            record_holding,
+            stays(thunk, mobile),
+            "a record holding a thunk",
+        ),
+        (list, Crossing::Crosses, "a list of a crossing element"),
+        (list_holding, stays(thunk, mobile), "a list of thunks"),
+        (lifted, Crossing::Crosses, "a lift of a crossing type"),
+        (staged, Crossing::Crosses, "a staged crossing type"),
+        (sigma, Crossing::Crosses, "a sigma of crossing components"),
+        (
+            sigma_holding,
+            stays(thunk, mobile),
+            "a sigma holding a thunk",
+        ),
+        (
+            handle,
+            Crossing::Crosses,
+            "a handle holding a crossing type",
+        ),
+        (
+            handle_holding,
+            stays(thunk, Predicate::Open),
+            "a handle holding a thunk is mobile and not open",
+        ),
+        (
+            endpoint_handle,
+            stays(session, Predicate::Open),
+            "a handle holding an endpoint",
+        ),
+        (
+            boxed,
+            Crossing::Crosses,
+            "a datatype at a crossing argument",
+        ),
+        (
+            boxed_holding,
+            stays(thunk, mobile),
+            "a datatype at a thunk argument",
+        ),
+        (
+            nat,
+            Crossing::Crosses,
+            "a recursive datatype of crossing fields",
+        ),
+        (later, stays(thunk, mobile), "a datatype with a thunk field"),
+        (
+            marked_atom,
+            Crossing::Crosses,
+            "an atom its signature marks mobile",
+        ),
+        (
+            unmarked_atom,
+            stays(unmarked_atom, mobile),
+            "an atom its signature leaves unmarked",
+        ),
+        (unknown, Crossing::Crosses, "the unknown type"),
+        (decoded, Crossing::Crosses, "the decode of a crossing code"),
+        (
+            opaque,
+            stays(opaque, mobile),
+            "the decode of a code the judgement cannot read",
+        ),
+        (thunk, stays(thunk, mobile), "a thunk"),
+        (stack, stays(stack, mobile), "a stack"),
+        (session, stays(session, mobile), "an endpoint"),
+        (effects, stays(effects, mobile), "an effect capability"),
+        (capability, stays(capability, mobile), "a world capability"),
+        (small, stays(small, mobile), "a universe"),
+        (static_pi, stays(static_pi, mobile), "a static Pi"),
+        (
+            path_universe,
+            stays(path_universe, mobile),
+            "a path between codes",
+        ),
+        (path, stays(path, mobile), "a path"),
+        (flow, stays(flow, mobile), "a flow"),
+        (run, stays(run, mobile), "a recorded run"),
+    ];
+    for (ty, expected, what) in decisions {
+        assert_eq!(crosses(&mut context, ty), Ok(expected), "{what}");
+    }
+    assert!(
+        matches!(
+            crosses(&mut context, dependent),
+            Ok(Crossing::Stays {
+                predicate: Predicate::Mobile,
+                ..
+            })
+        ),
+        "a datatype with a dependent field"
+    );
+}
+
+#[test]
+fn a_migration_consumes_its_capability_visibly()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let migration = migrate(&mut arena, SEAT, returned);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, migration).entered(operating()),
+    ];
+    assert!(
+        matches!(verdicts(&mut arena, HostEntry::Unbounded, &module)[..], [
+            Verdict::Data,
+            Verdict::Data,
+            Verdict::Checked { .. }
+        ]),
+        "a migration holding its capability checks"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let typed = type_module(&mut context, &module);
+    let moves = typed
+        .typings()
+        .get(&ConstantIndex::from(2_usize))
+        .map(Typings::moves);
+    let Some(
+        &[
+            WorldMove::Migrated {
+                at,
+                from,
+                to,
+                ref before,
+                ref after,
+            },
+            WorldMove::Returned { at: back, to: home },
+        ],
+    ) = moves
+    else {
+        panic!("a typed run keeps one migration and its return: {moves:?}");
+    };
+    assert_eq!(
+        (at, from, to, back, home),
+        (
+            migration,
+            world(OPERATOR),
+            world(SEAT),
+            migration,
+            world(OPERATOR)
+        ),
+        "the migration leaves the operator's world for the seat's and comes back"
+    );
+    let capability = Some(ValueType::World(WorldType::Capability(world(SEAT))));
+    let read = |zone: &LinearZone| {
+        zone.slots()
+            .map(|(ty, used)| (context.arena().value_type(ty).cloned(), used))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        read(before),
+        [(capability.clone(), LinearUse::Available)],
+        "the capability stands available before the migration"
+    );
+    assert_eq!(
+        read(after),
+        [(capability, LinearUse::Consumed)],
+        "and is consumed by it"
+    );
+}
+
+#[test]
+fn a_second_migration_without_a_capability_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let again = text(&mut arena, Spelled("again"));
+    let returned = arena.computation_return(report);
+    let returned_again = arena.computation_return(again);
+    let first = migrate(&mut arena, SEAT, returned);
+    let second = migrate(&mut arena, SEAT, returned_again);
+    let returns = arena.comp_type_returner(string);
+    let ascribed = arena.computation_ascribe(first, returns);
+    let twice = arena.computation_bind(ascribed, second);
+    // `apply : U (U (F String) → F String)`, owed at 4, forced over a thunk
+    // holding the migration.
+    let suspended = arena.value_type_thunk(returns);
+    let applying = arena.comp_type_arrow(suspended, returns);
+    let apply = arena.value_type_thunk(applying);
+    let applied = arena.value_constant(ConstantIndex::from(4_usize));
+    let forced = arena.computation_force(applied);
+    let inner = arena.value_thunk(first);
+    let captured = arena.computation_application(forced, inner);
+    let entered = arena.value_constant(ConstantIndex::from(3_usize));
+    let reentered = arena.computation_force(entered);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, twice).entered(operating()),
+        entry_point(&mut arena, At(3), string, twice)
+            .entered(Entry::new(world(OPERATOR), vec![world(SEAT), world(SEAT)])),
+        owed(At(4), apply),
+        entry_point(&mut arena, At(5), string, captured).entered(operating()),
+        entry_point(&mut arena, At(6), string, reentered),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts.get(2),
+        Some(&located(
+            computation(second),
+            LocatedDefect::CapabilityMissing { world: world(SEAT) }
+        )),
+        "the second migration finds the capability spent"
+    );
+    assert!(
+        matches!(verdicts.get(3), Some(&Verdict::Checked { .. })),
+        "an entry holding two capabilities migrates twice"
+    );
+    assert_eq!(
+        verdicts.get(5),
+        Some(&located(
+            computation(first),
+            LocatedDefect::CapabilityCaptured {
+                world: world(SEAT),
+                by: Capture::Thunk,
+            }
+        )),
+        "a migration in a thunk the entry did not force may run other than once"
+    );
+    assert_eq!(
+        verdicts.get(6),
+        Some(&located(value(entered), LocatedDefect::EntryNamed {
+            constant: ConstantIndex::from(3_usize),
+        })),
+        "an entry that spent a capability is no value another declaration may force"
+    );
+}
+
+/// #5712: a body run at its world holds no frame of its caller, so the host
+/// answers a draw that the body performs, once. The seat requires `rand`, so
+/// the draw is in its row (#3545). The draw's continuation then holds the
+/// capability of a later migration and spends it once, and the entry checks.
+/// The same draw at the entry's own world can reach a handler of a caller,
+/// which can resume it twice, so the draw captures the capability.
+#[test]
+fn a_body_s_draw_crosses_a_later_migration_s_capability_5712()
+{
+    let mut arena = CoreArena::new();
+    let host = gandr_core_term::effect::host::HostSignatures::new(&mut arena)
+        .expect("the host signatures are consistent");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let drawing =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(host.rand.clone()));
+    let width = arena.value_literal(crate::fixture::integer_literal());
+    let seven = arena.value_literal(crate::fixture::integer_literal());
+    // migrate [seat] { draw(1) }; migrate [seat] { return 7 }
+    let drawn = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let first = migrate(&mut arena, SEAT, drawn);
+    let ascribed = arena.computation_ascribe(first, drawing);
+    let returned = arena.computation_return(seven);
+    let second = migrate(&mut arena, SEAT, returned);
+    let away = arena.computation_bind(ascribed, second);
+    // draw(1); migrate [seat] { return 7 }
+    let drawn_home = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let ascribed_home = arena.computation_ascribe(drawn_home, drawing);
+    let returned_home = arena.computation_return(seven);
+    let after = migrate(&mut arena, SEAT, returned_home);
+    let home = arena.computation_bind(ascribed_home, after);
+    let declared = arena.value_type_thunk(drawing);
+    let suspended_away = arena.value_thunk(away);
+    let suspended_home = arena.value_thunk(home);
+    let [operator, seat] = drawing_seat(&host.rand);
+    let module = [
+        operator,
+        seat,
+        Declaration::new(
+            At(2).constant(),
+            Maybe::Present(declared),
+            Maybe::Present(suspended_away),
+            At(2).origin(),
+        )
+        .entered(Entry::new(world(OPERATOR), vec![world(SEAT), world(SEAT)])),
+        Declaration::new(
+            At(3).constant(),
+            Maybe::Present(declared),
+            Maybe::Present(suspended_home),
+            At(3).origin(),
+        )
+        .entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
+        "the host answers the body's draw once: {:?}",
+        verdicts.get(2)
+    );
+    assert_eq!(
+        verdicts.get(3),
+        Some(&located(
+            computation(drawn_home),
+            LocatedDefect::CapabilityCaptured {
+                world: world(SEAT),
+                by: Capture::Continuation,
+            }
+        )),
+        "a handler of a caller may resume the entry's own draw twice"
+    );
+}
+
+/// #3545: a migration's body performs in the row its world requires, as a
+/// definition's body performs in its declared row. A draw at a seat that
+/// requires `rand` checks under a pure returner, checked or synthesised, and
+/// the migration performs nothing where it stands. The same draw at a seat
+/// that requires nothing is refused, under an enclosing row that holds
+/// `rand` too: checked, at the draw; synthesised, at the migration's body.
+#[test]
+fn a_migration_s_body_performs_in_its_world_s_row_3545()
+{
+    let mut arena = CoreArena::new();
+    let host = gandr_core_term::effect::host::HostSignatures::new(&mut arena)
+        .expect("the host signatures are consistent");
+    let integer = arena.value_type_base(BaseType::Integer);
+    let pure = arena.comp_type_returner(integer);
+    let drawing =
+        arena.comp_type_returner_with_effects(integer, EffectRow::singleton(host.rand.clone()));
+    let width = arena.value_literal(crate::fixture::integer_literal());
+    // migrate [seat] { draw(1) }, checked against `F Integer`
+    let drawn = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let checked = migrate(&mut arena, SEAT, drawn);
+    // x ← migrate [seat] { draw(1) } ; return x
+    let drawn_bound = arena.computation_perform(host.rand.clone(), "draw".into(), width);
+    let synthesised = migrate(&mut arena, SEAT, drawn_bound);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(bound);
+    let bind = arena.computation_bind(synthesised, returned);
+    // The two entries, `checked` at 2 and `bind` at 3, each of type
+    // `U declared` at the operator's world.
+    let entries = |arena: &mut CoreArena, declared| {
+        let declared = arena.value_type_thunk(declared);
+        [(At(2), checked), (At(3), bind)].map(|(position, body)| {
+            let suspended = arena.value_thunk(body);
+            Declaration::new(
+                position.constant(),
+                Maybe::Present(declared),
+                Maybe::Present(suspended),
+                position.origin(),
+            )
+            .entered(operating())
+        })
+    };
+    let within = entries(&mut arena, pure);
+    let outside = entries(&mut arena, drawing);
+    let module = |[operator, seat]: [Declaration; 2], [first, second]: [Declaration; 2]| {
+        [operator, seat, first, second]
+    };
+    let required = module(drawing_seat(&host.rand), within);
+    let required = verdicts(&mut arena, HostEntry::Unbounded, &required);
+    assert!(
+        matches!(required[..], [
+            Verdict::Data,
+            Verdict::Data,
+            Verdict::Checked { .. },
+            Verdict::Checked { .. }
+        ]),
+        "a draw in the seat's row checks under a pure returner: {required:?}"
+    );
+    let unrequired = module(worlds(), outside);
+    let unrequired = verdicts(&mut arena, HostEntry::Unbounded, &unrequired);
+    assert!(
+        matches!(
+            unrequired.get(2),
+            Some(&Verdict::Refused(CheckRefusal::TypeMismatch(crate::Mismatch::Computation { at, .. })))
+                if at == drawn
+        ),
+        "a checked draw outside the seat's row is refused at the draw: {:?}",
+        unrequired.get(2)
+    );
+    assert!(
+        matches!(
+            unrequired.get(3),
+            Some(&Verdict::Refused(CheckRefusal::TypeMismatch(crate::Mismatch::Computation { at, .. })))
+                if at == drawn_bound
+        ),
+        "a synthesised draw outside the seat's row is refused at the body: {:?}",
+        unrequired.get(3)
+    );
+}
+
+#[test]
+fn a_stated_entry_is_bounded_by_the_host_s()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let migration = migrate(&mut arena, SEAT, returned);
+    let [operator, seat] = worlds();
+    let stated = [
+        Maybe::Absent(crate::declaration::entry::Absent::Unstated),
+        Maybe::Present(operating()),
+        Maybe::Present(Entry::new(world(SEAT), vec![])),
+        Maybe::Present(Entry::new(world(OPERATOR), vec![world(SEAT), world(SEAT)])),
+        Maybe::Present(Entry::new(world(OPERATOR), vec![])),
+        Maybe::Present(Entry::new(world(OPERATOR), vec![world(At(2))])),
+    ];
+    let mut module = vec![operator, seat];
+    for (position, entry) in (2_usize ..).zip(stated) {
+        let declaration = entry_point(&mut arena, At(position), string, migration);
+        module.push(match entry {
+            Maybe::Present(entry) => declaration.entered(entry),
+            Maybe::Absent(_) => declaration,
+        });
+    }
+    let at_body = |position: usize| value(body_of(&module[position]));
+    let missing = located(computation(migration), LocatedDefect::CapabilityMissing {
+        world: world(SEAT),
+    });
+    let within = verdicts(&mut arena, HostEntry::Within(operating()), &module);
+    assert!(
+        matches!(within[2 ..], [
+            Verdict::Checked { .. },
+            Verdict::Checked { .. },
+            _,
+            _,
+            _,
+            _
+        ]),
+        "an entry stating none takes the host's, and one stating the host's holds it: {within:?}"
+    );
+    assert_eq!(
+        within[4 ..],
+        [
+            located(at_body(4), LocatedDefect::EntryUngranted {
+                constant: ConstantIndex::from(4_usize)
+            }),
+            located(at_body(5), LocatedDefect::EntryUngranted {
+                constant: ConstantIndex::from(5_usize)
+            }),
+            missing,
+            located(at_body(7), LocatedDefect::UndeclaredWorld {
+                world: ConstantIndex::from(2_usize),
+            }),
+        ],
+        "an entry at another home or claiming a capability twice is ungranted; one within the host's holds no more than it states, and none names a position that declares no world"
+    );
+    let unbounded = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        unbounded.get(2),
+        Some(&missing),
+        "with no host entry, an entry stating none holds no capability"
+    );
+    assert!(
+        matches!(unbounded.get(5), Some(&Verdict::Checked { .. })),
+        "and a stated entry is taken as stated"
+    );
+    let unnamed = verdicts(&mut arena, HostEntry::Undeclared, &module);
+    assert_eq!(
+        unnamed.get(2),
+        Some(&located(at_body(2), LocatedDefect::HostWorldUndeclared)),
+        "a host naming a world the source does not declare grants nothing"
+    );
+}
+
+#[test]
+fn a_located_hypothesis_is_usable_only_at_its_world()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let held = arena.computation_world(WorldForm::Hold { value: report });
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let read = arena.computation_return(bound);
+    let read_here = arena.computation_world(WorldForm::Leta {
+        world: world(OPERATOR),
+        value: bound,
+        body: read,
+    });
+    let migration = migrate(&mut arena, SEAT, read);
+    let read_there = arena.computation_world(WorldForm::Leta {
+        world: world(OPERATOR),
+        value: bound,
+        body: migration,
+    });
+    let here = arena.computation_bind(held, read_here);
+    let there = arena.computation_bind(held, read_there);
+    // x <- hold report; y <- leta x in return x; return y
+    let passed = arena.computation_bind(read_here, read);
+    let passed = arena.computation_bind(held, passed);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, here).entered(operating()),
+        entry_point(&mut arena, At(3), string, there).entered(operating()),
+        entry_point(&mut arena, At(4), string, passed).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
+        "a report held and opened at the operator's world is read there"
+    );
+    assert_eq!(
+        verdicts.get(3),
+        Some(&located(value(bound), LocatedDefect::Elsewhere {
+            bound: world(OPERATOR),
+        })),
+        "and not at the seat's"
+    );
+    assert!(
+        matches!(verdicts.get(4), Some(&Verdict::Checked { .. })),
+        "an opening whose body synthesises gives its type past the opened value"
+    );
+}
+
+#[test]
+fn a_handle_opened_at_another_world_is_refused_4483()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let held = arena.computation_world(WorldForm::Hold { value: report });
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let read = arena.computation_return(bound);
+    let opened_elsewhere = arena.computation_world(WorldForm::Leta {
+        world: world(SEAT),
+        value: bound,
+        body: read,
+    });
+    let opened_nowhere = arena.computation_world(WorldForm::Leta {
+        world: world(At(2)),
+        value: bound,
+        body: read,
+    });
+    let elsewhere = arena.computation_bind(held, opened_elsewhere);
+    let nowhere = arena.computation_bind(held, opened_nowhere);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, elsewhere).entered(operating()),
+        entry_point(&mut arena, At(3), string, nowhere).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts.get(2),
+        Some(&located(
+            computation(opened_elsewhere),
+            LocatedDefect::OpenedElsewhere {
+                written: SEAT.constant(),
+                handle: OPERATOR.constant(),
+            }
+        )),
+        "a report held at the operator's world opens there, never at the seat's"
+    );
+    assert_eq!(
+        verdicts.get(3),
+        Some(&located(
+            computation(opened_nowhere),
+            LocatedDefect::UndeclaredWorld {
+                world: ConstantIndex::from(2_usize),
+            }
+        )),
+        "an opening writes a world a declaration declares"
+    );
+}
+
+#[test]
+fn hold_cannot_fabricate_a_remote_value()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let held = arena.computation_world(WorldForm::Hold { value: report });
+    let remote = arena.value_type_world(WorldType::At {
+        inner: string,
+        world: world(SEAT),
+    });
+    let local = arena.value_type_world(WorldType::At {
+        inner: string,
+        world: world(OPERATOR),
+    });
+    let bare = Entry::new(world(OPERATOR), vec![]);
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), remote, held).entered(bare.clone()),
+        entry_point(&mut arena, At(3), local, held).entered(bare),
+        entry_point(&mut arena, At(4), local, held),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts.get(2),
+        Some(&located(computation(held), LocatedDefect::HoldElsewhere {
+            wanted: world(SEAT),
+        })),
+        "a hold at the operator's world makes no handle at the seat's"
+    );
+    assert!(
+        matches!(verdicts.get(3), Some(&Verdict::Checked { .. })),
+        "it makes one at its own"
+    );
+    assert_eq!(
+        verdicts.get(4),
+        Some(&located(computation(held), LocatedDefect::Unlocated)),
+        "and at the host's world, which is no locus, none"
+    );
+}
+
+#[test]
+fn a_report_crosses_and_an_endpoint_does_not()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let reported = migrate(&mut arena, SEAT, returned);
+    let session = ended(&mut arena);
+    let endpoint_handle = arena.value_type_world(WorldType::At {
+        inner: session,
+        world: world(SEAT),
+    });
+    let [operator, seat] = worlds();
+    let module = [
+        operator,
+        seat,
+        entry_point(&mut arena, At(2), string, reported).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
+        "a migration returning a report checks"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    assert_eq!(
+        crosses(&mut context, session),
+        Ok(Crossing::Stays {
+            former: session,
+            predicate: Predicate::Mobile,
+        }),
+        "an endpoint does not cross"
+    );
+    assert_eq!(
+        crosses(&mut context, endpoint_handle),
+        Ok(Crossing::Stays {
+            former: session,
+            predicate: Predicate::Open,
+        }),
+        "nor does a handle to one"
+    );
+}
+
+#[test]
+fn a_thunk_crosses_by_its_image()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let [operator, seat] = worlds();
+    let unmarked = sealed(&mut arena, At(2), string, Mobility::Immobile);
+    let marked = sealed(&mut arena, At(3), string, Mobility::Mobile);
+    let unmarked_atom = arena.value_type_abstract(ConstantIndex::from(2_usize));
+    let marked_atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let [unmarked_payload, marked_payload] =
+        [4_usize, 5].map(|position| arena.value_constant(ConstantIndex::from(position)));
+    let report = text(&mut arena, Spelled("report"));
+    let returns_report = arena.computation_return(report);
+    let homed = entry_point(&mut arena, At(6), string, returns_report)
+        .entered(Entry::new(world(SEAT), vec![]));
+    let thunked = |arena: &mut CoreArena, result: ValueTypeId| {
+        let returns = arena.comp_type_returner(result);
+        arena.value_type_thunk(returns)
+    };
+    // `thunk { return x }` over the binder `x` the migration's body opens.
+    let captured = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_captured = arena.computation_return(captured);
+    let capturing = arena.value_thunk(returns_captured);
+    let returns_capturing = arena.computation_return(capturing);
+    let held_capturing = arena.computation_world(WorldForm::Hold { value: capturing });
+    let over = |arena: &mut CoreArena, payload: ValueId, tail: ComputationId| {
+        let bound = arena.computation_return(payload);
+        let body = arena.computation_bind(bound, tail);
+        migrate(arena, SEAT, body)
+    };
+    let closed = arena.value_thunk(returns_report);
+    let returns_closed = arena.computation_return(closed);
+    let closed_migration = migrate(&mut arena, SEAT, returns_closed);
+    let marked_migration = over(&mut arena, marked_payload, returns_capturing);
+    let unmarked_migration = over(&mut arena, unmarked_payload, returns_capturing);
+    let held_migration = over(&mut arena, unmarked_payload, held_capturing);
+    let named = arena.value_constant(ConstantIndex::from(6_usize));
+    let forced = arena.computation_force(named);
+    let homing = arena.value_thunk(forced);
+    let returns_homing = arena.computation_return(homing);
+    let homed_migration = migrate(&mut arena, SEAT, returns_homing);
+    let later = thunked(&mut arena, string);
+    let returner = arena.comp_type_returner(later);
+    let bound = arena.computation_ascribe(returns_closed, returner);
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns_variable = arena.computation_return(variable);
+    let through = arena.computation_bind(bound, returns_variable);
+    let through_migration = migrate(&mut arena, SEAT, through);
+    let label = FieldLabel::from(String::from("later"));
+    let deferred = arena.value_record(BTreeMap::from([(label.clone(), closed)]));
+    let returns_deferred = arena.computation_return(deferred);
+    let deferred_migration = migrate(&mut arena, SEAT, returns_deferred);
+    let deferred_type = arena.value_type_record(BTreeMap::from([(label, later)]));
+    let later_marked = thunked(&mut arena, marked_atom);
+    let later_unmarked = thunked(&mut arena, unmarked_atom);
+    let held_unmarked = arena.value_type_world(WorldType::At {
+        inner: later_unmarked,
+        world: world(SEAT),
+    });
+    let homed_type = thunked(&mut arena, string);
+    let module = [
+        operator,
+        seat,
+        unmarked,
+        marked,
+        owed(At(4), unmarked_atom),
+        owed(At(5), marked_atom),
+        homed,
+        entry_point(&mut arena, At(7), later, closed_migration).entered(operating()),
+        entry_point(&mut arena, At(8), later_marked, marked_migration).entered(operating()),
+        entry_point(&mut arena, At(9), later_unmarked, unmarked_migration).entered(operating()),
+        entry_point(&mut arena, At(10), held_unmarked, held_migration).entered(operating()),
+        entry_point(&mut arena, At(11), homed_type, homed_migration).entered(operating()),
+        entry_point(&mut arena, At(12), later, through_migration).entered(operating()),
+        entry_point(&mut arena, At(13), deferred_type, deferred_migration).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert!(
+        matches!(verdicts.get(7), Some(&Verdict::Checked { .. })),
+        "a closed thunk crosses"
+    );
+    assert!(
+        matches!(verdicts.get(8), Some(&Verdict::Checked { .. })),
+        "a thunk capturing a marked payload crosses"
+    );
+    assert!(
+        matches!(
+            verdicts.get(9),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    former,
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            })) if at == value(captured) && former == unmarked_atom
+        ),
+        "one capturing an unmarked payload is refused at the capture: {:?}",
+        verdicts.get(9)
+    );
+    assert!(
+        matches!(
+            verdicts.get(10),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Capture,
+                    predicate: Predicate::Open,
+                    ..
+                },
+            })) if at == value(captured)
+        ),
+        "a handle to it is not open at the capture: {:?}",
+        verdicts.get(10)
+    );
+    assert!(
+        matches!(
+            verdicts.get(11),
+            Some(&Verdict::Refused(CheckRefusal::Located {
+                at,
+                defect: LocatedDefect::Immobile {
+                    crossed: Crossed::Homed,
+                    predicate: Predicate::Mobile,
+                    ..
+                },
+            })) if at == value(named)
+        ),
+        "one reading a seat-homed function is refused at the read: {:?}",
+        verdicts.get(11)
+    );
+    assert_eq!(
+        verdicts.get(12),
+        Some(&located(
+            computation(through_migration),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Result,
+                ty: later,
+                former: later,
+                predicate: Predicate::Mobile,
+            }
+        )),
+        "a thunk returned through a variable carries no image"
+    );
+    assert!(
+        matches!(verdicts.get(13), Some(&Verdict::Checked { .. })),
+        "a record holding a closed thunk crosses field by field"
+    );
+}
+
+#[test]
+fn an_unmarked_abstract_payload_is_immobile()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let [operator, seat] = worlds();
+    let unmarked = sealed(&mut arena, At(2), string, Mobility::Immobile);
+    let marked = sealed(&mut arena, At(3), string, Mobility::Mobile);
+    let unmarked_atom = arena.value_type_abstract(ConstantIndex::from(2_usize));
+    let marked_atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let [unmarked_payload, marked_payload] =
+        [4_usize, 5].map(|position| arena.value_constant(ConstantIndex::from(position)));
+    let [unmarked_returned, marked_returned] =
+        [unmarked_payload, marked_payload].map(|payload| arena.computation_return(payload));
+    let unmarked_migration = migrate(&mut arena, SEAT, unmarked_returned);
+    let marked_migration = migrate(&mut arena, SEAT, marked_returned);
+    let module = [
+        operator,
+        seat,
+        unmarked,
+        marked,
+        owed(At(4), unmarked_atom),
+        owed(At(5), marked_atom),
+        entry_point(&mut arena, At(6), unmarked_atom, unmarked_migration).entered(operating()),
+        entry_point(&mut arena, At(7), marked_atom, marked_migration).entered(operating()),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts.get(6),
+        Some(&located(
+            computation(unmarked_migration),
+            LocatedDefect::Immobile {
+                crossed: Crossed::Result,
+                ty: unmarked_atom,
+                former: unmarked_atom,
+                predicate: Predicate::Mobile,
+            }
+        )),
+        "an unmarked atom stays where it was made, whatever it stands for"
+    );
+    assert!(
+        matches!(verdicts.get(7), Some(&Verdict::Checked { .. })),
+        "a marked one crosses"
+    );
+}
+
+#[test]
+fn a_mobility_mark_over_an_immobile_representation_is_refused_at_sealing()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let returns = arena.comp_type_returner(string);
+    let thunk = arena.value_type_thunk(returns);
+    let module = [
+        sealed(&mut arena, At(0), thunk, Mobility::Mobile),
+        sealed(&mut arena, At(1), string, Mobility::Mobile),
+        sealed(&mut arena, At(2), thunk, Mobility::Immobile),
+    ];
+    let verdicts = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    assert_eq!(
+        verdicts,
+        [
+            located(
+                CoreNode::Type(TypeNode::Value(thunk)),
+                LocatedDefect::MarkUnfounded {
+                    atom: ConstantIndex::from(0_usize),
+                    former: thunk,
+                    predicate: Predicate::Mobile,
+                }
+            ),
+            Verdict::Data,
+            Verdict::Data,
+        ],
+        "a mobile mark over a thunk is refused where the representation is visible; over a string, or unmarked, it seals"
+    );
+}
+
+#[test]
+fn an_undeclared_world_is_refused()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let migration = migrate(&mut arena, At(1), returned);
+    let held = arena.computation_world(WorldForm::Hold { value: report });
+    let nowhere = arena.value_type_world(WorldType::At {
+        inner: string,
+        world: world(At(1)),
+    });
+    let [operator, _] = worlds();
+    let module = [
+        operator,
+        Declaration::new(
+            ConstantIndex::from(1_usize),
+            Maybe::Present(string),
+            Maybe::Present(report),
+            OriginToken::from(1_usize),
+        ),
+        entry_point(&mut arena, At(2), nowhere, held).entered(Entry::new(world(OPERATOR), vec![])),
+        entry_point(&mut arena, At(3), string, migration)
+            .entered(Entry::new(world(OPERATOR), vec![])),
+        entry_point(&mut arena, At(4), string, returned).entered(Entry::new(world(At(1)), vec![])),
+    ];
+    let undeclared = LocatedDefect::UndeclaredWorld {
+        world: ConstantIndex::from(1_usize),
+    };
+    assert_eq!(
+        verdicts(&mut arena, HostEntry::Unbounded, &module)[2 ..],
+        [
+            located(CoreNode::Type(TypeNode::Value(nowhere)), undeclared),
+            located(computation(migration), undeclared),
+            located(value(body_of(&module[4])), undeclared),
+        ],
+        "a handle, a migration and an entry naming a position no world declaration holds are refused"
+    );
+}
+
+#[test]
+fn an_entry_reads_its_home_then_its_capabilities()
+{
+    let named = [OPERATOR, SEAT, SEAT].map(At::constant);
+    assert_eq!(
+        Entry::declared(&named),
+        Maybe::Present(Entry::new(world(OPERATOR), vec![world(SEAT), world(SEAT)])),
+        "the first name is the home and each later name one capability, in written order"
+    );
+    assert_eq!(
+        Entry::declared(&named[.. 1]),
+        Maybe::Present(Entry::new(world(OPERATOR), vec![])),
+        "one name is a home holding no capability"
+    );
+    assert_eq!(
+        Entry::declared(&[]),
+        Maybe::Absent(crate::declaration::entry::Absent::Unstated),
+        "no name states no entry"
+    );
+}
+
+/// Adopt the operator's and the seat's world declarations in `context`, as a
+/// pass that reuses their verdicts does.
+///
+/// # Specification
+/// trivial.
+fn adopt_worlds(context: &mut CheckingContext<'_>)
+{
+    for world in [OPERATOR, SEAT] {
+        context
+            .adopt_world(world.constant(), &EffectRow::EMPTY)
+            .expect("the worlds are adopted in order");
+    }
+}
+
+/// #3381: a pass that adopts a located program's earlier verdicts judges
+/// what follows as a fresh pass does. The worlds it adopts are declared, so
+/// an entry that migrates checks after them and settles its home and its
+/// spending. The register the pass settles for an adopted entry decides its
+/// reader: settled as the entry's judgement left it, the reader is refused as
+/// a fresh pass refuses it; settled at the host's world, unspent, it checks.
+#[test]
+fn an_adopted_located_program_judges_as_a_fresh_pass_3381()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let report = text(&mut arena, Spelled("report"));
+    let returned = arena.computation_return(report);
+    let migration = migrate(&mut arena, SEAT, returned);
+    let entry = entry_point(&mut arena, At(2), string, migration).entered(operating());
+    let DeclarationContent::Value {
+        signature: Maybe::Present(declared),
+        ..
+    } = *entry.content()
+    else {
+        panic!("the entry point states its type");
+    };
+    let named = arena.value_constant(At(2).constant());
+    let reader = Declaration::new(
+        At(3).constant(),
+        Maybe::Present(declared),
+        Maybe::Present(named),
+        At(3).origin(),
+    );
+    let [operator, seat] = worlds();
+    let module = [operator, seat, entry.clone(), reader.clone()];
+    let fresh = verdicts(&mut arena, HostEntry::Unbounded, &module);
+    let refused = located(value(named), LocatedDefect::EntryNamed {
+        constant: At(2).constant(),
+    });
+    assert!(
+        matches!(fresh[2 ..], [Verdict::Checked { .. }, ref read] if *read == refused),
+        "a fresh pass checks the entry and refuses its reader: {fresh:?}"
+    );
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    adopt_worlds(&mut context);
+    let judged = crate::check_declaration(&mut context, &entry);
+    let settled = context.located(At(2).constant());
+    assert!(
+        matches!(judged, Verdict::Checked { .. }),
+        "after the adopted worlds the entry's migration checks: {judged:?}"
+    );
+    assert_eq!(
+        settled,
+        super::Located::new(world(OPERATOR), super::Spending::Spent),
+        "and the register holds it at its home, spent"
+    );
+    assert_eq!(
+        (
+            context.resolve_entry(&entry),
+            context.resolve_entry(&reader)
+        ),
+        (Ok(operating()), Ok(Entry::default())),
+        "with no host entry, a stated entry resolves as stated and an unstated one to the host's world"
+    );
+    context.enter_at(HostEntry::Within(operating()));
+    assert_eq!(
+        (
+            context.resolve_entry(&entry),
+            context.resolve_entry(&reader)
+        ),
+        (Ok(operating()), Ok(operating())),
+        "within the host's entry, a stated entry stays and an unstated one takes the host's"
+    );
+    let mut read_after = |located: super::Located| {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        adopt_worlds(&mut context);
+        context
+            .adopt_formed(
+                At(2).constant(),
+                declared,
+                Maybe::Absent(crate::unfolding::Absent::Rigid),
+            )
+            .expect("the entry is adopted in order");
+        context.settle_adopted(At(2).constant(), located);
+        crate::check_declaration(&mut context, &reader)
+    };
+    assert_eq!(
+        read_after(settled),
+        refused,
+        "a reader of the entry adopted as its judgement settled it is refused as on a fresh pass"
+    );
+    assert!(
+        matches!(
+            read_after(super::Located::default()),
+            Verdict::Checked { .. }
+        ),
+        "the register the pass settles is what decides the reader"
+    );
+}

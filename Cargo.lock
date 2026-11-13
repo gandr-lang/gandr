@@ -1148,6 +1148,31 @@ dependencies = [
  "allocation-counter",
  "crossbeam-channel",
  "crossbeam-deque",
+ "gandr-core-checker-base",
+ "gandr-core-checker-bridge",
+ "gandr-core-fork",
+ "gandr-core-nbe",
+ "gandr-core-term",
+ "gandr-kernel-core",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-deep-inference",
+ "hotpath",
+ "proptest",
+ "quenchant-anodized",
+ "quenchant-shape",
+ "rayon",
+ "ringbuf",
+ "rtrb",
+ "serde_json",
+]
+
+[[package]]
+name = "gandr-core-checker-base"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-checker-base",
+ "gandr-core-checker-bridge",
  "gandr-core-fork",
  "gandr-core-nbe",
  "gandr-core-session",
@@ -1158,7 +1183,6 @@ dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
- "gandr-theory-deep-inference",
  "gandr-theory-levitation",
  "gandr-theory-ordered-algebras",
  "gandr-theory-sites",
@@ -1166,9 +1190,26 @@ dependencies = [
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
- "rayon",
- "ringbuf",
- "rtrb",
+]
+
+[[package]]
+name = "gandr-core-checker-bridge"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-checker-base",
+ "gandr-core-fork",
+ "gandr-core-nbe",
+ "gandr-core-term",
+ "gandr-kernel-check-memo",
+ "gandr-kernel-conversion-trace",
+ "gandr-kernel-core",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-deep-inference",
+ "hotpath",
+ "proptest",
+ "quenchant-anodized",
+ "quenchant-shape",
  "serde",
  "serde_json",
 ]

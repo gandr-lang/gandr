@@ -1,0 +1,85 @@
+[package]
+name = "gandr-core-checker-base"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The base of the core checking judgement: the four directed faces, the name-free declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary and the module run"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["bidirectional", "call-by-push-value", "gandr", "no-std", "type-checking"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`. Its tests judge a module and
+# then readmit it, so the target reads the bridge as a dev-dependency.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The judgement is stated over the core language's own vocabulary and its
+# context, and reads the leaf vocabulary (admission positions, de Bruijn
+# indices, literals, base types, sorts) from the term crate that core-term
+# re-uses it from, and levels from the strata crate. A code constant unfolds,
+# and a static operator reduces, through the normaliser's conversion machine,
+# whose recorded trace is the certificate the kernel replays; a replayed
+# certificate is addressed by the check-memo seam's content digest. The
+# certified strata's species and equivalences come from the site crate,
+# which `ua_n` reads its range and alphabet from; a context holds its
+# catalogues and strata, and a store the driver implements carries them on. An
+# endpoint's session type is related to another through the session crate's
+# one relation engine. A hole a call nominates for an omitted implicit is a
+# metavariable of the unifier's metacontext, solved by its solver. The pinned
+# anodized facade supplies the executable specifications. A module run forks
+# its independent declarations through the fork crate's trait. The access
+# rules add and compare uses in the ordered-algebras crate's usage semiring.
+# Nothing here names a surface crate: names, spans and syntax stay above the
+# core. `hotpath` profiles checking for the benchmark report.
+[dependencies]
+anodized.workspace = true
+gandr-core-fork.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-session.workspace = true
+gandr-core-term.workspace = true
+gandr-core-unify.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-ordered-algebras.workspace = true
+gandr-theory-sites.workspace = true
+hotpath = { workspace = true, optional = true }
+proptest = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+
+# The integration target readmits what it judges through the bridge, and
+# builds on the fixtures, which the crate's own dev-dependency turns on. The
+# univalence witnesses name the descriptions their statements relate.
+[dev-dependencies]
+gandr-core-checker-base = { path = ".", features = ["fixture"] }
+gandr-core-checker-bridge.workspace = true
+gandr-theory-levitation.workspace = true
+proptest.workspace = true
+
+[features]
+default = []
+# The fixtures of the tests: the arenas, declarations, modules and generators
+# that the tests of the base, the bridge and the top build on. Off, nothing
+# of them compiles outside this crate's own unit tests.
+fixture = ["dep:proptest"]
+# Per-declaration checking timed and its allocations counted for the
+# benchmark report (the driver's `hotpath` bench).
+hotpath = ["dep:hotpath", "hotpath/hotpath"]
+# The goal memo's tally in each checking context: a hit or a miss counted at
+# each consult, which the counts layer of the hub's instrument reads. The
+# buffer of steps a tracer lends the context, which the trace layer folds; its
+# records read the clock type of the fork crate's activity ring. Off, the
+# context holds no tally and no buffer, and a consult counts nothing.
+instrument = ["gandr-core-fork/instrument"]
+unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
+
+[lints]
+workspace = true

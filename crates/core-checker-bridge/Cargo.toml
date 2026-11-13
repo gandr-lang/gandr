@@ -1,0 +1,54 @@
+[package]
+name = "gandr-core-checker-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel bridge of the core checking judgement: readmission of each judged declaration through the kernel's one checked entry, and the staging templates"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "kernel", "no-std", "type-checking"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+
+# The bridge reads the judgement's report from the base. It erases into the
+# term crate's arena and admits through the kernel's choke point, which
+# re-derives every declaration the judgement accepts. A decode of a code
+# constant unfolds through the normaliser's conversion machine, and the
+# kernel replays the recorded trace, addressed by the check-memo seam's
+# content digest. The deep-inference crate gives the derivations a bridge
+# readmits. A staged program forks its independent jobs through the fork
+# crate's trait, on whatever pool the driver hands it. The pinned anodized
+# facade supplies the executable specifications. `hotpath` profiles a model
+# slot's resolution and readmission for the benchmark report.
+[dependencies]
+anodized.workspace = true
+gandr-core-checker-base.workspace = true
+gandr-core-fork.workspace = true
+gandr-core-nbe.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-core.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-deep-inference.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+serde.workspace = true
+
+# The tests build on the fixtures of the base.
+[dev-dependencies]
+gandr-core-checker-base = { workspace = true, features = ["fixture"] }
+proptest.workspace = true
+serde_json.workspace = true
+
+[features]
+default = []
+# The trial of each model slot's candidates and kernel readmission timed and
+# their allocations counted for the benchmark report (the driver's `hotpath`
+# bench).
+hotpath = ["dep:hotpath", "gandr-core-checker-base/hotpath", "hotpath/hotpath"]
+
+[lints]
+workspace = true
