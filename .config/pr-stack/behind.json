@@ -7,10 +7,25 @@
       "queued": true,
       "draft": false,
       "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
       "checks": "PENDING",
       "age": 60
     },
     "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
+  },
+  {
+    "name": "#7188: a queued, mergeable top whose stack shares no path with the branch takes no change above it, so the branch opens on the trunk by itself, with no wait",
+    "top": "behind",
+    "lower": "elsewhere",
+    "reading": {
+      "queued": true,
+      "draft": false,
+      "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
+      "checks": "PENDING",
+      "age": 60
+    },
+    "output": "stacked on main, past #1"
   },
   {
     "name": "#6760: a top not queued, BEHIND with its checks pending, is restacked onto the trunk, and the branch stacks on it",
@@ -20,6 +35,7 @@
       "queued": false,
       "draft": false,
       "merge": "BEHIND",
+      "mergeable": "MERGEABLE",
       "checks": "PENDING",
       "age": 60
     },
@@ -33,34 +49,23 @@
       "queued": false,
       "draft": false,
       "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
       "checks": "SUCCESS",
       "age": 60
     },
     "output": "stacked on lower (the top holds main)"
   },
   {
-    "name": "#4164: a top that conflicts with the trunk within its seat's claim window arms `pr:await` on it",
+    "name": "#7188: a top that conflicts with the trunk takes no change above it, so the branch opens on the trunk by itself, with no wait",
     "top": "behind",
     "lower": "apart",
     "reading": {
       "queued": false,
       "draft": false,
       "merge": "DIRTY",
+      "mergeable": "CONFLICTING",
       "checks": "SUCCESS",
-      "age": 14399
-    },
-    "output": "armed: arm: /bin/bash -c 'mise run pr:await 1' timer-await-1"
-  },
-  {
-    "name": "#4164: a top that has conflicted with the trunk past its seat's claim window is stacked past, onto the trunk when nothing below it is clean",
-    "top": "behind",
-    "lower": "apart",
-    "reading": {
-      "queued": false,
-      "draft": false,
-      "merge": "DIRTY",
-      "checks": "SUCCESS",
-      "age": 14400
+      "age": 60
     },
     "output": "stacked on main, past #1"
   },
@@ -72,23 +77,25 @@
       "queued": false,
       "draft": false,
       "merge": "BEHIND",
+      "mergeable": "MERGEABLE",
       "checks": "FAILURE",
       "age": 60
     },
     "output": "stacked on lower (the top holds main)"
   },
   {
-    "name": "#4124: a draft top that lacks the trunk change the branch builds on is refused as held, naming the change",
+    "name": "#7188: a draft top takes no change above it, so the branch opens on the trunk by itself",
     "top": "behind",
     "lower": "apart",
     "reading": {
       "queued": false,
       "draft": true,
       "merge": "BEHIND",
+      "mergeable": "MERGEABLE",
       "checks": "SUCCESS",
       "age": 60
     },
-    "output": "refused: lacks these changes of main the branch builds on, and it is a draft, held (names trunk B)"
+    "output": "stacked on main, past #1"
   },
   {
     "name": "a top that holds the trunk change takes the branch's own commit",
@@ -98,6 +105,7 @@
       "queued": true,
       "draft": false,
       "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
       "checks": "PENDING",
       "age": 60
     },
@@ -111,6 +119,7 @@
       "queued": true,
       "draft": false,
       "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
       "checks": "PENDING",
       "age": 60
     },
@@ -124,6 +133,7 @@
       "queued": false,
       "draft": false,
       "merge": "BEHIND",
+      "mergeable": "MERGEABLE",
       "checks": "PENDING",
       "age": 60
     },
@@ -138,6 +148,7 @@
       "queued": false,
       "draft": false,
       "merge": "BEHIND",
+      "mergeable": "MERGEABLE",
       "checks": "SUCCESS",
       "age": 60
     },

@@ -4193,22 +4193,10 @@
     "output": "{\"event\":\"top-current\",\"exit\":0}"
   },
   {
-    "name": "#4164: a top conflicting with the trunk within its seat's claim window is waited on, whatever it holds",
+    "name": "#7188: a top that conflicts with the trunk wakes the seat at once, so `pr:open` opens the branch on the trunk by itself",
     "program": "awaited.jq",
-    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": false, "age": 14399 },
-    "output": "null"
-  },
-  {
-    "name": "#4164: a top conflicting past its seat's claim window wakes the seat to stack past it",
-    "program": "awaited.jq",
-    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": true, "age": 14400 },
-    "output": "{\"event\":\"top-stale\",\"exit\":0}"
-  },
-  {
-    "name": "#4268: the REST reading of a top, `mergeable_state` dirty read as `DIRTY` and the head commit's age past the window, stacks past it",
-    "program": "awaited.jq",
-    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": false, "age": 14401 },
-    "output": "{\"event\":\"top-stale\",\"exit\":0}"
+    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": true },
+    "output": "{\"event\":\"top-conflicts\",\"exit\":0}"
   },
   {
     "name": "a bottom queued on a merged branch no open pull request heads stands off the trunk, and the landing retargets it (#4168)",
@@ -4788,5 +4776,77 @@
       "open": [{ "number": 7, "above": false, "commits": ["p1", "s1"] }]
     },
     "output": "[{\"number\":7,\"commits\":1}]"
+  },
+  {
+    "name": "#7188: a change that shares a path with a mergeable top's stack, with no hold, stacks on it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
+      "shared": [".config/pr-stack/stack.bash"]
+    },
+    "output": "{\"act\":\"stack\",\"why\":\"the change shares 1 paths with its stack, as .config/pr-stack/stack.bash\"}"
+  },
+  {
+    "name": "#7188: a change that shares no path with the top's stack opens on the trunk by itself",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "shared": []
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"the change shares no path with its stack\"}"
+  },
+  {
+    "name": "#7188: a top that conflicts with the trunk takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "DIRTY",
+      "mergeable": "CONFLICTING",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it conflicts with the trunk\"}"
+  },
+  {
+    "name": "#7188: a top that GitHub has not read mergeable takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "UNKNOWN",
+      "mergeable": "UNKNOWN",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"GitHub has not read it mergeable\"}"
+  },
+  {
+    "name": "#7188: a held top, which a pr:land is about to queue, takes no change above it and no wait",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": true,
+      "merge": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it carries the label landing, and a pr:land is about to queue it\"}"
+  },
+  {
+    "name": "#7188: a draft top takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": true,
+      "held": false,
+      "merge": "DRAFT",
+      "mergeable": "MERGEABLE",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it is a draft, held\"}"
   }
 ]
