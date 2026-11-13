@@ -720,7 +720,9 @@ summary=$(mktemp)
 listed=$(mktemp)
 depends=$(mktemp)
 aliases=$(mktemp)
-trap 'rm -f "$summary" "$listed" "$depends" "$aliases"' EXIT
+reported=$(mktemp)
+gated=$(mktemp)
+trap 'rm -f "$summary" "$listed" "$depends" "$aliases" "$reported" "$gated"' EXIT
 listings=()
 files=()
 shard=${CI_SHARD_ARGS:-}
@@ -753,17 +755,21 @@ fi
 # Each workspace package's workspace dependencies, and each listed package's
 # aliases with the count of its targets that list each. An alias is spelled as
 # `quenchant-gates` spells it: an integration test's carries its target's name.
-# Both pass through files: a listing of the workspace exceeds an argument.
+# Each reading passes through a file, the report and the gated tests too: a
+# listing of the workspace exceeds an argument, and the report of the `rest`
+# shard passes the kernel's single-argument limit (#7089).
 cargo metadata --locked --no-deps --format-version 1 \
   | jq -c '[.packages[] | {key: .name, value: ([.dependencies[] | select(.path != null) | .name] | unique)}] | from_entries' > "$depends"
 jq -c -s 'reduce (.[] | ."rust-suites"[]) as $suite ({};
     ($suite."binary-name" // $suite."package-name") as $target
     | reduce ($suite.testcases // {} | keys[]) as $name (.;
         .[$suite."package-name"][if $suite.kind == "test" then "\($target)::\($name)" else $name end] += 1))' "${files[@]}" > "$aliases"
-read=$(jq -n --arg report "$report" --argjson tests "$("$witnesses/tests.bash")" \
+printf '%s' "$report" > "$reported"
+"$witnesses/tests.bash" > "$gated"
+read=$(jq -n --rawfile report "$reported" --slurpfile tests "$gated" \
   --argjson here "$(rustc --print cfg | jq -R -s . | jq -c -L "$witnesses" -f "$witnesses/atoms.jq")" \
   --slurpfile hosts "$witnesses/hosts.json" --slurpfile depends "$depends" --slurpfile listed "$aliases" \
-  '{lines: ($report | split("\n")), tests: $tests, here: $here, hosts: $hosts[0], depends: $depends[0], listed: $listed[0]}' \
+  '{lines: ($report | split("\n")), tests: $tests[0], here: $here, hosts: $hosts[0], depends: $depends[0], listed: $listed[0]}' \
   | jq -c -L "$witnesses" -f "$witnesses/resolve.jq")
 jq -r '.resolved[]' <<< "$read"
 if [[ $(jq '.refused | length' <<< "$read") != 0 ]]; then
@@ -778,14 +784,18 @@ echo "adequacy witness resolution (G0): every witness resolves here, in a packag
 # `.config/witnesses/cases.json` holds a report, the gated tests, the host
 # atoms, the dependencies and the listed aliases `resolve.jq` reads, and the
 # lines it must resolve or refuse; one holds `rustc --print cfg`'s text and
-# the atoms `atoms.jq` keeps.
+# the atoms `atoms.jq` keeps. `.config/witnesses/shards-cases.bash` holds
+# each enforcing shard of `ci.yml` to the packages whose tests its members'
+# witnesses name (#7089).
 ["check:witness-cases"]
-description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, and a witness spelled with a package resolves only where that package depends on the owner, as recorded"
+description = "A witness this host builds no test for is left to the gate host whose cfg builds it, or refused when none does, a witness spelled with a package resolves only where that package depends on the owner, as recorded, and each shard lists the packages its witnesses name"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 .config/cases/run.bash witnesses .config/witnesses/cases.json --programs .config/witnesses --mode c
+.config/witnesses/shards-cases.bash
 echo "witness cases OK: $(jq length .config/witnesses/cases.json) cases read as recorded"
 '''
 

@@ -284,7 +284,15 @@
       ],
       "check:vectors": [".config/pr-stack/", "crates/storage-records/", "crates/storage-values/"],
       "check:vscode-smoke-admits": [".config/vscode-smoke/"],
-      "check:witness-cases": [".config/cases/", ".config/witnesses/"],
+      "check:witness-cases": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/witnesses/",
+        ".github/workflows/ci.yml",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
       "check:workflow-hashing": [".config/cases/", ".config/workflow-contexts/", ".github/"],
       "check:workflow-hashing-shell": [".config/cases/", ".config/workflow-contexts/", ".github/"]
     }
