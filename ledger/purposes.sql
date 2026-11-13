@@ -2692,7 +2692,6 @@ INSERT INTO purpose VALUES('surface-layout','units::SquaredOverflow','struct','S
 INSERT INTO purpose VALUES('surface-layout','units::TextBytesUsed','struct','Uniquely stored text and verbatim bytes so far.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-layout','units::VerbatimLinesUsed','struct','Stored verbatim physical fragments so far.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-layout','units::VmStepsUsed','struct','Cumulative virtual-machine steps used by a render meter.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-lowering','lower::cells::refuse_cells','function','Refuses a `cells` node until the pasting reading lands, so the node''s one diagnostic names the reading''s tracking issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::CarriedOrigins','struct','Holds the origins a closure''s lowering carries, so the closure''s origins are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::ClosureLowering','struct','Holds a closure''s lowering, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','lower::closure::Onto','enum','Names the target a closure''s lowering lowers onto, so the closure''s lowering is read.',NULL,'fits','sound',NULL);
@@ -2911,6 +2910,15 @@ INSERT INTO purpose VALUES('surface-lowering-base','layout::bracket_form','funct
 INSERT INTO purpose VALUES('surface-lowering-base','layout::misplaced','function','Gives the first bracket the layout of the declaration spanning `within` places elsewhere than the parser paired it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','layout::nesting','function','Gives how `label` nests: a closer of its family when it is `)`, `]` or `}`, and otherwise an opener of the family its last character opens.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::HERE','constant','Holds reflexivity''s spelling, which no pattern may take.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::Operations','struct','Holds a theory''s effect operations apart from its value operations.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::TheoryInterface','struct','Holds a theory read as an effect interface, so a capability scope and a row entry read its operations, its laws and its rules.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::TheoryLaw','struct','Holds a law of a theory read for the clauses of a scope that handles it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::TheoryOperation','struct','Holds an operation of a theory read as an effect operation, so a clause reads its payload and its reply.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::ValueOperation','struct','Holds a value operation of a theory, so a model the scope names answers it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::laws','function','Reads the laws of a theory over its operations, so a scope is checked as a model of the theory.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::operations','function','Reads the operations of a theory as an effect interface, so a scope refuses a member out of shape by its fault.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::capability::theory::rules','function','Reads the laws that the theory''s order orients as rewrites of a scope''s subject.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering-base','lower::cells::refuse_cells','function','Refuses a `cells` node until the pasting reading lands, so the node''s one diagnostic names the reading''s tracking issue.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::ElidableExit','struct','Holds an elidable exit, so the exit''s elision is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::Exit','enum','Names an exit, so the exit''s polarity is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering-base','lower::exits::Explicitness','enum','Names an exit''s explicitness, so the exit''s explicitness is read.',NULL,'fits','sound',NULL);

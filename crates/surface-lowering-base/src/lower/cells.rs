@@ -1,7 +1,9 @@
 //! The lowering of a `cells` node, a composite or a filler written over named
-//! cells. The pasting reading reads the cells' types into the shape the former
-//! is checked at. Until that reading lands, the lowering refuses the node by
-//! one refusal, classed under the reading's tracking issue.
+//! cells.
+//!
+//! The pasting reading reads the cells' types into the shape the former is
+//! checked at. Until that reading lands, the lowering refuses the node by one
+//! refusal, classed under the reading's tracking issue.
 //!
 //! # Witnesses
 //! - `lower::cells::tests::a_cells_node_is_refused_for_the_pasting_reading`

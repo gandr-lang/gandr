@@ -758,9 +758,7 @@ mod boundary;
 
 mod capability;
 
-mod cells;
-
-pub use cells::refuse_cells;
+pub use gandr_surface_lowering_base::lower::cells::refuse_cells;
 
 mod closure;
 

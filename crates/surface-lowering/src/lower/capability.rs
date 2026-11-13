@@ -259,9 +259,9 @@ use crate::unbuilt::Unbuilt;
 mod answered;
 #[cfg(test)]
 mod tests;
-mod theory;
 
 use answered::Answering;
+use gandr_surface_lowering_base::lower::capability::theory;
 pub(super) use theory::TheoryInterface;
 
 /// The name an abandonment is called by, where the program binds none.
@@ -2511,7 +2511,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   name.
     /// - witness: `lower::capability::tests::a_scope_handles_a_theory_s_operations_2272`
     /// - witness: `lower::capability::tests::a_scope_s_manifest_names_only_its_theory_s_sorts_2272`
-    /// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
+    /// - witness: `gandr-surface-lowering-base::lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
     /// - witness: `lower::capability::tests::a_row_names_a_theory_at_the_sorts_it_fixes_2844`
     #[spec(ensures: |ret| ret.is_err() || manifest.is_empty() || matches!(ret, Ok(Interface::Theory(ref theory)) if theory.scope == at))]
     pub(super) fn handled(

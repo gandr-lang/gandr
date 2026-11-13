@@ -88,7 +88,7 @@ mod tests;
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct TheoryInterface
+pub struct TheoryInterface
 {
     /// The capability scope handling the theory, or the name of the row
     /// entry naming it, whose signature the mint keeps for every form naming
@@ -123,7 +123,8 @@ impl TheoryInterface
     /// # Specification
     /// trivial.
     #[must_use]
-    pub(in crate::lower) fn operation(
+    #[inline]
+    pub fn operation(
         &self,
         name: &OperationName,
     ) -> Option<&TheoryOperation>
@@ -141,7 +142,7 @@ impl TheoryInterface
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct TheoryOperation
+pub struct TheoryOperation
 {
     /// The operation's name.
     pub name: OperationName,
@@ -157,7 +158,7 @@ pub(in crate::lower) struct TheoryOperation
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct ValueOperation
+pub struct ValueOperation
 {
     /// The operation's name.
     pub name: Name,
@@ -171,7 +172,7 @@ pub(in crate::lower) struct ValueOperation
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct Operations
+pub struct Operations
 {
     /// Each effect operation, in the theory's order.
     pub effects: Vec<TheoryOperation>,
@@ -184,7 +185,7 @@ pub(in crate::lower) struct Operations
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::lower) struct TheoryLaw
+pub struct TheoryLaw
 {
     /// The law's place among the theory's rules, then its stated laws.
     pub rule: RuleIndex,
@@ -226,7 +227,8 @@ pub(in crate::lower) struct TheoryLaw
 /// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
 /// - witness: `lower::capability::theory::tests::a_value_operation_is_read_apart_from_the_effects_2288`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.effects.len().saturating_add(read.values.len()) == members.operations.len()))]
-pub(in crate::lower) fn operations(
+#[inline]
+pub fn operations(
     members: &Members,
     fixed: &BTreeMap<Name, NodeIndex>,
 ) -> Result<Operations, (Placed, InterfaceFault)>
@@ -269,9 +271,10 @@ pub(in crate::lower) fn operations(
     Ok(read)
 }
 
-/// The laws of the theory `members` presents, then the laws `stated` states,
-/// each read for the clauses of a scope that answers `operations`, a law
-/// applying one of `values` left to the model that answers it.
+/// The laws of the theory `members` presents, then the laws `stated` states.
+///
+/// Each law is read for the clauses of a scope that answers `operations`. A
+/// law applying one of `values` is left to the model that answers it.
 ///
 /// # Specification
 /// - requires: `stated` holds the laws the block presenting `members` states.
@@ -294,12 +297,13 @@ pub(in crate::lower) fn operations(
 ///   operation, left to the model, and a stated law owed after the rules.
 /// - witness: `lower::capability::theory::tests::a_theory_s_laws_read_for_its_handler_2272`
 /// - witness: `lower::capability::theory::tests::a_value_operation_is_read_apart_from_the_effects_2288`
-/// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
+/// - witness: `gandr-surface-lowering::lower::capability::tests::a_scope_owes_its_theory_s_stated_laws_3966`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |laws| {
     let all = members.laws.len().saturating_add(stated.len());
     laws.len() <= all && (laws.len() == all || !values.is_empty())
 }))]
-pub(in crate::lower) fn laws(
+#[inline]
+pub fn laws(
     members: &Members,
     stated: &[StatedLaw],
     operations: &[TheoryOperation],
@@ -387,7 +391,9 @@ fn applied_value<'term>(
 ///   grows, as none.
 /// - witness: `lower::capability::theory::tests::a_theory_s_laws_rewrite_its_scope_s_subject_2272`
 #[spec(ensures: |ret| ret.len() <= members.laws.len())]
-pub(in crate::lower) fn rules(
+#[must_use]
+#[inline]
+pub fn rules(
     members: &Members,
     operations: &[TheoryOperation],
     turns: &[RuleTurn],

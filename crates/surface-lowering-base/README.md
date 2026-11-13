@@ -32,7 +32,7 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 - `ByForm`, `FormStretch`, `FormPlace` and `At`: the stretch of each top-level form among a tree's positions ([`by_form`](src/by_form.rs)).
 - `CircuitReading`, `circuit_wiring`, `circuit_canon` and `embed_circuit_rule`: a rule's body as a wiring diagram, its spider canon and its embeddings ([`circuit::embed`](src/circuit/embed.rs)).
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and the collection pass that fills them ([`module`](src/module.rs)); `ModuleImports` and `ImportDeclaration` ([`import`](src/import.rs)); `plan_operation` and `mint_operation` ([`operation`](src/operation.rs)); `Documentation` and `read_doc` ([`doc`](src/doc.rs)); the brackets a block's layout misplaces ([`layout`](src/layout.rs)).
-- `Exit`, `InferredExit`, `InferredRun` and the other records the module pass and the lowering share, and `parse_literal` ([`lower`](src/lower.rs)).
+- `Exit`, `InferredExit`, `InferredRun` and the other records the module pass and the lowering share, and `parse_literal` ([`lower`](src/lower.rs)); `refuse_cells` ([`lower::cells`](src/lower/cells.rs)); `TheoryInterface` and the reading of a theory as a capability's interface ([`lower::capability::theory`](src/lower/capability/theory.rs)).
 - With the `fixture` feature, the test fixtures: parsed and hand-built trees over the built-in grammar ([`fixture`](src/fixture.rs)).
 
 ## Expected features
@@ -58,6 +58,7 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 | The module pass: collection by name, module declarations, sealing, `Model(S)` members, worlds and foreign blocks | [`module`](src/module.rs), [`module::sealing`](src/module/sealing.rs), [`module::model`](src/module/model.rs), [`module::world`](src/module/world.rs), [`module::foreign`](src/module/foreign.rs) |
 | Imports, operations, documentation and layout | [`import`](src/import.rs), [`operation`](src/operation.rs), [`doc`](src/doc.rs), [`layout`](src/layout.rs) |
 | The records the module pass and the lowering share | [`lower::exits`](src/lower/exits.rs), [`lower::runs`](src/lower/runs.rs) |
+| A theory read as a capability's interface, and the refusal of a `cells` node | [`lower::capability::theory`](src/lower/capability/theory.rs), [`lower::cells`](src/lower/cells.rs) |
 
 ## References
 
@@ -65,6 +66,8 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 - `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — a scope's subject normalises by its theory's laws.
+- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — lineage: the theories design — a model meets the laws it owes by conversion or by certificate, so a law applying a value operation is the model's to state.
 - `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
 - `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
 - `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.

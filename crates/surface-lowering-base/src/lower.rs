@@ -1,8 +1,11 @@
-//! The records of the lowering that the module pass reads.
+//! The records and the parts of the lowering that read nothing of its
+//! context.
 //!
 //! They are the exits and the runs the lowering infers, the reading of a
-//! literal's own text, and the spelling of reflexivity. The lowering's families
-//! write them, and `gandr-surface-lowering` names each one at its old path.
+//! literal's own text, the spelling of reflexivity, the refusal of a `cells`
+//! node, and a theory read as a capability's interface. The lowering's
+//! families read them, and `gandr-surface-lowering` names each one at its old
+//! path.
 
 use alloc::string::String;
 
@@ -19,6 +22,8 @@ use quenchant_shape::shape::Maybe;
 use crate::form::Former;
 use crate::written_import::decode_escapes;
 
+pub mod capability;
+pub mod cells;
 pub mod exits;
 pub mod runs;
 
