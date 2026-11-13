@@ -36,7 +36,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 ## Expected features
 
-- **The core arena outlives the domain arena.** A domain node names core nodes it does not own, so the caller never truncates the core arena below one, as [`arena`](src/arena.rs) states.
+- **The core arena outlives the domain arena.** The caller keeps this expectation of [`core-nbe-base`](../core-nbe-base/README.md).
 - **Well-scoped input.** Readback splices a source id under open binders on the strength of its term face, which is sound only if that source term is closed. Evaluating a well-scoped term guarantees it.
 - **Lowering one body.** `LoweredChain::lower` asks the caller, once per distinct body, for that body as a closed core value in the run's arena; [`eval`](src/eval.rs) states the pass and its refusal.
 - **A fuel budget.** The caller sizes `Fuel` for the run; exhaustion is `EvalFault::OutOfFuel` or `ReadbackFault::OutOfFuel`, a decline rather than a verdict.
@@ -98,23 +98,19 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Topic | Module |
 | ----- | ------ |
 | Provided items in detail, references, optional tracing, what stays in the kernel, specification attributes | [`src/lib.rs`](src/lib.rs) |
-| Term and unfolding faces, neutrals and spines | [`domain`](src/domain.rs) |
-| The per-run arena | [`arena`](src/arena.rs) |
-| Closure spaces | [`closure`](src/closure.rs) |
+| The glued domain, the arena, closures, the cached word, the overlay, the measure and stage terms | [`core-nbe-base`](../core-nbe-base/README.md) |
 | Scheduling, duplication and granularity stances | [`policy`](src/policy.rs) |
 | Evaluation, lowered definition bodies, native data and records, source sharing | [`eval`](src/eval.rs) |
 | Readback modes | [`readback`](src/readback.rs) |
 | Conversion steps 1 through 3 | [`conv`](src/conv.rs) |
 | The conversion machine, native universe paths, termination | [`machine`](src/machine.rs), [`rules`](src/rules.rs) |
 | Codes and static operators | [`code`](src/code.rs) |
-| The cached word | [`guard`](src/guard.rs) |
 | Process re-sharing | [`resharing`](src/resharing.rs) |
 | Derivations and trace pairing | [`derivation`](src/derivation.rs) |
-| The sharing overlay, erasure, the measure, duplication and overlay evaluation | [`overlay`](src/overlay.rs), [`measure`](src/measure.rs), [`duplicate`](src/duplicate.rs), [`overlay_eval`](src/overlay_eval.rs) |
+| Duplication and overlay evaluation | [`duplicate`](src/duplicate.rs), [`overlay_eval`](src/overlay_eval.rs) |
 | Closed-configuration sharing and the certifying path | [`traced`](src/traced.rs) |
 | Live evaluation | [`live`](src/live.rs) |
-| Strict stage normalization | [`stage`](src/stage.rs) |
-| References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs), [`closure`](src/closure.rs) |
+| References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs) |
 
 ## References
 
