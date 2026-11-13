@@ -2020,6 +2020,70 @@ fi
 echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}, documented: ${#checked[@]}; every public item of a documented crate has its row, every row names an entry, every concern tag is a key a site of its concern covers"
 {% endraw %}'''
 
+# The positions ledger (#7323, `ledger/positions.sql`): every struct whose one
+# field is an unsigned integer or a byte array, in a source of a kernel or a
+# storage crate outside its tests, or in the core term arena, whose ids a
+# session's report holds, has a row, and every row names such a
+# struct. Such a struct is where a place takes a name, so a positional
+# identity reaches no key, name or byte form without a row that classes it:
+# `kept`, a place inside a piece that its content names; `owed`, a place
+# relative to an order of admission or of mints, with the issue whose unit
+# removes it; `local`, a place that none writes; `none`, no place. The dump
+# builds with every constraint holding and is its own re-dump. Each case in
+# `.config/positions/cases.json` holds the lines that `git grep` prints and
+# the structs that `.config/positions/hits.jq` reads from them. Every finding
+# is printed before the gate fails.
+["check:positions"]
+description = "Every positional struct of the kernel and storage crates and of the core term arena has its row in the positions ledger, and every row names one"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+.config/cases/run.bash 'positions' .config/positions/cases.json --program .config/positions/hits.jq || failed=1
+db="$fresh/positions.db"
+sqlite3 -bail "$db" < ledger/positions.sql
+sqlite3 "$db" .dump > "$fresh/positions.sql"
+if ! cmp -s "$fresh/positions.sql" ledger/positions.sql; then
+  diff -u ledger/positions.sql "$fresh/positions.sql" >&2 || true
+  echo 'ledger/positions.sql is not its own re-dump; normalize it with `mise run ledger:positions`' >&2
+  failed=1
+fi
+place='^\s*(pub(\([a-z]+\))?\s+)?struct\s+\w+(<[^>]*>)?\((pub(\([a-z]+\))?\s+)?(usize|u64|u32|u16|u8|\[u8;\s*\w+\])\)'
+test_cfg='^\s*#\[cfg\((all\()?test\b'
+module='^\s*(pub(\([a-z]+\))?\s+)?mod\s+\w+\s*(\{.*)?$'
+git grep -n -I -P -e "$place" -e "$test_cfg" -e "$module" -- ':(glob)crates/kernel-*/src/**' ':(glob)crates/storage-*/src/**' crates/core-term/src/arena.rs \
+  ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' \
+  | jq -R -s 'split("\n")' | jq -r -f .config/positions/hits.jq > "$fresh/hits.tsv"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE hit(file TEXT, name TEXT);' ".import $fresh/hits.tsv hit"
+findings=$(sqlite3 -bail "$db" <<'SQL'
+SELECT h.file || ': `' || h.name || '` has no row; add'
+  || ' INSERT INTO position VALUES(' || quote(h.file) || ',' || quote(h.name)
+  || ',''<reader>'',''<class>'',<unit>,''<why>'');'
+  || ' to ledger/positions.sql, each column as its schema there states, then run `mise run ledger:positions`'
+FROM hit h
+WHERE NOT EXISTS (SELECT 1 FROM position p WHERE (p.file, p.name) = (h.file, h.name))
+UNION ALL
+SELECT DISTINCT p.file || ': `' || p.name || '`: a row naming no struct of the pattern; correct its file or its name, or delete it'
+FROM position p
+WHERE NOT EXISTS (SELECT 1 FROM hit h WHERE (h.file, h.name) = (p.file, p.name));
+SQL
+)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'positions check FAILED' >&2
+  exit 1
+fi
+counts=$(sqlite3 -separator ' ' "$db" "SELECT (SELECT count(*) FROM hit), (SELECT count(*) FROM position WHERE class = 'kept'), (SELECT count(*) FROM position WHERE class = 'owed'), (SELECT count(*) FROM position WHERE class = 'local'), (SELECT count(*) FROM position WHERE class = 'none');")
+read -r structs kept owed local none <<< "$counts"
+echo "positions check OK: $structs structs, each with its row; rows: $kept kept, $owed owed, $local local, $none none"
+{% endraw %}'''
+
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
 # writes from the crates' documentation, and the documentation keeps its
 # shape: a key line names a library citation key, or `vault:` and a vault

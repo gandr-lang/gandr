@@ -223,6 +223,13 @@
         ".config/nightly/",
         ".github/workflows/nightly-sweeps.yml"
       ],
+      "check:positions": [
+        ".config/cases/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/positions/",
+        "crates/",
+        "ledger/positions.sql"
+      ],
       "check:pr-stack": [
         ".config/cases/",
         ".config/gh/",
