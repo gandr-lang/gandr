@@ -17,8 +17,8 @@
 //! so the tests that witness a judgement and its readmission stay in the crate
 //! that owns the judgement.
 
-// Module documentation that predates the shape lint: 159 headings outside the
-// vocabulary, 87 decision records, 11 issue references and 48 budgets exceeded.
+// Module documentation that predates the shape lint: 147 headings outside the
+// vocabulary, 76 decision records, 37 issue references and 39 budgets exceeded.
 // Each allow leaves with the rewrite that clears its count.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

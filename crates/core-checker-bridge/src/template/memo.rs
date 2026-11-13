@@ -1254,6 +1254,7 @@ impl Memo
     ///   reports and the memo after are compared; a repeated key is refused.
     /// - witness: `template::tests::forked_families_equal_one_by_one_admission_across_the_edit_traces`
     #[spec(ensures: |output| output.len() == families.len())]
+    #[inline]
     pub fn admit_families<F, C>(
         &mut self,
         arena: &Arena,

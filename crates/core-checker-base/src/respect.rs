@@ -226,6 +226,7 @@ pub enum Reading
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::RuleNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+#[inline]
 pub fn respected(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -500,6 +501,7 @@ pub enum Sethood
 ///   into the integers' paths is admitted and one into the circle's refused.
 /// - witness: `tests::native_formers::a_fold_into_the_paths_of_a_set_respects_its_rules`
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(context.arena().value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
+#[inline]
 pub fn sethood(
     context: &mut CheckingContext<'_>,
     carrier: ValueTypeId,

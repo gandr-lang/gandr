@@ -936,6 +936,7 @@ const fn checked(
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: context.depth(Zone::Intuitionistic) == depth,
 )]
+#[inline]
 pub fn form(
     context: &mut CheckingContext<'_>,
     node: TypeNode,

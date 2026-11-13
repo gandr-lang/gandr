@@ -99,6 +99,7 @@ const fn unbound(at: ValueTypeId) -> CheckRefusal
 #[spec(ensures: |ret| ret.is_err() == bounds.iter().enumerate().any(|(ordinal, &bound)| {
     matches!(bound, StageBound::Below(binder) if usize::from(binder) >= ordinal)
 }))]
+#[inline]
 pub fn bounded(
     bounds: &[StageBound],
     declared: ValueTypeId,
@@ -130,6 +131,7 @@ pub fn bounded(
 #[spec(requires: bounds.iter().enumerate().all(|(ordinal, &bound)| {
     !matches!(bound, StageBound::Below(binder) if usize::from(binder) >= ordinal)
 }))]
+#[inline]
 pub fn mint(
     stages: &mut StageOrder,
     bounds: &[StageBound],
@@ -173,6 +175,7 @@ pub fn mint(
 ///   a mark and erase to the plain type.
 /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(erased, ref marks)| arena.value_type(erased).is_some() && marks.iter().all(|mark| usize::from(mark.binder()) < bounds.len())))]
+#[inline]
 pub fn split(
     arena: &mut CoreArena,
     declared: ValueTypeId,
@@ -269,6 +272,7 @@ pub fn split(
 /// - hypothesis: L3 — as [`instantiation`].
 /// - witness: `tests::quantified::a_helper_at_a_stage_takes_a_recursion_s_claim`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| arena.value_type(staged).is_some()))]
+#[inline]
 pub fn restaged(
     arena: &mut CoreArena,
     declared: ValueTypeId,
@@ -368,9 +372,11 @@ fn wrapped(
 }
 
 /// The stages a call of a definition declared `declared`, quantified over
-/// `signature`, instantiates its binders at: each solved from every mark of it
-/// that lies in the domain of an argument of `spine` that is a variable whose
-/// type, `found` reads it, holds a stage there.
+/// `signature`, instantiates its binders at.
+///
+/// Each is solved from every mark of it that lies in the domain of an argument
+/// of `spine` that is a variable whose type, `found` reads it, holds a stage
+/// there.
 ///
 /// # Specification
 /// - requires: `spine` holds the call's arguments, first applied first;
@@ -409,6 +415,7 @@ fn wrapped(
 /// - witness: `tests::quantified::arguments_at_apart_stages_disagree_by_name_1227`
 /// - witness: `tests::quantified::a_supplied_stage_is_held_to_the_arguments_1227`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| read.len() == signature.bounds().len()))]
+#[inline]
 pub fn instantiation<Found>(
     (arena, order): (&CoreArena, &StageOrder),
     (declared, signature): (ValueTypeId, &StageSignature),

@@ -255,10 +255,11 @@ fn at_type(
     })
 }
 
-/// How `ua(e)` checks against `expected`: its cell against the bi-invertible
-/// record type when `expected` is an identity at `Type`, against the homotopy
-/// of the identity when `expected` is an identity one dimension up, by
-/// synthesis otherwise.
+/// How `ua(e)` checks against `expected`.
+///
+/// Its cell checks against the bi-invertible record type when `expected` is an
+/// identity at `Type`, against the homotopy of the identity when `expected` is
+/// an identity one dimension up, and by synthesis otherwise.
 ///
 /// # Specification
 /// - requires: `forward` is the map the node carries for `record`; both and
@@ -291,6 +292,7 @@ fn at_type(
     | Ok(Reading::Cell { cell, path }) => context.arena().value_type(cell).is_some() && context.arena().value_type(path).is_some(),
     | Ok(Reading::Synthesised) | Err(_) => true,
 })]
+#[inline]
 pub fn checked(
     context: &mut CheckingContext<'_>,
     (record, forward): (ValueId, ValueId),
@@ -378,6 +380,7 @@ pub fn checked(
     | Ok(premises) => premises.checks[0].0 == record,
     | Err(_) => true,
 })]
+#[inline]
 pub fn premises(
     context: &mut CheckingContext<'_>,
     at: ValueId,

@@ -186,6 +186,7 @@ pub enum Endpoint
     | Err(CheckRefusal::ComposeUncertified { at: site, .. }) => site == at,
     | Err(_) => false,
 })]
+#[inline]
 pub fn admit(
     strata: &mut Strata,
     at: ValueId,
@@ -409,6 +410,7 @@ pub(crate) fn chain_budget() -> ShapeBudget
     | Err(CheckRefusal::ComposeDoesNotFill { at: site, seam: held, .. }) => site == at && held == seam,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn fill(
     context: &CheckingContext<'_>,
     (at, seam): (ValueId, Seam),
@@ -489,6 +491,7 @@ pub enum CellReading
     | Err(CheckRefusal::ComposeDoesNotFill { at: site, .. }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn fill_columns(
     context: &CheckingContext<'_>,
     at: ValueId,
@@ -572,6 +575,8 @@ pub fn fill_columns(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn cell(
     left: Endpoint,
     right: Endpoint,

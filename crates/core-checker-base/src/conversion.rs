@@ -1693,6 +1693,7 @@ pub(crate) fn decode_bridge(
 ///   twice agree, and an arm leaving it at another state is refused.
 /// - witness: `judgement::session::tests::offer_arms_leaving_different_endpoints_are_refused`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
+#[inline]
 pub fn equivalent(
     context: &mut CheckingContext<'_>,
     left: ValueTypeId,

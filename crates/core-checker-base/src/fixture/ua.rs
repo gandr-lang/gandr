@@ -33,6 +33,8 @@ pub struct Legs(pub usize, pub usize);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn profile(Legs(inputs, outputs): Legs) -> Profile
 {
     Profile {
@@ -46,6 +48,8 @@ pub fn profile(Legs(inputs, outputs): Legs) -> Profile
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn two() -> Species
 {
     Species::new(BTreeMap::from([(
@@ -58,6 +62,8 @@ pub fn two() -> Species
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn catalogue() -> Arc<Catalogue>
 {
     Arc::new(Catalogue::build(ShapeSize::from(4)).expect("the catalogue builds"))
@@ -67,6 +73,8 @@ pub fn catalogue() -> Arc<Catalogue>
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn corolla(
     stratum: &SegalStratum,
     legs: Legs,
@@ -114,6 +122,8 @@ impl Answering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn new(
         image: Maybe<StratumImage, recalled::Absent>,
         expected: Unreplayed,
@@ -132,6 +142,7 @@ impl Answering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn counts(&self) -> Counts
     {
         Counts {
@@ -148,6 +159,7 @@ impl StratumStore for Answering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn recall(
         &self,
         _family: &Family,
@@ -162,6 +174,7 @@ impl StratumStore for Answering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn keep(
         &self,
         _family: &Family,
@@ -177,6 +190,7 @@ impl StratumStore for Answering
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn refuse(
         &self,
         _family: &Family,
@@ -204,6 +218,7 @@ impl StratumStore for Answering
 /// # Errors
 /// As the derivation's reading: the refusal where the translator's run sticks
 /// or leaves the code.
+#[inline]
 pub fn tabulated(
     context: &mut crate::context::CheckingContext<'_>,
     corolla: ShapeIndex,

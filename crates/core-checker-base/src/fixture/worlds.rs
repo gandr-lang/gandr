@@ -37,6 +37,8 @@ impl At
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn constant(self) -> ConstantIndex
     {
         ConstantIndex::from(self.0)
@@ -46,6 +48,8 @@ impl At
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn origin(self) -> OriginToken
     {
         OriginToken::from(self.0)
@@ -67,6 +71,8 @@ pub const SEAT: At = At(1);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn world(position: At) -> World
 {
     World::Declared(position.constant())
@@ -76,6 +82,8 @@ pub fn world(position: At) -> World
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn worlds() -> [Declaration; 2]
 {
     [OPERATOR, SEAT].map(|position| {
@@ -88,6 +96,8 @@ pub fn worlds() -> [Declaration; 2]
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn operating() -> Entry
 {
     Entry::new(world(OPERATOR), vec![world(SEAT)])
@@ -97,6 +107,7 @@ pub fn operating() -> Entry
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn text(
     arena: &mut CoreArena,
     Spelled(spelled): Spelled,
@@ -109,6 +120,7 @@ pub fn text(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn migrate(
     arena: &mut CoreArena,
     to: At,
@@ -126,6 +138,7 @@ pub fn migrate(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn entry_point(
     arena: &mut CoreArena,
     position: At,
@@ -148,6 +161,8 @@ pub fn entry_point(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub const fn located(
     at: CoreNode,
     defect: LocatedDefect,
@@ -160,6 +175,8 @@ pub const fn located(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub const fn computation(term: ComputationId) -> CoreNode
 {
     CoreNode::Term(TermNode::Computation(term))

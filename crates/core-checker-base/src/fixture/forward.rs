@@ -31,6 +31,8 @@ pub struct At(pub usize);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn declaration(
     At(position): At,
     declared: ValueTypeId,
@@ -49,6 +51,7 @@ pub fn declaration(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn judged(
     arena: &mut CoreArena,
     module: &[Declaration],
@@ -76,6 +79,7 @@ pub struct Migration
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn migration(arena: &mut CoreArena) -> Migration
 {
     let string = arena.value_type_base(BaseType::String);
@@ -102,6 +106,7 @@ pub fn migration(arena: &mut CoreArena) -> Migration
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn flow(
     arena: &mut CoreArena,
     (from, to): (ValueTypeId, ValueTypeId),
@@ -117,6 +122,7 @@ pub fn flow(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn function(
     arena: &mut CoreArena,
     (domain, result): (ValueTypeId, ValueTypeId),

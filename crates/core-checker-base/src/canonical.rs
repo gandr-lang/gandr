@@ -98,6 +98,7 @@ use crate::context::CheckingContext;
     || (signature.parameters().len() == 1
         && signature.indices().is_empty()
         && signature.constructors().iter().map(alloc::vec::Vec::len).eq([1_usize, 2, 2])))]
+#[inline]
 pub fn signature(
     arena: &CoreArena,
     holder: ConstantIndex,
@@ -262,6 +263,7 @@ pub fn signature(
     || (signature.parameters().len() == 2
         && signature.indices().is_empty()
         && signature.constructors().iter().map(alloc::vec::Vec::len).eq([2_usize])))]
+#[inline]
 pub fn pair(
     arena: &CoreArena,
     signature: &DataSignature,
@@ -395,6 +397,7 @@ pub fn pair(
 ///   `std.ir`'s `args` and `decodeArgs` answer, and an `E` whose `δ` case asks
 ///   for `h : X -> A` is refused at `δ`, each in the corpus.
 /// - witness: `canonical::tests::a_holder_of_e_is_refused_at_its_first_departing_answer_5255`
+#[inline]
 pub fn answers(
     context: &mut CheckingContext<'_>,
     role: Builtin,

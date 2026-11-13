@@ -208,6 +208,8 @@ impl Pattern
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn binders(self) -> OpenBinders
     {
         OpenBinders(self.binders)
@@ -217,6 +219,8 @@ impl Pattern
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn value(self) -> ValueId
     {
         self.value
@@ -260,8 +264,10 @@ pub enum Vocabulary
 }
 
 /// The signature of the data type `head`, when it is free, unindexed, has a
-/// constructor and every field's declared type is closed: it names no
-/// parameter and no field before it, so it reads the same at any arguments.
+/// constructor and every field's declared type is closed.
+///
+/// A closed field type names no parameter and no field before it, so it reads
+/// the same at any arguments.
 ///
 /// # Specification
 /// - requires: `head` is a data type at its weak head.
@@ -282,6 +288,7 @@ pub enum Vocabulary
 ///   parameter and the empty data type have no coverage.
 /// - witness: `equiv::tests::a_data_type_covers_as_its_constructors_fields`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(ref signature)) if signature.constructors().is_empty()))]
+#[inline]
 pub fn data_signature(
     context: &mut CheckingContext<'_>,
     head: ValueTypeId,
@@ -328,6 +335,7 @@ pub fn data_signature(
     | Err(CheckRefusal::EquivUnsupported { at: site, classifier: found }) => site == at && found == classifier,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn codes(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -366,6 +374,7 @@ pub fn codes(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn translator(
     context: &mut CheckingContext<'_>,
     (from, to): (ValueTypeId, ValueTypeId),
@@ -421,6 +430,7 @@ pub fn translator(
     | Ok(ref decided) => decided.evidence.source.len().saturating_add(decided.evidence.target.len()) >= 2,
     | Err(_) => true,
 })]
+#[inline]
 pub fn decide(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -517,13 +527,14 @@ fn round_trips(
     Ok(dialogues)
 }
 
-/// The coverage of `code`, as the kernel's universe-path patterns lay it out:
-/// the unit value; one fresh variable at a base atom; each summand's patterns
-/// injected, the first summand first; each tuple crossing the components'
-/// patterns lexicographically, an earlier component read past a later one's
-/// binders; at a list the empty list, then each element pattern consed onto
-/// a fresh variable at the list, the element read past it; and, in the
-/// [`Vocabulary::Data`] vocabulary, at a data type each constructor in tag
+/// The coverage of `code`, as the kernel's universe-path patterns lay it out.
+///
+/// The layout is the unit value; one fresh variable at a base atom; each
+/// summand's patterns injected, the first summand first; each tuple crossing
+/// the components' patterns lexicographically, an earlier component read past a
+/// later one's binders; at a list the empty list, then each element pattern
+/// consed onto a fresh variable at the list, the element read past it; and, in
+/// the [`Vocabulary::Data`] vocabulary, at a data type each constructor in tag
 /// order applied to its fields' crossed patterns, as a tuple crosses them.
 ///
 /// # Specification
@@ -559,6 +570,7 @@ fn round_trips(
         && patterns.iter().all(|pattern| context.arena().value(pattern.value).is_some()),
     | Ok(Maybe::Absent(_)) | Err(_) => true,
 })]
+#[inline]
 pub fn coverage(
     context: &mut CheckingContext<'_>,
     code: ValueTypeId,

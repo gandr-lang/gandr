@@ -148,6 +148,7 @@ pub struct Owed
 /// - hypothesis: L3 — a rose tree's node and its list of children, one block,
 ///   recurse through each other at one stage.
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
+#[inline]
 pub fn families(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -202,6 +203,7 @@ pub fn families(
     Ok(Maybe::Absent(reason)) => reason == Unstaged::Unknown,
     Err(_) => true,
 })]
+#[inline]
 pub fn open_fixpoint(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -372,6 +374,7 @@ fn result_at(
 ///   which the second judgement then refuses.
 /// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if found != position))]
+#[inline]
 pub fn returns_recursed_on(
     context: &mut CheckingContext<'_>,
     expected: CompTypeId,
@@ -424,9 +427,11 @@ pub fn returns_recursed_on(
     }
 }
 
-/// The motive a case checked at `expected` reads its branches at: the written
-/// `motive` with its result read at the stage `expected` returns at, when the
-/// motive names no scrutinee and returns the type that stage refines.
+/// The motive a case checked at `expected` reads its branches at.
+///
+/// It is the written `motive` with its result read at the stage `expected`
+/// returns at, when the motive names no scrutinee and returns the type that
+/// stage refines.
 ///
 /// A motive is written without stages, as every type the lowering writes is:
 /// a case in a body judged at a staged result returns at that stage, and its
@@ -454,6 +459,7 @@ pub fn returns_recursed_on(
     Maybe::Present(read) => context.arena().comp_type(read).is_some(),
     Maybe::Absent(reason) => reason == Unstaged::Plain,
 }))]
+#[inline]
 pub fn motive_at(
     context: &mut CheckingContext<'_>,
     motive: CompTypeId,
@@ -559,6 +565,7 @@ impl Dependence
     Ok((read, Maybe::Absent(_))) => read == scrutinee,
     Err(_) => true,
 })]
+#[inline]
 pub fn open_case(
     context: &mut CheckingContext<'_>,
     scrutinee: ValueTypeId,
@@ -638,6 +645,7 @@ enum Visit
 /// - witness: `tests::recursive_data::accessibility_is_decided_on_every_former`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&staged| staged == field
     || context.arena().value_type(staged).is_some()))]
+#[inline]
 pub fn stage_field(
     context: &mut CheckingContext<'_>,
     field: ValueTypeId,
@@ -744,6 +752,7 @@ pub fn stage_field(
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 /// - witness: `tests::recursive_data::a_mutual_recursion_descends_through_its_block_s_families_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(staged, _)| context.arena().comp_type(staged).is_some()))]
+#[inline]
 pub fn stage_branch(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -913,6 +922,7 @@ pub(crate) fn constructor_owes(
 ///   minted its stage but bound nothing at it, is not.
 /// - witness: `tests::recursion::a_nullary_argument_needs_a_value_below_the_stage`
 #[spec(ensures: |ret| !matches!(ret, Ok(Room::Witnessed)) || usize::from(context.depth(Zone::Intuitionistic)) > 0)]
+#[inline]
 pub fn room(
     context: &CheckingContext<'_>,
     wanted: Stage,
@@ -978,6 +988,7 @@ pub fn room(
     Ok(Maybe::Absent(Unstaged::Plain)) | Err(_) => true,
     Ok(Maybe::Absent(Unstaged::Unknown)) => false,
 })]
+#[inline]
 pub fn instantiation<Spine>(
     context: &mut CheckingContext<'_>,
     (code, codomain): (ValueId, CompTypeId),
@@ -1031,8 +1042,10 @@ where
 }
 
 /// The type an application of `head` to `last` reads, `applied` as the arrow
-/// gives it: for a call into a definition whose result follows its parameter
-/// at a position, a result of that parameter's type read at the stage of the
+/// gives it.
+///
+/// For a call into a definition whose result follows its parameter at a
+/// position, it is a result of that parameter's type read at the stage of the
 /// argument there.
 ///
 /// The definition was judged with that result at its own parameter's stage
@@ -1062,6 +1075,7 @@ where
 ///   the result at none.
 /// - witness: `tests::recursion::a_result_follows_the_parameter_it_recurses_on`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| context.arena().comp_type(read).is_some()))]
+#[inline]
 pub fn followed(
     context: &mut CheckingContext<'_>,
     (head, last): (ComputationId, ValueId),
@@ -1252,6 +1266,7 @@ fn held_at(
 /// - witness: `tests::native_formers::a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631`
 /// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(context.arena().value_type(ty), Some(&ValueType::Staged { .. }))))]
+#[inline]
 pub fn carried_stage(
     context: &mut CheckingContext<'_>,
     at: ComputationId,

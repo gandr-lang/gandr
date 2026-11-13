@@ -464,6 +464,7 @@ pub enum CompTypeView<'arena>
             | _ => false,
         },
 })]
+#[inline]
 pub fn value_type_view(
     arena: &CoreArena,
     value_type: ValueTypeId,
@@ -611,6 +612,7 @@ pub fn value_type_view(
     | (None, Err(FragmentRefusal::DanglingNode { node })) => node == CoreNode::Type(TypeNode::Computation(comp_type)),
     | _ => false,
 })]
+#[inline]
 pub fn comp_type_view(
     arena: &CoreArena,
     comp_type: CompTypeId,

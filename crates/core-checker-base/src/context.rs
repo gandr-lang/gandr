@@ -3666,6 +3666,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn deferrals(&self) -> &crate::elaboration::Deferrals
     {
         &self.deferrals

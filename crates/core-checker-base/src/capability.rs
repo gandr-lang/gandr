@@ -478,10 +478,12 @@ pub(crate) fn authorise(
     }
 }
 
-/// Whether the type `root` mentions a region that ends while `outside` is
-/// still live: the scope rule's side condition `ρ ∉ (A, ε)`, read from the
-/// region around the scope, and the capture rule's, read from the region the
-/// captor is kept in.
+/// Whether the type `root` mentions a region that ends while `outside` is still
+/// live.
+///
+/// This is the scope rule's side condition `ρ ∉ (A, ε)`, read from the region
+/// around the scope, and the capture rule's, read from the region the captor is
+/// kept in.
 ///
 /// # Specification
 /// - ensures: [`Reach::Mentions`] when a capability type reachable through
@@ -799,14 +801,15 @@ fn quoted<'arena>(
         })
 }
 
-/// What one half of a fork may do to the host: each interface it may use,
-/// with the operations it may perform there. A half's footprint is read off
-/// the types of the names it mentions and the operations it performs by
-/// name, so a closure's footprint is the summary its type already records:
-/// a held capability's authority, and the row of each returner it reaches.
-/// Two halves are separate when no interface is in both footprints, or every
-/// operation either performs on a shared one only reads the host
-/// ([`gandr_core_term::effect::host::access`]).
+/// What one half of a fork may do to the host: each interface it may use, with
+/// the operations it may perform there.
+///
+/// A half's footprint is read off the types of the names it mentions and the
+/// operations it performs by name, so a closure's footprint is the summary its
+/// type already records: a held capability's authority, and the row of each
+/// returner it reaches. Two halves are separate when no interface is in both
+/// footprints, or every operation either performs on a shared one only reads
+/// the host ([`gandr_core_term::effect::host::access`]).
 ///
 /// # Specification
 /// - ensures: one entry per interface, holding each operation once with the
@@ -1057,6 +1060,7 @@ impl Footprint
     | Err(CheckRefusal::CapabilityUngranted { constant: named, declared: ty }) => named == constant && ty == declared.id(),
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn held(
     context: &mut CheckingContext<'_>,
     constant: ConstantIndex,

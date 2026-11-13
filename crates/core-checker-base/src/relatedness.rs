@@ -125,6 +125,7 @@ enum Reached
 /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_sealed_type_is_refused_by_name`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::an_interfaced_atom_bears_its_relation_as_its_bridge_in_both_checkers`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::BridgeAtSealedType { at: named, .. }) if named != at))]
+#[inline]
 pub fn require_unsealed(
     context: &mut CheckingContext<'_>,
     at: ValueTypeId,
@@ -282,6 +283,7 @@ pub enum Fibre
 /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::a_bridge_at_a_list_is_the_relation_lifting_in_both_checkers`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::bridges::the_codes_outside_the_bridge_fold_are_refused_by_name`
 #[spec(ensures: |ret| !matches!(ret, Err(CheckRefusal::OutsideFold { at: named, .. }) if named != at))]
+#[inline]
 pub fn fibre(
     context: &mut CheckingContext<'_>,
     at: ValueId,

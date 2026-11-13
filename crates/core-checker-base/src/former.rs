@@ -426,8 +426,9 @@ fn present(
         })
 }
 
-/// A data declaration's constructor table as a rule side reads it: a field
-/// reading as the declaration's own type where it is the family at
+/// A data declaration's constructor table as a rule side reads it.
+///
+/// A field reads as the declaration's own type where it is the family at
 /// `position`; as dependent where it follows its constructor's first field and
 /// its type is open, formed under the fields before it as well as the
 /// parameters; and as its classifier elsewhere.
@@ -446,6 +447,8 @@ fn present(
 /// - witness: `tests::native_formers::a_fold_rests_on_the_laws_of_the_rules_it_computes_apart`
 /// - witness: `tests::native_formers::a_rule_binding_a_dependent_field_is_refused_in_both_checkers`
 #[spec(ensures: |ret| ret.len() == signature.constructors().len())]
+#[inline]
+#[must_use]
 pub fn slot_table(
     arena: &gandr_core_term::CoreArena,
     position: ConstantIndex,
@@ -523,6 +526,7 @@ quenchant_shape::reason_enum! {
 ///   endpoint are refused by name, in both checkers.
 /// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::NotADataType(_) | CheckRefusal::Undecided { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::OutOfFragment { .. })))]
+#[inline]
 pub fn apart(
     context: &mut CheckingContext<'_>,
     carrier: ValueTypeId,
@@ -749,6 +753,7 @@ pub(crate) fn form_interface(
 ///   refuses the atom or the evidence.
 /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+#[inline]
 pub fn related_by(
     arena: &mut gandr_core_term::CoreArena,
     relation: ValueId,
@@ -775,6 +780,7 @@ pub fn related_by(
 ///   the law refuses the atom and the stated law admits it.
 /// - witness: `gandr-core-checker-bridge::bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::an_interface_member_named_at_another_member_s_type_refuses_the_atom`
+#[inline]
 pub fn law_type(
     arena: &mut gandr_core_term::CoreArena,
     level: &Level,
@@ -823,6 +829,7 @@ pub fn law_type(
 /// - hypothesis: L3 — equal carriers at distinct positions stay nominal.
 /// - witness: `tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|signature| matches!(context.arena().value_type(datatype), Some(ValueType::Data { declaration, arguments }) if matches!(context.data_in_scope(*declaration), Maybe::Present(ref held) if held == signature) && signature.arity().0 == arguments.len())) == ret.is_ok())]
+#[inline]
 pub fn signature(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -860,6 +867,7 @@ pub fn signature(
 /// - hypothesis: L3 — two open arguments distinguish reversal and capture.
 /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
 #[spec(ensures: |ret| usize::from(prefix) != 0 || ret == Ok(subject))]
+#[inline]
 pub fn instantiate(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -907,6 +915,7 @@ pub fn instantiate(
 ///   of the field it names.
 /// - witness: `former::tests::a_later_field_reads_its_parameters_past_the_earlier_fields`
 #[spec(ensures: |ret| !matches!(context.arena().value_type(datatype), Some(ValueType::Data { arguments, .. }) if arguments.is_empty()) || ret == Ok(field))]
+#[inline]
 pub fn field_type(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -1072,9 +1081,10 @@ pub(crate) fn field_outside(
 }
 
 /// The classifier a constructor's stated index at `position` checks against,
-/// read under the parameters and the constructor's `fields`: the index
-/// classifier carried past the fields, the indices before it replaced by the
-/// results the constructor states for them.
+/// read under the parameters and the constructor's `fields`.
+///
+/// It is the index classifier carried past the fields, the indices before it
+/// replaced by the results the constructor states for them.
 ///
 /// # Specification
 /// - requires: `index` is scoped under the parameters and the `position`
@@ -1093,6 +1103,7 @@ pub(crate) fn field_outside(
 ///   and its element is refused there.
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(ensures: |ret| ret.is_err() || usize::try_from(u32::from(position)).is_ok_and(|position| position <= stated.len()))]
+#[inline]
 pub fn index_at(
     context: &mut CheckingContext<'_>,
     index: ValueTypeId,
@@ -1138,6 +1149,7 @@ pub fn index_at(
 ///   `Vec(a, Z)` whatever its annotation says.
 /// - witness: `tests::native_formers::an_indexed_family_stands_at_its_indices_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().value_type(id).is_some()) == ret.is_ok())]
+#[inline]
 pub fn stated_at(
     context: &mut CheckingContext<'_>,
     (datatype, constructor): (ValueTypeId, ValueId),
@@ -1306,6 +1318,7 @@ pub(crate) fn type_read_fields(
 /// - witness: `former::tests::a_branch_binds_a_field_only_where_its_result_names_it`
 /// - witness: `former::tests::an_indexed_branch_binds_its_equations_after_its_fields`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&id| context.arena().comp_type(id).is_some()) == ret.is_ok())]
+#[inline]
 pub fn branch_type(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,

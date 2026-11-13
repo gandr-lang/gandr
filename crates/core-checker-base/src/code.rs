@@ -508,6 +508,8 @@ impl Certificate
     /// # Specification
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
+    #[inline]
+    #[must_use]
     pub fn with_decisions(
         self,
         decisions: Vec<ConversionDecision<TraceNode>>,
@@ -522,6 +524,8 @@ impl Certificate
     /// # Specification
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
+    #[inline]
+    #[must_use]
     pub fn with_reduct(
         self,
         reduct: ValueId,
@@ -606,9 +610,11 @@ pub struct Reflexivity
 }
 
 /// A reflexivity's pair that the tier met: the point, the endpoint and the
-/// binders whose calls return. The checker records `Evaluate` for the pair and
-/// runs no machine. The readmission runs the machine on the pair only when the
-/// kernel's own evaluation leaves it undecided.
+/// binders whose calls return.
+///
+/// The checker records `Evaluate` for the pair and runs no machine. The
+/// readmission runs the machine on the pair only when the kernel's own
+/// evaluation leaves it undecided.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MetPair
 {
@@ -673,6 +679,8 @@ impl MetPair
     /// # Adequacy
     /// - hypothesis: L3 — as [`CodeDefinitions::relation`].
     /// - witness: `gandr-core-checker-bridge::bridge::tests::an_undecided_pair_crosses_with_its_second_certificate_3557`
+    #[inline]
+    #[must_use]
     pub fn certified(
         &self,
         definitions: &CodeDefinitions,

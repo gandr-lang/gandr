@@ -362,6 +362,7 @@ impl NestedElaboration
     | Ok((_, ref elaboration)) => elaboration.decisions == *decisions,
     | Err(unenclosed) => decisions.contains_key(&unenclosed.run()),
 })]
+#[inline]
 pub fn elaborate(
     arena: &mut CoreArena,
     body: ValueId,
@@ -419,6 +420,7 @@ pub fn elaborate(
 /// - witness: `tests::module::a_literal_read_in_a_definition_s_own_value_stands_as_its_reading_4812`
 /// - witness: `tests::module::an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579`
 #[spec(ensures: |ret| ret.2.len() >= decisions.len())]
+#[inline]
 pub fn cross(
     arena: &mut CoreArena,
     body: ValueId,

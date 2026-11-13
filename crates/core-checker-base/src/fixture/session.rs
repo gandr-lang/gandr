@@ -44,6 +44,8 @@ pub struct Spelled(pub &'static str);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn label(Spelled(text): Spelled) -> FieldLabel
 {
     FieldLabel::from(String::from(text))
@@ -54,6 +56,7 @@ pub fn label(Spelled(text): Spelled) -> FieldLabel
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn session(
     arena: &mut CoreArena,
     syntax: Vec<ProtocolSyntax>,
@@ -76,6 +79,7 @@ pub fn session(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn seat_end(arena: &mut CoreArena) -> ValueTypeId
 {
     let string = arena.value_type_base(BaseType::String);
@@ -116,6 +120,7 @@ pub fn seat_end(arena: &mut CoreArena) -> ValueTypeId
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn end(arena: &mut CoreArena) -> ValueTypeId
 {
     session(arena, alloc::vec![ProtocolSyntax::End], &[])
@@ -137,6 +142,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn new(arena: &'arena mut CoreArena) -> Self
     {
         Self { arena, received: 0 }
@@ -146,6 +152,8 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn endpoint(&self) -> DeBruijnIndex
     {
         DeBruijnIndex::from(self.received)
@@ -155,6 +163,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn then(
         &mut self,
         action: SessionAction,
@@ -169,6 +178,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn act(
         &mut self,
         action: SessionAction,
@@ -181,6 +191,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn text(
         &mut self,
         Spelled(text): Spelled,
@@ -194,6 +205,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn close(&mut self) -> ComputationId
     {
         self.act(SessionAction::Close {
@@ -205,6 +217,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn select(
         &mut self,
         choice: Spelled,
@@ -224,6 +237,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn send(
         &mut self,
         text: Spelled,
@@ -244,10 +258,13 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
-    pub fn receive(
+    #[inline]
+    pub fn receive<R>(
         &mut self,
-        rest: impl FnOnce(&mut Self) -> ComputationId,
+        rest: R,
     ) -> ComputationId
+    where
+        R: FnOnce(&mut Self) -> ComputationId,
     {
         let endpoint = self.endpoint();
         self.received = self.received.saturating_add(1);
@@ -260,6 +277,7 @@ impl<'arena> Program<'arena>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn offer(
         &mut self,
         arms: &[(Spelled, ComputationId)],
@@ -280,6 +298,7 @@ impl<'arena> Program<'arena>
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn seat(arena: &mut CoreArena) -> ComputationId
 {
     let mut program = Program::new(arena);
@@ -300,6 +319,7 @@ pub fn seat(arena: &mut CoreArena) -> ComputationId
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn operator(arena: &mut CoreArena) -> ComputationId
 {
     let mut program = Program::new(arena);
@@ -327,6 +347,7 @@ pub fn operator(arena: &mut CoreArena) -> ComputationId
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn fork(
     arena: &mut CoreArena,
     protocol: ValueTypeId,
@@ -343,8 +364,12 @@ pub fn fork(
 
 /// Check `term` against the pure returner of the unit.
 ///
+/// # Errors
+/// The judgement's refusal of `term`.
+///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn check_unit(
     arena: &mut CoreArena,
     term: ComputationId,
@@ -357,8 +382,13 @@ pub fn check_unit(
 
 /// Check `term` against `expected`, formed first.
 ///
+/// # Errors
+/// The refusal of `expected`'s formation, or the judgement's refusal of
+/// `term`.
+///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn check_at(
     arena: &mut CoreArena,
     term: ComputationId,
@@ -380,6 +410,7 @@ pub fn check_at(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn integer(
     arena: &mut CoreArena,
     Spelled(digits): Spelled,
@@ -392,6 +423,8 @@ pub fn integer(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub const fn child(fork: ComputationId) -> Endpoint
 {
     Endpoint {
@@ -404,6 +437,7 @@ pub const fn child(fork: ComputationId) -> Endpoint
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn delegating(arena: &mut CoreArena) -> ValueTypeId
 {
     let ended = end(arena);
@@ -430,12 +464,15 @@ pub enum AfterSend
     Closes,
 }
 
-/// The sending half of an exchange over [`delegating`]: `let d = fork (e : end)
-/// { close(e) }; send(c, d) ; close(c)`, with `close(d)` after the send
-/// when `after` closes it. Answers the inner fork and the `close d`.
+/// The sending half of an exchange over [`delegating`].
+///
+/// The half is `let d = fork (e : end) { close(e) }; send(c, d) ; close(c)`,
+/// with `close(d)` after the send when `after` closes it. Answers the inner
+/// fork and the `close d`.
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn delegator(
     arena: &mut CoreArena,
     after: AfterSend,
@@ -475,6 +512,7 @@ pub fn delegator(
 ///
 /// # Errors
 /// As the judgement's reading: the refusal when `ty` is no session type.
+#[inline]
 pub fn session_at(
     context: &CheckingContext<'_>,
     ty: ValueTypeId,

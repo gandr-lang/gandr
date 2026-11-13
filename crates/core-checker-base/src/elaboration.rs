@@ -214,6 +214,8 @@ impl Suspension
             && ret.equations.windows(2).all(|pair| pair.first() < pair.get(1))
             && ret.blockers.iter().all(|hole| owed.contains(hole)),
     )]
+    #[inline]
+    #[must_use]
     pub fn new(
         declared: FormedValueType,
         residue: Residue,
@@ -444,6 +446,7 @@ impl Entry
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn supplied(&self) -> Maybe<FormedValueType, signature_table::Absent>
     {
         self.supplied
@@ -454,6 +457,7 @@ impl Entry
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub const fn unfolds(&self) -> Maybe<ValueId, unfolding::Absent>
     {
         self.unfolds
@@ -475,6 +479,8 @@ impl Entry
     /// - witness: `gandr-core-checker::tests::elaboration::incremental_equals_from_scratch`
     /// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
     #[spec(ensures: |ret| ret.judgements == Judgements(1))]
+    #[inline]
+    #[must_use]
     pub fn judged(
         context: &CheckingContext<'_>,
         source: Declaration,
@@ -497,6 +503,7 @@ impl Entry
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn after(
         mut self,
         earlier: Judgements,
@@ -600,6 +607,7 @@ fn unfolds(
 /// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
 /// - witness: `gandr-core-checker::tests::elaboration::a_refused_declaration_leaves_no_transport_behind`
 #[spec(ensures: |ret| matches!(context.deferrals().emission, Emission::Recording(_)) || ret.is_err())]
+#[inline]
 pub fn emit_recorded(
     context: &mut CheckingContext<'_>,
     body: ValueId,
@@ -623,6 +631,7 @@ pub fn emit_recorded(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn record_transports(context: &mut CheckingContext<'_>)
 {
     context.deferrals_mut().emission = Emission::Recording(Transports::default());
@@ -654,6 +663,8 @@ pub fn record_transports(context: &mut CheckingContext<'_>)
         _ => false,
     },
 )]
+#[inline]
+#[must_use]
 pub fn accepted(
     verdict: Verdict,
     emitted: Result<output::Emitted, CheckRefusal>,

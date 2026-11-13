@@ -5,6 +5,18 @@
 //! A recipe is a flat list of steps, each naming earlier entries by position,
 //! so a generated tree is built by one forward pass and read by one explicit
 //! stack: no fixture recurses, whatever depth a recipe reaches.
+//!
+//! The `fixture` feature opens the module to the tests of the bridge and the
+//! top. A fixture panics where the test misread its input. The module is built
+//! for a test or for the feature, and in each build it expects the panic lints.
+#![expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::missing_panics_doc,
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "a fixture refuses loudly an input the test did not mean, and its specification states each panic"
+)]
 
 pub mod elaboration;
 pub mod flow;
@@ -57,6 +69,7 @@ use crate::retire::Retirement;
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn signature_parts(
     arena: &mut CoreArena,
     family: ConstantIndex,
@@ -109,6 +122,7 @@ pub fn signature_parts(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn canonical_signature(
     arena: &mut CoreArena,
     family: ConstantIndex,
@@ -132,6 +146,7 @@ pub fn canonical_signature(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn pair_parts(arena: &mut CoreArena) -> [Vec<ValueTypeId>; 2]
 {
     let universe = |arena: &mut CoreArena| {
@@ -170,6 +185,7 @@ pub fn pair_parts(arena: &mut CoreArena) -> [Vec<ValueTypeId>; 2]
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn canonical_pair(arena: &mut CoreArena) -> gandr_core_term::DataSignature
 {
     let [parameters, fields] = pair_parts(arena);
@@ -180,10 +196,11 @@ pub fn canonical_pair(arena: &mut CoreArena) -> gandr_core_term::DataSignature
     gandr_core_term::DataSignature::new(parameters, Vec::from([fields]), kind)
 }
 
-/// Whether two runs of the judgement over one term refused it alike. A rule
-/// that mints a type as it judges mints it again in the second run, so a
-/// shape mismatch's found type and its weak head are compared by their
-/// syntax, and every other refusal exactly.
+/// Whether two runs of the judgement over one term refused it alike.
+///
+/// A rule that mints a type as it judges mints it again in the second run, so a
+/// shape mismatch's found type and its weak head are compared by their syntax,
+/// and every other refusal exactly.
 ///
 /// # Specification
 /// - ensures: equal refusals answer `Equal`; shape mismatches at one term
@@ -197,6 +214,8 @@ pub fn canonical_pair(arena: &mut CoreArena) -> gandr_core_term::DataSignature
 ///   the site or the wanted shape passes a wrong refusal.
 /// - witness: `judgement::elaboration::tests::the_strict_judgement_is_the_total_runs_oracle`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+#[inline]
+#[must_use]
 pub fn same_refusal(
     arena: &CoreArena,
     left: CheckRefusal,
@@ -268,6 +287,8 @@ fn same_type_syntax(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn integer_literal() -> Literal
 {
     Literal::Integer(IntegerLiteral::new(Sign::NonNegative, Magnitude::zero()))
@@ -278,6 +299,7 @@ pub fn integer_literal() -> Literal
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn integer(
     arena: &mut CoreArena,
     digits: String,
@@ -292,6 +314,8 @@ pub fn integer(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn text_literal() -> Literal
 {
     Literal::Text(StringLiteral::new(String::new()))
@@ -301,6 +325,8 @@ pub fn text_literal() -> Literal
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn numeric_literal() -> Literal
 {
     Literal::Numeric(NumericLiteral::new(
@@ -326,6 +352,8 @@ pub fn numeric_literal() -> Literal
 ///   result. Arbitrary receiving-arena sizes are not claimed.
 /// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
+#[inline]
+#[must_use]
 pub fn dangling_value_type() -> ValueTypeId
 {
     let mut scratch = CoreArena::new();
@@ -350,6 +378,8 @@ pub fn dangling_value_type() -> ValueTypeId
 ///   value id in a small receiving arena, separating accidental resolution or a
 ///   wrong node family, not every arena cardinality.
 /// - witness: `judgement::tests::a_dangling_term_is_refused_as_a_fault`
+#[inline]
+#[must_use]
 pub fn dangling_value() -> ValueId
 {
     let mut scratch = CoreArena::new();
@@ -378,6 +408,7 @@ pub fn dangling_value() -> ValueId
 #[spec(ensures: types.iter().enumerate().all(|(position, &declared)|
     context.signature(ConstantIndex::from(position)).map(crate::formation::FormedValueType::id)
         == quenchant_shape::shape::Maybe::Present(declared)))]
+#[inline]
 pub fn seed(
     context: &mut CheckingContext<'_>,
     types: &[ValueTypeId],
@@ -425,6 +456,7 @@ pub struct Booleans
 #[spec(ensures: |ret| arena.value_type(ret.ty).is_some()
     && arena.value_type(ret.function).is_some()
     && [ret.not, ret.not_not, ret.same].iter().all(|&function| arena.value(function).is_some()))]
+#[inline]
 pub fn booleans(arena: &mut CoreArena) -> Booleans
 {
     let unit_type = arena.value_type_unit();
@@ -715,6 +747,7 @@ impl TypeRecipe
     ///   roots and child order, not arena exhaustion.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
     #[spec(ensures: |ret| arena.value_type(ret.0).is_some() && arena.comp_type(ret.1).is_some())]
+    #[inline]
     pub fn build_both(
         &self,
         arena: &mut CoreArena,
@@ -754,6 +787,7 @@ impl TypeRecipe
     ///   selection rather than the last computation entry.
     /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
     #[spec(ensures: |ret| arena.value_type(ret).is_some())]
+    #[inline]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -785,6 +819,8 @@ impl TypeRecipe
                 Token::Arrow => pending.checked_add(1),
             }
         }) == Some(0))]
+    #[inline]
+    #[must_use]
     pub fn shape(&self) -> Vec<Token>
     {
         let entries = self.resolve();
@@ -837,6 +873,7 @@ impl TypeRecipe
 ///   preorder observer; the evidence concerns semantic shape and copying at
 ///   fresh ids, not exhaustive constructor frequencies.
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+#[inline]
 pub fn type_recipe() -> impl Strategy<Value = TypeRecipe>
 {
     let step = prop_oneof![
@@ -918,6 +955,7 @@ impl TermRecipe
     #[spec(ensures: |ret| ret.values.len().checked_add(ret.comps.len()).and_then(|count| count.checked_sub(2)) == Some(self.steps.len())
         && ret.values.iter().all(|&value| arena.value(value).is_some())
         && ret.comps.iter().all(|&comp| arena.computation(comp).is_some()))]
+    #[inline]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -991,6 +1029,7 @@ impl TermRecipe
 ///   observing success and exact refusal; this bounds the sampled syntax, not
 ///   its probability distribution or exhaustive coverage.
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+#[inline]
 pub fn term_recipe() -> impl Strategy<Value = TermRecipe>
 {
     let step = prop_oneof![
@@ -1106,6 +1145,7 @@ impl TypedRecipe
                     || matches!(arena.computation(comp), Some(&gandr_core_term::Computation::Return(returned))
                         if matches!(arena.value(returned), Some(gandr_core_term::Value::Thunk(_))))) == (mode == Mode::Checking))
         && ret.constants.iter().all(|&declared| arena.value_type(declared).is_some()))]
+    #[inline]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -1250,6 +1290,7 @@ impl TypedRecipe
 ///   it, and every synthesising term reproduces that type; this separates
 ///   builder/type disagreement, not strategy distribution.
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+#[inline]
 pub fn typed_recipe() -> impl Strategy<Value = TypedRecipe>
 {
     let step = prop_oneof![
@@ -1435,6 +1476,8 @@ impl FunctionRecipe
             .unwrap_or(&self.result);
         (ret == Typing::WellTyped) == (*chosen == self.result)
     }))]
+    #[inline]
+    #[must_use]
     pub fn typing(&self) -> Typing
     {
         let scope = self.scope();
@@ -1473,6 +1516,7 @@ impl FunctionRecipe
             && matches!(arena.value_type(ret.declared), Some(ValueType::Thunk(_)))
             && matches!(arena.value(ret.body), Some(gandr_core_term::Value::Thunk(_))),
     )]
+    #[inline]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -1540,6 +1584,7 @@ impl FunctionRecipe
 ///   and accepted functions cross an independent kernel; this establishes
 ///   sampled semantic agreement, not a distribution claim.
 /// - witness: `gandr-core-checker-bridge::bridge::tests::every_checked_function_definition_is_readmitted`
+#[inline]
 pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
 {
     let atom = || {
@@ -1597,6 +1642,7 @@ impl Retirement for RetireAt
         ensures: |ret| self.readings.get() == before.saturating_add(1)
             && matches!(ret, Demand::Retired(())) == (self.readings.get() >= self.at),
     )]
+    #[inline]
     fn demand(&self) -> Demand<()>
     {
         let reading = self.readings.get().saturating_add(1);
@@ -1617,19 +1663,22 @@ impl Retirement for RetireAt
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn formed(id: gandr_core_term::ValueTypeId) -> crate::formation::FormedValueType
 {
     crate::formation::FormedValueType::derived(id)
 }
 
 /// The reflexivity whose point relates to its left endpoint by `left` and to
-/// its right endpoint by `right`, with the pair `(point, endpoint)` the tier
-/// met at each side, closed: a test hands the readmission a reading that no
-/// judgement made.
+/// its right endpoint by `right`.
+///
+/// It carries the pair `(point, endpoint)` the tier met at each side, closed: a
+/// test hands the readmission a reading that no judgement made.
 ///
 /// # Specification
 /// trivial.
 #[must_use]
+#[inline]
 pub fn met_reflexivity(
     left: Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>,
     right: Vec<gandr_kernel_conversion_trace::ConversionDecision<gandr_core_nbe::TraceNode>>,

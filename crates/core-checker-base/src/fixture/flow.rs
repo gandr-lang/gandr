@@ -79,6 +79,8 @@ impl Branch
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn label(self) -> FieldLabel
     {
         FieldLabel::from(String::from(match self {
@@ -109,6 +111,7 @@ impl Word
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     pub fn text(
         self,
         arena: &mut CoreArena,
@@ -127,6 +130,7 @@ impl Word
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn seat(
     arena: &mut CoreArena,
     seat: Seat,
@@ -221,6 +225,7 @@ pub fn seat(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn texted(
     arena: &mut CoreArena,
     movement: &RecordedMove<Word>,
@@ -239,6 +244,7 @@ pub fn texted(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn run(
     arena: &mut CoreArena,
     moves: &[RecordedMove<Word>],
@@ -255,6 +261,7 @@ pub fn run(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn retiring(arena: &mut CoreArena) -> ValueId
 {
     run(arena, &[
@@ -270,6 +277,8 @@ pub fn retiring(arena: &mut CoreArena) -> ValueId
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn declaration(
     At(position): At,
     declared: ValueTypeId,
@@ -288,6 +297,7 @@ pub fn declaration(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn judged(
     arena: &mut CoreArena,
     module: &[Declaration],
@@ -301,6 +311,7 @@ pub fn judged(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn statement(
     arena: &mut CoreArena,
     position: At,
@@ -319,6 +330,7 @@ pub fn statement(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn ridden(
     arena: &mut CoreArena,
     position: At,
@@ -339,6 +351,7 @@ pub fn ridden(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn ridden_at(
     arena: &mut CoreArena,
     former: fn(&mut CoreArena, ValueId) -> ValueTypeId,
@@ -359,6 +372,7 @@ pub fn ridden_at(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn verdict(
     report: &ModuleReport,
     At(position): At,
@@ -374,6 +388,7 @@ pub fn verdict(
 ///
 /// # Errors
 /// As the flow's reading: the refusal that the code's normal form meets.
+#[inline]
 pub fn session_code(
     context: &mut CheckingContext<'_>,
     code: ValueId,

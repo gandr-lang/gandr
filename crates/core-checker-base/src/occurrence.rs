@@ -339,6 +339,7 @@ impl Admitted for alloc::collections::BTreeMap<ConstantIndex, Accessibility>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn variance(
         &self,
         family: ConstantIndex,
@@ -362,6 +363,7 @@ impl Admitted for Unwalked
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn variance(
         &self,
         _family: ConstantIndex,
@@ -382,9 +384,11 @@ enum Uniformity
     NonUniform,
 }
 
-/// The block a data declaration is admitted in: its families, a run of data
-/// declarations from the first member, the declaration among them, then the
-/// block's definitions up to the position past its last member.
+/// The block a data declaration is admitted in.
+///
+/// The block holds its families, a run of data declarations from the first
+/// member, the declaration among them, then the block's definitions up to the
+/// position past its last member.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -415,6 +419,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn lone(position: ConstantIndex) -> Self
     {
         let end = ConstantIndex::from(usize::from(position).saturating_add(1));
@@ -431,6 +436,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn new(
         first: ConstantIndex,
         families: ConstantIndex,
@@ -449,6 +455,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn first(self) -> ConstantIndex
     {
         self.first
@@ -459,6 +466,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub const fn families(self) -> ConstantIndex
     {
         self.families
@@ -469,6 +477,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn family(
         self,
         position: ConstantIndex,
@@ -487,6 +496,7 @@ impl Block
     /// # Specification
     /// trivial.
     #[must_use]
+    #[inline]
     pub fn holds(
         self,
         position: ConstantIndex,
@@ -1724,6 +1734,7 @@ const fn refusal(
     | CheckRefusal::NestedOccurrence(_)
     | CheckRefusal::NonUniformOccurrence(_)),
     |accessibility| accessibility.parameters.len() == signature.parameters().len()))]
+#[inline]
 pub fn occurrences<Earlier>(
     arena: &CoreArena,
     (block, definitions, earlier): (&Block, &[(ConstantIndex, ValueId)], &Earlier),
@@ -1810,6 +1821,8 @@ where
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 /// - witness: `occurrence::tests::a_later_position_extends_the_block_through_every_former`
 #[spec(ensures: |ret| ret > position)]
+#[inline]
+#[must_use]
 pub fn reach(
     arena: &CoreArena,
     position: ConstantIndex,

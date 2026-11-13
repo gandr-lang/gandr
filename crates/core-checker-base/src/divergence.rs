@@ -98,9 +98,11 @@ pub enum Divergence
     Unstated(CompTypeId),
 }
 
-/// Refuse the partial fixpoint `at` over `body` unless `expected` states that
-/// it may run forever, its body never names its own binder, it follows a
-/// protocol, or the declaration under judgement is a ruled operation.
+/// Refuse the partial fixpoint `at` over `body` unless a condition allows it.
+///
+/// The fixpoint stands when `expected` states that it may run forever, when its
+/// body never names its own binder, when it follows a protocol, or when the
+/// declaration under judgement is a ruled operation.
 ///
 /// # Specification
 /// - requires: `expected` is formed; `body` is the body of the fixpoint `at`.
@@ -129,6 +131,7 @@ pub enum Divergence
     | Err(CheckRefusal::TypeMismatch(Mismatch::Computation { at: site, expected: wanted, .. })) => site == at && wanted == expected,
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn require(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -397,6 +400,7 @@ pub enum Protocol
 ///   returns before it runs again, and a loop that threads no endpoint, each
 ///   asserted as the exact verdict.
 /// - witness: `divergence::tests::a_loop_follows_its_protocol_only_when_every_pass_acts_first`
+#[inline]
 pub fn follows(
     arena: &CoreArena,
     body: ComputationId,
@@ -659,6 +663,7 @@ fn acts(
     | Ok(Divergence::Unstated(rebuilt)) => rebuilt != expected,
     | Ok(Divergence::Stated) | Err(_) => true,
 })]
+#[inline]
 pub fn stated(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -806,6 +811,7 @@ pub fn stated(
 ///   row holding `Partial`, a lazy product with one such component, and a value
 ///   type that is no thunk, each asserted as the exact answer.
 /// - witness: `divergence::tests::a_call_returns_only_where_every_row_is_empty`
+#[inline]
 pub fn calls(
     context: &mut CheckingContext<'_>,
     bound: ValueTypeId,
@@ -858,6 +864,7 @@ pub fn calls(
 /// - hypothesis: L3 — as [`calls`], read at every binder.
 /// - witness: `divergence::tests::an_unread_call_converts_only_where_its_row_is_empty`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |indices| indices.is_sorted()))]
+#[inline]
 pub fn returning(context: &mut CheckingContext<'_>) -> Result<Vec<DeBruijnIndex>, CheckRefusal>
 {
     let depth = u32::try_from(usize::from(context.binders().depth(Zone::Intuitionistic)))

@@ -29,6 +29,8 @@ pub struct At(pub usize);
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn declaration(
     at: At,
     declared: ValueTypeId,
@@ -47,6 +49,8 @@ pub fn declaration(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn signed(declaration: &Declaration) -> ValueTypeId
 {
     match *declaration.content() {
@@ -83,6 +87,7 @@ pub struct Route
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn route(arena: &mut CoreArena) -> Route
 {
     let universe = arena.value_type_universe(

@@ -75,6 +75,7 @@ use crate::refusal::TacticFault;
     captures: depth = context.depth(Zone::Intuitionistic),
     ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
 )]
+#[inline]
 pub fn answer(
     context: &mut CheckingContext<'_>,
     at: ValueId,

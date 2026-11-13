@@ -661,6 +661,7 @@ fn converting_evidence(
         && (relation == SessionRelation::Equivalence || statement.owed.is_empty()),
     | Err(_) => true,
 })]
+#[inline]
 pub fn decide(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -819,6 +820,7 @@ pub fn payload_paths(
         ),
     | _ => false,
 })]
+#[inline]
 pub fn elaborate(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -1005,6 +1007,7 @@ pub(crate) fn record_simulation(
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == at && wanted == ExpectedShape::Flow && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn endpoints(
     context: &mut CheckingContext<'_>,
     at: TermNode,
@@ -1081,6 +1084,7 @@ pub fn endpoints(
 /// - hypothesis: L3 — a stay rides as the identity at any motive.
 /// - witness: `tests::flow::a_run_rides_forward_and_refuses_by_move`
 #[spec(ensures: |ret| left != right || ret == Ok(Agreement::Convertible))]
+#[inline]
 pub fn convertible(
     context: &CheckingContext<'_>,
     left: ValueId,
@@ -1136,6 +1140,7 @@ pub fn convertible(
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn covariant(
     arena: &CoreArena,
     at: ComputationId,
@@ -1349,6 +1354,7 @@ pub fn covariant(
 ///   level zero records nothing.
 /// - witness: `tests::flow::a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&family| family == written || context.motives().get(&at) == Some(&family)))]
+#[inline]
 pub fn levelled(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -1410,6 +1416,7 @@ pub fn levelled(
     | Err(CheckRefusal::NonCovariantMotive { at: site } | CheckRefusal::RideUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn ride(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -1630,6 +1637,7 @@ fn computed(
     | Err(CheckRefusal::RunNotAdmitted { at: site, .. }) => site == value && moving != Moving::Fixed,
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn admit(
     context: &mut CheckingContext<'_>,
     at: ComputationId,

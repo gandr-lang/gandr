@@ -1,6 +1,7 @@
-//! The products of two universe paths and of two universe flows in the core:
-//! `pathProduct(p, q)`, judged componentwise and elaborated to the kernel's
-//! native product, and its directed twin `flowProduct(p, q)`.
+//! The products of two universe paths and of two universe flows in the core.
+//!
+//! `pathProduct(p, q)` is judged componentwise and elaborated to the kernel's
+//! native product, and `flowProduct(p, q)` is its directed twin.
 //!
 //! # The rule
 //!
@@ -157,6 +158,7 @@ pub struct Component
     | Err(CheckRefusal::ShapeMismatch { at: site, wanted, found, .. }) => site == TermNode::Value(at) && wanted == ExpectedShape::PathUniverse && found == TypeNode::Value(classifier),
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn component(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -285,6 +287,7 @@ pub fn component(
 /// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `gandr-core-checker-bridge::bridge::tests::native_path_module_round_trips`
 /// - witness: `tests::product::a_product_with_a_native_and_a_written_component_reads_as_an_element`
+#[inline]
 pub fn classifier(
     arena: &mut CoreArena,
     first: Component,
@@ -455,6 +458,7 @@ pub(crate) fn flow_classifier(
 /// - witness: `tests::product::a_product_of_written_paths_elaborates_to_the_native_product`
 /// - witness: `tests::product::what_the_product_cannot_read_it_refuses_by_name`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&native| matches!(context.arena().value(native), Some(Value::PathProduct(..)))))]
+#[inline]
 pub fn native(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -505,6 +509,7 @@ pub fn native(
     | Err(CheckRefusal::ShapeMismatch { found, .. }) => found == TypeNode::Value(classifier),
     | Err(_) => true,
 })]
+#[inline]
 pub fn certificate(
     context: &mut CheckingContext<'_>,
     at: ValueId,

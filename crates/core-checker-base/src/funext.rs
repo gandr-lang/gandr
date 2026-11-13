@@ -363,6 +363,7 @@ struct Stuck
     | Err(CheckRefusal::FunextUnsupported { at: site, .. } | CheckRefusal::PointwiseDistinct { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn decide(
     context: &mut CheckingContext<'_>,
     at: ValueId,

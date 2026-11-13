@@ -189,6 +189,7 @@ impl Grouping
                     && grouping.steps.iter().position(|group| group.0 == index)
                         < grouping.steps.iter().position(|group| group.0 == index.saturating_add(1))
                             .or(Some(usize::MAX)))))]
+    #[inline]
     pub fn of(
         arena: &Arena,
         certificate: &Certificate,
@@ -240,6 +241,8 @@ impl Harvest
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub const fn new(program: ProgramId) -> Self
     {
         Self {
@@ -290,6 +293,7 @@ impl Harvest
                 == members.saturating_add(steps.len()),
             Err(_) => self.families.iter().map(|family| family.members.len()).sum::<usize>() == members,
         })]
+    #[inline]
     pub fn join(
         &mut self,
         grouping: &Grouping,
@@ -330,6 +334,8 @@ impl Harvest
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn finish(self) -> Vec<Family>
     {
         self.families

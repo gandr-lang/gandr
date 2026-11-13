@@ -125,9 +125,11 @@ pub struct Loop
 }
 
 /// The cells in the sort `datatype` names, in the order a case's loop arms
-/// follow its constructors' branches: by the admission position of the words
-/// they mint, then in written order. A cell above dimension one is owed as a
-/// loop is, at the dimension [`lifted`] reads.
+/// follow its constructors' branches.
+///
+/// The order is by the admission position of the words they mint, then in
+/// written order. A cell above dimension one is owed as a loop is, at the
+/// dimension [`lifted`] reads.
 ///
 /// # Specification
 /// - requires: `datatype` is formed.
@@ -146,6 +148,7 @@ pub struct Loop
 ///   integers owes none.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.iter().all(|owed| context.data_signatures().get(&owed.words).is_some_and(|signature| signature.presentation().cells().is_some())))]
+#[inline]
 pub fn loops(
     context: &mut CheckingContext<'_>,
     datatype: ValueTypeId,
@@ -292,6 +295,7 @@ fn lifted(
 ///   owes nothing, and a dependent family that is no returner is refused.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. } | CheckRefusal::LoopUndecided { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+#[inline]
 pub fn respected(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -643,8 +647,9 @@ fn presented_set(
         .then_some(carrier))
 }
 
-/// The type the loop arm for `owed` of the case `at` over `datatype` checks
-/// at: the path over the loop from the case's answer at the point carried
+/// The type the loop arm for `owed` of the case `at` over `datatype` checks at.
+///
+/// It is the path over the loop from the case's answer at the point carried
 /// along it to that answer, `F Path[.A = A[pt]](⟨transport(A, ℓ, b)⟩, b)`, and
 /// `F Path[.A = A](b, b)` for a motive that ignores its binder.
 ///
@@ -673,6 +678,7 @@ fn presented_set(
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::LoopNotRespected { at: refused, .. }) if refused == at) || matches!(ret, Err(CheckRefusal::MachineInvariant)))]
+#[inline]
 pub fn arm_type(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -776,6 +782,7 @@ fn reflexivities(
 /// - hypothesis: L3 — as [`respected`]: the circle's point is `Base`.
 /// - witness: `tests::native_formers::a_case_over_the_circle_owes_its_loop_377`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&point| matches!(context.arena().value(point), Some(Value::Constructor { .. }))))]
+#[inline]
 pub fn point(
     context: &mut CheckingContext<'_>,
     (datatype, arities): (ValueTypeId, &[FieldCount]),
@@ -808,8 +815,10 @@ pub fn point(
 }
 
 /// The carrier and the point a type of words reads its path at, its cells
-/// wrapped `reflexivities` times: `carrier` and `point` at loops, and for
-/// each wrapping the path type at the point below and its reflexivity.
+/// wrapped `reflexivities` times.
+///
+/// They are `carrier` and `point` at loops, and for each wrapping the path type
+/// at the point below and its reflexivity.
 ///
 /// # Specification
 /// - requires: `point` is a value of `carrier`.
@@ -825,6 +834,7 @@ pub fn point(
 ///   of its point in both checkers.
 /// - witness: `tests::native_formers::a_loop_is_a_word_at_its_path_in_both_checkers`
 #[spec(captures: before = (carrier, point), ensures: |ret| reflexivities != Reflexivities::NONE || ret == before)]
+#[inline]
 pub fn wrapped(
     context: &mut CheckingContext<'_>,
     (carrier, point): (ValueTypeId, ValueId),
@@ -901,6 +911,7 @@ pub(crate) fn point_of(
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn letter(
     arena: &mut gandr_core_term::CoreArena,
     owed: Loop,

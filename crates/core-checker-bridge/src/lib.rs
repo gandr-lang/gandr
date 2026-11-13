@@ -9,6 +9,19 @@
 //! module and readmit it to witness the judgement are in the base's
 //! integration target. The tests here witness the bridge.
 
+// Module documentation that predates the shape lint: 22 headings outside the
+// vocabulary, 6 decision records, 6 issue references and 13 budgets exceeded.
+// Each allow leaves with the rewrite that clears its count.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        module_doc_heading,
+        doc_decision_record,
+        doc_issue_reference,
+        module_doc_budget,
+        reason = "module documentation that predates the shape lint"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

@@ -267,6 +267,7 @@ fn shown_by(
 /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
 /// - witness: `regioned::tests::a_definition_abstracting_no_region_reads_as_declared`
 /// - witness: `regioned::tests::a_binder_is_shown_through_every_former_the_two_types_share`
+#[inline]
 pub fn placement<Found>(
     arena: &CoreArena,
     declared: ValueTypeId,
@@ -324,6 +325,7 @@ where
 /// - witness: `regioned::tests::a_call_places_each_binder_at_the_shortest_region_shown_1221`
 #[spec(requires: arena.value_type(declared).is_some(), ensures: |ret| arena.value_type(ret).is_some())]
 #[must_use]
+#[inline]
 pub fn instantiated(
     arena: &mut CoreArena,
     declared: ValueTypeId,

@@ -81,6 +81,7 @@ pub struct Handled
 ///   admitted, and one over put-get whose clauses tell them apart is refused at
 ///   the law.
 /// - witness: `module::tests::a_scope_is_checked_as_a_model_of_its_theory_2272`
+#[inline]
 pub fn lawful(
     context: &CheckingContext<'_>,
     laws: &[gandr_core_term::handler::HandlerLaw],

@@ -1,7 +1,8 @@
-//! Type formation: a type is formed when every node it reaches is a former the
-//! judgement has a rule for, every code it decodes inhabits the universe the
-//! decode names, and every lift raises; a formed type has exactly one
-//! [`Classifier`].
+//! Type formation, and the one [`Classifier`] of each formed type.
+//!
+//! A type is formed when every node it reaches is a former the judgement has a
+//! rule for, every code it decodes inhabits the universe the decode names, and
+//! every lift raises. A formed type has exactly one [`Classifier`].
 //!
 //! # Formed is a type, not a promise
 //!
@@ -629,6 +630,7 @@ pub fn level_of(
 /// - witness: `tests::ua::the_swap_of_a_binary_generator_is_a_path_of_the_certificate_universe`
 /// - witness: `formation::tests::a_path_code_is_closed_first_order_and_inhabited`
 #[spec(ensures: |ret| match ret { Ok(root) => matches!(arena.value(code), Some(&gandr_core_term::Value::Quote(quoted)) if root == quoted) && matches!(arena.value_type(root), Some(&(gandr_core_term::ValueType::Base(_) | gandr_core_term::ValueType::Product(_) | gandr_core_term::ValueType::Sum(_)))), Err(CheckRefusal::PathCode(found)) => found == code, Err(_) => false })]
+#[inline]
 pub fn path_code(
     arena: &CoreArena,
     code: gandr_core_term::ValueId,

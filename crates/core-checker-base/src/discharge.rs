@@ -67,6 +67,7 @@ use crate::view::value_type_view;
 /// - witness: `discharge::tests::an_omitted_law_whose_sides_part_is_undischarged`
 /// - witness: `discharge::tests::a_law_over_no_binder_is_here_alone`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&body| context.arena().value(body).is_some()))]
+#[inline]
 pub fn here(
     context: &mut CheckingContext<'_>,
     declared: FormedValueType,

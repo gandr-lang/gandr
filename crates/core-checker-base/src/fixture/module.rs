@@ -48,6 +48,8 @@ pub struct At(pub usize);
             && Some(usize::from(ret.origin())) == position.0.checked_add(100)
             && matches!(ret.content(),&crate::DeclarationContent::Value {signature,body} if signature == declared && body == defined),
     )]
+#[inline]
+#[must_use]
 pub fn declaration(
     position: At,
     declared: Maybe<ValueTypeId, signature::Absent>,
@@ -73,6 +75,7 @@ pub const HOLE: Maybe<ValueId, body::Absent> = Maybe::Absent(body::Absent::Hole)
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn integer_function(arena: &mut CoreArena) -> (ValueTypeId, ValueId)
 {
     let integer = arena.value_type_base(BaseType::Integer);
@@ -92,6 +95,7 @@ pub fn integer_function(arena: &mut CoreArena) -> (ValueTypeId, ValueId)
 ///
 /// # Specification
 /// trivial.
+#[inline]
 pub fn call(
     arena: &mut CoreArena,
     callee: ConstantIndex,
@@ -103,15 +107,18 @@ pub fn call(
     arena.computation_application(forced, argument)
 }
 
-/// The fixture of the literal readers: `word : U(Integer → F String)` reads
-/// every natural as the same string, `flag` and `bit : U(Integer → F
-/// Character)` are owed, `taker : U(String → F Integer)` and `chooser :
-/// U(Character → F Integer)` are owed, and the declaration at 5 is
-/// `thunk(callee(n))` at `U(F Integer)`, `n` the literal `written`. The checker
-/// keeps `kept` as its readers.
+/// The fixture of the literal readers.
+///
+/// `word : U(Integer → F String)` reads every natural as the same string,
+/// `flag` and `bit : U(Integer → F Character)` are owed, `taker : U(String → F
+/// Integer)` and `chooser : U(Character → F Integer)` are owed, and the
+/// declaration at 5 is `thunk(callee(n))` at `U(F Integer)`, `n` the literal
+/// `written`. The checker keeps `kept` as its readers.
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn read_literal(
     kept: &[gandr_core_term::LiteralReader],
     callee: ConstantIndex,
@@ -165,6 +172,8 @@ pub fn read_literal(
 ///
 /// # Specification
 /// trivial.
+#[inline]
+#[must_use]
 pub fn naturals(at: &[ConstantIndex]) -> Vec<gandr_core_term::LiteralReader>
 {
     at.iter()
@@ -191,6 +200,8 @@ pub fn naturals(at: &[ConstantIndex]) -> Vec<gandr_core_term::LiteralReader>
 /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
 #[spec(ensures: |ret| ret.iter().copied().eq(supported.support().consulted().iter()
         .map(|entry| (entry.constant(), entry.answer().map(crate::formation::FormedValueType::id)))))]
+#[inline]
+#[must_use]
 pub fn answers(
     supported: &crate::support::Supported
 ) -> Vec<(

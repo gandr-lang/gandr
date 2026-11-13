@@ -404,6 +404,7 @@ impl ModuleReport
     /// # Specification
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
+    #[inline]
     pub fn judged_mut(&mut self) -> &mut [Judged]
     {
         &mut self.judged
@@ -460,6 +461,7 @@ impl ModuleReport
     /// # Specification
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
+    #[inline]
     pub fn coercions_mut(&mut self) -> &mut BTreeMap<ValueId, crate::conversion::Coercion>
     {
         &mut self.coercions
@@ -1053,6 +1055,7 @@ quenchant_shape::reason_enum! {
     && context.motives().keys().all(|at| report.motives.contains_key(at))
     && context.payloads().keys().all(|at| report.payloads.contains_key(at))
     && context.handled().keys().all(|at| report.handled.contains_key(at)))]
+#[inline]
 pub fn absorb(
     report: &mut ModuleReport,
     context: &CheckingContext<'_>,

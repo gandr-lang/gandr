@@ -2069,6 +2069,7 @@ pub fn check_module(
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
 /// - witness: `gandr-core-checker::tests::elaboration::shared_code_occurrences_keep_distinct_transports`
 #[spec(ensures: |ret| ret.judged().len() == declarations.len())]
+#[inline]
 pub fn run<Settle>(
     context: &mut CheckingContext<'_>,
     declarations: &[Declaration],
@@ -2412,9 +2413,10 @@ impl Default for ModuleRun
 }
 
 /// Judge the declaration at `target` of `declarations` once more, after
-/// admitting every declaration before it as an earlier run answered it: each
-/// value declaration through `adopt`, never judged again, and each nominal
-/// declaration formed again.
+/// admitting every declaration before it as an earlier run answered it.
+///
+/// Each value declaration enters through `adopt`, never judged again, and each
+/// nominal declaration is formed again.
 ///
 /// # Specification
 /// - requires: `declarations` is the module an earlier run judged, with at most
@@ -2439,6 +2441,7 @@ impl Default for ModuleRun
 /// - witness: `gandr-core-checker::tests::elaboration::checked_success_is_stable_without_rejudgement`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|&(verdict, ref residue)|
     matches!(verdict, Verdict::Suspended(_)) == (residue.pending() == Deferred::Yes)))]
+#[inline]
 pub fn rejudge<Adopt>(
     context: &mut CheckingContext<'_>,
     declarations: &[Declaration],

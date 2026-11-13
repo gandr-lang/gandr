@@ -193,6 +193,7 @@ impl Written
     ///   arm's own type and depth.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: refined.generalising.iter().all(|&(lambda, place)| self.generalising.get(&lambda) == Some(&place)))]
+    #[inline]
     pub fn record(
         &mut self,
         refined: &Refined,
@@ -223,6 +224,7 @@ impl Written
         | Standing::Written(_) => !self.minted.contains(&at),
     })]
     #[must_use]
+    #[inline]
     pub fn standing(
         &self,
         at: TermNode,
@@ -252,6 +254,7 @@ impl Written
     /// - witness: `tests::native_formers::a_refined_arm_elaborates_its_nested_call_where_it_is_written_3483`
     #[spec(ensures: |ret| self.sources.values().get(&at).map_or(ret == at, |&origin| ret == origin))]
     #[must_use]
+    #[inline]
     pub fn value(
         &self,
         at: ValueId,
@@ -272,6 +275,7 @@ impl Written
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: |ret| self.sources.computations().get(&at).map_or(ret == at, |&origin| ret == origin))]
     #[must_use]
+    #[inline]
     pub fn computation(
         &self,
         at: ComputationId,
@@ -294,6 +298,7 @@ impl Written
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: self.standing.last().is_none_or(|&(open, _)| open <= place)
         && (self.generalising.contains_key(&minted) == self.standing.last().is_some_and(|&(open, _)| open == place)))]
+    #[inline]
     pub fn open(
         &mut self,
         minted: ComputationId,
@@ -318,6 +323,7 @@ impl Written
     ///   first arm opened.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: self.standing.last().is_none_or(|&(open, _)| open < depth))]
+    #[inline]
     pub fn close(
         &mut self,
         depth: BinderDepth,
@@ -345,6 +351,7 @@ impl Written
     ///   path between the written binders, at the written depth.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: |ret| ret.depth <= typing.depth)]
+    #[inline]
     pub fn read_back(
         &self,
         arena: &mut CoreArena,
@@ -422,6 +429,7 @@ impl Written
     ///   reads no record of theirs.
     /// - witness: `tests::native_formers::a_refined_arm_types_its_written_terms_in_their_own_context_3483`
     #[spec(ensures: self.sources.values().is_empty() && self.sources.computations().is_empty() && self.generalising.is_empty() && self.minted.is_empty() && self.standing.is_empty())]
+    #[inline]
     pub fn clear(&mut self)
     {
         *self = Self::default();

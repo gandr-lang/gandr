@@ -201,6 +201,7 @@ enum Leaf
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn codes(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -255,6 +256,7 @@ pub fn codes(
     | Ok(ref decided) => !decided.images.is_empty() && decided.images.len() == decided.dialogues.len(),
     | Err(_) => true,
 })]
+#[inline]
 pub fn decide(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -959,6 +961,7 @@ fn function_code(
     | Err(CheckRefusal::ForwardUnsupported { at: site }) => site == at,
     | Ok(_) | Err(_) => true,
 })]
+#[inline]
 pub fn arrow(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -1011,6 +1014,7 @@ pub fn arrow(
     | Err(CheckRefusal::Boundary { at: site }) => site == domain || site == codomain,
     | Ok(()) | Err(_) => true,
 })]
+#[inline]
 pub fn against(
     context: &mut CheckingContext<'_>,
     at: ValueId,
