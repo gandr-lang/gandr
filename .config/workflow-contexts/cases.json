@@ -131,5 +131,38 @@
       }
     },
     "output": "[]"
+  },
+  {
+    "name": "#7117: a job that runs a nextest archive with no fetch before it is refused",
+    "input": {
+      "workflow": ".github/workflows/riscv64.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            { "name": "download the test archive" },
+            { "run": "cargo nextest run --archive-file a.tar.zst --profile riscv64" },
+            { "run": "cargo fetch --locked" }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/riscv64.yml` job `test` runs a nextest archive with no step before it that fetches the lockfile's sources, so a test that reads the dependency tree offline misses a new git source\"]"
+  },
+  {
+    "name": "#7117: a job that fetches the lockfile's sources before it runs a nextest archive holds",
+    "input": {
+      "workflow": ".github/workflows/riscv64.yml",
+      "jobs": {
+        "test": {
+          "steps": [
+            { "run": "cargo fetch --locked --manifest-path a/Cargo.toml" },
+            {
+              "run": "if [[ -e $LOCK ]]; then flock 9; fi\ncargo nextest run --archive-file a.tar.zst --profile riscv64"
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
   }
 ]

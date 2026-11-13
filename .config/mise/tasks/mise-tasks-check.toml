@@ -1598,9 +1598,12 @@ run = ".config/local-paths/check.bash"
 # walks a build directory with `**`. A step tests one file at the
 # directory's root (#6888). A job of a workflow that runs on an edit of a
 # pull request reads a field of `github.event.changes` in its condition, so
-# an edit of the body alone skips it (#6774).
+# an edit of the body alone skips it (#6774). A job that runs a nextest
+# archive fetches the lockfile's sources in a step before the run, since the
+# archive holds no source and a test reads the dependency tree offline
+# (#7117).
 ["check:workflow-hashing"]
-description = "No hashFiles over a tarball or a build directory, no unavailable context, and no job on a pull request edit that reads no change, in a workflow"
+description = "No hashFiles over a tarball or a build directory, no unavailable context, no job on a pull request edit that reads no change, and no nextest archive run with no fetch before it, in a workflow"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -1625,7 +1628,7 @@ if git grep -nIE -e 'hashFiles[(][^)]*[.]tar' -- ':/.github'; then
   echo 'workflow hashing check FAILED: hashFiles over a tarball; raise a flag where the tarball is written' >&2
   exit 1
 fi
-echo 'workflow hashing check OK: no hashFiles over a tarball or a build directory, no unavailable context, and no job on a pull request edit that reads no change'
+echo 'workflow hashing check OK: no hashFiles over a tarball or a build directory, no unavailable context, no job on a pull request edit that reads no change, and no nextest archive run with no fetch before it'
 '''
 
 ["check:workflow-hashing-shell"]
