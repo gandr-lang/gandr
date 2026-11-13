@@ -186,6 +186,7 @@ use gandr_surface_lowering::InScope;
 use gandr_surface_lowering::Insertion;
 use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::PatternReading;
@@ -248,8 +249,8 @@ use crate::compose::judge_lowering;
 use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::evaluation::Evaluation;
-use crate::evaluate::hidden_members;
 use crate::typed::referent::Referents;
 
 mod referent;
@@ -1217,6 +1218,88 @@ fn own(
     let start = usize::from(span.start()).checked_sub(usize::from(base))?;
     let end = usize::from(span.end()).checked_sub(usize::from(base))?;
     ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
+}
+
+/// Each member a module matched against a signature keeps out of its
+/// interface, with that module's path.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every declaration whose container is a module that matching
+///   coerced, and whose admission position none of that module's exported value
+///   components resolves to, keyed by that position and holding the module's
+///   path joined by `.`; a member hidden by two modules keeps the first.
+/// - fails: never.
+/// - panics: none.
+/// - intension: a module with no coerced structure is skipped without a walk;
+///   otherwise each declaration's container path is read once, in place, and
+///   compared with each coerced module's path, allocating nothing per
+///   declaration.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model whose helpers stand outside its signature, and
+///   sealed modules whose runs name only their exports.
+/// - witness: `tests::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`
+/// - witness: `evaluate::tests::a_run_naming_a_declaration_outside_every_sealed_module_is_spelled`
+#[spec(ensures: |ref ret| ret.keys().all(|constant| module.declarations().iter().any(|declaration| declaration.constant() == *constant)))]
+pub fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
+{
+    let mut hidden = BTreeMap::new();
+    if !module
+        .structures()
+        .iter()
+        .any(|structure| structure.coerced().0)
+    {
+        return hidden;
+    }
+    // Each declaration's container path, as `LoweredModule::path_of` spells
+    // it before the declaration's own name: a derived rule's theory, else the
+    // path of the module it is declared in.
+    let containers: Vec<(ConstantIndex, Option<SurfaceName<'_>>, &[SurfaceName<'_>])> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            let path = match declaration.container() {
+                Container::TopLevel(_) => &[][..],
+                Container::Module(index) => module
+                    .structures()
+                    .get(usize::from(index))
+                    .map_or(&[][..], LoweredStructure::path),
+            };
+            (declaration.constant(), module.theory_of(declaration), path)
+        })
+        .collect();
+    let mut exported: BTreeSet<ConstantIndex> = BTreeSet::new();
+    let mut at = String::new();
+    for structure in module.structures() {
+        if !structure.coerced().0 {
+            continue;
+        }
+        exported.clear();
+        exported.extend(
+            structure
+                .values()
+                .iter()
+                .map(|component| component.constant),
+        );
+        at.clear();
+        for (index, segment) in structure.path().iter().enumerate() {
+            if index > 0 {
+                at.push('.');
+            }
+            at.push_str(AsRef::<str>::as_ref(segment));
+        }
+        for &(constant, theory, path) in &containers {
+            let within = theory.map_or_else(
+                || path == structure.path(),
+                |theory| structure.path() == [theory],
+            );
+            if within && !exported.contains(&constant) {
+                let _first = hidden.entry(constant).or_insert_with(|| at.clone());
+            }
+        }
+    }
+    hidden
 }
 
 /// The modules of the source starting at `base` in the unit's text `text`
@@ -5997,12 +6080,14 @@ impl TypeTable
     /// - witness: `typed::tests::a_member_s_value_reprints_under_its_own_declaration_610`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    pub fn reprint_value(
+    pub fn reprint_value<E>(
         &self,
         grammar: &Pbg,
         signed: Maybe<Name<'_>, signed::Absent>,
         written: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         const NAME: &str = REPRINTED;
         let declared = match signed {
@@ -6055,7 +6140,7 @@ impl TypeTable
                 let mut signed = String::from(<&str>::from(self.naming.text()));
                 signed.push_str(&signature);
                 signed.push_str(&body);
-                self.run_reprinted(grammar, SourceText::from(signed.as_str()))
+                self.run_reprinted::<E>(grammar, SourceText::from(signed.as_str()))
             },
             again @ (Maybe::Present(_) | Maybe::Absent(_)) => again,
         }
@@ -6097,12 +6182,14 @@ impl TypeTable
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     #[inline]
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    pub fn reprint_normal_form(
+    pub fn reprint_normal_form<E>(
         &self,
         grammar: &Pbg,
         block: Name<'_>,
         written: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         let Ok(Lowered::Module { module, .. }) = lower_unit_source(
             grammar,
@@ -6124,7 +6211,11 @@ impl TypeTable
         if matches!(declaration.outcome(), DeclarationOutcome::Data(_))
             || declaration.role() == Role::Operation
         {
-            return self.reprint_value(grammar, Maybe::Absent(signed::Absent::Unsigned), written);
+            return self.reprint_value::<E>(
+                grammar,
+                Maybe::Absent(signed::Absent::Unsigned),
+                written,
+            );
         }
         module
             .normal_form(declaration, CallText::from(<&str>::from(written)))
@@ -6231,16 +6322,18 @@ impl TypeTable
     /// - witness: `tests::census::every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3`
     /// - witness: `typed::tests::an_importer_s_value_reads_back_beside_its_sibling_552`
     #[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(ref again) if again.is_empty()))]
-    fn run_reprinted(
+    fn run_reprinted<E>(
         &self,
         grammar: &Pbg,
         source: SourceText<'_>,
     ) -> Maybe<String, reprinted::Absent>
+    where
+        E: Engine,
     {
         let Ok(Composed::Settled { mut program, .. }) =
             lower_unit_source(grammar, source, &self.unit, &mut LoweringCount::default()).and_then(
                 |lowering| {
-                    judge_lowering(
+                    judge_lowering::<E>(
                         CorpusRoot::Fixture,
                         (lowering, source),
                         &HostGrant::UNBOUNDED,
@@ -6260,7 +6353,7 @@ impl TypeTable
             .find(|&constant| {
                 matches!(program.name(constant), Maybe::Present(held) if held.as_ref() == REPRINTED)
             });
-        match constant.map(|constant| program.evaluate(constant)) {
+        match constant.map(|constant| E::evaluate(&mut program, constant)) {
             Some(Evaluation::Value(value)) => Maybe::Present(value.presentation().to_string()),
             Some(
                 Evaluation::Sealed(_)

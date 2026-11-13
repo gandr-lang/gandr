@@ -1,0 +1,46 @@
+[package]
+name = "gandr-surface-evaluate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The run stage of gandr: a checked module focused into a program and run, native or on the executor"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "toolchain"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The run stage focuses each accepted body through the sequent calculus and
+# runs it with the emitter, native or on its executor. The network's runtime
+# serves a program's `Net` operations, and the exact reals serve
+# `std.reals.Eff`. A `draw` of `std.rand.Eff` reads the entropy of the
+# operating system through getrandom. The run stage implements the
+# dispatcher's `Engine`, which the composition and the check verb read.
+[dependencies]
+anodized.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-incremental.workspace = true
+gandr-core-sequent.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-runtime-emitter.workspace = true
+gandr-runtime-net.workspace = true
+gandr-storage-values.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-pretty.workspace = true
+gandr-surface-syntax.workspace = true
+gandr-theory-exact-reals.workspace = true
+getrandom.workspace = true
+hotpath = { workspace = true, optional = true }
+quenchant-shape.workspace = true
+
+[features]
+default = []
+hotpath = ["dep:hotpath", "gandr-surface-dispatcher/hotpath", "hotpath/hotpath"]
+
+[lints]
+workspace = true

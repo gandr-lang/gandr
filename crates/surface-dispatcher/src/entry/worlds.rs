@@ -197,7 +197,7 @@ impl ProgramKey
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn code(
+    pub fn code(
         self,
         at: CommandId,
     ) -> Code
@@ -212,7 +212,7 @@ impl ProgramKey
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn place(
+    pub fn place(
         self,
         code: &Code,
     ) -> Option<CommandId>

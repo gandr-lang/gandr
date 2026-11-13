@@ -284,11 +284,11 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::component::Member;
+use crate::engine::Engine;
 use crate::entry::exercised::Exercised;
-use crate::evaluate::Focused;
-use crate::evaluate::Program;
-use crate::evaluate::ScheduledRuns;
 use crate::measure::CheckSchedule;
+use crate::program::Focused;
+use crate::program::Program;
 use crate::schedule::Scheduling;
 use crate::schedule::independent;
 use crate::stage::Monotonic;
@@ -2454,14 +2454,16 @@ impl JudgedClosure
     /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
     #[inline]
     #[must_use]
-    pub fn new(
+    pub fn new<E>(
         closure: Arc<ClosureLowering>,
         grant: &HostGrant,
         root: CorpusRoot,
     ) -> Option<Self>
+    where
+        E: Engine,
     {
         cells::Judged::try_new(closure, |closure| {
-            judge_closure(closure, grant, root).ok_or(())
+            judge_closure::<E>(closure, grant, root).ok_or(())
         })
         .ok()
         .map(Self)
@@ -2560,11 +2562,13 @@ impl fmt::Debug for JudgedClosure
 /// - hypothesis: L3 — as [`JudgedClosure`].
 /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn judge_closure<'held>(
+fn judge_closure<'held, E>(
     closure: &'held ClosureLowering,
     grant: &HostGrant,
     root: CorpusRoot,
 ) -> Option<ClosureJudgement<'held>>
+where
+    E: Engine,
 {
     let (mut module, mut arena) = closure.alone()?;
     let declarations = adapt(&module, &arena);
@@ -2594,7 +2598,13 @@ fn judge_closure<'held>(
     // rows frozen so each revision copies only its own.
     let mut focused = program.clone().into_focused();
     focused.freeze();
-    let settled = settle(root, &closing, &module, &verdicts, &mut program);
+    let settled = settle(
+        root,
+        &closing,
+        &module,
+        &verdicts,
+        &mut E::runs(&mut program),
+    );
     let first = ConstantIndex::from(0_usize);
     let minted = elaborated(&verdicts, first);
     let spellings = settled.as_ref().map_or_else(
@@ -2927,14 +2937,16 @@ pub fn lower_onto_closure<'held>(
         Err(_) => true,
     },
 )]
-pub fn judge<'source>(
+pub fn judge<'source, E>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     grant: &HostGrant,
 ) -> Judged<'source>
+where
+    E: Engine,
 {
-    judge_member(
+    judge_member::<E>(
         root,
         (module, text),
         arena,
@@ -2975,15 +2987,17 @@ pub fn judge<'source>(
         Err(_) => true,
     },
 )]
-pub fn judge_member<'source>(
+pub fn judge_member<'source, E>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     grant: &HostGrant,
     base: ByteOffset,
 ) -> Judged<'source>
+where
+    E: Engine,
 {
-    judge_member_after(root, (module, text), arena, (grant, Checking::Whole), base)
+    judge_member_after::<E>(root, (module, text), arena, (grant, Checking::Whole), base)
 }
 
 /// [`judge_member`] of a module checked as `checking` says.
@@ -3027,15 +3041,17 @@ pub fn judge_member<'source>(
         Err(_) => true,
     },
 )]
-pub fn judge_member_after<'source>(
+pub fn judge_member_after<'source, E>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
 ) -> Judged<'source>
+where
+    E: Engine,
 {
-    judge_member_after_retiring(
+    judge_member_after_retiring::<E, _>(
         root,
         (module, text),
         arena,
@@ -3089,7 +3105,7 @@ pub fn judge_member_after<'source>(
         true
     },
 )]
-pub fn judge_member_after_retiring<'source, Poll>(
+pub fn judge_member_after_retiring<'source, E, Poll>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
@@ -3098,9 +3114,10 @@ pub fn judge_member_after_retiring<'source, Poll>(
     (retirement, recording, supporting): (&Poll, Recording<'_>, Supporting),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
+    E: Engine,
     Poll: Retirement,
 {
-    judge_member_on(
+    judge_member_on::<E, _>(
         root,
         (module, text),
         arena,
@@ -3121,7 +3138,7 @@ where
 ///
 /// # Specification
 /// trivial.
-fn judge_member_on<'source, Poll>(
+fn judge_member_on<'source, E, Poll>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
@@ -3136,6 +3153,7 @@ fn judge_member_on<'source, Poll>(
     ),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
+    E: Engine,
     Poll: Retirement,
 {
     let last = Member {
@@ -3143,7 +3161,7 @@ where
         end: ByteOffset::from(text.as_ref().len()),
         root,
     };
-    match judge_members(
+    match judge_members::<E, _>(
         (module, text),
         arena,
         (grant, checking),
@@ -3191,15 +3209,17 @@ where
 ///   one.
 /// - witness: `tests::corpus::sweeps::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
 #[inline]
-pub fn judge_member_tabled<'source>(
+pub fn judge_member_tabled<'source, E>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (unit, base): (&Unit, ByteOffset),
 ) -> (Judged<'source>, Maybe<TypeTable, tabled::Absent>)
+where
+    E: Engine,
 {
-    judge_member_tabled_retiring(
+    judge_member_tabled_retiring::<E, _>(
         root,
         (module, text),
         arena,
@@ -3229,7 +3249,7 @@ pub fn judge_member_tabled<'source>(
 ///   does, and answers what [`judge_member_tabled`] answers.
 /// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
 #[inline]
-pub fn judge_member_tabled_retiring<'source, Poll>(
+pub fn judge_member_tabled_retiring<'source, E, Poll>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
@@ -3238,6 +3258,7 @@ pub fn judge_member_tabled_retiring<'source, Poll>(
     (retirement, supporting): (&Poll, Supporting),
 ) -> Polled<(Judged<'source>, Maybe<TypeTable, tabled::Absent>), Poll::Retired, ()>
 where
+    E: Engine,
     Poll: Retirement,
 {
     let last = Member {
@@ -3245,7 +3266,7 @@ where
         end: ByteOffset::from(text.as_ref().len()),
         root,
     };
-    match judge_members(
+    match judge_members::<E, _>(
         (module, text),
         arena,
         (grant, checking),
@@ -3405,7 +3426,7 @@ type JudgedUnit<'source> = (
 } else {
     true
 })]
-fn judge_members<'source, Poll>(
+fn judge_members<'source, E, Poll>(
     (mut module, text): (LoweredModule<'source>, SourceText<'source>),
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
@@ -3421,6 +3442,7 @@ fn judge_members<'source, Poll>(
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
 where
+    E: Engine,
     Poll: Retirement,
 {
     let declarations = adapt(&module, &arena);
@@ -3547,21 +3569,17 @@ where
         },
     );
     let laid = Laid { earlier, last };
-    let mut concurrent;
-    let runner: &mut dyn Runner = match scheduling {
-        Scheduling::Sequential => &mut program,
-        Scheduling::Concurrent(pool) => {
-            concurrent = ScheduledRuns::new(&mut program, pool);
-            &mut concurrent
-        },
-    };
-    let settled_report = match after {
+    let settle_with = |runner: &mut dyn Runner| match after {
         Some(closure) => closure
             .settled
             .as_ref()
             .map_err(|&fault| fault)
             .and_then(|earlier| settle_after(laid, &arena, &module, &verdicts, runner, earlier)),
         None => settle(laid, &arena, &module, &verdicts, runner),
+    };
+    let settled_report = match scheduling {
+        Scheduling::Sequential => settle_with(&mut E::runs(&mut program)),
+        Scheduling::Concurrent(pool) => settle_with(&mut E::scheduled(&mut program, pool)),
     };
     let projected = match settled_report {
         Ok(report) => {
@@ -4126,12 +4144,14 @@ fn settled<'source>(
     Maybe::Present(_) | Maybe::Absent(kept::Absent::Unjudged) => keeping == Keeping::Admission,
     Maybe::Absent(kept::Absent::Unasked) => keeping == Keeping::Composed,
 })]
-pub fn judge_component<'source>(
+pub fn judge_component<'source, E>(
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     (grant, checking): (&HostGrant, Checking<'source>),
     (members, spelled): (&[Member], &mut SpellingCount),
     (keeping, positioning): (Keeping, Positioning),
 ) -> KeptComponent<'source>
+where
+    E: Engine,
 {
     let unkept = match keeping {
         Keeping::Composed => kept::Absent::Unasked,
@@ -4143,7 +4163,7 @@ pub fn judge_component<'source>(
     };
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
-            let (projected, admission, _untabled, after) = judge_members(
+            let (projected, admission, _untabled, after) = judge_members::<E, _>(
                 (module, text),
                 arena,
                 (grant, checking),
@@ -4447,14 +4467,16 @@ fn elaborated(
         Ok(Composed::Refused(_)) | Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
     },
 )]
-pub fn judge_module<'source>(
+pub fn judge_module<'source, E>(
     root: CorpusRoot,
     (module, text): (LoweredModule<'source>, SourceText<'source>),
     arena: CoreArena,
     grant: &HostGrant,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
+where
+    E: Engine,
 {
-    judge(root, (module, text), arena, grant).admit()
+    judge::<E>(root, (module, text), arena, grant).admit()
 }
 
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
@@ -4513,14 +4535,16 @@ pub fn judge_module<'source>(
             | Err(ComposeFault::Parse(_) | ComposeFault::Readmission(_) | ComposeFault::Settle(_)) => true,
     },
 )]
-pub fn compose<'source>(
+pub fn compose<'source, E>(
     grammar: &Pbg,
     root: CorpusRoot,
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
+where
+    E: Engine,
 {
-    compose_on(
+    compose_on::<E>(
         grammar,
         root,
         source,
@@ -4564,7 +4588,7 @@ pub fn compose<'source>(
 /// - witness: `tests::corpus::sweeps::the_concurrent_schedule_settles_the_corpus_alike_2954`
 /// - witness: `tests::corpus::sweeps::the_goal_memo_settles_the_corpus_alike_5719`
 #[inline]
-pub fn compose_on<'source>(
+pub fn compose_on<'source, E>(
     grammar: &Pbg,
     root: CorpusRoot,
     source: SourceText<'source>,
@@ -4572,9 +4596,11 @@ pub fn compose_on<'source>(
     scheduling: Scheduling<'_>,
     memo: MemoActivity,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
+where
+    E: Engine,
 {
     match lower_source(grammar, source, lowerings)?.into_lowered() {
-        Lowered::Module { module, arena } => judge_member_on(
+        Lowered::Module { module, arena } => judge_member_on::<E, _>(
             root,
             (module, source),
             arena,
@@ -4627,16 +4653,18 @@ pub fn compose_on<'source>(
         Err(ComposeFault::Parse(_) | ComposeFault::Lowering(_)) => false,
     },
 )]
-pub fn judge_lowering<'source>(
+pub fn judge_lowering<'source, E>(
     root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
     grant: &HostGrant,
     base: ByteOffset,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
+where
+    E: Engine,
 {
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
-            judge_member(root, (module, text), arena, grant, base).admit()
+            judge_member::<E>(root, (module, text), arena, grant, base).admit()
         },
         Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
     }

@@ -17,6 +17,7 @@
 //! prints steps in another order would move the selection beside the model.
 
 use alloc::string::String;
+use core::marker::PhantomData;
 use core::slice;
 use std::path::Path;
 
@@ -60,6 +61,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
+use crate::engine::Engine;
 use crate::walk::Standing;
 use crate::walk::Step;
 use crate::workspace::stepped_alone;
@@ -271,7 +273,7 @@ struct Remaining<'step>
 
 /// The diagnostics of one step, in the order its verb prints them.
 #[derive(Clone, Debug)]
-pub struct Entries<'step>
+pub struct Entries<'step, E>
 {
     /// The source's path.
     path: &'step Path,
@@ -293,6 +295,8 @@ pub struct Entries<'step>
     checked: usize,
     /// What remains.
     cursor: Cursor<'step>,
+    /// The engine that runs the settlement of a repair checked.
+    engine: PhantomData<fn() -> E>,
 }
 
 /// What `step` prints under `verb`, in order.
@@ -344,10 +348,10 @@ pub struct Entries<'step>
 })]
 #[inline]
 #[must_use]
-pub fn entries<'step>(
+pub fn entries<'step, E>(
     step: &'step Step<'step>,
     verb: Verb,
-) -> Entries<'step>
+) -> Entries<'step, E>
 {
     let (path, text, base, cursor) = match *step {
         Step::Fault { path, .. } => (
@@ -376,6 +380,7 @@ pub fn entries<'step>(
         repairs: Repairs::Named,
         checked: 0_usize,
         cursor,
+        engine: PhantomData,
     }
 }
 
@@ -801,7 +806,9 @@ enum Printed<'step>
     Subject(Subject<'step>),
 }
 
-impl<'step> Entries<'step>
+impl<'step, E> Entries<'step, E>
+where
+    E: Engine,
 {
     /// These entries, each lint reaching where `lints` says.
     ///
@@ -1096,7 +1103,7 @@ impl<'step> Entries<'step>
                     && self.checked < CHECKED_REPAIRS
                 {
                     self.checked = self.checked.saturating_add(1);
-                    if settles(self.path, self.text, self.start, declaration, named)
+                    if settles::<E>(self.path, self.text, self.start, declaration, named)
                         == Settlement::Settled
                     {
                         diagnostic.fix = Maybe::Present(named.clone());
@@ -1125,13 +1132,15 @@ impl<'step> Entries<'step>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Entries::repairing`].
 /// - witness: `entry::tests::a_repair_is_proposed_as_a_fix_once_it_checks_5474`
-fn settles(
+fn settles<E>(
     path: &Path,
     text: SourceText<'_>,
     start: SourceStart,
     declaration: &DeclarationReport<'_>,
     repair: &Fix,
 ) -> Settlement
+where
+    E: Engine,
 {
     let Maybe::Present(own) = start.measure(repair.span)
     else {
@@ -1156,7 +1165,7 @@ fn settles(
     written.push_str(before);
     written.push_str(&repair.replacement);
     written.push_str(after);
-    stepped_alone(
+    stepped_alone::<E, _, _>(
         path,
         SourceText::from(written.as_str()),
         |step| match step {
@@ -1175,7 +1184,9 @@ fn settles(
     .unwrap_or(Settlement::Unsettled)
 }
 
-impl Iterator for Entries<'_>
+impl<E> Iterator for Entries<'_, E>
+where
+    E: Engine,
 {
     type Item = Diagnostic;
 
@@ -1231,7 +1242,9 @@ impl Iterator for Entries<'_>
     }
 }
 
-impl Entries<'_>
+impl<E> Entries<'_, E>
+where
+    E: Engine,
 {
     /// The next diagnostic, measured against the step's whole text.
     ///

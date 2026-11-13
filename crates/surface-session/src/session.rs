@@ -361,6 +361,7 @@ use gandr_surface_dispatcher::ArtifactPositions;
 use gandr_surface_dispatcher::Checking;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Engine as _;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::ImportPath;
@@ -389,6 +390,7 @@ use gandr_surface_dispatcher::lower_resumed_unit;
 use gandr_surface_dispatcher::path_imports;
 use gandr_surface_dispatcher::positioned;
 use gandr_surface_dispatcher::tabled;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -1542,7 +1544,7 @@ pub fn evaluate<'text>(
 {
     match declaration.produced() {
         Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
-            Maybe::Present(program.evaluate(declaration.constant()))
+            Maybe::Present(Evaluator::evaluate(program, declaration.constant()))
         },
         Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
             Maybe::Absent(evaluation::Absent::Holed)
@@ -3224,7 +3226,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         }
         let judged = within(sink, Phase::Judge, |sink| {
             let judged = match self.tables {
-                Tables::Kept => match judge_member_tabled_retiring(
+                Tables::Kept => match judge_member_tabled_retiring::<Evaluator, _>(
                     self.root.corpus_root(),
                     (module, revision),
                     arena,
@@ -3235,7 +3237,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     Polled::Whole((judged, table)) => Polled::Whole((judged.into_parts(), table)),
                     Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
                 },
-                Tables::Unkept => match judge_member_after_retiring(
+                Tables::Unkept => match judge_member_after_retiring::<Evaluator, _>(
                     self.root.corpus_root(),
                     (module, revision),
                     arena,
@@ -4815,7 +4817,7 @@ where
             Maybe::Absent(admitted::Absent::RefusedWhole),
         ),
         Lowered::Module { module, arena } => {
-            let (settled, admission) = judge_member(
+            let (settled, admission) = judge_member::<Evaluator>(
                 root.corpus_root(),
                 (module, candidate),
                 arena,

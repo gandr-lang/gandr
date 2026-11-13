@@ -61,6 +61,10 @@ use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::RealsProfile;
 use gandr_theory_exact_reals::Answer;
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Budget;
@@ -97,10 +101,6 @@ use gandr_theory_exact_reals::validate;
 
 use self::machine::Machines;
 use self::machine::Verdict;
-use crate::entry::console::Console;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
-use crate::entry::entered::RealsProfile;
 
 mod machine;
 
@@ -119,42 +119,39 @@ const RESTORE: &str = "restore";
 /// The operation of [`REALS`] that gives the work counters of a machine.
 const REPORT: &str = "report";
 
-impl RealsProfile
+/// The quotas that `profile` sets.
+///
+/// # Specification
+/// trivial.
+fn limits(profile: RealsProfile) -> Limits
 {
-    /// The quotas that the profile sets.
-    ///
-    /// # Specification
-    /// trivial.
-    fn limits(self) -> Limits
-    {
-        match self {
-            Self::Default => Limits {
-                plan: Quotas::default(),
-                checker: CheckerQuotas::default(),
-                precision: 4096,
-                quanta: 1024,
-                plans: 64,
-                machines: 64,
+    match profile {
+        RealsProfile::Default => Limits {
+            plan: Quotas::default(),
+            checker: CheckerQuotas::default(),
+            precision: 4096,
+            quanta: 1024,
+            plans: 64,
+            machines: 64,
+        },
+        RealsProfile::Bounded => Limits {
+            plan: Quotas {
+                bytes: ByteLength::from(0x0001_0000_usize),
+                nodes: NodeCount::from(4096_usize),
+                height: Height::from(256_u32),
+                binders: Height::from(16_u32),
+                width: BitWidth::from(4096_u64),
+                power: Power::from(64_u32),
             },
-            Self::Bounded => Limits {
-                plan: Quotas {
-                    bytes: ByteLength::from(0x0001_0000_usize),
-                    nodes: NodeCount::from(4096_usize),
-                    height: Height::from(256_u32),
-                    binders: Height::from(16_u32),
-                    width: BitWidth::from(4096_u64),
-                    power: Power::from(64_u32),
-                },
-                checker: CheckerQuotas {
-                    steps: StepCount::from(4096_usize),
-                    width: BitWidth::from(4096_u64),
-                },
-                precision: 256,
-                quanta: 256,
-                plans: 16,
-                machines: 16,
+            checker: CheckerQuotas {
+                steps: StepCount::from(4096_usize),
+                width: BitWidth::from(4096_u64),
             },
-        }
+            precision: 256,
+            quanta: 256,
+            plans: 16,
+            machines: 16,
+        },
     }
 }
 
@@ -517,7 +514,7 @@ impl Reals
     /// trivial.
     pub(super) fn new(profile: RealsProfile) -> Self
     {
-        Self::under(profile.limits())
+        Self::under(limits(profile))
     }
 
     /// The empty tables of a run under `limits`.

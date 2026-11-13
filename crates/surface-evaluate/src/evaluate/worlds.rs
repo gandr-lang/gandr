@@ -14,7 +14,7 @@
 //! holds a capability for to its own key (`Program::here`).
 //!
 //! A migration's code is named by the
-//! [`ProgramKey`](crate::entry::worlds::ProgramKey) of the program both
+//! [`ProgramKey`](gandr_surface_dispatcher::ProgramKey) of the program both
 //! hosts hold and the migration's place in it; each capture and the answer
 //! cross by content, committed to the network's chunks and fetched over the
 //! migration's connection.
@@ -50,7 +50,6 @@ use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
-use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
@@ -60,20 +59,17 @@ use gandr_runtime_net::Answer;
 use gandr_runtime_net::Arrival;
 use gandr_runtime_net::Configuration;
 use gandr_runtime_net::Net;
-use gandr_runtime_net::NodeId;
-use gandr_runtime_net::Peer;
 use gandr_runtime_net::WorldName;
 use gandr_storage_values::ChunkCount;
 use gandr_storage_values::ValueManifest;
+use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Hosted;
+use gandr_surface_dispatcher::Line;
+use gandr_surface_dispatcher::MigrationCount;
+use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::Worlds;
 
-use super::Program;
-use crate::entry::console::Console;
-use crate::entry::console::Line;
-use crate::entry::console::Printed;
-use crate::entry::worlds::Hosted;
-use crate::entry::worlds::MigrationCount;
-use crate::entry::worlds::WorldBindings;
-use crate::entry::worlds::Worlds;
+use super::Machine;
 
 /// Decide the migration `request` offers, as a host holding `worlds` and the
 /// world names `names` decides it, shipping it on `net` when its world is
@@ -153,7 +149,7 @@ pub(super) fn shipped(
     }
 }
 
-impl Program<'_>
+impl Machine<'_, '_>
 {
     /// Host this program's worlds on `net`: answer each migration shipped to
     /// it until `migrations` are answered, running each whose world `worlds`'
@@ -293,56 +289,5 @@ impl Program<'_>
             },
             Err(_uncrossed) => Answer::Refused(Unmigrated::Unanswered),
         }
-    }
-
-    /// The world this program declares under `name`, its last declaration of
-    /// that name.
-    ///
-    /// # Specification
-    /// trivial.
-    fn world_named(
-        &self,
-        name: &WorldName,
-    ) -> Option<World>
-    {
-        self.declarations
-            .iter()
-            .rev()
-            .find(|&(_, declared)| declared.name.as_ref() == name.as_ref())
-            .map(|(&constant, _)| World::Declared(constant))
-    }
-
-    /// The first world the entry holds a capability for that `bindings`
-    /// bind to no host.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(super) fn unbound(
-        &self,
-        bindings: &WorldBindings,
-    ) -> Option<ConstantIndex>
-    {
-        self.reaches.iter().copied().find(|&world| {
-            self.names
-                .get(usize::from(world))
-                .is_none_or(|name| bindings.peer(&WorldName::from(name.as_str())).is_none())
-        })
-    }
-
-    /// Every world the entry holds a capability for, each bound to the host
-    /// `here`: the bindings of a host that hosts every world shipped to it.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(crate) fn here(
-        &self,
-        here: NodeId,
-    ) -> WorldBindings
-    {
-        self.reaches
-            .iter()
-            .filter_map(|&world| self.names.get(usize::from(world)))
-            .map(|name| (WorldName::from(name.as_str()), Peer::new(here)))
-            .collect()
     }
 }

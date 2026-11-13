@@ -129,6 +129,7 @@ use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_prelude;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::report::RunReport;
 use crate::entry::report::SourceCount;
 use crate::pool::Helped;
@@ -557,17 +558,19 @@ impl Prelude
     ///   source composes laid after the prelude whole.
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     #[spec(ensures: |ret| ret.is_none() || self.lowering.is_some())]
-    fn judged(
+    fn judged<E>(
         &self,
         root: CorpusRoot,
     ) -> Option<&JudgedClosure>
+    where
+        E: Engine,
     {
         let lowering = self.lowering.as_ref()?;
         match root {
             CorpusRoot::Strict => &self.strict,
             CorpusRoot::Fixture => &self.fixture,
         }
-        .get_or_init(|| JudgedClosure::new(Arc::clone(lowering), &self.grant, root))
+        .get_or_init(|| JudgedClosure::new::<E>(Arc::clone(lowering), &self.grant, root))
         .as_ref()
     }
 }
@@ -781,15 +784,16 @@ impl Walk
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     /// - witness: `walk::tests::a_source_given_twice_answers_twice_from_one_judgement`
     #[inline]
-    pub fn visit<Stop, Visitor>(
+    pub fn visit<E, Stop, Visitor>(
         self,
         pool: &Pool,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
+        E: Engine,
         Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
     {
-        self.visiting(pool, Keeping::Composed, |step, _unkept| visitor(step))
+        self.visiting::<E, _, _, _>(pool, Keeping::Composed, |step, _unkept| visitor(step))
     }
 
     /// [`Self::visit`], handing each step beside the admission of the
@@ -817,15 +821,16 @@ impl Walk
     ///   admission handed beside its source.
     /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
     #[inline]
-    pub fn visit_admitting<Stop, Visitor>(
+    pub fn visit_admitting<E, Stop, Visitor>(
         self,
         pool: &Pool,
         visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
+        E: Engine,
         Visitor: FnMut(Step<'_>, Maybe<&Admission, kept::Absent>) -> ControlFlow<Stop>,
     {
-        self.visiting(pool, Keeping::Admission, visitor)
+        self.visiting::<E, _, _, _>(pool, Keeping::Admission, visitor)
     }
 
     /// [`Self::visit`], with each lowering job marked by `recording`: the
@@ -847,16 +852,17 @@ impl Walk
     /// - witness: `walk::tests::a_recorded_walk_marks_each_lowering_and_hands_over_the_same_steps`
     #[cfg(feature = "instrument")]
     #[inline]
-    pub fn visit_recording<Stop, Visitor, Declares>(
+    pub fn visit_recording<E, Stop, Visitor, Declares>(
         self,
         recording: &crate::ActivityFork<'_, Declares>,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
+        E: Engine,
         Visitor: FnMut(Step<'_>) -> ControlFlow<Stop>,
         Declares: Sync,
     {
-        self.visiting(recording, Keeping::Composed, |step, _unkept| visitor(step))
+        self.visiting::<E, _, _, _>(recording, Keeping::Composed, |step, _unkept| visitor(step))
     }
 
     /// [`Self::visit`], each step handed beside its component's admission
@@ -875,13 +881,14 @@ impl Walk
     /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
     /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
     /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
-    fn visiting<Stop, Visitor, Jobs>(
+    fn visiting<E, Stop, Visitor, Jobs>(
         mut self,
         pool: &Jobs,
         keeping: Keeping,
         mut visitor: Visitor,
     ) -> ControlFlow<Stop, RunReport>
     where
+        E: Engine,
         Visitor: FnMut(Step<'_>, Maybe<&Admission, kept::Absent>) -> ControlFlow<Stop>,
         Jobs: Helped,
     {
@@ -977,7 +984,7 @@ impl Walk
             let component = grouped.components.get(position)?;
             let cells = (regrouped.get(position)?, parted.get(position)?);
             Some(pool.job(|| {
-                judgement(
+                judgement::<E>(
                     grammar,
                     prelude,
                     component,
@@ -1479,13 +1486,15 @@ fn settled<'step>(
 /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
 #[spec(ensures: |ref ret| usize::from(ret.lowerings) <= component.members.len()
     && usize::from(ret.parsed) <= component.text.len())]
-fn lower<'text>(
+fn lower<'text, E>(
     grammar: &Pbg,
     prelude: &'text Prelude,
     component: &'text Component,
 ) -> Job<'text>
+where
+    E: Engine,
 {
-    if let Some(job) = lower_after(grammar, prelude, component) {
+    if let Some(job) = lower_after::<E>(grammar, prelude, component) {
         return job;
     }
     let mut lowerings = LoweringCount::default();
@@ -1543,15 +1552,17 @@ fn lower<'text>(
 #[spec(ensures: |ref ret| ret.as_ref().is_none_or(|job|
     usize::from(job.lowerings) <= component.members.len()
         && usize::from(job.parsed) < component.text.len()))]
-fn lower_after<'text>(
+fn lower_after<'text, E>(
     grammar: &Pbg,
     prelude: &'text Prelude,
     component: &'text Component,
 ) -> Option<Job<'text>>
+where
+    E: Engine,
 {
     // The prelude's declarations settle under the first source's root, the
     // root `judge_members` continues a closure under.
-    let judged = prelude.judged(component.members.first()?.root)?;
+    let judged = prelude.judged::<E>(component.members.first()?.root)?;
     let closure = judged.lowering();
     let own = component.text.strip_prefix(<&str>::from(closure.text()))?;
     let alone = parse(grammar, SourceText::from(own)).ok()?;
@@ -1616,15 +1627,17 @@ fn lower_after<'text>(
 /// - witness: `walk::tests::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 #[spec(ensures: |ref ret| ret.held.len() == component.members.len())]
-fn judgement<'text>(
+fn judgement<'text, E>(
     grammar: &Pbg,
     prelude: &'text Prelude,
     component: &'text Component,
     (regrouped, parted): (&'text OnceLock<Grouped>, &'text OnceLock<Grouped>),
     judging: (&HostGrant, Keeping, Positioning),
 ) -> Judgement<'text>
+where
+    E: Engine,
 {
-    let job = lower(grammar, prelude, component);
+    let job = lower::<E>(grammar, prelude, component);
     let mut work = Work {
         lowerings: job.lowerings,
         parsed: job.parsed,
@@ -1637,10 +1650,10 @@ fn judgement<'text>(
             .and_then(|lowering| refused_member(lowering, component));
         if let Some(first) = refused {
             let again = parted.get_or_init(|| part(grammar, &mut work, component, first));
-            judge_regrouped(&mut work, grammar, judging, again)
+            judge_regrouped::<E>(&mut work, grammar, judging, again)
         }
         else {
-            judge(
+            judge::<E>(
                 &mut work.spellings,
                 judging,
                 component,
@@ -1653,7 +1666,7 @@ fn judgement<'text>(
     }
     else {
         let again = regrouped.get_or_init(|| regroup(grammar, component));
-        judge_regrouped(&mut work, grammar, judging, again)
+        judge_regrouped::<E>(&mut work, grammar, judging, again)
     };
     Judgement { held, work }
 }
@@ -1679,7 +1692,7 @@ fn judgement<'text>(
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 #[spec(ensures: |ref ret| ret.len() == component.members.len())]
-fn judge<'text>(
+fn judge<'text, E>(
     spelled: &mut SpellingCount,
     (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     component: &'text Component,
@@ -1688,9 +1701,11 @@ fn judge<'text>(
         Checking<'text>,
     ),
 ) -> Vec<Held<'text>>
+where
+    E: Engine,
 {
     let (composed, admission) = match lowering {
-        Ok(lowering) => judge_component(
+        Ok(lowering) => judge_component::<E>(
             (lowering, SourceText::from(component.text.as_str())),
             (grant, checking),
             (&component.members, spelled),
@@ -1747,12 +1762,14 @@ fn judge<'text>(
 /// - hypothesis: L3 — as [`regroup`].
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 #[spec(ensures: |ref ret| ret.len() == again.placed.len())]
-fn judge_regrouped<'text>(
+fn judge_regrouped<'text, E>(
     work: &mut Work,
     grammar: &Pbg,
     (grant, keeping, positioning): (&HostGrant, Keeping, Positioning),
     again: &'text Grouped,
 ) -> Vec<Option<Held<'text>>>
+where
+    E: Engine,
 {
     work.parsed.absorb(again.parsed);
     let mut parts: Vec<Vec<Option<Held<'text>>>> = Vec::with_capacity(again.components.len());
@@ -1767,7 +1784,7 @@ fn judge_regrouped<'text>(
         work.lowerings.absorb(lowerings);
         work.parsed.absorb(ParsedBytes::from(part.text.len()));
         parts.push(
-            judge(
+            judge::<E>(
                 &mut work.spellings,
                 (grant, keeping, positioning),
                 part,

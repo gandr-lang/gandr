@@ -56,6 +56,7 @@ use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_dispatcher::package_root;
 use gandr_surface_dispatcher::workspace_root;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -286,7 +287,7 @@ impl Files
         if self.workspaces.get(root).is_none_or(|held| held.0 != stamp) {
             let members = match Workspace::discover(root) {
                 Maybe::Present(workspace) if workspace.root() == root => workspace
-                    .members()
+                    .members::<Evaluator>()
                     .map(|(members, _gathered)| members)
                     .unwrap_or_default(),
                 Maybe::Present(_) | Maybe::Absent(workspace_root::Absent::Unworkspaced) => {

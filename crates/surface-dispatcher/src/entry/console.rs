@@ -180,7 +180,7 @@ impl Captured
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn clear(&mut self)
+    pub fn clear(&mut self)
     {
         self.lines.clear();
         self.errors.clear();

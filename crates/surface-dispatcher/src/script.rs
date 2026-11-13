@@ -35,6 +35,7 @@ use crate::compose::LoweringCount;
 use crate::compose::compose;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::console::Console;
 use crate::entry::entered::Entered;
 use crate::entry::entered::Entry;
@@ -180,12 +181,14 @@ impl Ran<'_>
         Ran::Hosted(_) => false,
     },
 )]
-pub fn execute<'source>(
+pub fn execute<'source, E>(
     composed: &mut Composed<'source>,
     arguments: &[String],
     console: &mut dyn Console,
     (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
 ) -> Ran<'source>
+where
+    E: Engine,
 {
     let Composed::Settled {
         ref report,
@@ -211,7 +214,7 @@ pub fn execute<'source>(
     match program.name(entry.constant) {
         Maybe::Present(name) => Ran::Entered {
             target: name,
-            entered: program.enter(entry, arguments, console, (net, worlds, profile)),
+            entered: E::enter(program, entry, arguments, console, (net, worlds, profile)),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
@@ -236,18 +239,20 @@ pub fn execute<'source>(
 ///   print a line for each.
 /// - witness: `tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
 ///
-/// [`Program::host`]: crate::Program::host
+/// [`Program::host`]: crate::Engine::host
 #[inline]
-pub fn host<'source>(
-    composed: &Composed<'source>,
+pub fn host<'source, E>(
+    composed: &mut Composed<'source>,
     (net, worlds): (&mut Net, Worlds<'_>),
     migrations: MigrationCount,
     console: &mut dyn Console,
 ) -> Ran<'source>
+where
+    E: Engine,
 {
     let Composed::Settled {
         ref report,
-        ref program,
+        ref mut program,
         ..
     } = *composed
     else {
@@ -262,7 +267,7 @@ pub fn host<'source>(
     if refused {
         return Ran::Refused;
     }
-    Ran::Hosted(program.host(worlds, net, migrations, console))
+    Ran::Hosted(E::host(program, worlds, net, migrations, console))
 }
 
 /// Compose `source` under the strict root, as a source at no path, and run
@@ -295,15 +300,17 @@ pub fn host<'source>(
         before
     } else { before.saturating_add(1_usize) },
 )]
-pub fn run_source<'source>(
+pub fn run_source<'source, E>(
     grammar: &Pbg,
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
     console: &mut dyn Console,
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
+where
+    E: Engine,
 {
-    let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(
+    let mut composed = compose::<E>(grammar, CorpusRoot::Strict, source, lowerings)?;
+    let ran = execute::<E>(
         &mut composed,
         &[],
         console,
@@ -610,10 +617,12 @@ impl Script
             ScriptRun::Source { step: Step::Fault { .. }, .. } => false,
         },
     )]
-    pub fn run(
+    pub fn run<E>(
         &mut self,
         console: &mut dyn Console,
     ) -> ScriptRun<'_>
+    where
+        E: Engine,
     {
         let root = match read_source(&self.reader, &self.path, &mut self.text) {
             Ok(root) => root,
@@ -642,7 +651,7 @@ impl Script
         let source = SourceText::from(laid.text.as_str());
         let composed = lower_unit_source(grammar, source, &laid.unit, &mut self.lowerings)
             .and_then(|lowering| {
-                judge_lowering(
+                judge_lowering::<E>(
                     root.corpus_root(),
                     (lowering, source),
                     &HostGrant::UNBOUNDED,
@@ -673,12 +682,12 @@ impl Script
                 let net = self.net.as_deref_mut();
                 let ran = match (self.hosting, net, worlds) {
                     (Some(migrations), Some(net), Some(worlds)) => {
-                        host(&composed, (net, worlds), migrations, console)
+                        host::<E>(&mut composed, (net, worlds), migrations, console)
                     },
                     (Some(_), ..) => Ran::Hosted(Hosted::Faulted {
                         answered: MigrationCount::default(),
                     }),
-                    (None, net, worlds) => execute(
+                    (None, net, worlds) => execute::<E>(
                         &mut composed,
                         &self.arguments,
                         console,

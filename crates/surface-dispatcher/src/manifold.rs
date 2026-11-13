@@ -134,6 +134,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Composed;
+use crate::engine::Engine;
 use crate::entry::answered::Answered;
 use crate::entry::answered::Spelling;
 use crate::entry::answered::Unran;
@@ -142,7 +143,7 @@ use crate::entry::evaluation::declaration_name;
 use crate::entry::report::Goals;
 use crate::entry::report::Verb;
 use crate::entry::worlds::WorldBindings;
-use crate::evaluate::Program;
+use crate::program::Program;
 use crate::walk::Step;
 use crate::workspace::answered_alone;
 use crate::workspace::lowered_alone;
@@ -197,9 +198,11 @@ impl Site
     /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
     /// - witness: `manifold::tests::a_field_that_does_not_read_is_refused_by_name_3374`
     #[inline]
-    pub fn read(file: &Path) -> Result<Self, Undeployed>
+    pub fn read<E>(file: &Path) -> Result<Self, Undeployed>
+    where
+        E: Engine,
     {
-        let [key, sockets, secret] = ran_alone(file, [
+        let [key, sockets, secret] = ran_alone::<E, 3>(file, [
             Stated::Key.name(),
             Stated::Sockets.name(),
             Stated::Secret.name(),
@@ -329,14 +332,16 @@ impl Site
     ///   `a_host_reads_its_site_s_secret_by_name_3375`.
     /// - witness: `manifold::tests::a_site_reads_its_secret_from_the_model_given_3375`
     #[inline]
-    pub fn secret(
+    pub fn secret<E>(
         &self,
         from: Secrets<'_>,
     ) -> Result<Secret, Undeployed>
+    where
+        E: Engine,
     {
         let (text, secreted) = match from {
             Secrets::Model(file) => {
-                let answered = answered_alone(
+                let answered = answered_alone::<E>(
                     file,
                     Stated::Secrets.name(),
                     StringLiteral::new(self.secret.clone()),
@@ -488,9 +493,11 @@ impl Manifold
     /// - witness: `manifold::tests::a_field_that_does_not_read_is_refused_by_name_3374`
     /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
     #[inline]
-    pub fn read(file: &Path) -> Result<Self, Undeployed>
+    pub fn read<E>(file: &Path) -> Result<Self, Undeployed>
+    where
+        E: Engine,
     {
-        let [artifact, placements, translation] = ran_alone(file, [
+        let [artifact, placements, translation] = ran_alone::<E, 3>(file, [
             Stated::Artifact.name(),
             Stated::Placements.name(),
             Stated::Translation.name(),
@@ -681,7 +688,9 @@ impl Manifold
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     #[inline]
     #[must_use]
-    pub fn judged(&self) -> Vec<Undeployed>
+    pub fn judged<E>(&self) -> Vec<Undeployed>
+    where
+        E: Engine,
     {
         let text = match std::fs::read_to_string(&self.artifact) {
             Ok(text) => text,
@@ -701,7 +710,7 @@ impl Manifold
             matches!(worlds.get(world), Some(&Declared::World(Maybe::Present(_))))
         });
         let sites = if required {
-            self.sites()
+            self.sites::<E>()
         }
         else {
             BTreeMap::new()
@@ -728,7 +737,7 @@ impl Manifold
                         site,
                         translation: self.translation,
                     };
-                    refused.extend(offering.judged());
+                    refused.extend(offering.judged::<E>());
                     continue;
                 },
                 Some(&Declared::Refused(ref why)) => Undeployed::Misworlded {
@@ -765,14 +774,16 @@ impl Manifold
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::judged`].
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
-    fn sites(&self) -> BTreeMap<NodeId, PathBuf>
+    fn sites<E>(&self) -> BTreeMap<NodeId, PathBuf>
+    where
+        E: Engine,
     {
         let here = std::env::current_dir().and_then(|here| here.canonicalize());
         sources_alone(&self.file)
             .unwrap_or_default()
             .into_iter()
             .filter_map(|source| {
-                let [key] = ran_alone(&source, [Stated::Key.name()]).ok()?;
+                let [key] = ran_alone::<E, 1>(&source, [Stated::Key.name()]).ok()?;
                 let key = NodeId::from_str(&strung(&source, Stated::Key, key).ok()?).ok()?;
                 let named = match here {
                     Ok(ref here) => source
@@ -1830,7 +1841,9 @@ impl Offering<'_>
     /// - hypothesis: L3 — as [`Manifold::judged`].
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
-    fn judged(self) -> Vec<Undeployed>
+    fn judged<E>(self) -> Vec<Undeployed>
+    where
+        E: Engine,
     {
         let mut arena = CoreArena::new();
         let table = HostSignatures::new(&mut arena);
@@ -1913,8 +1926,8 @@ impl Offering<'_>
                 (Maybe::Absent(_), &Maybe::Absent(_)) => {},
             }
         }
-        why.extend(self.modelled(&bound));
-        why.extend(self.granted(SourceText::from(site.as_str()), &listed));
+        why.extend(self.modelled::<E>(&bound));
+        why.extend(self.granted::<E>(SourceText::from(site.as_str()), &listed));
         let mut refused: BTreeMap<Position, Undeployed> = why
             .into_iter()
             .filter_map(|(position, why)| {
@@ -1953,10 +1966,12 @@ impl Offering<'_>
     ///   a flow and one read through a renaming are taken.
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
     /// - witness: `manifold::tests::an_offer_is_admitted_through_a_translation_by_the_manifold_s_policy_3461`
-    fn modelled(
+    fn modelled<E>(
         self,
         bound: &[Bound<'_>],
     ) -> BTreeMap<Position, String>
+    where
+        E: Engine,
     {
         if bound.is_empty() {
             return BTreeMap::new();
@@ -2029,7 +2044,7 @@ impl Offering<'_>
                 end: ByteOffset::from(written.len()),
             });
         }
-        judge(self.artifact, SourceText::from(written.as_str()), &wrote)
+        judge::<E>(self.artifact, SourceText::from(written.as_str()), &wrote)
     }
 
     /// Why each host interface the site lists is not held by its authority.
@@ -2051,11 +2066,13 @@ impl Offering<'_>
     ///   is granted, and `Net`, which it does not, is refused naming both
     ///   capabilities.
     /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
-    fn granted(
+    fn granted<E>(
         self,
         site: SourceText<'_>,
         listed: &[Listed<'_>],
     ) -> BTreeMap<Position, String>
+    where
+        E: Engine,
     {
         let mut written = format!("{site}\n");
         let mut wrote = Vec::with_capacity(listed.len());
@@ -2086,7 +2103,7 @@ impl Offering<'_>
         if wrote.is_empty() {
             return BTreeMap::new();
         }
-        judge(self.site, SourceText::from(written.as_str()), &wrote)
+        judge::<E>(self.site, SourceText::from(written.as_str()), &wrote)
     }
 }
 
@@ -2107,11 +2124,13 @@ impl Offering<'_>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Offering::judged`].
 /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
-fn judge(
+fn judge<E>(
     source: &Path,
     written: SourceText<'_>,
     wrote: &[Wrote],
 ) -> BTreeMap<Position, String>
+where
+    E: Engine,
 {
     let every = |why: &str| {
         wrote
@@ -2119,7 +2138,7 @@ fn judge(
             .map(|entry| (entry.position, String::from(why)))
             .collect()
     };
-    let read = stepped_alone(source, written, |step| {
+    let read = stepped_alone::<E, _, _>(source, written, |step| {
         match step {
             Step::Source {
                 composed: Composed::Settled { .. },
@@ -2134,7 +2153,7 @@ fn judge(
         let starts: BTreeMap<ByteOffset, Wrote> =
             wrote.iter().map(|&entry| (entry.start, entry)).collect();
         let mut refused: BTreeMap<Position, String> = BTreeMap::new();
-        for diagnostic in entries(&step, Verb::Check(Goals::Gated)) {
+        for diagnostic in entries::<E>(&step, Verb::Check(Goals::Gated)) {
             let Maybe::Present(span) = diagnostic.span
             else {
                 continue;

@@ -2,63 +2,15 @@
 //! hole, which no handler claims, read back to the hole and the place its
 //! source writes it.
 
-use alloc::collections::BTreeMap;
-
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::REACHED;
 use gandr_core_sequent::REACHED_HOLE;
-use gandr_core_term::Computation;
-use gandr_core_term::CoreArena;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::Literal;
-use gandr_surface_lowering::LoweredModule;
-use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
-
-use crate::entry::evaluation::hole_site;
-
-/// Where `module` writes each hole a run can reach, by its name: the span of
-/// the one hole bearing it, or the shared absence where holes of several
-/// sources share one name.
-///
-/// # Specification
-/// - requires: `module` was lowered into `core`.
-/// - ensures: every hole a computation of `module`'s origins holds is keyed; a
-///   name every such computation writes at one span maps to that span, and one
-///   written at two spans to [`hole_site::Absent::Shared`].
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the clause restates the walk over the origins.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a run reaching a hole is reported at the hole's span.
-/// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
-pub(super) fn hole_sites(
-    core: &CoreArena,
-    module: &LoweredModule<'_>,
-) -> BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>
-{
-    let mut sites = BTreeMap::new();
-    for &(computation, origin) in module.origins().computations() {
-        let Some(&Computation::Hole(hole)) = core.computation(computation)
-        else {
-            continue;
-        };
-        let span = origin.span();
-        let _held = sites
-            .entry(hole)
-            .and_modify(|site: &mut Maybe<ByteSpan, hole_site::Absent>| {
-                if *site != Maybe::Present(span) {
-                    *site = Maybe::Absent(hole_site::Absent::Shared);
-                }
-            })
-            .or_insert(Maybe::Present(span));
-    }
-    sites
-}
 
 /// The hole the command `at` reaches, when it is the perform focusing leaves
 /// for a hole.

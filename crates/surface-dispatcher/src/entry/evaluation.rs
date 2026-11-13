@@ -13,6 +13,7 @@ use anodized::spec;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::ReadbackRefusal;
 use gandr_core_sequent::Stuck;
+use gandr_core_term::ComputationId;
 use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Declined;
@@ -47,6 +48,18 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a program has no declaration of its own source's.
+    pub mod last_declared {
+        /// The source declares nothing.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source declares no name.
+            NoDeclaration,
+        }
+    }
+}
+
 /// A value, spelled: the text `gandr run` prints for a run that returned one,
 /// laid out by the printer every face shares.
 #[repr(transparent)]
@@ -61,7 +74,7 @@ impl ValueSpelling
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(presentation: Presentation) -> Self
+    pub const fn new(presentation: Presentation) -> Self
     {
         Self(presentation)
     }
@@ -127,7 +140,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         module: String,
         declared: String,
     ) -> Self
@@ -141,7 +154,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn module(&self) -> &String
+    pub const fn module(&self) -> &String
     {
         &self.module
     }
@@ -152,7 +165,7 @@ impl SealedRun
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn declared(&self) -> &String
+    pub const fn declared(&self) -> &String
     {
         &self.declared
     }
@@ -172,6 +185,19 @@ impl fmt::Display for SealedRun
     {
         write!(f, "⟨opaque at {}⟩ : {}", self.module, self.declared)
     }
+}
+
+/// Where a run of a declaration ended: its terminal value read back, or the
+/// evaluation that ended it before there was one to read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Terminal<'source>
+{
+    /// The terminal value, read back as the computation returning it into
+    /// the arena the run was given.
+    Read(ComputationId),
+    /// The evaluation the run ended with first: unrunnable, stuck, blamed, or
+    /// a terminal whose read-back refused.
+    Ended(Evaluation<'source>),
 }
 
 /// What running one declaration came to.

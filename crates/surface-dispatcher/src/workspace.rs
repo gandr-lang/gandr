@@ -54,17 +54,18 @@ use crate::compose::Lowered;
 use crate::compose::LoweringCount;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
+use crate::engine::Engine;
 use crate::entry::answered::Answered;
 use crate::entry::answered::Spelling;
 use crate::entry::answered::Unran;
+use crate::entry::evaluation::Terminal;
 use crate::entry::evaluation::declaration_name;
-use crate::evaluate::Program;
-use crate::evaluate::Terminal;
 use crate::package::Package;
 use crate::package::WorkspaceManifest;
 use crate::package::package_root;
 use crate::package::toolchain::Separated;
 use crate::package::toolchain::Toolchain;
+use crate::program::Program;
 use crate::root::classify;
 use crate::walk::SourceFault;
 use crate::walk::Standing;
@@ -220,9 +221,11 @@ impl Workspace
     ///   is a string, are refused with what they state.
     /// - witness: `tests::package::a_workspace_walks_every_member_it_names_2687`
     #[inline]
-    pub fn members(&self) -> Result<(Vec<Package>, Gathered), Unmembered>
+    pub fn members<E>(&self) -> Result<(Vec<Package>, Gathered), Unmembered>
+    where
+        E: Engine,
     {
-        let [came, version, gandr, features, systems] = match ran_alone(
+        let [came, version, gandr, features, systems] = match ran_alone::<E, 5>(
             &self.source(),
             [MEMBERS, FIELDS[0], FIELDS[1], FIELDS[2], FIELDS[3]].map(SurfaceName::from),
         ) {
@@ -414,14 +417,16 @@ impl core::error::Error for Unstated
 /// [`Site::read`]: crate::manifold::Site::read
 /// [`Manifold::read`]: crate::manifold::Manifold::read
 #[inline]
-pub fn ran_alone<const NAMES: usize>(
+pub fn ran_alone<E, const NAMES: usize>(
     source: &Path,
     names: [SurfaceName<'_>; NAMES],
 ) -> Result<[Maybe<String, declaration_name::Absent>; NAMES], Unran>
+where
+    E: Engine,
 {
-    alone(source, |program| {
+    alone::<E, _>(source, |program| {
         names.map(|name| match program.named(name) {
-            Maybe::Present(constant) => Maybe::Present(program.evaluate(constant).to_string()),
+            Maybe::Present(constant) => Maybe::Present(E::evaluate(program, constant).to_string()),
             Maybe::Absent(absent) => Maybe::Absent(absent),
         })
     })
@@ -455,20 +460,22 @@ pub fn ran_alone<const NAMES: usize>(
 ///   undeclared; an answer other than a string is not generated.
 /// - witness: `manifold::tests::a_site_reads_its_secret_from_the_model_given_3375`
 #[inline]
-pub fn answered_alone(
+pub fn answered_alone<E>(
     source: &Path,
     function: SurfaceName<'_>,
     argument: StringLiteral,
 ) -> Result<Maybe<Answered, declaration_name::Absent>, Unran>
+where
+    E: Engine,
 {
-    alone(source, |program| {
+    alone::<E, _>(source, |program| {
         let constant = match program.named(function) {
             Maybe::Present(constant) => constant,
             Maybe::Absent(absent) => return Maybe::Absent(absent),
         };
         let mut core = CoreArena::new();
         let argument = core.value_literal(Literal::Text(argument));
-        let read = match program.call(constant, &[argument], &mut core, &mut Unhosted) {
+        let read = match E::call(program, constant, &[argument], &mut core, &mut Unhosted) {
             Ok(Terminal::Read(read)) => read,
             Ok(Terminal::Ended(ended)) => {
                 return Maybe::Present(Answered::Other(ended.to_string()));
@@ -495,15 +502,17 @@ pub fn answered_alone(
 ///
 /// # Errors
 /// [`Unran`], as [`ran_alone`].
-fn alone<Read>(
+fn alone<E, Read>(
     source: &Path,
     read: impl FnOnce(&mut Program<'_>) -> Read,
 ) -> Result<Read, Unran>
+where
+    E: Engine,
 {
     let text = std::fs::read_to_string(source).map_err(|error| Unran::Unread {
         message: error.to_string(),
     })?;
-    stepped_alone(source, SourceText::from(text.as_str()), |step| match step {
+    stepped_alone::<E, _, _>(source, SourceText::from(text.as_str()), |step| match step {
         Step::Source {
             composed: Composed::Settled { mut program, .. },
             ..
@@ -546,12 +555,13 @@ fn alone<Read>(
 /// - witness: `manifold::tests::a_site_and_a_manifold_read_from_their_files_3374`
 /// - witness: `manifold::tests::a_world_s_row_is_judged_against_its_site_s_offer_3523`
 #[inline]
-pub fn stepped_alone<Read, Reader>(
+pub fn stepped_alone<E, Read, Reader>(
     source: &Path,
     text: SourceText<'_>,
     read: Reader,
 ) -> Result<Read, Unran>
 where
+    E: Engine,
     Reader: FnOnce(Step<'_>) -> Read,
 {
     let grammar = built_in().map_err(|error| Unran::Refused {
@@ -563,7 +573,7 @@ where
     let mut lowerings = LoweringCount::default();
     let step = match lower_unit_source(&grammar, laid_text, &laid.unit, &mut lowerings).and_then(
         |lowering| {
-            judge_lowering(
+            judge_lowering::<E>(
                 CorpusRoot::Strict,
                 (lowering, laid_text),
                 &HostGrant::UNBOUNDED,

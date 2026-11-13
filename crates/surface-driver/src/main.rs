@@ -431,6 +431,7 @@ use gandr_surface_dispatcher::reconcile_lock;
 use gandr_surface_dispatcher::relock;
 use gandr_surface_dispatcher::schedule;
 use gandr_surface_dispatcher::timed;
+use gandr_surface_evaluate::Evaluator;
 use gandr_surface_features::FeatureLedger;
 use gandr_surface_format::Form;
 use gandr_surface_format::FormatOptions;
@@ -1154,8 +1155,8 @@ fn sited(
     lookup: Lookup,
 ) -> Result<Binding, Undeployed>
 {
-    let site = Site::read(file)?;
-    let secret = site.secret(secrets)?;
+    let site = Site::read::<Evaluator>(file)?;
+    let secret = site.secret::<Evaluator>(secrets)?;
     let binding = site
         .sockets()
         .iter()
@@ -1191,7 +1192,7 @@ fn manifolded(
     program: &Path,
 ) -> Result<Manifold, Undeployed>
 {
-    let manifold = Manifold::read(file)?;
+    let manifold = Manifold::read::<Evaluator>(file)?;
     manifold.deploying(program)?;
     Ok(manifold)
 }
@@ -1545,7 +1546,7 @@ fn locking(
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 fn lock(paths: Vec<PathBuf>) -> ExitCode
 {
-    let packages = match packaged(paths, Path::new(".")) {
+    let packages = match packaged::<Evaluator>(paths, Path::new(".")) {
         Ok((_, packages, _)) => packages,
         Err(unpackaged) => return unpathed(&unpackaged),
     };
@@ -1893,7 +1894,7 @@ fn main() -> ExitCode
                 },
             };
             let grant = grant.entering(entry);
-            let paths = match packaged(paths, Path::new(".")) {
+            let paths = match packaged::<Evaluator>(paths, Path::new(".")) {
                 Ok((paths, reached, gathered)) => {
                     workspaces = gathered;
                     if !reached.is_empty() {
@@ -1953,7 +1954,7 @@ fn main() -> ExitCode
             paths,
         }) => (
             Invocation::Test {
-                paths: match packaged(paths, Path::new(".")) {
+                paths: match packaged::<Evaluator>(paths, Path::new(".")) {
                     Ok((paths, ..)) => paths,
                     Err(unpackaged) => return unpathed(&unpackaged),
                 },
@@ -2057,7 +2058,7 @@ fn main() -> ExitCode
             paths,
         }) => (
             Invocation::Format {
-                paths: match packaged(paths, Path::new(".")) {
+                paths: match packaged::<Evaluator>(paths, Path::new(".")) {
                     Ok((paths, ..)) => paths,
                     Err(unpackaged) => return unpathed(&unpackaged),
                 },
@@ -3158,7 +3159,7 @@ impl HubVerbs
         (printed, faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
     ) -> std::io::Result<()>
     {
-        let (paths, reached, gathered) = match packaged(paths, Path::new(".")) {
+        let (paths, reached, gathered) = match packaged::<Evaluator>(paths, Path::new(".")) {
             Ok(packaged) => packaged,
             Err(unpackaged) => return writeln!(faulted, "gandr: {unpackaged}"),
         };
@@ -4194,7 +4195,7 @@ fn run(
                 else {
                     Repairs::Named
                 };
-                for diagnostic in entries(&step, verb)
+                for diagnostic in entries::<Evaluator>(&step, verb)
                     .linting(lints)
                     .spelling(spelling)
                     .repairing(repairs)
@@ -4253,12 +4254,12 @@ fn run(
         (Occupancy::Unprinted, Some(rings)) => {
             (occupancy::recorded(walk, (pool, rings), visitor), None)
         },
-        (Occupancy::Unprinted, None) => (walk.visit(pool, visitor), None),
+        (Occupancy::Unprinted, None) => (walk.visit::<Evaluator, _, _>(pool, visitor), None),
     };
     #[cfg(not(feature = "instrument"))]
     let visited = {
         let core::marker::PhantomData = rings;
-        walk.visit(pool, visitor)
+        walk.visit::<Evaluator, _, _>(pool, visitor)
     };
     let report = match visited {
         ControlFlow::Continue(report) => report,
@@ -4892,7 +4893,7 @@ fn read_manifest(
         manifests.get_mut(attributed.place),
     ) && packaged.package.source() == attributed.canonical
     {
-        *slot = Some(Manifest::of(program, report, packaged.package));
+        *slot = Some(Manifest::of::<Evaluator>(program, report, packaged.package));
     }
 }
 
@@ -4965,8 +4966,8 @@ fn deployed(
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<RunVerdict>
 {
-    let refused = match Manifold::read(file) {
-        Ok(manifold) => manifold.judged(),
+    let refused = match Manifold::read::<Evaluator>(file) {
+        Ok(manifold) => manifold.judged::<Evaluator>(),
         Err(undeployed) => Vec::from([undeployed]),
     };
     for undeployed in &refused {
@@ -5246,7 +5247,7 @@ fn script(
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    let ran = runnable.run(&mut Lines {
+    let ran = runnable.run::<Evaluator>(&mut Lines {
         out: &mut *stdout,
         err: &mut *stderr,
         input: &mut std::io::stdin().lock(),
@@ -5258,7 +5259,9 @@ fn script(
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;
         },
         ScriptRun::Source { step, ran } => {
-            for diagnostic in entries(&step, Verb::Check(Goals::Reported)).spelling(spelling) {
+            for diagnostic in
+                entries::<Evaluator>(&step, Verb::Check(Goals::Reported)).spelling(spelling)
+            {
                 let rendered = gandr_surface_render_terminal::render(
                     &diagnostic,
                     RenderStyle::Plain,
