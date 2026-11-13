@@ -519,6 +519,141 @@ fn a_later_declaration_reads_an_earlier_type()
     );
 }
 
+/// The caller that takes each accepted declaration from the report of a whole
+/// run, and enters it as an adoption enters it.
+struct FromReport<'report>
+{
+    /// The report of the whole run.
+    report: &'report super::ModuleReport,
+    /// The positions taken, in order.
+    taken: Vec<ConstantIndex>,
+}
+
+impl super::Taking for FromReport<'_>
+{
+    /// The whole run's decision of `declaration` when it accepted the body,
+    /// entered at the declared type and the definition that the run kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn take(
+        &mut self,
+        context: &mut CheckingContext<'_>,
+        declaration: &Declaration,
+    ) -> Maybe<super::Taken, super::taken::Absent>
+    {
+        let constant = declaration.constant();
+        let Some(verdict) = self
+            .report
+            .judged()
+            .iter()
+            .find(|judged| judged.constant() == constant)
+            .map(super::Judged::verdict)
+        else {
+            return Maybe::Absent(super::taken::Absent::Unheld);
+        };
+        let (declared, body) = match verdict {
+            Verdict::Checked { declared, body, .. } => (declared, body),
+            Verdict::Synthesised { body, synthesised } => (synthesised.produced(), body),
+            Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => {
+                return Maybe::Absent(super::taken::Absent::Unheld);
+            },
+        };
+        let defined = self
+            .report
+            .definitions()
+            .get(&constant)
+            .copied()
+            .unwrap_or(body);
+        if context
+            .adopt_formed(constant, declared.id(), Maybe::Present(defined))
+            .is_err()
+        {
+            return Maybe::Absent(super::taken::Absent::Unheld);
+        }
+        self.taken.push(constant);
+        Maybe::Present(super::Taken::new(
+            verdict,
+            (
+                Maybe::Absent(crate::support::kept::Absent::Accepted),
+                Maybe::Absent(crate::support::elaborated::Absent::Unnested),
+                Maybe::Absent(crate::support::waits::Absent::Unsuspended),
+            ),
+        ))
+    }
+}
+
+/// #6620: a run that takes each accepted declaration of a module from the
+/// report of a whole run decides only the owed and the refused ones. Its
+/// report holds the verdicts, the definitions, the failures and the ledger of
+/// the whole run. A taken declaration that a later one reads supplies its type
+/// as the judged one does, so the later verdicts agree too.
+#[test]
+fn a_run_that_takes_each_accepted_declaration_reports_as_the_whole_run_6620()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let thunk_type = arena.value_type_thunk(returns_integer);
+    let zero = arena.value_literal(integer_literal());
+    let text = arena.value_literal(text_literal());
+    let returned = arena.computation_return(zero);
+    let thunk = arena.value_thunk(returned);
+    let suspended = arena.value_constant(ConstantIndex::from(0_usize));
+    let owed = arena.value_constant(ConstantIndex::from(1_usize));
+    let module = [
+        declaration(At(0), Maybe::Present(thunk_type), Maybe::Present(thunk)),
+        declaration(At(1), Maybe::Present(integer), HOLE),
+        declaration(At(2), UNSIGNED, Maybe::Present(suspended)),
+        declaration(At(3), Maybe::Present(integer), Maybe::Present(owed)),
+        declaration(At(4), Maybe::Present(integer), Maybe::Present(text)),
+    ];
+    let mut taking_arena = arena.clone();
+    let whole = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    let mut from = FromReport {
+        report: &whole,
+        taken: Vec::new(),
+    };
+    let taking = {
+        let mut context = CheckingContext::new(&mut taking_arena, CheckBudget::DEFAULT);
+        let mut run = ModuleRun::new();
+        let polled = run.judge_taking(
+            &mut context,
+            &module,
+            |_, _, _| {},
+            (&crate::retire::Unretired, &mut from),
+        );
+        assert!(
+            matches!(polled, Polled::Whole(())),
+            "nobody retires the run"
+        );
+        run.finish(&mut context)
+    };
+    assert_eq!(
+        from.taken,
+        [0_usize, 2, 3].map(ConstantIndex::from),
+        "the run takes the three accepted declarations and decides the owed and the refused one"
+    );
+    assert_eq!(
+        (
+            taking.judged(),
+            taking.definitions(),
+            taking.failures(),
+            taking.ledger()
+        ),
+        (
+            whole.judged(),
+            whole.definitions(),
+            whole.failures(),
+            whole.ledger()
+        ),
+        "the taking run reports the verdicts, the definitions, the failures and the ledger of the whole run"
+    );
+}
+
 #[test]
 fn an_ascription_keeps_the_endpoints_it_related()
 {
