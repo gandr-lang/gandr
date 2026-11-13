@@ -2451,6 +2451,44 @@ if [[ -n "$shown" ]]; then
 fi
 {% endraw %}'''
 
+# The version of the unit frame (#7018): `unit:frame` prints one digest of
+# the rows that `units.md` asks of a unit, the nine axes with their questions
+# and the concerns (`.config/claims/frame.bash`). A change of a row gives a
+# new digest.
+["unit:frame"]
+description = "Print the digest of the unit frame: the reading axes, their questions and the concerns"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/claims/frame.bash"
+unit_frame "$root"
+{% endraw %}'''
+
+# The coordinator signs a unit's sections through `unit:sign <n>` (#7018). It
+# adds `shape:signed` and writes one comment that holds the frame's digest
+# (`unit_frame_marker`), so the sign-off records the frame that the sections
+# answer. The task first runs `unit:check`, so a refused unit is not signed.
+["unit:sign"]
+description = "Sign a unit's sections at the frame now: shape:signed and a comment holding the frame's digest"
+usage = '''
+arg "<issue>" help="the issue number"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+issue=${usage_issue:?}
+[[ $issue =~ ^[0-9]+$ ]] || { echo "unit:sign takes an issue number, not \`$issue\`" >&2; exit 2; }
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/claims/frame.bash"
+mise run unit:check "$issue"
+frame=$(unit_frame "$root")
+gh issue edit "$issue" --add-label shape:signed > /dev/null
+gh issue comment "$issue" --body "$(unit_frame_marker "$frame")
+The coordinator signs the sections at the unit frame \`$frame\`." > /dev/null
+echo "unit:sign: #$issue signed at the frame $frame"
+{% endraw %}'''
+
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
 # states, without asking (#2533). `claim:next <lane>` reads the lane's areas
 # from the factory's lane table (`.config/claims/lanes.bash`, #3736), refusing a lane the table does not
