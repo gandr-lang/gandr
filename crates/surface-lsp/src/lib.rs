@@ -424,8 +424,6 @@ use gandr_surface_lsp_diagnostics::saved;
 use gandr_surface_lsp_diagnostics::tier;
 use gandr_surface_lsp_navigation::calls;
 use gandr_surface_lsp_navigation::doc;
-use gandr_surface_lsp_navigation::inlay;
-use gandr_surface_lsp_navigation::paste;
 use gandr_surface_lsp_navigation::rename;
 use gandr_surface_lsp_navigation::shadowed;
 use gandr_surface_lsp_navigation::site;

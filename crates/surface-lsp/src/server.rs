@@ -170,8 +170,6 @@ use crate::hover::hovering_laid;
 use crate::inbox::Changes;
 use crate::inbox::Inbox;
 use crate::inbox::Unread;
-use crate::inlay::hint_at;
-use crate::inlay::hints;
 use crate::inline::ghost;
 use crate::instrument::Job;
 use crate::instrument::Subscription;
@@ -179,7 +177,6 @@ use crate::markup::Markup;
 use crate::missing::UNRESOLVED_NAME;
 use crate::missing::additions;
 use crate::notebook::Notebook;
-use crate::paste::copied;
 use crate::peer::Peer;
 use crate::position::Position;
 use crate::position::Range;
@@ -380,9 +377,7 @@ use crate::unused::unreached;
 use crate::unused::unused;
 use crate::uses::Written;
 use crate::uses::declared;
-use crate::uses::highlights;
 use crate::uses::located;
-use crate::uses::mirrored;
 use crate::uses::placed;
 use crate::view::report;
 
@@ -6819,6 +6814,80 @@ impl Server
     }
 }
 
+/// One copy of a document, as a handler of a navigation request reads it:
+/// the copy, its URI, and the copies the editors hold as the connection's
+/// imports read them.
+pub struct Viewed<'workspace>
+{
+    /// The copy.
+    document: &'workspace Document,
+    /// The URI of its document.
+    uri: &'workspace DocumentUri,
+    /// The copies the editors hold, as the connection's imports read them.
+    shadowing: Shadowing<'workspace>,
+}
+
+impl gandr_surface_lsp_core::context::Held for Viewed<'_>
+{
+    /// The copy's text.
+    ///
+    /// # Specification
+    /// trivial.
+    fn source(&self) -> SourceText<'_>
+    {
+        self.document.text.source()
+    }
+
+    /// What the copy's reading holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reading(&self) -> &Reading
+    {
+        self.document.text.reading()
+    }
+
+    /// What the copy keeps for its hovers, as the editors' copies shadow its
+    /// imports; none when its hovering does not build.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hovering(&self) -> Option<&Hovering>
+    {
+        self.document.hovering(self.uri, &self.shadowing).ok()
+    }
+}
+
+impl gandr_surface_lsp_core::context::Context for Workspace
+{
+    type Held<'context>
+        = Viewed<'context>
+    where
+        Self: 'context;
+
+    /// The copy of the document at `uri` that `peer` is answered from, with
+    /// its URI and the editors' copies; none for an unknown URI.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn view<'context>(
+        &'context self,
+        uri: &'context DocumentUri,
+        peer: Peer,
+    ) -> Option<Viewed<'context>>
+    {
+        match Self::view(self, uri, peer) {
+            Maybe::Present(document) => Some(Viewed {
+                document,
+                uri,
+                shadowing: self.shadowing(peer),
+            }),
+            Maybe::Absent(_) => None,
+        }
+    }
+}
+
 impl Workspace
 {
     /// The copy of the document at `uri` that `peer` is answered from: its
@@ -6826,6 +6895,10 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::same_name_method,
+        reason = "the `Context` method of this name reads through it"
+    )]
     fn view(
         &self,
         uri: &DocumentUri,
@@ -7090,9 +7163,10 @@ impl Workspace
     /// - requires: nothing; an unknown URI and any range are admitted.
     /// - ensures: an unknown document yields Nothing; a held document whose
     ///   session did not build, and an empty or inverted range, yield no hint;
-    ///   otherwise the hints [`hints`] answers over the range, off the copy's
-    ///   tree and what it keeps for its hovers, made now when no request has
-    ///   asked since the text last changed.
+    ///   otherwise the hints
+    ///   [`hints`](gandr_surface_lsp_navigation::inlay::hints) answers over the
+    ///   range, off the copy's tree and what it keeps for its hovers, made now
+    ///   when no request has asked since the text last changed.
     /// - provides: the answer to `textDocument/inlayHint`.
     /// - fails: never.
     /// - panics: none.
@@ -7121,25 +7195,12 @@ impl Workspace
         (style, deferring): (gandr_surface_pretty::Style, ResolvesHintLocations),
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        let window = ByteSpan::new(
-            ByteOffset::from(usize::from(range.start.byte(&index))),
-            ByteOffset::from(usize::from(range.end.byte(&index))),
-        );
-        Answer::Hints(
-            match (document.hovering(uri, &self.shadowing(peer)), window) {
-                (Ok(hovering), Ok(window)) if window.start() < window.end() => hints(
-                    (hovering, document.text.reading().tiles()),
-                    (uri, &index),
-                    window,
-                    (style, deferring),
-                ),
-                (Ok(_) | Err(_), Ok(_) | Err(_)) => Vec::new(),
-            },
+        gandr_surface_lsp_navigation::handlers::inlay_hints(
+            self,
+            uri,
+            peer,
+            range,
+            (style, deferring),
         )
     }
 
@@ -7150,8 +7211,9 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: none for an unknown document or one whose session did not
-    ///   build; otherwise what [`hint_at`] answers at `position`, off the
-    ///   copy's tree and what it keeps for its hovers.
+    ///   build; otherwise what
+    ///   [`hint_at`](gandr_surface_lsp_navigation::inlay::hint_at) answers at
+    ///   `position`, off the copy's tree and what it keeps for its hovers.
     /// - provides: the answer to `inlayHint/resolve`; none answers the hint as
     ///   it came.
     /// - fails: never.
@@ -7172,18 +7234,7 @@ impl Workspace
         style: gandr_surface_pretty::Style,
     ) -> Option<InlayHint>
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return None;
-        };
-        let hovering = document.hovering(uri, &self.shadowing(peer)).ok()?;
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        hint_at(
-            (hovering, document.text.reading().tiles()),
-            (uri, &index),
-            position,
-            style,
-        )
+        gandr_surface_lsp_navigation::handlers::resolve_hint(self, uri, peer, position, style)
     }
 
     /// The sources declaring what `ranges` of the copy of the document at
@@ -7192,16 +7243,18 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any ranges are admitted.
     /// - ensures: an unknown document yields Nothing; a held document whose
-    ///   session did not build yields none; otherwise the sources [`copied`]
-    ///   answers over the ranges, off what the copy keeps for its hovers, made
-    ///   now when no request has asked since the text last changed.
+    ///   session did not build yields none; otherwise the sources
+    ///   [`copied`](gandr_surface_lsp_navigation::paste::copied) answers over
+    ///   the ranges, off what the copy keeps for its hovers, made now when no
+    ///   request has asked since the text last changed.
     /// - provides: the answer to `gandr/copiedSources`, which a copy asks.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`copied`], and an unknown document answers
-    ///   `null`.
+    /// - hypothesis: L3 — as
+    ///   [`copied`](gandr_surface_lsp_navigation::paste::copied), and an
+    ///   unknown document answers `null`.
     /// - witness: `server::tests::a_copy_answers_the_sources_its_names_are_declared_in`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Sources(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
@@ -7212,15 +7265,7 @@ impl Workspace
         ranges: &[Range],
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        let index = LineIndex::new(<&str>::from(document.text.source()).into());
-        Answer::Sources(document.hovering(uri, &self.shadowing(peer)).map_or_else(
-            |_| Vec::new(),
-            |hovering| copied(hovering, (uri, &index), ranges),
-        ))
+        gandr_surface_lsp_navigation::handlers::copied_sources(self, uri, peer, ranges)
     }
 
     /// The inline completion of the copy of the document at `uri` that `peer`
@@ -8078,16 +8123,18 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document, and one whose session holds no grammar,
-    ///   yields Nothing; otherwise the highlights [`highlights`] answers off
-    ///   the copy's text and what it keeps for its hovers, made now when no
+    ///   yields Nothing; otherwise the highlights
+    ///   [`highlights`](gandr_surface_lsp_navigation::uses::highlights) answers
+    ///   off the copy's text and what it keeps for its hovers, made now when no
     ///   request has asked since the text last changed.
     /// - provides: the answer to `textDocument/documentHighlight`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`highlights`], and an unknown document answers
-    ///   `null`.
+    /// - hypothesis: L3 — as
+    ///   [`highlights`](gandr_surface_lsp_navigation::uses::highlights), and an
+    ///   unknown document answers `null`.
     /// - witness: `server::tests::a_highlight_marks_a_name_s_declaration_and_its_uses`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Highlights(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
@@ -8098,15 +8145,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        document
-            .hovering(uri, &self.shadowing(peer))
-            .map_or(Answer::Nothing, |hovering| {
-                highlights(document.text.source(), hovering, position)
-            })
+        gandr_surface_lsp_navigation::handlers::highlight(self, uri, peer, position)
     }
 
     /// What a linked-editing request at `position` of the copy of the document
@@ -8115,15 +8154,17 @@ impl Workspace
     /// # Specification
     /// - requires: nothing; an unknown URI and any position are admitted.
     /// - ensures: an unknown document, and one whose session holds no grammar,
-    ///   yields Nothing; otherwise what [`mirrored`] answers off the copy's
-    ///   text and what it keeps for its hovers.
+    ///   yields Nothing; otherwise what
+    ///   [`mirrored`](gandr_surface_lsp_navigation::uses::mirrored) answers off
+    ///   the copy's text and what it keeps for its hovers.
     /// - provides: the answer to `textDocument/linkedEditingRange`.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`mirrored`], and an unknown document answers
-    ///   `null`.
+    /// - hypothesis: L3 — as
+    ///   [`mirrored`](gandr_surface_lsp_navigation::uses::mirrored), and an
+    ///   unknown document answers `null`.
     /// - witness: `server::tests::linked_editing_mirrors_a_binder_within_its_declaration`
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Mirrored(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
@@ -8134,15 +8175,7 @@ impl Workspace
         position: Position,
     ) -> Answer
     {
-        let Maybe::Present(document) = self.view(uri, peer)
-        else {
-            return Answer::Nothing;
-        };
-        document
-            .hovering(uri, &self.shadowing(peer))
-            .map_or(Answer::Nothing, |hovering| {
-                mirrored(document.text.source(), hovering, position)
-            })
+        gandr_surface_lsp_navigation::handlers::linked_editing(self, uri, peer, position)
     }
 
     /// What a reference request at `position` of the copy of the document at
