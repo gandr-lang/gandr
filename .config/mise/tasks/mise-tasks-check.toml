@@ -2869,7 +2869,7 @@ failed=0
 # `cases <kind> <program> <file>` runs the cases of a program. Each program
 # and its file live in the directory of the program's concern (#6252).
 cases() {
-  .config/cases/run.bash "$1" "$3" --program "$2" -L .config/bodies -L .config/claims -L .config/issues "${@:4}" || failed=1
+  .config/cases/run.bash "$1" "$3" --program "$2" -L .config/bodies -L .config/claims -L .config/issues -L .config/bench "${@:4}" || failed=1
 }
 cases claims .config/claims/decide.jq .config/claims/cases.json
 cases opening .config/bodies/opening.jq .config/bodies/opening.json

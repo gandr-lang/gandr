@@ -4700,7 +4700,7 @@ source "$config_dir/bodies/opening-input.bash"
 for reading in "${opening_readings[@]}"; do
   if [[ $reading != vault ]]; then printf '%s\n' "${!reading}" > "$vaultdir/$reading.json"; fi
 done
-findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/opening.jq")
+findings=$(opening_input "$vaultdir" "$own" "$body" | jq -r -L "$config_dir/bodies" -L "$config_dir/bench" -f "$config_dir/bodies/opening.jq")
 # Each issue the body works is sectioned and signed (#3134, `signed.jq`).
 signed=$(jq -n --slurpfile issues <(printf '%s\n' "$issues") '{issues: $issues[0]}' \
   | jq -r -L "$config_dir/bodies" --argjson concerns "$(jq -c .rows <<< "$concerns")" --argjson cutoff "$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$config_dir/references/window.toml")" -f "$config_dir/bodies/signed.jq")
