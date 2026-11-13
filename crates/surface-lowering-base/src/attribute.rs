@@ -454,7 +454,8 @@ pub fn deprecation(
 ///   it holds.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`crate::LoweredModule::deprecated_uses`].
+/// - hypothesis: L3 — as
+///   [`LoweredModule::deprecated_uses`](crate::module::LoweredModule::deprecated_uses).
 /// - witness: `gandr-surface-lowering::lower::tests::each_use_of_a_deprecated_declaration_is_listed`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeprecatedUse<'source>
