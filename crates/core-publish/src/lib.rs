@@ -11,7 +11,9 @@
 //! states who may read it from before it takes the name. A guard owns the
 //! temporary from its creation, and on every exit but the rename it attempts
 //! to remove the temporary's own name. [`publish`] is the rename at the
-//! process's default access.
+//! process's default access. [`publish_staged`] creates the temporary in a
+//! staging directory of the caller's, so a directory that many writers share
+//! sees only the rename.
 //!
 //! The writer lives in a crate of its own. So a consumer at any layer from
 //! the core upward publishes a file without a dependency on another
@@ -213,15 +215,74 @@ pub fn publish_as(
     access: &Access,
 ) -> Result<(), Unpublished>
 {
-    let temporary = Temporary::written(file, contents, placement, access)?;
+    let temporary = Temporary::written(beside(file), file, contents, placement, access)?;
     match placement {
         Placement::Replace => temporary.rename(file),
         Placement::Keep => temporary.link(file),
     }
 }
 
-/// A temporary created exclusively beside the file it publishes, owned until
-/// the rename moves it onto the file. Its drop attempts to remove its own
+/// Publish `contents` as the file `name` of `directory`: a private temporary
+/// in `staging`, then one rename onto the name, at the process's default
+/// access.
+///
+/// # Specification
+/// - requires: `name` spells one file name, with no separator, and `staging` is
+///   a directory on the file system of `directory`.
+/// - ensures: as [`publish_as`] at `directory`'s `name` with
+///   [`Placement::Replace`] and [`Access::Default`], with the temporary in
+///   `staging`, not beside the file. So the creation and the removal of a
+///   temporary never touch `directory`, and its one rename is the only change
+///   that `directory` sees.
+/// - fails: as [`publish_as`]: [`Step::Create`] with `NotFound` when `staging`
+///   does not stand, and [`Step::Rename`] when the rename fails, as across two
+///   file systems.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Errors
+/// [`Unpublished`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a staged publication reads back with only the file in the
+///   directory and nothing in the staging directory, and a missing staging
+///   directory refuses the creation.
+/// - witness: `tests::a_staged_publication_leaves_its_file_and_an_empty_staging_directory`
+/// - witness: `tests::a_missing_staging_directory_refuses_the_creation`
+#[inline]
+pub fn publish_staged<Name>(
+    staging: &Path,
+    directory: &Path,
+    name: Name,
+    contents: Contents<'_>,
+) -> Result<(), Unpublished>
+where
+    Name: core::fmt::Display,
+{
+    let file = directory.join(name.to_string());
+    Temporary::written(
+        staging,
+        &file,
+        contents,
+        Placement::Replace,
+        &Access::Default,
+    )?
+    .rename(&file)
+}
+
+/// The directory that holds `file`, where its temporary stands unless a
+/// publication stages it elsewhere.
+///
+/// # Specification
+/// trivial.
+fn beside(file: &Path) -> &Path
+{
+    file.parent().unwrap_or_else(|| Path::new(""))
+}
+
+/// A temporary created exclusively in a staging directory, beside the file it
+/// publishes unless the publication stages it elsewhere, owned until the
+/// rename moves it onto the file. Its drop attempts to remove its own
 /// name unless the rename disarmed the guard; after a link the file keeps the
 /// contents under its own name.
 ///
@@ -258,14 +319,14 @@ enum Publication
 
 impl Temporary
 {
-    /// `contents`, written whole into a file created exclusively beside
-    /// `file`, under a private name leading with `file`'s, readable as
+    /// `contents`, written whole into a file created exclusively in
+    /// `staging`, under a private name leading with `file`'s, readable as
     /// `access` states and synced when `placement` keeps it.
     ///
     /// # Specification
     /// - requires: nothing; a `file` with no file name is refused.
     /// - ensures: on success the contents are whole in a file this call created
-    ///   beside `file`, named `file`'s name, then `.tmp-` and more, and the
+    ///   in `staging`, named `file`'s name, then `.tmp-` and more, and the
     ///   guard is armed. A candidate name that exists is never opened:
     ///   exclusive creation turns a collision into a retry under a fresh nonce.
     /// - fails: [`Unpublished`] at `file`: [`Step::Create`] when `file` ends in
@@ -292,7 +353,7 @@ impl Temporary
         ensures: |ret| match ret {
             Ok(ref temporary) => {
                 temporary.published == Publication::Private
-                    && temporary.path.parent() == file.parent()
+                    && temporary.path.parent() == Some(staging)
                     && temporary.path.file_name().zip(file.file_name()).is_some_and(|(spelled, name)| {
                         spelled
                             .as_encoded_bytes()
@@ -306,6 +367,7 @@ impl Temporary
         },
     )]
     fn written(
+        staging: &Path,
         file: &Path,
         contents: Contents<'_>,
         placement: Placement,
@@ -340,7 +402,7 @@ impl Temporary
             let nonce = core::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), process);
             let mut spelled = name.to_os_string();
             spelled.push(format!(".tmp-{process}-{nonce:016x}"));
-            let candidate = file.with_file_name(spelled);
+            let candidate = staging.join(spelled);
             let mut handle = match options.open(&candidate) {
                 Ok(handle) => handle,
                 Err(ref error) if error.kind() == io::ErrorKind::AlreadyExists => continue,

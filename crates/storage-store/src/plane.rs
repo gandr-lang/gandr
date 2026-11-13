@@ -13,13 +13,19 @@
 //! keeps the bytes for the call's life. An insertion goes into the batch, and
 //! [`Batch::publish`] writes each object that the batch took when the call
 //! ends: neither plane trait can name a file system's failure, and the facade
-//! can. A publication writes a temporary file in the plane's directory and
-//! renames it onto its name through `gandr_core_publish`, so a reader never
-//! meets half an object. Two batches that take one object write the same
-//! bytes, so the rename publishes one object. Every load verifies what it
-//! read, so bytes changed on disk are refused by the plane's own fault. A
-//! listed object that a load refused stands refused, and the next batch that
-//! takes its name writes the object over the file.
+//! can. A publication writes a temporary file in the shard of the calling
+//! thread, a directory of its own beside the planes, and renames it onto its
+//! name in the plane through `gandr_core_publish`. So a reader never meets
+//! half an object, and the plane's directory sees one rename for each object.
+//! The creation of each temporary touches only the thread's shard, so the
+//! producers of a pool contend on no directory for it. The union of the
+//! shards is set union by digest, and that one rename is all of it: an object
+//! is in the plane before the call that put it returns, so a read that the
+//! call orders after it finds the object in the plane. Two batches that take
+//! one object write the same bytes, so the rename publishes one object. Every
+//! load verifies what it read, so bytes changed on disk are refused by the
+//! plane's own fault. A listed object that a load refused stands refused, and
+//! the next batch that takes its name writes the object over the file.
 //!
 //! # Boundaries
 //!
@@ -29,16 +35,28 @@
 //! digest. So a file that changes on disk after the store opened stays as it
 //! is until a store that lists it refuses it.
 //!
+//! A thread takes its shard by its ordinal in the process modulo 64, so two
+//! threads past that width share a shard, and two processes over one store
+//! share each shard. Each temporary takes its name by exclusive creation, so a
+//! shared shard costs contention and never a collision. A crash between a
+//! temporary's creation and its rename leaves the temporary in its shard, and
+//! no listing reads it.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: § The real leak
 //!   was in the filesystem — an object's temporary has one owner, the guard of
 //!   the writer it publishes through.
+//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the store's single
+//!   writer plan (§ Refinements) — the shard is per producer, the batch that a
+//!   call holds given an owner, and the union of shards is renames by digest,
+//!   one an object, before any reader that the call orders after it.
 
 use alloc::collections::BTreeMap;
 use core::cell::Cell;
 use core::cell::OnceCell;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use std::io;
 use std::path::Path;
@@ -47,7 +65,8 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_publish::Contents;
-use gandr_core_publish::publish;
+use gandr_core_publish::Step;
+use gandr_core_publish::publish_staged;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::EncodedNode;
 use gandr_storage_records::NodeHash;
@@ -73,6 +92,23 @@ const TABLES: usize = 40_usize;
 
 /// The slots of a call's first table of reads by name.
 const FIRST_SLOTS: usize = 16_usize;
+
+/// How many shards the producers of one store stage their objects in. A
+/// thread takes the shard of its ordinal modulo this, so the workers of a pool
+/// up to this width each own a shard.
+const SHARDS: usize = 64_usize;
+
+/// The directory beside a store's planes that holds its shards.
+const SHARD_ROOT: &str = "shards";
+
+/// The ordinal that the next thread to publish in the process takes.
+static ORDINALS: AtomicUsize = AtomicUsize::new(0_usize);
+
+std::thread_local! {
+    /// The shard of the calling thread: its ordinal modulo [`SHARDS`], taken
+    /// at its first publication.
+    static SHARD: usize = ORDINALS.fetch_add(1_usize, Ordering::Relaxed) % SHARDS;
+}
 
 /// The identity a plane names its objects by: 32 bytes, spelled as 64
 /// lowercase hexadecimal digits.
@@ -196,6 +232,11 @@ pub struct Directory<Name>
 {
     /// The directory.
     path: PathBuf,
+    /// The directory of the store's shards, beside the plane's.
+    shards: PathBuf,
+    /// The directory of each shard, made by the first publication through
+    /// it, so a later batch allocates no path for it.
+    staged: [OnceLock<PathBuf>; SHARDS],
     /// Every object the directory held when the plane opened, by identity.
     objects: BTreeMap<Name, Filed>,
 }
@@ -238,7 +279,13 @@ where
             };
             let _listed = objects.insert(name, Filed::unread());
         }
-        Ok(Self { path, objects })
+        let shards = path.with_file_name(SHARD_ROOT);
+        Ok(Self {
+            path,
+            shards,
+            staged: [const { OnceLock::new() }; SHARDS],
+            objects,
+        })
     }
 
     /// The file an object of identity `name` stands in.
@@ -742,15 +789,20 @@ where
         let _taken = self.taken.insert(name, Box::from(bytes.0));
     }
 
-    /// Write each object the batch took to its file.
+    /// Write each object the batch took to its file, through the shard of the
+    /// calling thread.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success each object the batch took is a file of the
-    ///   plane's directory under its name.
-    /// - provides: the end of every facade operation that inserts.
-    /// - fails: [`StoreError::Io`] for the first file that cannot be written;
-    ///   the objects after it are not written.
+    ///   plane's directory under its name, and no temporary of it stays in the
+    ///   shard of the calling thread. A batch that took nothing touches no
+    ///   directory.
+    /// - provides: the end of every facade operation that inserts, and the
+    ///   union of the thread's shard into the plane: one rename an object.
+    /// - fails: [`StoreError::Io`] for the first file that cannot be written,
+    ///   or for a shard directory that cannot be made; the objects after it are
+    ///   not written.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -759,14 +811,39 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a committed value derefs after reopening, which reads
-    ///   only what was written, and sixteen writers of one value leave one file
-    ///   per chunk.
+    ///   only what was written; sixteen writers of one value leave one file per
+    ///   chunk; and sixteen writers of distinct values leave every object in
+    ///   the plane and each shard empty.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::sixteen_writers_of_one_value_leave_one_object_per_digest_6899`
+    /// - witness: `tests::store::sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204`
     fn publish(self) -> Result<(), StoreError>
     {
+        if self.taken.is_empty() {
+            return Ok(());
+        }
+        let shard = SHARD.with(|shard| *shard);
+        // The ordinal is taken modulo the table's length, so the table holds
+        // the slot; the shards' root stands in only to keep the call total.
+        let staging: &Path = self
+            .plane
+            .staged
+            .get(shard)
+            .map_or(&self.plane.shards, |slot| {
+                slot.get_or_init(|| self.plane.shards.join(shard.to_string()))
+            });
         for (name, bytes) in &self.taken {
-            publish(&self.plane.path, name, Contents(bytes)).map_err(StoreError::from)?;
+            match publish_staged(staging, &self.plane.path, name, Contents(bytes)) {
+                Err(ref fault)
+                    if fault.step == Step::Create && fault.kind == io::ErrorKind::NotFound =>
+                {
+                    std::fs::create_dir_all(staging)
+                        .map_err(|error| StoreError::io(staging, &error))?;
+                    publish_staged(staging, &self.plane.path, name, Contents(bytes))
+                        .map_err(StoreError::from)?;
+                },
+                published => published.map_err(StoreError::from)?,
+            }
         }
         Ok(())
     }

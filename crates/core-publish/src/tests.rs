@@ -16,6 +16,7 @@ use super::Step;
 use super::Unpublished;
 use super::publish;
 use super::publish_as;
+use super::publish_staged;
 
 /// The file every witness publishes.
 const FILE: &str = "record";
@@ -138,6 +139,67 @@ fn a_missing_directory_refuses_the_creation()
         scratch.entries(),
         Vec::<String>::new(),
         "and nothing is made"
+    );
+}
+
+#[test]
+fn a_staged_publication_leaves_its_file_and_an_empty_staging_directory()
+{
+    let scratch = Scratch::new(Label("staged"));
+    let plane = scratch.path().join("plane");
+    let staging = scratch.path().join("staging");
+    std::fs::create_dir_all(&plane).expect("the plane is made");
+    std::fs::create_dir_all(&staging).expect("the staging directory is made");
+    for contents in [&b"first"[..], &b"second, longer"[..]] {
+        assert_eq!(
+            publish_staged(&staging, &plane, FILE, Contents(contents)),
+            Ok(()),
+            "a staged publication publishes"
+        );
+        assert_eq!(
+            std::fs::read(plane.join(FILE)).expect("the file reads"),
+            contents,
+            "the file holds the contents of the last publication"
+        );
+        let lists = |directory: &Path| -> Vec<String> {
+            std::fs::read_dir(directory)
+                .expect("a directory lists")
+                .map(|entry| {
+                    entry
+                        .expect("an entry reads")
+                        .file_name()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect()
+        };
+        assert_eq!(lists(&plane), [FILE], "the plane holds the file alone");
+        assert_eq!(
+            lists(&staging),
+            Vec::<String>::new(),
+            "and no temporary stays in the staging directory"
+        );
+    }
+}
+
+#[test]
+fn a_missing_staging_directory_refuses_the_creation()
+{
+    let scratch = Scratch::new(Label("unstaged"));
+    let absent = scratch.path().join("absent");
+    assert_eq!(
+        publish_staged(&absent, scratch.path(), FILE, Contents(b"bytes")),
+        Err(Unpublished {
+            path: scratch.path().join(FILE),
+            step: Step::Create,
+            kind: io::ErrorKind::NotFound,
+        }),
+        "no temporary is created where no staging directory is"
+    );
+    assert_eq!(
+        scratch.entries(),
+        Vec::<String>::new(),
+        "and nothing is published"
     );
 }
 

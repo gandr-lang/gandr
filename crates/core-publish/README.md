@@ -15,7 +15,7 @@ The one writer that publishes a file whole: a private temporary, created exclusi
 
 ## Synopsis
 
-**What.** A small crate: `publish_as` writes a file's contents into a temporary beside the file, then renames it onto the file's name or links it there. A rename replaces the file, so a reader of the directory sees the old bytes or the new ones, never half of either. A link keeps a file already at the name. `publish` is the rename at the process's default access. `Unpublished` names the file, the step the file system refused and what it said.
+**What.** A small crate: `publish_as` writes a file's contents into a temporary beside the file, then renames it onto the file's name or links it there. A rename replaces the file, so a reader of the directory sees the old bytes or the new ones, never half of either. A link keeps a file already at the name. `publish` is the rename at the process's default access. `publish_staged` writes the temporary in a staging directory of the caller's on the same file system, so a directory that many writers share sees only each rename. `Unpublished` names the file, the step the file system refused and what it said.
 
 **Why.** The record stores of `core-incremental`, the planes and roots of `storage-store`, the dispatcher's rewrite of a mapped source and the driver's kernel key each published their files this way. A `core` crate depends on no `storage` crate, so the writer lives in a crate of its own. A consumer at any layer from the core upward reaches it.
 
@@ -28,6 +28,7 @@ The one writer that publishes a file whole: a private temporary, created exclusi
 ## Provided features
 
 - `publish(directory, name, contents)`: the file `name` of `directory` holds `contents`, and no temporary of the publication remains.
+- `publish_staged(staging, directory, name, contents)`: as `publish`, with the temporary created in `staging`. A missing `staging` is a `Create` refusal with `NotFound`.
 - `publish_as(file, contents, placement, access)`: `Placement::Replace` renames, and `Placement::Keep` syncs, then links, so a file already at the name stays. `Access` is `Default`, `Owner` or `Exactly(permissions)`.
 - `Unpublished`: the file, the `Step` refused (`Create`, `Write`, `Rename` or `Link`) and the file system's `io::ErrorKind`. A run of taken temporary names is a `Create` refusal with `AlreadyExists`, and a kept file's held name a `Link` refusal with `AlreadyExists`.
 
