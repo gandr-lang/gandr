@@ -172,9 +172,6 @@
 //!   Common Subsequences." Communications of the ACM 20(5), 1977. — the
 //!   reduction of a longest common subsequence over distinct keys to a longest
 //!   increasing subsequence, which item alignment uses.
-//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
-//!   hub — a session is a consumer of the host's one pool, which the edit loop
-//!   installs as the faces of the driver do.
 
 // Module documentation that predates the shape lint: 34 headings outside the
 // vocabulary, 8 decision records, 1 issue reference and 9 budgets exceeded.
