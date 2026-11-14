@@ -1576,7 +1576,7 @@ mod tests
 
     /// A view attached to a hub that reads a store hears the store's card
     /// after the greeting: the value under the root of an export, its one
-    /// chunk and the bytes of that chunk's file, and each owed cell with its
+    /// chunk and the bytes of that chunk's record, and each owed cell with its
     /// unit (#6296).
     #[test]
     fn an_attached_view_hears_the_store_6296()
@@ -1589,11 +1589,13 @@ mod tests
         register
             .name(RootName::new(String::from("export/one")), pointer)
             .expect("the root is named");
+        let length = u64::from(
+            store
+                .closure(pointer)
+                .expect("the value resides in its chunk")
+                .bytes(),
+        );
         drop((store, register));
-        let file = directory.join("chunks").join(pointer.digest().to_string());
-        let length = std::fs::metadata(&file)
-            .expect("the chunk's file is read")
-            .len();
         let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
         else {
             panic!("no other hub serves a fresh socket");

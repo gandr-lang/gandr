@@ -257,8 +257,13 @@ INSERT INTO position VALUES('crates/storage-schema/src/store/layout.rs','Family'
 INSERT INTO position VALUES('crates/storage-schema/src/store/prove/image.rs','Field','','none',NULL,'A carrier of the bytes of a field.');
 INSERT INTO position VALUES('crates/storage-schema/src/store/prove/image.rs','Length','','none',NULL,'A length.');
 INSERT INTO position VALUES('crates/storage-store/src/entries.rs','EntryAddress','','none',NULL,'A digest of an entry.');
-INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Slots','','none',NULL,'A count of slots.');
-INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Start','','local',NULL,'Where the probe of a name starts in one table of reads.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Checked','','none',NULL,'A carrier of the bytes of a header that its checksum covers.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Checksum','','none',NULL,'A checksum over a header.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','HeaderBytes','','none',NULL,'A carrier of the bytes of a segment record''s header.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Length','','none',NULL,'A length of an object.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Offset','storage-store::plane','owed','#7481','A record''s place in its segment in the order of the appends, which the header writes for its own check and which becomes kept once a trailer''s digest names the sealed segment.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','SegmentId','storage-store::plane','owed','#7481','A segment''s identity, which a process mints past every identity it saw and the header writes for its own check, and which stays local for the open segment alone once a trailer''s digest names each sealed segment.');
+INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Slot','','local',NULL,'A place in one plane''s arena in memory, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','EntryDigest','','none',NULL,'A digest of an entry.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','Generation','','none',NULL,'A journal''s generation, a version of a register that names no content.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','HeaderBytes','','none',NULL,'A carrier of the bytes of a header.');

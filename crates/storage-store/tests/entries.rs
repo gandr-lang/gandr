@@ -134,7 +134,7 @@ fn listing(root: &Path) -> Vec<(PathBuf, String, Vec<u8>)>
     rows
 }
 
-/// The objects the store at `root` holds on disk.
+/// The records the store at `root` holds on disk.
 ///
 /// # Specification
 /// trivial.
@@ -142,7 +142,7 @@ fn objects(root: &Path) -> usize
 {
     ["chunks", "nodes"]
         .iter()
-        .map(|plane| fs::read_dir(root.join(plane)).map_or(0, Iterator::count))
+        .map(|plane| crate::store::records(&root.join(plane)).len())
         .sum()
 }
 

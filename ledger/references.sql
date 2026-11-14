@@ -456,8 +456,7 @@ INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','core-
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kernel-check-memo','overlay','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa','kernel-core','descent','exemplar','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
 INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-incremental','record','background','c40ef5389636232e5a082aea52516ebbd7b1e284','2026-10-30','e4699f0cc9f993e9055183b01e33b4d75c4ed6b5');
-INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','d03c14a645030fe23d85a00f3c3d8bd23303db6c','2026-11-13','2f1967ec8e99fa04e0328a6ae0b0d6b0c551a766');
-INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','storage-store','plane','background','1ac24fcee8f02e2558c797343ef34cb5ab01b392','2026-11-13','d074560ff2ed2106686437f28cdae21a06d0aa4c');
+INSERT INTO reference VALUES('vault:01a178aa-4bbc-7842-9a60-d11551c41e06','core-publish','','lineage','2e505aca52c720dd0eabb9d39ab037f3fdde7c84','2026-11-14','b0505dedc870b4b2afdc1a763c428070cce70e63');
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-cell-complexes-tools','','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-4e61-7143-9414-8eb3d0de397f','theory-coherent-resolutions','','anchor',NULL,NULL,NULL);
@@ -759,7 +758,10 @@ INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surfa
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','surface-driver','allocator','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','core-checker-base','ua::strata','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','storage-store','register','anchor','43f5f991d791a198a234057bc3c8aaab5e1e2739','2026-11-14','e6ea31c072ea96ff9997ccad9b0ffb6266d17be9');
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-sites','map','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160','storage-store','plane','anchor','2e505aca52c720dd0eabb9d39ab037f3fdde7c84','2026-11-14','1ec63b7d7f609c5ee74fcc4137ed5949c9bcb01e');
+INSERT INTO reference VALUES('vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f','storage-store','plane','background','2e505aca52c720dd0eabb9d39ab037f3fdde7c84','2026-11-14','1ec63b7d7f609c5ee74fcc4137ed5949c9bcb01e');
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or

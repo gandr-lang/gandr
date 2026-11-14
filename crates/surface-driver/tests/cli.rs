@@ -2848,7 +2848,9 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
         .expect("a pointer is a digest and an offset");
     assert_eq!(offset, "0", "an identity is its chunk's root");
     assert!(
-        chunks.join(digest).is_file(),
+        records(&chunks)
+            .iter()
+            .any(|record| record.digest == digest),
         "the store under the XDG data home holds the pointer's chunk: {}",
         chunks.display()
     );
@@ -2863,7 +2865,9 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
         "removing the store leaves the lock as it stands"
     );
     assert!(
-        chunks.join(digest).is_file(),
+        records(&chunks)
+            .iter()
+            .any(|record| record.digest == digest),
         "the run commits the chunk again"
     );
     let mut homeless = gandr(&[Path::new("check"), Path::new("sibling")]);
@@ -2877,6 +2881,48 @@ fn a_package_s_lock_points_into_the_store_the_run_opens_3157()
         stderr(&faulted),
         "gandr: no directory names the store: set `XDG_DATA_HOME` or `HOME`\n"
     );
+}
+
+/// One record a segment of a store's plane holds.
+struct Record
+{
+    /// The object's digest, in lowercase hexadecimal.
+    digest: String,
+    /// How many bytes the object holds.
+    length: u64,
+}
+
+/// Every record the segments of the store's plane at `plane` hold: each a
+/// header of 64 bytes, its magic `gsg1`, its length as four little-endian
+/// bytes and its digest first, then the object's bytes.
+///
+/// # Specification
+/// trivial.
+fn records(plane: &Path) -> Vec<Record>
+{
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(plane).expect("the plane lists") {
+        let bytes = std::fs::read(entry.expect("an entry reads").path()).expect("a segment reads");
+        let mut rest = bytes.as_slice();
+        while let Some((magic, after)) = rest.split_first_chunk::<4>()
+            && magic == b"gsg1"
+            && let Some((length, after)) = after.split_first_chunk::<4>()
+            && let Some((digest, after)) = after.split_first_chunk::<32>()
+            && let Some((_place, after)) = after.split_first_chunk::<24>()
+            && let Ok(body) = usize::try_from(u32::from_le_bytes(*length))
+            && let Some(next) = after.get(body ..)
+        {
+            found.push(Record {
+                digest: digest.iter().fold(String::new(), |mut text, byte| {
+                    write!(text, "{byte:02x}").expect("a string takes text");
+                    text
+                }),
+                length: u64::from(u32::from_le_bytes(*length)),
+            });
+            rest = next;
+        }
+    }
+    found
 }
 
 /// #3225: `check` of a package commits its export into the store the run
@@ -2960,7 +3006,7 @@ fn a_checked_package_s_export_is_named_by_its_address_3225()
 /// #6296: after `check` of the standard library, the store under the data
 /// directory holds one value of the engine, the library's export, beside the
 /// one node of its roots. The store account reads that export as its one row:
-/// every chunk of the store and the bytes of their files, its root chunk held
+/// every chunk of the store and the bytes of their records, its root chunk held
 /// by itself alone.
 #[test]
 fn the_store_account_reads_the_standard_library_s_export_6296()
@@ -2973,17 +3019,20 @@ fn the_store_account_reads_the_standard_library_s_export_6296()
     let output = ran(command);
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
     let directory = data.join("gandr/store");
-    let listed = |plane: &str| -> Vec<PathBuf> {
-        std::fs::read_dir(directory.join(plane))
-            .expect("the plane lists")
-            .map(|entry| entry.expect("an entry reads").path())
-            .collect()
-    };
-    let chunks = listed("chunks");
-    let bytes = chunks.iter().fold(0_u64, |sum, chunk| {
-        sum.saturating_add(std::fs::metadata(chunk).expect("a chunk is read").len())
-    });
-    assert_eq!(listed("nodes").len(), 1, "the roots are one node");
+    // Two threads that put one chunk at once may each append its record, so
+    // the account counts each digest once.
+    let chunks: alloc::collections::BTreeMap<String, u64> = records(&directory.join("chunks"))
+        .into_iter()
+        .map(|record| (record.digest, record.length))
+        .collect();
+    let bytes = chunks
+        .values()
+        .fold(0_u64, |sum, length| sum.saturating_add(*length));
+    assert_eq!(
+        records(&directory.join("nodes")).len(),
+        1,
+        "the roots are one node"
+    );
     let mut account = StoreAccount::default();
     account
         .read(&directory, &BTreeSet::default())
@@ -3003,7 +3052,7 @@ fn the_store_account_reads_the_standard_library_s_export_6296()
     assert_eq!(
         u64::from(resident.bytes),
         bytes,
-        "the bytes are the lengths of the chunks' files"
+        "the bytes are the lengths of the chunks' records"
     );
     assert_eq!(
         usize::from(resident.shared),

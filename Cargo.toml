@@ -279,14 +279,16 @@ default-features = false
 version = "1.8.7"
 default-features = false
 
-# The arena of a host's chunk holder: an append-only vector whose push and get
-# take `&self` with no lock, and whose elements never move, so a chunk that the
-# holder lends stays at its address while threads push. The choice, its
-# alternatives and its reversal are in the pull request of #6899 that adds it.
+# The arena of a host's chunk holder and of a store plane's records: an
+# append-only vector whose push and get take `&self` with no lock, and whose
+# elements never move, so a chunk or a record that the holder lends stays at
+# its address while threads push. The choice, its alternatives and its
+# reversal are in the pull request of #6899 that adds it.
 # features:
 # - none: the crate has no feature to turn on.
 # consumers:
 # - runtime-net
+# - storage-store
 [workspace.dependencies.boxcar]
 version = "0.2.14"
 default-features = false
@@ -475,7 +477,6 @@ path = "crates/core-nbe-base"
 # exclusively, then renamed onto its name.
 # consumers:
 # - core-incremental
-# - storage-store
 [workspace.dependencies.gandr-core-publish]
 path = "crates/core-publish"
 
@@ -1660,17 +1661,18 @@ version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
 
-# The index of a host's chunk holder, from a chunk's digest to its slot in the
-# arena, read and written with no lock. A read happens after the write that it
-# reads, so a reader that finds a slot reads the whole image. iroh holds it
-# already, with the same features. The choice, its alternatives and its
-# reversal are in the pull request of #6899 that adds it.
+# The index of a host's chunk holder and of a store plane, from a digest to its
+# slot in the arena, read and written with no lock. A read happens after the
+# write that it reads, so a reader that finds a slot reads the whole image.
+# iroh holds it already, with the same features. The choice, its alternatives
+# and its reversal are in the pull request of #6899 that adds it.
 # features:
 # - none: `fast-barrier` stays off, as iroh has it. It trades a fence on each
 #   read for a system call on each reclamation, and no measurement asks for it
 #   yet. `serde` stays off: nothing serialises the index.
 # consumers:
 # - runtime-net
+# - storage-store
 [workspace.dependencies.papaya]
 version = "0.2.5"
 default-features = false

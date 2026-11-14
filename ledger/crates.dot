@@ -230,7 +230,6 @@ digraph crates {
   "storage-records" -> "storage-chunker";
   "storage-records" -> "theory-spec-combinators";
   "storage-schema" -> "storage-records";
-  "storage-store" -> "core-publish";
   "storage-store" -> "storage-chunker";
   "storage-store" -> "storage-records";
   "storage-store" -> "storage-values";

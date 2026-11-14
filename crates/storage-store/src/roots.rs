@@ -4,15 +4,17 @@
 //! A root names where something stands in the store by a name of the
 //! consumer's own, as `lock/<package address>` or `verdict/<key>`. The tree's
 //! records are each name's bytes keyed to the pointer's digest and then its
-//! offset as four little-endian bytes; the file `roots` at the store's root
-//! holds the tree's root node identity in lowercase hexadecimal. Reading the
-//! tree loads that node and its leaves from the record plane, which verifies
-//! each, then builds the tree again from their records and refuses a tree
-//! whose root node is not the one the file names.
+//! offset as four little-endian bytes. The file `roots.log` at the store's root
+//! is a log of the trees: each fold appends one line, the tree's root node
+//! identity in lowercase hexadecimal. Reading the tree loads that node and its
+//! leaves from the record plane, which verifies each, then builds the tree
+//! again from their records and refuses a tree whose root node is not the one
+//! the line names. When the newest tree names a node the plane does not hold
+//! or refuses, the reading takes the tree before it.
 //!
-//! The file `roots.journal` holds the namings since the tree. [`Kept`] reads
-//! it, appends to it and folds it into the tree, so a naming costs amortised
-//! constant time.
+//! The file `roots.log.journal` holds the namings since the tree. [`Kept`]
+//! reads it, appends to it and folds it into the tree, so a naming costs
+//! amortised constant time.
 //!
 //! # Boundaries
 //!
@@ -20,9 +22,18 @@
 //! and a name is what one host's consumer chose. A root states where a value
 //! stands, never that it is valid.
 //!
-//! An entry is appended unsynced, as a publication renames unsynced: a crash
-//! may lose the last namings, and never makes a root name a pointer no naming
-//! gave it.
+//! Each step of a fold is durable before the next starts. The tree's nodes
+//! are synced with their segment. Then the log's new line is synced, and then
+//! the journal is cut to a header over the new tree and synced. So a crash
+//! between two steps leaves a log whose newest tree loads whole, or the tree
+//! before it, and a journal over the newest tree or over none. A journal
+//! entry is synced as it is appended, after the objects its pointer names.
+//!
+//! A torn line ends the log, and a torn entry ends the journal. Neither ever
+//! makes a root name a pointer no naming gave it.
+//!
+//! The log grows by one line for each fold, and nothing cuts it. The root as
+//! a durable record with a sequence and a checksum replaces it.
 
 use alloc::collections::BTreeMap;
 use std::fs::File;
@@ -33,8 +44,6 @@ use std::io::Write as _;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_publish::Contents;
-use gandr_core_publish::publish;
 use gandr_storage_records::BlockStore as _;
 use gandr_storage_records::DecodeWork;
 use gandr_storage_records::DecodedNode;
@@ -50,6 +59,8 @@ use gandr_storage_values::ContentPtr;
 use gandr_storage_values::TokenOffset;
 use quenchant_shape::shape::Maybe;
 
+use crate::crash;
+use crate::crash::Point;
 use crate::plane::FileName;
 use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
@@ -57,11 +68,12 @@ use crate::plane::hexadecimal;
 use crate::store::RootsFault;
 use crate::store::StoreError;
 
-/// The file at a store's root naming its roots tree's root node.
-pub const ROOTS: &str = "roots";
+/// The file at a store's root that logs its roots trees' root nodes, the
+/// newest last.
+pub const ROOTS: &str = "roots.log";
 
 /// The file at a store's root journaling the namings since its roots tree.
-pub const JOURNAL: &str = "roots.journal";
+pub const JOURNAL: &str = "roots.log.journal";
 
 /// The bytes a root's pointer is recorded as: its digest, then its offset.
 const POINTER_LEN: usize = 36_usize;
@@ -176,7 +188,7 @@ quenchant_shape::reason_enum! {
         /// The reason no tree is named.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Absent {
-            /// No roots file stands.
+            /// No roots log stands, or it holds no whole line.
             Unwritten,
         }
     }
@@ -302,7 +314,8 @@ impl Roots
             | StoreError::Value(_)
             | StoreError::Record(_)
             | StoreError::Roots { .. }
-            | StoreError::Unowned) => other,
+            | StoreError::Unowned
+            | StoreError::Oversized { .. }) => other,
             #[cfg(unix)]
             other @ StoreError::Entry(_) => other,
         })?;
@@ -323,18 +336,19 @@ impl Roots
         Ok(Self(roots))
     }
 
-    /// Write the roots as a tree into `nodes` and name its root node in the
-    /// [`ROOTS`] file of `directory`.
+    /// Write the roots as a tree into `nodes` and append its root node to the
+    /// [`ROOTS`] log of `directory`.
     ///
     /// # Specification
     /// - requires: `nodes` is the record plane of the store at `directory`, and
     ///   the roots name at least one root.
-    /// - ensures: on success the tree of the roots' records is written to the
-    ///   plane's directory and the file names its root node, which is returned,
-    ///   so [`Roots::tree`] reads these roots back from it.
+    /// - ensures: on success the tree of the roots' records is durable in the
+    ///   plane, and then the log's last line, durable after it, names its root
+    ///   node, which is returned, so [`Roots::tree`] reads these roots back
+    ///   from it.
     /// - provides: the write every fold makes.
     /// - fails: [`StoreError::Record`] when the tree cannot be built or
-    ///   admitted, [`StoreError::Io`] when a file cannot be written.
+    ///   admitted, [`StoreError::Io`] when a file cannot be written or synced.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -342,8 +356,10 @@ impl Roots
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a root set reads back after reopening.
+    /// - hypothesis: L3 — a root set reads back after reopening, and a crash
+    ///   after each step of a fold leaves roots whose objects load.
     /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
     fn write(
         &self,
         directory: &Path,
@@ -362,15 +378,127 @@ impl Roots
         let tree = RecordTree::build(&refs, TreeParams::current()).map_err(StoreError::Record)?;
         let mut batch = NodeBatch::over(nodes);
         tree.write_to(&mut batch).map_err(StoreError::Record)?;
+        crash::passed(Point::TreeBefore);
         batch.publish()?;
-        publish(
-            directory,
-            ROOTS,
-            Contents(format!("{}\n", tree.root_node_hash()).as_bytes()),
-        )
-        .map_err(StoreError::from)?;
+        nodes.sync()?;
+        crash::passed(Point::TreeAfter);
+        let path = directory.join(ROOTS);
+        let io = |error: io::Error| StoreError::io(&path, &error);
+        crash::passed(Point::LogBefore);
+        let (mut log, made) = created(&path).map_err(io)?;
+        log.write_all(format!("{}\n", tree.root_node_hash()).as_bytes())
+            .and_then(|()| log.sync_data())
+            .map_err(io)?;
+        if made == Made::Created {
+            synced_directory(directory)?;
+        }
+        crash::passed(Point::LogAfter);
         Ok(tree.root_node_hash())
     }
+
+    /// The roots of the newest tree of `trees` that loads whole from `nodes`.
+    ///
+    /// # Specification
+    /// - requires: `nodes` is the record plane of the store at `directory`, and
+    ///   `trees` is its log, the newest last.
+    /// - ensures: on success the newest tree of `trees` whose nodes the plane
+    ///   holds and verifies, with its roots, as [`Roots::tree`] reads them.
+    /// - provides: the reading that survives a crash between a fold's steps.
+    /// - fails: the newest tree's fault when no tree of the log loads, and
+    ///   [`StoreError::Io`] at once for a file that cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crash after each step of a fold leaves roots whose
+    ///   objects load, and a tree the store does not hold is refused.
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
+    /// - witness: `tests::store::a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397`
+    fn newest(
+        directory: &Path,
+        nodes: &NodeDirectory,
+        trees: &Trees,
+    ) -> Result<(NodeHash, Self), StoreError>
+    {
+        let mut first = None;
+        for tree in core::iter::once(trees.newest).chain(trees.older.iter().rev().copied()) {
+            match Self::tree(directory, nodes, tree) {
+                Ok(roots) => return Ok((tree, roots)),
+                Err(fault @ StoreError::Io { .. }) => return Err(fault),
+                Err(
+                    fault @ (StoreError::Value(_)
+                    | StoreError::Record(_)
+                    | StoreError::Roots { .. }
+                    | StoreError::Unowned
+                    | StoreError::Oversized { .. }),
+                ) => {
+                    let _kept = first.get_or_insert(fault);
+                },
+                #[cfg(unix)]
+                Err(fault @ StoreError::Entry(_)) => {
+                    let _kept = first.get_or_insert(fault);
+                },
+            }
+        }
+        Err(first.unwrap_or_else(|| StoreError::Roots {
+            path: directory.join(ROOTS),
+            fault: RootsFault::Unspelled,
+        }))
+    }
+}
+
+/// Whether an open made its file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Made
+{
+    /// The open created the file.
+    Created,
+    /// The file stood before the open.
+    Found,
+}
+
+/// The file at `path`, opened to append, and whether the open created it.
+///
+/// # Specification
+/// trivial.
+fn created(path: &Path) -> io::Result<(File, Made)>
+{
+    match std::fs::OpenOptions::new()
+        .append(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => Ok((file, Made::Created)),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map(|file| (file, Made::Found)),
+        Err(error) => Err(error),
+    }
+}
+
+/// Sync the directory `directory`, so the entries made in it are durable.
+///
+/// # Specification
+/// trivial.
+fn synced_directory(directory: &Path) -> Result<(), StoreError>
+{
+    File::open(directory)
+        .and_then(|opened| opened.sync_all())
+        .map_err(|error| StoreError::io(directory, &error))
+}
+
+/// The trees a roots log names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Trees
+{
+    /// The trees before the newest, the oldest first.
+    older: Vec<NodeHash>,
+    /// The tree the log's last whole line names.
+    newest: NodeHash,
 }
 
 /// A journal's generation: each fold publishes the next.
@@ -498,12 +626,13 @@ enum Reading
 /// naming appends one entry, so it reads only the entries other stores
 /// appended since its store last read. Once the journal holds as many entries
 /// as the tree holds roots, and at least [`FOLD_FLOOR`], the next naming
-/// folds: it builds the tree again with every root, names it in `roots`, then
-/// publishes an empty journal of the next generation. A tree of n roots is
-/// built after at least n namings, so a naming costs amortised constant time.
+/// folds: it builds the tree again with every root, appends its line to
+/// `roots.log`, then cuts the journal to a header of the next generation. A
+/// tree of n roots is built after at least n namings, so a naming costs
+/// amortised constant time.
 ///
 /// A journal whose header names another tree is stale: a fold named its tree
-/// and stopped before it published the journal. The tree holds its entries,
+/// and stopped before it cut the journal. The tree holds its entries,
 /// so a reading skips them, and the next naming folds. An entry whose digest
 /// fails ends the journal: a naming stopped while it appended, and the next
 /// naming cuts the file there.
@@ -674,20 +803,20 @@ impl Kept
     }
 
     /// Fold the journal: the roots, with the naming's name naming its pointer,
-    /// written as a tree and named in [`ROOTS`], then an empty journal of the
-    /// generation after `seen` published over it.
+    /// written as a tree and appended to [`ROOTS`], then the journal cut to a
+    /// header of the generation after `seen` over it.
     ///
     /// # Specification
     /// - requires: as [`Kept::name`], and `seen` the generation of the
     ///   journal's header, or the first where none stands.
     /// - ensures: on success the roots with the naming are this store's, the
-    ///   tree is named, and the journal over it is current and empty. When the
-    ///   tree cannot be written the roots are as they were; when the journal
-    ///   cannot be published the tree stands named, the reading is stale over
+    ///   tree is named, and the journal over it is current, empty and durable.
+    ///   When the tree cannot be written the roots are as they were; when the
+    ///   journal cannot be cut the tree stands named, the reading is stale over
     ///   it, and the next naming folds again.
     /// - provides: the one write of a whole roots tree.
     /// - fails: as [`Roots::write`], and [`StoreError::Io`] for a journal that
-    ///   cannot be published.
+    ///   cannot be cut, written or synced.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -695,10 +824,12 @@ impl Kept
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — namings across a fold read back after reopening, and
-    ///   a second store reads the fold's tree.
+    /// - hypothesis: L3 — namings across a fold read back after reopening, a
+    ///   second store reads the fold's tree, and a crash at each step of a fold
+    ///   leaves roots whose objects load.
     /// - witness: `tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081`
     /// - witness: `tests::store::two_stores_keep_each_other_s_roots_across_a_fold_4081`
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
     fn fold(
         &mut self,
         directory: &Path,
@@ -724,8 +855,14 @@ impl Kept
             tree,
             generation: seen.next(),
         };
-        publish(directory, JOURNAL, Contents(&HeaderBytes::from(header).0))
-            .map_err(StoreError::from)?;
+        let path = directory.join(JOURNAL);
+        let mut file = journal(directory)?;
+        crash::passed(Point::JournalBefore);
+        file.set_len(0)
+            .and_then(|()| file.write_all(&HeaderBytes::from(header).0))
+            .and_then(|()| file.sync_data())
+            .map_err(|error| StoreError::io(&path, &error))?;
+        crash::passed(Point::JournalAfter);
         self.reading = Reading::Current {
             tree_roots,
             read: Read {
@@ -744,8 +881,10 @@ impl Kept
     /// - requires: as [`Kept::read`].
     /// - ensures: on success the roots and the reading are those [`Kept::read`]
     ///   gives now, and the generation returned is the journal header's, or the
-    ///   first where none stands. The tree is read only when the roots file or
-    ///   the journal's header changed since this reading.
+    ///   first where none stands. The tree is read only when the roots log or
+    ///   the journal's header changed since this reading. The tree read is the
+    ///   newest of the log that loads, and the journal adds to it only when its
+    ///   header names that tree.
     /// - provides: the reading every naming starts from.
     /// - fails: [`StoreError::Io`] for a file that cannot be read,
     ///   [`StoreError::Record`] for a node the plane refuses, and
@@ -774,31 +913,34 @@ impl Kept
             Maybe::Present(header) => header.generation,
             Maybe::Absent(_) => Generation::default(),
         };
-        let named = named_tree(directory)?;
-        let Maybe::Present(tree) = named
+        let named = named_trees(directory)?;
+        let Maybe::Present(trees) = named
         else {
             *self = Self::default();
             return Ok(seen);
         };
-        let over = match header {
-            Maybe::Present(header) if header.tree == tree => Maybe::Present(header),
-            Maybe::Present(_) => Maybe::Absent(unheaded::Absent::Foreign),
-            Maybe::Absent(reason) => Maybe::Absent(reason),
-        };
-        match (self.reading, over) {
-            (Reading::Current { read, .. }, Maybe::Present(header)) if read.header == header => {},
-            (Reading::Stale { tree: stale }, Maybe::Absent(_)) if stale == tree => {
+        match (self.reading, header) {
+            (Reading::Current { read, .. }, Maybe::Present(header))
+                if read.header == header && header.tree == trees.newest => {},
+            (Reading::Stale { tree: stale }, _)
+                if stale == trees.newest
+                    && !matches!(header, Maybe::Present(header) if header.tree == stale) =>
+            {
                 return Ok(seen);
             },
             (Reading::Untreed | Reading::Stale { .. } | Reading::Current { .. }, _) => {
-                let roots = Roots::tree(directory, nodes, tree)?;
+                let (tree, roots) = Roots::newest(directory, nodes, &trees)?;
                 let tree_roots = roots.0.len();
                 self.roots = roots;
-                let Maybe::Present(header) = over
+                let Maybe::Present(header) = header
                 else {
                     self.reading = Reading::Stale { tree };
                     return Ok(seen);
                 };
+                if header.tree != tree {
+                    self.reading = Reading::Stale { tree };
+                    return Ok(seen);
+                }
                 self.reading = Reading::Current {
                     tree_roots,
                     read: Read {
@@ -864,16 +1006,18 @@ impl Kept
     }
 }
 
-/// The root node the [`ROOTS`] file of the store at `directory` names.
+/// The trees the [`ROOTS`] log of the store at `directory` names, the newest
+/// last.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `Unwritten` when no file stands; the identity the file spells
-///   otherwise.
-/// - provides: the tree every reading starts from.
-/// - fails: [`StoreError::Io`] for a file that cannot be read, and
-///   [`StoreError::Roots`] naming [`RootsFault::Unspelled`] for one that spells
-///   no node.
+/// - ensures: `Unwritten` when no log stands or it holds no whole line; each
+///   identity a whole line spells otherwise, in order. A last line with no end
+///   is torn and is not read.
+/// - provides: the trees every reading starts from.
+/// - fails: [`StoreError::Io`] for a log that cannot be read, and
+///   [`StoreError::Roots`] naming [`RootsFault::Unspelled`] for a whole line
+///   that spells no node.
 /// - panics: none.
 /// - executable: none — the outcome is the file system's.
 ///
@@ -881,11 +1025,13 @@ impl Kept
 /// As above.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a root set reads back after reopening, and a file
-///   spelling no node is refused by name.
+/// - hypothesis: L3 — a root set reads back after reopening, a line spelling no
+///   node is refused by name, and a crash in a fold's append leaves the trees
+///   before it.
 /// - witness: `tests::store::a_root_set_reads_back_after_reopening`
 /// - witness: `tests::store::a_roots_file_naming_no_node_is_refused_on_opening`
-fn named_tree(directory: &Path) -> Result<Maybe<NodeHash, untreed::Absent>, StoreError>
+/// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
+fn named_trees(directory: &Path) -> Result<Maybe<Trees, untreed::Absent>, StoreError>
 {
     let path = directory.join(ROOTS);
     let text = match std::fs::read_to_string(&path) {
@@ -895,16 +1041,28 @@ fn named_tree(directory: &Path) -> Result<Maybe<NodeHash, untreed::Absent>, Stor
         },
         Err(ref error) => return Err(StoreError::io(&path, error)),
     };
-    let Some(Maybe::Present(hash)) = text
-        .strip_suffix('\n')
-        .map(|spelled| hexadecimal::<NodeHash>(FileName(spelled)))
+    let mut lines: Vec<&str> = text.split('\n').collect();
+    // The text after the last end of line is empty, or a torn line.
+    let _torn = lines.pop();
+    let mut trees = Vec::with_capacity(lines.len());
+    for line in lines {
+        let Maybe::Present(hash) = hexadecimal::<NodeHash>(FileName(line))
+        else {
+            return Err(StoreError::Roots {
+                path,
+                fault: RootsFault::Unspelled,
+            });
+        };
+        trees.push(hash);
+    }
+    let Some(newest) = trees.pop()
     else {
-        return Err(StoreError::Roots {
-            path,
-            fault: RootsFault::Unspelled,
-        });
+        return Ok(Maybe::Absent(untreed::Absent::Unwritten));
     };
-    Ok(Maybe::Present(hash))
+    Ok(Maybe::Present(Trees {
+        older: trees,
+        newest,
+    }))
 }
 
 /// The journal of the store at `directory`, made empty where it is missing,
@@ -913,7 +1071,8 @@ fn named_tree(directory: &Path) -> Result<Maybe<NodeHash, untreed::Absent>, Stor
 /// # Specification
 /// - requires: nothing.
 /// - ensures: on success the [`JOURNAL`] file stands at `directory`, its bytes
-///   as they were, and the file returned reads and writes it.
+///   as they were, and the file returned reads and writes it. A journal the
+///   call makes is durable in the directory.
 /// - provides: the handle every reading and naming takes the journal by.
 /// - fails: [`StoreError::Io`] when the file cannot be opened or made.
 /// - panics: none.
@@ -928,13 +1087,17 @@ fn named_tree(directory: &Path) -> Result<Maybe<NodeHash, untreed::Absent>, Stor
 fn journal(directory: &Path) -> Result<File, StoreError>
 {
     let path = directory.join(JOURNAL);
-    std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(|error| StoreError::io(&path, &error))
+    let io = |error: io::Error| StoreError::io(&path, &error);
+    let mut open = std::fs::OpenOptions::new();
+    let _set = open.read(true).write(true);
+    match open.clone().create_new(true).open(&path) {
+        Ok(file) => {
+            synced_directory(directory)?;
+            Ok(file)
+        },
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => open.open(&path).map_err(io),
+        Err(error) => Err(io(error)),
+    }
 }
 
 /// The header `journal` opens with.
@@ -1202,9 +1365,11 @@ impl Appended
     /// # Specification
     /// - requires: `journal` is the journal at `path`.
     /// - ensures: on success the journal ends with the entries, from `at` on,
-    ///   and no entries are held. With no entries, nothing is written.
+    ///   durable on the device, and no entries are held. With no entries,
+    ///   nothing is written.
     /// - provides: the one write of a run of namings.
-    /// - fails: [`StoreError::Io`] for a journal that cannot be cut or written.
+    /// - fails: [`StoreError::Io`] for a journal that cannot be cut, written or
+    ///   synced.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -1229,6 +1394,7 @@ impl Appended
         journal.set_len(self.at).map_err(io)?;
         let _at = journal.seek(io::SeekFrom::Start(self.at)).map_err(io)?;
         journal.write_all(&self.bytes).map_err(io)?;
+        journal.sync_data().map_err(io)?;
         self.bytes.clear();
         Ok(())
     }

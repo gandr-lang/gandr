@@ -41,7 +41,6 @@ flowchart BT
   core -->|32| kernel
   storage -->|6| theory
   storage -->|1| kernel
-  storage -->|1| core
   runtime -->|1| theory
   runtime -->|2| kernel
   runtime -->|5| core

@@ -1,19 +1,13 @@
-//! The store's load: many files read into one store at once, the rate of its
-//! puts beside the rate of the fold of one writer.
+//! The store's load: many files read into one store at once, the rate and the
+//! latency of its puts, the naming that makes them durable, and the wall of
+//! the scan that opens the store after.
 //!
 //! The bench first makes a source tree of 20,000 files of 4 KiB. The BLAKE3
 //! output of the index of a file fills it, so no two files share a piece. A
 //! file of 4 KiB is no longer than the least cut of the byte profile, so it
 //! reads as one piece. For each width, a fresh store opens, and that many
 //! threads load the tree into it with `Store::read_in`. Each thread loads
-//! every width-th file. The put rate is the count of objects in the two planes
-//! after the load, over the wall time of the load.
-//!
-//! The fold is the work of the single writer of a sharded store. One thread
-//! renames each object of the width-1 store into a fresh plane directory,
-//! then syncs that directory once. The fold rate is the count of objects that
-//! it renames, over the wall time of the renames and the sync. A width whose
-//! put rate is above the fold rate outruns one writer.
+//! every width-th file and times each call.
 //!
 //! # Examples
 //!
@@ -21,8 +15,24 @@
 //! and 64 under the temporary directory of the host, and prints one row for
 //! each width. `-- --directory <path>` puts the source tree and the stores
 //! under that directory. `-- --widths 1,8,96` measures the widths that it
-//! names. Under `cargo test`, the bench loads 64 files at widths 1 and 2 and
-//! prints nothing, so the gates run it and do not time it.
+//! names, and `-- --files <n>` loads that many files. Under `cargo test`, the
+//! bench loads 64 files at widths 1 and 2 and prints nothing, so the gates run
+//! it and do not time it.
+//!
+//! # Items
+//!
+//! The put rate is the count of records in the two planes after the load,
+//! over the wall time of the load. The latency is the 50th and the 99th
+//! percentile of the calls. A call makes one batch on each plane and syncs
+//! nothing, since no root names what it put. After the load, one naming
+//! commits an output and names it, and the bench times it. That naming syncs
+//! every segment the load wrote to, so its wall is the durable cost the whole
+//! load shares.
+//!
+//! After the load the bench opens the store again and times the open. The
+//! open scans each segment's headers into the index, so its wall grows with
+//! the records the store holds. Once the root carries the index, the open
+//! reads the root and no segment.
 //!
 //! # Boundaries
 //!
@@ -38,11 +48,14 @@
 //! # References
 //!
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the store's single
-//!   writer plan (§ The topology of one host) — the fold of the writer beside
-//!   the sum of the rates of the producers is the measure of the shards.
+//!   writer plan (§ The topology of one host) — the producers append to their
+//!   own shards, and no single writer folds them.
 //! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance
 //!   programme (§ performance-figures) — a row names what it measures: the
 //!   filesystem, the device, the CPU and the voluntary switches.
+//! - `vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f` — anchor: the IO layer's
+//!   probe (§ the grid) — the rows of a segment that this bench measures the
+//!   store against.
 
 #![expect(
     clippy::expect_used,
@@ -52,7 +65,6 @@
 
 use core::time::Duration;
 use std::fs;
-use std::fs::File;
 #[cfg(target_os = "macos")]
 use std::os::unix::fs::FileTypeExt as _;
 #[cfg(target_os = "macos")]
@@ -61,12 +73,14 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use gandr_storage_store::Output;
+use gandr_storage_store::RootName;
 use gandr_storage_store::Store;
 use nix::sys::resource::UsageWho;
 use nix::sys::resource::getrusage;
 use nix::sys::time::TimeVal;
 
-/// How many files a full run loads.
+/// How many files a full run loads unless `--files` says otherwise.
 const FULL: Count = Count(20_000);
 
 /// How many files a test-mode pass loads.
@@ -85,12 +99,18 @@ const SMOKE_WIDTHS: [Count; 2] = [Count(1), Count(2)];
 /// The directories of the two planes under the root of a store.
 const PLANES: [&str; 2] = ["chunks", "nodes"];
 
-/// A count of files, threads or objects.
+/// The magic each segment record's header opens with.
+const MAGIC: &[u8; 4] = b"gsg1";
+
+/// The bytes of a segment record's header after its magic and its length.
+const HEADER_REST: usize = 56;
+
+/// A count of files, threads or records.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 struct Count(usize);
 
-/// A count of objects over each second of a wall time.
+/// A count of records over each second of a wall time.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
 struct Rate(u128);
@@ -152,34 +172,59 @@ fn duration(time: TimeVal) -> Duration
     Duration::from_secs(seconds).saturating_add(Duration::from_micros(micros))
 }
 
-/// The objects that one pass moves, its wall time, and what the process spent
-/// during it.
-#[derive(Clone, Copy)]
+/// The records that one load puts, its wall time, each call's latency, its
+/// naming, and what the process spent during it.
 struct Pass
 {
-    /// The objects that the planes gain.
-    objects: Count,
-    /// The wall time of the pass.
+    /// The records that the planes gain.
+    records: Count,
+    /// The wall time of the load.
     wall: Duration,
-    /// The CPU and the voluntary switches of the process during the pass.
+    /// The latency of each call, in increasing order.
+    calls: Vec<Duration>,
+    /// The wall of one naming after the load, which syncs what it wrote.
+    naming: Duration,
+    /// The CPU and the voluntary switches of the process during the load.
     spent: Spent,
 }
 
 impl Pass
 {
-    /// The objects of the pass over each second of its wall time.
+    /// The records of the pass over each second of its wall time.
     ///
     /// # Specification
     /// trivial.
-    fn rate(self) -> Rate
+    fn rate(&self) -> Rate
     {
-        let objects = u128::try_from(self.objects.0).expect("a count fits in 128 bits");
+        let records = u128::try_from(self.records.0).expect("a count fits in 128 bits");
         Rate(
-            objects
+            records
                 .saturating_mul(1_000_000)
                 .checked_div(self.wall.as_micros().max(1))
                 .unwrap_or_default(),
         )
+    }
+
+    /// The latency below which `percent` of the calls end.
+    ///
+    /// # Specification
+    /// trivial.
+    fn percentile(
+        &self,
+        percent: Count,
+    ) -> Duration
+    {
+        let at = self
+            .calls
+            .len()
+            .saturating_mul(percent.0)
+            .checked_div(100)
+            .unwrap_or_default();
+        self.calls
+            .get(at)
+            .or_else(|| self.calls.last())
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -225,32 +270,35 @@ fn source(
         .collect()
 }
 
-/// The objects under the plane directories of `store`: each file named by 64
-/// lowercase hexadecimal digits.
+/// The records the segments of the two planes of `store` hold, counted by
+/// their headers up to each segment's first bytes that open none.
 ///
 /// # Specification
 /// trivial.
-fn objects(store: &Path) -> Vec<PathBuf>
+fn records(store: &Path) -> Count
 {
-    PLANES
-        .iter()
-        .flat_map(|plane| fs::read_dir(store.join(plane)).expect("a plane lists"))
-        .map(|entry| entry.expect("a plane entry reads").path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name.len() == 64
-                        && name
-                            .bytes()
-                            .all(|byte| byte.is_ascii_digit() || (b'a' ..= b'f').contains(&byte))
-                })
-        })
-        .collect()
+    let mut count = 0_usize;
+    for plane in PLANES {
+        for entry in fs::read_dir(store.join(plane)).expect("a plane lists") {
+            let bytes =
+                fs::read(entry.expect("a plane entry reads").path()).expect("a segment reads");
+            let mut rest = bytes.as_slice();
+            while let Some((magic, after)) = rest.split_first_chunk::<4>()
+                && magic == MAGIC
+                && let Some((length, after)) = after.split_first_chunk::<4>()
+                && let Ok(length) = usize::try_from(u32::from_le_bytes(*length))
+                && let Some(next) = after.get(HEADER_REST.saturating_add(length) ..)
+            {
+                count = count.saturating_add(1);
+                rest = next;
+            }
+        }
+    }
+    Count(count)
 }
 
 /// Read every file of `files` into a fresh store at `store`, `width` threads
-/// at once.
+/// at once, each call timed.
 ///
 /// # Specification
 /// trivial.
@@ -267,56 +315,66 @@ fn load(
     width: Count,
 ) -> Pass
 {
-    let (opened, _register) = Store::open(store).expect("a fresh store opens");
+    let (opened, mut register) = Store::open(store).expect("a fresh store opens");
     let before = Spent::now();
     let started = Instant::now();
-    std::thread::scope(|scope| {
+    let mut calls: Vec<Duration> = std::thread::scope(|scope| {
+        // Every loader starts before the first join, so they run at once.
+        let mut threads = Vec::with_capacity(width.0);
         for first in 0 .. width.0 {
             let opened = &opened;
-            scope.spawn(move || {
-                for path in files.iter().skip(first).step_by(width.0) {
-                    opened.read_in(path).expect("a source file reads in");
-                }
-            });
+            threads.push(scope.spawn(move || {
+                files
+                    .iter()
+                    .skip(first)
+                    .step_by(width.0)
+                    .map(|path| {
+                        let call = Instant::now();
+                        opened.read_in(path).expect("a source file reads in");
+                        call.elapsed()
+                    })
+                    .collect::<Vec<Duration>>()
+            }));
         }
+        threads
+            .into_iter()
+            .flat_map(|thread| thread.join().expect("a loader runs to its end"))
+            .collect()
     });
     let wall = started.elapsed();
     let spent = Spent::now().since(before);
+    calls.sort_unstable();
+    // One naming after the load syncs every segment the load wrote to.
+    let first = files.first().expect("a load reads a file");
+    let entry = opened.read_in(first).expect("a loaded file reads in again");
+    let named = Instant::now();
+    let pointer = opened
+        .commit(&Output::new(entry, Vec::new()))
+        .expect("an output commits");
+    register
+        .name(RootName::new(String::from("bench/load")), pointer)
+        .expect("the output is named");
+    let naming = named.elapsed();
     Pass {
-        objects: Count(objects(store).len()),
+        records: records(store),
         wall,
+        calls,
+        naming,
         spent,
     }
 }
 
-/// Rename every object of the store at `store` into a fresh plane directory
-/// under `root`, then sync that directory once.
+/// The wall of the open of the store at `store`, which scans its segments.
 ///
 /// # Specification
 /// trivial.
-fn fold(
-    store: &Path,
-    root: &Path,
-) -> Pass
+fn reopened(store: &Path) -> Duration
 {
-    let shard = objects(store);
-    let plane = root.join("plane");
-    fs::create_dir_all(&plane).expect("the plane directory is made");
-    let before = Spent::now();
     let started = Instant::now();
-    for object in &shard {
-        let name = object.file_name().expect("an object has a name");
-        fs::rename(object, plane.join(name)).expect("an object renames into the plane");
-    }
-    File::open(&plane)
-        .and_then(|directory| directory.sync_all())
-        .expect("the plane directory syncs");
+    let opened = Store::open(store).expect("the loaded store opens again");
     let wall = started.elapsed();
-    Pass {
-        objects: Count(shard.len()),
-        wall,
-        spent: Spent::now().since(before),
-    }
+    drop(opened);
+    wall
 }
 
 /// The filesystem and the device that hold a directory.
@@ -436,30 +494,30 @@ impl Substrate
     }
 }
 
-/// Print one row: `width`, the objects and the wall of `pass`, its put rate,
-/// that rate over `fold`, what the process spent during the pass, and the
-/// filesystem and the device of `substrate`.
+/// Print one row: `width`, the records and the wall of `pass`, its put rate,
+/// its latencies, its naming, the wall of the `open` after it, what the
+/// process spent during the load, and the filesystem and the device of
+/// `substrate`.
 ///
 /// # Specification
 /// trivial.
 fn row(
     width: Count,
-    pass: Pass,
-    fold: Rate,
+    pass: &Pass,
+    open: Duration,
     substrate: &Substrate,
 )
 {
-    let put = pass.rate();
     println!(
-        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
         width.0,
-        pass.objects.0,
+        pass.records.0,
         pass.wall.as_millis(),
-        put.0,
-        put.0
-            .saturating_mul(100)
-            .checked_div(fold.0.max(1))
-            .unwrap_or_default(),
+        pass.rate().0,
+        pass.percentile(Count(50)).as_micros(),
+        pass.percentile(Count(99)).as_micros(),
+        pass.naming.as_micros(),
+        open.as_millis(),
         pass.spent.user.as_millis(),
         pass.spent.system.as_millis(),
         pass.spent.switches,
@@ -473,14 +531,16 @@ struct Arguments
 {
     /// A full run, which times and prints; otherwise one short pass.
     full: bool,
+    /// How many files a full run loads.
+    files: Count,
     /// The directory that holds the run, or the temporary one.
     directory: PathBuf,
     /// The widths that `--widths` names, if it names any.
     widths: Option<Vec<Count>>,
 }
 
-/// The arguments of the process: `--bench`, `--directory <path>` and
-/// `--widths <list>`, each width of the list a count above zero.
+/// The arguments of the process: `--bench`, `--files <n>`, `--directory
+/// <path>` and `--widths <list>`, each width of the list a count above zero.
 ///
 /// # Specification
 /// trivial.
@@ -488,6 +548,7 @@ fn arguments() -> Arguments
 {
     let mut parsed = Arguments {
         full: false,
+        files: FULL,
         directory: std::env::temp_dir(),
         widths: None,
     };
@@ -495,6 +556,14 @@ fn arguments() -> Arguments
     while let Some(word) = words.next() {
         match word.as_str() {
             "--bench" => parsed.full = true,
+            "--files" => {
+                parsed.files = Count(
+                    words
+                        .next()
+                        .and_then(|count| count.parse().ok())
+                        .expect("--files names a count"),
+                );
+            },
             "--directory" => {
                 parsed.directory = words
                     .next()
@@ -524,8 +593,8 @@ fn arguments() -> Arguments
     parsed
 }
 
-/// Load the source tree at each width and print a row for each, beside the
-/// fold of one writer, after a line that names the substrate.
+/// Load the source tree at each width and print a row for each, after a line
+/// that names the substrate.
 ///
 /// # Specification
 /// trivial.
@@ -535,9 +604,9 @@ fn main()
     let full = asked.full;
     let parallelism = std::thread::available_parallelism().map_or(1, usize::from);
     let (files, widths): (Count, Vec<Count>) = match (full, asked.widths) {
-        (true, Some(named)) => (FULL, named),
+        (true, Some(named)) => (asked.files, named),
         (true, None) => (
-            FULL,
+            asked.files,
             FULL_WIDTHS
                 .into_iter()
                 .filter(|width| width.0 <= parallelism)
@@ -559,50 +628,35 @@ fn main()
     );
     let root = scratch(&asked.directory);
     let sources = source(&root, files);
-
-    // Width 1 loads first and folds, so each row after it can state its rate
-    // beside the fold as its threads end.
-    let single = root.join("store-1");
-    let first = load(&single, &sources, Count(1));
-    let folded = fold(&single, &root);
-    let fold_rate = folded.rate();
     if full {
         println!(
-            "store load of {} files of {FILE_BYTES} bytes under {}, filesystem {}, device {}; \
-             the fold of one writer renames {} objects in {} ms, {} objects per second",
+            "store load of {} files of {FILE_BYTES} bytes under {}, filesystem {}, device {}",
             files.0,
             asked.directory.display(),
             substrate.filesystem,
-            substrate.named(),
-            folded.objects.0,
-            folded.wall.as_millis(),
-            fold_rate.0
+            substrate.named()
         );
         println!(
-            "| width | objects | wall (ms) | puts per second | puts over the fold (%) | user CPU \
-             (ms) | system CPU (ms) | voluntary switches | filesystem | device |"
+            "| width | records | wall (ms) | puts per second | p50 call (µs) | p99 call (µs) | \
+             naming (µs) | open (ms) | user CPU (ms) | system CPU (ms) | voluntary switches | \
+             filesystem | device |"
         );
-        println!("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |");
-        row(Count(1), first, fold_rate, &substrate);
+        println!(
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
+        );
     }
-    fs::remove_dir_all(&single).expect("the store of width 1 is removed");
-    fs::remove_dir_all(root.join("plane")).expect("the folded plane is removed");
-
-    for width in widths.into_iter().filter(|width| width.0 > 1) {
+    for width in widths {
         let store = root.join(format!("store-{}", width.0));
         let pass = load(&store, &sources, width);
         assert!(
-            pass.objects.0 >= files.0,
+            pass.records.0 >= files.0,
             "each file puts at least its one piece"
         );
+        let open = reopened(&store);
         if full {
-            row(width, pass, fold_rate, &substrate);
+            row(width, &pass, open, &substrate);
         }
         fs::remove_dir_all(&store).expect("the store of a width is removed");
     }
-    assert!(
-        first.objects.0 >= files.0 && folded.objects.0 == first.objects.0,
-        "each file puts at least its one piece, and the fold renames each object"
-    );
     fs::remove_dir_all(&root).expect("the scratch directory is removed");
 }

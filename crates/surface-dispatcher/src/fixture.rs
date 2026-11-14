@@ -260,6 +260,95 @@ pub fn exercised(
     Exercised::of(arena, module, report)
 }
 
+/// How [`damage`] changes a chunk's record on disk.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Damage
+{
+    /// Cut the record's segment one byte short of the record's end.
+    Truncate,
+    /// Flip the low bit of the record's last byte.
+    Flip,
+}
+
+/// Damage the latest record of the chunk that `pointer` names in the value
+/// plane of the store at `store`.
+///
+/// A record is a header of 64 bytes, its magic `gsg1`, its length as four
+/// little-endian bytes and its digest first, then the object's bytes. The
+/// segments are read in the order of their names, and a later record of one
+/// digest replaces an earlier one, as the store reads them.
+///
+/// # Specification
+/// - requires: the store at `store` holds a record of the pointer's chunk.
+/// - ensures: the latest such record is cut short or holds one changed byte.
+/// - fails: never.
+/// - panics: if no segment holds the chunk, or a segment cannot be read or
+///   written.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a store refuses a damaged chunk, and a later commit
+///   writes it afresh.
+/// - witness: `receipts::tests::a_damaged_receipt_is_passed_over_until_it_is_kept_again`
+#[inline]
+pub fn damage(
+    store: &Path,
+    pointer: gandr_storage_values::ContentPtr,
+    damage: Damage,
+)
+{
+    use std::os::unix::fs::FileExt as _;
+
+    let digest = pointer.digest();
+    let mut segments: Vec<PathBuf> = std::fs::read_dir(store.join("chunks"))
+        .expect("the value plane lists")
+        .map(|entry| entry.expect("an entry reads").path())
+        .collect();
+    segments.sort();
+    let mut latest = None;
+    for segment in segments {
+        let bytes = std::fs::read(&segment).expect("a segment reads");
+        let mut rest = bytes.as_slice();
+        let mut at = 0_u64;
+        while let Some((magic, after)) = rest.split_first_chunk::<4>()
+            && magic == b"gsg1"
+            && let Some((length, after)) = after.split_first_chunk::<4>()
+            && let Some((named, after)) = after.split_first_chunk::<32>()
+            && let Some((_place, after)) = after.split_first_chunk::<24>()
+            && let Ok(body) = usize::try_from(u32::from_le_bytes(*length))
+            && let Some(next) = after.get(body ..)
+        {
+            let end = at
+                .saturating_add(64_u64)
+                .saturating_add(u64::from(u32::from_le_bytes(*length)));
+            if named.as_slice() == digest.as_ref() {
+                latest = Some((segment.clone(), end));
+            }
+            at = end;
+            rest = next;
+        }
+    }
+    let (segment, end) = latest.expect("a segment holds the chunk");
+    let last = end.checked_sub(1_u64).expect("a record has bytes");
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&segment)
+        .expect("the segment opens");
+    match damage {
+        Damage::Truncate => file.set_len(last).expect("the segment is cut"),
+        Damage::Flip => {
+            let mut byte = [0_u8; 1];
+            file.read_exact_at(&mut byte, last)
+                .expect("the last byte reads");
+            let [ref mut changed] = byte;
+            *changed ^= 0x01_u8;
+            file.write_all_at(&byte, last)
+                .expect("the last byte is changed");
+        },
+    }
+}
+
 /// A fresh scratch directory, removed when dropped. The field is the
 /// directory, which a test joins its paths to.
 #[repr(transparent)]

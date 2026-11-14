@@ -1559,11 +1559,12 @@ version = "0.0.0"
 dependencies = [
  "arc-swap",
  "blake3",
- "gandr-core-publish",
+ "boxcar",
  "gandr-storage-chunker",
  "gandr-storage-records",
  "gandr-storage-values",
  "nix",
+ "papaya",
  "quenchant-anodized",
  "quenchant-shape",
 ]
