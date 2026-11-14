@@ -770,27 +770,24 @@ where
                 .entries
                 .get(at)
                 .is_some_and(|entry| !keep(&entry.support, &entry.outcome));
-            if refused {
-                self.remove_at(at);
+            if refused && let Ok(place) = TablePosition::try_from(at) {
+                self.remove_at(place);
             }
         }
     }
 
-    /// Remove the entry at `at`, moving the last entry into its place.
+    /// Remove the entry at `place`, moving the last entry into its place.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn remove_at(
         &mut self,
-        at: usize,
+        place: TablePosition,
     )
     {
+        let at = usize::from(place);
         let Some(removed) = self.entries.get(at)
-        else {
-            return;
-        };
-        let Ok(place) = TablePosition::try_from(at)
         else {
             return;
         };
