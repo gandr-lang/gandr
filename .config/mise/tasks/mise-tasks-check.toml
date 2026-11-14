@@ -1688,7 +1688,8 @@ echo "merge residue check OK: $(jq length "$cases") cases read as recorded; no c
 # that git does not ignore, after the cases of `.config/local-paths/` read as
 # recorded. A placeholder name of `placeholders` stands. The check sits in no
 # group of `.config/gate-scope/table.json` and in no row of its `reads`, so
-# it is light and each change runs it.
+# it is light and each change runs it. The integration cycle's plain lane
+# runs it too, and no run on `landing` runs it (#7478).
 ["check:local-paths"]
 description = "No line of the tree holds the path of a home directory"
 tools.jq = "1.8.1"
@@ -2820,7 +2821,7 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 '''
 
 # The queue on `landing` runs the blocking set alone (#5439).
-# `.config/landing/jobs.jq` refuses six faults. The first is a job that runs
+# `.config/landing/jobs.jq` refuses seven faults. The first is a job that runs
 # in a merge group on `landing` outside the blocking set, the brake (#5442)
 # and the run's setup.
 # The second is a check in that set that `check:landing` does not name. The
@@ -2829,12 +2830,16 @@ echo "coverage check OK: $(jq length .config/coverage/cases.json) cases read as 
 # the nightly restores and that no job saves on a push to main whose queue
 # run, the merge group into `landing`, holds none (#6790). The sixth is a
 # job that can run on a push to `landing` outside the report lanes (#6993).
+# The seventh is a check that the integration cycle runs alone, `cycle`
+# below, which a merge group on `landing` or a pull request can run,
+# `check:landing` names, or no job of the cycle's dispatch runs (#7478).
 # Each case in `.config/landing/cases.json` gives its refusals. Then the jobs
 # of `.github/workflows/landing-checks.yml`, anchors expanded, give none against the
 # tasks that `check:landing` depends on, the states that
-# `.github/workflows/nightly-sweeps.yml` restores and the branches of its `on.push`.
+# `.github/workflows/nightly-sweeps.yml` restores, the branches of its `on.push`
+# and `cycle`.
 ["check:landing-queue"]
-description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, a pull request on landing runs no Clippy, and a push to landing runs the report lanes alone"
+description = "A merge group on landing runs only the run's setup, the brake and the tasks of check:landing, a pull request on landing runs no Clippy, a push to landing runs the report lanes alone, and the integration cycle alone runs check:local-paths"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''
@@ -2844,12 +2849,13 @@ set -euo pipefail
 landing=$(mise tasks ls --json | jq -c '[.[] | select(.name == "check:landing") | .depends[]]')
 states=$(yq -o=json 'explode(.) | [.jobs[].env.CI_BUILD_STATE | select(. != null)] | unique' .github/workflows/nightly-sweeps.yml | jq -c .)
 pushes=$(yq -o=json '.on.push.branches // []' .github/workflows/landing-checks.yml | jq -c .)
-refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/landing-checks.yml | jq -c --argjson landing "$landing" --argjson states "$states" --argjson pushes "$pushes" '{jobs: ., landing: $landing, states: $states, pushes: $pushes}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/landing-checks.yml: \(.)"')
+cycle='["check:local-paths"]'
+refusals=$(yq -o=json 'explode(.) | .jobs' .github/workflows/landing-checks.yml | jq -c --argjson landing "$landing" --argjson states "$states" --argjson pushes "$pushes" --argjson cycle "$cycle" '{jobs: ., landing: $landing, states: $states, pushes: $pushes, cycle: $cycle}' | jq -r -f .config/landing/jobs.jq | jq -r '.[] | ".github/workflows/landing-checks.yml: \(.)"')
 if [[ -n "$refusals" ]]; then
   printf '%s\n' "$refusals" >&2
   exit 1
 fi
-echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup, the brake and the $(jq length <<< "$landing") tasks of check:landing alone"
+echo "landing queue check OK: $(jq length .config/landing/cases.json) cases read as recorded; a merge group on landing runs the setup, the brake and the $(jq length <<< "$landing") tasks of check:landing alone, and the integration cycle alone runs $(jq length <<< "$cycle") checks"
 '''
 
 # The landing rebase (#5441, `.config/landing/rebase.bash`) and its trigger
