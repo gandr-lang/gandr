@@ -616,10 +616,12 @@ impl SupportContext
     }
 
     /// Merge the frozen layers of this session's table and kept memo, as
-    /// [`ContentTable::compact`] and the memo's compaction merge them. A
-    /// session that forks a job at each release, while jobs stay open,
-    /// keeps its layers to the open jobs and a logarithm of its records and
-    /// outcomes, so each join and each recall reads as many.
+    /// [`ContentTable::compact`] and the memo's compaction merge them. The
+    /// kept memo first settles each layer that no open job reads. A join links
+    /// a job's outcomes as layers, so this is where the session merges them,
+    /// off the path of each fork. A session that forks a job at each release,
+    /// while jobs stay open, keeps its layers to the open jobs and a logarithm
+    /// of its records and outcomes, so each join and each recall reads as many.
     ///
     /// # Specification
     /// - requires: `arena` is the arena this session names nodes of.
@@ -642,6 +644,7 @@ impl SupportContext
     )
     {
         self.table.compact(arena);
+        self.kept.settle();
         self.kept.compact();
     }
 
@@ -653,8 +656,9 @@ impl SupportContext
     /// - requires: `job` was forked from this session, or from one it overlays;
     ///   `arena` is this session's arena. The caller folds the jobs of one fork
     ///   point in their order.
-    /// - ensures: as [`ContentTable::join`] and the kept memo's join, each of
-    ///   which settles first.
+    /// - ensures: as [`ContentTable::join`], which settles first, and the kept
+    ///   memo's join, which links the job's outcomes as layers that
+    ///   [`Self::compact`] settles.
     /// - provides: the fold of a job's session at its commit.
     /// - fails: the job kept an outcome under a key that this session kept with
     ///   another outcome since the job's fork.

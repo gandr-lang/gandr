@@ -732,6 +732,89 @@ where
             .iter()
             .map(|entry| (&entry.support, &entry.outcome))
     }
+
+    /// Remove each entry that `keep` refuses. The last entry takes the place
+    /// of each removed one, so a removal moves one entry and the entries that
+    /// stay keep their outcomes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the memo serves each support whose entry `keep` accepts as it
+    ///   served it before, and no support whose entry `keep` refuses; the
+    ///   census and the bucket count count the entries that stay.
+    /// - provides: the filter that a join applies to a part's entries before
+    ///   the part's layer joins its parent by reference.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — `keep` is the caller's predicate, which a clause
+    ///   could only read by calling it again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — removing the first, a middle and the last of five
+    ///   entries, two of them under one digest and one on its own plane, then
+    ///   serving each survivor, distinguishes a removal that strands the moved
+    ///   entry, one that closes a bucket another entry still carries, and a
+    ///   miscounted plane.
+    /// - witness: `memo::tests::a_removal_keeps_every_other_entry_and_counts_exactly`
+    #[inline]
+    pub(crate) fn retain<Keep>(
+        &mut self,
+        mut keep: Keep,
+    ) where
+        Keep: FnMut(&Support, &Outcome) -> bool,
+    {
+        let mut next = self.entries.len();
+        while let Some(at) = next.checked_sub(1) {
+            next = at;
+            let refused = self
+                .entries
+                .get(at)
+                .is_some_and(|entry| !keep(&entry.support, &entry.outcome));
+            if refused && let Ok(place) = TablePosition::try_from(at) {
+                self.remove_at(place);
+            }
+        }
+    }
+
+    /// Remove the entry at `place`, moving the last entry into its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn remove_at(
+        &mut self,
+        place: TablePosition,
+    )
+    {
+        let at = usize::from(place);
+        let Some(removed) = self.entries.get(at)
+        else {
+            return;
+        };
+        let digest = removed.support.digest();
+        let plane = removed.support.plane();
+        let hash = TableHash::of(&digest);
+        self.index.remove(hash, place);
+        let last = self.entries.len().saturating_sub(1);
+        if last != at
+            && let Some(moved) = self.entries.get(last)
+            && let Ok(from) = TablePosition::try_from(last)
+        {
+            let moved = TableHash::of(&moved.support.digest());
+            self.index.remove(moved, from);
+            self.index.file(moved, place);
+        }
+        let _removed = self.entries.swap_remove(at);
+        self.census.forget(plane);
+        let carried = self.index.filed(hash).any(|position| {
+            self.entries
+                .get(usize::from(position))
+                .is_some_and(|entry| entry.support.digest() == digest)
+        });
+        if !carried {
+            self.buckets = self.buckets.closed();
+        }
+    }
 }
 
 impl<Support, Outcome> Default for HashedMemo<Support, Outcome>
@@ -1465,5 +1548,73 @@ mod tests
             &TestOutcome(7),
             memo.recall(&first).expect("replacement retained").outcome()
         );
+    }
+
+    #[test]
+    fn a_removal_keeps_every_other_entry_and_counts_exactly()
+    {
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
+        let collided = |content| TestSupport {
+            plane: TestPlane::Term,
+            content: TestContent(content),
+            digest: DigestWord::from(42),
+        };
+        let typed = TestSupport::honest(TestPlane::Type, TestContent(3));
+        let fourth = TestSupport::honest(TestPlane::Term, TestContent(4));
+        let fifth = TestSupport::honest(TestPlane::Term, TestContent(5));
+        for (outcome, support) in (10_u8 ..).zip([collided(1), collided(2), typed, fourth, fifth]) {
+            assert_eq!(
+                Ok(MemoRecord::Recorded),
+                memo.remember(support, TestOutcome(outcome))
+            );
+        }
+        memo.retain(|support, _| ![1, 3, 5].contains(&support.content.0));
+        assert_eq!(
+            MemoEntryCount::from(2),
+            memo.entry_count(),
+            "two entries stay"
+        );
+        assert_eq!(
+            MemoEntryCount::zero(),
+            memo.plane_entry_count(TestPlane::Type),
+            "the type plane lost its one entry"
+        );
+        assert_eq!(
+            MemoBucketCount::from(2),
+            memo.bucket_count(),
+            "the collided digest keeps its bucket for the entry that stays"
+        );
+        assert_eq!(
+            Some(&TestOutcome(11)),
+            memo.recall(&collided(2)).map(|hit| hit.outcome()),
+            "the entry under the collided digest is still served"
+        );
+        assert_eq!(
+            Some(&TestOutcome(13)),
+            memo.recall(&fourth).map(|hit| hit.outcome()),
+            "the entry that moved into a removed place is still served"
+        );
+        for removed in [collided(1), typed, fifth] {
+            assert!(
+                memo.recall(&removed).is_none(),
+                "a removed support is not served"
+            );
+        }
+        memo.retain(|support, _| support.content.0 != 2);
+        assert_eq!(
+            MemoBucketCount::from(1),
+            memo.bucket_count(),
+            "the removal of the digest's last entry closes its bucket"
+        );
+        assert_eq!(
+            Ok(MemoRecord::Recorded),
+            memo.remember(collided(1), TestOutcome(20)),
+            "a removed support records again as a fresh entry"
+        );
+        assert_eq!(
+            Some(&TestOutcome(20)),
+            memo.recall(&collided(1)).map(|hit| hit.outcome())
+        );
+        assert_eq!(MemoEntryCount::from(2), memo.entry_count());
     }
 }
