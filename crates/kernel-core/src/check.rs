@@ -275,6 +275,7 @@
 //!   bench.
 
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
@@ -450,12 +451,13 @@ fn value_shape_mismatch(
     }
 }
 
-/// Pair each case branch with the summand it binds, the first branch last.
+/// The sum a case's branches bind: `scrutinee_type`, a sum of one summand for
+/// each branch.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: on success, one `(branch, summand)` pair per branch, in reverse
-///   summand order so popping yields them first to last.
+/// - ensures: on success, `scrutinee_type`, a sum of exactly as many summands
+///   as there are branches.
 /// - fails: a sum shape mismatch when `scrutinee_type` is not a sum of exactly
 ///   as many summands as there are branches; [`KernelError::ArenaFault`] never,
 ///   an unresolvable classifier being a shape mismatch too.
@@ -469,27 +471,65 @@ fn value_shape_mismatch(
 ///   branches over a sum of three, and a case over a product, refuse as a sum
 ///   shape mismatch.
 /// - witness: `check::tests::an_n_way_case_binds_each_summand`
-#[spec(ensures: |ret| ret.as_ref().map_or(true, |pairs| pairs.len() == branches.len()
-    && pairs.iter().rev().map(|&(branch, _)| branch).eq(branches.iter().copied())))]
-fn case_branches(
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&sum| sum == scrutinee_type
+    && matches!(arena.value_type(sum), Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len())))]
+fn case_sum(
     arena: &TermArena,
     scrutinee_type: ValueTypeId,
     branches: &[ComputationId],
-) -> Result<Vec<(ComputationId, ValueTypeId)>, KernelError>
+) -> Result<ValueTypeId, KernelError>
 {
     match arena.value_type(scrutinee_type) {
-        Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => Ok(branches
-            .iter()
-            .copied()
-            .zip(summands.iter().copied())
-            .rev()
-            .collect()),
+        Some(&ValueType::Sum(ref summands)) if summands.len() == branches.len() => {
+            Ok(scrutinee_type)
+        },
         _ => Err(value_shape_mismatch(
             arena,
             ExpectedValueShape::Sum,
             scrutinee_type,
         )),
     }
+}
+
+/// The branch of `case` at `next`, with the summand of `sum` that it binds;
+/// none past the last branch.
+///
+/// # Specification
+/// - requires: `sum` is the case's [`case_sum`].
+/// - ensures: the branch and the summand at `next`, or none past the last.
+/// - fails: [`KernelError::ArenaFault`] when `case` is no case or `sum` no sum.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`case_sum`].
+/// - witness: `check::tests::an_n_way_case_binds_each_summand`
+#[spec(ensures: |ret| match ret.as_ref() {
+    Ok(&Some((branch, summand))) => match (arena.computation(case), arena.value_type(sum)) {
+        (Some(&Computation::Case { ref branches, .. }), Some(&ValueType::Sum(ref summands))) => {
+            branches.get(usize::from(next)) == Some(&branch)
+                && summands.get(usize::from(next)) == Some(&summand)
+        },
+        _ => false,
+    },
+    Ok(&None) => true,
+    Err(error) => matches!(*error, KernelError::ArenaFault),
+})]
+fn case_branch(
+    arena: &TermArena,
+    (case, sum): (ComputationId, ValueTypeId),
+    next: Summand,
+) -> Result<Option<(ComputationId, ValueTypeId)>, KernelError>
+{
+    let (Some(&Computation::Case { ref branches, .. }), Some(&ValueType::Sum(ref summands))) =
+        (arena.computation(case), arena.value_type(sum))
+    else {
+        return Err(KernelError::ArenaFault);
+    };
+    let at = usize::from(next);
+    Ok(branches.get(at).copied().zip(summands.get(at).copied()))
 }
 
 /// A computation-type shape mismatch, with a content witness.
@@ -2876,12 +2916,318 @@ impl Goal
     }
 }
 
+/// A frame's run of items: a slice of one of the machine's stacks, named by
+/// the place of its first item and the count of its items. The next item is
+/// the last of the slice.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Slice<Item>
+{
+    /// The place of the slice's first item in the stack.
+    start: usize,
+    /// The count of the slice's items.
+    count: usize,
+    /// The stack's item.
+    item: PhantomData<fn() -> Item>,
+}
+
+impl<Item: Copy> Slice<Item>
+{
+    /// Push `items` on `stack` in their order, as a new slice.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn pushed<Items>(
+        stack: &mut Vec<Item>,
+        items: Items,
+    ) -> Self
+    where
+        Items: IntoIterator<Item = Item>,
+    {
+        let start = stack.len();
+        stack.extend(items);
+        Self {
+            start,
+            count: stack.len().saturating_sub(start),
+            item: PhantomData,
+        }
+    }
+
+    /// An empty slice at the top of `stack`, which the items pushed on it
+    /// next fill.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn mark(stack: &[Item]) -> Self
+    {
+        Self {
+            start: stack.len(),
+            count: 0,
+            item: PhantomData,
+        }
+    }
+
+    /// Each item of `stack` from the slice's first place on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn above(
+        self,
+        stack: &[Item],
+    ) -> &[Item]
+    {
+        stack.get(self.start ..).unwrap_or_default()
+    }
+
+    /// As [`Self::above`], to change in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn above_mut(
+        self,
+        stack: &mut [Item],
+    ) -> &mut [Item]
+    {
+        stack.get_mut(self.start ..).unwrap_or_default()
+    }
+
+    /// The slice of each item of `stack` from the slice's first place on, in
+    /// their order: the last pushed is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn filled(
+        self,
+        stack: &[Item],
+    ) -> Self
+    {
+        Self {
+            start: self.start,
+            count: stack.len().saturating_sub(self.start),
+            item: PhantomData,
+        }
+    }
+
+    /// As [`Self::filled`], with the items turned in place: the first pushed
+    /// is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn turned(
+        self,
+        stack: &mut [Item],
+    ) -> Self
+    {
+        let filled = self.filled(stack);
+        filled.above_mut(stack).reverse();
+        filled
+    }
+
+    /// Push `item` on `stack` as the slice's last item. Each frame above the
+    /// slice's frame gave its places back, so the slice stands at the top.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn grown(
+        self,
+        stack: &mut Vec<Item>,
+        item: Item,
+    ) -> Self
+    {
+        // Each frame above this one gave its places back, so the slice ends at
+        // the top of `stack`.
+        stack.push(item);
+        Self {
+            start: self.start,
+            count: self.count.saturating_add(1),
+            item: PhantomData,
+        }
+    }
+
+    /// The slice's items, the next last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn items(
+        self,
+        stack: &[Item],
+    ) -> &[Item]
+    {
+        stack
+            .get(self.start .. self.start.saturating_add(self.count))
+            .unwrap_or_default()
+    }
+
+    /// The next item, and the slice that remains after it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn next(
+        self,
+        stack: &[Item],
+    ) -> Option<(Item, Self)>
+    {
+        let count = self.count.checked_sub(1)?;
+        let item = *stack.get(self.start.saturating_add(count))?;
+        Some((item, Self {
+            start: self.start,
+            count,
+            item: PhantomData,
+        }))
+    }
+
+    /// Give the slice's places back to `stack`, with each place above them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn release(
+        self,
+        stack: &mut Vec<Item>,
+    )
+    {
+        stack.truncate(self.start);
+    }
+
+    /// The slice's items, to change in place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn items_mut(
+        self,
+        stack: &mut [Item],
+    ) -> &mut [Item]
+    {
+        stack
+            .get_mut(self.start .. self.start.saturating_add(self.count))
+            .unwrap_or_default()
+    }
+
+    /// Push the items of `items` on `stack` as a new slice, and empty
+    /// `items`, which keeps its places.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn saved(
+        stack: &mut Vec<Item>,
+        items: &mut Vec<Item>,
+    ) -> Self
+    {
+        let slice = Self::pushed(stack, items.iter().copied());
+        items.clear();
+        slice
+    }
+
+    /// Write the slice's items back into `items`, and give the slice's places
+    /// back to `stack`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restored(
+        self,
+        stack: &mut Vec<Item>,
+        items: &mut Vec<Item>,
+    )
+    {
+        items.clear();
+        items.extend_from_slice(self.items(stack));
+        self.release(stack);
+    }
+}
+
+/// The checker machine's continuation: its frames, innermost last, and the
+/// stacks of the items that its frames name by slice. On each stack, a
+/// frame's slice stands above the slices of the frames below it. A check
+/// owns one and lends it to each of its runs, and each run empties it first,
+/// so its places outlive the run.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Continuation
+{
+    /// The frames, innermost last.
+    frames: Vec<Frame>,
+    /// The goals of the frames' slices.
+    goals: Vec<Goal>,
+    /// The values of the frames' slices.
+    values: Vec<ValueId>,
+    /// The value types of the frames' slices.
+    types: Vec<ValueTypeId>,
+    /// The computation types of the frames' slices.
+    comp_types: Vec<CompTypeId>,
+    /// The higher evaluation components of the frames' slices.
+    components: Vec<ComponentChecks>,
+    /// The questions of the frames' memo records.
+    questions: Vec<Question>,
+}
+
+/// One component of a higher evaluation on the machine's stacks: the
+/// telescope its checks stand in, outermost first, and its checks, the next
+/// last.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct ComponentChecks
+{
+    /// The telescope the checks stand in, outermost first.
+    context: Slice<ValueTypeId>,
+    /// The checks, the next last.
+    goals: Slice<Goal>,
+}
+
+impl ComponentChecks
+{
+    /// Push the telescope and the checks of each of `obligations` on the
+    /// stacks, the last obligation first, so that the first is the next.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn pushed(
+        (components, types, goals): (&mut Vec<Self>, &mut Vec<ValueTypeId>, &mut Vec<Goal>),
+        obligations: &[crate::identity_recursion::ComponentObligation],
+    ) -> Slice<Self>
+    {
+        Slice::pushed(
+            components,
+            obligations.iter().rev().map(|obligation| Self {
+                context: Slice::pushed(types, obligation.context.iter().copied()),
+                goals: Slice::pushed(
+                    goals,
+                    obligation
+                        .checks
+                        .iter()
+                        .rev()
+                        .map(|&(value, ty)| Goal::CheckValue(value, ty)),
+                ),
+            }),
+        )
+    }
+}
+
 /// A continuation of the checker machine. Every held type is a `Copy` id.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Frame
 {
-    /// Discharge the remaining ordered goals, then yield their promised result.
-    Pending(Vec<Goal>, Produced),
+    /// Discharge the remaining goals of a slice of the goal stack, the next
+    /// last, then yield their promised result.
+    Pending(Slice<Goal>, Produced),
     /// Discharge the remaining goals of a record's fields, or of a
     /// restriction's fixed values, in order, then yield the checked answer.
     /// A refusal raised under this frame names the field checked now, the
@@ -2889,7 +3235,7 @@ enum Frame
     Fields
     {
         /// The goals still to discharge, the next last.
-        remaining: Vec<Goal>,
+        remaining: Slice<Goal>,
         /// The record literal or the restriction whose fields these are.
         holder: ValueId,
         /// How many of the holder's fields began their check, in the order of
@@ -2897,17 +3243,20 @@ enum Frame
         begun: usize,
     },
     /// Accumulate inferred record field types without recursive checking.
+    /// The record literal names each field: its labels, in their order, name
+    /// the types in the same order.
     RecordField
     {
-        /// Label for the current synthesized field.
-        label: gandr_kernel_term::FieldLabel,
-        /// Remaining label/value pairs, in reverse canonical order.
-        remaining: Vec<(gandr_kernel_term::FieldLabel, ValueId)>,
-        /// Classifiers inferred so far.
-        fields: alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+        /// The record literal whose fields these are.
+        holder: ValueId,
+        /// The values still to synthesize, the next last.
+        remaining: Slice<ValueId>,
+        /// The classifiers inferred so far, in label order.
+        types: Slice<ValueTypeId>,
     },
-    /// Project a field once the record's classifier is known.
-    RecordProjection(gandr_kernel_term::FieldLabel),
+    /// Project the field that the projection names once the record's
+    /// classifier is known.
+    RecordProjection(ComputationId),
     /// Project a component once the tuple's classifier is known; the tuple
     /// itself is kept, since a dependent pair's second factor reads the first
     /// component.
@@ -2937,7 +3286,7 @@ enum Frame
         /// Session-path classifier to synthesize after its obligations.
         classifier: ValueTypeId,
         /// Surrounding telescope, excluded from the closed proof tuple.
-        context: Vec<ValueTypeId>,
+        context: Slice<ValueTypeId>,
     },
     /// Synthesize the second product-path component after the first.
     PathProductFirst(ValueId),
@@ -2955,7 +3304,7 @@ enum Frame
         /// Validated endpoint types.
         endpoints: crate::path_universe::PathType,
         /// The enclosing context, restored after both map checks.
-        context: Vec<ValueTypeId>,
+        context: Slice<ValueTypeId>,
     },
     /// Replay both round trips after both translators checked.
     PathBackward
@@ -2965,7 +3314,7 @@ enum Frame
         /// Validated endpoint types.
         endpoints: crate::path_universe::PathType,
         /// The enclosing context.
-        context: Vec<ValueTypeId>,
+        context: Slice<ValueTypeId>,
     },
     /// Check a transport operand after synthesizing its path classifier.
     Transport(ValueId),
@@ -2986,17 +3335,18 @@ enum Frame
         left: ValueId,
         /// The target endpoint.
         right: ValueId,
-        /// The dialogue relating the point to each endpoint.
-        dialogues: alloc::sync::Arc<gandr_kernel_term::EndpointDialogues>,
+        /// The `here` or `stay` value, whose dialogues relate the point to
+        /// each endpoint.
+        holder: ValueId,
     },
     /// A higher evaluation's component checks, each in its own pattern
     /// telescope, then the enclosing context restored.
     Components
     {
         /// The enclosing context.
-        outer: Vec<ValueTypeId>,
+        outer: Slice<ValueTypeId>,
         /// The components still to check, the next one last.
-        remaining: Vec<crate::identity_recursion::ComponentObligation>,
+        remaining: Slice<ComponentChecks>,
     },
     /// An element transport: its path's classifier is synthesized.
     ElementTransport(ComputationId),
@@ -3031,7 +3381,7 @@ enum Frame
         /// Its validated first-order endpoint types.
         endpoints: crate::flow_universe::FlowType,
         /// The enclosing context, restored after the replay.
-        context: Vec<ValueTypeId>,
+        context: Slice<ValueTypeId>,
     },
     /// A function flow: the boundary at `position` is synthesized; orient it.
     FlowBoundary
@@ -3087,18 +3437,19 @@ enum Frame
         binders: [ValueTypeId; 3],
     },
     /// A tuple synthesis: the component in the register is synthesized; the
-    /// rest are held, in reverse order, with the types synthesized so far.
+    /// tuple holds the rest, and the types synthesized so far stand in order.
     SynthTuple
     {
-        /// The components still to synthesize, the next one last.
-        remaining: Vec<ValueId>,
+        /// The tuple, whose component past the types so far is the next.
+        tuple: ValueId,
         /// The component types synthesized so far, in order.
-        types: Vec<ValueTypeId>,
+        types: Slice<ValueTypeId>,
     },
     /// A thunk synthesis: the body computation is synthesizing.
     SynthThunk,
-    /// A lift synthesis: the body is synthesizing; the target level is held.
-    SynthLift(Level),
+    /// A lift synthesis: the body is synthesizing; the lift holds the target
+    /// level.
+    SynthLift(ValueId),
     /// A list-cell check: the head checked; check the tail against the held
     /// list type.
     CheckPairSecond(ValueId, ValueTypeId),
@@ -3166,25 +3517,25 @@ enum Frame
     /// A returner synthesis: the value is synthesized.
     SynthReturn,
     /// A synthesis of a return of several values: the value in the register is
-    /// synthesized; the rest are held, in reverse order, with the types
-    /// synthesized so far.
+    /// synthesized; the return holds the rest, and the types synthesized so
+    /// far stand in order.
     SynthReturnAll
     {
-        /// The values still to synthesize, the next one last.
-        remaining: Vec<ValueId>,
+        /// The return, whose value past the types so far is the next.
+        returns: ComputationId,
         /// The value types synthesized so far, in order, each in the ambient
         /// context.
-        types: Vec<ValueTypeId>,
+        types: Slice<ValueTypeId>,
     },
     /// A lazy pairing synthesis: the component in the register is
-    /// synthesized; the rest are held, in reverse order, with the types
-    /// synthesized so far.
+    /// synthesized; the pairing holds the rest, and the types synthesized so
+    /// far stand in order.
     SynthWith
     {
-        /// The components still to synthesize, the next one last.
-        remaining: Vec<ComputationId>,
+        /// The pairing, whose component past the types so far is the next.
+        with: ComputationId,
         /// The component types synthesized so far, in order.
-        types: Vec<CompTypeId>,
+        types: Slice<CompTypeId>,
     },
     /// A projection: the pairing's type is synthesizing; the component is
     /// held.
@@ -3198,17 +3549,20 @@ enum Frame
     /// binds, and the body's type, strengthened past every binder, becomes
     /// the bind's.
     SynthBindAll(ComputationId, gandr_kernel_term::ResultCount),
-    /// A case synthesis: the scrutinee is synthesized; the branch sources are
-    /// held, in summand order.
-    SynthCaseScrutinee(alloc::boxed::Box<[ComputationId]>),
+    /// A case synthesis: the scrutinee is synthesized; the case holds the
+    /// branch sources, in summand order.
+    SynthCaseScrutinee(ComputationId),
     /// A case synthesis: the branch in the register synthesized under its
-    /// summand; the rest are held with their summands, and the first branch's
-    /// type, once known, for the convergence check.
+    /// summand; the case and its sum hold the rest, and the first branch's
+    /// type, once known, stands for the convergence check.
     SynthCaseBranch
     {
-        /// The branches still to synthesize with their summands, the next one
-        /// last.
-        remaining: Vec<(ComputationId, ValueTypeId)>,
+        /// The case, whose branches these are.
+        case: ComputationId,
+        /// The sum the case scrutinizes, one summand for each branch.
+        sum: ValueTypeId,
+        /// The summand of the next branch.
+        next: Summand,
         /// The first branch's strengthened type, once synthesized.
         first: Option<CompTypeId>,
     },
@@ -3222,12 +3576,12 @@ enum Frame
     /// synthesized; the body source, the count of values it binds and the
     /// expected type are held.
     CheckBindAll(ComputationId, gandr_kernel_term::ResultCount, CompTypeId),
-    /// A case check: the scrutinee synthesized; the branch sources and expected
-    /// type are held.
+    /// A case check: the scrutinee synthesized; the case and the expected type
+    /// are held.
     CheckCaseScrutinee
     {
-        /// The branch sources, in summand order.
-        branches: alloc::boxed::Box<[ComputationId]>,
+        /// The case, whose branch sources stand in summand order.
+        case: ComputationId,
         /// The expected type every branch checks against, written outside
         /// their binders.
         expected: CompTypeId,
@@ -3238,8 +3592,10 @@ enum Frame
     /// A case check: the branches still to check, each under its summand.
     CheckCaseBranch
     {
-        /// The branches still to check with their summands, the next one last.
-        remaining: Vec<(ComputationId, ValueTypeId)>,
+        /// The case, whose branches these are.
+        case: ComputationId,
+        /// The sum the case scrutinizes, one summand for each branch.
+        sum: ValueTypeId,
         /// The expected type every branch checks against, already read from
         /// under its binder.
         expected: CompTypeId,
@@ -3247,8 +3603,7 @@ enum Frame
         /// scrutinee, the innermost binder: each branch reads it at its own
         /// injection.
         refining: Maybe<CompTypeId, refining::Absent>,
-        /// The summand of the next branch, which `remaining` yields first to
-        /// last.
+        /// The summand of the next branch.
         next: Summand,
     },
     /// A binder scope closes: pop the innermost context slot.
@@ -3260,12 +3615,13 @@ enum Frame
     /// under it back out of it.
     Strengthen,
     /// The goal this frame was pushed for is now answered; record it under
-    /// its question and the binders its accrual gathered.
+    /// its question, a slice of one item on the question stack, and the
+    /// binders its accrual gathered.
     ///
     /// Pushed **before** the goal's own continuations, so it pops after all of
     /// them — which is exactly when the produced register holds that goal's
     /// final answer, by the machine's own unwinding invariant.
-    Memoize(Question, Opened),
+    Memoize(Slice<Question>, Opened),
 }
 
 quenchant_shape::reason_enum! {
@@ -3633,16 +3989,17 @@ fn arm_goal(
     )
 }
 
-/// The goals checking each of `values` against its result in `results`, a
-/// telescope, the first goal last.
+/// Push on `goals` the goals checking each of `values` against its result in
+/// `results`, a telescope, the first goal last.
 ///
 /// # Specification
 /// - requires: `results` and `values` have one length, which fits `u32`; each
 ///   result is written under the binders of the results before it, and the
 ///   values in the ambient context.
-/// - ensures: one value check per value, in reverse order. Each checks at its
-///   result with every earlier binder replaced by the earlier value, the
-///   innermost first, each value carried past the binders still outside it.
+/// - ensures: one value check per value pushed on `goals`, in reverse order.
+///   Each checks at its result with every earlier binder replaced by the
+///   earlier value, the innermost first, each value carried past the binders
+///   still outside it.
 /// - provides: the check of a return of several values.
 /// - fails: never.
 /// - panics: none.
@@ -3651,16 +4008,16 @@ fn arm_goal(
 /// - hypothesis: L3 — a second result naming the first checks its value at the
 ///   first value, and refuses a value of the first result's unread type.
 /// - witness: `check::tests::a_return_of_several_values_checks_each_at_its_instantiated_result`
-#[spec(ensures: |ret| ret.len() == values.len())]
+#[spec(captures: start = goals.len(), ensures: |()| goals.len() == start.saturating_add(values.len()))]
 fn returned_goals(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    results: &[ValueTypeId],
-    values: &[ValueId],
-) -> Vec<Goal>
+    (results, values): (&[ValueTypeId], &[ValueId]),
+    goals: &mut Vec<Goal>,
+)
 {
     let (table, rewrites) = session.rewrite_parts();
-    let mut goals = Vec::with_capacity(values.len());
+    goals.reserve(values.len());
     for (position, (&result, &value)) in results.iter().zip(values).enumerate().rev() {
         let mut instantiated = result;
         for (earlier, &replacement) in values.iter().enumerate().take(position).rev() {
@@ -3677,7 +4034,6 @@ fn returned_goals(
         }
         goals.push(Goal::CheckValue(value, instantiated));
     }
-    goals
 }
 
 /// `subject`, synthesized under one binder, read outside it.
@@ -3887,7 +4243,7 @@ fn machine<M>(
     initial: Goal,
     walk: &mut Walk,
     recording: Recording<'_, M>,
-    frames: &mut Vec<Frame>,
+    continuation: &mut Continuation,
 ) -> Result<Produced, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
@@ -3898,6 +4254,15 @@ where
         census,
         owed,
     } = recording;
+    let &mut Continuation {
+        ref mut frames,
+        goals: ref mut goal_stack,
+        values: ref mut value_stack,
+        types: ref mut type_stack,
+        comp_types: ref mut comp_type_stack,
+        components: ref mut component_stack,
+        questions: ref mut question_stack,
+    } = continuation;
     let first_owed = owed.len();
     // The barriers opened where the machine swapped its context, innermost
     // last; empty when the memo is inactive.
@@ -3956,7 +4321,10 @@ where
             }
             else {
                 let opened = session.open(&context);
-                frames.push(Frame::Memoize(question, opened));
+                frames.push(Frame::Memoize(
+                    Slice::pushed(question_stack, [question]),
+                    opened,
+                ));
             }
         }
         census.record(SupportPlane::Term, answered);
@@ -3965,8 +4333,9 @@ where
             None => match goal {
                 Goal::SynthValue(id) => match *read_value(arena, id)? {
                     Value::Constructor { .. } => {
-                        let (datatype, mut goals) =
-                            former::constructor(arena, judgement.entries, session, id)?;
+                        let mark = Slice::mark(goal_stack);
+                        let datatype =
+                            former::constructor(arena, judgement.entries, session, id, goal_stack)?;
                         let _level = type_level(
                             arena,
                             judgement,
@@ -3979,27 +4348,27 @@ where
                                 owed,
                             },
                         )?;
-                        goals.reverse();
-                        frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
+                        frames.push(Frame::Pending(
+                            mark.turned(goal_stack),
+                            Produced::ValueType(datatype),
+                        ));
                         Produced::ValueType(datatype)
                     },
                     Value::Record(ref values) => {
-                        let mut remaining = values
-                            .iter()
-                            .rev()
-                            .map(|(label, value)| (label.clone(), *value))
-                            .collect::<Vec<_>>();
-                        let fields = alloc::collections::BTreeMap::new();
-                        if let Some((label, value)) = remaining.pop() {
+                        let remaining = Slice::pushed(value_stack, values.values().rev().copied());
+                        if let Some((value, remaining)) = remaining.next(value_stack) {
                             frames.push(Frame::RecordField {
-                                label,
+                                holder: id,
                                 remaining,
-                                fields,
+                                types: Slice::mark(type_stack),
                             });
                             goal = Goal::SynthValue(value);
                             continue 'expand;
                         }
-                        Produced::ValueType(arena.value_type_record(fields))
+                        remaining.release(value_stack);
+                        Produced::ValueType(
+                            arena.value_type_record(alloc::collections::BTreeMap::new()),
+                        )
                     },
                     // A restriction synthesizes its record value's type first.
                     Value::Restrict { value, .. } => {
@@ -4045,7 +4414,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: path_type,
-                            context: core::mem::take(&mut context),
+                            context: Slice::saved(type_stack, &mut context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4088,7 +4457,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: flow_type,
-                            context: core::mem::take(&mut context),
+                            context: Slice::saved(type_stack, &mut context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4135,7 +4504,7 @@ where
                         frames.push(Frame::FlowForward {
                             flow: id,
                             endpoints,
-                            context: core::mem::take(&mut context),
+                            context: Slice::saved(type_stack, &mut context),
                         });
                         goal = Goal::CheckValue(translator, expected);
                         continue 'expand;
@@ -4226,7 +4595,7 @@ where
                         frames.push(Frame::PathForward {
                             path: id,
                             endpoints,
-                            context: core::mem::take(&mut context),
+                            context: Slice::saved(type_stack, &mut context),
                         });
                         goal = Goal::CheckValue(forward, translator);
                         continue 'expand;
@@ -4271,12 +4640,10 @@ where
                     // A tuple synthesizes the product of its components'
                     // types, in order; the empty tuple synthesizes the unit.
                     Value::Tuple(ref components) => {
-                        let mut remaining = components.iter().rev().copied().collect::<Vec<_>>();
-                        let arity = remaining.len();
-                        if let Some(first) = remaining.pop() {
+                        if let Some(&first) = components.first() {
                             frames.push(Frame::SynthTuple {
-                                remaining,
-                                types: Vec::with_capacity(arity),
+                                tuple: id,
+                                types: Slice::mark(type_stack),
                             });
                             goal = Goal::SynthValue(first);
                             continue 'expand;
@@ -4288,8 +4655,8 @@ where
                         goal = Goal::SynthComp(body);
                         continue 'expand;
                     },
-                    Value::Lift { ref target, body } => {
-                        frames.push(Frame::SynthLift(target.clone()));
+                    Value::Lift { body, .. } => {
+                        frames.push(Frame::SynthLift(id));
                         goal = Goal::SynthValue(body);
                         continue 'expand;
                     },
@@ -4536,8 +4903,9 @@ where
                     else {
                         return Err(KernelError::ArenaFault);
                     };
-                    let (datatype, mut goals) =
-                        former::constructor(arena, judgement.entries, session, id)?;
+                    let mark = Slice::mark(goal_stack);
+                    let datatype =
+                        former::constructor(arena, judgement.entries, session, id, goal_stack)?;
                     let _level = type_level(
                         arena,
                         judgement,
@@ -4563,11 +4931,13 @@ where
                         (&stages, context.as_slice()),
                         block,
                         stage,
-                        &mut goals,
+                        mark.above_mut(goal_stack),
                     )?;
                     frames.push(Frame::ConvertValue(base));
-                    goals.reverse();
-                    frames.push(Frame::Pending(goals, Produced::ValueType(datatype)));
+                    frames.push(Frame::Pending(
+                        mark.turned(goal_stack),
+                        Produced::ValueType(datatype),
+                    ));
                     Produced::ValueType(datatype)
                 },
                 // An introduction form reads the head of the type it checks
@@ -4633,17 +5003,16 @@ where
                                 });
                             }
                         }
-                        let goals = values
-                            .iter()
-                            .rev()
-                            .map(|(label, value)| {
+                        let remaining = Slice::pushed(
+                            goal_stack,
+                            values.iter().rev().map(|(label, value)| {
                                 fields.get(label).map_or(Goal::SynthValue(*value), |ty| {
                                     Goal::CheckValue(*value, *ty)
                                 })
-                            })
-                            .collect::<Vec<_>>();
+                            }),
+                        );
                         frames.push(Frame::Fields {
-                            remaining: goals,
+                            remaining,
                             holder: id,
                             begun: 0,
                         });
@@ -4724,12 +5093,12 @@ where
                             (Some(&ValueType::Product(ref parts)), _)
                                 if parts.len() == components.len() =>
                             {
-                                let goals = components
-                                    .iter()
-                                    .zip(parts.iter())
-                                    .rev()
-                                    .map(|(&component, &part)| Goal::CheckValue(component, part))
-                                    .collect::<Vec<_>>();
+                                let goals = Slice::pushed(
+                                    goal_stack,
+                                    components.iter().zip(parts.iter()).rev().map(
+                                        |(&component, &part)| Goal::CheckValue(component, part),
+                                    ),
+                                );
                                 frames.push(Frame::Pending(goals, Produced::Checked));
                                 Produced::Checked
                             },
@@ -4738,7 +5107,7 @@ where
                                 let fibre =
                                     substitute_value_type(arena, table, rewrites, second, left);
                                 frames.push(Frame::Pending(
-                                    alloc::vec![Goal::CheckValue(right, fibre)],
+                                    Slice::pushed(goal_stack, [Goal::CheckValue(right, fibre)]),
                                     Produced::Checked,
                                 ));
                                 goal = Goal::CheckValue(left, first);
@@ -4766,11 +5135,7 @@ where
                             ));
                         },
                     },
-                    Value::Here {
-                        point,
-                        ref dialogues,
-                    } => {
-                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                    Value::Here { point, .. } => {
                         let (domain, left, right) = crate::element_identity::reflexive_parts(
                             arena,
                             crate::identity_recursion::Interfaces::of(judgement.entries),
@@ -4780,7 +5145,7 @@ where
                             point,
                             left,
                             right,
-                            dialogues,
+                            holder: id,
                         });
                         goal = Goal::CheckValue(point, domain);
                         continue 'expand;
@@ -4788,18 +5153,14 @@ where
                     // `stay(c)` checks at a flow, at either reading, by the
                     // point at the carrier and the endpoint conversions a
                     // `here` owes.
-                    Value::Stay {
-                        point,
-                        ref dialogues,
-                    } => {
-                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                    Value::Stay { point, .. } => {
                         let ends = crate::flow_universe::ends(arena, expected)
                             .map_err(KernelError::Flow)?;
                         frames.push(Frame::CheckHere {
                             point,
                             left: ends.source,
                             right: ends.target,
-                            dialogues,
+                            holder: id,
                         });
                         goal = Goal::CheckValue(point, ends.carrier);
                         continue 'expand;
@@ -4813,17 +5174,19 @@ where
                         let program = alloc::sync::Arc::clone(program);
                         owed_values.clear();
                         owed_values.extend_from_slice(evidence);
-                        let goals = crate::element_identity::higher_obligations(
-                            arena,
-                            crate::identity_recursion::Interfaces::of(judgement.entries),
-                            expected,
-                            &program,
-                            &owed_values,
-                        )?
-                        .into_iter()
-                        .rev()
-                        .map(|(guard, fibre)| Goal::CheckValue(guard, fibre))
-                        .collect::<Vec<_>>();
+                        let goals = Slice::pushed(
+                            goal_stack,
+                            crate::element_identity::higher_obligations(
+                                arena,
+                                crate::identity_recursion::Interfaces::of(judgement.entries),
+                                expected,
+                                &program,
+                                &owed_values,
+                            )?
+                            .into_iter()
+                            .rev()
+                            .map(|(guard, fibre)| Goal::CheckValue(guard, fibre)),
+                        );
                         frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
@@ -4839,7 +5202,7 @@ where
                         owed_components.clear();
                         owed_components.extend_from_slice(components);
                         let unfoldings = admitted_unfoldings(judgement);
-                        let mut remaining = crate::element_identity::evaluation_obligations(
+                        let remaining = crate::element_identity::evaluation_obligations(
                             arena,
                             (
                                 &unfoldings,
@@ -4849,14 +5212,15 @@ where
                             &dialogues,
                             &owed_components,
                         )?;
-                        remaining.reverse();
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        frames.push(Frame::Components {
-                            outer: core::mem::take(&mut context),
-                            remaining,
-                        });
+                        let outer = Slice::saved(type_stack, &mut context);
+                        let remaining = ComponentChecks::pushed(
+                            (component_stack, type_stack, goal_stack),
+                            &remaining,
+                        );
+                        frames.push(Frame::Components { outer, remaining });
                         Produced::Checked
                     },
                     // A quantified evaluation replays every step's dialogues
@@ -4871,7 +5235,7 @@ where
                         owed_values.clear();
                         owed_values.extend_from_slice(children);
                         let unfoldings = admitted_unfoldings(judgement);
-                        let mut remaining = crate::element_identity::quantified_obligations(
+                        let remaining = crate::element_identity::quantified_obligations(
                             arena,
                             (
                                 &unfoldings,
@@ -4881,14 +5245,15 @@ where
                             &steps,
                             &owed_values,
                         )?;
-                        remaining.reverse();
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        frames.push(Frame::Components {
-                            outer: core::mem::take(&mut context),
-                            remaining,
-                        });
+                        let outer = Slice::saved(type_stack, &mut context);
+                        let remaining = ComponentChecks::pushed(
+                            (component_stack, type_stack, goal_stack),
+                            &remaining,
+                        );
+                        frames.push(Frame::Components { outer, remaining });
                         Produced::Checked
                     },
                     // A restriction's type is exact: it is compared with the
@@ -4935,8 +5300,8 @@ where
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    Computation::RecordProjection(record, ref label) => {
-                        frames.push(Frame::RecordProjection(label.clone()));
+                    Computation::RecordProjection(record, _) => {
+                        frames.push(Frame::RecordProjection(id));
                         goal = Goal::SynthValue(record);
                         continue 'expand;
                     },
@@ -5078,12 +5443,10 @@ where
                     // A return of several values synthesizes the telescope of
                     // their types, each carried past the results before it.
                     Computation::ReturnAll(ref values) => {
-                        let mut remaining = values.iter().rev().copied().collect::<Vec<_>>();
-                        let arity = remaining.len();
-                        if let Some(first) = remaining.pop() {
+                        if let Some(&first) = values.first() {
                             frames.push(Frame::SynthReturnAll {
-                                remaining,
-                                types: Vec::with_capacity(arity),
+                                returns: id,
+                                types: Slice::mark(type_stack),
                             });
                             goal = Goal::SynthValue(first);
                             continue 'expand;
@@ -5100,12 +5463,10 @@ where
                     // pairing checking-only too. The empty pairing
                     // synthesizes the terminal type.
                     Computation::With(ref components) => {
-                        let mut remaining = components.iter().rev().copied().collect::<Vec<_>>();
-                        let arity = remaining.len();
-                        if let Some(first) = remaining.pop() {
+                        if let Some(&first) = components.first() {
                             frames.push(Frame::SynthWith {
-                                remaining,
-                                types: Vec::with_capacity(arity),
+                                with: id,
+                                types: Slice::mark(comp_type_stack),
                             });
                             goal = Goal::SynthComp(first);
                             continue 'expand;
@@ -5128,7 +5489,7 @@ where
                                 form: NonInferableForm::EmptyCase,
                             });
                         }
-                        frames.push(Frame::SynthCaseScrutinee(branches.clone()));
+                        frames.push(Frame::SynthCaseScrutinee(id));
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
@@ -5333,7 +5694,9 @@ where
                                     ));
                                 },
                             };
-                        let goals = returned_goals(arena, session, &results, &values);
+                        let mark = Slice::mark(goal_stack);
+                        returned_goals(arena, session, (&results, &values), goal_stack);
+                        let goals = mark.filled(goal_stack);
                         frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
@@ -5351,12 +5714,14 @@ where
                             (
                                 Some(&CompType::With(ref types)),
                                 &Computation::With(ref components),
-                            ) if types.len() == components.len() => components
-                                .iter()
-                                .zip(types.iter())
-                                .rev()
-                                .map(|(&component, &ty)| Goal::CheckComp(component, ty))
-                                .collect::<Vec<_>>(),
+                            ) if types.len() == components.len() => Slice::pushed(
+                                goal_stack,
+                                components
+                                    .iter()
+                                    .zip(types.iter())
+                                    .rev()
+                                    .map(|(&component, &ty)| Goal::CheckComp(component, ty)),
+                            ),
                             _ => {
                                 return Err(comp_shape_mismatch(
                                     arena,
@@ -5368,14 +5733,10 @@ where
                         frames.push(Frame::Pending(goals, Produced::Checked));
                         Produced::Checked
                     },
-                    Computation::Case {
-                        scrutinee,
-                        ref branches,
-                    } => {
-                        let branches = branches.clone();
+                    Computation::Case { scrutinee, .. } => {
                         let refining = refining_goal(arena, session, scrutinee, expected);
                         frames.push(Frame::CheckCaseScrutinee {
-                            branches,
+                            case: id,
                             expected,
                             refining,
                         });
@@ -5491,10 +5852,10 @@ where
             #[cfg(feature = "counts")]
             let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
             match frame {
-                Frame::Pending(mut goals, result) => {
+                Frame::Pending(slice, result) => {
                     let siblings = Siblings {
                         context: &context,
-                        goals: &goals,
+                        goals: slice.items(goal_stack),
                         field: None,
                         stages: &stages,
                         root,
@@ -5513,24 +5874,26 @@ where
                             FrameFork::Joined
                         )
                     {
+                        slice.release(goal_stack);
                         produced = result;
                         continue;
                     }
-                    if let Some(next) = goals.pop() {
-                        frames.push(Frame::Pending(goals, result));
+                    if let Some((next, rest)) = slice.next(goal_stack) {
+                        frames.push(Frame::Pending(rest, result));
                         goal = next;
                         continue 'expand;
                     }
+                    slice.release(goal_stack);
                     produced = result;
                 },
                 Frame::Fields {
-                    mut remaining,
+                    remaining,
                     holder,
                     begun,
                 } => {
                     let siblings = Siblings {
                         context: &context,
-                        goals: &remaining,
+                        goals: remaining.items(goal_stack),
                         field: Some((holder, begun)),
                         stages: &stages,
                         root,
@@ -5549,10 +5912,11 @@ where
                             FrameFork::Joined
                         )
                     {
+                        remaining.release(goal_stack);
                         produced = Produced::Checked;
                         continue;
                     }
-                    if let Some(next) = remaining.pop() {
+                    if let Some((next, remaining)) = remaining.next(goal_stack) {
                         frames.push(Frame::Fields {
                             remaining,
                             holder,
@@ -5561,26 +5925,38 @@ where
                         goal = next;
                         continue 'expand;
                     }
+                    remaining.release(goal_stack);
                     produced = Produced::Checked;
                 },
                 Frame::RecordField {
-                    label,
-                    mut remaining,
-                    mut fields,
+                    holder,
+                    remaining,
+                    types,
                 } => {
-                    fields.insert(label, produced.value_type()?);
-                    if let Some((label, value)) = remaining.pop() {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    if let Some((value, remaining)) = remaining.next(value_stack) {
                         frames.push(Frame::RecordField {
-                            label,
+                            holder,
                             remaining,
-                            fields,
+                            types,
                         });
                         goal = Goal::SynthValue(value);
                         continue 'expand;
                     }
+                    let Some(&Value::Record(ref values)) = arena.value(holder)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let fields: alloc::collections::BTreeMap<_, _> = values
+                        .keys()
+                        .cloned()
+                        .zip(types.items(type_stack).iter().copied())
+                        .collect();
+                    types.release(type_stack);
+                    remaining.release(value_stack);
                     produced = Produced::ValueType(arena.value_type_record(fields));
                 },
-                Frame::RecordProjection(label) => {
+                Frame::RecordProjection(projection) => {
                     let actual = produced.value_type()?;
                     let Some(matched_native_node) = arena.value_type(actual)
                     else {
@@ -5598,9 +5974,17 @@ where
                             actual,
                         ));
                     };
-                    let field = *fields
-                        .get(&label)
-                        .ok_or(KernelError::AbsentRecordField { label })?;
+                    let Some(&Computation::RecordProjection(_, ref label)) =
+                        arena.computation(projection)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let field =
+                        *fields
+                            .get(label)
+                            .ok_or_else(|| KernelError::AbsentRecordField {
+                                label: label.clone(),
+                            })?;
                     produced = Produced::CompType(arena.comp_type_returner(field));
                 },
                 // A projection of a product returns the part at its position.
@@ -5744,12 +6128,14 @@ where
                             Maybe::Present(_) => motive,
                             Maybe::Absent(_) => at,
                         };
-                        let (result, mut goals, looped, reads) = former::case(
+                        let mark = Slice::mark(goal_stack);
+                        let (result, looped, reads) = former::case(
                             arena,
                             (judgement.entries, judgement.presentations),
                             session,
                             (case, branches_at),
                             (datatype, opened, own_constant),
+                            goal_stack,
                         )?;
                         // A field domain that named the constant is formed as
                         // read, under the branch's fields before it at their
@@ -5758,7 +6144,7 @@ where
                         // later definition of the block, as its family did.
                         for read in reads {
                             let Some(&Goal::CheckComp(_, mut telescope)) =
-                                goals.get(usize::from(read.tag))
+                                mark.above(goal_stack).get(usize::from(read.tag))
                             else {
                                 return Err(KernelError::ArenaFault);
                             };
@@ -5791,8 +6177,10 @@ where
                         if let Maybe::Present(reading) = obliged {
                             frames.push(Frame::Respect(case, reading));
                         }
-                        goals.reverse();
-                        frames.push(Frame::Pending(goals, Produced::CompType(result)));
+                        frames.push(Frame::Pending(
+                            mark.turned(goal_stack),
+                            Produced::CompType(result),
+                        ));
                         produced = Produced::CompType(result);
                     }
                 },
@@ -5939,7 +6327,12 @@ where
                     goal = Goal::CheckComp(body, under_both);
                     continue 'expand;
                 },
-                Frame::Memoize(question, opened) => {
+                Frame::Memoize(asked, opened) => {
+                    let Some((question, _)) = asked.next(question_stack)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    asked.release(question_stack);
                     let reads = session.close(opened);
                     let support = question.answered(arena, session, context.as_slice(), reads);
                     // A memo at its ceiling declines to record; see the same
@@ -6081,7 +6474,7 @@ where
                     });
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Path)?;
-                    context = outer;
+                    outer.restored(type_stack, &mut context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -6147,8 +6540,15 @@ where
                     point,
                     left,
                     right,
-                    dialogues,
+                    holder,
                 } => {
+                    let dialogues = match arena.value(holder) {
+                        Some(
+                            &(Value::Here { ref dialogues, .. }
+                            | Value::Stay { ref dialogues, .. }),
+                        ) => alloc::sync::Arc::clone(dialogues),
+                        _ => return Err(KernelError::ArenaFault),
+                    };
                     let unfoldings = admitted_unfoldings(judgement);
                     crate::element_identity::reflexive_endpoints(
                         arena,
@@ -6160,28 +6560,23 @@ where
                     )?;
                     produced = Produced::Checked;
                 },
-                Frame::Components {
-                    outer,
-                    mut remaining,
-                } => {
-                    let Some(component) = remaining.pop()
+                Frame::Components { outer, remaining } => {
+                    let Some((component, rest)) = remaining.next(component_stack)
                     else {
-                        context = outer;
+                        remaining.release(component_stack);
+                        outer.restored(type_stack, &mut context);
                         if let Some(barrier) = barriers.pop() {
                             let _closed = session.close(barrier);
                         }
                         produced = Produced::Checked;
                         continue;
                     };
-                    context = component.context;
-                    frames.push(Frame::Components { outer, remaining });
-                    let goals = component
-                        .checks
-                        .into_iter()
-                        .rev()
-                        .map(|(value, ty)| Goal::CheckValue(value, ty))
-                        .collect::<Vec<_>>();
-                    frames.push(Frame::Pending(goals, Produced::Checked));
+                    component.context.restored(type_stack, &mut context);
+                    frames.push(Frame::Components {
+                        outer,
+                        remaining: rest,
+                    });
+                    frames.push(Frame::Pending(component.goals, Produced::Checked));
                     produced = Produced::Checked;
                 },
                 // Transport's input checks at the motive instantiated at the
@@ -6236,10 +6631,13 @@ where
                         right: end,
                     }) = arena.value_type(motive)
                     {
-                        frames.push(Frame::Pending(alloc::vec![goal], Produced::Checked));
+                        frames.push(Frame::Pending(
+                            Slice::pushed(goal_stack, [goal]),
+                            Produced::Checked,
+                        ));
                         frames.push(Frame::ScopeExit);
                         frames.push(Frame::Pending(
-                            alloc::vec![Goal::CheckValue(end, fibre)],
+                            Slice::pushed(goal_stack, [Goal::CheckValue(end, fibre)]),
                             Produced::Checked,
                         ));
                         context.push(domain);
@@ -6451,7 +6849,7 @@ where
                     );
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Flow)?;
-                    context = outer;
+                    outer.restored(type_stack, &mut context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -6789,7 +7187,7 @@ where
                         binders: [result, once, related],
                     });
                     frames.push(Frame::Pending(
-                        Vec::from([
+                        Slice::pushed(goal_stack, [
                             Goal::CheckValue(evidence, premise),
                             Goal::CheckValue(right, argument),
                         ]),
@@ -6807,23 +7205,26 @@ where
                     goal = Goal::SynthComp(body);
                     continue 'expand;
                 },
-                Frame::SynthTuple {
-                    mut remaining,
-                    mut types,
-                } => {
-                    types.push(produced.value_type()?);
-                    if let Some(next) = remaining.pop() {
-                        frames.push(Frame::SynthTuple { remaining, types });
+                Frame::SynthTuple { tuple, types } => {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    let Some(&Value::Tuple(ref components)) = arena.value(tuple)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = components.get(types.items(type_stack).len()) {
+                        frames.push(Frame::SynthTuple { tuple, types });
                         goal = Goal::SynthValue(next);
                         continue 'expand;
                     }
-                    produced = Produced::ValueType(arena.value_type_product(&types));
+                    produced =
+                        Produced::ValueType(arena.value_type_product(types.items(type_stack)));
+                    types.release(type_stack);
                 },
                 Frame::SynthThunk => {
                     let body_type = produced.comp_type()?;
                     produced = Produced::ValueType(arena.value_type_thunk(body_type));
                 },
-                Frame::SynthLift(target) => {
+                Frame::SynthLift(lift) => {
                     let body_type = produced.value_type()?;
                     let body_level = type_level(
                         arena,
@@ -6837,10 +7238,13 @@ where
                             owed,
                         },
                     )?;
-                    judgement.levels.check_level_scope(&target)?;
-                    judgement
-                        .levels
-                        .check_universe_below(&body_level, &target)?;
+                    let Some(&Value::Lift { ref target, .. }) = arena.value(lift)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    judgement.levels.check_level_scope(target)?;
+                    judgement.levels.check_universe_below(&body_level, target)?;
+                    let target = target.clone();
                     produced = Produced::ValueType(arena.value_type_lift(body_type, target));
                 },
                 Frame::CheckPairSecond(second, second_type) => {
@@ -6909,17 +7313,16 @@ where
                         .filter(|&(label, _)| !fixed.contains_key(label))
                         .map(|(label, &ty)| (label.clone(), ty))
                         .collect();
-                    let goals = fixed
-                        .iter()
-                        .rev()
-                        .filter_map(|(label, &value)| {
+                    let remaining = Slice::pushed(
+                        goal_stack,
+                        fixed.iter().rev().filter_map(|(label, &value)| {
                             fields.get(label).map(|&ty| Goal::CheckValue(value, ty))
-                        })
-                        .collect::<Vec<_>>();
+                        }),
+                    );
                     let kept = arena.value_type_record(kept);
                     frames.push(Frame::RestrictConverts { restriction, kept });
                     frames.push(Frame::Fields {
-                        remaining: goals,
+                        remaining,
                         holder: restriction,
                         begun: 0,
                     });
@@ -7085,7 +7488,7 @@ where
                     classifier,
                     context: outer,
                 } => {
-                    context = outer;
+                    outer.restored(type_stack, &mut context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -7118,20 +7521,21 @@ where
                     let result_type = produced.value_type()?;
                     produced = Produced::CompType(arena.comp_type_returner(result_type));
                 },
-                Frame::SynthReturnAll {
-                    mut remaining,
-                    mut types,
-                } => {
-                    types.push(produced.value_type()?);
-                    if let Some(next) = remaining.pop() {
-                        frames.push(Frame::SynthReturnAll { remaining, types });
+                Frame::SynthReturnAll { returns, types } => {
+                    let types = types.grown(type_stack, produced.value_type()?);
+                    let Some(&Computation::ReturnAll(ref values)) = arena.computation(returns)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = values.get(types.items(type_stack).len()) {
+                        frames.push(Frame::SynthReturnAll { returns, types });
                         goal = Goal::SynthValue(next);
                         continue 'expand;
                     }
                     // Each type was synthesized in the ambient context, and
                     // its result stands under the results before it.
                     let (table, rewrites) = session.rewrite_parts();
-                    for (position, result) in types.iter_mut().enumerate() {
+                    for (position, result) in types.items_mut(type_stack).iter_mut().enumerate() {
                         let before = BinderDepth::from(u32::try_from(position).unwrap_or(u32::MAX));
                         *result = shift_value_type(
                             arena,
@@ -7142,19 +7546,23 @@ where
                             before,
                         );
                     }
-                    produced = Produced::CompType(arena.comp_type_returns(&types));
+                    produced = Produced::CompType(arena.comp_type_returns(types.items(type_stack)));
+                    types.release(type_stack);
                 },
-                Frame::SynthWith {
-                    mut remaining,
-                    mut types,
-                } => {
-                    types.push(produced.comp_type()?);
-                    if let Some(next) = remaining.pop() {
-                        frames.push(Frame::SynthWith { remaining, types });
+                Frame::SynthWith { with, types } => {
+                    let types = types.grown(comp_type_stack, produced.comp_type()?);
+                    let Some(&Computation::With(ref components)) = arena.computation(with)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    if let Some(&next) = components.get(types.items(comp_type_stack).len()) {
+                        frames.push(Frame::SynthWith { with, types });
                         goal = Goal::SynthComp(next);
                         continue 'expand;
                     }
-                    produced = Produced::CompType(arena.comp_type_with(&types));
+                    produced =
+                        Produced::CompType(arena.comp_type_with(types.items(comp_type_stack)));
+                    types.release(comp_type_stack);
                 },
                 // A projection reads its component off the pairing's
                 // synthesized lazy product, a codata type read through its
@@ -7224,13 +7632,18 @@ where
                         },
                     }
                 },
-                Frame::SynthCaseScrutinee(branches) => {
+                Frame::SynthCaseScrutinee(case) => {
                     // A decode of a returned code is read to the type the code
                     // quotes, as a data case reads its scrutinee's.
                     let scrutinee_type = produced.value_type()?;
                     let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
-                    let mut remaining = case_branches(arena, scrutinee_type, &branches)?;
-                    let Some((branch, summand)) = remaining.pop()
+                    let Some(&Computation::Case { ref branches, .. }) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let sum = case_sum(arena, scrutinee_type, branches)?;
+                    let Some((branch, summand)) =
+                        case_branch(arena, (case, sum), Summand::from(0_usize))?
                     else {
                         return Err(KernelError::NotInferable {
                             form: NonInferableForm::EmptyCase,
@@ -7238,7 +7651,9 @@ where
                     };
                     context.push(summand);
                     frames.push(Frame::SynthCaseBranch {
-                        remaining,
+                        case,
+                        sum,
+                        next: Summand::from(1_usize),
                         first: None,
                     });
                     frames.push(Frame::ScopeExit);
@@ -7248,7 +7663,9 @@ where
                 // Every branch's type, strengthened out of its binder, must
                 // convert to the first branch's, which the case then has.
                 Frame::SynthCaseBranch {
-                    mut remaining,
+                    case,
+                    sum,
+                    next,
                     first,
                 } => {
                     let branch_type =
@@ -7268,10 +7685,12 @@ where
                             }
                         },
                     };
-                    if let Some((branch, summand)) = remaining.pop() {
+                    if let Some((branch, summand)) = case_branch(arena, (case, sum), next)? {
                         context.push(summand);
                         frames.push(Frame::SynthCaseBranch {
-                            remaining,
+                            case,
+                            sum,
+                            next: Summand::from(usize::from(next).saturating_add(1)),
                             first: Some(first_type),
                         });
                         frames.push(Frame::ScopeExit);
@@ -7366,7 +7785,7 @@ where
                 // expected type read from under that binder. A case of no
                 // branches over the empty sum checks at once.
                 Frame::CheckCaseScrutinee {
-                    branches,
+                    case,
                     expected,
                     refining,
                 } => {
@@ -7375,10 +7794,15 @@ where
                     // is cased on at that sum, the empty one among them.
                     let scrutinee_type = produced.value_type()?;
                     let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
-                    let remaining = case_branches(arena, scrutinee_type, &branches)?;
+                    let Some(&Computation::Case { ref branches, .. }) = arena.computation(case)
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let sum = case_sum(arena, scrutinee_type, branches)?;
                     let scoped = weakened(arena, session, expected);
                     frames.push(Frame::CheckCaseBranch {
-                        remaining,
+                        case,
+                        sum,
                         expected: scoped,
                         refining,
                         next: Summand::from(0_usize),
@@ -7386,19 +7810,21 @@ where
                     produced = Produced::Checked;
                 },
                 Frame::CheckCaseBranch {
-                    mut remaining,
+                    case,
+                    sum,
                     expected,
                     refining,
                     next,
                 } => {
-                    if let Some((branch, summand)) = remaining.pop() {
+                    if let Some((branch, summand)) = case_branch(arena, (case, sum), next)? {
                         let goal_here = match refining {
                             Maybe::Present(outside) => arm_goal(arena, session, outside, next),
                             Maybe::Absent(_) => expected,
                         };
                         context.push(summand);
                         frames.push(Frame::CheckCaseBranch {
-                            remaining,
+                            case,
+                            sum,
                             expected,
                             refining,
                             next: Summand::from(usize::from(next).saturating_add(1)),
@@ -7432,7 +7858,8 @@ where
 /// name the field whose value a refusal is about.
 ///
 /// # Specification
-/// - requires: as [`machine`], whose frame stack this call holds.
+/// - requires: as [`machine`]; `continuation` is the check's own, which this
+///   run empties first and then holds.
 /// - ensures: [`machine`]'s verdict, except that [`field_refused`] names the
 ///   refusal of a field's value by the field's label. A refusal deeper inside
 ///   the value, or outside every field, stays as the machine raised it.
@@ -7456,11 +7883,18 @@ fn run<M>(
     initial: Goal,
     stages: StageOrder,
     recording: Recording<'_, M>,
+    continuation: &mut Continuation,
 ) -> Result<Produced, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
-    let mut frames = Vec::new();
+    continuation.frames.clear();
+    continuation.goals.clear();
+    continuation.values.clear();
+    continuation.types.clear();
+    continuation.comp_types.clear();
+    continuation.components.clear();
+    continuation.questions.clear();
     machine(
         arena,
         judgement,
@@ -7468,9 +7902,9 @@ where
         initial,
         &mut Walk::starting(stages),
         recording,
-        &mut frames,
+        continuation,
     )
-    .map_err(|refusal| field_refused(arena, &frames, refusal))
+    .map_err(|refusal| field_refused(arena, &continuation.frames, refusal))
 }
 
 /// `refusal`, named by the innermost field frame of `frames` when it is about
@@ -7720,7 +8154,15 @@ pub(crate) fn form_declared(
             owed: &mut owed,
         },
     )?;
-    drain_code_obligations(arena, judgement, &mut memo, session, census, owed)
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        session,
+        census,
+        owed,
+        &mut Continuation::default(),
+    )
 }
 
 /// Check a declaration against a caller-supplied memo — the **opt-in** entry.
@@ -7964,6 +8406,9 @@ where
     )?;
     check_sealing_provenance(arena, declared, declaration.provenance())?;
     let mut following = Maybe::Absent(recursion::Unstaged::Plain);
+    // One continuation for every run of the check: each run empties it first
+    // and keeps its places, so its stacks allocate once for the check.
+    let mut continuation = Continuation::default();
     let verdict: Result<(), KernelError> = match *declaration.content() {
         DeclarationContent::Data {
             kind,
@@ -8068,6 +8513,7 @@ where
                             census,
                             owed: &mut owed,
                         },
+                        &mut continuation,
                     )?;
                 }
             }
@@ -8192,6 +8638,7 @@ where
                     census,
                     owed: &mut owed,
                 },
+                &mut continuation,
             )?;
             // A structural definition whose type returns the type it recurses
             // on is checked once more with that result read at the
@@ -8220,6 +8667,7 @@ where
                         census,
                         owed: &mut owed_staged,
                     },
+                    &mut continuation,
                 )
                 .and_then(|_checked| {
                     drain_code_obligations(
@@ -8229,6 +8677,7 @@ where
                         session,
                         census,
                         owed_staged,
+                        &mut continuation,
                     )
                 });
                 if staged.is_ok() {
@@ -8361,6 +8810,7 @@ where
                             census,
                             owed: &mut owed,
                         },
+                        &mut continuation,
                     )?;
                 }
             }
@@ -8368,7 +8818,15 @@ where
         },
     };
     verdict?;
-    drain_code_obligations(arena, judgement, memo, session, census, owed)?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        memo,
+        session,
+        census,
+        owed,
+        &mut continuation,
+    )?;
     // A holder answers its role's canonical form, over the entries admitted
     // before it.
     crate::builtin::admit(arena, judgement.entries, declaration)?;
@@ -8389,7 +8847,8 @@ where
 ///
 /// # Specification
 /// - requires: `owed` holds the obligations the declaration's own walks
-///   recorded, each with the context its code stands in.
+///   recorded, each with the context its code stands in; `continuation` is the
+///   check's own, which each run of the drain empties first.
 /// - ensures: `Ok(())` when every pending or generated obligation checks before
 ///   the operational ceiling is exhausted. An empty worklist is a no-op;
 ///   otherwise the first attempted check charges a term-plane event when the
@@ -8464,6 +8923,7 @@ fn drain_code_obligations<M>(
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
     owed: Vec<CodeObligation>,
+    continuation: &mut Continuation,
 ) -> Result<(), KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
@@ -8481,7 +8941,15 @@ where
         return Ok(());
     }
     let mut ledger = session.take_drained();
-    drain_into(arena, judgement, memo, session, census, owed, &mut ledger)?;
+    drain_into(
+        arena,
+        judgement,
+        memo,
+        session,
+        census,
+        owed,
+        (&mut ledger, continuation),
+    )?;
     ledger.record(memo, session);
     Ok(())
 }
@@ -8535,7 +9003,7 @@ fn drain_into<M>(
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
     mut owed: Vec<CodeObligation>,
-    ledger: &mut DrainLedger,
+    (ledger, continuation): (&mut DrainLedger, &mut Continuation),
 ) -> Result<(), KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
@@ -8577,6 +9045,7 @@ where
                         census,
                         owed: &mut owed,
                     },
+                    continuation,
                 )?;
             },
             CodeObligation::Endpoints {
@@ -8601,6 +9070,7 @@ where
                             census,
                             owed: &mut owed,
                         },
+                        continuation,
                     )?;
                 }
             },
@@ -8661,6 +9131,7 @@ where
                             census,
                             owed: &mut owed,
                         },
+                        continuation,
                     )?;
                 }
             },
@@ -8695,6 +9166,7 @@ where
                             census,
                             owed: &mut owed,
                         },
+                        continuation,
                     )?;
                 }
             },
@@ -8751,7 +9223,7 @@ impl crate::fork::Job for DrainPart<'_>
             &mut self.session,
             &mut self.census,
             owed,
-            &mut self.ledger,
+            (&mut self.ledger, &mut Continuation::default()),
         );
         if answer.is_err() {
             self.refused.store(true, Ordering::Relaxed);
@@ -9036,10 +9508,10 @@ impl SiblingPart<'_>
     #[inline]
     fn check(&mut self) -> Result<(), KernelError>
     {
-        let mut frames = Vec::new();
+        let mut continuation = Continuation::default();
         if let Some((holder, begun)) = self.field {
-            frames.push(Frame::Fields {
-                remaining: Vec::new(),
+            continuation.frames.push(Frame::Fields {
+                remaining: Slice::mark(&continuation.goals),
                 holder,
                 begun,
             });
@@ -9057,9 +9529,9 @@ impl SiblingPart<'_>
                 census: &mut self.census,
                 owed: &mut owed,
             },
-            &mut frames,
+            &mut continuation,
         )
-        .map_err(|refusal| field_refused(&self.arena, &frames, refusal))?;
+        .map_err(|refusal| field_refused(&self.arena, &continuation.frames, refusal))?;
         if owed.is_empty() {
             return Ok(());
         }
@@ -9071,7 +9543,7 @@ impl SiblingPart<'_>
             &mut self.session,
             &mut self.census,
             owed,
-            &mut ledger,
+            (&mut ledger, &mut continuation),
         )?;
         self.session.fold_drained(ledger);
         Ok(())
@@ -9265,6 +9737,7 @@ pub(crate) fn check_closed_value(
     let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
     let mut owed = Vec::new();
+    let mut continuation = Continuation::default();
     let _level = type_level(
         arena,
         judgement,
@@ -9289,8 +9762,17 @@ pub(crate) fn check_closed_value(
             census: &mut census,
             owed: &mut owed,
         },
+        &mut continuation,
     )?;
-    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        &mut session,
+        &mut census,
+        owed,
+        &mut continuation,
+    )
 }
 
 /// Synthesize a closed native value and discharge every code obligation.
@@ -9329,6 +9811,7 @@ pub(crate) fn synth_closed_value(
     let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
     let mut owed = Vec::new();
+    let mut continuation = Continuation::default();
     let result = run(
         arena,
         judgement,
@@ -9341,9 +9824,18 @@ pub(crate) fn synth_closed_value(
             census: &mut census,
             owed: &mut owed,
         },
+        &mut continuation,
     )?
     .value_type()?;
-    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)?;
+    drain_code_obligations(
+        arena,
+        judgement,
+        &mut memo,
+        &mut session,
+        &mut census,
+        owed,
+        &mut continuation,
+    )?;
     Ok(result)
 }
 
@@ -9377,6 +9869,7 @@ mod tests
     use gandr_kernel_term::ValueTypeId;
 
     use super::BinderDepth;
+    use super::Continuation;
     use super::Goal;
     use super::Judgement;
     use super::Produced;
@@ -9718,6 +10211,7 @@ mod tests
                 census: &mut census,
                 owed: &mut Vec::new(),
             },
+            &mut Continuation::default(),
         )
     }
 
@@ -9763,6 +10257,7 @@ mod tests
                 census: &mut census,
                 owed: &mut Vec::new(),
             },
+            &mut Continuation::default(),
         )
     }
 
@@ -9813,6 +10308,7 @@ mod tests
                 census: &mut census,
                 owed: &mut Vec::new(),
             },
+            &mut Continuation::default(),
         )
     }
 
@@ -10579,6 +11075,7 @@ mod tests
                 census: &mut census,
                 owed: &mut Vec::new(),
             },
+            &mut Continuation::default(),
         );
         assert_eq!(
             Ok(Produced::Checked),

@@ -401,7 +401,8 @@ pub(super) fn field_type(
     Ok(result)
 }
 
-/// Construct field-checking goals for one explicit constructor.
+/// Construct field-checking goals for one explicit constructor, and push them
+/// on `goals`, the first field first.
 ///
 /// # Specification
 /// - requires: the value id belongs to the current arena.
@@ -414,7 +415,7 @@ pub(super) fn field_type(
 ///   classifier names, unknown tags, wrong argument or field arities, and a
 ///   classifier at another index than the constructor states.
 /// - panics: none.
-/// Returned goals are executable field-check obligations, not synthesized
+/// The pushed goals are executable field-check obligations, not synthesized
 /// claims.
 ///
 /// # Errors
@@ -430,13 +431,14 @@ pub(super) fn field_type(
 /// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
 /// - witness: `tests::recursive_data::dependent_fields_are_admitted`
 /// - witness: `tests::native_formers::an_indexed_constructor_stands_at_its_stated_index`
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
+#[spec(captures: start = goals.len(), ensures: |ret| ret.is_err() || goals.get(start ..).is_some_and(|pushed| pushed.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
 pub(super) fn constructor(
     arena: &mut TermArena,
     entries: &Entries,
     session: &mut SupportContext,
     value: ValueId,
-) -> Result<(ValueTypeId, Vec<Goal>), KernelError>
+    goals: &mut Vec<Goal>,
+) -> Result<ValueTypeId, KernelError>
 {
     let (family, datatype, tag, count) = match arena.value(value).ok_or(KernelError::ArenaFault)? {
         &Value::Constructor {
@@ -527,7 +529,7 @@ pub(super) fn constructor(
     if count != expected.len() {
         return Err(KernelError::ConstructorArity);
     }
-    let mut goals = Vec::with_capacity(count);
+    goals.reserve(count);
     for (index, &ty) in expected.iter().enumerate() {
         let earlier = BinderDepth::from(
             u32::try_from(index).map_err(|_cause| KernelError::ConstructorArity)?,
@@ -576,7 +578,7 @@ pub(super) fn constructor(
             }
         }
     }
-    Ok((datatype, goals))
+    Ok(datatype)
 }
 
 /// A constructor's stated result index with the family's parameters
@@ -857,27 +859,29 @@ pub(super) type Scrutinised = (
     Maybe<(ConstantIndex, DeBruijnIndex), super::recursion::Unowned>,
 );
 
-/// Collect the constructor-specific branch obligations and instantiated result.
+/// Collect the constructor-specific branch obligations on `goals`, and the
+/// instantiated result.
 ///
 /// # Specification
 /// - requires: the scrutinee has the supplied data classifier; motive formation
 ///   is checked by the surrounding judgement; `read` is the written motive or
 ///   the staged result the case is checked at (`recursion::motive_at`).
-/// - ensures: exactly one branch obligation per constructor, in table order,
-///   each binding its recursive fields at the stage the case `opened`
-///   (`recursion::stage_branch`) when it opened one — with the declaration's
-///   own constant read as the self binder `own` names, every field domain that
-///   named it returned as a [`super::recursion::Read`] — then, for a case
-///   carrying a loop arm per loop of its sort (`loops::loops`), one per loop
-///   arm at `loops::arm_type`; [`Looped::Owed`] exactly when the sort has loops
-///   and the case carries no loop arm. The branches and the result are read at
-///   `read` over a sort with no loops, and at the written motive otherwise.
+/// - ensures: exactly one branch obligation per constructor pushed on `goals`,
+///   in table order, each binding its recursive fields at the stage the case
+///   `opened` (`recursion::stage_branch`) when it opened one — with the
+///   declaration's own constant read as the self binder `own` names, every
+///   field domain that named it returned as a [`super::recursion::Read`] —
+///   then, for a case carrying a loop arm per loop of its sort
+///   (`loops::loops`), one per loop arm at `loops::arm_type`; [`Looped::Owed`]
+///   exactly when the sort has loops and the case carries no loop arm. The
+///   branches and the result are read at `read` over a sort with no loops, and
+///   at the written motive otherwise.
 /// - fails: wrong shape or a non-exhaustive branch vector: neither one branch
 ///   per constructor nor one more per loop. A presented type's rules are an
 ///   obligation the caller decides once the branches have checked, by
 ///   `respect::respected`, and so are owed loops, by `loops::respected`.
 /// - panics: none.
-/// The executable postcondition classifies every returned computation check.
+/// The executable postcondition classifies every pushed computation check.
 ///
 /// # Errors
 /// Returns native shape, coverage, instantiation or arena refusals.
@@ -889,14 +893,15 @@ pub(super) type Scrutinised = (
 /// - witness: `tests::recursive_data::a_recursion_descends_on_its_first_parameter`
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
+#[spec(captures: start = goals.len(), ensures: |ret| ret.is_err() || goals.get(start ..).is_some_and(|pushed| pushed.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
     arena: &mut TermArena,
     (entries, presentations): (&Entries, &crate::presented::Presentations),
     session: &mut SupportContext,
     (case, read): (ComputationId, CompTypeId),
     (datatype, opened, own): Scrutinised,
-) -> Result<(CompTypeId, Vec<Goal>, Looped, Vec<super::recursion::Read>), KernelError>
+    goals: &mut Vec<Goal>,
+) -> Result<(CompTypeId, Looped, Vec<super::recursion::Read>), KernelError>
 {
     let (scrutinee, written, count, equations) =
         match arena.computation(case).ok_or(KernelError::ArenaFault)? {
@@ -987,7 +992,7 @@ pub(super) fn case(
     if usize::from(equations) != signature.indices.len() {
         return Err(KernelError::NonExhaustiveDataCase);
     }
-    let mut goals = Vec::with_capacity(count);
+    goals.reserve(count);
     let mut reads = Vec::new();
     // A mutual block's families share the stage the case opened.
     let block = match opened {
@@ -1042,7 +1047,7 @@ pub(super) fn case(
     }
     let (table, memo) = session.rewrite_parts();
     let result = rewrite::substitute_comp_type(arena, table, memo, motive, scrutinee);
-    Ok((result, goals, looped, reads))
+    Ok((result, looped, reads))
 }
 
 quenchant_shape::reason_enum! {
