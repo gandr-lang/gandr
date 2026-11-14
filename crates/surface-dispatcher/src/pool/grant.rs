@@ -44,6 +44,7 @@
 //!   gandr draw on one budget.
 
 use std::fs::File;
+#[cfg(unix)]
 use std::fs::OpenOptions;
 use std::io::Read as _;
 use std::io::Write as _;

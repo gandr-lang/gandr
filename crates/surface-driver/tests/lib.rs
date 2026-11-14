@@ -9,3 +9,5 @@ mod net;
 mod rand;
 #[cfg(test)]
 mod reals;
+#[cfg(test)]
+mod wasi;

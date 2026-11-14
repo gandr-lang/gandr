@@ -348,6 +348,7 @@ use gandr_kernel_core::tallied;
 use gandr_runtime_emitter::Budget;
 use gandr_runtime_emitter::budget;
 use gandr_runtime_emitter::budget::Jumps;
+#[cfg(unix)]
 use gandr_runtime_emitter::budget::Origin;
 use gandr_runtime_emitter::regions;
 use gandr_runtime_emitter::regions::Bytes;

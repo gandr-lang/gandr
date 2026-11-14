@@ -18,10 +18,11 @@ name: nightly-sweeps
 # test state it restores. A failure is a red run on main, never a blocked
 # queue. A dispatch always runs. Beside them, every day, each CI lane's
 # median job time against its budget, and the chain of a cold build of the
-# driver on x86-64 and on riscv64 against the last night's (#6893). The
-# sweeps and the recovery sweep run on a runner of our own while one is
-# online (#6868). The whole workflow is held to fifteen minutes summed over
-# its jobs on hosted runners.
+# driver on x86-64 and on riscv64 against the last night's (#6893), and the
+# wasm driver against the native one (#7402). The sweeps, the recovery sweep
+# and the wasm driver run on a runner of our own while one is online
+# (#6868). The whole workflow is held to fifteen minutes summed over its
+# jobs on hosted runners.
 on:
   schedule:
     - cron: "0 4 * * *"
@@ -457,6 +458,30 @@ jobs:
       - *chain-build
       - *chain-upload
 
+  # The wasm driver against the native one (#4882, #7402): `mise run
+  # test:wasm` builds the release driver for wasm32-wasip3 and runs each case
+  # of `.config/wasm/cases.txt` on both. No landing builds wasm, so a crate
+  # that a WASI build cannot take shows here first. The build rebuilds std,
+  # and a cold build does not fit the nightly's hosted budget. So the job runs
+  # only on a runner of our own, in the night's kept tree
+  # (`.config/nightly/tree.bash`), whose target directory keeps the last
+  # night's build. Its time counts in no hosted sum. A night whose sweeps fall
+  # back to the hosted runner builds no wasm. `reports` keeps one issue while
+  # the build fails (`mise run ci:wasm-file`).
+  wasm:
+    name: build the wasm driver and compare it with the native one
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && needs.freshness.outputs.runner == 'integration' }}
+    runs-on: [self-hosted, integration] # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 60
+    env:
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: integration
+    steps:
+      - *git-checkout
+      - name: build the wasm driver and compare it with the native one
+        run: .config/nightly/tree.bash mise run test:wasm
+
   # The night's reports and filings run as one job, each its own step, so
   # one container start serves them (#3208): a start costs 20 to 25 s, and
   # the lane budget, the recovery filing and the reports did a minute or less
@@ -566,7 +591,7 @@ jobs:
   # for is a `--waiting` argument and a line of the same issue (#6947).
   reports:
     name: report and file the night's findings
-    needs: [ci-image-ref, freshness, sweeps, chain, chain-riscv64]
+    needs: [ci-image-ref, freshness, sweeps, chain, chain-riscv64, wasm]
     if: ${{ !cancelled() && needs.ci-image-ref.result == 'success' }}
     runs-on: *linux
     permissions:
@@ -693,6 +718,14 @@ jobs:
           path: ${{ runner.temp }}/chain/rows
           retention-days: 30
           if-no-files-found: ignore
+      # The wasm driver's night (#7402): one collector issue while the build
+      # or the comparison fails, closed on the first night that passes (`mise
+      # run ci:wasm-file`). A night that builds no wasm writes nothing.
+      - name: keep the wasm driver's issue
+        if: ${{ !cancelled() && (needs.wasm.result == 'success' || needs.wasm.result == 'failure') }}
+        env:
+          WASM_RESULT: ${{ needs.wasm.result }}
+        run: mise run ci:wasm-file
       - name: compare each lane with its budget
         if: *not-cancelled
         shell: bash

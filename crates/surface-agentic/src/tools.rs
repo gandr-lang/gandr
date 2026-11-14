@@ -75,7 +75,9 @@ use gandr_surface_lsp::Body;
 use gandr_surface_lsp::ContentChange;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
+#[cfg(unix)]
 use gandr_surface_lsp::Position;
+#[cfg(unix)]
 use gandr_surface_lsp::Prepared;
 use gandr_surface_lsp::Proposal;
 use gandr_surface_lsp::ProposalRefusal;
@@ -406,11 +408,29 @@ enum Answer
     /// A subscription: the scope that the call follows, which may name a
     /// document that the hub does not hold now. The Reactive Agent Protocol
     /// toolset opens it, and the Model Context Protocol face does not offer it.
-    Subscription(fn(&Value) -> Result<Scope, ToolRefusal>),
+    Subscription(
+        #[cfg_attr(
+            not(unix),
+            expect(
+                dead_code,
+                reason = "the toolset of `rap`, compiled on unix, alone opens a subscription"
+            )
+        )]
+        fn(&Value) -> Result<Scope, ToolRefusal>,
+    ),
     /// A long operation: the job that the call runs. The Reactive Agent
     /// Protocol toolset runs it and answers by a callback when it ends, and the
     /// Model Context Protocol face does not offer it.
-    Job(fn(&Value) -> Result<Job, ToolRefusal>),
+    Job(
+        #[cfg_attr(
+            not(unix),
+            expect(
+                dead_code,
+                reason = "the toolset of `rap`, compiled on unix, alone runs a job"
+            )
+        )]
+        fn(&Value) -> Result<Job, ToolRefusal>,
+    ),
 }
 
 /// One operation of the hub, as each face offers it.
@@ -706,6 +726,7 @@ pub fn list() -> Vec<Value>
 #[spec(ensures: |ret| ret.len() == OPERATIONS.len()
     && ret.iter().all(|tool| tool.get("title").is_none()))]
 #[must_use]
+#[cfg(unix)]
 pub fn offered() -> Vec<Value>
 {
     OPERATIONS
@@ -801,6 +822,7 @@ pub fn call(
 /// - witness: `rap::tests::a_newer_revision_retires_a_check_or_a_run_and_a_cancel_ends_a_job_6940`
 #[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| matches!(named, "check" | "replay" | "run" | "test")))]
 #[inline]
+#[cfg(unix)]
 pub fn job(
     name: &Value,
     arguments: &Value,
@@ -857,6 +879,7 @@ fn paths(arguments: &Value) -> Result<Vec<PathBuf>, ToolRefusal>
 /// - witness: `rap::tests::an_activity_subscription_hears_each_task_until_it_ends_6509`
 #[spec(ensures: |ret| ret.is_none() || name.as_str().is_some_and(|named| named.starts_with("subscribe_")))]
 #[inline]
+#[cfg(unix)]
 pub fn subscription(
     name: &Value,
     arguments: &Value,
@@ -1195,6 +1218,7 @@ fn tried(
 ///   name that no declaration has is refused.
 /// - witness: `rap::tests::a_long_operation_answers_when_its_job_ends`
 #[inline]
+#[cfg(unix)]
 pub fn prepared(
     workspace: &Workspace,
     (document, entry): (&DocumentUri, &String),
