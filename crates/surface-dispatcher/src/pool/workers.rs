@@ -32,9 +32,9 @@
 //!
 //! # References
 //!
-//! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the shared pool
-//!   page, § pool-tokens: one token for each thread of the width, and a wait on
-//!   a futex.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: the shared pool
+//!   page, § pool-tokens: one thread for each token of the width, the job in
+//!   the slot of a ring, and a nested fork that exchanges its token.
 
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
