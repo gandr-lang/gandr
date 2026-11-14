@@ -265,6 +265,20 @@ pub enum Released
     ),
 }
 
+/// Whether a release predicts the entry of a plain definition.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Predicting
+{
+    /// The release predicts no entry.
+    Never,
+    /// The release predicts the entry that the commit makes when the check
+    /// admits the declaration as staged.
+    Admission,
+}
+
 /// Why a release hands its declaration back: what it reads of an earlier
 /// release whose commit has not come.
 ///
@@ -1108,7 +1122,7 @@ impl Environment
     /// # Specification
     /// - requires: `staged` was built into this environment's arena through
     ///   [`Self::stage`], and the content that each declaration it names holds
-    ///   is committed.
+    ///   is committed, or predicted by [`Self::release_predicting`].
     /// - ensures: a running check holds the declaration's place, keys,
     ///   references, marks and name, and its check: the reading of a verdict
     ///   that a trusted record holds under its key, or a check that owns a view
@@ -1143,6 +1157,55 @@ impl Environment
     pub fn release(
         &mut self,
         staged: StagedDeclaration,
+    ) -> Result<Released, KernelError>
+    {
+        self.release_as(staged, Predicting::Never)
+    }
+
+    /// Release the check of a lone declaration as [`Self::release`] does,
+    /// and predict its entry when the speculation's `signature` is on and
+    /// the declaration is a plain definition that holds no role. A later
+    /// release that names it then reads that entry before its commit.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::release`].
+    /// - ensures: as [`Self::release`]. The reserved slot of a predicted
+    ///   definition holds the entry that its commit makes when its check admits
+    ///   it as staged, and a later release reads it. No later release commits
+    ///   before it. Its commit compares the two: a refusal or another entry
+    ///   takes the prediction back and drops each later release, as
+    ///   [`Self::drop_after`] drops them.
+    /// - fails: as [`Self::release`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::release`].
+    ///
+    /// # Errors
+    /// As [`Self::release`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later release that reads the prediction and commits
+    ///   before it, or that a refused prediction keeps, gives other entries or
+    ///   outcomes than the serial run.
+    /// - witness: `environment::tests::a_definition_released_beside_the_running_one_that_it_names_folds_as_the_serial_run_7282`
+    /// - witness: `environment::tests::a_reader_of_a_refused_prediction_is_dropped_and_released_again_7282`
+    #[inline]
+    pub fn release_predicting(
+        &mut self,
+        staged: StagedDeclaration,
+    ) -> Result<Released, KernelError>
+    {
+        self.release_as(staged, Predicting::Admission)
+    }
+
+    /// Release the check of a lone declaration as [`Self::release`] states,
+    /// and predict its entry as `predicting` asks.
+    ///
+    /// # Specification
+    /// trivial.
+    fn release_as(
+        &mut self,
+        staged: StagedDeclaration,
+        predicting: Predicting,
     ) -> Result<Released, KernelError>
     {
         let (content_start, staged_rank, declaration) = staged.into_parts();
@@ -1301,6 +1364,18 @@ impl Environment
                     .then_some(content_start),
             );
         }
+        // A plain definition that holds no role, released to predict, predicts
+        // its entry. So a later release that names it reads the entry that its
+        // commit makes when its check admits it, and that commit compares the
+        // two.
+        let predicted = (predicting == Predicting::Admission
+            && self.speculation.signature == crate::speculation::Setting::On
+            && matches!(key_name, ConstantName::Definition { .. })
+            && matches!(declaration.role(), Maybe::Absent(_)))
+        .then(|| match recalled {
+            Maybe::Present(ref accessibility) => (Admission::Recalled, accessibility.clone()),
+            Maybe::Absent(_) => (Admission::Checked, check::Accessibility::unwalked()),
+        });
         let way = match recalled {
             Maybe::Present(accessibility) => Way::Recalled(accessibility),
             // The check reads through the support its content names, and a
@@ -1319,6 +1394,35 @@ impl Environment
                 },
             ),
         };
+        // The check's own scope opened first, so its view holds no prediction
+        // of its own entry, as the serial run holds none. The session names
+        // the position as the commit will, above.
+        if let Some((admission, accessibility)) = predicted {
+            let rested_on = self.transitive_rest(
+                declaration.content(),
+                declaration.laws(),
+                position,
+                admission,
+            );
+            self.entries.predict(
+                &self.arena,
+                position,
+                AdmittedDeclaration::live(AdmittedParts {
+                    declaration: declaration.clone(),
+                    admission,
+                    rested_on,
+                    references: named.clone(),
+                    block: check::occurrence::Block::lone(position),
+                    accessibility,
+                    key_name,
+                    census: ExpansionCensus::new(),
+                    key: entry_key,
+                    content: entry_content,
+                    rank,
+                    unit: Unit::lone(position),
+                }),
+            );
+        }
         Ok(Released::Running(
             Pending {
                 place: (position, rank),
@@ -1420,8 +1524,10 @@ impl Environment
     ///   [`Self::release`] of this environment.
     /// - ensures: as [`Self::add_decl`] ensures after its check: on an outcome
     ///   that admits, one entry at the reserved position; on a refusal, a
-    ///   vacancy there. The length is unchanged. The session holds what the
-    ///   check named, and the entries hold no horizon.
+    ///   vacancy there. The length is unchanged, but where the commit finds
+    ///   that the slot predicted another entry: then each later release is
+    ///   dropped, and the entries end past the position. The session holds what
+    ///   the check named, and the entries hold no horizon.
     /// - panics: none.
     ///
     /// # Errors
@@ -1430,7 +1536,9 @@ impl Environment
     /// [`KernelError::KeptOutcomesDisagree`] refuses the environment when the
     /// check kept an outcome under a key that the environment kept with
     /// another outcome since the release. [`KernelError::UnboundConstant`]
-    /// when no reservation of this environment stands at the position.
+    /// when no reservation of this environment stands at the position, or at
+    /// the first prediction before it whose commit has not come; then
+    /// nothing changes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::release`].
@@ -1438,7 +1546,7 @@ impl Environment
     /// - witness: `environment::tests::a_read_outside_the_support_refuses_the_declaration_2797`
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[inline]
-    #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| self.entries.len() == entry_len && self.entries.check_horizon().is_none())]
+    #[spec(captures: [entry_len = self.entries.len(), place = pending.place.0], ensures: |ret| (self.entries.len() == entry_len || usize::from(self.entries.len()) == usize::from(place).saturating_add(1)) && self.entries.check_horizon().is_none())]
     pub fn settle(
         &mut self,
         pending: Pending,
@@ -1516,6 +1624,21 @@ impl Environment
     ) -> Result<(), KernelError>
     {
         let (position, _) = pending.place;
+        let (content_end, _) = pending.marks;
+        self.drop_past(position, content_end)
+    }
+
+    /// Drop each release after the release at `position`, whose content ends
+    /// at `content_end`, as [`Self::drop_after`] states.
+    ///
+    /// # Specification
+    /// trivial.
+    fn drop_past(
+        &mut self,
+        position: ConstantIndex,
+        content_end: gandr_kernel_term::ArenaWatermark,
+    ) -> Result<(), KernelError>
+    {
         let cursor =
             usize::from(self.entries.len()).saturating_sub(usize::from(self.releases.unfolded()));
         let Some(offset) = usize::from(position)
@@ -1531,15 +1654,33 @@ impl Environment
         self.entries.truncate(gandr_kernel_term::ArenaLength::from(
             usize::from(position).saturating_add(1),
         ));
-        // The content of each dropped release lies above the content of
-        // `pending`, and no admission after it raised the floor.
-        let (content_end, _) = pending.marks;
+        // The content of each dropped release lies above the content of the
+        // release at `position`, and no admission after it raised the floor.
         self.arena
             .truncate_to(content_end.clamped_into(self.admission_floor, self.arena.watermark()));
         for _ in 0 .. usize::from(dropped) {
             self.rollbacks = self.rollbacks.and_one();
         }
         Ok(())
+    }
+
+    /// Take back the prediction at `position`, whose content ends at
+    /// `content_end`, and drop each release after it, which may have read it.
+    /// The prediction counts as one rollback.
+    ///
+    /// # Specification
+    /// trivial.
+    fn miss(
+        &mut self,
+        position: ConstantIndex,
+        content_end: gandr_kernel_term::ArenaWatermark,
+    )
+    {
+        self.entries.unpredict(position);
+        self.rollbacks = self.rollbacks.and_one();
+        // The guard of the commit keeps each later release uncommitted, so
+        // the drop takes each of them.
+        let _dropped = self.drop_past(position, content_end);
     }
 
     /// Discard the run of a dropped release: take back the scope that its
@@ -1719,13 +1860,17 @@ impl Environment
     ///   the admission floor at least at `lone.marks.0`; on a refusal, a
     ///   vacancy at `lone.place.0`, and the arena truncated to `lone.marks.1`
     ///   when no content sits above the declaration's. Otherwise its content
-    ///   stays as an orphan below the later content. The length is unchanged.
+    ///   stays as an orphan below the later content. The length is unchanged,
+    ///   but where the slot predicted another entry than the commit makes: then
+    ///   each later release is dropped, and the entries end past
+    ///   `lone.place.0`.
     /// - panics: none.
     ///
     /// # Errors
     /// The refusal that `lone.outcome` carries, or
     /// [`KernelError::UnboundConstant`] when no reservation stands at
-    /// `lone.place.0`.
+    /// `lone.place.0`, or at the first prediction before it whose commit has
+    /// not come; then nothing changes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_decl`], and a refusal under a later
@@ -1733,7 +1878,7 @@ impl Environment
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566`
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
-    #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted(), place = lone.place.0], ensures: |ret| self.entries.len() == entry_len && match ret.as_ref() {
+    #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted(), place = lone.place.0], ensures: |ret| (self.entries.len() == entry_len || usize::from(self.entries.len()) == usize::from(place).saturating_add(1)) && match ret.as_ref() {
         Ok(id) => id.position() == place,
         Err(_) => self.entries.admitted() == admitted,
     })]
@@ -1763,6 +1908,15 @@ impl Environment
         else {
             return Err(KernelError::UnboundConstant { index: position });
         };
+        // A release after a prediction may read it, and the prediction's own
+        // commit drops each later release when the check does not bear it
+        // out. So no commit comes before the commit of a prediction before it.
+        if let Some(at) = self
+            .entries
+            .predicted_within((ConstantIndex::from(cursor), position))
+        {
+            return Err(KernelError::UnboundConstant { index: at });
+        }
         match outcome {
             Ok(accessibility) => {
                 // A receipt attests only what the kernel checked itself.
@@ -1787,24 +1941,29 @@ impl Environment
                     position,
                     admission,
                 );
-                self.entries.fill(
-                    &self.arena,
-                    position,
-                    AdmittedDeclaration::live(AdmittedParts {
-                        declaration,
-                        admission,
-                        rested_on,
-                        references: named,
-                        block: check::occurrence::Block::lone(position),
-                        accessibility,
-                        key_name,
-                        census,
-                        key: entry_key,
-                        content: entry_content,
-                        rank,
-                        unit: Unit::lone(position),
-                    }),
-                );
+                let entry = AdmittedDeclaration::live(AdmittedParts {
+                    declaration,
+                    admission,
+                    rested_on,
+                    references: named,
+                    block: check::occurrence::Block::lone(position),
+                    accessibility,
+                    key_name,
+                    census,
+                    key: entry_key,
+                    content: entry_content,
+                    rank,
+                    unit: Unit::lone(position),
+                });
+                if self
+                    .entries
+                    .predicted(position)
+                    .map(|predicted| predicted.agrees(&entry))
+                    == Some(crate::env::Prediction::Missed)
+                {
+                    self.miss(position, content_end);
+                }
+                self.entries.fill(&self.arena, position, entry);
                 alloc::sync::Arc::make_mut(&mut self.commits).hold((position, rank));
                 if let (true, Maybe::Present(content)) = (generative, content) {
                     alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
@@ -1819,6 +1978,10 @@ impl Environment
                     .commit(offset, crate::releases::Unfolded::Vacated)
                 {
                     return Err(KernelError::UnboundConstant { index: position });
+                }
+                // The naming below names the vacancy that the miss leaves.
+                if self.entries.predicted(position).is_some() {
+                    self.miss(position, content_end);
                 }
                 // Drop this declaration's content, down to the admission floor
                 // and no further, when no later staging sits above it. Its
@@ -2628,7 +2791,7 @@ impl Environment
             match self.entries.family().get(usize::from(position)) {
                 Some(&Slot::Admitted(_)) => {},
                 Some(&Slot::Retired) => return Err(KernelError::Retired { position }),
-                Some(&(Slot::Vacant | Slot::Reserved)) | None => {
+                Some(&(Slot::Vacant | Slot::Reserved | Slot::Predicted(_))) | None => {
                     return Err(KernelError::UnboundConstant { index: position });
                 },
             }
@@ -3624,9 +3787,8 @@ impl Environment
         else {
             return Err(match self.entries.family().get(usize::from(first)) {
                 Some(&Slot::Retired) => KernelError::Retired { position: first },
-                Some(&(Slot::Admitted(_) | Slot::Vacant | Slot::Reserved)) | None => {
-                    KernelError::UnboundConstant { index: first }
-                },
+                Some(&(Slot::Admitted(_) | Slot::Vacant | Slot::Reserved | Slot::Predicted(_)))
+                | None => KernelError::UnboundConstant { index: first },
             });
         };
         let unit = entry.unit();
@@ -9156,6 +9318,154 @@ mod tests
             usize::from(committed.entries().len()),
             3_usize,
             "the refused drop keeps every entry"
+        );
+    }
+
+    /// Stage the lone offer `offer` in `environment` over `scope`, ranked.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stage_lone(
+        environment: &mut Environment,
+        offer: &Offer,
+        scope: &InScope,
+    ) -> StagedDeclaration
+    {
+        stage_offer(environment, offer, scope, Ranking::Ranked)
+            .pop()
+            .expect("a lone offer stages one declaration")
+    }
+
+    /// The scope in which the unit definition at position 0 is admitted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn first_unit_in_scope() -> InScope
+    {
+        let mut scope = InScope::default();
+        scope.note(
+            &Offer::Unit(None, Dip::Ascending),
+            &Ok(vec![ConstantIndex::from(0_usize)]),
+        );
+        scope
+    }
+
+    /// #7282: a unit definition released to predict holds its entry in its
+    /// reserved slot, so a definition that names it releases and runs beside
+    /// it, before its commit. Settled in order, the two fold as the serial
+    /// run's, and no prediction is taken back.
+    #[test]
+    fn a_definition_released_beside_the_running_one_that_it_names_folds_as_the_serial_run_7282()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let source = [
+            Offer::Unit(None, Dip::Ascending),
+            Offer::Unit(Some(0), Dip::Ascending),
+        ];
+        let mut serial = Environment::new();
+        let reference = admit_serially(&mut serial, &source, Ranking::Ranked);
+
+        let mut environment = Environment::new().speculating(crate::speculation::Speculation::ON);
+        let staged = stage_lone(&mut environment, &source[0], &InScope::default());
+        let Ok(Released::Running(named, named_check)) = environment.release_predicting(staged)
+        else {
+            panic!("the unit definition releases");
+        };
+        assert!(
+            environment
+                .entries()
+                .predicted(ConstantIndex::from(0_usize))
+                .is_some(),
+            "the reserved slot holds the predicted entry"
+        );
+        let staged = stage_lone(&mut environment, &source[1], &first_unit_in_scope());
+        let Ok(Released::Running(reader, reader_check)) = environment.release(staged)
+        else {
+            panic!("the reader reads the predicted entry, and releases");
+        };
+        let reader_ran = reader_check.run();
+        let outcomes = vec![
+            environment
+                .settle(named, named_check.run())
+                .map(|id| vec![id.position()]),
+            environment
+                .settle(reader, reader_ran)
+                .map(|id| vec![id.position()]),
+        ];
+        assert_eq!(
+            outcomes, reference,
+            "each offer resolves as in the serial run"
+        );
+        assert_eq!(
+            folded(&environment, &signer),
+            folded(&serial, &signer),
+            "the environment folds as the serial run's"
+        );
+        assert_eq!(
+            usize::from(environment.rollbacks()),
+            0_usize,
+            "no prediction is taken back"
+        );
+    }
+
+    /// #7282: a definition that the kernel refuses, released to predict,
+    /// takes its prediction back at its settle and drops the release that
+    /// read it: each counts one rollback. Released again as the serial run
+    /// releases it, the reader folds as the serial run's.
+    #[test]
+    fn a_reader_of_a_refused_prediction_is_dropped_and_released_again_7282()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let source = [
+            Offer::Lone(Member::Refused, Dip::Ascending),
+            Offer::Unit(Some(0), Dip::Ascending),
+        ];
+        let mut serial = Environment::new();
+        let reference = admit_serially(&mut serial, &source, Ranking::Ranked);
+
+        let mut environment = Environment::new().speculating(crate::speculation::Speculation::ON);
+        let staged = stage_lone(&mut environment, &source[0], &InScope::default());
+        let Ok(Released::Running(refused, refused_check)) = environment.release_predicting(staged)
+        else {
+            panic!("the refused definition releases");
+        };
+        let staged = stage_lone(&mut environment, &source[1], &first_unit_in_scope());
+        let Ok(Released::Running(_, reader_check)) = environment.release(staged)
+        else {
+            panic!("the reader reads the predicted entry, and releases");
+        };
+        let reader_ran = reader_check.run();
+        let mut outcomes = vec![
+            environment
+                .settle(refused, refused_check.run())
+                .map(|id| vec![id.position()]),
+        ];
+        assert_eq!(
+            usize::from(environment.entries().len()),
+            1_usize,
+            "the drop takes the reader's slot"
+        );
+        assert_eq!(
+            usize::from(environment.releases.outstanding()),
+            0_usize,
+            "no release stays outstanding"
+        );
+        assert_eq!(
+            usize::from(environment.rollbacks()),
+            2_usize,
+            "the prediction and the dropped reader each count one rollback"
+        );
+        environment.discard(reader_ran);
+        let staged = stage_lone(&mut environment, &source[1], &InScope::default());
+        outcomes.push(environment.add_decl(staged).map(|id| vec![id.position()]));
+        assert_eq!(
+            outcomes, reference,
+            "each offer resolves as in the serial run"
+        );
+        assert_eq!(
+            folded(&environment, &signer),
+            folded(&serial, &signer),
+            "the environment folds as the serial run's"
         );
     }
 
