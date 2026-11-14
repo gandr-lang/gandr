@@ -3,8 +3,9 @@
 //! **One counter bounds the host.** The segment is a file in the runtime
 //! directory, which each process that takes the host's tokens maps. Its
 //! counter holds the free tokens and a generation in one word. A take is one
-//! compare-and-swap that lowers the count, and a give is one add. A free take
-//! makes no system call.
+//! add that lowers the count and raises the generation, and a give is one add.
+//! A take that finds no free token adds its token back. A free take makes no
+//! system call, and no take retries under contention.
 //!
 //! **A take that finds no token waits.** It reads the count of wakes, counts
 //! itself among the waiters, and reads the counter again. It then waits on the
@@ -19,9 +20,11 @@
 //! dead, and a pid that another process took since misleads no reaper. The
 //! reaper gives the slot's tokens back.
 //!
-//! **A crash between two steps loses no token.** A holder marks its slot
-//! before it moves a token between its slot and the counter, and it clears the
-//! mark after. A reaper that finds a dead slot with its mark audits the
+//! **A crash between two steps loses no token.** A holder counts a move in its
+//! slot's mark before it moves a token between its slot and the counter, and it
+//! takes the move off the mark after. The threads of one process share its
+//! slot, so the mark counts each of their moves. A reaper that finds a dead
+//! slot with its mark audits the
 //! segment. The audit counts the free tokens and the tokens of each slot,
 //! between two reads of the generation that agree and with no slot marked. It
 //! then gives back the tokens that the count lacks, or takes off a lent token
@@ -101,6 +104,10 @@ const GENERATION: u64 = 1 << 32;
 
 /// The bits of the free count in the counter's word.
 const FREE: u64 = GENERATION - 1;
+
+/// The least free count that reads as below zero: a take that found no token
+/// lowered the count, and it adds the token back.
+const BELOW_ZERO: u64 = 1 << 31;
 
 /// How long a take waits on the futex before it reads the counter again.
 ///
@@ -193,7 +200,8 @@ struct Slot
     /// The tokens that the holder holds: below zero while it lends the
     /// process's own token.
     held: AtomicI32,
-    /// One while the holder moves a token between the slot and the counter.
+    /// The holder's moves of a token between the slot and the counter that are
+    /// under way.
     marked: AtomicU32,
 }
 
@@ -614,25 +622,24 @@ impl Host
     {
         let counter = &self.mapping.segment().counter;
         let slot = self.slot();
-        slot.marked.store(1, Ordering::SeqCst);
-        let mut word = counter.word.load(Ordering::Relaxed);
-        loop {
-            if word & FREE == 0 {
-                slot.marked.store(0, Ordering::Release);
-                return Maybe::Absent(untaken::Absent::Busy);
+        slot.marked.fetch_add(1, Ordering::SeqCst);
+        // The add raises the generation and lowers the count. On a counter with
+        // no free token it borrows from the generation, and the add back gives
+        // the token back and raises the generation once.
+        let before = counter.word.fetch_add(GENERATION - 1, Ordering::SeqCst) & FREE;
+        if before == 0 || before >= BELOW_ZERO {
+            let restored = counter.word.fetch_add(1, Ordering::SeqCst).wrapping_add(1) & FREE;
+            slot.marked.fetch_sub(1, Ordering::Release);
+            // A give between the two adds found the count below one, and a
+            // waiter that read it then waits. The add back frees that token, so
+            // it wakes the waiter.
+            if restored != 0 && restored < BELOW_ZERO {
+                rouse(counter);
             }
-            match counter.word.compare_exchange_weak(
-                word,
-                word.wrapping_sub(1).wrapping_add(GENERATION),
-                Ordering::SeqCst,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(now) => word = now,
-            }
+            return Maybe::Absent(untaken::Absent::Busy);
         }
         slot.held.fetch_add(1, Ordering::Relaxed);
-        slot.marked.store(0, Ordering::Release);
+        slot.marked.fetch_sub(1, Ordering::Release);
         Maybe::Present(Token::COUNTED)
     }
 
@@ -661,7 +668,8 @@ impl Host
             }
             let seen = Wakes(counter.wakes.load(Ordering::Acquire));
             counter.waiters.fetch_add(1, Ordering::SeqCst);
-            if counter.word.load(Ordering::SeqCst) & FREE == 0 {
+            let free = counter.word.load(Ordering::SeqCst) & FREE;
+            if free == 0 || free >= BELOW_ZERO {
                 wait(counter, seen, WAIT);
             }
             counter.waiters.fetch_sub(1, Ordering::SeqCst);
@@ -691,11 +699,11 @@ impl Host
     )
     {
         let slot = self.slot();
-        slot.marked.store(1, Ordering::SeqCst);
+        slot.marked.fetch_add(1, Ordering::SeqCst);
         slot.held.fetch_sub(1, Ordering::Relaxed);
         let counter = &self.mapping.segment().counter;
         counter.word.fetch_add(1 + GENERATION, Ordering::SeqCst);
-        slot.marked.store(0, Ordering::Release);
+        slot.marked.fetch_sub(1, Ordering::Release);
         rouse(counter);
     }
 }
@@ -1178,6 +1186,42 @@ mod tests
             free(&counter),
             Free(4),
             "the audit takes the dead lender's token off"
+        );
+        drop(counter);
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    #[test]
+    fn a_move_cut_off_beside_a_whole_move_of_its_process_loses_no_token()
+    {
+        let directory = scratch(Scratch("beside"));
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(4).unwrap())).unwrap();
+        let Maybe::Present(host) = Host::join(&directory)
+        else {
+            panic!("the process joins the hub's counter");
+        };
+        // One thread's take lowered the counter and stopped before it counted
+        // the token in the slot, its mark set.
+        host.slot().marked.fetch_add(1, Ordering::SeqCst);
+        counter
+            .mapping
+            .segment()
+            .counter
+            .word
+            .fetch_sub(1, Ordering::SeqCst);
+        // A second thread of the process takes a token and gives it back.
+        let Maybe::Present(token) = host.take_now()
+        else {
+            panic!("the second thread takes a token");
+        };
+        host.give(token);
+        // The process ends while the first move stays cut off.
+        drop(host);
+        assert_eq!(
+            free(&counter),
+            Free(4),
+            "the audit gives the cut-off take's token back"
         );
         drop(counter);
         drop(std::fs::remove_dir_all(&directory));
