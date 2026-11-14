@@ -1734,9 +1734,11 @@ where
     ///   once in [`CHAIN_PROBE`] releases. A release that gives a job beside a
     ///   running job ends the chain. Out of a chain, after each release that
     ///   gives a job, and after each result, the calling thread hands kept jobs
-    ///   to lanes with room. While it can neither release nor commit, it runs
-    ///   its oldest kept job, or else a job of a lane whose task does not run,
-    ///   or else it waits for a result. Once the call returns, each task ends.
+    ///   to lanes with room. A job that no other job runs beside stays with the
+    ///   calling thread: the only one not committed, while the next item waits
+    ///   on a commit. While it can neither release nor commit, it runs its
+    ///   oldest kept job, or else a job of a lane whose task does not run, or
+    ///   else it waits for a result. Once the call returns, each task ends.
     /// - panics: the first panic of `release`, of a job or of `commit`, after
     ///   it ends the schedule so that no task starts another job.
     /// - executable: none — each release and commit is a call of the caller's
@@ -1819,7 +1821,7 @@ where
                         ledger.kept.push_back((next, job));
                         outstanding = outstanding.saturating_add(1);
                         next = ItemIndex(next.0.saturating_add(1));
-                        if !chained {
+                        if !chained && (outstanding > 1 || waiting.free(next) == Released::Free) {
                             self.hand(ledger);
                         }
                     },
@@ -3278,6 +3280,35 @@ mod tests
                     .saturating_add(count.checked_div(CHAIN_PROBE).unwrap_or_default()),
             "a chain tries one release beside a running job in {CHAIN_PROBE}, not {} releases for {count} items",
             releases.get()
+        );
+    }
+
+    #[test]
+    fn a_chain_of_dependences_runs_its_jobs_on_the_calling_thread()
+    {
+        let caller = std::thread::current().id();
+        let pool = Pool::new(Width::Threads(Threads::from(
+            NonZeroUsize::new(4_usize).unwrap(),
+        )));
+        let count = 256_usize;
+        // Each item waits on the one before it, so no job runs beside another.
+        let chain = Dependences::new((1_usize .. count).map(|later| Dependence {
+            before: later.checked_sub(1).unwrap(),
+            after: later,
+        }))
+        .unwrap();
+        let mut ran: Vec<Option<ThreadId>> = alloc::vec![None; count];
+        pool.schedule(
+            &mut ran,
+            &chain,
+            |_position, _ran| Releasing::<(), Option<ThreadId>>::Run(()),
+            |()| Some(std::thread::current().id()),
+            |_position, ran, job| *ran = job,
+        );
+        let elsewhere = ran.iter().filter(|&&job| job != Some(caller)).count();
+        assert_eq!(
+            elsewhere, 0,
+            "a lone job runs on the calling thread, not on a worker: {elsewhere} left it"
         );
     }
 

@@ -35,10 +35,6 @@
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the shared pool
 //!   page, § pool-tokens: one token for each thread of the width, and a wait on
 //!   a futex.
-//! - Karlin, Li, Manasse and Owicki, *Empirical studies of competitive spinning
-//!   for a shared-memory multiprocessor*, SOSP 1991 — dependency: a waiter that
-//!   spins for the cost of a block, then blocks, pays at most twice the least
-//!   cost of the wait.
 
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
