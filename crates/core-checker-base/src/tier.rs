@@ -2,7 +2,7 @@
 //!
 //! The checker names no evaluator. A run hands its context an
 //! [`EndpointTier`] the driver supplies, as it hands a staging check a
-//! [`gandr_core_fork::Fork`], and the driver owns the emitter, its code and its
+//! `gandr_core_fork::Fork`, and the driver owns the emitter, its code and its
 //! fuel. The `here` rule offers the tier each endpoint pair, closed or open
 //! over the context. A pair the tier meets carries the one decision
 //! `Evaluate`, which the kernel converts by its own evaluation; every other
