@@ -260,11 +260,12 @@ fn points(wires: &[Wire]) -> Points
     Points(wires.iter().map(|wire| usize::from(*wire)).collect())
 }
 
-/// `map`, out of `source`, as Definition 1 reads it.
+/// `map` of `wreath`, out of `source`, as Definition 1 reads it.
 ///
 /// # Specification
 /// trivial.
 fn read(
+    wreath: &Two,
     map: &TwoMap,
     source: &Theta,
 ) -> Reading
@@ -273,7 +274,11 @@ fn read(
         .flat_map(|vertex| {
             map.column(Edge::from(vertex))
                 .iter()
-                .map(move |&(image, ref column)| {
+                .map(move |&(image, column)| {
+                    let column = wreath
+                        .inner()
+                        .map_at(column)
+                        .expect("the index names a map");
                     let named = (source.0[vertex] > 0).then(|| points(column.wires()));
                     let cover = Cover {
                         interval: usize::from(image),
@@ -284,8 +289,12 @@ fn read(
         })
         .collect();
     inner.sort_unstable();
+    let outer = wreath
+        .outer()
+        .map_at(map.outer())
+        .expect("the index names a map");
     Reading {
-        outer: points(map.outer().wires()),
+        outer: points(outer.wires()),
         inner,
     }
 }
@@ -444,7 +453,7 @@ fn the_site_names_a_part_of_definition_one()
         for &(to, ref target) in &schemes {
             let hom = restriction.hom(from, to);
             readings.clear();
-            readings.extend(hom.iter().map(|map| read(map, source)));
+            readings.extend(hom.iter().map(|map| read(&restriction, map, source)));
             for (reading, map) in readings.iter().zip(hom) {
                 assert_eq!(
                     conforms(reading, source, target),
@@ -579,22 +588,25 @@ fn theta_three_maps(
     maps
 }
 
-/// `map`, out of `source`, as Definition 1 reads it.
+/// `map` of `wreath`, out of `source`, as Definition 1 reads it.
 ///
 /// # Specification
 /// trivial.
 fn read_three(
+    wreath: &Three,
     map: &ThreeMap,
     source: &ThetaThree,
 ) -> ReadingThree
 {
+    let two = wreath.inner();
     let mut inner: Vec<(Cover, Option<Reading>)> = (0 .. source.0.len())
         .flat_map(|vertex| {
             map.column(Edge::from(vertex))
                 .iter()
-                .map(move |&(image, ref column)| {
+                .map(move |&(image, column)| {
                     let from = &source.0[vertex];
-                    let named = (!from.0.is_empty()).then(|| read(column, from));
+                    let column = two.map_at(column).expect("the index names a map");
+                    let named = (!from.0.is_empty()).then(|| read(two, column, from));
                     let cover = Cover {
                         interval: usize::from(image),
                         source: vertex,
@@ -604,8 +616,12 @@ fn read_three(
         })
         .collect();
     inner.sort_unstable();
+    let outer = wreath
+        .outer()
+        .map_at(map.outer())
+        .expect("the index names a map");
     ReadingThree {
-        outer: points(map.outer().wires()),
+        outer: points(outer.wires()),
         inner,
     }
 }
@@ -762,8 +778,8 @@ fn definition_one_at_level_three_counts_the_suspensions_maps()
 fn the_site_at_level_three_names_a_part_of_definition_one()
 {
     let bound = ShapeSize::from(13_usize);
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
-    let restriction = Wreath::build(&chains, &restriction(bound), bound);
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let restriction = Wreath::build(&chains, &Arc::new(restriction(bound)), bound);
     let schemes = schemes_three(&restriction);
     let (mut theta, mut site, mut lacked) = (0_usize, 0_usize, 0_usize);
     let mut names: BTreeSet<ThetaThreeMap> = BTreeSet::new();
@@ -773,7 +789,7 @@ fn the_site_at_level_three_names_a_part_of_definition_one()
         for &(to, ref target) in &schemes {
             let hom = restriction.hom(from, to);
             readings.clear();
-            readings.extend(hom.iter().map(|map| read_three(map, source)));
+            readings.extend(hom.iter().map(|map| read_three(&restriction, map, source)));
             for (reading, map) in readings.iter().zip(hom) {
                 assert_eq!(
                     conforms_three(reading, source, target),
@@ -860,15 +876,20 @@ where
             let mediating = level.hom(vertex, test);
             level.hom(left, test).iter().all(|out_left| {
                 level.hom(right, test).iter().all(|out_right| {
-                    let compatible = L::then(first, out_left).is_ok_and(|through| {
-                        L::then(second, out_right).is_ok_and(|other| through == other)
+                    let compatible = level.then(first, out_left).is_ok_and(|through| {
+                        level
+                            .then(second, out_right)
+                            .is_ok_and(|other| through == other)
                     });
                     !compatible
                         || mediating
                             .iter()
                             .filter(|map| {
-                                L::then(upper, map).is_ok_and(|through| through == *out_left)
-                                    && L::then(lower, map)
+                                level
+                                    .then(upper, map)
+                                    .is_ok_and(|through| through == *out_left)
+                                    && level
+                                        .then(lower, map)
                                         .is_ok_and(|through| through == *out_right)
                             })
                             .take(2)
@@ -903,8 +924,10 @@ where
                         for &vertex in &every {
                             for upper in level.hom(left, vertex) {
                                 for lower in level.hom(right, vertex) {
-                                    let commutes = L::then(first, upper).is_ok_and(|through| {
-                                        L::then(second, lower).is_ok_and(|other| through == other)
+                                    let commutes = level.then(first, upper).is_ok_and(|through| {
+                                        level
+                                            .then(second, lower)
+                                            .is_ok_and(|other| through == other)
                                     });
                                     if commutes {
                                         found.push(Square {
@@ -954,7 +977,8 @@ fn suspend_map<'wreath>(
         .hom(from, to)
         .iter()
         .filter(|suspended| {
-            *suspended.outer() == identity && *suspended.column(zero) == [(zero, map.clone())]
+            wreath.outer().map_at(suspended.outer()) == Some(&identity)
+                && matches!(suspended.column(zero), [(end, inner)] if *end == zero && wreath.inner().map_at(*inner) == Some(map))
         })
         .collect();
     match *found {
@@ -1028,12 +1052,19 @@ fn inclusion(
         .hom(from, to)
         .iter()
         .filter(|map| {
-            shifted(map.outer().images(), outer)
-                && (0 .. map.outer().images().len()).all(|vertex| {
+            let Some(outer_map) = wreath.outer().map_at(map.outer())
+            else {
+                return false;
+            };
+            shifted(outer_map.images(), outer)
+                && (0 .. outer_map.images().len()).all(|vertex| {
                     match *map.column(Edge::from(vertex)) {
-                        [(image, ref column)] => {
+                        [(image, column)] => {
                             usize::from(image) == vertex.saturating_add(outer)
-                                && shifted(column.images(), inner)
+                                && wreath
+                                    .inner()
+                                    .map_at(column)
+                                    .is_some_and(|column| shifted(column.images(), inner))
                         },
                         _ => false,
                     }
@@ -1066,8 +1097,8 @@ fn wedge(
         restricted.clear();
         restricted.extend(out.iter().map(|map| {
             (
-                Two::then(left, map).expect("the inclusion composes"),
-                Two::then(right, map).expect("the inclusion composes"),
+                wreath.then(left, map).expect("the inclusion composes"),
+                wreath.then(right, map).expect("the inclusion composes"),
             )
         }));
         pairs.clear();
@@ -1104,8 +1135,7 @@ fn the_wedge_and_the_cover_give_one_verdict()
 {
     let bound = ShapeSize::from(13_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
-    let level: &Catalogue = &chains;
-    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let wreath = Arc::new(Wreath::build(&chains, &chains, bound));
     let below = level_one(&chains);
     let cover = WreathStratum::certify(Arc::clone(&wreath), Degree::from(11_usize), below)
         .expect("level two is certified at the bound's top");
@@ -1136,7 +1166,11 @@ fn the_wedge_and_the_cover_give_one_verdict()
                 ),
             ];
             let glued = wedge(&wreath, at, legs, |one, other| {
-                as_membership(one.outer().wires().last() == other.outer().wires().first())
+                let outer = wreath.outer();
+                as_membership(
+                    outer.map_at(one.outer()).map(|map| map.wires().last())
+                        == outer.map_at(other.outer()).map(|map| map.wires().first()),
+                )
             });
             splits += 1;
             if glued != covered {
@@ -1164,19 +1198,20 @@ fn the_wedge_and_the_cover_give_one_verdict()
                 };
                 let literal = wedge(&wreath, at, legs, |one, other| {
                     as_membership(
-                        Two::then(into_left, one).ok() == Two::then(into_right, other).ok(),
+                        wreath.then(into_left, one).ok() == wreath.then(into_right, other).ok(),
                     )
                 });
                 let at_the_wire = wedge(&wreath, at, legs, |one, other| {
                     let zero = Edge::from(0_usize);
+                    let (outer, inner) = (wreath.outer(), wreath.inner());
                     let (mine, theirs) = (one.column(zero), other.column(zero));
                     as_membership(
-                        one.outer() == other.outer()
+                        outer.map_at(one.outer()) == outer.map_at(other.outer())
                             && mine.len() == theirs.len()
                             && mine.iter().zip(theirs).all(
-                                |(&(image, ref inner), &(other_image, ref other_inner))| {
-                                    let (end, start) =
-                                        (inner.wires().last(), other_inner.wires().first());
+                                |(&(image, first), &(other_image, second))| {
+                                    let end = inner.map_at(first).map(|map| map.wires().last());
+                                    let start = inner.map_at(second).map(|map| map.wires().first());
                                     image == other_image && end == start
                                 },
                             ),

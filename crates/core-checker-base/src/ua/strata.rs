@@ -818,8 +818,7 @@ impl Strata
         let store = Arc::clone(&self.store);
         let key = BuiltKey::Faces(class.0, class.1.clone());
         let built = shared_or(&*store, key, || {
-            let level: &Catalogue = &catalogue;
-            match Wreath::faces(level, level, at.bound, object) {
+            match Wreath::faces(&catalogue, &catalogue, at.bound, object) {
                 Maybe::Present(faces) => {
                     WreathStratum::certify(Arc::new(faces), degree, SegalStratum::clone(&below))
                         .map_err(|refused| Unfaced::Refused(uncertified::<Catalogue>(refused)))
@@ -1076,8 +1075,7 @@ impl Strata
         }
         let key = BuiltKey::Wreath(StratumLevel::Two, bound);
         let built = shared_or(&*self.store, key, || {
-            let level: &Catalogue = &catalogue;
-            Ok::<_, StratumDefect>(Wreath::build(level, level, bound))
+            Ok::<_, StratumDefect>(Wreath::build(&catalogue, &catalogue, bound))
         })?;
         let _first = self.wreaths.insert(bound, Arc::clone(&built));
         Ok((catalogue, built))

@@ -366,7 +366,7 @@ impl core::error::Error for MapObstruction
 ///
 /// # Specification
 /// - provides: the vertex or wire of the first map's image that the second map
-///   has no image for.
+///   has no image for, or the part of a composite that no hom set holds.
 /// - executable: none — a refusal on its own lacks the two maps; the
 ///   composite's predicate checks the payload against them.
 ///
@@ -391,6 +391,9 @@ pub enum CompositionMismatch
         /// The wire.
         wire: Wire,
     },
+    /// No hom set of the level holds a part of the composite, so no index
+    /// names it.
+    Unheld,
 }
 
 /// Whether a map has an inverse in the class.
@@ -1002,6 +1005,7 @@ impl SiteMap
         Err(CompositionMismatch::Vertex { vertex }) => usize::from(vertex) >= next.images.len()
             && self.images.iter().any(|image| image.contains(vertex) == Membership::Inside),
         Err(CompositionMismatch::Wire { wire }) => usize::from(wire) >= next.wires.len() && self.wires.contains(&wire),
+        Err(CompositionMismatch::Unheld) => false,
     })]
     pub fn then(
         &self,

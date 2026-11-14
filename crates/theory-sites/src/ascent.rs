@@ -463,8 +463,12 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
             return Maybe::Absent(());
         };
         if <Above<Below>>::degree(column) < Degree::from(2_usize) {
+            let Some(identity) = self.wreath.identity(index)
+            else {
+                return Maybe::Absent(());
+            };
             return Maybe::Present(Cover::Cells {
-                cells: vec![(column.clone(), <Above<Below>>::identity(column))],
+                cells: vec![(column.clone(), identity)],
                 glue: Vec::new(),
             });
         }
@@ -515,7 +519,12 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
             cocone.cells.get(usize::from(at)),
             cocone.cells.get(usize::from(there)),
         ) {
-            (Some(mine), Some(theirs)) => pair(cocone, &self.below, (mine, map), (theirs, other)),
+            (Some(mine), Some(theirs)) => pair(
+                &self.wreath,
+                (cocone, &self.below),
+                (mine, map),
+                (theirs, other),
+            ),
             _ => Membership::Outside,
         }
     }
@@ -938,13 +947,13 @@ impl<Below: Certificate> WreathStratum<Below>
         self.degree
     }
 
-    /// The wreath.
+    /// The wreath, by the shared handle that the level above shares it by.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn wreath(&self) -> &Above<Below>
+    pub const fn wreath(&self) -> &Arc<Above<Below>>
     {
         &self.wreath
     }
@@ -1226,10 +1235,10 @@ where
                 .hom(at, index)
                 .iter()
                 .find(|map| {
-                    *map.outer() == outer.map
+                    wreath.outer().map_at(map.outer()) == Some(&outer.map)
                         && match inner_map {
                             Maybe::Present(ref inner_map) => {
-                                matches!(map.column(Edge::from(0_usize)), [(to, onto)] if *to == vertex && onto == inner_map)
+                                matches!(map.column(Edge::from(0_usize)), [(to, onto)] if *to == vertex && wreath.inner().map_at(*onto) == Some(inner_map))
                             },
                             Maybe::Absent(()) => true,
                         }
@@ -1292,10 +1301,10 @@ where
         .map(|cell| wreath.hom(cell.object, test))
         .collect();
     let found = families(&candidates, |chosen, cursor| {
-        agrees(cocone, below, &candidates, chosen, cursor)
+        agrees(wreath, (cocone, below), &candidates, chosen, cursor)
     });
     let restrict = |position: usize, map: &WreathMap<MapOf<Below>>| {
-        <Above<Below>>::then(&cocone.cells.get(position)?.map, map).ok()
+        wreath.then(&cocone.cells.get(position)?.map, map).ok()
     };
     bijection(
         &candidates,
@@ -1316,8 +1325,8 @@ where
 /// # Specification
 /// trivial.
 fn agrees<Below>(
-    cocone: &AboveCocone<Below>,
-    below: &Below,
+    wreath: &Above<Below>,
+    (cocone, below): (&AboveCocone<Below>, &Below),
     candidates: &[&[WreathMap<MapOf<Below>>]],
     chosen: &[Choice],
     cursor: Choice,
@@ -1336,7 +1345,7 @@ where
         else {
             return false;
         };
-        pair(cocone, below, (mine, map), (theirs, other)) == Membership::Inside
+        pair(wreath, (cocone, below), (mine, map), (theirs, other)) == Membership::Inside
     });
     if kept {
         Membership::Inside
@@ -1347,13 +1356,14 @@ where
 }
 
 /// Whether the maps out of two cells of `cocone` agree: within one column
-/// as [`same_column`] reads them, across two as [`across_columns`] does.
+/// as [`same_column`] reads them, across two as [`across_columns`] does. The
+/// maps are `wreath`'s, which resolves their indices.
 ///
 /// # Specification
 /// trivial.
 fn pair<Below>(
-    cocone: &AboveCocone<Below>,
-    below: &Below,
+    wreath: &Above<Below>,
+    (cocone, below): (&AboveCocone<Below>, &Below),
     mine: (&Cell<MapOf<Below>>, &WreathMap<MapOf<Below>>),
     theirs: (&Cell<MapOf<Below>>, &WreathMap<MapOf<Below>>),
 ) -> Membership
@@ -1361,10 +1371,10 @@ where
     Below: Certificate,
 {
     if mine.0.column == theirs.0.column {
-        same_column(cocone, below, mine, theirs)
+        same_column(wreath, (cocone, below), mine, theirs)
     }
     else {
-        across_columns(cocone, mine, theirs)
+        across_columns(wreath.outer(), cocone, mine, theirs)
     }
 }
 
@@ -1375,15 +1385,16 @@ where
 /// # Specification
 /// trivial.
 fn same_column<Below>(
-    cocone: &AboveCocone<Below>,
-    below: &Below,
+    wreath: &Above<Below>,
+    (cocone, below): (&AboveCocone<Below>, &Below),
     (mine, map): (&Cell<MapOf<Below>>, &WreathMap<MapOf<Below>>),
     (theirs, other): (&Cell<MapOf<Below>>, &WreathMap<MapOf<Below>>),
 ) -> Membership
 where
     Below: Certificate,
 {
-    if map.outer() != other.outer() {
+    let outer = wreath.outer();
+    if outer.map_at(map.outer()) != outer.map_at(other.outer()) {
         return Membership::Outside;
     }
     let (Spot::Vertex(at), Spot::Vertex(there)) = (mine.spot, theirs.spot)
@@ -1395,9 +1406,15 @@ where
         map.column(Edge::from(0_usize)),
         other.column(Edge::from(0_usize)),
     );
+    let inner = wreath.inner();
     let kept = left.iter().zip(right).all(|(first, second)| {
         first.0 == second.0
-            && below.agree(glue, (at, &first.1), (there, &second.1)) == Membership::Inside
+            && match (inner.map_at(first.1), inner.map_at(second.1)) {
+                (Some(first), Some(second)) => {
+                    below.agree(glue, (at, first), (there, second)) == Membership::Inside
+                },
+                (None, _) | (_, None) => false,
+            }
     });
     if kept {
         Membership::Inside
@@ -1407,19 +1424,24 @@ where
     }
 }
 
-/// Whether two cells of different columns agree: their outer maps agree along
-/// every outer graft joining the two columns and have disjoint images.
+/// Whether two cells of different columns agree: their outer maps, read from
+/// `outer`, agree along every outer graft joining the two columns and have
+/// disjoint images.
 ///
 /// # Specification
 /// trivial.
 fn across_columns<Map, Glue>(
+    outer: &Catalogue,
     cocone: &WreathCocone<Map, Glue>,
     (mine, map): (&Cell<Map>, &WreathMap<Map>),
     (theirs, other): (&Cell<Map>, &WreathMap<Map>),
 ) -> Membership
 {
-    let wire =
-        |map: &WreathMap<Map>, leg: Leg| map.outer().wires().get(usize::from(leg.wire)).copied();
+    let (Some(map), Some(other)) = (outer.map_at(map.outer()), outer.map_at(other.outer()))
+    else {
+        return Membership::Outside;
+    };
+    let wire = |map: &SiteMap, leg: Leg| map.wires().get(usize::from(leg.wire)).copied();
     let glued = cocone.outer.iter().all(|graft| {
         let (producer, consumer) = (graft.producer, graft.consumer);
         if producer.vertex == mine.column && consumer.vertex == theirs.column {
@@ -1432,11 +1454,7 @@ fn across_columns<Map, Glue>(
             true
         }
     });
-    let apart = map
-        .outer()
-        .image_union()
-        .intersection(other.outer().image_union())
-        == VertexSet::EMPTY;
+    let apart = map.image_union().intersection(other.image_union()) == VertexSet::EMPTY;
     if glued && apart {
         Membership::Inside
     }

@@ -44,7 +44,7 @@ pub fn column(Length(length): Length) -> Shape
 /// trivial.
 pub fn restriction(bound: ShapeSize) -> Wreath<Catalogue>
 {
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     Wreath::build(&chains, &chains, bound)
 }
 
@@ -104,8 +104,7 @@ pub fn level_two(
     bound: ShapeSize,
 ) -> WreathStratum
 {
-    let level: &Catalogue = catalogue;
-    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let wreath = Arc::new(Wreath::build(catalogue, catalogue, bound));
     let top = wreath
         .objects()
         .iter()

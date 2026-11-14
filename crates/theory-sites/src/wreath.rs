@@ -17,6 +17,11 @@
 //! are. A [`Wreath`] is a [`Level`], so the conditions run over it and a wreath
 //! may carry another.
 //!
+//! A wreath map keeps its outer map and each inner map as a [`HomIndex`] into
+//! the hom set that holds it, never as a copy. A wreath shares its outer
+//! catalogue and its inner level with their holders, by the store's shared
+//! handle. Its map operations read each map from there.
+//!
 //! An object keys by its class: the least, over the orders of its outer
 //! vertices, of the relabelled outer ends with the columns' keys in that order.
 //! [`Level::find`] reads the key, so it finds an object written in any vertex
@@ -95,6 +100,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
@@ -109,7 +115,9 @@ use crate::catalogue::Family;
 use crate::catalogue::ShapeIndex;
 use crate::catalogue::shape_class;
 use crate::degree::Degree;
+use crate::level::HomIndex;
 use crate::level::Level;
+use crate::level::MapPosition;
 use crate::map::CompositionMismatch;
 use crate::map::Invertibility;
 use crate::map::Membership;
@@ -296,35 +304,39 @@ pub struct WreathKey<Key>
     columns: Box<[Key]>,
 }
 
-/// One source vertex's inner maps, each with the image vertex it maps to.
-type Column<Map> = Box<[(Edge, Map)]>;
+/// One source vertex's inner maps, each as its index with the image vertex
+/// it maps to.
+type Column<Map> = Box<[(Edge, HomIndex<Map>)]>;
 
 /// A map of a wreath: an outer map and, for each source vertex, one inner map
-/// to each vertex of its image, in vertex order.
+/// to each vertex of its image, in vertex order. Each map is an index into
+/// the hom set that holds it.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WreathMap<Map>
 {
-    /// The outer map.
-    outer: SiteMap,
-    /// Per source vertex, each image vertex with the inner map to it.
+    /// The index of the outer map in the outer catalogue.
+    outer: HomIndex<SiteMap>,
+    /// Per source vertex, each image vertex with the index of the inner map
+    /// to it in the inner level.
     columns: Box<[Column<Map>]>,
 }
 
 impl<Map> WreathMap<Map>
 {
-    /// The outer map.
+    /// The index of the outer map in the outer catalogue.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn outer(&self) -> &SiteMap
+    pub const fn outer(&self) -> HomIndex<SiteMap>
     {
-        &self.outer
+        self.outer
     }
 
-    /// The inner maps out of the source's column at `vertex`, each with the
-    /// image vertex it maps to; empty past the source's vertices.
+    /// The indices of the inner maps out of the source's column at `vertex`,
+    /// each with the image vertex it maps to; empty past the source's
+    /// vertices.
     ///
     /// # Specification
     /// trivial.
@@ -333,7 +345,7 @@ impl<Map> WreathMap<Map>
     pub fn column(
         &self,
         vertex: Edge,
-    ) -> &[(Edge, Map)]
+    ) -> &[(Edge, HomIndex<Map>)]
     {
         self.columns
             .get(usize::from(vertex))
@@ -342,11 +354,9 @@ impl<Map> WreathMap<Map>
 }
 
 impl<Map> fmt::Display for WreathMap<Map>
-where
-    Map: fmt::Display,
 {
-    /// Writes the outer map, then each source vertex's inner maps in angle
-    /// brackets as `v→w map`, columns separated by `|`.
+    /// Writes the outer map's index, then each source vertex's inner maps'
+    /// indices in angle brackets as `v→w index`, columns separated by `|`.
     ///
     /// # Specification
     /// trivial.
@@ -402,10 +412,19 @@ pub struct Wreath<Inner: Level>
     objects: Box<[WreathShape<Inner::Object>]>,
     /// Each class's index, by its key.
     classes: BTreeMap<WreathKey<Inner::Key>, ShapeIndex>,
+    /// Each object's class: its outer shape's index and its columns' indices,
+    /// in the order of the objects.
+    places: Box<[Class]>,
     /// The families the objects lie in, one per level, outermost first.
     families: Box<[Family]>,
     /// The hom sets, row-major: source index times count plus target index.
     homs: Box<[HomSet<Inner::Map>]>,
+    /// The outer catalogue, whose hom sets the outer indices name, shared with
+    /// its holders.
+    outer: Arc<Catalogue>,
+    /// The inner level, whose hom sets the inner indices name, shared with its
+    /// holders.
+    inner: Arc<Inner>,
 }
 
 /// An object as its outer shape's index and its columns' indices.
@@ -438,13 +457,13 @@ impl<Inner: Level> Wreath<Inner>
         wreath.homs.len() == wreath.objects.len().saturating_mul(wreath.objects.len()),
     ])]
     pub fn build(
-        outer: &Catalogue,
-        inner: &Inner,
+        outer: &Arc<Catalogue>,
+        inner: &Arc<Inner>,
         bound: ShapeSize,
     ) -> Self
     {
         let classes = Self::classes(outer, inner, bound);
-        Self::over(outer, inner, &classes, |_, _, source, target| {
+        Self::over(outer, inner, classes, |_, _, source, target| {
             Self::maps_between(outer, inner, source, target)
         })
     }
@@ -479,8 +498,8 @@ impl<Inner: Level> Wreath<Inner>
         Maybe::Absent(_) => true,
     })]
     pub fn faces(
-        outer: &Catalogue,
-        inner: &Inner,
+        outer: &Arc<Catalogue>,
+        inner: &Arc<Inner>,
         bound: ShapeSize,
         object: &WreathShape<Inner::Object>,
     ) -> Maybe<Self, shape_class::Absent>
@@ -516,7 +535,7 @@ impl<Inner: Level> Wreath<Inner>
         Maybe::Present(Self::over(
             outer,
             inner,
-            &faces,
+            faces,
             |source_at, target_at, source, face| match (
                 Some(target_at) == at,
                 into.get_mut(source_at),
@@ -571,26 +590,50 @@ impl<Inner: Level> Wreath<Inner>
         Degree::from(top)
     }
 
+    /// The outer catalogue, whose hom sets the outer indices of the maps name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn outer(&self) -> &Catalogue
+    {
+        &self.outer
+    }
+
+    /// The inner level, whose hom sets the inner indices of the maps name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn inner(&self) -> &Inner
+    {
+        &self.inner
+    }
+
     /// The wreath over `classes`, in their order, with the hom set `hom` gives
-    /// for each ordered pair: by the two positions and the two classes.
+    /// for each ordered pair: by the two positions and the two classes. The
+    /// wreath shares `outer` and `inner`, whose hom sets its maps' indices
+    /// name.
     ///
     /// # Specification
     /// trivial.
     fn over(
-        outer: &Catalogue,
-        inner: &Inner,
-        classes: &[Class],
+        outer: &Arc<Catalogue>,
+        inner: &Arc<Inner>,
+        classes: Vec<Class>,
         mut hom: impl FnMut(usize, usize, &Class, &Class) -> HomSet<Inner::Map>,
     ) -> Self
     {
-        let objects: Box<[WreathShape<Inner::Object>]> = classes
-            .iter()
-            .filter_map(|class| Self::object_of(outer, inner, class))
-            .collect();
+        let (objects, places): (Vec<WreathShape<Inner::Object>>, Vec<Class>) = classes
+            .into_iter()
+            .filter_map(|class| Self::object_of(outer, inner, &class).map(|object| (object, class)))
+            .unzip();
         let mut homs: Vec<HomSet<Inner::Map>> =
-            Vec::with_capacity(classes.len().saturating_mul(classes.len()));
-        for (source_at, source) in classes.iter().enumerate() {
-            for (target_at, target) in classes.iter().enumerate() {
+            Vec::with_capacity(places.len().saturating_mul(places.len()));
+        for (source_at, source) in places.iter().enumerate() {
+            for (target_at, target) in places.iter().enumerate() {
                 homs.push(hom(source_at, target_at, source, target));
             }
         }
@@ -600,10 +643,13 @@ impl<Inner: Level> Wreath<Inner>
             .map(|(index, object)| (<Self as Level>::key(object), ShapeIndex::from(index)))
             .collect();
         Self {
-            objects,
+            objects: objects.into_boxed_slice(),
             classes: keys,
+            places: places.into_boxed_slice(),
             families: Self::families_of(outer, inner),
             homs: homs.into_boxed_slice(),
+            outer: Arc::clone(outer),
+            inner: Arc::clone(inner),
         }
     }
 
@@ -707,7 +753,9 @@ impl<Inner: Level> Wreath<Inner>
         found.into_iter().map(|(_, class)| class).collect()
     }
 
-    /// Every map from the class `source` to the class `target`, ascending.
+    /// Every map from the class `source` to the class `target`, ascending: each
+    /// outer map and each inner map as its index into the hom set that holds
+    /// it.
     ///
     /// # Specification
     /// trivial.
@@ -720,9 +768,16 @@ impl<Inner: Level> Wreath<Inner>
     {
         let (source_columns, target_columns) = (&source.1, &target.1);
         let mut found: Vec<WreathMap<Inner::Map>> = Vec::new();
-        let mut slots: Vec<(Edge, Edge, &[Inner::Map])> = Vec::new();
-        let mut choice: Vec<ShapeIndex> = Vec::new();
-        for map in <Catalogue as Level>::hom(outer, source.0, target.0) {
+        let mut slots: Vec<(Slot, &[Inner::Map])> = Vec::new();
+        let mut choice: Vec<MapPosition> = Vec::new();
+        for (position, map) in <Catalogue as Level>::hom(outer, source.0, target.0)
+            .iter()
+            .enumerate()
+        {
+            let Some(outer_index) = outer.index_at(source.0, target.0, MapPosition::from(position))
+            else {
+                continue;
+            };
             slots.clear();
             slots.extend(
                 source_columns
@@ -730,31 +785,36 @@ impl<Inner: Level> Wreath<Inner>
                     .enumerate()
                     .flat_map(|(vertex, column)| {
                         map.image(Edge::from(vertex)).members().map(move |end| {
-                            let options = target_columns
-                                .get(usize::from(end))
-                                .map_or(&[][..], |target| inner.hom(*column, *target));
-                            (Edge::from(vertex), end, options)
+                            let onto = target_columns.get(usize::from(end)).copied();
+                            let options = onto.map_or(&[][..], |onto| inner.hom(*column, onto));
+                            let slot = Slot {
+                                vertex: Edge::from(vertex),
+                                end,
+                                from: *column,
+                                onto: onto.unwrap_or(*column),
+                            };
+                            (slot, options)
                         })
                     }),
             );
-            if slots.iter().any(|slot| slot.2.is_empty()) {
+            if slots.iter().any(|slot| slot.1.is_empty()) {
                 continue;
             }
             choice.clear();
-            choice.resize(slots.len(), ShapeIndex::from(0));
+            choice.resize(slots.len(), MapPosition::from(0));
             loop {
-                let mut columns: Vec<Vec<(Edge, Inner::Map)>> =
+                let mut columns: Vec<Vec<(Edge, HomIndex<Inner::Map>)>> =
                     vec![Vec::new(); source_columns.len()];
-                for (&(vertex, end, options), &picked) in slots.iter().zip(&choice) {
+                for (&(slot, _), &picked) in slots.iter().zip(&choice) {
                     if let (Some(column), Some(chosen)) = (
-                        columns.get_mut(usize::from(vertex)),
-                        options.get(usize::from(picked)),
+                        columns.get_mut(usize::from(slot.vertex)),
+                        inner.index_at(slot.from, slot.onto, picked),
                     ) {
-                        column.push((end, chosen.clone()));
+                        column.push((slot.end, chosen));
                     }
                 }
                 found.push(WreathMap {
-                    outer: map.clone(),
+                    outer: outer_index,
                     columns: columns.into_iter().map(Vec::into_boxed_slice).collect(),
                 });
                 if advance(&mut choice, &slots) == Membership::Outside {
@@ -765,6 +825,49 @@ impl<Inner: Level> Wreath<Inner>
         found.sort();
         found.into_boxed_slice()
     }
+}
+
+/// One inner map a wreath map picks: the source vertex, the image vertex, and
+/// the indices of the inner objects the map runs between.
+#[derive(Clone, Copy, Debug)]
+struct Slot
+{
+    /// The source vertex.
+    vertex: Edge,
+    /// The image vertex.
+    end: Edge,
+    /// The index of the source vertex's column in the inner level.
+    from: ShapeIndex,
+    /// The index of the image vertex's column in the inner level.
+    onto: ShapeIndex,
+}
+
+/// The index of the composite of the maps `first` and `next` name at
+/// `level`, in the hom set from `first`'s source to `next`'s target.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// - [`CompositionMismatch`]: as [`Level::then`] refuses the two maps.
+/// - [`CompositionMismatch::Unheld`]: an index past its hom set, or no map of
+///   the hom set equal to the composite.
+fn composite<L>(
+    level: &L,
+    first: HomIndex<L::Map>,
+    next: HomIndex<L::Map>,
+) -> Result<HomIndex<L::Map>, CompositionMismatch>
+where
+    L: Level,
+{
+    let (Some(before), Some(after)) = (level.map_at(first), level.map_at(next))
+    else {
+        return Err(CompositionMismatch::Unheld);
+    };
+    let composed = level.then(before, after)?;
+    level
+        .index_of(first.source(), next.target(), &composed)
+        .ok_or(CompositionMismatch::Unheld)
 }
 
 /// Into `out`, every tuple of inner indices, one per outer vertex, whose
@@ -813,18 +916,18 @@ fn within(
 ///
 /// # Specification
 /// trivial.
-fn advance<Choice>(
-    choice: &mut [ShapeIndex],
-    slots: &[(Edge, Edge, &[Choice])],
+fn advance<Picked, Choice>(
+    choice: &mut [MapPosition],
+    slots: &[(Picked, &[Choice])],
 ) -> Membership
 {
     for (picked, slot) in choice.iter_mut().zip(slots) {
         let next = usize::from(*picked).saturating_add(1);
-        if next < slot.2.len() {
-            *picked = ShapeIndex::from(next);
+        if next < slot.1.len() {
+            *picked = MapPosition::from(next);
             return Membership::Inside;
         }
-        *picked = ShapeIndex::from(0);
+        *picked = MapPosition::from(0);
     }
     Membership::Outside
 }
@@ -885,37 +988,48 @@ impl<Inner: Level> Level for Wreath<Inner>
         self.homs.get(position).map_or(&[], |maps| &**maps)
     }
 
-    /// The outer identity, with each column's inner identity to itself.
+    /// The outer identity, with each column's inner identity to itself, each
+    /// found in its hom set; absent past the objects.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn identity(object: &Self::Object) -> Self::Map
+    fn identity(
+        &self,
+        at: ShapeIndex,
+    ) -> Option<Self::Map>
     {
-        WreathMap {
-            outer: SiteMap::identity(&object.outer),
-            columns: object
-                .columns
-                .iter()
-                .enumerate()
-                .map(|(vertex, column)| Box::from([(Edge::from(vertex), Inner::identity(column))]))
-                .collect(),
-        }
+        let &(outer_at, ref columns) = self.places.get(usize::from(at))?;
+        let outer = self
+            .outer
+            .index_of(outer_at, outer_at, &self.outer.identity(outer_at)?)?;
+        let columns = columns
+            .iter()
+            .enumerate()
+            .map(|(vertex, &column)| {
+                let identity = self.inner.identity(column)?;
+                let index = self.inner.index_of(column, column, &identity)?;
+                Some(Box::from([(Edge::from(vertex), index)]))
+            })
+            .collect::<Option<Box<[Column<Inner::Map>]>>>()?;
+        Some(WreathMap { outer, columns })
     }
 
     /// The outer composite, with each inner map composed onward through the
-    /// middle vertex it maps to.
+    /// middle vertex it maps to; each part found in its hom set.
     ///
     /// # Specification
-    /// - ensures: a composite's outer map is the outer maps' composite, with
-    ///   one column per source vertex of `first`.
-    /// - fails: the outer maps do not compose, an inner pair does not, or a
-    ///   middle vertex has no column in `next`.
+    /// - ensures: a composite's outer map runs from `first`'s source to
+    ///   `next`'s target, with one column per source vertex of `first`.
+    /// - fails: the outer maps do not compose, an inner pair does not, a middle
+    ///   vertex has no column in `next`, or no hom set holds a part.
     ///
     /// # Errors
     /// - [`CompositionMismatch`]: the outer maps', or an inner pair's.
     /// - [`CompositionMismatch::Vertex`]: a middle vertex `next` has no column
     ///   for.
+    /// - [`CompositionMismatch::Unheld`]: no hom set holds a part of the
+    ///   composite.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the identity laws and the closure of each class run
@@ -923,18 +1037,20 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// - witness: `tests::wreath::the_wreath_is_a_generalized_reedy_category`
     #[inline]
     #[spec(ensures: |result| result.as_ref().map_or(true, |map| {
-        first.outer.then(&next.outer).is_ok_and(|outer| outer == map.outer)
+        map.outer.source() == first.outer.source()
+            && map.outer.target() == next.outer.target()
             && map.columns.len() == first.columns.len()
     }))]
     fn then(
+        &self,
         first: &Self::Map,
         next: &Self::Map,
     ) -> Result<Self::Map, CompositionMismatch>
     {
-        let outer = first.outer.then(&next.outer)?;
+        let outer = composite(self.outer(), first.outer, next.outer)?;
         let mut columns: Vec<Column<Inner::Map>> = Vec::with_capacity(first.columns.len());
         for column in &first.columns {
-            let mut composed: Vec<(Edge, Inner::Map)> = Vec::new();
+            let mut composed: Vec<(Edge, HomIndex<Inner::Map>)> = Vec::new();
             for entry in column {
                 let middle = entry.0;
                 let onward = next
@@ -942,7 +1058,7 @@ impl<Inner: Level> Level for Wreath<Inner>
                     .get(usize::from(middle))
                     .ok_or(CompositionMismatch::Vertex { vertex: middle })?;
                 for step in onward {
-                    composed.push((step.0, Inner::then(&entry.1, &step.1)?));
+                    composed.push((step.0, composite(self.inner(), entry.1, step.1)?));
                 }
             }
             composed.sort_by_key(|pair| pair.0);
@@ -962,29 +1078,34 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// trivial.
     #[inline]
     fn admits(
+        &self,
         map: &Self::Map,
         source: &Self::Object,
         target: &Self::Object,
     ) -> Membership
     {
-        let fits = map.outer.validate(&source.outer, &target.outer).is_ok()
-            && map.columns.len() == source.columns.len()
-            && map
-                .columns
-                .iter()
-                .zip(source.columns.iter())
-                .enumerate()
-                .all(|(vertex, (column, from))| {
-                    column
-                        .iter()
-                        .map(|entry| entry.0)
-                        .eq(map.outer.image(Edge::from(vertex)).members())
-                        && column.iter().all(|entry| {
-                            target.columns.get(usize::from(entry.0)).is_some_and(|to| {
-                                Inner::admits(&entry.1, from, to) == Membership::Inside
+        let fits = self.outer.map_at(map.outer).is_some_and(|outer| {
+            outer.validate(&source.outer, &target.outer).is_ok()
+                && map.columns.len() == source.columns.len()
+                && map
+                    .columns
+                    .iter()
+                    .zip(source.columns.iter())
+                    .enumerate()
+                    .all(|(vertex, (column, from))| {
+                        column
+                            .iter()
+                            .map(|entry| entry.0)
+                            .eq(outer.image(Edge::from(vertex)).members())
+                            && column.iter().all(|entry| {
+                                target.columns.get(usize::from(entry.0)).is_some_and(|to| {
+                                    self.inner.map_at(entry.1).is_some_and(|inner| {
+                                        self.inner.admits(inner, from, to) == Membership::Inside
+                                    })
+                                })
                             })
-                        })
-                });
+                    })
+        });
         if fits {
             Membership::Inside
         }
@@ -996,7 +1117,7 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// Whether the outer kernels meet in no point and, at each source vertex,
     /// the inner maps of the whole family out of it are jointly raising; a
     /// vertex an outer map deletes carries no inner map, and constrains
-    /// nothing there.
+    /// nothing there. A map whose index names no map is outside.
     ///
     /// # Specification
     /// - ensures: inside only when the family is non-empty and its outer
@@ -1008,30 +1129,43 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// - witness: `tests::wreath::a_column_raises_when_one_inner_map_keeps_it`
     #[inline]
     #[spec(ensures: |answer| answer == Membership::Outside
-        || family.iter().map(|map| map.outer.kernel()).reduce(VertexSet::intersection) == Some(VertexSet::EMPTY))]
-    fn jointly_raising(family: &[&Self::Map]) -> Membership
+        || family.iter().filter_map(|map| self.outer.map_at(map.outer)).map(SiteMap::kernel).reduce(VertexSet::intersection) == Some(VertexSet::EMPTY))]
+    fn jointly_raising(
+        &self,
+        family: &[&Self::Map],
+    ) -> Membership
     {
         let Some(first) = family.first()
         else {
             return Membership::Outside;
         };
-        let meet = family
-            .iter()
-            .map(|map| map.outer.kernel())
-            .reduce(VertexSet::intersection);
+        let mut meet: Option<VertexSet> = None;
+        for map in family {
+            let Some(outer) = self.outer.map_at(map.outer)
+            else {
+                return Membership::Outside;
+            };
+            let kernel = outer.kernel();
+            meet = Some(meet.map_or(kernel, |meet| meet.intersection(kernel)));
+        }
         if meet != Some(VertexSet::EMPTY) {
             return Membership::Outside;
         }
         let mut at: Vec<&Inner::Map> = Vec::new();
         let columns_raise = (0 .. first.columns.len()).all(|vertex| {
             at.clear();
-            at.extend(
-                family
-                    .iter()
-                    .filter_map(|map| map.columns.get(vertex))
-                    .flat_map(|column| column.iter().map(|entry| &entry.1)),
-            );
-            Inner::jointly_raising(&at) == Membership::Inside
+            for entry in family
+                .iter()
+                .filter_map(|map| map.columns.get(vertex))
+                .flat_map(|column| column.iter())
+            {
+                let Some(inner) = self.inner.map_at(entry.1)
+                else {
+                    return false;
+                };
+                at.push(inner);
+            }
+            self.inner.jointly_raising(&at) == Membership::Inside
         });
         if columns_raise {
             Membership::Inside
@@ -1048,20 +1182,25 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// trivial.
     #[inline]
     fn lowering(
+        &self,
         map: &Self::Map,
         target: &Self::Object,
     ) -> Membership
     {
-        let lowers = map.outer.lowering(&target.outer) == Membership::Inside
+        let lowers = self
+            .outer
+            .map_at(map.outer)
+            .is_some_and(|outer| outer.lowering(&target.outer) == Membership::Inside)
             && map
                 .columns
                 .iter()
                 .flat_map(|column| column.iter())
                 .all(|entry| {
-                    target
-                        .columns
-                        .get(usize::from(entry.0))
-                        .is_some_and(|to| Inner::lowering(&entry.1, to) == Membership::Inside)
+                    target.columns.get(usize::from(entry.0)).is_some_and(|to| {
+                        self.inner.map_at(entry.1).is_some_and(|inner| {
+                            self.inner.lowering(inner, to) == Membership::Inside
+                        })
+                    })
                 });
         if lowers {
             Membership::Inside
@@ -1078,16 +1217,21 @@ impl<Inner: Level> Level for Wreath<Inner>
     /// trivial.
     #[inline]
     fn invertibility(
+        &self,
         map: &Self::Map,
         target: &Self::Object,
     ) -> Invertibility
     {
-        let inverts = map.outer.invertibility(&target.outer) == Invertibility::Invertible
-            && map.columns.iter().all(|column| {
+        let inverts =
+            self.outer.map_at(map.outer).is_some_and(|outer| {
+                outer.invertibility(&target.outer) == Invertibility::Invertible
+            }) && map.columns.iter().all(|column| {
                 column.len() == 1
                     && column.iter().all(|entry| {
                         target.columns.get(usize::from(entry.0)).is_some_and(|to| {
-                            Inner::invertibility(&entry.1, to) == Invertibility::Invertible
+                            self.inner.map_at(entry.1).is_some_and(|inner| {
+                                self.inner.invertibility(inner, to) == Invertibility::Invertible
+                            })
                         })
                     })
             });
