@@ -360,16 +360,19 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 # a `GATE_SCOPE` that keeps no member using `anodized` otherwise builds
 # `quenchant-anodized` without its feature under the cfg, and its build stops.
 # `--units FILE` also writes the pass's units to FILE as Cargo's JSON
-# messages: `ci:prune-clippy` keeps exactly those units (#5930). The parser's
-# report builds only under its `census` feature, so the pass turns that
-# feature on whenever the scope keeps `gandr-workflow-parser-report`. The
-# report is then linted, and Cargo counts the dependencies that it uses.
+# messages: `ci:prune-clippy` keeps exactly those units (#5930). A target
+# that builds only under a feature, as the parser's report under `census`
+# and the benches of `gandr-lang` under `hotpath`, is linted too: the pass
+# turns on the features that the targets of the scope's packages require
+# (`.config/policy/required.bash`). Cargo then counts the dependencies that
+# such a target uses.
 ["check:clippy-enforcing"]
 description = "The clippy wall with specification enforcement"
+tools.jq = "1.8.1"
 usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = "{% set scope = env.GATE_SCOPE | default(value='--workspace') %}{% set padded = scope ~ ' ' %}.config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy {{ scope }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if '--exclude gandr-workflow-parser-report ' in padded %}{% else %}--features gandr-workflow-parser-report/census {% endif %}{% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
+run = "{% set scope = env.GATE_SCOPE | default(value='--workspace') %}features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ scope }}) && .config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy {{ scope }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' $features {% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
@@ -437,8 +440,12 @@ done
 # library for it, so the compiler refuses each denied lint as unknown
 # (#6946). After its run the task runs the case of #6946
 # (`.config/policy/scope-cases.bash`) through the same command, `policy`.
+# The run turns on the features that the targets of the scope's packages
+# require (`.config/policy/required.bash`), as `check:clippy-enforcing`
+# does, so a target that builds only under a feature is linted too.
 ["check:dylint"]
 description = "quenchant's policy library over the workspace"
+tools.jq = "1.8.1"
 env.CARGO_INCREMENTAL = "0"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 # The plugin links through dylint-link, which renames the artifact with the
@@ -630,7 +637,9 @@ policy() {
   fi
   .config/mise/gated "${run[@]}"
 }
-policy {{ env.GATE_SCOPE | default(value='--workspace') }}
+features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
+# shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
+policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features
 export toolchain
 export -f policy
 .config/policy/scope-cases.bash

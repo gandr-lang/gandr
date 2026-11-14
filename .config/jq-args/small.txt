@@ -115,6 +115,7 @@
 --arg url
 --arg workflow
 --argjson alive
+--argjson all
 --argjson allocations
 --argjson background
 --argjson brake
@@ -130,6 +131,7 @@
 --argjson ended
 --argjson epic
 --argjson every
+--argjson excluded
 --argjson family_count
 --argjson first
 --argjson forgo
@@ -164,6 +166,7 @@
 --argjson red
 --argjson retry_at
 --argjson seconds
+--argjson selected
 --argjson self
 --argjson share
 --argjson touched
