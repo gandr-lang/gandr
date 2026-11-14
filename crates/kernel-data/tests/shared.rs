@@ -186,8 +186,8 @@ fn a_block_holds_one_count_and_the_value()
     assert_eq!(last.get().align(), 8);
     drop(shared);
     assert_eq!(returned.get(), 1);
-    assert_eq!(size_of::<Shared<u64>>(), size_of::<usize>());
-    assert_eq!(size_of::<Unique<u64>>(), size_of::<usize>());
+    assert_eq!(size_of::<Shared<u64, Global>>(), size_of::<usize>());
+    assert_eq!(size_of::<Unique<u64, Global>>(), size_of::<usize>());
 }
 
 #[test]

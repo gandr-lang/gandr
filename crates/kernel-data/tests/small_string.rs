@@ -216,12 +216,12 @@ fn a_string_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget()
 fn the_string_is_24_bytes_and_compares_as_its_text()
 {
     assert_eq!(
-        core::mem::size_of::<SmallString>(),
+        core::mem::size_of::<SmallString<Global>>(),
         WIDTH,
         "the global allocator's string is 24 bytes"
     );
     assert_eq!(
-        core::mem::size_of::<Option<SmallString>>(),
+        core::mem::size_of::<Option<SmallString<Global>>>(),
         WIDTH,
         "an option of a string keeps its tag in the string's niche"
     );
@@ -241,13 +241,13 @@ fn the_string_is_24_bytes_and_compares_as_its_text()
         hasher.hash_one("name"),
         "a string hashes as its text"
     );
-    let set: HashSet<SmallString> = [inline, heap.clone()].into_iter().collect();
+    let set: HashSet<SmallString<Global>> = [inline, heap.clone()].into_iter().collect();
     let again = SmallString::<Global>::try_from(long.as_str()).expect("a block");
     assert!(
         set.contains(&fixed) && set.contains(&again),
         "a set finds a key by an equal string of another form"
     );
-    let ordered: BTreeSet<SmallString> = [heap, fixed.clone()].into_iter().collect();
+    let ordered: BTreeSet<SmallString<Global>> = [heap, fixed.clone()].into_iter().collect();
     let order: Vec<&str> = ordered.iter().map(|string| &**string).collect();
     let mut expected = vec![long.as_str(), "name"];
     expected.sort_unstable();

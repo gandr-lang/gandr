@@ -13,11 +13,13 @@ use core::alloc::AllocError;
 use core::alloc::Allocator;
 use core::alloc::Layout;
 use core::cell::Cell;
+use core::hash::BuildHasher as _;
 use core::mem::size_of;
 use core::panic::AssertUnwindSafe;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
+use std::hash::RandomState;
 use std::panic::catch_unwind;
 
 use gandr_kernel_data::Count;
@@ -118,7 +120,7 @@ fn bombs<const N: usize>(
     drops: &Cell<usize>,
     count: usize,
     at: usize,
-) -> SmallVec<Bomb<'_>, N>
+) -> SmallVec<Bomb<'_>, N, Global>
 {
     (0_usize .. count)
         .map(|index| Bomb {
@@ -146,6 +148,8 @@ enum Operation
     Drain(usize, usize),
     /// Write the item at the index, if the vector holds one there.
     Write(usize, u16),
+    /// Keep the items below the bound.
+    Retain(u16),
 }
 
 /// Any operation, over lengths up to about three times the largest `N`.
@@ -163,6 +167,7 @@ fn operation() -> impl Strategy<Value = Operation>
         (0_usize .. 24_usize, 0_usize .. 24_usize)
             .prop_map(|(first, second)| Operation::Drain(first.min(second), first.max(second))),
         (0_usize .. 24_usize, any::<u16>()).prop_map(|(at, item)| Operation::Write(at, item)),
+        any::<u16>().prop_map(Operation::Retain),
     ]
 }
 
@@ -174,7 +179,7 @@ fn operation() -> impl Strategy<Value = Operation>
 /// trivial.
 fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
 {
-    let mut small = SmallVec::<u16, N>::new();
+    let mut small = SmallVec::<u16, N, Global>::new();
     let mut model = Vec::new();
     for operation in operations {
         match *operation {
@@ -210,6 +215,10 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
                     *kept = item;
                 }
             },
+            Operation::Retain(bound) => {
+                small.retain(|&item| item < bound);
+                model.retain(|&item| item < bound);
+            },
         }
         prop_assert_eq!(small.as_slice(), model.as_slice());
         prop_assert_eq!(
@@ -221,7 +230,7 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
         small.clone().into_iter().eq(model.iter().copied()),
         "the clone yields the model's items by value"
     );
-    let collected: SmallVec<u16, N> = model.iter().copied().collect();
+    let collected: SmallVec<u16, N, Global> = model.iter().copied().collect();
     prop_assert_eq!(collected.as_slice(), model.as_slice());
     Ok(())
 }
@@ -262,9 +271,44 @@ proptest! {
 fn pushed<const N: usize>() -> bool
 {
     let count = N.saturating_mul(3).saturating_add(2);
-    let mut vec = SmallVec::<usize, N>::new();
+    let mut vec = SmallVec::<usize, N, Global>::new();
     (0_usize .. count).for_each(|item| vec.push(item));
     vec.iter().copied().eq(0_usize .. count)
+}
+
+/// Vectors of one set of items in place, spilled and of two capacities
+/// compare equal, hash alike and order as their slices.
+#[test]
+fn vectors_compare_and_hash_as_their_slices()
+{
+    let items = [3_u16, 1, 4, 1, 5];
+    let inline: SmallVec<u16, 8, Global> = items.into_iter().collect();
+    let spilled: SmallVec<u16, 2, Global> = items.into_iter().collect();
+    assert!(
+        inline == spilled,
+        "the same items compare equal across capacities"
+    );
+    let shorter: SmallVec<u16, 8, Global> = [3_u16, 1, 4].into_iter().collect();
+    assert!(shorter != inline, "a prefix is not the whole");
+    assert_eq!(
+        (shorter.cmp(&inline), shorter.partial_cmp(&inline)),
+        (
+            [3_u16, 1, 4].as_slice().cmp(items.as_slice()),
+            [3_u16, 1, 4].as_slice().partial_cmp(items.as_slice())
+        ),
+        "a vector orders as its slice"
+    );
+    let state = RandomState::new();
+    assert_eq!(
+        state.hash_one(&inline),
+        state.hash_one(items.to_vec()),
+        "a vector hashes as a `Vec` of its items"
+    );
+    assert_eq!(
+        state.hash_one(&inline),
+        state.hash_one(&spilled),
+        "a vector in place and a spilled one hash alike"
+    );
 }
 
 /// Up to `N` items lie in place and draw no block. The push past `N` moves
@@ -328,7 +372,7 @@ impl Drop for Token
 #[test]
 fn a_zero_sized_item_takes_no_storage()
 {
-    let mut vec = SmallVec::<Token, 0>::new();
+    let mut vec = SmallVec::<Token, 0, Global>::new();
     (0_usize .. 1_000_usize).for_each(|_| vec.push(Token));
     assert_eq!(
         (vec.len(), usize::from(vec.capacity())),
@@ -348,7 +392,7 @@ fn a_zero_sized_item_takes_no_storage()
         "each token drops once"
     );
     assert_eq!(
-        size_of::<SmallVec<Token, 0>>(),
+        size_of::<SmallVec<Token, 0, Global>>(),
         size_of::<usize>().saturating_mul(3),
         "a vector of tokens is its length and the empty pair"
     );
@@ -414,7 +458,7 @@ fn a_grow_past_the_length_or_the_allocator_is_refused_and_the_vector_stays()
 #[test]
 fn a_drain_yields_its_range_and_closes_the_gap()
 {
-    let mut spilled: SmallVec<u32, 4> = (0_u32 .. 8_u32).collect();
+    let mut spilled: SmallVec<u32, 4, Global> = (0_u32 .. 8_u32).collect();
     assert_eq!(
         spilled.drain(2_usize .. 5_usize).collect::<Vec<u32>>(),
         [2_u32, 3_u32, 4_u32],
@@ -425,7 +469,7 @@ fn a_drain_yields_its_range_and_closes_the_gap()
         [0_u32, 1_u32, 5_u32, 6_u32, 7_u32],
         "the items past the range close the gap"
     );
-    let mut inline: SmallVec<u32, 8> = (0_u32 .. 6_u32).collect();
+    let mut inline: SmallVec<u32, 8, Global> = (0_u32 .. 6_u32).collect();
     let mut drain = inline.drain(1_usize ..= 3_usize);
     assert_eq!(drain.next(), Some(1_u32), "the drain yields its first item");
     drop(drain);
@@ -499,7 +543,7 @@ fn an_item_whose_drop_panics_leaves_each_other_item_dropped_once()
 )]
 fn an_array_converts_with_no_error_arm()
 {
-    let Ok(vec) = SmallVec::<u8, 3>::try_from([1_u8, 2_u8, 3_u8]);
+    let Ok(vec) = SmallVec::<u8, 3, Global>::try_from([1_u8, 2_u8, 3_u8]);
     assert_eq!(
         (vec.as_slice(), usize::from(vec.capacity())),
         (&[1_u8, 2_u8, 3_u8][..], 3_usize),
@@ -515,12 +559,12 @@ fn the_size_is_one_word_beside_the_larger_half()
     let word = size_of::<usize>();
     assert_eq!(
         [
-            size_of::<SmallVec<u64, 0>>(),
-            size_of::<SmallVec<u64, 1>>(),
-            size_of::<SmallVec<u64, 2>>(),
-            size_of::<SmallVec<u64, 4>>(),
-            size_of::<SmallVec<u64, 8>>(),
-            size_of::<SmallVec<u8, 16>>(),
+            size_of::<SmallVec<u64, 0, Global>>(),
+            size_of::<SmallVec<u64, 1, Global>>(),
+            size_of::<SmallVec<u64, 2, Global>>(),
+            size_of::<SmallVec<u64, 4, Global>>(),
+            size_of::<SmallVec<u64, 8, Global>>(),
+            size_of::<SmallVec<u8, 16, Global>>(),
         ],
         [
             word.saturating_mul(3),

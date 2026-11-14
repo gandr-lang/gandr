@@ -348,7 +348,7 @@ unsafe fn release<T, A>(
 ///
 /// # Specification
 /// - ensures: the module's unsafe invariants hold between each two calls.
-pub struct Unique<T, A = Global>
+pub struct Unique<T, A>
 where
     A: Allocator,
 {
@@ -360,7 +360,7 @@ where
     value: PhantomData<Block<T>>,
 }
 
-impl<T> Unique<T>
+impl<T> Unique<T, Global>
 {
     /// A block of `value` over the global allocator.
     ///
@@ -531,7 +531,7 @@ where
 ///
 /// # Specification
 /// - ensures: the module's unsafe invariants hold between each two calls.
-pub struct Shared<T, A = Global>
+pub struct Shared<T, A>
 where
     A: Allocator,
 {
@@ -544,7 +544,7 @@ where
     value: PhantomData<Block<T>>,
 }
 
-impl<T> Shared<T>
+impl<T> Shared<T, Global>
 {
     /// A block of `value` over the global allocator, with one holder.
     ///

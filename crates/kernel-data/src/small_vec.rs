@@ -29,7 +29,10 @@ use alloc::alloc::Global;
 use alloc::alloc::handle_alloc_error;
 use core::alloc::Allocator;
 use core::alloc::Layout;
+use core::cmp::Ordering;
 use core::fmt;
+use core::hash::Hash;
+use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::DropGuard;
 use core::mem::ManuallyDrop;
@@ -118,7 +121,7 @@ union Raw<T, const N: usize>
 /// - requires: `N` is at most `isize::MAX`, which each constructor checks when
 ///   it compiles.
 /// - ensures: the module's unsafe invariants hold between each two calls.
-pub struct SmallVec<T, const N: usize, A = Global>
+pub struct SmallVec<T, const N: usize, A>
 where
     A: Allocator,
 {
@@ -174,7 +177,7 @@ impl Refused
     }
 }
 
-impl<T, const N: usize> SmallVec<T, N>
+impl<T, const N: usize> SmallVec<T, N, Global>
 {
     /// An empty vector over the global allocator.
     ///
@@ -667,6 +670,43 @@ where
         self.truncate(Count(0));
     }
 
+    /// Keeps the items for which `keep` answers `true`, in their order, and
+    /// drops the others.
+    ///
+    /// The vector moves each kept item down by a swap, and then truncates.
+    /// So `keep` reads each item once, in order, and the dropped items drop
+    /// after the last read, not in their order.
+    ///
+    /// # Specification
+    /// - ensures: the vector holds the items that `keep` kept, in their order,
+    ///   and each other item drops once.
+    /// - panics: when `keep` panics, or an item's drop panics. A panic in
+    ///   `keep` leaves each item in the vector, in some order.
+    /// - intension: one read of each item and at most one swap of each.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the model test keeps the items below a bound, in
+    ///   place and spilled, against `Vec::retain`.
+    /// - witness: `tests::small_vec::each_operation_agrees_with_a_vec`
+    #[spec(captures: before = self.count(), ensures: self.count() <= before)]
+    #[inline]
+    pub fn retain<F>(
+        &mut self,
+        mut keep: F,
+    ) where
+        F: FnMut(&T) -> bool,
+    {
+        let items = self.as_mut_slice();
+        let mut kept = 0_usize;
+        for index in 0 .. items.len() {
+            if items.get(index).is_some_and(&mut keep) {
+                items.swap(kept, index);
+                kept = kept.saturating_add(1);
+            }
+        }
+        self.truncate(Count(kept));
+    }
+
     /// Removes the items of `range`, and yields them in order. When the
     /// drain drops, the items past the range move down to close the gap.
     ///
@@ -808,7 +848,7 @@ where
 /// # Specification
 /// - requires: the vector's length is the start of the range, and the slots
 ///   from `next` to `end` hold the items not yet yielded.
-pub struct Drain<'vec, T, const N: usize, A = Global>
+pub struct Drain<'vec, T, const N: usize, A>
 where
     A: Allocator,
 {
@@ -941,7 +981,7 @@ where
 /// # Specification
 /// - requires: the vector's length is zero, and the slots from `next` to `end`
 ///   hold the items not yet yielded.
-pub struct IntoIter<T, const N: usize, A = Global>
+pub struct IntoIter<T, const N: usize, A>
 where
     A: Allocator,
 {
@@ -1238,6 +1278,93 @@ where
     ) -> fmt::Result
     {
         f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl<T, U, const N: usize, const M: usize, A, B> PartialEq<SmallVec<U, M, B>> for SmallVec<T, N, A>
+where
+    T: PartialEq<U>,
+    A: Allocator,
+    B: Allocator,
+{
+    /// Two vectors are equal when their items are, in order, whatever their
+    /// capacities, their allocators and where their items lie.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &SmallVec<U, M, B>,
+    ) -> bool
+    {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<T, const N: usize, A> Eq for SmallVec<T, N, A>
+where
+    T: Eq,
+    A: Allocator,
+{
+}
+
+impl<T, const N: usize, A> PartialOrd for SmallVec<T, N, A>
+where
+    T: PartialOrd,
+    A: Allocator,
+{
+    /// The slices' lexicographic order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        self.as_slice().partial_cmp(other.as_slice())
+    }
+}
+
+impl<T, const N: usize, A> Ord for SmallVec<T, N, A>
+where
+    T: Ord,
+    A: Allocator,
+{
+    /// The slices' lexicographic order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        self.as_slice().cmp(other.as_slice())
+    }
+}
+
+impl<T, const N: usize, A> Hash for SmallVec<T, N, A>
+where
+    T: Hash,
+    A: Allocator,
+{
+    /// A vector hashes as its slice does, so it hashes as a `Vec` of the same
+    /// items.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: Hasher,
+    {
+        self.as_slice().hash(state);
     }
 }
 
