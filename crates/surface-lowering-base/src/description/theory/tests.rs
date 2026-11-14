@@ -224,7 +224,7 @@ fn a_model_type_reads_as_a_nested_model_1226()
     else {
         panic!("the theory presents its members")
     };
-    let members = presentation.members().unwrap();
+    let members = presentation.spelled_members().unwrap();
     let read: Vec<(&str, OperationKind, usize, usize, Option<&str>)> = members
         .operations
         .iter()

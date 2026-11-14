@@ -21,6 +21,8 @@ use super::TheoryRule;
 use super::TheorySort;
 use super::TheoryValue;
 use super::UndescribedTheory;
+use super::presented_ids;
+use super::presented_names;
 use super::theory_desc;
 use crate::arity::SortRef;
 use crate::boundary::ConstructorTag;
@@ -41,6 +43,9 @@ use crate::desc::TheoryShape;
 use crate::desc::shape_parameter;
 use crate::generic::DescValue;
 use crate::generic::Payload;
+use crate::names::NameId;
+use crate::names::Names;
+use crate::names::name_text;
 use crate::rule::FreeTerm;
 use crate::rule::Freshness;
 use crate::rule::RowTail;
@@ -400,6 +405,117 @@ fn a_presentation_round_trips_through_its_value()
         value,
         "an observation is not the operation of the same ports"
     );
+}
+
+#[test]
+fn a_presentation_decodes_into_a_table_as_its_text_reads()
+{
+    for parts in [cat_like(), lambda()] {
+        let value = TheoryValue::encode(&parts);
+        let Ok(written) = value.decode()
+        else {
+            panic!("the value codes a presentation");
+        };
+        let mut names = Names::new();
+        let Ok(minted) = value.decode_into(&mut names)
+        else {
+            panic!("a table with room takes every name");
+        };
+        let name = |id: &NameId| -> Name {
+            match names.text(*id) {
+                Maybe::Present(text) => Name::from(text),
+                Maybe::Absent(absent) => panic!("the decode minted each id it holds: {absent:?}"),
+            }
+        };
+        let term = |term: &FreeTerm<NameId>| -> FreeTerm {
+            match term.map_names(|id| Ok::<Name, name_text::Absent>(name(id))) {
+                Ok(read) => read,
+                Err(absent) => panic!("each name maps: {absent:?}"),
+            }
+        };
+        let binder = |binder: &TheoryBinder<NameId>| TheoryBinder {
+            name: name(&binder.name),
+            sort: name(&binder.sort),
+            indices: binder.indices.iter().map(&term).collect(),
+        };
+        let port = |port: &TheoryPort<NameId>| TheoryPort {
+            name: name(&port.name),
+            sort: name(&port.sort),
+            indices: port.indices.iter().map(&term).collect(),
+            bindings: port.bindings.iter().map(&binder).collect(),
+            abstractions: port.abstractions.iter().map(&binder).collect(),
+        };
+        let read = TheoryParts {
+            shape: minted.shape.clone(),
+            sorts: minted
+                .sorts
+                .iter()
+                .map(|sort| TheorySort {
+                    name: name(&sort.name),
+                    indices: sort.indices.iter().map(&port).collect(),
+                    representability: sort.representability,
+                })
+                .collect(),
+            operations: minted
+                .operations
+                .iter()
+                .map(|operation| TheoryOperation {
+                    name: name(&operation.name),
+                    kind: operation.kind,
+                    inputs: operation.inputs.iter().map(&port).collect(),
+                    outputs: operation.outputs.iter().map(&port).collect(),
+                })
+                .collect(),
+            rules: minted
+                .rules
+                .iter()
+                .map(|rule| TheoryRule {
+                    name: name(&rule.name),
+                    left: term(&rule.left),
+                    right: term(&rule.right),
+                    fresh: rule
+                        .fresh
+                        .iter()
+                        .map(|fresh| Freshness {
+                            atom: name(&fresh.atom),
+                            term: name(&fresh.term),
+                        })
+                        .collect(),
+                    under: match rule.under {
+                        Maybe::Present(ref under) => Maybe::Present(Under {
+                            theories: under.theories.iter().map(&name).collect(),
+                            tail: under.tail,
+                        }),
+                        Maybe::Absent(absent) => Maybe::Absent(absent),
+                    },
+                })
+                .collect(),
+        };
+        assert_eq!(
+            read, written,
+            "each id reads back as the text it was decoded from"
+        );
+        for (ids, texts) in minted.operations.iter().zip(&written.operations) {
+            let presented = presented_ids(&ids.inputs, &ids.outputs, &mut names);
+            let Maybe::Present(presented) = presented
+            else {
+                panic!("a table with room mints each placeholder: {presented:?}");
+            };
+            let expected = presented_names(&texts.inputs, &texts.outputs);
+            assert_eq!(
+                presented.len(),
+                expected.len(),
+                "each port presents one name"
+            );
+            for (&id, text) in presented.iter().zip(&expected) {
+                assert_eq!(
+                    names.text(id),
+                    Maybe::Present(text.as_name_ref()),
+                    "each port presents its id under the name the text form gives it"
+                );
+            }
+        }
+    }
 }
 
 #[test]

@@ -804,6 +804,10 @@ pub fn derive_boundary(
 /// # Errors
 /// See the `- fails:` clause above.
 ///
+/// # Cost
+/// - allocation: the derived term, durable by the term
+/// - allocation: the worklist and the path, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — zero, one-short and exact ceilings on unbound, nullary
 ///   and unary bodies have exact terms or budget refusals. Off-by-one charges,

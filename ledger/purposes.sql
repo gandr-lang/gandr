@@ -5456,6 +5456,9 @@ INSERT INTO purpose VALUES('theory-levitation','generic::Side','enum','Names whi
 INSERT INTO purpose VALUES('theory-levitation','generic::generic_eq','function','Decides description-guided structural equality of two values, so the values'' equality is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','generic::serialize_desc','function','Renders a description''s `theory` normal form, so the rendering''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','generic::serialize_value','function','Encodes a value canonically in bytes, so the encoding''s bytes are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','names::NameId','struct','Names one name of a description by its place in the table, so a copy of the name copies no text.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','names::Names','struct','Holds the table of a description''s names in its allocator, so each name''s id and text are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','names::TermName','trait','Names the forms a free term''s names take, so a term is read in text or in ids.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::Crossing','enum','Names how a rule''s right-hand side crosses an abstraction, so the crossing''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::FreeTerm','struct','Holds a term in the free monad over the description functor with variables, so the term''s nodes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','rule::Freshness','struct','Holds a rule''s freshness condition, so the condition''s named atoms are read.',NULL,'fits','sound',NULL);
@@ -5493,6 +5496,7 @@ INSERT INTO purpose VALUES('theory-levitation','theory::TheoryRule','struct','Ho
 INSERT INTO purpose VALUES('theory-levitation','theory::TheorySort','struct','Holds a sort of a theory, so the sort''s index ports are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','theory::TheoryValue','struct','Holds a presentation as a value of `Theory`, so the value''s encoding is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','theory::UndescribedTheory','enum','Names a theory that cannot be described, so the refusal''s cause is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-levitation','theory::presented_ids','function','Lists the names a presentation presents as ids into a table, so the ids are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','theory::presented_names','function','Lists the names a presentation presents, so the names are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','theory::theory_desc','function','Describes the datatype `Theory`, so the description''s table is built.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-levitation','tree::ArgumentCount','struct','Names the number of children a tree node has, so the count''s value is read.',NULL,'fits','sound',NULL);

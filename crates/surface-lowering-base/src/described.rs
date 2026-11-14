@@ -1392,6 +1392,10 @@ impl Typer<'_>
     ///   which no predicate over the presentation restates; the witness reads
     ///   each back.
     ///
+    /// # Cost
+    /// - allocation: the walk's maps, setup
+    /// - allocation: the members and the signature read back as text, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the probe theories' sorts, operations, rules, stated
     ///   laws and circuit answer at the types asserted; the identity-return
@@ -1409,11 +1413,20 @@ impl Typer<'_>
         code: Option<ValueTypeId>,
     )
     {
-        let Ok(members) = presentation.members()
+        let Ok(minted) = presentation.members()
         else {
             return;
         };
-        let model = derive_members(&members, presentation.wired(), &presentation.laws);
+        // The walk reads text: the members and the signature read back at its
+        // boundary, which #7663 moves to ids.
+        let (Ok(model), Ok(members)) = (
+            derive_members(&minted, presentation.wired(), &presentation.laws)
+                .and_then(|derivation| derivation.spelled()),
+            minted.spelled(),
+        )
+        else {
+            return;
+        };
         self.members = members
             .sorts
             .iter()
@@ -1694,7 +1707,7 @@ impl Typer<'_>
             }
         }
         for member in written.circuits.iter().chain(&written.diagrams) {
-            self.circuit(&scope, &members, member, &declared.heads);
+            self.circuit(&scope, &minted, member, &declared.heads);
         }
         self.members.clear();
     }
@@ -2000,6 +2013,9 @@ impl Typer<'_>
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
     ///
+    /// # Cost
+    /// - allocation: the wires' sorts and the sorts' names, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `cong1`'s wires `x`, `x′`, `y` and `z` answer at
     ///   `Nat`, and `add` at its type; a wire only a later reading reaches, a
@@ -2016,12 +2032,19 @@ impl Typer<'_>
     )
     {
         let declared = |sort: &Name| {
-            members
-                .sorts
-                .iter()
-                .any(|held| held.name == *sort && held.indices.is_empty())
+            members.sorts.iter().any(|held| {
+                held.indices.is_empty()
+                    && members.names.text(held.name) == Maybe::Present(sort.as_name_ref())
+            })
         };
-        let names: Vec<Name> = members.sorts.iter().map(|sort| sort.name.clone()).collect();
+        let names: Vec<Name> = members
+            .sorts
+            .iter()
+            .filter_map(|sort| match members.names.text(sort.name) {
+                Maybe::Present(text) => Some(Name::from(text)),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
         let wires = members.wire_sorts(circuit);
         let context = self.context(scope);
         let wire = |typer: &mut Self, name: &Name, span: ByteSpan, role: DescribedRole| {

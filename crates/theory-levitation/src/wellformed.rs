@@ -935,6 +935,10 @@ fn signature_names<G>(desc: &TheoryDesc<G>) -> BTreeSet<&Name>
 ///   other than the right-hand root.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: each diagnostic, diagnostic
+/// - allocation: the left side's variables, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — symbols outside the signature on both sides, a repeated
 ///   fresh right-hand variable, and results tuples at the right-hand root,
@@ -1684,6 +1688,9 @@ pub fn naming_port<G>(desc: &TheoryDesc<G>) -> Option<(&Name, &Name)>
 /// - ensures: one diagnostic per out-of-signature application, in pre-order.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: each diagnostic, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — known and foreign application heads are observed by
 ///   diagnostic count, order and the face's span; omitting an occurrence or
@@ -1805,6 +1812,10 @@ fn check_arity(
 ///   first-occurrence order; `linear` is positive exactly when the variable
 ///   occurs once.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the metadata, durable by the face
+/// - allocation: the occurrences and the names seen, setup
 ///
 /// # Adequacy
 /// - hypothesis: L3 — ground terms, single and repeated variables, and a mixed

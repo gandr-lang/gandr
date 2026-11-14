@@ -237,6 +237,9 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns `Malformed` or `RetiredRuleArrow` for unreadable faces.
     ///
+    /// # Cost
+    /// - allocation: the face and its written nodes, durable by the face
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric rule endpoints distinguish reversal, fresh
     ///   variables and lost nested heads; the equation and the pinned arrow

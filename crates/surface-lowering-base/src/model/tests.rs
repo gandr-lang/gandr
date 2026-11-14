@@ -483,6 +483,7 @@ fn each_model_fault_reads_as_its_own_clause()
         ModelFault::Abstraction,
         ModelFault::Unbound,
         ModelFault::Computation,
+        ModelFault::Full,
     ]
     .iter()
     .map(ToString::to_string)
@@ -588,7 +589,7 @@ fn an_implicit_object_past_the_last_free_letter_is_numbered()
 fn a_presentation_reads_its_members_off_its_value()
 {
     let presentation = presented(CAT_SHAPE);
-    let members = presentation.members().unwrap();
+    let members = presentation.spelled_members().unwrap();
     let [ref id, ref comp] = *members.operations.as_slice()
     else {
         panic!("two operations: {:?}", members.operations);

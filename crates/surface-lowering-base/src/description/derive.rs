@@ -108,6 +108,9 @@ impl Reader<'_, '_>
     /// [`DescriptionFault::Malformed`] at the declaration, or the side's own
     /// diagnostic.
     ///
+    /// # Cost
+    /// - allocation: the statement's terms, durable by the statement
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`derived_statement`].
     /// - witness: `gandr-surface-lowering::tests::modules::models::a_derived_rule_reads_the_model_it_quantifies_over`

@@ -26,6 +26,7 @@ use crate::boundary::InstantiationStatus;
 use crate::boundary::RuleVariableLinearity;
 use crate::code::Name;
 use crate::desc::SurfaceSpan;
+use crate::names::NameId;
 use crate::tree::ArgumentCount;
 use crate::tree::Children;
 use crate::tree::Head;
@@ -33,34 +34,34 @@ use crate::tree::Tree;
 use crate::tree::TreeRef;
 use crate::tree::leaf_image;
 
-/// One node head of a free term.
+/// One node head of a free term, over the names `N` it holds.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum TermHead
+pub enum TermHead<N>
 {
     /// A pattern variable.
-    Var(Name),
+    Var(N),
     /// A constructor application over its argument count.
-    Ctor(Name, ArgumentCount),
+    Ctor(N, ArgumentCount),
     /// An operation application over its argument count.
-    Op(Name, ArgumentCount),
+    Op(N, ArgumentCount),
     /// A results tuple over its component count.
     Results(ArgumentCount),
     /// A metavariable instantiated at its argument count of terms.
-    Inst(Name, ArgumentCount),
+    Inst(N, ArgumentCount),
     /// An atom abstracted over its one body, `bind a . t`, at a port written
     /// `bind (a : N) . T`.
-    Abs(Name),
+    Abs(N),
     /// An atom named inside an abstraction that binds it, at a port of its
     /// atom sort.
-    Atom(Name),
+    Atom(N),
     /// A variable of a representable sort bound over its one body,
     /// `bind x . t`, at a port written `pi+ (x : S) . T`: the binding field.
-    Lam(Name),
+    Lam(N),
     /// A variable named inside the binding field that binds it.
-    Bound(Name),
+    Bound(N),
 }
 
-impl Head for TermHead
+impl<N> Head for TermHead<N>
 {
     /// The application's argument count.
     ///
@@ -80,6 +81,43 @@ impl Head for TermHead
     }
 }
 
+impl<N> TermHead<N>
+{
+    /// The head with its name replaced by the name's image under `name`, and
+    /// its kind and arity kept.
+    ///
+    /// # Specification
+    /// - ensures: the same kind and arity; a results tuple names nothing and is
+    ///   kept whole.
+    /// - fails: the error `name` returns.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`FreeTerm::map_names`].
+    /// - witness: `rule::tests::a_term_mapped_to_ids_keeps_its_shape_and_spells_alike`
+    #[inline]
+    #[spec(ensures: |ref mapped| mapped.as_ref().map_or(true, |head| head.arity() == self.arity()))]
+    fn try_map<M, E, F>(
+        &self,
+        name: &mut F,
+    ) -> Result<TermHead<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        Ok(match *self {
+            Self::Var(ref held) => TermHead::Var(name(held)?),
+            Self::Ctor(ref held, arity) => TermHead::Ctor(name(held)?, arity),
+            Self::Op(ref held, arity) => TermHead::Op(name(held)?, arity),
+            Self::Results(arity) => TermHead::Results(arity),
+            Self::Inst(ref held, arity) => TermHead::Inst(name(held)?, arity),
+            Self::Abs(ref held) => TermHead::Abs(name(held)?),
+            Self::Atom(ref held) => TermHead::Atom(name(held)?),
+            Self::Lam(ref held) => TermHead::Lam(name(held)?),
+            Self::Bound(ref held) => TermHead::Bound(name(held)?),
+        })
+    }
+}
+
 /// A term in the free monad `D⋆(V)` over the description functor with
 /// variables `V`: a variable, a constructor application, an operation
 /// application, or a metavariable's instantiation.
@@ -89,9 +127,16 @@ impl Head for TermHead
 ///
 /// Held as one flat table, so a term of any depth is built, compared, walked
 /// and dropped without recursion.
+///
+/// The term is a functor in the names `N` it holds ([`FreeTerm::map_names`]).
+/// Its builders take text, the default [`Name`]. A decode mints the form that
+/// holds [`NameId`]s into a description's table, and a copy of that form
+/// copies no text.
+///
+/// [`NameId`]: crate::NameId
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct FreeTerm(Tree<TermHead>);
+pub struct FreeTerm<N = Name>(Tree<TermHead<N>>);
 
 impl FreeTerm
 {
@@ -123,9 +168,8 @@ impl FreeTerm
         N: Into<Name>,
         A: IntoIterator<Item = Self>,
     {
-        let args: Vec<Tree<TermHead>> = args.into_iter().map(|arg| arg.0).collect();
-        let arity = ArgumentCount::from(args.len());
-        Self(Tree::node(TermHead::Ctor(name.into(), arity), args))
+        let name = name.into();
+        Self::applied(|arity| TermHead::Ctor(name, arity), args)
     }
 
     /// An operation application `f(t₀, …, tₙ)`.
@@ -142,9 +186,8 @@ impl FreeTerm
         N: Into<Name>,
         A: IntoIterator<Item = Self>,
     {
-        let args: Vec<Tree<TermHead>> = args.into_iter().map(|arg| arg.0).collect();
-        let arity = ArgumentCount::from(args.len());
-        Self(Tree::node(TermHead::Op(name.into(), arity), args))
+        let name = name.into();
+        Self::applied(|arity| TermHead::Op(name, arity), args)
     }
 
     /// A results tuple `(t₀, …, tₙ)`: one term per output port of the
@@ -165,9 +208,7 @@ impl FreeTerm
     where
         A: IntoIterator<Item = Self>,
     {
-        let components: Vec<Tree<TermHead>> = components.into_iter().map(|arg| arg.0).collect();
-        let arity = ArgumentCount::from(components.len());
-        Self(Tree::node(TermHead::Results(arity), components))
+        Self::applied(TermHead::Results, components)
     }
 
     /// The instantiation `t(u₀, …, uₙ)` of the metavariable `t` a binding
@@ -191,9 +232,8 @@ impl FreeTerm
         N: Into<Name>,
         A: IntoIterator<Item = Self>,
     {
-        let args: Vec<Tree<TermHead>> = args.into_iter().map(|arg| arg.0).collect();
-        let arity = ArgumentCount::from(args.len());
-        Self(Tree::node(TermHead::Inst(name.into(), arity), args))
+        let name = name.into();
+        Self::applied(|arity| TermHead::Inst(name, arity), args)
     }
 
     /// The abstraction `bind a . t` of the atom `a` over `body`, at a port
@@ -203,6 +243,9 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term
     #[inline]
     #[must_use]
     pub fn abs<N>(
@@ -235,6 +278,9 @@ impl FreeTerm
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, durable by the term
     #[inline]
     #[must_use]
     pub fn lam<N>(
@@ -292,6 +338,10 @@ impl FreeTerm
     ///   rebuilt arguments; the binders in scope form a tree of links, each
     ///   node naming its innermost, so a name looks its binder up along the
     ///   binders above it alone.
+    ///
+    /// # Cost
+    /// - allocation: the minted term, durable by the term
+    /// - allocation: the walk's stacks, setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two terms whose nested abstractions name different
@@ -421,6 +471,10 @@ impl FreeTerm
     ///   binders in scope form a tree of links, as in
     ///   [`Self::canonical_atoms`].
     ///
+    /// # Cost
+    /// - allocation: the read term, durable by the term
+    /// - allocation: the walk's stacks, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — an abstraction at a port that binds one variable and
     ///   abstracts one atom, its atom's abstraction outside its field, pins the
@@ -538,6 +592,110 @@ impl FreeTerm
         }
         built.pop().unwrap_or_else(|| self.clone())
     }
+}
+
+impl FreeTerm<NameId>
+{
+    /// A variable term of an id: the variable a reader of the id form, such
+    /// as a sort inference, builds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn var_id(name: NameId) -> Self
+    {
+        Self::leaf_of(TermHead::Var(name))
+    }
+
+    /// An operation application of an id, `f(t₀, …, tₙ)`, over `args`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, growth within the arguments' tables
+    #[inline]
+    #[must_use]
+    pub fn op_id<A>(
+        name: NameId,
+        args: A,
+    ) -> Self
+    where
+        A: IntoIterator<Item = Self>,
+    {
+        Self::applied(|arity| TermHead::Op(name, arity), args)
+    }
+}
+
+impl<N> FreeTerm<N>
+{
+    /// A term of one head and no argument.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn leaf_of(head: TermHead<N>) -> Self
+    {
+        Self(Tree::leaf(head))
+    }
+
+    /// A term whose root is the head `head` gives at the arity of `args`,
+    /// over `args`, left to right.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the term's table, growth within the arguments' tables
+    #[inline]
+    #[must_use]
+    pub(crate) fn applied<H, A>(
+        head: H,
+        args: A,
+    ) -> Self
+    where
+        H: FnOnce(ArgumentCount) -> TermHead<N>,
+        A: IntoIterator<Item = Self>,
+    {
+        let args: Vec<Tree<TermHead<N>>> = args.into_iter().map(|arg| arg.0).collect();
+        let arity = ArgumentCount::from(args.len());
+        Self(Tree::node(head(arity), args))
+    }
+
+    /// The term with each name replaced by its image under `name`: the map of
+    /// the functor the term is in its names. A written term maps to the ids
+    /// of a description's table this way.
+    ///
+    /// # Specification
+    /// - ensures: the same shape, kinds and arities, each name the image of the
+    ///   name it replaces.
+    /// - fails: the first error `name` returns, in table order.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the mapped term's table, durable by the term it maps
+    ///
+    /// # Errors
+    /// The first error `name` returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a term of every head kind maps to ids and back to one
+    ///   equal term, and its ids spell its names; a map that drops a head,
+    ///   swaps two names or keeps a stale extent changes the round trip.
+    /// - witness: `rule::tests::a_term_mapped_to_ids_keeps_its_shape_and_spells_alike`
+    #[inline]
+    #[spec(ensures: |ref mapped| mapped.as_ref().map_or(true, |term| term.0.to_ref().head().arity() == self.0.to_ref().head().arity()))]
+    pub fn map_names<M, E, F>(
+        &self,
+        mut name: F,
+    ) -> Result<FreeTerm<M>, E>
+    where
+        F: FnMut(&N) -> Result<M, E>,
+    {
+        self.0.try_map(|head| head.try_map(&mut name)).map(FreeTerm)
+    }
 
     /// The term as a borrowed node.
     ///
@@ -545,7 +703,7 @@ impl FreeTerm
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn to_node(&self) -> TermNode<'_>
+    pub fn to_node(&self) -> TermNode<'_, N>
     {
         TermNode(self.0.to_ref())
     }
@@ -556,7 +714,7 @@ impl FreeTerm
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn view(&self) -> TermView<'_>
+    pub fn view(&self) -> TermView<'_, N>
     {
         self.to_node().view()
     }
@@ -584,7 +742,9 @@ impl FreeTerm
         )
     )]
     #[spec(ensures: |ref vars| vars.iter().eq(self.to_node().vars()))]
-    pub fn collect_vars(&self) -> Vec<Name>
+    pub fn collect_vars(&self) -> Vec<N>
+    where
+        N: Clone + PartialEq,
     {
         self.to_node().vars().cloned().collect()
     }
@@ -605,7 +765,7 @@ impl FreeTerm
     ///   omitting a nullary head or reversing siblings changes the sequence.
     /// - witness: `rule::tests::inspection_reads_mixed_applications_in_argument_order`
     #[inline]
-    pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
+    pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &N>
     {
         self.0.to_ref().preorder().filter_map(|head| match *head {
             TermHead::Var(_)
@@ -667,7 +827,10 @@ impl FreeTerm
             | TermHead::Bound(_) => None,
         })
     }
+}
 
+impl FreeTerm
+{
     /// The term with each variable `image` answers for replaced by its image.
     ///
     /// # Specification
@@ -728,6 +891,9 @@ impl fmt::Display for FreeTerm
     /// # Errors
     /// Propagates a refusal from the formatting sink.
     ///
+    /// # Cost
+    /// - allocation: the text of each subterm, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — variables, nullary and mixed nested applications are
     ///   compared with exact inspection text; a refusing sink pins the error
@@ -776,10 +942,27 @@ impl fmt::Display for FreeTerm
 
 /// A borrowed node of a [`FreeTerm`].
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TermNode<'term>(TreeRef<'term, TermHead>);
+#[derive(Debug, Eq, PartialEq)]
+pub struct TermNode<'term, N = Name>(TreeRef<'term, TermHead<N>>);
 
-impl<'term> TermNode<'term>
+impl<N> Clone for TermNode<'_, N>
+{
+    /// Copies the borrow.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<N> Copy for TermNode<'_, N>
+{
+}
+
+impl<'term, N> TermNode<'term, N>
 {
     /// The node's head and arguments.
     ///
@@ -787,7 +970,7 @@ impl<'term> TermNode<'term>
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn view(self) -> TermView<'term>
+    pub fn view(self) -> TermView<'term, N>
     {
         match *self.0.head() {
             TermHead::Var(ref name) => TermView::Var(name),
@@ -834,7 +1017,7 @@ impl<'term> TermNode<'term>
     ///   deduplication change those sequences.
     /// - witness: `rule::tests::free_variables_are_collected_in_order_with_repeats`
     #[inline]
-    pub fn vars(self) -> impl Iterator<Item = &'term Name>
+    pub fn vars(self) -> impl Iterator<Item = &'term N>
     {
         self.0.preorder().filter_map(|head| match *head {
             TermHead::Var(ref name) => Some(name),
@@ -855,7 +1038,9 @@ impl<'term> TermNode<'term>
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn to_term(self) -> FreeTerm
+    pub fn to_term(self) -> FreeTerm<N>
+    where
+        N: Clone,
     {
         FreeTerm(self.0.to_tree())
     }
@@ -863,32 +1048,32 @@ impl<'term> TermNode<'term>
 
 /// The head and arguments of one free-term node.
 #[derive(Clone, Debug)]
-pub enum TermView<'term>
+pub enum TermView<'term, N = Name>
 {
     /// A pattern variable `x`.
-    Var(&'term Name),
+    Var(&'term N),
     /// A constructor application.
     Ctor
     {
         /// The constructor's name.
-        name: &'term Name,
+        name: &'term N,
         /// The arguments, left to right.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// An operation application.
     Op
     {
         /// The operation's name.
-        name: &'term Name,
+        name: &'term N,
         /// The arguments, left to right.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// A results tuple, the root of a many-out operation rule's right-hand
     /// side.
     Results
     {
         /// The components, in output-port order.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// A metavariable's instantiation `t(u₀, …, uₙ)`: the variable a binding
     /// port binds on the left-hand side, applied to one term per variable the
@@ -896,45 +1081,45 @@ pub enum TermView<'term>
     Inst
     {
         /// The metavariable's name.
-        name: &'term Name,
+        name: &'term N,
         /// The terms standing for the variables it binds, in binder order.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// An atom's abstraction `bind a . t` at a port written
     /// `bind (a : N) . T`: the atom is bound in its one argument, the body.
     Abs
     {
         /// The abstracted atom's name.
-        atom: &'term Name,
+        atom: &'term N,
         /// The body, the one argument.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// The atom `a` named inside an abstraction `bind a . t` that binds it,
     /// at a port of its atom sort.
-    Atom(&'term Name),
+    Atom(&'term N),
     /// A binding field `bind x . t` at a port written `pi+ (x : S) . T`: the
     /// variable, of a representable sort, is bound in its one argument, the
     /// body.
     Lam
     {
         /// The bound variable's name.
-        var: &'term Name,
+        var: &'term N,
         /// The body, the one argument.
-        args: TermArgs<'term>,
+        args: TermArgs<'term, N>,
     },
     /// The variable `x` named inside a binding field `bind x . t` that binds
     /// it.
-    Bound(&'term Name),
+    Bound(&'term N),
 }
 
 /// The arguments of a free-term application, left to right.
 #[repr(transparent)]
 #[derive(Clone, Debug)]
-pub struct TermArgs<'term>(Children<'term, TermHead>);
+pub struct TermArgs<'term, N = Name>(Children<'term, TermHead<N>>);
 
-impl<'term> Iterator for TermArgs<'term>
+impl<'term, N> Iterator for TermArgs<'term, N>
 {
-    type Item = TermNode<'term>;
+    type Item = TermNode<'term, N>;
 
     /// The next argument.
     ///
@@ -957,7 +1142,7 @@ impl<'term> Iterator for TermArgs<'term>
     }
 }
 
-impl ExactSizeIterator for TermArgs<'_>
+impl<N> ExactSizeIterator for TermArgs<'_, N>
 {
 }
 
@@ -1038,12 +1223,12 @@ impl RuleVarMeta
 ///   naming no abstraction's atom or no metavariable.
 /// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Freshness
+pub struct Freshness<N = Name>
 {
     /// The atom.
-    pub atom: Name,
+    pub atom: N,
     /// The metavariable the atom is fresh for.
-    pub term: Name,
+    pub term: N,
 }
 
 impl Freshness
@@ -1085,10 +1270,10 @@ impl Freshness
 ///   and the tail.
 /// - witness: `theory::tests::a_rule_keeps_the_row_it_fires_under_2448`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Under
+pub struct Under<N = Name>
 {
     /// The theories, in written order.
-    pub theories: Box<[Name]>,
+    pub theories: Box<[N]>,
     /// Whether the row may hold theories it does not name.
     pub tail: RowTail,
 }
@@ -1710,5 +1895,54 @@ mod tests
             fmt::write(&mut RefusingSink, format_args!("{mixed}")),
             Err(fmt::Error)
         );
+    }
+
+    #[test]
+    fn a_term_mapped_to_ids_keeps_its_shape_and_spells_alike()
+    {
+        use crate::boundary::NameRef;
+        use crate::names::NameId;
+        use crate::names::Names;
+        use crate::names::name_mint;
+        use crate::names::name_text;
+
+        let written = FreeTerm::op("mul", [
+            FreeTerm::ctor("pair", [
+                FreeTerm::var("a"),
+                FreeTerm::results([FreeTerm::atom("x")]),
+            ]),
+            FreeTerm::inst("t", [FreeTerm::bound("y")]),
+            FreeTerm::abs("x", FreeTerm::lam("y", FreeTerm::var("a"))),
+        ]);
+        let mut names = Names::new();
+        let Ok(minted) = written.map_names(|name| -> Result<NameId, name_mint::Absent> {
+            match names.mint(name.as_name_ref()) {
+                Maybe::Present(id) => Ok(id),
+                Maybe::Absent(absent) => Err(absent),
+            }
+        })
+        else {
+            panic!("a table with room mints every name");
+        };
+        let Ok(read) = minted.map_names(|&id| -> Result<Name, name_text::Absent> {
+            match names.text(id) {
+                Maybe::Present(text) => Ok(Name::from(text)),
+                Maybe::Absent(absent) => Err(absent),
+            }
+        })
+        else {
+            panic!("each id reads back");
+        };
+        assert_eq!(read, written);
+        let [first, second] = *minted.collect_vars().as_slice()
+        else {
+            panic!("two occurrences of `a`");
+        };
+        assert_eq!(first, second, "one name mints one id");
+        let Some(&mul) = minted.applied_symbols().next()
+        else {
+            panic!("the root applies `mul`");
+        };
+        assert_eq!(names.text(mul), Maybe::Present(NameRef::from("mul")));
     }
 }

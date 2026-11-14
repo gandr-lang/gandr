@@ -2451,6 +2451,9 @@ impl Reader<'_, '_>
     /// # Errors
     /// Returns syntax, interface or instantiation failures.
     ///
+    /// # Cost
+    /// - allocation: the member read, durable by the member
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a readable body, a written face, a face with two
     ///   conditions and a two-rooted body over a many-out frame separate a read
@@ -3367,6 +3370,10 @@ fn member_span(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the members and the forms, setup
+/// - allocation: each refusal, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — a law naming a variable it does not bind is refused at
 ///   the law, before the model of its theory refuses.
@@ -3407,7 +3414,8 @@ fn unstated(
                 | ModelFault::Inherited
                 | ModelFault::Binding
                 | ModelFault::Abstraction
-                | ModelFault::Computation,
+                | ModelFault::Computation
+                | ModelFault::Full,
             )
             | Ok(_) => None,
         })

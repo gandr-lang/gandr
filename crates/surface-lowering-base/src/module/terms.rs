@@ -108,6 +108,10 @@ pub struct TermGenerators
 /// # Errors
 /// As the fails clause.
 ///
+/// # Cost
+/// - allocation: the members on ids, setup
+/// - allocation: the generators, durable by the terms type
+///
 /// # Adequacy
 /// - hypothesis: L3 — a unital magma gives its unit and its product, a
 ///   two-sorted theory and a law-bearing one are refused by their features.
@@ -135,7 +139,7 @@ pub fn term_generators(presentation: &Presentation) -> Result<TermGenerators, Un
     if !sort.indices.is_empty() || sort.ground != GroundSort::Value {
         return outside;
     }
-    let plain = |port: &Port| {
+    let plain = |port: &Port<_>| {
         port.sort.sort == sort.name
             && port.sort.indices.is_empty()
             && port.binders.is_empty()

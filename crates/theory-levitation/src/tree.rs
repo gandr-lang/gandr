@@ -254,6 +254,44 @@ impl<H> Tree<H>
             .chain(iter::once(&self.root))
             .map(|entry| &entry.head)
     }
+
+    /// The tree with each head replaced by its image under `head`, and every
+    /// extent kept.
+    ///
+    /// # Specification
+    /// - ensures: the same table layout, each head the image of the head it
+    ///   replaces, read in table order with the root last.
+    /// - fails: the first error `head` returns, in table order.
+    /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the mapped table, durable by the tree it maps
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::FreeTerm::map_names`].
+    /// - witness: `rule::tests::a_term_mapped_to_ids_keeps_its_shape_and_spells_alike`
+    #[inline]
+    #[spec(ensures: |ref mapped| mapped.as_ref().map_or(true, |tree| tree.below.len() == self.below.len() && tree.root.extent == self.root.extent))]
+    pub(crate) fn try_map<K, E, F>(
+        &self,
+        mut head: F,
+    ) -> Result<Tree<K>, E>
+    where
+        F: FnMut(&H) -> Result<K, E>,
+    {
+        let mut below = Vec::with_capacity(self.below.len());
+        for entry in &self.below {
+            below.push(Entry {
+                head: head(&entry.head)?,
+                extent: entry.extent,
+            });
+        }
+        let root = Entry {
+            head: head(&self.root.head)?,
+            extent: self.root.extent,
+        };
+        Ok(Tree { below, root })
+    }
 }
 
 /// A borrowed subtree: a contiguous range of a table and its root.

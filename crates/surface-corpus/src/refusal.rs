@@ -1599,6 +1599,9 @@ impl RefusalName
     /// - provides: the names the diagnostics ledger pairs with exemplars.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the names, durable by the list
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — every name read back from its spelling is the name; a
     ///   lost family or reading is a name the diagnostics ledger cannot pair.
@@ -2201,6 +2204,9 @@ impl RefusalName
     ///   absence, which the expectation reader turns into a fixture failure.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the named readings' tags, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — changed case, dropped letters, surrounding
     ///   whitespace, suffixes, empty text, a bare qualified variant and a
@@ -2329,7 +2335,7 @@ const FORMERS: [UnadmittedFormer; 26_usize] = [
 ];
 
 /// Every fault a model component the derivation cannot state carries.
-const MODEL_FAULTS: [ModelFault; 12_usize] = [
+const MODEL_FAULTS: [ModelFault; 13_usize] = [
     ModelFault::UnknownHead,
     ModelFault::Arity,
     ModelFault::IllSorted,
@@ -2342,6 +2348,7 @@ const MODEL_FAULTS: [ModelFault; 12_usize] = [
     ModelFault::Abstraction,
     ModelFault::Unbound,
     ModelFault::Computation,
+    ModelFault::Full,
 ];
 
 /// Every fault an import's signature match carries.
@@ -2582,6 +2589,7 @@ const fn model_tag(fault: ModelFault) -> Tag
         ModelFault::Abstraction => "Abstraction",
         ModelFault::Unbound => "Unbound",
         ModelFault::Computation => "Computation",
+        ModelFault::Full => "Full",
     })
 }
 
