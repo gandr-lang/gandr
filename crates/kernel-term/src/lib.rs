@@ -247,7 +247,6 @@ pub use crate::decode::decoded_prefix;
 pub use crate::encode::EncodedPrefix;
 pub use crate::encode::KeyedSegment;
 pub use crate::encode::Places;
-pub use crate::encode::SegmentEncoder;
 pub use crate::encode::encode;
 pub use crate::encode::encode_after;
 pub use crate::encode::encode_placed;

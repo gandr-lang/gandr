@@ -47,7 +47,7 @@
 //!
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: §
 //!   kernel-verdict-reuse — a verdict key reads each declaration's segment as
-//!   [`SegmentEncoder`] writes it, so the canonical bytes are the key's input.
+//!   [`keyed_segment`] writes it, so the canonical bytes are the key's input.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -178,27 +178,8 @@ struct Interner
     by_content: BTreeMap<EncodedEntry, GlobalIndex>,
     /// The next free global index.
     next: GlobalIndex,
-    /// What the last segment assigned, when the interner keeps it: a
-    /// [`SegmentEncoder`]'s, so a refused declaration's segment is forgotten.
-    journal: Option<Journal>,
     /// How the segments write an admission position.
     positions: Positions,
-}
-
-/// What one segment assigned: the nodes it named, the entries it added and
-/// the next free global index before it.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug, Default)]
-struct Journal
-{
-    /// The nodes the segment named, in the order it named them.
-    nodes: Vec<AnyNode>,
-    /// The entries the segment added, in index order.
-    contents: Vec<EncodedEntry>,
-    /// The next free global index before the segment.
-    next: GlobalIndex,
 }
 
 /// How a segment writes an admission position.
@@ -389,7 +370,6 @@ impl Interner
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
             next: GlobalIndex::default(),
-            journal: None,
             positions: Positions::Raw,
         }
     }
@@ -425,7 +405,6 @@ impl Interner
             base: Some(base),
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
-            journal: None,
             positions: Positions::Raw,
         }
     }
@@ -475,7 +454,7 @@ impl Interner
             .or_else(|| self.base.as_ref()?.by_node.get(&node).copied())
     }
 
-    /// Name `node` by `global`, and keep it in the journal when there is one.
+    /// Name `node` by `global`.
     ///
     /// # Specification
     /// trivial.
@@ -487,9 +466,6 @@ impl Interner
     )
     {
         let _prior = self.by_node.insert(node, global);
-        if let Some(ref mut journal) = self.journal {
-            journal.nodes.push(node);
-        }
     }
 
     /// The global index the entry with `entry`'s bytes took, here or in the
@@ -820,150 +796,6 @@ pub fn encode_after(
     out
 }
 
-/// An admission-ordered sequence's declarations encoded one at a time.
-///
-/// Each segment is the one [`encode_prefix`] writes, so a key over the
-/// sequence reads its canonical bytes before the sequence is whole.
-///
-/// # Specification
-/// - requires: each declaration [`SegmentEncoder::segment`] is given follows
-///   the ones given before it, over one arena whose nodes keep their ids.
-/// - ensures: the segments given, concatenated, are the segments
-///   [`encode_prefix`] writes for the sequence.
-/// - provides: one declaration's canonical bytes at the cost of its own nodes,
-///   sharing with the declarations before it as a whole encoding shares.
-/// - panics: none.
-/// - executable: none — the interner is private and moved only by
-///   [`SegmentEncoder::segment`] and [`SegmentEncoder::forget`], whose
-///   specifications state it.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a mixed sequence encoded one declaration at a time writes
-///   the prefix encoding's segments, and an open seal is refused; a segment
-///   forgotten leaves the segments after it as if it had never been given.
-/// - witness: `encode::tests::declarations_encoded_one_at_a_time_write_the_prefix_segments`
-/// - witness: `encode::tests::a_forgotten_segment_leaves_the_next_as_if_never_given_6566`
-#[derive(Clone, Debug)]
-#[repr(transparent)]
-pub struct SegmentEncoder
-{
-    /// What the segments given so far assigned.
-    interner: Interner,
-}
-
-impl Default for SegmentEncoder
-{
-    /// An encoder that has given no segment.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn default() -> Self
-    {
-        Self {
-            interner: Interner {
-                journal: Some(Journal::default()),
-                ..Interner::new()
-            },
-        }
-    }
-}
-
-impl SegmentEncoder
-{
-    /// The segment of `declaration`, the next declaration of the sequence.
-    ///
-    /// # Specification
-    /// - requires: as [`SegmentEncoder`].
-    /// - ensures: absent as [`encoded_prefix::Absent::OpenSeal`], the encoder
-    ///   unchanged, when `declaration` is an abstract type sealed to the end of
-    ///   the sequence; otherwise its segment as [`encode_prefix`] writes it
-    ///   after the declarations given before.
-    /// - fails: never.
-    /// - panics: none within [`encode`]'s domain.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`SegmentEncoder`].
-    /// - witness: `encode::tests::declarations_encoded_one_at_a_time_write_the_prefix_segments`
-    #[inline]
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(encoded_prefix::Absent::OpenSeal)) == matches!(
-        *declaration.declaration().content(),
-        DeclarationContent::AbstractType { scope: SealScope::Open, .. }
-    ))]
-    pub fn segment(
-        &mut self,
-        arena: &TermArena,
-        declaration: &MarkedDeclaration,
-    ) -> Maybe<EncodedArtifact, encoded_prefix::Absent>
-    {
-        if let DeclarationContent::AbstractType {
-            scope: SealScope::Open,
-            ..
-        } = *declaration.declaration().content()
-        {
-            return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
-        }
-        if let Some(ref mut journal) = self.interner.journal {
-            journal.nodes.clear();
-            journal.next = self.interner.next;
-        }
-        let mut out = EncodedArtifact::new();
-        encode_declaration(
-            &mut out,
-            arena,
-            &mut self.interner,
-            declaration,
-            SealExtent::from(0_usize),
-        );
-        Maybe::Present(out)
-    }
-
-    /// Forget the last segment given, as if its declaration had never been
-    /// given: the kernel refused it, so it enters no environment, and the
-    /// arena mints its nodes' ids again.
-    ///
-    /// # Specification
-    /// - requires: no segment was given since the one forgotten.
-    /// - ensures: the nodes the last segment named are named no more, the
-    ///   entries it added are held no more, and the next free index is the one
-    ///   before it; a second call changes nothing.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a segment forgotten between two others leaves the
-    ///   last one's bytes as an encoding that never held it writes them.
-    /// - witness: `encode::tests::a_forgotten_segment_leaves_the_next_as_if_never_given_6566`
-    #[inline]
-    #[spec(
-        captures: restored = self.interner.journal.as_ref().map(|journal| journal.next),
-        ensures: self.interner.journal.as_ref().is_none_or(|journal| journal.nodes.is_empty()
-            && journal.contents.is_empty()
-            && Some(self.interner.next) == restored),
-    )]
-    pub fn forget(&mut self)
-    {
-        let Interner {
-            ref mut by_node,
-            ref mut by_content,
-            ref mut next,
-            ref mut journal,
-            ..
-        } = self.interner;
-        let Some(journal) = journal.as_mut()
-        else {
-            return;
-        };
-        for node in journal.nodes.drain(..) {
-            let _named = by_node.remove(&node);
-        }
-        for entry in journal.contents.drain(..) {
-            let _held = by_content.remove(&entry);
-        }
-        *next = journal.next;
-    }
-}
-
 /// One declaration's segment as a verdict key reads it.
 ///
 /// The segment is written alone, and each admission position by where the
@@ -1015,7 +847,7 @@ impl KeyedSegment
 /// each member of `block` as one more than twice its place in the block.
 ///
 /// # Specification
-/// - requires: as [`SegmentEncoder`].
+/// - requires: the nodes of `declaration` live in `arena`.
 /// - ensures: absent as [`encoded_prefix::Absent::OpenSeal`] when `declaration`
 ///   is an abstract type sealed to the end of the sequence; otherwise the
 ///   segment, and each position it names outside `block`, once.
@@ -1413,9 +1245,6 @@ fn encode_declaration(
     out.put_uvarint(WireU64::from(WireUsize::from(segment.len())));
     for entry in &segment {
         out.put_image(entry.0.as_image());
-    }
-    if let Some(ref mut journal) = interner.journal {
-        journal.contents = segment;
     }
     out.put_uvarint(WireU64::from(u64::from(u32::from(root_declared))));
     if let DeclarationContent::LiteralIdentity { test, .. } = *content {
@@ -5134,142 +4963,6 @@ mod tests
             super::encode_prefix(&arena, &leading),
             super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
         ));
-    }
-
-    #[test]
-    fn declarations_encoded_one_at_a_time_write_the_prefix_segments()
-    {
-        let mut arena = TermArena::new();
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let universe = builder
-            .arena()
-            .value_type_universe(GroundSort::Value, Level::zero());
-        let integer = builder.arena().value_type_base(BaseType::Integer);
-        let atom = builder.abstract_type(
-            LevelSignature::monomorphic(),
-            universe,
-            integer,
-            super::SealScope::Closed(super::SealExtent::from(2_usize)),
-        );
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let abstract_type = builder
-            .arena()
-            .value_type_abstract(ConstantIndex::from(0_usize));
-        let quote = builder.arena().value_quote(abstract_type);
-        let definition = builder.def(LevelSignature::monomorphic(), universe, quote);
-        // One body is the definition's own node, the other is built anew to
-        // the same content: both read the shared entries the first assigned.
-        let shared =
-            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), universe, quote);
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let rebuilt_type = builder
-            .arena()
-            .value_type_abstract(ConstantIndex::from(0_usize));
-        let rebuilt = builder.arena().value_quote(rebuilt_type);
-        let anew = builder.def(LevelSignature::monomorphic(), universe, rebuilt);
-        let axiom =
-            DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), abstract_type);
-        let open = DeclarationBuilder::new(&mut arena).abstract_type(
-            LevelSignature::monomorphic(),
-            universe,
-            integer,
-            super::SealScope::Open,
-        );
-        let sequence = [
-            MarkedDeclaration::new(AdmissionMark::Checked, atom),
-            MarkedDeclaration::new(AdmissionMark::UncheckedBypass, definition),
-            MarkedDeclaration::new(AdmissionMark::Checked, shared),
-            MarkedDeclaration::new(AdmissionMark::Checked, anew),
-            MarkedDeclaration::new(AdmissionMark::Checked, axiom),
-        ];
-        let super::Maybe::Present(prefix) = super::encode_prefix(&arena, &sequence)
-        else {
-            panic!("no seal is open");
-        };
-        let mut encoder = super::SegmentEncoder::default();
-        let mut segments = Vec::new();
-        for declaration in &sequence {
-            let super::Maybe::Present(segment) = encoder.segment(&arena, declaration)
-            else {
-                panic!("no seal is open");
-            };
-            segments.extend_from_slice(segment.as_image().as_ref());
-        }
-        assert_eq!(
-            segments.as_slice(),
-            prefix.segments.as_image().as_ref(),
-            "the segments, concatenated, are the prefix encoding's"
-        );
-        assert!(matches!(
-            encoder.segment(
-                &arena,
-                &MarkedDeclaration::new(AdmissionMark::Checked, open)
-            ),
-            super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
-        ));
-    }
-
-    /// #6566: a segment forgotten between two others, its nodes' ids minted
-    /// again for different content and its content given again, leaves the
-    /// segments after it as an encoding that never held it writes them.
-    #[test]
-    fn a_forgotten_segment_leaves_the_next_as_if_never_given_6566()
-    {
-        let mut arena = TermArena::new();
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let integer = builder.arena().value_type_base(BaseType::Integer);
-        let first = builder.axiom(LevelSignature::monomorphic(), integer);
-        let kept = arena.watermark();
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let universe = builder
-            .arena()
-            .value_type_universe(GroundSort::Value, Level::zero());
-        let refused = builder.axiom(LevelSignature::monomorphic(), universe);
-        let mut forgetting = super::SegmentEncoder::default();
-        for declaration in [&first, &refused] {
-            let super::Maybe::Present(_segment) = forgetting.segment(
-                &arena,
-                &MarkedDeclaration::new(AdmissionMark::Checked, declaration.clone()),
-            )
-            else {
-                panic!("no seal is open");
-            };
-        }
-        forgetting.forget();
-        arena.truncate_to(kept);
-        // The next declaration takes the forgotten one's ids for other
-        // content; the one after it gives the forgotten content again.
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let unit = builder.arena().value_type_unit();
-        let reminted = builder.axiom(LevelSignature::monomorphic(), unit);
-        let mut builder = DeclarationBuilder::new(&mut arena);
-        let universe = builder
-            .arena()
-            .value_type_universe(GroundSort::Value, Level::zero());
-        let again = builder.axiom(LevelSignature::monomorphic(), universe);
-        let mut never = super::SegmentEncoder::default();
-        let super::Maybe::Present(_first) = never.segment(
-            &arena,
-            &MarkedDeclaration::new(AdmissionMark::Checked, first),
-        )
-        else {
-            panic!("no seal is open");
-        };
-        for declaration in [reminted, again] {
-            let marked = MarkedDeclaration::new(AdmissionMark::Checked, declaration);
-            let (super::Maybe::Present(after), super::Maybe::Present(expected)) = (
-                forgetting.segment(&arena, &marked),
-                never.segment(&arena, &marked),
-            )
-            else {
-                panic!("no seal is open");
-            };
-            assert_eq!(
-                after.as_image().as_ref(),
-                expected.as_image().as_ref(),
-                "a segment after the forgotten one is written as if it had never been given"
-            );
-        }
     }
 
     /// #6568: a keyed segment writes each position by where the segment

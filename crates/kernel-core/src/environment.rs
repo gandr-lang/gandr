@@ -1015,8 +1015,10 @@ impl Environment
     ///   nothing. A declaration recorded by a trusted signer is recalled under
     ///   its own key, refused after one name changes, refused under an unlisted
     ///   signer or a tampered record, and never recalled under
-    ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck); a
-    ///   rejection before it changes no later key.
+    ///   [`TrustPolicy::Recheck`](crate::verdict::TrustPolicy::Recheck). A
+    ///   rejection between two declarations changes no later key. A declaration
+    ///   that names the vacancy of a rejection has no entry key, so it is
+    ///   checked and refused.
     /// - witness: `environment::tests::a_definition_referencing_a_prior_one_checks`
     /// - witness: `environment::tests::a_forward_constant_reference_is_unbound`
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
@@ -1027,7 +1029,8 @@ impl Environment
     /// - witness: `tests::verdicts::an_unlisted_signer_recalls_nothing`
     /// - witness: `tests::verdicts::a_tampered_record_recalls_nothing`
     /// - witness: `tests::verdicts::a_rechecking_environment_recalls_nothing`
-    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
+    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566`
+    /// - witness: `tests::verdicts::a_declaration_that_names_the_vacancy_of_a_rejection_is_checked_7426`
     /// - witness: `element_identity::tests::a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558`
     // The predicate covers the two structural halves of the success
     // postcondition: exactly one entry is appended, and the admission floor
