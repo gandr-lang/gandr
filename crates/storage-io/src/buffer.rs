@@ -5,6 +5,14 @@
 use std::fs::File;
 use std::os::unix::fs::FileExt as _;
 
+use anodized::spec;
+
+use crate::record::Header;
+use crate::record::Place;
+use crate::record::RecordDigest;
+use crate::record::RecordLength;
+use crate::record::SegmentId;
+use crate::record::Shard;
 use crate::ring::Moved;
 use crate::ring::Position;
 use crate::sys::Errno;
@@ -39,6 +47,43 @@ impl From<Buffer> for Vec<u8>
     fn from(buffer: Buffer) -> Self
     {
         buffer.0
+    }
+}
+
+impl From<&Header> for Buffer
+{
+    /// The header's 80 bytes, its checksum first.
+    ///
+    /// # Specification
+    /// - ensures: 80 bytes, which [`Buffer::header`] reads back as `header` at
+    ///   the header's own place.
+    /// - panics: none.
+    /// - executable: none — the round trip is the witness's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an encoded header reads back at its own place, and is
+    ///   refused at each other place.
+    /// - witness: `tests::record::a_header_reads_back_only_at_its_own_place`
+    #[inline]
+    fn from(header: &Header) -> Self
+    {
+        let mut covered = [0_u8; 64];
+        let fields = u64::from(header.place.shard)
+            .to_le_bytes()
+            .into_iter()
+            .chain(u64::from(header.place.segment).to_le_bytes())
+            .chain(u64::from(header.place.offset).to_le_bytes())
+            .chain(u64::from(header.length).to_le_bytes())
+            .chain(<[u8; 32]>::from(header.digest));
+        for (slot, byte) in covered.iter_mut().zip(fields) {
+            *slot = byte;
+        }
+        let mut bytes = Vec::with_capacity(80);
+        if let Some(checksum) = blake3::hash(&covered).as_bytes().first_chunk::<16>() {
+            bytes.extend_from_slice(checksum);
+        }
+        bytes.extend_from_slice(&covered);
+        Self(bytes)
     }
 }
 
@@ -130,5 +175,57 @@ impl Buffer
         file.write_at(&self.0, u64::from(at))
             .map(|written| Moved::from(u32::try_from(written).unwrap_or(u32::MAX)))
             .map_err(Errno::from)
+    }
+
+    /// The header at the start of the buffer, when its checksum holds and it
+    /// names the place `expected`.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, a header whose place is `expected`.
+    /// - fails: [`Errno::CORRUPT`] when the buffer holds fewer than 80 bytes,
+    ///   the checksum fails, or the header names another place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Errno::CORRUPT`] for a short buffer, a failed checksum, or a header
+    /// of another place.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an encoded header reads back at its own place, and is
+    ///   refused at each other place and with any byte changed.
+    /// - witness: `tests::record::a_header_reads_back_only_at_its_own_place`
+    /// - witness: `tests::record::a_changed_byte_fails_the_checksum`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |header| header.place == expected))]
+    #[inline]
+    pub fn header(
+        &self,
+        expected: Place,
+    ) -> Result<Header, Errno>
+    {
+        let (checksum, rest) = self.0.split_first_chunk::<16>().ok_or(Errno::CORRUPT)?;
+        let covered = rest.first_chunk::<64>().ok_or(Errno::CORRUPT)?;
+        if blake3::hash(covered).as_bytes().first_chunk::<16>() != Some(checksum) {
+            return Err(Errno::CORRUPT);
+        }
+        let (shard, rest) = covered.split_first_chunk::<8>().ok_or(Errno::CORRUPT)?;
+        let (segment, rest) = rest.split_first_chunk::<8>().ok_or(Errno::CORRUPT)?;
+        let (offset, rest) = rest.split_first_chunk::<8>().ok_or(Errno::CORRUPT)?;
+        let (length, rest) = rest.split_first_chunk::<8>().ok_or(Errno::CORRUPT)?;
+        let digest = rest.first_chunk::<32>().ok_or(Errno::CORRUPT)?;
+        let header = Header {
+            place: Place {
+                shard: Shard::from(u64::from_le_bytes(*shard)),
+                segment: SegmentId::from(u64::from_le_bytes(*segment)),
+                offset: Position::from(u64::from_le_bytes(*offset)),
+            },
+            length: RecordLength::from(u64::from_le_bytes(*length)),
+            digest: RecordDigest::from(*digest),
+        };
+        if header.place == expected {
+            Ok(header)
+        }
+        else {
+            Err(Errno::CORRUPT)
+        }
     }
 }

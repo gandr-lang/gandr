@@ -218,6 +218,9 @@ INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','BytePosition'
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','RecordCount','','none',NULL,'A count of records.');
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','RecordPosition','','local',NULL,'A position in one record order while the chunker cuts it; a chunk is named by its digest.');
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','TokenCount','','none',NULL,'A count of tokens.');
+INSERT INTO position VALUES('crates/storage-io/src/record.rs','RecordDigest','','none',NULL,'A digest of a record''s bytes.');
+INSERT INTO position VALUES('crates/storage-io/src/record.rs','RecordLength','','none',NULL,'A count of a record''s bytes.');
+INSERT INTO position VALUES('crates/storage-io/src/record.rs','Shard','','none',NULL,'A tag of the shard that writes a record.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Count','','none',NULL,'A count of entries or of completions.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Index','','local',NULL,'A position in one ring''s queue, which only the ring and its kernel read.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Key','','local',NULL,'A submission''s key, which only its ring carries back; no key, name or byte form writes it.');

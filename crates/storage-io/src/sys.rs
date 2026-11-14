@@ -120,6 +120,10 @@ impl Errno
     pub const NOT_SUPPORTED: Self = Self(95);
     /// The operation runs already, so a cancel cannot stop it.
     pub const ALREADY: Self = Self(114);
+    /// The bytes read are not the record expected there: its header fails
+    /// its checksum or names another place. A filesystem gives this number
+    /// for corrupt metadata.
+    pub const CORRUPT: Self = Self(117);
     /// A cancel, or the failure of an entry linked before it, stopped the
     /// operation.
     pub const CANCELLED: Self = Self(125);

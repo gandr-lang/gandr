@@ -1,16 +1,9 @@
 //! The `Io`: a buffer moves into each submission and comes back with its
 //! completion, under the ring's form and under the blocking form alike.
 
-use core::sync::atomic::AtomicU64;
-use core::sync::atomic::Ordering;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::path::PathBuf;
-
 use gandr_storage_io::Buffer;
 use gandr_storage_io::Chain;
 use gandr_storage_io::Count;
-use gandr_storage_io::Done;
 use gandr_storage_io::Errno;
 use gandr_storage_io::Form;
 use gandr_storage_io::Handle;
@@ -20,90 +13,10 @@ use gandr_storage_io::Position;
 use gandr_storage_io::Reason;
 use gandr_storage_io::Segment;
 
-/// The bytes of one block that the witnesses write and read.
-const BLOCK: usize = 4_096;
-
-/// The scratch files named so far in this process, so each name is fresh.
-static NAMED: AtomicU64 = AtomicU64::new(0);
-
-/// A fresh file for one witness, removed when the witness ends.
-#[repr(transparent)]
-struct Scratch
-{
-    /// The file's path.
-    path: PathBuf,
-}
-
-impl Scratch
-{
-    /// A fresh scratch file, named by the process and a counter.
-    ///
-    /// # Specification
-    /// trivial.
-    fn new() -> Self
-    {
-        let serial = NAMED.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("gandr-storage-io-{}-{serial}", std::process::id()));
-        Self { path }
-    }
-
-    /// The file, open to read and to write.
-    ///
-    /// # Specification
-    /// trivial.
-    fn open(&self) -> File
-    {
-        OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .read(true)
-            .write(true)
-            .open(&self.path)
-            .expect("the scratch file opens")
-    }
-
-    /// The bytes of the file.
-    ///
-    /// # Specification
-    /// trivial.
-    fn bytes(&self) -> Buffer
-    {
-        Buffer::from(std::fs::read(&self.path).expect("the scratch file reads"))
-    }
-}
-
-impl Drop for Scratch
-{
-    /// # Specification
-    /// trivial.
-    fn drop(&mut self)
-    {
-        let _removed = std::fs::remove_file(&self.path);
-    }
-}
-
-/// An `Io` of each form at `depth`: the form that the kernel gives, then
-/// the blocking form.
-///
-/// # Specification
-/// trivial.
-fn forms(depth: Count) -> [Io; 2]
-{
-    [
-        Io::open(depth).expect("an io opens"),
-        Io::blocking(depth).expect("the blocking form opens"),
-    ]
-}
-
-/// Each completion of `io`, until it holds no submission.
-///
-/// # Specification
-/// trivial.
-fn completions(io: &mut Io) -> Vec<Done>
-{
-    core::iter::from_fn(|| io.wait().expect("the wait answers")).collect()
-}
+use crate::common::BLOCK;
+use crate::common::Scratch;
+use crate::common::completions;
+use crate::common::forms;
 
 /// A write, a sync and a read, linked in that order, complete in that order
 /// under each form. Each buffer comes back, and the read holds the bytes
@@ -168,8 +81,7 @@ fn a_failed_write_cancels_its_linked_sync()
     for mut io in forms(Count::from(8_u32)) {
         let scratch = Scratch::new();
         drop(scratch.open());
-        let readonly =
-            Handle::from(File::open(&scratch.path).expect("the scratch file opens to read"));
+        let readonly = Handle::from(scratch.reader());
         let mut segment = Segment::new(readonly, Position::from(0_u64));
         let append = io
             .append(

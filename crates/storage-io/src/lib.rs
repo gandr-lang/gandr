@@ -7,6 +7,11 @@
 //! refuses one, it runs the same interface on one thread of positioned
 //! calls, and [`Io::form`] reports which.
 //!
+//! A record is a [`Header`] and its bytes. The header names the record's
+//! own [`Place`], and its checksum covers that place. [`Io::read_record`]
+//! checks the header in its completion, so a read of another place is
+//! refused as corrupt before its bytes become a value.
+//!
 //! The UAPI comes from the pinned kernel by `mise run uapi:generate`, and
 //! the gate's `check:uapi` keeps it current. The layouts are the same on
 //! each 64-bit Linux architecture. The crate issues its system calls by the
@@ -30,6 +35,11 @@ mod buffer;
     any(target_arch = "x86_64", target_arch = "riscv64")
 ))]
 mod io;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+mod record;
 #[cfg(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "riscv64")
@@ -93,6 +103,36 @@ pub use crate::io::Refused;
     any(target_arch = "x86_64", target_arch = "riscv64")
 ))]
 pub use crate::io::Segment;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::Header;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::Place;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::RecordDigest;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::RecordLength;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::SegmentId;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
+pub use crate::record::Shard;
 #[cfg(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "riscv64")

@@ -308,6 +308,7 @@ fn run(
             Operation::Read {
                 ref handle,
                 ref mut buffer,
+                ..
             } => buffer.read_from(handle.file(), order.at),
             Operation::Write {
                 ref handle,

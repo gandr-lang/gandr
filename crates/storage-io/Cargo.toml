@@ -19,9 +19,11 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The crate issues its system calls itself; it links no C library of its
-# own. The pinned anodized facade supplies the specification attribute.
+# own. The pinned anodized facade supplies the specification attribute;
+# blake3 checksums each record's header.
 [dependencies]
 anodized.workspace = true
+blake3.workspace = true
 
 [lints]
 workspace = true

@@ -74,7 +74,7 @@ impl From<u64> for Key
 /// # Specification
 /// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Position(u64);
 
 impl From<u64> for Position

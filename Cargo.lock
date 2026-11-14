@@ -1535,6 +1535,7 @@ dependencies = [
 name = "gandr-storage-io"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "quenchant-anodized",
 ]
 

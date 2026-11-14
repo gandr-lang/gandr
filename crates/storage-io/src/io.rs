@@ -9,6 +9,8 @@ use std::os::fd::AsFd as _;
 
 use crate::blocking::Blocking;
 use crate::buffer::Buffer;
+use crate::record::Header;
+use crate::record::Place;
 use crate::ring::Count;
 use crate::ring::Entry;
 use crate::ring::Key;
@@ -235,13 +237,16 @@ pub struct Refused
 #[derive(Debug)]
 pub enum Operation
 {
-    /// A read into `buffer` from the handle's file.
+    /// A read into `buffer` from the handle's file. With `expect`, its
+    /// completion checks the header at the start of the bytes read.
     Read
     {
         /// The file.
         handle: Handle,
         /// The bytes to read into.
         buffer: Buffer,
+        /// The place whose record the read expects, if it expects one.
+        expect: Option<Place>,
     },
     /// A write of `buffer` into the handle's file.
     Write
@@ -294,6 +299,52 @@ impl Operation
             Self::Sync { .. } | Self::Cancel { .. } => Moved::from(0),
         }
     }
+
+    /// The outcome of the operation once it moved `moved` bytes: a read
+    /// that expects a place checks the header that it read.
+    ///
+    /// # Specification
+    /// - ensures: `Ok(moved)` for each operation but a read that expects a
+    ///   place; for that read, `Ok(moved)` only when it read a whole header
+    ///   whose checksum holds and which names the place.
+    /// - fails: [`Errno::CORRUPT`] for a short read or a header that
+    ///   [`Buffer::header`] refuses.
+    /// - panics: none.
+    /// - executable: none — the read's bytes are the kernel's.
+    ///
+    /// # Errors
+    /// [`Errno::CORRUPT`] for a short read or a header of another place.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a read of a record at its own place completes with
+    ///   its bytes, and a read of a misdirected or changed record completes
+    ///   corrupt.
+    /// - witness: `tests::record::a_read_of_the_expected_place_passes`
+    /// - witness: `tests::record::a_misdirected_record_reads_corrupt`
+    fn checked(
+        &self,
+        moved: Moved,
+    ) -> Result<Moved, Errno>
+    {
+        match *self {
+            Self::Read {
+                ref buffer,
+                expect: Some(place),
+                ..
+            } => {
+                if moved < Header::size() {
+                    Err(Errno::CORRUPT)
+                }
+                else {
+                    buffer.header(place).map(|_header| moved)
+                }
+            },
+            Self::Read { expect: None, .. }
+            | Self::Write { .. }
+            | Self::Sync { .. }
+            | Self::Cancel { .. } => Ok(moved),
+        }
+    }
 }
 
 /// Whether an order still runs, or a cancel stopped it before it started.
@@ -331,7 +382,8 @@ pub struct Order
 impl Order
 {
     /// The completion of this order with `outcome`, which gives its buffer
-    /// back.
+    /// back. A read that expects a place completes corrupt when its header
+    /// fails the check.
     ///
     /// # Specification
     /// trivial.
@@ -342,6 +394,7 @@ impl Order
         outcome: Result<Moved, Errno>,
     ) -> Done
     {
+        let outcome = outcome.and_then(|moved| self.operation.checked(moved));
         Done {
             pending: Pending(self.key),
             outcome,
@@ -361,6 +414,7 @@ impl Order
             Operation::Read {
                 ref handle,
                 ref mut buffer,
+                ..
             } => Entry::read(handle.0.as_fd(), buffer, self.at, self.key),
             Operation::Write {
                 ref handle,
@@ -701,6 +755,45 @@ impl Io
         self.stage(at, chain, Operation::Read {
             handle: handle.clone(),
             buffer,
+            expect: None,
+        })
+    }
+
+    /// Read the record that `expected` places, from `handle` at its offset
+    /// into `buffer`, which comes back with the completion. The completion
+    /// checks the record's header before the bytes become a value.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, the pending key of the read, staged after each
+    ///   submission before it; its completion is [`Errno::CORRUPT`] unless it
+    ///   read a whole header that holds and names `expected`.
+    /// - fails: [`Refused`], with the buffer, as [`Io::stage`] states.
+    /// - panics: none.
+    /// - executable: none — the read is the kernel's.
+    ///
+    /// # Errors
+    /// [`Refused`] with the buffer, when the caller holds as many unread
+    /// completions as the `Io` keeps, or the kernel refuses a submission.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a read of a record at its own place completes with
+    ///   its bytes, and a read of a misdirected or changed record completes
+    ///   corrupt, under both forms.
+    /// - witness: `tests::record::a_read_of_the_expected_place_passes`
+    /// - witness: `tests::record::a_misdirected_record_reads_corrupt`
+    #[inline]
+    pub fn read_record(
+        &mut self,
+        handle: &Handle,
+        expected: Place,
+        buffer: Buffer,
+        chain: Chain,
+    ) -> Result<Pending, Refused>
+    {
+        self.stage(expected.offset, chain, Operation::Read {
+            handle: handle.clone(),
+            buffer,
+            expect: Some(expected),
         })
     }
 
