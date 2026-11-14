@@ -236,7 +236,8 @@ if [[ $mode == full ]]; then
   # The items of the base that the head lacks, in one pass over an object
   # keyed by the head's ids (#7479): a scan of the head's list for each item
   # of the base took minutes. Each line carries the item's fields and its
-  # JSON, so the loop starts no `jq` to split them.
+  # JSON, and the loop prints each item beside its origin, so one `jq` run
+  # splits the lines and one more writes the records.
   left=$({
     jq -r --slurpfile head "$scratch/items-head.json" '(reduce $head[0][].id as $id ({}; .[$id] = true)) as $h
       | .[] | select($h[.id] | not) | "\(.id)\t\(.file // "")\t\(.start // "")\t\(.end // "")\t\(tojson)"' "$scratch/items-base.json" \
@@ -246,9 +247,11 @@ if [[ $mode == full ]]; then
           else
             found=$(origin "$(sed -E 's/.*:://; s/[<>]//g' <<< "$id")" "$file")
           fi
-          jq -c --argjson origin "$found" --slurpfile acts "$scratch/acts.json" \
-            '{id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}' <<< "$item"
-        done
+          printf '%s\t%s\n' "$found" "$item"
+        done \
+      | jq -R -c --slurpfile acts "$scratch/acts.json" \
+          'index("\t") as $at | (.[:$at] | fromjson) as $origin | .[$at + 1:] | fromjson
+            | {id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}'
     comm -23 "$scratch/ledger-base" "$scratch/ledger-head" | while IFS= read -r key; do
       table=${key%%:*}
       fields=${key#*:}
