@@ -627,9 +627,9 @@ impl Unit
     /// This unit with a stand-in for the standard library's module `module`
     /// before its last source: a source of one byte, homed as `module`, at
     /// the last source's start. The last source moves one byte on and
-    /// imports the stand-in after every import it writes. A host
-    /// interface is native, so the import of its home reads no declaration,
-    /// and the stand-in holds none (#5209).
+    /// imports the stand-in after every import it writes. A host interface
+    /// and a type head that a `std` module homes are native, so the import of
+    /// their home reads no declaration, and the stand-in holds none (#5209).
     ///
     /// # Specification
     /// - requires: the caller lays one byte, a newline, at the last source's
@@ -637,8 +637,8 @@ impl Unit
     /// - ensures: one source more, the stand-in homed as `module` just before
     ///   the last, which imports it last; every other source and the prelude as
     ///   before.
-    /// - provides: the import of a host interface's home where the unit lays no
-    ///   source of that home.
+    /// - provides: the import of the home of a host interface or of a homed
+    ///   type head, where the unit lays no source of that home.
     /// - fails: never.
     /// - panics: none.
     ///

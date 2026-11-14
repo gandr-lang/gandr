@@ -12,7 +12,7 @@
 // same `enclosed` runs under a handler of this source, a second model of the
 // interface.
 //
-// - see: `crates/surface-dispatcher/src/evaluate/reals.rs` — the host that
+// - see: `crates/surface-evaluate/src/evaluate/reals.rs` — the host that
 //   serves the interface
 // - see: `crates/theory-exact-reals/README.md` — the plans, the machine and
 //   the checker
