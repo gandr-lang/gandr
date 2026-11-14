@@ -4468,15 +4468,16 @@ fn a_path_transport_unfolds_its_path_where_the_dialogue_names_it()
 #[test]
 fn a_held_path_runs_over_its_operand_as_it_was_3734()
 {
-    // `tr(y. Path[.A = Unit]((), y), ⟨force g⟩, ⟨force d⟩)` against `return ⟨force
-    // d⟩`, `g = thunk (return here(()))` and `d = thunk (force o)` definitions
-    // and `o` opaque: `assoc(f, g, h) then ⟨whiskerRight(…)⟩` in miniature.
-    // The append runs `d` through its definition to `o`, where it sticks, so
-    // the operand stays `⟨force d⟩` and the transport stands on its held
-    // path. The dialogue unfolds `g`, the transport along reflexivity
-    // returns the operand as it was, and the two sides are one shared node.
-    // Kept as the run left it, the operand is `⟨force o⟩`, and the shared
-    // comparison the dialogue names finds the sides apart.
+    // `tr(y. Path[.A = Unit]((), y), ⟨force g⟩, ⟨force d⟩)` against `return
+    // ⟨force d⟩`, `g = thunk (return here(()))` and `d = thunk (force o)`
+    // definitions and `o` opaque: `assoc(f, g, h) then ⟨whiskerRight(…)⟩`
+    // in miniature. The append runs `d` through its definition to `o`,
+    // where it sticks, so the operand stays `⟨force d⟩` and the transport
+    // stands on its held path. The dialogue unfolds `g`, the transport
+    // along reflexivity returns the operand as it was, and the two sides
+    // are one shared node. Kept as the run left it, the operand is `⟨force
+    // o⟩`, and the shared comparison the dialogue names finds the sides
+    // apart.
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
@@ -4521,12 +4522,13 @@ fn a_held_path_runs_over_its_operand_as_it_was_3734()
 fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
 {
     // `tr(y. Path[.A = Unit]((), y), ⟨force g⟩, ⟨force w⟩)`, `g = thunk (return
-    // here(()))` and `w = thunk (return ⟨tr(y. Path[.A = Unit]((), y), here(()),
-    // here(()))⟩)` definitions: the level-two whisker at reflexivities, then
-    // a composite, in miniature. The append runs `w` to the endpoint it
-    // returns and on through the endpoint's transport to `here(())`, the
-    // empty word, so the transport returns its path. Left unread, the
-    // endpoint keeps the operand held, and the transport stands on its path.
+    // here(()))` and `w = thunk (return ⟨tr(y. Path[.A = Unit]((), y),
+    // here(()), here(()))⟩)` definitions: the level-two whisker at
+    // reflexivities, then a composite, in miniature. The append runs `w` to
+    // the endpoint it returns and on through the endpoint's transport to
+    // `here(())`, the empty word, so the transport returns its path. Left
+    // unread, the endpoint keeps the operand held, and the transport stands
+    // on its path.
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
@@ -4623,8 +4625,8 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
         KernelVerdict::Convertible,
         "a bind's run reads on into a transport along a reflexivity it returns"
     );
-    // `⟨y ← force v; return y⟩`, `v = thunk (return ⟨tr(y. Path[.A = Unit]((), y),
-    // ⟨force g⟩, here(()))⟩)`: the endpoint's transport stands along a
+    // `⟨y ← force v; return y⟩`, `v = thunk (return ⟨tr(y. Path[.A = Unit]((),
+    // y), ⟨force g⟩, here(()))⟩)`: the endpoint's transport stands along a
     // returned path, which the run holds, so the operand stays as it was and
     // the transport stands on its path, apart from `return ⟨force g⟩`.
     let call = arena.value_constant(ConstantIndex::from(3_usize));
@@ -4653,8 +4655,8 @@ fn a_held_run_reads_on_into_an_endpoint_it_returns_4228()
 fn an_operand_s_run_runs_the_call_it_returns_4412()
 {
     // `tr(P, ⟨force r⟩, ⟨tr(P, ⟨force q⟩, ⟨force p⟩)⟩)` in `P = y.
-    // Path[.A = Unit]((), y)`, `p` and `q` each `thunk (return here(()))` and `r`
-    // opaque: `(p then q) then r` in miniature. The outer run reads the
+    // Path[.A = Unit]((), y)`, `p` and `q` each `thunk (return here(()))` and
+    // `r` opaque: `(p then q) then r` in miniature. The outer run reads the
     // inner transport, whose own run takes `p` to `here(())` and returns
     // the path `⟨force q⟩`. The evaluator's append runs that call too, so
     // the outer transport moves `here(())` along `⟨force r⟩` and returns
@@ -4700,13 +4702,13 @@ fn an_operand_s_run_runs_the_call_it_returns_4412()
 #[test]
 fn a_returned_transport_runs_its_held_path_s_call_4413()
 {
-    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A = Unit]((),
-    // y)`, `w = thunk (return ⟨tr(Q, ⟨force k⟩, here(()))⟩)` in `Q = y.
-    // Path[.A = Unit](y, ())`, `k = thunk (return here(()))` and `r` opaque:
-    // `back(assoc(…))` returned by a bind's run, in miniature. The append
-    // reads no transport in `Q`, so the evaluator's run stance runs `k`
-    // under it and moves `here(())` along `here(())`. The outer transport
-    // then moves the empty word and returns its path.
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A =
+    // Unit]((), y)`, `w = thunk (return ⟨tr(Q, ⟨force k⟩, here(()))⟩)` in
+    // `Q = y. Path[.A = Unit](y, ())`, `k = thunk (return here(()))` and
+    // `r` opaque: `back(assoc(…))` returned by a bind's run, in miniature.
+    // The append reads no transport in `Q`, so the evaluator's run stance
+    // runs `k` under it and moves `here(())` along `here(())`. The outer
+    // transport then moves the empty word and returns its path.
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
@@ -4782,12 +4784,13 @@ fn a_returned_transport_runs_its_held_path_s_call_4413()
 #[test]
 fn a_returned_transport_along_a_reflexivity_reads_on_4419()
 {
-    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A = Unit]((),
-    // y)`, `w = thunk (return ⟨tr(Q, here(()), here(()))⟩)` in `Q = y.
-    // Path[.A = Unit](y, ())` and `r` opaque: the second whisker of a defined
-    // chain at reflexivities, returned by a bind's run, in miniature. The
-    // evaluator's run moves `here(())` along the reflexivity, so the outer
-    // transport moves the empty word and returns its path.
+    // `tr(P, ⟨force r⟩, ⟨y ← force w; return y⟩)` in `P = y. Path[.A =
+    // Unit]((), y)`, `w = thunk (return ⟨tr(Q, here(()), here(()))⟩)` in `Q
+    // = y. Path[.A = Unit](y, ())` and `r` opaque: the second whisker of a
+    // defined chain at reflexivities, returned by a bind's run, in
+    // miniature. The evaluator's run moves `here(())` along the
+    // reflexivity, so the outer transport moves the empty word and returns
+    // its path.
     let mut arena = TermArena::new();
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
@@ -5029,7 +5032,8 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
     let later = then(&mut arena, pa, bcd);
     let abc = composed(&mut arena, ab, pc);
     let fold = then(&mut arena, abc, pd);
-    // (a then b) then (c then d): a returned operand along a returned composite.
+    // (a then b) then (c then d): a returned operand along a returned
+    // composite.
     let cd = composed(&mut arena, pc, pd);
     let pairs = then(&mut arena, ab, cd);
     // (a then b) then ((c then d) then e) against a then (b then (c then (d
@@ -5093,8 +5097,9 @@ fn a_transport_along_a_stuck_composite_moves_along_each_path_in_order()
             "{what}"
         );
     }
-    // A bind into `w. tr(y. Path[.A = Unit](w, y), w, v)`, whose family reads the
-    // bound path, keeps its weak head: the path stands in the family too.
+    // A bind into `w. tr(y. Path[.A = Unit](w, y), w, v)`, whose family reads
+    // the bound path, keeps its weak head: the path stands in the family
+    // too.
     let read = arena.value_variable(DeBruijnIndex::from(1_u32));
     let reading = arena.value_type_path(unit_type, read, endpoint);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -5186,10 +5191,10 @@ fn a_bind_over_a_link_on_a_named_univalence_runs_it_6321()
 fn stuck_transports_read_their_motives_endpoints_by_unfolding_4179()
 {
     // #4179: over `[x, y, q, v]`, `tr(t. Path[.A = Unit](⟨same x⟩, t), q, v)`
-    // against `tr(t. Path[.A = Unit](x, t), q, v)`, `same` returning its argument.
-    // The motive premise closes on the shared pair once its start reads by
-    // unfolding `same`. The two quotes compared as any other pair hold `same`
-    // and stay open, and a start reading to `y` does not close.
+    // against `tr(t. Path[.A = Unit](x, t), q, v)`, `same` returning its
+    // argument. The motive premise closes on the shared pair once its start
+    // reads by unfolding `same`. The two quotes compared as any other pair
+    // hold `same` and stay open, and a start reading to `y` does not close.
     let mut arena = TermArena::new();
     let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
     let returned = arena.computation_return(argument);
@@ -5970,7 +5975,8 @@ fn a_step_reads_a_record_code_a_stuck_arm_returns_3045()
             (FieldLabel::from(String::from("v")), unit_type),
         ]))
     };
-    // `inner`, constant 1, is `thunk { λh. return ⌜{ok : El(⟨e(h)⟩), v : 1}⌝ }`.
+    // `inner`, constant 1, is `thunk { λh. return ⌜{ok : El(⟨e(h)⟩), v : 1}⌝
+    // }`.
     let at_e = call(&mut arena, 0, h);
     let at_e = arena.value_returned(at_e);
     let owed = arena.value_type_element(at_e, Level::zero());

@@ -453,8 +453,8 @@ fn a_received_value_crosses_as_an_assumption_1319()
     });
     let delegation = fork(&mut arena, delegating, inner, parent);
     let delegated = arena.value_thunk(delegation);
-    // let d = fork (c : ?(Integer + Unit). end) { let order = recv(c); close(c) };
-    //     send(d, inj₀ 1) ; close(d)
+    // let d = fork (c : ?(Integer + Unit). end) { let order = recv(c); close(c)
+    // };     send(d, inj₀ 1) ; close(d)
     let integer = arena.value_type_base(BaseType::Integer);
     let order = arena.value_type_sum(&[integer, unit]);
     let ordering = session(

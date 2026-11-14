@@ -801,7 +801,8 @@ where
         }
         current = next;
     }
-    // The conclusion's own enumeration orders `⊥`'s edges, as the source's does.
+    // The conclusion's own enumeration orders `⊥`'s edges, as the source's
+    // does.
     let final_positions = A::command_positions(&current);
     let mut final_order: HashMap<&A::Pos, usize, FixedState> = HashMap::default();
     for (index, position) in final_positions.iter().enumerate() {

@@ -231,7 +231,8 @@ fn a_deep_chain_is_released_in_both_orders_inside_a_small_stack()
             );
             drop(arena);
 
-            // Second order: drop the arena outright, with the chain still in it.
+            // Second order: drop the arena outright, with the chain still in
+            // it.
             let (arena, handle) = deep_chain(body, produced);
             assert!(arena.value(handle).is_some());
             drop(arena);
@@ -365,7 +366,8 @@ fn a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack(
             assert_eq!(OverlayWatermark::default(), overlay.watermark());
             drop(overlay);
 
-            // Second order: drop the overlay outright, with the chain still in it.
+            // Second order: drop the overlay outright, with the chain still in
+            // it.
             let (overlay, top, lifted) = deep_overlay();
             assert!(overlay.value(top).is_some() && overlay.value_type(lifted).is_some());
             drop(overlay);

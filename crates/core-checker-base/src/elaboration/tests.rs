@@ -202,9 +202,10 @@ fn two_arguments_disagreeing_on_an_implicit_are_apart_1216()
 #[test]
 fn an_open_end_is_solved_from_its_point_1979()
 {
-    // `(here(0) : Path[.A = Integer](0, _))`: two rigid values are conversion's;
-    // the open end against the point that reaches it is bound to the point;
-    // a second, different point is then refuted against the same end.
+    // `(here(0) : Path[.A = Integer](0, _))`: two rigid values are
+    // conversion's; the open end against the point that reaches it is bound
+    // to the point; a second, different point is then refuted against the
+    // same end.
     let mut arena = CoreArena::new();
     let mut deferrals = super::Deferrals::default();
     let (hole, open, _) = nominated(&mut arena, &mut deferrals);
@@ -274,10 +275,10 @@ fn an_implicit_solved_past_its_scope_escapes_1216()
 #[test]
 fn a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270()
 {
-    // `log("a")` where `[Console, Partial]` is asked: `log`'s row `[Console | r]`,
-    // `r` omitted, against the closed row binds `r` to `[Partial]`. Two closed
-    // rows are conversion's; against `[Partial]`, which lacks `Console`, the open
-    // row is apart.
+    // `log("a")` where `[Console, Partial]` is asked: `log`'s row `[Console |
+    // r]`, `r` omitted, against the closed row binds `r` to `[Partial]`.
+    // Two closed rows are conversion's; against `[Partial]`, which lacks
+    // `Console`, the open row is apart.
     use gandr_core_term::effect::EffectName;
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectRow;

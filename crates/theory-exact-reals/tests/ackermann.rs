@@ -521,7 +521,8 @@ fn read_back(
         for &candidate in candidates.iter().skip(1) {
             let held = sets.members(cumulus).unwrap().to_vec();
             let members = sets.members(candidate).unwrap().to_vec();
-            // The union equals the cumulus when the cumulus holds the candidate.
+            // The union equals the cumulus when the cumulus holds the
+            // candidate.
             let union = sets.set(&[held, members].concat()).unwrap();
             if union == cumulus {
                 continue;

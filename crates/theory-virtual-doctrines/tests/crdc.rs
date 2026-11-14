@@ -2210,7 +2210,8 @@ mod tests
         }
     }
 
-    // ---- Axiom (iii): horizontal decomposition -------------------------------
+    // ---- Axiom (iii): horizontal decomposition
+    // -------------------------------
 
     proptest! {
         #![proptest_config(crdc_config(Cases(1024)))]
@@ -2277,7 +2278,8 @@ mod tests
         }
     }
 
-    // ---- Axiom (iv): source a strong multi-opfibration ------------------------
+    // ---- Axiom (iv): source a strong multi-opfibration
+    // ------------------------
 
     /// A generated cell, an instantiation of its variables, and a grounding
     /// of the instantiated left-hand side — the source-pushforward cases.
@@ -2360,7 +2362,8 @@ mod tests
         }
     }
 
-    // ---- Axiom (v): target a residual multi-opfibration -----------------------
+    // ---- Axiom (v): target a residual multi-opfibration
+    // -----------------------
 
     proptest! {
         #![proptest_config(crdc_config(Cases(256)))]
@@ -2566,7 +2569,8 @@ mod tests
         );
     }
 
-    // ---- Virtual-side line items (Thompson–Carlson) ---------------------------
+    // ---- Virtual-side line items (Thompson–Carlson)
+    // ---------------------------
 
     /// The Peano instance arguments (successor depths).
     #[derive(Clone, Copy, Debug)]

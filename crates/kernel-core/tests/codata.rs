@@ -257,7 +257,8 @@ fn a_bind_observes_a_returner_codata()
 {
     let mut environment = Environment::new();
     let nat = nat(&mut environment).position();
-    // `Later = ν. { now : F Nat }` and `later : U Later = thunk &{.0 => return 1}`.
+    // `Later = ν. { now : F Nat }` and `later : U Later = thunk &{.0 => return
+    // 1}`.
     let mut staging = environment.stage();
     let arena = staging.arena();
     let nat_type = arena.value_type_data(nat, vec![]);

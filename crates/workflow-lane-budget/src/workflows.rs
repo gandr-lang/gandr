@@ -1048,8 +1048,8 @@ mod tests
                 timed!("8", 900, [(1300, "sweep"), (200, "test")]),
             ]
         };
-        // nightly-sweeps' newest run passes the ceiling; Weekly's only an older one
-        // does; Release, unbudgeted, passes every limit.
+        // nightly-sweeps' newest run passes the ceiling; Weekly's only an older
+        // one does; Release, unbudgeted, passes every limit.
         let table = Workflows::new(
             &budgets,
             "2".parse::<RunCount>().unwrap(),

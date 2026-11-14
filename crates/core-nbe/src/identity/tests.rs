@@ -531,9 +531,9 @@ fn telescope_transport_into_an_identity_of_the_unit_type_returns_the_unit_1960()
 {
     // At the atom `A` (position 0), along rigid evidence (position 2), the
     // family of paths back to `origin` (position 1), `(y : A, z : Path[.A = A](
-    // origin, y)) => Path[.A = A](y, origin)`, and the family of the identities of
-    // the singleton's own paths, `(y : A, z : Path[.A = A](origin, y)) =>
-    // Path[.A = Path[.A = A](origin, y)](z, z)`.
+    // origin, y)) => Path[.A = A](y, origin)`, and the family of the identities
+    // of the singleton's own paths, `(y : A, z : Path[.A = A](origin, y))
+    // => Path[.A = Path[.A = A](origin, y)](z, z)`.
     let mut core = CoreArena::new();
     let atom = core.value_type_abstract(ConstantIndex::from(0_usize));
     let origin = core.value_constant(ConstantIndex::from(1_usize));
@@ -1422,10 +1422,11 @@ fn a_decomposition_converts_with_the_web_it_reads_back_as()
 #[test]
 fn a_named_dialogue_decomposes_through_its_definition()
 {
-    // def named = <one exchange> ; `decompose(named)` against `decompose` of the
-    // literal, under the held stance the checker compares endpoints in. The
-    // definition stays unforced, and the decomposition reads its operand through
-    // the body; with no body to read, the head is rigid and refuses.
+    // def named = <one exchange> ; `decompose(named)` against `decompose` of
+    // the literal, under the held stance the checker compares endpoints in.
+    // The definition stays unforced, and the decomposition reads its
+    // operand through the body; with no body to read, the head is rigid and
+    // refuses.
     let mut core = CoreArena::new();
     let unit = core.value_unit();
     let truth = core.value_injection(Side::Left.into(), unit);

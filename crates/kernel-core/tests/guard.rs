@@ -324,7 +324,8 @@ fn the_stream_of_ones_is_guarded()
         ones.is_ok(),
         "the call stands under `Cons` and its thunk: {ones:?}"
     );
-    // `never = fix s. Later (thunk (force s))` and `Now 1`, into the delay type.
+    // `never = fix s. Later (thunk (force s))` and `Now 1`, into the delay
+    // type.
     let delay = delay(&mut environment, nat, DataFixpoint::Greatest);
     let never = corecursion(&mut environment, FixpointEvidence::Guarded, |arena| {
         let delay_type = arena.value_type_data(delay, vec![]);

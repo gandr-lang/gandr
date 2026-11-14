@@ -54,8 +54,8 @@ fn each_refusal_is_named()
     let (reversed, narrower) =
         statement(&mut arena, At(1), SessionRelation::Subtyping, (wide, end));
     let (sub, _) = statement(&mut arena, At(2), SessionRelation::Subtyping, (end, wide));
-    // ride(fun (X) { Flow[.A = Type](X, ⌜End⌝) }, sub, stay(⌜End⌝)) would reverse
-    // `sub`.
+    // ride(fun (X) { Flow[.A = Type](X, ⌜End⌝) }, sub, stay(⌜End⌝)) would
+    // reverse `sub`.
     let sub_constant = arena.value_constant(ConstantIndex::from(2_usize));
     let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let type_universe = universe(&mut arena);

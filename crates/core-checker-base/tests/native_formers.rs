@@ -967,8 +967,9 @@ fn a_case_over_the_circle_owes_its_loop_377()
         let constant = ConstantIndex::from(position.saturating_add(3));
         declarations.push(definition(constant, declared, body));
     }
-    // The family `x ↦ Unit → F (Path[.A = S](x, x))`, dependent and no returner,
-    // owed at the loop and refused with an arm for the loop alike.
+    // The family `x ↦ Unit → F (Path[.A = S](x, x))`, dependent and no
+    // returner, owed at the loop and refused with an arm for the loop
+    // alike.
     let unit = arena.value_type_unit();
     let behind = arena.comp_type_arrow(unit, looped);
     let answered = arena.computation_return(circle.empty);
@@ -1206,8 +1207,8 @@ fn a_nested_loop_obligation_owes_its_square_off_a_set_464()
 {
     let mut arena = CoreArena::new();
     let (mut declarations, circle) = one_loop(&mut arena);
-    // `U (Path[.A = S](a, a) → F Path[.A = S](a, a))`, answered by the identity at
-    // the point.
+    // `U (Path[.A = S](a, a) → F Path[.A = S](a, a))`, answered by the identity
+    // at the point.
     let p = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let identity = arena.computation_return(p);
     let identity = arena.computation_lambda(identity);
@@ -1853,7 +1854,8 @@ fn a_law_is_stated_bare_only_over_no_variable()
         else {
             bare
         };
-        // `λy. case y { Base ⇒ return c; Twist(_) | Loop(_) | Wrap(_) ⇒ return d }`
+        // `λy. case y { Base ⇒ return c; Twist(_) | Loop(_) | Wrap(_) ⇒ return
+        // d }`
         let base_arm = arena.computation_return(at_base);
         let [twist_arm, loop_arm, wrap_arm] = [(); 3].map(|()| {
             let returned = arena.computation_return(elsewhere);
@@ -2843,8 +2845,9 @@ fn a_constructor_field_written_as_a_call_meets_its_annotation_3625()
             .into(),
         OriginToken::from(2_usize),
     );
-    // `more(m : Nat, c : Count(ident(m))) -> Count(S(ident(m))) { More(ident(m),
-    // c) }`: the count is written as the call the types write.
+    // `more(m : Nat, c : Count(ident(m))) -> Count(S(ident(m))) {
+    // More(ident(m), c) }`: the count is written as the call the types
+    // write.
     let in_tail = called(&mut arena, 0);
     let in_tail = arena.value_returned(in_tail);
     let tail_type = arena.value_type_data(count, vec![in_tail]);
@@ -3044,9 +3047,9 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
     );
     let one_equation = gandr_kernel_term::EquationCount::from(1_usize);
     let one_field = vec![gandr_kernel_term::FieldCount::from(1_usize)];
-    // `f(n : Nat, i : I(S(n))) -> B(w(n)) { case i { Made(m) => Mk : B(w(m)) } }`,
-    // with `w` the identity for `pred` and `S` for `whole`. The arm learns
-    // `m = n` only from `S(m) = S(n)`.
+    // `f(n : Nat, i : I(S(n))) -> B(w(n)) { case i { Made(m) => Mk : B(w(m)) }
+    // }`, with `w` the identity for `pred` and `S` for `whole`. The arm
+    // learns `m = n` only from `S(m) = S(n)`.
     let wrap = |arena: &mut CoreArena, inside: bool, at: ValueId| {
         if inside {
             arena.value_constructor(natural, nat, first, vec![at])
@@ -3946,8 +3949,8 @@ fn reflexivity_under_a_bind(
 fn a_returned_value_defines_the_binder_it_binds()
 {
     let mut arena = CoreArena::new();
-    // `let x = 3; return here(x)` at `Path[.A = Integer](3, 3)`: the type reads the
-    // binder, which stands for the value it binds.
+    // `let x = 3; return here(x)` at `Path[.A = Integer](3, 3)`: the type reads
+    // the binder, which stands for the value it binds.
     let value = three(&mut arena);
     let declaration = reflexivity_under_a_bind(&mut arena, ConstantIndex::from(0_usize), value);
     let (report, crossed) = run(&mut arena, &[declaration]);

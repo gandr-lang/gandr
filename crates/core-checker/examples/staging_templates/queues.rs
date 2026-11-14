@@ -254,7 +254,8 @@ where
                     remaining.len()
                 },
                 Self::Rtrb(ref mut sender) if publication == Publication::Batch => {
-                    // This safe chunks API reserves, fills and commits one chunk.
+                    // This safe chunks API reserves, fills and commits one
+                    // chunk.
                     match sender.push_entire_slice(remaining) {
                         Ok(()) => remaining.len(),
                         Err(rtrb::chunks::ChunkError::TooFewSlots(_)) => 0,

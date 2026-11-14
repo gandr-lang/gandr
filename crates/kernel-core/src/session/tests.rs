@@ -185,7 +185,8 @@ fn session_codes_are_closed_and_contractive()
         check_closed_value(&mut arena, reflexive, classifier),
         Ok(())
     );
-    // A surrounding function binder must not close an open session payload code.
+    // A surrounding function binder must not close an open session payload
+    // code.
     let variable = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
     let open = arena.value_type_element(variable, gandr_kernel_strata::Level::zero());
     let quoted = code(

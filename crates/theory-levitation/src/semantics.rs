@@ -362,8 +362,9 @@ impl<'term, 'signature> Evaluation<'term, 'signature>
                 Err(BindingError::InvalidState)
             },
             BindingHead::Operation(ref name, _) => {
-                // economy: the operation is found by a scan of the declarations;
-                // an index by name pays off only for large signatures.
+                // economy: the operation is found by a scan of the
+                // declarations; an index by name pays off only
+                // for large signatures.
                 let operation = self
                     .operations
                     .iter()

@@ -3187,7 +3187,8 @@ impl ContentTable
             start: end.saturating_sub(self.scratch.0.len()),
             end,
         });
-        // Each record occupies memory, so the allocated table bounds this count.
+        // Each record occupies memory, so the allocated table bounds this
+        // count.
         self.records = u64::from(arith::add(
             arith::Int::from(self.records),
             arith::Int::from(1_u64),

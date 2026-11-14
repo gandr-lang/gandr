@@ -4026,8 +4026,8 @@ fn an_environment_substitution_reaches_into_types()
         (integer, constant, Some(1)),
         "a covered index is its entry and one past the environment is lowered"
     );
-    // `Π (_ : Integer). F Path[.A = Integer](#0, #1)`: the codomain's own binder
-    // stands, and the covered index under it is the entry.
+    // `Π (_ : Integer). F Path[.A = Integer](#0, #1)`: the codomain's own
+    // binder stands, and the covered index under it is the entry.
     let under = arena.value_type_path(integer, zero, one);
     let returns = arena.comp_type_returner(under);
     let pi = arena.comp_type_pi(integer, returns);

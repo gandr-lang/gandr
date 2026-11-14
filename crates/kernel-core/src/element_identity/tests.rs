@@ -242,9 +242,9 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     ));
     assert_eq!(error.to_string(), "an identity fibre is neutral");
 
-    // A domain that reads a binder: `Π (x : U). Π (y : El x). F (Path[.A = El x](y,
-    // y))` forms, `here(y)` checks against it and synthesizes at it, and the
-    // unit as native evidence refuses as a neutral fibre.
+    // A domain that reads a binder: `Π (x : U). Π (y : El x). F (Path[.A = El
+    // x](y, y))` forms, `here(y)` checks against it and synthesizes at it,
+    // and the unit as native evidence refuses as a neutral fibre.
     let mut arena = TermArena::new();
     let universe_type = universe(&mut arena);
     let decoded = |arena: &mut TermArena, index: u32| {
@@ -384,8 +384,8 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
 #[test]
 fn reflexivity_converts_its_endpoints_by_the_laws_of_bind()
 {
-    // Under `g : U (Bool → F Bool)`, `here(r)` at `Path[.A = U (Bool → F Bool)](
-    // l, r)` for three `l`s against `r = thunk (λ b. force g b)`.
+    // Under `g : U (Bool → F Bool)`, `here(r)` at `Path[.A = U (Bool → F
+    // Bool)]( l, r)` for three `l`s against `r = thunk (λ b. force g b)`.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let variable =
@@ -613,7 +613,8 @@ fn a_tuple_at_a_function_identity_is_refused_719()
 #[test]
 fn a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair()
 {
-    // Σ (b : Bool). Path[.A = Bool](b, b), between #{true, here(true)} and itself.
+    // Σ (b : Bool). Path[.A = Bool](b, b), between #{true, here(true)} and
+    // itself.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -3328,10 +3329,10 @@ fn telescope_transport_along_here_reduces()
 #[test]
 fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 {
-    // In `(y : Unit, z : Path[.A = Unit]((), y)) => C`, the unit's evidence `()`
-    // is a closed path that is no reflexivity. A returned type reading neither
-    // entry returns the value along it; one reading the endpoint or the
-    // identity over it, at a carrier other than the unit, sticks.
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) => C`, the unit's evidence
+    // `()` is a closed path that is no reflexivity. A returned type reading
+    // neither entry returns the value along it; one reading the endpoint or
+    // the identity over it, at a carrier other than the unit, sticks.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let unit = arena.value_type_unit();
@@ -3376,11 +3377,11 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
 #[test]
 fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 {
-    // In `(y : Unit, z : Path[.A = Unit]((), y)) => Path[.A = Unit](y, ())`, the
-    // family of paths back to the centre, every inhabitant of the returned type
-    // is the unit: along the unit's evidence `()`, a closed path that is no
-    // reflexivity, along a variable and along a constant the transport
-    // returns it.
+    // In `(y : Unit, z : Path[.A = Unit]((), y)) => Path[.A = Unit](y, ())`,
+    // the family of paths back to the centre, every inhabitant of the
+    // returned type is the unit: along the unit's evidence `()`, a closed
+    // path that is no reflexivity, along a variable and along a constant
+    // the transport returns it.
     let mut arena = TermArena::new();
     let unit = arena.value_type_unit();
     let centre = arena.value_unit();
@@ -3420,9 +3421,10 @@ fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 fn j_derived_in_the_singleton_checks_and_computes()
 {
     // J := λx : Bool. λp : Path[.A = Bool](T, x). λd : C[T, here(T)].
-    //   transport((y : Bool, z : Path[.A = Bool](T, y)) => C, p, here(T), here(p),
-    // d)   : F C[x, p]
-    // where C(y, z) = Path[.A = Path[.A = Bool](T, y)](z, z) reads both entries.
+    //   transport((y : Bool, z : Path[.A = Bool](T, y)) => C, p, here(T),
+    // here(p), d)   : F C[x, p]
+    // where C(y, z) = Path[.A = Path[.A = Bool](T, y)](z, z) reads both
+    // entries.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let truth = boolean.truth;

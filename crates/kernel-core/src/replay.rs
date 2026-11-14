@@ -1833,9 +1833,10 @@ pub(crate) fn read_endpoints(
                 {
                     continue;
                 }
-                // A step's own reading runs its code to the quote it returns, so
-                // two stuck endpoints that differ by a definition a stuck arm
-                // calls, held on one side and run on the other, convert by the
+                // A step's own reading runs its code to the quote it returns,
+                // so two stuck endpoints that differ by a
+                // definition a stuck arm calls, held on one
+                // side and run on the other, convert by the
                 // kernel's δ-steps (#2831). A quote pair the δ-steps reach and
                 // owe is read on this worklist in turn (#3045). Two thunks the
                 // walk set aside for a forced thunk convert by the same
@@ -8344,10 +8345,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             }
                         },
                     }
-                    // An elimination meeting a returned endpoint runs the endpoint's
-                    // computation and eliminates what it returns: `E[c] ⇝ c to x. E[x]`.
-                    // That machinery reads closed terms, so the state is unloaded
-                    // first.
+                    // An elimination meeting a returned endpoint runs the
+                    // endpoint's computation and eliminates
+                    // what it returns: `E[c] ⇝ c to x. E[x]`.
+                    // That machinery reads closed terms, so the state is
+                    // unloaded first.
                     if let Some(inspected) = self.inspected(focus.node)
                         && let Some(&Value::Returned(_)) = self
                             .arena
@@ -8412,8 +8414,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     let branch =
                                         *branches.get(usize::from(tag)).ok_or_else(unreadable)?;
                                     let field_count = fields.len();
-                                    // The branch applies to each field, then to each
-                                    // index equation's reflexivity, all read where
+                                    // The branch applies to each field, then to
+                                    // each
+                                    // index equation's reflexivity, all read
+                                    // where
                                     // the constructor is.
                                     arguments.clear();
                                     for position in 0 .. field_count {
@@ -8427,7 +8431,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                             .push(*fields.get(position).ok_or_else(unreadable)?);
                                     }
                                     // Each index equation is reflexivity at the
-                                    // constructor's own index, which its datatype
+                                    // constructor's own index, which its
+                                    // datatype
                                     // states after the parameters.
                                     let Some(&ValueType::Data {
                                         arguments: ref indices,
@@ -8446,9 +8451,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                         self.charge()?;
                                         arguments.push(self.arena.value_here(point));
                                     }
-                                    // Each argument stands as the application frame
+                                    // Each argument stands as the application
+                                    // frame
                                     // the substituting reduction's next steps
-                                    // decompose its application into, charged as
+                                    // decompose its application into, charged
+                                    // as
                                     // each of those steps is.
                                     for &argument in arguments.iter().rev() {
                                         self.charge()?;
@@ -8984,16 +8991,19 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     },
                                 }
                             }
-                            // A fixpoint's gate inspects its argument, so a returned
-                            // endpoint there runs first: `fix f c ⇝ c to x. fix f x`.
-                            // That machinery reads closed terms, so the state is
+                            // A fixpoint's gate inspects its argument, so a
+                            // returned
+                            // endpoint there runs first: `fix f c ⇝ c to x. fix
+                            // f x`. That machinery
+                            // reads closed terms, so the state is
                             // unloaded first.
                             if let Some((offset, argument)) = reached
                                 && let Some(&Value::Returned(_)) = self.arena.value(argument.node)
                             {
                                 let mut applied = self.unload(&mut cells, focus);
                                 let mut outer = self.unload_frames(&mut cells, &mut frames);
-                                // A joint fixpoint's projection stands between it and
+                                // A joint fixpoint's projection stands between
+                                // it and
                                 // its arguments, and stays there.
                                 if projected > 0_usize {
                                     let Some(Frame::Project(component)) = outer.pop()
@@ -9256,10 +9266,13 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 self.continuation_of(bind),
                                 Continuation::Eliminates | Continuation::Returns
                             ) {
-                                // Read through, this bind restores the elimination
-                                // of a returned endpoint it came from, which binds
-                                // the same call again: it never returns; or it is
-                                // the call's own η-expansion, which the goal reads
+                                // Read through, this bind restores the
+                                // elimination
+                                // of a returned endpoint it came from, which
+                                // binds
+                                // the same call again: it never returns; or it
+                                // is the call's
+                                // own η-expansion, which the goal reads
                                 // back as the call and expands again. It stays
                                 // over its call, and the next bind out is tried
                                 // over both.
@@ -9326,8 +9339,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 progress = Progress::Reduced;
                                 continue 'reading;
                             }
-                            // The enclosing continuation did not return: its bind
-                            // stays over its call, and the next bind out is tried
+                            // The enclosing continuation did not return: its
+                            // bind stays over its
+                            // call, and the next bind out is tried
                             // over both.
                             let call = self.wrap(tried.call, tried.bind.frame());
                             next = (call, tried.outer, tried.progress, false);
@@ -9476,13 +9490,15 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 progress = Progress::Reduced;
                 continue 'endpoints;
             }
-            // The endpoint's computation is read: the suspended plain reading binds
-            // what it came to and goes on. A reading stopped at a call a definition
-            // heads waits for the conversion to unfold that call by a recorded
-            // step, so it is bound once over the whole term, every occurrence of
-            // the endpoint's node reading the bind's variable: the call then runs
-            // once for all of them, as the producer's held endpoint keeps its one
-            // unfolding for every elimination of it.
+            // The endpoint's computation is read: the suspended plain reading
+            // binds what it came to and goes on. A reading stopped
+            // at a call a definition heads waits for the conversion
+            // to unfold that call by a recorded step, so it is
+            // bound once over the whole term, every occurrence of
+            // the endpoint's node reading the bind's variable: the call then
+            // runs once for all of them, as the producer's held
+            // endpoint keeps its one unfolding for every
+            // elimination of it.
             let Some(held) = suspended.take()
             else {
                 break 'endpoints;

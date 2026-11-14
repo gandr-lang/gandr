@@ -1705,8 +1705,9 @@ where
                 {
                     note_read(&mut reads, &mut reading, (node, depth));
                 }
-                // A share's endpoint answers at once: the variable of the binder
-                // outside the root, raised under every binder crossed.
+                // A share's endpoint answers at once: the variable of the
+                // binder outside the root, raised under every
+                // binder crossed.
                 if let Rewrite::Share { endpoint, closed } = step
                     && node == AnyNode::Value(endpoint)
                     && (closed || depth == BinderDepth::NONE)
@@ -1717,9 +1718,10 @@ where
                 }
                 // The one arm that answers through a sub-walk rather than
                 // through its children: the occurrence being substituted, where
-                // the walk has crossed binders the replacement has to be carried
-                // under. The sub-walk leaves exactly one result on the stack,
-                // which is what this goal's parent was going to read anyway.
+                // the walk has crossed binders the replacement has to be
+                // carried under. The sub-walk leaves exactly
+                // one result on the stack, which is what this
+                // goal's parent was going to read anyway.
                 match carried_occurrence(arena, step, node, depth) {
                     Maybe::Present(replacement) => {
                         tasks.push(RewriteTask::Record(node, depth, step));
@@ -1795,7 +1797,8 @@ where
                 }
                 let outcome = close_rewrite(arena, step, node, depth, &mut results);
                 // A memo at its ceiling declines to record. The walk proceeds
-                // unmemoized from there, which costs reuse and never the answer.
+                // unmemoized from there, which costs reuse and never the
+                // answer.
                 remember_rewrite(
                     (table, arena, memo),
                     &mut local,
@@ -3549,7 +3552,8 @@ fn rewrite_variable(
                 // before it ever schedules this close.
                 core::cmp::Ordering::Equal => replacement,
                 core::cmp::Ordering::Greater => {
-                    // index > depth >= 0, so removing this binder cannot underflow.
+                    // index > depth >= 0, so removing this binder cannot
+                    // underflow.
                     let lowered = u32::from(arith::sub(
                         arith::Int::from(index.0),
                         arith::Int::from(1_u32),

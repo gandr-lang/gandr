@@ -69,7 +69,8 @@ impl ExpansionCount
     #[must_use]
     fn successor(self) -> Self
     {
-        // reason: census measurements clamp at u64::MAX without refusing a check.
+        // reason: census measurements clamp at u64::MAX without refusing a
+        // check.
         Self(u64::from(arith::saturating_add(
             arith::Int::from(self.0),
             arith::Int::from(1_u64),

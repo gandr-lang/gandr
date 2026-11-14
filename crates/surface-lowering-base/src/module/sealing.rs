@@ -839,7 +839,8 @@ impl<'source> Collector<'_, 'source>
         for &(face, ref listed) in written {
             let face_name = self.name_of(face);
             if !named.insert(face_name) {
-                // As a theory's: the boundary first, then the face it names twice.
+                // As a theory's: the boundary first, then the face it names
+                // twice.
                 return Err(LoweringRefusal::IllFormedDescription {
                     span: face.span,
                     fault: face.span,

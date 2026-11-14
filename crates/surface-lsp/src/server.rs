@@ -12438,7 +12438,8 @@ mod tests
             if name == "invLooper" {
                 shown = Some(resolved.clone());
             }
-            // Each lens's line is named by the declaration it stands in (#2786).
+            // Each lens's line is named by the declaration it stands in
+            // (#2786).
             rows.push(format!(
                 "{}: {name}: {title}",
                 crate::anchor::anchored(

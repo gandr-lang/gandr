@@ -207,7 +207,8 @@ fn seat_and_generator_identity_witnesses()
         Ok(RelationResult::Unrelated)
     );
 
-    // Bisimulation is an identity action on recorded skeletons in both directions.
+    // Bisimulation is an identity action on recorded skeletons in both
+    // directions.
     let mut arena = TermArena::new();
     let payloads = codes(&mut arena);
     let gen_code = encode(&mut arena, &generator, &payloads).expect("generator code");
@@ -514,7 +515,8 @@ fn a_prefix_advances_open_and_refuses_by_move()
         Some(whole),
         gandr_core_session::certified::advance((&old, &wide), &evidence, &complete).ok()
     );
-    // A move the source protocol does not offer is the source monitor's refusal.
+    // A move the source protocol does not offer is the source monitor's
+    // refusal.
     assert!(matches!(
         advance_prefix((&old, &wide), &evidence, &[Move::Select("report".into())]),
         Err(TransportError::Replay(ReplayError::Refused { .. }))

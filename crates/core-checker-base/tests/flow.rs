@@ -591,8 +591,9 @@ fn a_motive_above_level_zero_reads_its_binder_at_the_carriers_level_1837()
     // def kept : Flow[.A = Type[+, 1]](Type, Type) = stay(Type) ;
     // def same : Path[.A = Type[+, 1]](Type, Type) = here(Type) ;
     // def rode : () => Type = thunk { ride(fun (X) { X }, kept, Integer) } ;
-    // def moved : () => Type = thunk { transport(fun (X) { X }, same, Integer) } ;
-    // def small : () => Integer = thunk { ride(fun (X) { X }, stay(Integer), 0) } ;
+    // def moved : () => Type = thunk { transport(fun (X) { X }, same, Integer)
+    // } ; def small : () => Integer = thunk { ride(fun (X) { X },
+    // stay(Integer), 0) } ;
     let mut arena = CoreArena::new();
     let small = universe(&mut arena);
     let one = Level::constant(LevelConstant::from(1_u64));

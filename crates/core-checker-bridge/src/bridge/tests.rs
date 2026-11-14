@@ -2335,8 +2335,8 @@ fn an_unquoted_function_call_crosses_with_its_run_certified()
 #[test]
 fn an_open_decode_crosses_read_and_a_forged_one_is_refused()
 {
-    // def arrow : U (Type -> F Type) = thunk λa. return ⌜U (El(a) -> F El(a))⌝ ;
-    // def apply : U ((a : Type) -> El(⟨arrow a⟩) -> El(a) -> F El(a)) =
+    // def arrow : U (Type -> F Type) = thunk λa. return ⌜U (El(a) -> F El(a))⌝
+    // ; def apply : U ((a : Type) -> El(⟨arrow a⟩) -> El(a) -> F El(a)) =
     //     thunk λ λ λ. force f v ;
     // def same : El(⟨arrow ⌜Integer⌝⟩) = thunk λ. return x ;
     let mut arena = CoreArena::new();
@@ -2644,9 +2644,9 @@ fn a_split_by_position_of_a_computed_pair_reads_its_fibre_in_both_checkers_5290(
 {
     // def repr : U(Unit -> F Type) = \_. return ⌜Σ (n : Integer). Path[.A =
     // Integer](n, n)⌝ ; def p : El(⟨repr ()⟩) = (0, here 0) ;
-    // def atLoop : U((n : Integer) -> Path[.A = Integer](n, n) -> F Integer) = \n.
-    // \r. return n ; def splitPair : U(Unit -> F Integer) = \_. split p as (n,
-    // r) in atLoop n r ;
+    // def atLoop : U((n : Integer) -> Path[.A = Integer](n, n) -> F Integer) =
+    // \n. \r. return n ; def splitPair : U(Unit -> F Integer) = \_. split p
+    // as (n, r) in atLoop n r ;
     //
     // The call hides the dependent pair from the split, which has no motive.
     let mut arena = CoreArena::new();
@@ -3307,9 +3307,9 @@ fn a_readmission_keeps_the_witnesses_of_a_formation_its_edit_leaves_7200()
     // def a : Integer = 1 ; data d = A | B ;
     // def f : *{port : d, tls}[.port = d.A] = {tls = 1} ;
     //
-    // The formation's name reads the data `d` by the content key that the kernel
-    // gave it, and that key reads no position. An edit that deletes `a` moves
-    // `d`, and the walk keeps `d` and the formation's reader.
+    // The formation's name reads the data `d` by the content key that the
+    // kernel gave it, and that key reads no position. An edit that deletes
+    // `a` moves `d`, and the walk keeps `d` and the formation's reader.
     let (_, record) = recorded(&[
         (Named(0), Formable::Plain(1)),
         (Named(1), Formable::Data),
@@ -3386,8 +3386,8 @@ fn a_formation_takes_one_name_in_each_readmission_7245()
 fn a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261()
 {
     // def lead : Integer = 1 ;
-    // module M :> #{ type T, one : Integer, two : Integer } { type T = Integer ;
-    //                                     def one = 7 ; def two = 7 ; }
+    // module M :> #{ type T, one : Integer, two : Integer } { type T = Integer
+    // ;                                     def one = 7 ; def two = 7 ; }
     // def first : *{port, tls}[.port = M.one] = {tls = 1} ;
     // def second : *{port, tls}[.port = M.two] = {tls = 1} ;
     //
@@ -6020,8 +6020,8 @@ fn element_identity_and_a_compound_endpoint_are_readmitted()
     // def id        : U (Integer -> F Integer) = thunk { \x. return x } ;
     // def same      : Path[.A = Integer](0, 0) = here(0) ;
     // def moved     : U (F Path[.A = Integer](0, 0))
-    //               = thunk { tr(y. Path[.A = Integer](0, y), here(0), here(0)) } ;
-    // def compound  : Path[.A = Integer]((id 0), 0) = here(0) ;
+    //               = thunk { tr(y. Path[.A = Integer](0, y), here(0), here(0))
+    // } ; def compound  : Path[.A = Integer]((id 0), 0) = here(0) ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let returns_integer = arena.comp_type_returner(integer);
@@ -6933,9 +6933,9 @@ fn a_ride_along_a_named_flow_crosses_with_the_flows_unfolding()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
     // def flip : Flow[.A = Type](Bool, Bool) = forward(not) ;
-    // def flipped : Path[.A = Bool](ride(fun (X) { X }, flip, .0), .1) = here(.1) ;
-    // The ride is stuck on `flip` until `flip` unfolds: a step only the
-    // recorded dialogue names.
+    // def flipped : Path[.A = Bool](ride(fun (X) { X }, flip, .0), .1) =
+    // here(.1) ; The ride is stuck on `flip` until `flip` unfolds: a step
+    // only the recorded dialogue names.
     let mut arena = CoreArena::new();
     let functions = crate::fixture::booleans(&mut arena);
     let (flow_type, element, [truth, falsity]) = flows_of_booleans(&mut arena, functions.ty);
@@ -6964,8 +6964,8 @@ fn a_ride_through_named_translators_crosses_with_their_unfoldings_308()
 {
     // def not : U (Bool -> F Bool) = \b. case b of { .0 -> .1 ; .1 -> .0 } ;
     // def both : Path[.A = #{Bool, Bool}](
-    //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), #{.0, .1}),
-    //   #{.1, .0}) = here(#{.1, .0}) ;
+    //   ride(fun (X) { X }, flowProduct(forward(not), forward(not)), #{.0,
+    // .1}),   #{.1, .0}) = here(#{.1, .0}) ;
     // def each : Path[.A = #{Bool, Bool}](
     //   ride(fun (X) { type(#{X, X}) }, forward(not), #{.0, .1}), #{.1, .0})
     //   = here(#{.1, .0}) ;
@@ -7079,8 +7079,8 @@ fn a_funext_through_a_named_equivalence_crosses_with_its_unfolding_1335()
 {
     // def not : U (+{(), ()} -> F +{(), ()}) ;
     // def negation : Path[.A = Type](+{(), ()}, +{(), ()}) = equiv(not, not) ;
-    // def stepped : Path[.A = U (…)](⟨tr(t. U (El t -> F El t), negation, not)⟩,
-    // not)   = funext(⟨tr(…)⟩, not) ;
+    // def stepped : Path[.A = U (…)](⟨tr(t. U (El t -> F El t), negation,
+    // not)⟩, not)   = funext(⟨tr(…)⟩, not) ;
     // The function carried along the named path runs through `negation`'s
     // definition; the trace the checker records for each input names that
     // unfolding, or the kernel's replay cannot reach the carried function.
@@ -7492,8 +7492,8 @@ fn an_ascription_solves_the_wildcard_its_type_holds_1979()
     use gandr_core_term::hole::NominationIndex;
 
     // def p       : Path[.A = Integer](0, 0) = here(0) ;
-    // def met     : Path[.A = Integer](0, 0) = (p : Path[.A = Integer](0, ?a)) ;
-    // def reached = (here(0) : Path[.A = Integer](0, ?b)) ;
+    // def met     : Path[.A = Integer](0, 0) = (p : Path[.A = Integer](0, ?a))
+    // ; def reached = (here(0) : Path[.A = Integer](0, ?b)) ;
     // The value bridge meets `?a` against `p`'s right end. `reached` has no
     // signature to meet its type at, so only reflexivity, meeting `?b`
     // against its point, solves `?b`.
@@ -8711,8 +8711,8 @@ fn every_checked_static_declaration_is_readmitted()
     // def Witness : Type = RawRelMonad (\X. F (El X * El X)) Integer Integer ;
     // def Elided : Type =
     //   U (Integer -> F (Integer * Integer))
-    //   * U (U (F (Integer * Integer)) -> U (Integer -> F (Integer * Integer)) -> F
-    //     (Integer * Integer)) ;
+    //   * U (U (F (Integer * Integer)) -> U (Integer -> F (Integer * Integer))
+    //     -> F (Integer * Integer)) ;
     // def unit_and_bind : El Witness ;
     //
     // The kernel is the oracle: the instance crosses as the same content
@@ -9253,7 +9253,8 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
         ),
         "a rule rebuilding its own call is the kernel's to refuse"
     );
-    // The same rule on a body that is no tree crosses and the kernel refuses it.
+    // The same rule on a body that is no tree crosses and the kernel refuses
+    // it.
     let untreed =
         declaration(At(1), Maybe::Present(unit_type), Maybe::Present(unit)).ruled(rules(own, &[x]));
     let (_, readmission) = judge_and_readmit(&mut arena, &[first(), untreed]);
@@ -9660,9 +9661,9 @@ fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
 {
     // def kept : U ((x : Integer) -> (y : Integer)
     //   -> (p : Path[.A = Integer](⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
-    //   -> F Path[.A = Integer](⟨via ?o2 x y⟩, ⟨via ?o3 x y⟩)) = thunk λx λy λp.
-    // return p ; def turned : … -> F Path[.A = Integer](⟨via ?o6 y x⟩, ⟨via ?o7
-    // y x⟩)) … ;
+    //   -> F Path[.A = Integer](⟨via ?o2 x y⟩, ⟨via ?o3 x y⟩)) = thunk λx λy
+    // λp. return p ; def turned : … -> F Path[.A = Integer](⟨via ?o6 y x⟩,
+    // ⟨via ?o7 y x⟩)) … ;
     let mut arena = CoreArena::new();
     let ([first, via], candidate) = via_an_omitted_model(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);
@@ -10203,7 +10204,8 @@ mod bridges;
 fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
 {
     // data Two : Type where { | Z : Two | S : (u : ()) --> Two } ;
-    // def f : U (Two -> F ()) = λt. case t { Z => return (), S(_) => return () } ;
+    // def f : U (Two -> F ()) = λt. case t { Z => return (), S(_) => return ()
+    // } ;
     use alloc::sync::Arc;
 
     use gandr_core_term::DataSignature;

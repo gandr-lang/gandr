@@ -1382,8 +1382,9 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
     use gandr_theory_levitation::SimplySorted;
     use gandr_theory_levitation::VariableIndex;
 
-    // The corpus's own blocks, read as every `theory` block is: the naturals and
-    // the λ-calculus are simply sorted, so both views serve their descriptions.
+    // The corpus's own blocks, read as every `theory` block is: the naturals
+    // and the λ-calculus are simply sorted, so both views serve their
+    // descriptions.
     let report = described(include_str!(
         "../../../../../corpus/model/desc/second-order-signatures.gandr"
     ));

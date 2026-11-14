@@ -547,7 +547,8 @@ fn a_path_call_omits_its_member_s_implicits_5520()
 {
     // A module path heads a call as a name does: `P.inv p`, `P.Q.flip p` and,
     // inside `P`, `Q.flip p` each leave out the member's three implicits, and
-    // a hole names each. `P.plain 3` calls a member with no implicit, as before.
+    // a hole names each. `P.plain 3` calls a member with no implicit, as
+    // before.
     let source = include_str!("tests/fixtures/a-path-call-omits-its-member-s-implicits-5520.gandr");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);

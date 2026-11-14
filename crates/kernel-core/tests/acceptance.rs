@@ -992,9 +992,9 @@ fn a_billion_occurrence_definition_admits_checked()
         "checked, not bypassed"
     );
 
-    // The same shape through the opt-in entry, so the row's memoized columns are
-    // asserted rather than merely predicted. The memoless columns are the closed
-    // form's value and are deliberately never run.
+    // The same shape through the opt-in entry, so the row's memoized columns
+    // are asserted rather than merely predicted. The memoless columns are
+    // the closed form's value and are deliberately never run.
     let (mut arena, declaration) = stage(|arena| shared_composite(arena, CAPABILITY_DEPTH));
     let mut live: DefaultMemo = DefaultMemo::new();
     let (verdict, census) = check_with(&mut arena, &declaration, &mut live);

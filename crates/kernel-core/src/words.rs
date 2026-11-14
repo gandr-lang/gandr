@@ -1579,8 +1579,8 @@ where
     let selector = *fixed.get(over.0)?;
     let count = fixed.len();
     if let Some(&Value::Returned(call)) = arena.value(selector) {
-        // `x ← c; tr(y. Path[.A = C](fixed, ⟨f … x … y …⟩), letter, here(fixed))`:
-        // `x` one binder in, `y` two.
+        // `x ← c; tr(y. Path[.A = C](fixed, ⟨f … x … y …⟩), letter,
+        // here(fixed))`: `x` one binder in, `y` two.
         let two = BinderDepth::from(2_u32);
         let one = BinderDepth::from(1_u32);
         let named = arena.value_constant(function);

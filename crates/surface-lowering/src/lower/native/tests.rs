@@ -4022,7 +4022,8 @@ fn a_nested_match_records_its_cover_5103()
         ],
         "one split for each switch, inner first, each over its family's two constructors"
     );
-    // Mint the same steps again in order, leaving `Some` out of `Maybe`'s split.
+    // Mint the same steps again in order, leaving `Some` out of `Maybe`'s
+    // split.
     let mut dropped = Cover::new();
     for (_id, step) in cover.steps() {
         let step = match *step {

@@ -1202,7 +1202,8 @@ where
                     ref results,
                     ref effects,
                 }) => {
-                    // Each result stands under the binders of the results before it.
+                    // Each result stands under the binders of the results
+                    // before it.
                     let mut at = reach;
                     for &result in results {
                         pending.push((AnyNode::ValueType(result), at));

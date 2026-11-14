@@ -751,7 +751,8 @@ impl StagedMarks
         let mut found: usize = 0;
         for &held in &self.marks {
             if held.clamped_into(ArenaWatermark::default(), mark) != held {
-                // At most marks.len() distinct entries contribute to this count.
+                // At most marks.len() distinct entries contribute to this
+                // count.
                 found = usize::from(arith::add(
                     arith::Int::from(found),
                     arith::Int::from(1_usize),

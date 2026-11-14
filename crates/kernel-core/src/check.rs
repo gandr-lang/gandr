@@ -4793,9 +4793,11 @@ where
                 {
                     let (mode, domain, left, right) =
                         crate::element_identity::related_parts(arena, expected)?;
-                    // The decode of a returned code is read to the type the code
-                    // quotes, as an introduction form reads it: the identity at
-                    // `El(⟨R a b⟩)` is the identity at the type `R a b` returns.
+                    // The decode of a returned code is read to the type the
+                    // code quotes, as an introduction form
+                    // reads it: the identity at
+                    // `El(⟨R a b⟩)` is the identity at the type `R a b`
+                    // returns.
                     let domain = read_returned_decode(arena, judgement, domain);
                     if mode == crate::identity_recursion::Mode::Bridge {
                         goal = Goal::CheckValue(
@@ -4811,11 +4813,13 @@ where
                         continue 'expand;
                     }
                     // A path whose one endpoint spells a looped point and whose
-                    // other converts with it is those words: the value checks at
-                    // the words, and the path then converts with them. A path
+                    // other converts with it is those words: the value checks
+                    // at the words, and the path then
+                    // converts with them. A path
                     // whose endpoints both compute the point without spelling
-                    // it, `Path[.A = Circle](mul(Base, Base), mul(Base, Base))`,
-                    // checks at the words of the one type of words over its
+                    // it, `Path[.A = Circle](mul(Base, Base), mul(Base,
+                    // Base))`, checks at the words of the
+                    // one type of words over its
                     // sort, and converts with the path at that point, which
                     // pairs each endpoint with the point (#485).
                     let spelled = |sides| judgement.presentations.words(arena, domain, sides);
@@ -6448,8 +6452,9 @@ where
                     else {
                         return Err(KernelError::ArenaFault);
                     };
-                    // Replay mutates the arena; retain only the evidence across that borrow.
-                    // A translator may name what the environment admitted
+                    // Replay mutates the arena; retain only the evidence across
+                    // that borrow. A translator may name
+                    // what the environment admitted
                     // before it, so both round trips unfold its definitions.
                     let evidence = alloc::sync::Arc::clone(evidence);
                     let unfoldings = admitted_unfoldings(judgement);

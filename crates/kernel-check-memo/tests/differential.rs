@@ -1534,11 +1534,12 @@ mod tests
             let arena = shared_composite(depth)?;
             let occurrences = occurrence_count(depth)?;
             let distinct = distinct_content_count(depth)?;
-            // The memoized walk issues `2d + 1` goals per plane — the root plus two
-            // per pair expansion — of which `d + 1` miss and `d` are served. A hit
-            // at an interior node prunes that node's whole subtree, which is why
-            // the served count is linear in the depth rather than in the
-            // occurrence count.
+            // The memoized walk issues `2d + 1` goals per plane — the root plus
+            // two per pair expansion — of which `d + 1` miss and
+            // `d` are served. A hit at an interior node prunes that
+            // node's whole subtree, which is why the served count
+            // is linear in the depth rather than in the occurrence
+            // count.
             let served = served_count(depth);
             let goals = goal_count(depth)?;
 

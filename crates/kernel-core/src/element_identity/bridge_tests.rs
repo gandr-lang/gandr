@@ -924,8 +924,8 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
     let identified = crate::replay::Unfoldings::default().identifying(environment.entries());
 
     // In the family of paths back to `a`, `(y : A, z : Path[.A = A](a, y)) =>
-    // Path[.A = A](y, a)`, every fibre is the relation's, the unit type: along the
-    // evidence the transport returns the unit.
+    // Path[.A = A](y, a)`, every fibre is the relation's, the unit type: along
+    // the evidence the transport returns the unit.
     let mut staging = environment.stage();
     let arena = staging.arena();
     let sealed = arena.value_type_abstract(atom);

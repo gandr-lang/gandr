@@ -834,8 +834,8 @@ fn a_deep_computation_evaluates_inside_a_small_stack()
     let evaluated = std::thread::Builder::new()
         .stack_size(SMALL_STACK_BYTES)
         .spawn(|| {
-            // A left-nested chain of binds, each of which must run before the one
-            // above it.
+            // A left-nested chain of binds, each of which must run before the
+            // one above it.
             let (core, sequenced) = unshared_bind_chain();
             let (domain, result) = evaluated_computation(&core, sequenced, ample());
 

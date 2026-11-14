@@ -4591,14 +4591,15 @@ fn two_transports_along_a_held_call_compare_motives_written_apart_by_their_call_
 #[test]
 fn codes_over_held_values_emit_one_shared_comparison_4005()
 {
-    // #4005: `λg. λp. return thunk(λq. return g) to f. tr(y. Path[.A = Unit](⟨force
-    // f ()⟩, y), p, ())` against the same with the lambda's body written `return
-    // g to t. return t`. The two bodies differ as written, so the two motives
-    // are α-equal only over the pair of thunks. The machine reads that pair
-    // through to `return g` on both sides and emits the motives as one shared
-    // comparison, never the forced premises, and the kernel's replay closes
-    // it on its own terms. A thunk returning `p` against one returning `g`
-    // refutes the premise, and the motives decline rather than refute.
+    // #4005: `λg. λp. return thunk(λq. return g) to f. tr(y. Path[.A =
+    // Unit](⟨force f ()⟩, y), p, ())` against the same with the lambda's
+    // body written `return g to t. return t`. The two bodies differ as
+    // written, so the two motives are α-equal only over the pair of thunks.
+    // The machine reads that pair through to `return g` on both sides and
+    // emits the motives as one shared comparison, never the forced
+    // premises, and the kernel's replay closes it on its own terms. A thunk
+    // returning `p` against one returning `g` refutes the premise, and the
+    // motives decline rather than refute.
     let build = || {
         let mut core = CoreArena::new();
         let unit_type = core.value_type_unit();
@@ -4829,13 +4830,13 @@ fn a_returning_call_holds_where_its_continuation_passes_it_on_3824()
 fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_4011()
 {
     // Under rigid `x`, `g`, `h` and `q` at levels 0 to 3, `m` the motive
-    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
-    // t. tr(m, h, t)`, the composite's body against `a ↦ G(F(a))`'s at `q
-    // then g` and `r then h` (#4011). The bound transport is stuck on `g` and
-    // returns, so the bind is its continuation at its endpoint, on either
-    // side and under either endpoint reading. Against the transport, both
-    // sides read as binds over the stuck transport (#4025). Against `h`
-    // called at the endpoint, the bind holds by a recorded decision.
+    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g,
+    // q) to t. tr(m, h, t)`, the composite's body against `a ↦ G(F(a))`'s
+    // at `q then g` and `r then h` (#4011). The bound transport is stuck on
+    // `g` and returns, so the bind is its continuation at its endpoint, on
+    // either side and under either endpoint reading. Against the transport,
+    // both sides read as binds over the stuck transport (#4025). Against
+    // `h` called at the endpoint, the bind holds by a recorded decision.
     let mut core = CoreArena::new();
     let variable = |core: &mut CoreArena, index: u32| {
         core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
@@ -4963,10 +4964,10 @@ fn a_transport_stuck_on_a_path_holds_against_its_continuation_at_its_endpoint_40
 fn a_transport_on_a_returned_endpoint_refutes_a_bind_along_another_path_4025()
 {
     // Under rigid `x`, `g`, `h` and `q` at levels 0 to 3, `m` the motive
-    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g, q) to
-    // t. tr(m, g, t)`, #4011's pair with the continuation's path `h` swapped
-    // for `g` (#4025). The two transports run along different paths, so the
-    // pair is refuted, and the kernel replays the refutation.
+    // `t. Path[.A = Unit](x, t)`: `tr(m, h, ⟨tr(m, g, q)⟩)` against `tr(m, g,
+    // q) to t. tr(m, g, t)`, #4011's pair with the continuation's path `h`
+    // swapped for `g` (#4025). The two transports run along different
+    // paths, so the pair is refuted, and the kernel replays the refutation.
     let mut core = CoreArena::new();
     let variable = |core: &mut CoreArena, index: u32| {
         core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
@@ -5539,14 +5540,14 @@ fn two_held_transports_convert_by_their_computations()
 #[test]
 fn a_transport_of_a_call_s_result_unfolds_the_call_first_3806()
 {
-    // `⟨tr(y. Path[.A = Unit](y, y), R, R)⟩` against `⟨tr(y. Path[.A = Unit](y, y),
-    // R, ⟨ident(R)⟩)⟩` for the rigid path `R`. The kernel runs a returned
-    // operand before it reads the path, so it reads the right side as `ident(R)
-    // to x. tr(…, R, x)` and unfolds `ident` before it meets the transport.
-    // Held on its operand, the transport waits on `ident` in the machine as
-    // well, so the machine unfolds it first and the kernel replays the trace.
-    // Held on the path, the machine compared the transports first, and the
-    // kernel refused the trace.
+    // `⟨tr(y. Path[.A = Unit](y, y), R, R)⟩` against `⟨tr(y. Path[.A = Unit](y,
+    // y), R, ⟨ident(R)⟩)⟩` for the rigid path `R`. The kernel runs a
+    // returned operand before it reads the path, so it reads the right side
+    // as `ident(R) to x. tr(…, R, x)` and unfolds `ident` before it meets
+    // the transport. Held on its operand, the transport waits on `ident` in
+    // the machine as well, so the machine unfolds it first and the kernel
+    // replays the trace. Held on the path, the machine compared the
+    // transports first, and the kernel refused the trace.
     let mut core = CoreArena::new();
     let function = identity(&mut core);
     let unit_type = core.value_type_unit();

@@ -1825,7 +1825,8 @@ mod sweeps
                 else {
                     panic!("every corpus path is carried through the pipeline");
                 };
-                // An importer's text is its component's; the editor holds its own.
+                // An importer's text is its component's; the editor holds its
+                // own.
                 let own = <&str>::from(text)
                     .get(usize::from(base) ..)
                     .expect("a source's own text starts inside its unit's");
@@ -1880,7 +1881,8 @@ mod sweeps
         let (served, written) = session(&messages);
         assert_eq!(served, Served::Clean, "the session ends cleanly");
         // An unused binder's and an unused import's hints are the editor's own,
-        // read off the composition; the walk reports the model's diagnostics alone.
+        // read off the composition; the walk reports the model's diagnostics
+        // alone.
         let mut publications = BTreeMap::new();
         for message in &written {
             if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {

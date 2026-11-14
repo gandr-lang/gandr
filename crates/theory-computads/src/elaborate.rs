@@ -3238,7 +3238,8 @@ mod tests
     fn a_two_output_operation_elaborates_one_frame_with_two_continuations()
     {
         // `oper divmod : (m, n) --> (q, r)` with `rule : divmod(m, Zero) ==>
-        // (Zero, m)` and the tail call `rule : divmod(Succ(m), n) ==> divmod(m, n)`.
+        // (Zero, m)` and the tail call `rule : divmod(Succ(m), n) ==> divmod(m,
+        // n)`.
         let desc = nat_with([divmod_op()], [
             face(
                 FreeTerm::op("divmod", [FreeTerm::var("m"), FreeTerm::ctor("Zero", [])]),

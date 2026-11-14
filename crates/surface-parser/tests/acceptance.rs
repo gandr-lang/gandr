@@ -673,8 +673,8 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
         );
     }
     // A bare-sort side at item position is declined, not silently dropped. The
-    // sugar ladder's bare rungs stay available inside a `theory` block, where the
-    // member's sort hole is form-interior.
+    // sugar ladder's bare rungs stay available inside a `theory` block, where
+    // the member's sort hole is form-interior.
     for &src in &[
         "oper f : Nat --> Nat",
         "oper f : (a : A) --> Nat",
@@ -2129,11 +2129,11 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
 #[test]
 fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Error>>
 {
-    // The p99 of a corpus source's cold parse is fast. Every `parse` is stateless
-    // (no incremental reuse), so each call is a cold parse; per file we keep
-    // the MINIMUM over a few iterations — the minimum is the least-noise
-    // estimate of the true cost, so a loaded runner inflates individual
-    // samples but not this gate.
+    // The p99 of a corpus source's cold parse is fast. Every `parse` is
+    // stateless (no incremental reuse), so each call is a cold parse; per
+    // file we keep the MINIMUM over a few iterations — the minimum is the
+    // least-noise estimate of the true cost, so a loaded runner inflates
+    // individual samples but not this gate.
     //
     // The budget is profile-aware: a 1 ms p99 release cold-parse, enforced
     // under an optimized build (`not(debug_assertions)`), and under the

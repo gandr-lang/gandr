@@ -3814,9 +3814,9 @@ where
             Verdict::Synthesised { body, synthesised } => Some((synthesised.produced().id(), body)),
             Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => None,
         };
-        // A type operator — a definition whose type views as a static Pi — stays
-        // on the checker's side; a type the view refuses is not one, and its
-        // own erasure refuses it.
+        // A type operator — a definition whose type views as a static Pi —
+        // stays on the checker's side; a type the view refuses is not
+        // one, and its own erasure refuses it.
         match (definition, judged.verdict()) {
             (None, Verdict::Data) => {
                 let offer = match (
@@ -5806,8 +5806,9 @@ where
                     Err(unstaged) => {
                         // The block crosses whole or not at all: what staged is
                         // abandoned, latest first, and every member shares the
-                        // refusal, unless a native signature, a free model or an
-                        // assumption it waited on is admitted and the block staged
+                        // refusal, unless a native signature, a free model or
+                        // an assumption it waited on is
+                        // admitted and the block staged
                         // again past it.
                         for member in staged.into_iter().rev() {
                             environment.abandon(member.declaration);
@@ -5881,8 +5882,9 @@ where
                     .collect();
             },
             Err(error) => {
-                // A member's pair the kernel leaves undecided is answered by its
-                // second certificate, erased as that member staged.
+                // A member's pair the kernel leaves undecided is answered by
+                // its second certificate, erased as that member
+                // staged.
                 let next = usize::from(environment.entries().len());
                 let crossing = members
                     .iter()

@@ -260,8 +260,8 @@ fn mobility_is_decided_on_every_former()
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let opaque = arena.value_type_element(bound, Level::zero());
     // `Box (a : Type) = box (El a)` at 0, `Nat = zero | succ Nat` at 1,
-    // `Later = later (U (F String))` at 2, `Dependent = mk (a : Type, x : El a)`
-    // at 3, an unmarked abstract integer at 4 and a marked one at 5.
+    // `Later = later (U (F String))` at 2, `Dependent = mk (a : Type, x : El
+    // a)` at 3, an unmarked abstract integer at 4 and a marked one at 5.
     let boxes = Arc::new(DataSignature::new(vec![small], vec![vec![opaque]], small));
     let thunk_code = arena.value_quote(thunk);
     let boxed = arena.value_type_data(ConstantIndex::from(0_usize), vec![code]);

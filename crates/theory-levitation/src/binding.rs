@@ -473,7 +473,8 @@ impl<'signature, G> SimplySorted<'signature, G>
                         if usize::from(count) != operation.arity.inputs.len() {
                             return Err(BindingError::Arity(name.clone()));
                         }
-                        // The stack reverses traversal, not argument/port pairing.
+                        // The stack reverses traversal, not argument/port
+                        // pairing.
                         work.extend(
                             node.children()
                                 .zip(&operation.arity.inputs)

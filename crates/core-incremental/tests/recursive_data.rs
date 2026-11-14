@@ -157,7 +157,8 @@ fn program() -> Program
         arena.value_thunk(first)
     };
 
-    // double = fix rec. λx. case x of { zero ↦ zero; succ p ↦ succ (succ (rec p)) }
+    // double = fix rec. λx. case x of { zero ↦ zero; succ p ↦ succ (succ (rec
+    // p)) }
     let nat_returner = arena.comp_type_returner(nat);
     let doubling_type = {
         let arrow = arena.comp_type_arrow(nat, nat_returner);

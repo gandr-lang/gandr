@@ -3105,9 +3105,9 @@ impl Lowering<'_>
             },
             WorldForm::Leta { value, body, .. } => {
                 let (bound, slot) = self.bind(scope, Binding::Producer);
-                // reason: as a hold's, a leta's body falls through to the loaded
-                // continuation, the body's return when that is where the
-                // continuation delivers.
+                // reason: as a hold's, a leta's body falls through to the
+                // loaded continuation, the body's return when
+                // that is where the continuation delivers.
                 let falls = match self.returns_through(continuation, scope)? {
                     Some(_) => Binding::Returning,
                     None => Binding::FallThrough,

@@ -811,7 +811,8 @@ fn funext_computes_and_refuses_wrong_components()
 {
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
-    // Check the case-inlined fixture against actual two-application composition.
+    // Check the case-inlined fixture against actual two-application
+    // composition.
     for argument in [boolean.truth, boolean.falsity] {
         let first = application(&mut arena, boolean.not, argument);
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));

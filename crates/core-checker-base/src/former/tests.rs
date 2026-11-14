@@ -330,8 +330,8 @@ fn a_field_that_reads_a_lambda_field_reads_its_thunk_5374()
 #[test]
 fn a_refused_field_keeps_the_binders_it_was_formed_under_4028()
 {
-    // `Bad(p : Integer) { b : (x : Integer, y : Path[.A = Integer](x, ())) }`: the
-    // second field's endpoint `()` is no integer.
+    // `Bad(p : Integer) { b : (x : Integer, y : Path[.A = Integer](x, ())) }`:
+    // the second field's endpoint `()` is no integer.
     let mut arena = CoreArena::new();
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
     let integer = arena.value_type_base(BaseType::Integer);
@@ -345,8 +345,8 @@ fn a_refused_field_keeps_the_binders_it_was_formed_under_4028()
         vec![vec![integer, misread]],
         kind,
     ));
-    // `Marked : Integer -> Type { mark : (u : Unit, v : Unit) --> Marked(()) }`:
-    // the stated index `()` is no integer.
+    // `Marked : Integer -> Type { mark : (u : Unit, v : Unit) --> Marked(())
+    // }`: the stated index `()` is no integer.
     let marked = ConstantIndex::from(0_usize);
     let stated = Arc::new(
         DataSignature::new(vec![], vec![vec![unit_type, unit_type]], kind)

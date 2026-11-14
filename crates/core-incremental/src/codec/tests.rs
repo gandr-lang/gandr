@@ -977,7 +977,8 @@ fn session_nodes_persist_their_protocol_and_children()
     let index = NodeIndex::from;
     let state = ProtocolState::from;
     let label = |text: &str| gandr_core_term::FieldLabel::from(alloc::string::String::from(text));
-    // ?A. mu t. +{ report : !B. &{ next : t, retire : end }, handoff : !A. end }
+    // ?A. mu t. +{ report : !B. &{ next : t, retire : end }, handoff : !A. end
+    // }
     let protocol = Protocol::new(
         vec![
             ProtocolSyntax::Receive {

@@ -303,7 +303,8 @@ fn the_fixture_round_trips_through_the_block_store()
         "alpha has none"
     );
 
-    // The provenance index: who named a digest, in which task, attempt and role.
+    // The provenance index: who named a digest, in which task, attempt and
+    // role.
     let subject_digest = attribute(&reopened, &Name("subject_digest"));
     let naming_subject = arrow(&reopened, &Name("naming_subject"));
     let naming_move = arrow(&reopened, &Name("naming_move"));
@@ -329,7 +330,8 @@ fn the_fixture_round_trips_through_the_block_store()
     assert_eq!(provenance.first().map(|row| row.0), Some(alpha));
     assert_eq!(provenance.last().map(|row| row.0), Some(beta));
 
-    // The reopened counter continues, and an unchanged store recommits to its root.
+    // The reopened counter continues, and an unchanged store recommits to its
+    // root.
     let again = reopened
         .commit(&mut blocks)
         .expect("an unchanged store recommits");

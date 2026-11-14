@@ -10792,8 +10792,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(synthesised),
             ) => {
-                // Every binder stays open until the type has left them all, so a
-                // refusal attributes each to this frame.
+                // Every binder stays open until the type has left them all, so
+                // a refusal attributes each to this frame.
                 let mut lowered = synthesised;
                 for _ in 0_usize .. usize::from(arity) {
                     let Maybe::Present(outer) =
@@ -11099,8 +11099,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::CompType(synthesised),
             ) => self.bound_all(at, (bound, arity, body), direction, synthesised),
             (Frame::BindAllBody { at, arity, bound }, Produced::CompType(synthesised)) => {
-                // Every binder stays open until the type has left them all, so a
-                // refusal attributes each to this frame.
+                // Every binder stays open until the type has left them all, so
+                // a refusal attributes each to this frame.
                 let mut lowered = synthesised;
                 for _ in 0_usize .. usize::from(arity) {
                     let Maybe::Present(outer) =

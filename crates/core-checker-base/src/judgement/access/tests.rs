@@ -649,8 +649,8 @@ fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
         [Ok(()), Ok(())],
         "two shared views of one held value nest, and the value stays readable"
     );
-    // hold c = 0; access shared c as v { (v,).0 }; access c as w { resume(w, 0) }
-    // unwind {}; (c,).0
+    // hold c = 0; access shared c as v { (v,).0 }; access c as w { resume(w, 0)
+    // } unwind {}; (c,).0
     let (_viewed, viewed) = copied(&mut arena, l0());
     let first = shared(&mut arena, l0(), viewed);
     let resumed = resume(&mut arena, l0(), zero);
@@ -664,7 +664,8 @@ fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
         [Ok(()), Ok(())],
         "a shared access ends with its body, so an exclusive one follows it"
     );
-    // hold c = 0; access shared c as v { access c as w { resume(w, 0) } unwind {} }
+    // hold c = 0; access shared c as v { access c as w { resume(w, 0) } unwind
+    // {} }
     let exclusive = access(&mut arena, l1(), resumed, unwind);
     let frozen = shared(&mut arena, l0(), exclusive);
     let frozen = hold(&mut arena, frozen);
@@ -684,7 +685,8 @@ fn a_shared_view_reads_beside_its_held_value_and_ends_with_its_body()
         [Err(at(inside, AccessDefect::Lent)); 2],
         "nothing is lent beside an exclusive access"
     );
-    // hold c = 0; access shared c as v { resume(v, 0) }, and the same with abort(v)
+    // hold c = 0; access shared c as v { resume(v, 0) }, and the same with
+    // abort(v)
     let aborted = abort(&mut arena, l0());
     for eliminator in [resumed, aborted] {
         let read_only = shared(&mut arena, l0(), eliminator);
@@ -810,7 +812,8 @@ fn a_place_of_a_held_list_is_lent_at_its_index()
     let integers = integers(&mut arena);
     let zero = arena.value_literal(integer_literal());
     let unwind = done(&mut arena);
-    // hold xs = [0]; access xs.#[0] as v { let x = (v,).0; resume(v, x) } unwind {}
+    // hold xs = [0]; access xs.#[0] as v { let x = (v,).0; resume(v, x) }
+    // unwind {}
     let (_viewed, read) = copied(&mut arena, l0());
     let copy = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let written = resume(&mut arena, l0(), copy);
@@ -1011,9 +1014,9 @@ fn a_view_kept_in_a_region_lives_as_long_as_its_scope()
         "a value kept in a region stays kept at the type that keeps it"
     );
     // scope Proc (c) { y <- (return thunk { hold s = 0; access shared s as w {
-    // x <- …; force x } } : F (U F Integer)); () }, x kept in the scope's region,
-    // the first: a hold stands in a scope only where its type is pure, inside a
-    // thunk.
+    // x <- …; force x } } : F (U F Integer)); () }, x kept in the scope's
+    // region, the first: a hold stands in a scope only where its type is
+    // pure, inside a thunk.
     let scope_kept = arena.value_type_kept(suspended, Region::Scoped(RegionDepth::from(1_u32)));
     let scope_keeps = arena.comp_type_returner(scope_kept);
     let scope_bind = arena.computation_ascribe(suspend, scope_keeps);
@@ -1288,8 +1291,8 @@ fn a_case_s_arms_each_take_a_hold_from_where_the_case_found_it_1488()
         );
     }
     // A case on a sum ends each arm but the last as a list's does.
-    // hold c = 0; b <- (return inl () : F (1 + 1)); case b { inl _ => …, inr _ => …
-    // }
+    // hold c = 0; b <- (return inl () : F (1 + 1)); case b { inl _ => …, inr _
+    // => … }
     let unit = arena.value_type_unit();
     let sum = arena.value_type_sum(&[unit, unit]);
     let sums = arena.comp_type_returner(sum);

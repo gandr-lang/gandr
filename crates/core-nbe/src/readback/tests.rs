@@ -3315,7 +3315,8 @@ fn a_spent_call_left_unrun_is_reported_held()
     use gandr_core_term::CertificateEquality;
     use gandr_core_term::equal_certificate_syntax;
 
-    // `id := thunk (λx. return x)`, read alone and as `thunk (λy. force id · y)`.
+    // `id := thunk (λx. return x)`, read alone and as `thunk (λy. force id ·
+    // y)`.
     let mut core = CoreArena::new();
     let id = ConstantIndex::from(0_usize);
     let bound = core.value_variable(Zone::Intuitionistic, innermost());

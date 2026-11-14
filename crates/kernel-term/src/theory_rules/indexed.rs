@@ -753,8 +753,9 @@ impl<'arena> Reader<'arena>
                     }
                     let count = usize::from(count);
                     let base = stack.len().checked_sub(count)?;
-                    // The arguments stand on the stack's top, the first argument
-                    // last pushed; the fresh implicit indices are consecutive
+                    // The arguments stand on the stack's top, the first
+                    // argument last pushed; the fresh
+                    // implicit indices are consecutive
                     // nodes.
                     let at = |place: usize| -> Option<&Sorted> {
                         stack.get(

@@ -1420,9 +1420,9 @@ mod tests
     #[test]
     fn a_redex_under_two_frames_whiskers_outermost_first()
     {
-        // `node : p(n) ==> (m); node : Succ(m) --> (s); node : add(w, s) --> (z);`
-        // — the redex sits in the second argument of `add`, inside the first
-        // argument of `Succ`.
+        // `node : p(n) ==> (m); node : Succ(m) --> (s); node : add(w, s) -->
+        // (z);` — the redex sits in the second argument of `add`,
+        // inside the first argument of `Succ`.
         let body = CircuitBody::new(
             [
                 CircuitNode::Redex(CircuitRedex::new(

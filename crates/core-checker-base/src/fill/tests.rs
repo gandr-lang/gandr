@@ -198,8 +198,8 @@ fn a_free_cell_fills_its_square_by_induction()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
-    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1, 1)](here(1),
-    // p)`.
+    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1,
+    // 1)](here(1), p)`.
     let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
     let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -258,8 +258,8 @@ fn a_cell_of_dimension_one_fills_its_square_by_induction()
 {
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
-    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1, 1)](here(1),
-    // p)`.
+    // `p : Path[.A = ℤ](1, 1)`, then `α : Path[.A = Path[.A = ℤ](1,
+    // 1)](here(1), p)`.
     let moving = variable(&mut arena, DeBruijnIndex::from(0_u32));
     let lifted = arena.value_type_path(integers.cell, integers.reflexive, moving);
     let alpha = variable(&mut arena, DeBruijnIndex::from(0_u32));
@@ -342,7 +342,8 @@ fn vertex_paths_fill_their_square_by_induction()
     let mut arena = CoreArena::new();
     let integers = integers(&mut arena);
     let index = |arena: &mut CoreArena, at: u32| variable(arena, DeBruijnIndex::from(at));
-    // `x⁺ : ℤ`, `x→ : Path[.A = ℤ](1, x⁺)`, `y⁺ : ℤ`, `y→ : Path[.A = ℤ](1, y⁺)`.
+    // `x⁺ : ℤ`, `x→ : Path[.A = ℤ](1, x⁺)`, `y⁺ : ℤ`, `y→ : Path[.A = ℤ](1,
+    // y⁺)`.
     let right = index(&mut arena, 0);
     let vertex = arena.value_type_path(integers.carrier, integers.one, right);
     // `c⁺ : Path[.A = ℤ](x⁺, y⁺)`.

@@ -1915,7 +1915,8 @@ mod tests
         assert!(!anodized::types::Spec::predicate(&forged));
 
         let mut image = manifest.encode().as_ref().to_vec();
-        // The v1 layout names the index base at byte 96 and ends with the count.
+        // The v1 layout names the index base at byte 96 and ends with the
+        // count.
         *image.get_mut(96_usize).expect("the index-base field") = INDEX_BASE_CHUNK_LOCAL;
         let count_start = image
             .len()

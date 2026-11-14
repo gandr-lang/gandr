@@ -1373,8 +1373,8 @@ mod tests
         let span = SurfaceSpan::new(0_usize.into(), 1_usize.into());
         let restricted = |body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs("a", body)]);
         let par = |p: FreeTerm, q: FreeTerm| FreeTerm::op("par", [p, q]);
-        // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where { | a # q }`: `q`
-        // moves under `a`, `p` stays under it.
+        // `par(nu(bind a . p), q) ==> nu(bind a . par(p, q)) where { | a # q
+        // }`: `q` moves under `a`, `p` stays under it.
         let scope = RuleFace::new(
             par(restricted(FreeTerm::var("p")), FreeTerm::var("q")),
             restricted(par(FreeTerm::var("p"), FreeTerm::var("q"))),
