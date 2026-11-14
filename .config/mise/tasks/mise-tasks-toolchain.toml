@@ -116,11 +116,15 @@ elif [ -f Cargo.toml ]; then
   perl -0777 -pi -e 's{(^\[workspace\.dependencies\.clippy_utils\]\n)(.*?)(?=^\[|\z)}{my ($head, $body) = ($1, $2); $body =~ s/^tag = ".*"$/tag = "rust-$ENV{WORKFLOW_STABLE}"/m; "$head$body"}gmse' Cargo.toml
 fi
 perl -pi -e 's/^channel = .*/channel = "$ENV{WORKFLOW_CHANNEL}"/' rust-toolchain.toml
+# mise reads the rust pin from rust-toolchain.toml and holds it in mise.lock,
+# and CI installs it with --locked. The install writes the entry of the new
+# pin, so the lock moves with the pin (#7541).
+mise install rust
 if [ -f .github/docker/rust-clippy.bash ]; then
   perl -0777 -pi -e 's{^# rust-clippy.s \S+, the commit that set \S+\.\nrev=[0-9a-f]{40}$}{# rust-clippy\x27s $ENV{CLIPPY_TAG}, the commit that set $ENV{WORKFLOW_CHANNEL}.\nrev=$ENV{CLIPPY_REV}}m or die "rust-clippy.bash carries no rust-clippy pin\n"' .github/docker/rust-clippy.bash
 fi
 
-echo "pinned channel $channel; workflow revision ${revision:-local-library}; rust-clippy $clippy_source at $clippy_rev"
+echo "pinned channel $channel, and its entry in mise.lock; workflow revision ${revision:-local-library}; rust-clippy $clippy_source at $clippy_rev"
 echo 'clear ~/.dylint_drivers; each worktree cleans its target at its first gate under the new pin (target:pin); then rerun the full gate wall'
 echo 'external consumers: mise run check'
 {% endraw %}
