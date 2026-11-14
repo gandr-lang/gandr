@@ -62,6 +62,7 @@ digraph crates {
     label = "storage";
     "storage-artifact";
     "storage-chunker";
+    "storage-io";
     "storage-records";
     "storage-schema";
     "storage-store";

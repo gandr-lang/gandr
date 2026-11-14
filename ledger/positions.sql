@@ -218,6 +218,13 @@ INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','BytePosition'
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','RecordCount','','none',NULL,'A count of records.');
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','RecordPosition','','local',NULL,'A position in one record order while the chunker cuts it; a chunk is named by its digest.');
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','TokenCount','','none',NULL,'A count of tokens.');
+INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Count','','none',NULL,'A count of entries or of completions.');
+INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Key','','local',NULL,'A submission''s key, which only its ring carries back; no key, name or byte form writes it.');
+INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Moved','','none',NULL,'A count of bytes.');
+INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Position','','local',NULL,'A byte position in one file that the caller names; no key, name or byte form of this crate writes it.');
+INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Errno','','none',NULL,'An error number.');
+INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Number','','none',NULL,'A number of a system call.');
+INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Word','','none',NULL,'A carrier of a machine word of a system call.');
 INSERT INTO position VALUES('crates/storage-records/src/boundary.rs','BoundaryMaskBits','','none',NULL,'A count of the bits of a mask.');
 INSERT INTO position VALUES('crates/storage-records/src/boundary.rs','BoundaryRecordCap','','none',NULL,'A cap on records.');
 INSERT INTO position VALUES('crates/storage-records/src/bytes.rs','NodeHash','','none',NULL,'A digest of a node.');

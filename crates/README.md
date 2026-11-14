@@ -53,6 +53,7 @@ crates/
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
+├── storage-io/                    the IO layer: one io_uring for each worker on the kernel's own system calls
 ├── storage-records/               the authenticated ordered-record plane
 ├── storage-schema/                the record plane as C-sets with checked equations
 ├── storage-store/                 one store over both planes and named roots
