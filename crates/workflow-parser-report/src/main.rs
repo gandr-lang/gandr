@@ -4,6 +4,10 @@
 //! Run with `mise run parser:report`, which builds it under the release
 //! profile and writes `target/parser-report.md`.
 //!
+//! # Boundaries
+//!
+//! The report prints the rows of each axis to its standard output:
+//!
 //! | Axis | Measure | Read from |
 //! | ---- | ------- | --------- |
 //! | latency | each keystroke's time from its change to its settled answer, p50 and p99 | a language-server session per [`SAMPLE`] source, one line typed back a character per change |
@@ -12,6 +16,8 @@
 //! | ambiguity | each decision's settling stage, the candidates it read, and the windows and window tokens it molded | the molder's [`DecisionCensus`] over every corpus source |
 //! | incremental | per edit, the tokens re-labelled and the forms re-molded against what the edit touches | a form store per [`SAMPLE`] source, through the latency workload's keystrokes and the edit sweep's form edits |
 //! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
+//!
+//! # Dependencies
 //!
 //! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
 //! `gandr-workflow-sweep`. The latency workload's client is the driver's
@@ -44,6 +50,7 @@ use gandr_surface_parser::UnitSeam;
 use gandr_surface_parser::label;
 use gandr_surface_parser::parse;
 use gandr_surface_session::FormStore;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_workflow_ledger_tasks::LedgerRun;
@@ -605,7 +612,7 @@ fn keystrokes(text: SourceText<'_>) -> Maybe<Keystrokes, Untyped>
     let found = lines.iter().skip(middle).find_map(|&(at, line)| {
         let content = line.trim_end_matches(['\n', '\r']);
         let code = content.trim_start();
-        let typed = code.chars().count() >= TYPED && !code.starts_with("//");
+        let typed = code.chars().take(TYPED).count() == TYPED && !code.starts_with("//");
         typed.then(|| {
             let start = at.saturating_add(content.len().saturating_sub(code.len()));
             (start, start.saturating_add(code.len()))
@@ -905,12 +912,12 @@ impl Typing
     /// trivial.
     const fn and(
         self,
-        elsewhere: usize,
+        elsewhere: Tally,
     ) -> Self
     {
         Self {
             keystrokes: self.keystrokes.and(Tally(1)),
-            elsewhere: self.elsewhere.and(Tally(elsewhere)),
+            elsewhere: self.elsewhere.and(elsewhere),
         }
     }
 }
@@ -922,19 +929,20 @@ impl Typing
 /// trivial.
 fn owed(
     pbg: &Pbg,
-    revision: &str,
-    typed: core::ops::Range<usize>,
-) -> Result<usize, Failure>
+    revision: SourceText<'_>,
+    typed: core::ops::Range<ByteOffset>,
+) -> Result<Tally, Failure>
 {
-    let parsed = parse(pbg, SourceText::from(revision))?;
-    Ok(parsed
-        .obligations()
-        .iter()
-        .filter(|obligation| {
-            usize::from(obligation.span.end()) < typed.start
-                || usize::from(obligation.span.start()) > typed.end
-        })
-        .count())
+    let parsed = parse(pbg, revision)?;
+    Ok(Tally(
+        parsed
+            .obligations()
+            .iter()
+            .filter(|obligation| {
+                obligation.span.end() < typed.start || obligation.span.start() > typed.end
+            })
+            .count(),
+    ))
 }
 
 /// The typing workload: every [`STRIDE`]th indented code line of each
@@ -951,6 +959,8 @@ fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut indented = Typing::default();
     let mut zero = Typing::default();
+    // Each revision is written into this one buffer.
+    let mut revision = String::new();
     for relative in SAMPLE {
         let text = std::fs::read_to_string(root.join(relative))?;
         // Each indented code line: its start, its code's start and its end.
@@ -979,26 +989,34 @@ fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
             else {
                 continue;
             };
+            let first = ByteOffset::from(start);
             for (offset, character) in code.char_indices() {
                 let length = offset.saturating_add(character.len_utf8());
                 let typed = code.get(.. length).unwrap_or_default();
+                revision.clear();
+                revision.extend([before, spaces, typed, after]);
                 indented = indented.and(owed(
                     pbg,
-                    &format!("{before}{spaces}{typed}{after}"),
-                    start .. code_start.saturating_add(length),
+                    SourceText::from(revision.as_str()),
+                    first .. ByteOffset::from(code_start.saturating_add(length)),
                 )?);
+                revision.clear();
+                revision.extend([before, typed, after]);
                 zero = zero.and(owed(
                     pbg,
-                    &format!("{before}{typed}{after}"),
-                    start .. start.saturating_add(length),
+                    SourceText::from(revision.as_str()),
+                    first .. ByteOffset::from(start.saturating_add(length)),
                 )?);
             }
             for width in 1 ..= spaces.len() {
                 let spaced = spaces.get(.. width).unwrap_or_default();
+                revision.clear();
+                revision.extend([before, spaced, code, after]);
                 zero = zero.and(owed(
                     pbg,
-                    &format!("{before}{spaced}{code}{after}"),
-                    start .. start.saturating_add(width).saturating_add(code.len()),
+                    SourceText::from(revision.as_str()),
+                    first
+                        .. ByteOffset::from(start.saturating_add(width).saturating_add(code.len())),
                 )?);
             }
         }

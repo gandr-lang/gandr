@@ -1,24 +1,6 @@
 //! The `gandr` series of the benchmark report: fixed workloads run once each
-//! under the hotpath profiler.
-//!
-//! | Workload | What it runs | Measured functions |
-//! | -------- | ------------ | ------------------ |
-//! | `closure check` | `gandr check` of the largest model source and its imports | the checker's per-declaration judgement and the kernel bridge's readmission |
-//! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
-//! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
-//! | `component walk` | `gandr check` of a directory of twenty sources in sixteen components, each laid after the prelude | the prelude's lowering and judgement, once per walk, and each component's own |
-//! | `component floor` | `gandr check` of a directory of sixty-four components of one definition each, every one laid after the prelude | what each component pays to reuse the prelude's judgement: its lowering resumed onto the prelude's (`lower_onto_closure`), its program continued from the prelude's (`Program::after`) and its readmission resumed from the prelude's record (`Crossed::resume`) |
-//! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
-//! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
-//! | `many outputs` | `gandr check` of an operation of two outputs defined by rules, and of a definition that binds both outputs of its call and runs | the operation's lowering, the kernel's link of its rules to its body, and the run of the call, which return both outputs with no product |
-//! | `winding lengths` | `gandr check` of the loop words of 100, 10³ and 10⁵ letters, each wound and forced by a run, as cctt's `tests/bench/s1.cctt` winds them | the run machine's reduction of each word, and the checker's and the kernel's judgement of the source |
-//! | `negation lengths` | `gandr check` of the transport of `true` along composites of 101, 10³ + 1 and 10⁵ + 1 negation paths, as cctt's `tests/bench/negPath.cctt` transports it | the run machine's application of each path's map, and the checker's and the kernel's judgement of the source |
-//! | `lsp first keystroke` | a language-server session that opens the same source, waits for the open's judgement, then erases one line; only the change is timed | the server's first recheck, which also builds the closure's lowering and judgement once |
-//! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
-//! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
-//! | `lsp comment edit` | a session that opens the group laws, waits for the open's judgement, then adds a comment line before their first, outside the rule block; only the change is timed | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
-//! | `distinct definitions, serial` | `gandr check` of two sources of 5,000 distinct plain definitions each, on one thread | each declaration's check and commit, the cost that the wider run must match |
-//! | `distinct definitions, two jobs` | the same check at two jobs, or at the series' width when wider, under the policy that the driver installs for the width | each commit beside an open check: a copy of what an open check shares shows here as bytes past the serial run's |
+//! under the hotpath profiler. Each workload's function states what it runs
+//! and what its block measures, and `main` runs them in order.
 //!
 //! Each language-server workload serves its session on the bench's thread,
 //! and a client on a thread of its own speaks to it over pipes
@@ -30,6 +12,27 @@
 //! `cargo bench` line runs them on `n` threads, as the scaling account does at
 //! each width of its curve (`mise run bench:scaling`).
 //!
+//! # Items
+//!
+//! | Block | Workload |
+//! | ----- | -------- |
+//! | `closure check` | [`closure_check`] |
+//! | `stage readmission` | [`stage_readmission`] |
+//! | `rule completion` | [`rule_completion`] |
+//! | `component walk` | [`component_walk`] |
+//! | `component floor` | [`component_floor`] |
+//! | `prelude resolve` | [`prelude_resolve`] |
+//! | `many candidates` | [`many_candidates`] |
+//! | `many outputs` | [`many_outputs`] |
+//! | `winding lengths` | [`winding_lengths`] |
+//! | `negation lengths` | [`negation_lengths`] |
+//! | `lsp first keystroke`, `lsp keystroke` | [`lsp_keystrokes`] |
+//! | `lsp burst` | [`lsp_burst`] |
+//! | `lsp comment edit` | [`lsp_comment_edit`] |
+//! | `distinct definitions, serial`, `distinct definitions, two jobs` | [`distinct_definitions`] |
+//!
+//! # Dependencies
+//!
 //! Built with `--features hotpath`, which turns on the profiler in every
 //! measured crate, counts allocations through the profiler's global
 //! allocator, and links the upload client. The run prints the report on exit;
@@ -39,21 +42,13 @@
 //! changed. The `gandr-bytes` run measures allocations in bytes, and Cloud
 //! checks the budgets of `hotpath/gandr-bytes-policy.toml` on each report.
 //!
-//! # Decision
-//!
-//! hotpath 0.28 was chosen for its CI comparison service: a pull request gets
-//! a per-function comparison of time and allocations against its base, with
-//! no baseline storage of our own. Allocation counts are exact for a fixed
-//! workload, so `gandr` (`hotpath/gandr-policy.toml`) judges them at 2% in
-//! every crate; wall-clock time on a shared runner is not, so `gandr-timing`
+//! Cloud gives a pull request a per-function comparison of time and
+//! allocations against its base, with no baseline storage of our own.
+//! Allocation counts are exact for a fixed workload, so `gandr`
+//! (`hotpath/gandr-policy.toml`) judges them at 2% in every crate. Wall-clock
+//! time on a shared runner is not exact, so `gandr-timing`
 //! (`hotpath/gandr-timing-policy.toml`) judges the average of functions called
 //! at least 20 times at 7.5%, only in the crates a change reaches.
-//! Rejected: criterion and divan time a closure in isolation and keep their
-//! baselines on the machine that ran them; iai-callgrind counts instructions
-//! exactly but needs valgrind and gives no per-function allocation view. The
-//! choice reverses if the comparison service stops answering, or if
-//! instruction counts prove the better regression signal for the same lane
-//! cost.
 
 #![expect(
     clippy::expect_used,
@@ -63,10 +58,12 @@
 
 #[path = "shared/lsp.rs"]
 mod lsp;
+#[path = "shared/support.rs"]
 mod support;
 
 use core::fmt::Write as _;
 use core::num::NonZeroUsize;
+use std::path::Path;
 use std::path::PathBuf;
 
 use gandr_surface_dispatcher::Invocation;
@@ -118,11 +115,11 @@ const MANY: &str = "../../corpus/model/modules/model-resolution-many.gandr";
 const MANY_OUTPUTS: &str = "../../corpus/model/desc/many-out-op.gandr";
 
 /// The source the winding lengths check: three loop words, each wound by a
-/// run (#6309).
+/// run.
 const WINDING: &str = "../../corpus/model/identity/winding-lengths.gandr";
 
 /// The source the negation lengths check: three negation composites, each
-/// transported along by a run (#6309).
+/// transported along by a run.
 const NEGATION: &str = "../../corpus/model/identity/negation-lengths.gandr";
 
 /// How many one-definition components the component floor checks.
@@ -138,10 +135,12 @@ const DISTINCT: usize = 5_000;
 /// trivial.
 fn source() -> PathBuf
 {
-    corpus(SOURCE)
+    corpus(Path::new(SOURCE))
 }
 
-/// Check the closure of [`SOURCE`].
+/// Check the closure of [`SOURCE`], as `gandr check` of the largest model
+/// source and its imports does. The block measures the checker's
+/// per-declaration judgement and the kernel bridge's readmission.
 ///
 /// # Specification
 /// trivial.
@@ -151,72 +150,101 @@ fn closure_check()
 }
 
 /// Check the [`COMPLETION`] sources, every rule block decided and completed.
+/// The block measures each rule block's decision, and the completion's
+/// overlap queries and normalization.
 ///
 /// # Specification
 /// trivial.
 fn rule_completion()
 {
-    check(COMPLETION.iter().map(|relative| corpus(relative)).collect());
+    check(
+        COMPLETION
+            .iter()
+            .map(|relative| corpus(Path::new(relative)))
+            .collect(),
+    );
 }
 
-/// Check every source under [`COMPONENTS`], component by component.
+/// Check every source under [`COMPONENTS`], component by component. The
+/// block measures the prelude's lowering and judgement, once per walk, and
+/// each component's own.
 ///
 /// # Specification
 /// trivial.
 fn component_walk()
 {
-    check(vec![corpus(COMPONENTS)]);
+    check(vec![corpus(Path::new(COMPONENTS))]);
 }
 
-/// Check [`RESOLVE`], every comparison resolved through the prelude.
+/// Check [`RESOLVE`], every comparison resolved through the prelude. The
+/// block measures the prelude's lowering and judgement (`lower_closure`,
+/// `judge_closure`), the candidates a model slot collects
+/// (`Lowerer::model_candidates`), each candidate's packing, an include's among
+/// them (`Lowerer::packed_structure`), the include's reduct maps
+/// (`Lowerer::mint_reducts`), the checker's trial of each candidate
+/// (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`).
 ///
 /// # Specification
 /// trivial.
 fn prelude_resolve()
 {
-    check(vec![corpus(RESOLVE)]);
+    check(vec![corpus(Path::new(RESOLVE))]);
 }
 
-/// Check [`MANY`], each of its sixteen slots trying every candidate.
+/// Check [`MANY`], each of its sixteen slots trying every candidate. The block
+/// measures each candidate's trial against the one solver store all sixteen
+/// slots share (`tried`), and the slots' resolution (`Deferrals::resolve`).
 ///
 /// # Specification
 /// trivial.
 fn many_candidates()
 {
-    check(vec![corpus(MANY)]);
+    check(vec![corpus(Path::new(MANY))]);
 }
 
 /// Check [`MANY_OUTPUTS`]: its operation of two outputs, its rules and its
-/// run.
+/// run. The block measures the operation's lowering, the kernel's link of its
+/// rules to its body, and the run of the call, which returns both outputs with
+/// no product.
 ///
 /// # Specification
 /// trivial.
 fn many_outputs()
 {
-    check(vec![corpus(MANY_OUTPUTS)]);
+    check(vec![corpus(Path::new(MANY_OUTPUTS))]);
 }
 
-/// Check [`WINDING`]: each loop word built, wound and forced by a run.
+/// Check [`WINDING`]: the loop words of 100, 10³ and 10⁵ letters, each built,
+/// wound and forced by a run, as cctt's `tests/bench/s1.cctt` winds them. The
+/// block measures the run machine's reduction of each word, and the checker's
+/// and the kernel's judgement of the source.
 ///
 /// # Specification
 /// trivial.
 fn winding_lengths()
 {
-    check(vec![corpus(WINDING)]);
+    check(vec![corpus(Path::new(WINDING))]);
 }
 
-/// Check [`NEGATION`]: each composite built and transported along by a run.
+/// Check [`NEGATION`]: the transport of `true` along composites of 101,
+/// 10³ + 1 and 10⁵ + 1 negation paths, each built and transported along by a
+/// run, as cctt's `tests/bench/negPath.cctt` transports it. The block measures
+/// the run machine's application of each path's map, and the checker's and the
+/// kernel's judgement of the source.
 ///
 /// # Specification
 /// trivial.
 fn negation_lengths()
 {
-    check(vec![corpus(NEGATION)]);
+    check(vec![corpus(Path::new(NEGATION))]);
 }
 
 /// Check [`FLOOR`] components of one definition each, written under a
 /// directory of their own: each component's cost is what it pays for the
-/// prelude its judgement reuses.
+/// prelude its judgement reuses. The block measures that cost: the
+/// component's lowering resumed onto the prelude's (`lower_onto_closure`), its
+/// program continued from the prelude's (`Program::after`) and its readmission
+/// resumed from the prelude's record (`Crossed::resume`).
 ///
 /// # Specification
 /// trivial.
@@ -241,7 +269,10 @@ fn component_floor()
 /// at the series' width when it is wider. A commit beside an open check
 /// costs what a commit beside none costs, so the wider block allocates what
 /// the serial one allocates; a copy of a structure that an open check shares
-/// shows as the difference.
+/// shows as the difference. The serial block measures each declaration's
+/// check and commit, the cost that the wider run must match. The wider block
+/// runs under the policy that the driver installs for its width, and measures
+/// each commit beside an open check.
 ///
 /// # Specification
 /// trivial.
@@ -283,7 +314,9 @@ fn distinct_definitions()
         .expect("the directory of the distinct definitions is removed");
 }
 
-/// Stage [`PROGRAMS`] and readmit every certificate they produce.
+/// Stage [`PROGRAMS`] and readmit every certificate they produce, as
+/// `gandr stage pow:0..8 double:0..8` does. The block measures the kernel's
+/// readmission of each staged certificate.
 ///
 /// # Specification
 /// trivial.
@@ -305,35 +338,35 @@ fn stage_readmission()
     core::hint::black_box(run.digest());
 }
 
-/// `text` with the lines at `left_out` left out.
-///
-/// # Specification
-/// trivial.
-fn erased(
-    text: &str,
-    left_out: &[usize],
-) -> String
-{
-    text.lines()
-        .enumerate()
-        .filter(|&(at, _)| !left_out.contains(&at))
-        .map(|(_, line)| line)
-        .collect::<Vec<&str>>()
-        .join("\n")
-}
-
 /// Open [`SOURCE`] in a language-server session and wait for the open's
 /// judgement. Erase its middle line, timed as the first keystroke, then the
-/// line after it, timed as a keystroke with the closure warm.
+/// line after it, timed as a keystroke with the closure warm. The first block
+/// measures the server's first recheck, which also builds the closure's
+/// lowering and judgement once. The second measures the server's recheck with
+/// the closure warm, the cost each later keystroke pays.
 ///
 /// # Specification
 /// trivial.
 fn lsp_keystrokes()
 {
     let text = std::fs::read_to_string(source()).expect("the model source reads");
-    let middle = text.lines().count().checked_div(2).unwrap_or_default();
-    let first = erased(&text, &[middle]);
-    let second = erased(&text, &[middle, middle.saturating_add(1)]);
+    let lines: Vec<&str> = text.lines().collect();
+    let middle = lines.len().checked_div(2).unwrap_or_default();
+    let (before, after) = lines
+        .split_at_checked(middle)
+        .expect("the middle line is a line of the source");
+    // The source with the middle line and the `skipped - 1` lines after it left
+    // out.
+    let kept = |skipped: usize| {
+        before
+            .iter()
+            .chain(after.iter().skip(skipped))
+            .copied()
+            .collect::<Vec<&str>>()
+            .join("\n")
+    };
+    let first = kept(1);
+    let second = kept(2);
     live(&source(), text, move |client| {
         hotpath::measure_block!("lsp first keystroke", client.change(&[first]))?;
         hotpath::measure_block!("lsp keystroke", client.change(&[second]))
@@ -344,7 +377,8 @@ fn lsp_keystrokes()
 /// Open [`SOURCE`] in a language-server session and wait for the open's
 /// judgement. Erase the last [`BURST`] characters of its middle line one
 /// keystroke at a time, every keystroke a content change of one notification,
-/// timed as one burst.
+/// timed as one burst. The block measures the server's recheck, once per
+/// burst.
 ///
 /// # Specification
 /// trivial.
@@ -379,13 +413,14 @@ fn lsp_burst()
 
 /// Open the group laws in a language-server session and wait for the open's
 /// judgement. Add a comment line before their first, outside the rule block,
-/// timed as one change.
+/// timed as one change. The block measures the server's recheck and each rule
+/// block's decision, which no change of the block's own text asks for.
 ///
 /// # Specification
 /// trivial.
 fn lsp_comment_edit()
 {
-    let laws = corpus(COMPLETION[0]);
+    let laws = corpus(Path::new(COMPLETION[0]));
     let text = std::fs::read_to_string(&laws).expect("the group laws read");
     let edited = format!("// Edited.\n{text}");
     live(&laws, text, move |client| {
