@@ -1923,8 +1923,11 @@ enum Elaboration
 ///   grammar reads a universe's endpoints, codes, as types and any other
 ///   carrier's as expressions; any other type former's value slot is read as
 ///   the type is, since every type application reads its arguments in the
-///   type's own sort. A call reads its own head and arguments as expressions,
-///   which [`Walk::visit`] schedules itself.
+///   type's own sort. A computation's slot that takes a computation — an arm, a
+///   bound computation, the rest of a bind — is an expression, since the
+///   lowering reads a computation that a type decodes as a body, where a call
+///   is juxtaposed (#7564). A call reads its own head and arguments as
+///   expressions, which [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
@@ -1941,6 +1944,7 @@ enum Elaboration
 /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
 /// - witness: `tests::goldens::a_returned_typed_bind_in_an_argument_is_a_block_3942`
 /// - witness: `tests::goldens::a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211`
+/// - witness: `tests::goldens::a_call_in_an_arm_of_a_decoded_match_is_juxtaposed_7564`
 #[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_) | Former::Lambda(_) | Former::LinearLambda(_) | Former::StaticLambda(_) | Former::PathTransport { .. } | Former::Ride { .. }) || braced(source, former).is_some()
     || (endpoints_read_as_expressions(source, former) == Endpoints::Expressions && !matches!(admits, Admits::ValueType)) {
     Surface::Expression
@@ -1950,6 +1954,12 @@ enum Elaboration
     && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
 {
     Surface::Type
+} else if !matches!(*former,
+    Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
+    && matches!(kind(former), Kind::Computation)
+    && matches!(admits, Admits::Computation(_))
+{
+    Surface::Expression
 } else {
     surface
 })]
@@ -1995,15 +2005,20 @@ where
             | Former::Ascription { .. }
             | Former::Place { .. }
     );
-    if !writes_nothing
-        && matches!(kind(former), Kind::Value | Kind::Computation)
-        && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType)
-    {
-        Surface::Type
+    if writes_nothing || !matches!(kind(former), Kind::Value | Kind::Computation) {
+        return surface;
     }
-    else {
-        surface
+    if matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType) {
+        return Surface::Type;
     }
+    // A computation that a type decodes reads its own computations as a body
+    // does: the lowering takes a match, a bind or a returner where a type is
+    // read as the decode of the code that it returns, and reads its arms and
+    // its statements in the expression grammar (#7564).
+    if matches!(kind(former), Kind::Computation) && matches!(admits, Admits::Computation(_)) {
+        return Surface::Expression;
+    }
+    surface
 }
 
 /// How the grammar reads a path's or a bridge's endpoints.
