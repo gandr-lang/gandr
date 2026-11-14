@@ -109,8 +109,11 @@ INSERT INTO position VALUES('crates/kernel-core/src/speculation.rs','Rollbacks',
 INSERT INTO position VALUES('crates/kernel-core/src/stage_order.rs','Steps','','none',NULL,'A count of steps.');
 INSERT INTO position VALUES('crates/kernel-core/src/words.rs','Argument','','local',NULL,'An argument''s place in one call.');
 INSERT INTO position VALUES('crates/kernel-core/src/words.rs','Arity','','none',NULL,'A count of arguments.');
+INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Bucket','','local',NULL,'A bucket''s index among the buckets of one layer in one process.');
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Budget','','none',NULL,'A budget.');
+INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Count','','none',NULL,'A count of values.');
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Key','','local',NULL,'A value''s offset in one region, which only that region seats back; no key, name or byte form writes it.');
+INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Offset','','local',NULL,'A value''s offset in the id space of one region, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-strata/src/entail.rs','WitnessPrefixLength','','none',NULL,'A length of a witness prefix.');
 INSERT INTO position VALUES('crates/kernel-strata/src/horn.rs','ClauseIndex','','local',NULL,'A clause''s index in one compilation.');
 INSERT INTO position VALUES('crates/kernel-strata/src/level.rs','LevelConstant','','none',NULL,'A constant level.');

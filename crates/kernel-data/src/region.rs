@@ -17,6 +17,8 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem::size_of;
 
+use anodized::spec;
+
 /// An invariant brand: no region's ids read as another region's.
 type Brand<'region> = PhantomData<fn(&'region ()) -> &'region ()>;
 
@@ -63,6 +65,8 @@ pub struct Exhausted
 
 impl fmt::Display for Exhausted
 {
+    /// # Specification
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -79,6 +83,85 @@ impl fmt::Display for Exhausted
 
 impl core::error::Error for Exhausted
 {
+}
+
+/// A value's offset in the id space of its region.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Offset(u32);
+
+/// A count of the values of a layer, or a value's index among them.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Count(u32);
+
+/// A bucket's index among the buckets of a layer.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Bucket(u32);
+
+/// Where a layer keeps the value of one index: its bucket, and the slot in
+/// it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Place
+{
+    /// The bucket.
+    bucket: Bucket,
+    /// The slot in the bucket.
+    within: usize,
+}
+
+impl Place
+{
+    /// The place of the value at `index` in a layer. Bucket `b` holds
+    /// `FIRST << b` slots, and starts past the slots of each bucket before
+    /// it.
+    ///
+    /// # Specification
+    /// - ensures: two indices give two places, and the slot lies inside its
+    ///   bucket.
+    /// - panics: none.
+    /// - executable: none — the first clause ranges over every pair of indices.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values minted across two buckets read back at their
+    ///   ids, which a place map that sends two indices to one slot refuses.
+    /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
+    fn of(index: Count) -> Option<Self>
+    {
+        let shifted = index.0.checked_add(FIRST)?;
+        let top = shifted.checked_ilog2()?;
+        let bucket = top.checked_sub(FIRST_LOG)?;
+        let within = shifted.checked_sub(1_u32.checked_shl(top)?)?;
+        Some(Self {
+            bucket: Bucket(bucket),
+            within: usize::try_from(within).ok()?,
+        })
+    }
+}
+
+impl Bucket
+{
+    /// The slots of this bucket.
+    ///
+    /// # Specification
+    /// trivial.
+    fn slots(self) -> Option<Count>
+    {
+        FIRST.checked_shl(self.0).map(Count)
+    }
 }
 
 /// The durable key of a value: its offset, with no brand. It is the one form
@@ -121,7 +204,7 @@ impl From<Key> for u32
 pub struct Id<'region>
 {
     /// The value's offset in the region's id space.
-    offset: u32,
+    offset: Offset,
     /// The region's brand.
     brand: Brand<'region>,
 }
@@ -131,18 +214,20 @@ impl Id<'_>
     /// The durable key of the value: the export, which is always safe.
     ///
     /// # Specification
-    /// - ensures: [`Region::seat`] of the key in this region gives this id.
+    /// - ensures: the key holds the id's offset, so [`Region::seat`] of it in
+    ///   this region gives this id.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a key of each of two values seats back as its own id,
     ///   and a key past the region is refused.
     /// - witness: `tests::region::a_key_seats_back_in_its_region_and_a_key_past_it_is_refused`
+    #[spec(ensures: |ret| ret.0 == self.offset.0)]
     #[inline]
     #[must_use]
-    pub const fn key(self) -> Key
+    pub fn key(self) -> Key
     {
-        Key(self.offset)
+        Key(self.offset.0)
     }
 }
 
@@ -180,17 +265,18 @@ impl<'parent, 'child> Adopt<'parent, 'child>
     /// The parent's id under the child's brand: the id itself.
     ///
     /// # Specification
-    /// - ensures: the child reads at the result the value that the parent reads
-    ///   at `id`.
+    /// - ensures: the result keeps the offset of `id`, so the child reads at it
+    ///   the value that the parent reads at `id`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a child reads a value of the parent through the
     ///   adopted id, and the child's own first id is apart from it.
     /// - witness: `tests::region::a_child_reads_a_value_of_its_parent_through_adopt`
+    #[spec(ensures: |ret| ret.offset == id.offset)]
     #[inline]
     #[must_use]
-    pub const fn adopt(
+    pub fn adopt(
         self,
         id: Id<'parent>,
     ) -> Id<'child>
@@ -215,6 +301,18 @@ pub trait Branded
     type Of<'region>;
 
     /// The value under the brand `'to`, each id read through `translate`.
+    ///
+    /// # Specification
+    /// - ensures: the value with each of its ids read through `translate`, and
+    ///   nothing else changed.
+    /// - panics: none.
+    /// - executable: none — the body is each implementor's, and no predicate
+    ///   compares a value across two brands.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an id that a child answers reads in the parent the
+    ///   value the child minted at it.
+    /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     fn rebrand<'from, 'to, Translate>(
         value: Self::Of<'from>,
         translate: &Translate,
@@ -227,6 +325,8 @@ impl Branded for ()
 {
     type Of<'region> = ();
 
+    /// # Specification
+    /// trivial.
     #[inline]
     fn rebrand<'from, 'to, Translate>(
         (): Self::Of<'from>,
@@ -242,6 +342,8 @@ impl Branded for Id<'static>
 {
     type Of<'region> = Id<'region>;
 
+    /// # Specification
+    /// trivial.
     #[inline]
     fn rebrand<'from, 'to, Translate>(
         value: Id<'from>,
@@ -260,6 +362,8 @@ where
 {
     type Of<'region> = Option<Family::Of<'region>>;
 
+    /// # Specification
+    /// trivial.
     #[inline]
     fn rebrand<'from, 'to, Translate>(
         value: Self::Of<'from>,
@@ -272,30 +376,6 @@ where
     }
 }
 
-/// The bucket of a layer's relative index, and the slot within it.
-///
-/// # Specification
-/// - ensures: two relative indices give two places; bucket `b` holds `FIRST <<
-///   b` slots.
-/// - panics: none.
-fn place(index: u32) -> Option<(u32, u32)>
-{
-    let shifted = index.checked_add(FIRST)?;
-    let top = shifted.checked_ilog2()?;
-    let bucket = top.checked_sub(FIRST_LOG)?;
-    let within = shifted.checked_sub(1_u32.checked_shl(top)?)?;
-    Some((bucket, within))
-}
-
-/// The slots of a bucket.
-///
-/// # Specification
-/// trivial.
-fn bucket_slots(bucket: u32) -> Option<u32>
-{
-    FIRST.checked_shl(bucket)
-}
-
 /// The storage of one region: its own values from `base` on, over the frozen
 /// prefix of the region it forked from.
 struct Layer<'below, Value>
@@ -303,9 +383,9 @@ struct Layer<'below, Value>
     /// The frozen prefix: every offset below `base`.
     below: Option<&'below Self>,
     /// The first offset of this layer's own values.
-    base: u32,
+    base: Offset,
     /// The values this layer holds.
-    len: Cell<u32>,
+    len: Cell<Count>,
     /// The bytes this layer may draw.
     budget: Budget,
     /// The bytes this layer drew.
@@ -317,16 +397,19 @@ struct Layer<'below, Value>
 impl<'below, Value> Layer<'below, Value>
 {
     /// An empty layer from `base` on, over `below`.
+    ///
+    /// # Specification
+    /// trivial.
     fn new(
         below: Option<&'below Self>,
-        base: u32,
+        base: Offset,
         budget: Budget,
     ) -> Self
     {
         Self {
             below,
             base,
-            len: Cell::new(0_u32),
+            len: Cell::new(Count(0_u32)),
             budget,
             drawn: Cell::new(Budget(0_usize)),
             buckets: [const { OnceCell::new() }; BUCKETS],
@@ -334,6 +417,9 @@ impl<'below, Value> Layer<'below, Value>
     }
 
     /// The refusal of this layer.
+    ///
+    /// # Specification
+    /// trivial.
     const fn exhausted(&self) -> Exhausted
     {
         Exhausted {
@@ -342,48 +428,78 @@ impl<'below, Value> Layer<'below, Value>
     }
 
     /// The first offset past every value this layer reads.
-    fn extent(&self) -> Result<u32, Exhausted>
+    ///
+    /// # Specification
+    /// trivial.
+    fn extent(&self) -> Result<Offset, Exhausted>
     {
         self.base
-            .checked_add(self.len.get())
+            .0
+            .checked_add(self.len.get().0)
+            .map(Offset)
             .ok_or_else(|| self.exhausted())
     }
 
     /// The bytes this layer may still draw.
+    ///
+    /// # Specification
+    /// trivial.
     fn remaining(&self) -> Budget
     {
         Budget(self.budget.0.saturating_sub(self.drawn.get().0))
     }
 
-    /// The value at `offset`, in this layer or in its frozen prefix.
+    /// The value at `offset`: in the first layer, from this one down, whose
+    /// base is at most `offset`.
+    ///
+    /// # Specification
+    /// - ensures: the value that [`Layer::push`] stored at `offset`, in this
+    ///   layer or in its frozen prefix; `None` past every value.
+    /// - panics: none.
+    /// - executable: none — the predicate would repeat the lookup it checks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values minted across two buckets read back at their
+    ///   ids, and a child reads its parent's value below its base.
+    /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
+    /// - witness: `tests::region::a_child_reads_a_value_of_its_parent_through_adopt`
     fn get(
         &self,
-        offset: u32,
+        offset: Offset,
     ) -> Option<&Value>
     {
-        match offset.checked_sub(self.base) {
-            Some(index) => {
-                let (bucket, within) = place(index)?;
-                self.buckets
-                    .get(usize::try_from(bucket).ok()?)?
-                    .get()?
-                    .get(usize::try_from(within).ok()?)?
-                    .get()
-            },
-            None => self.below?.get(offset),
-        }
+        let layer = core::iter::successors(Some(self), |layer| layer.below)
+            .find(|layer| layer.base <= offset)?;
+        let place = Place::of(Count(offset.0.checked_sub(layer.base.0)?))?;
+        layer
+            .buckets
+            .get(usize::try_from(place.bucket.0).ok()?)?
+            .get()?
+            .get(place.within)?
+            .get()
     }
 
     /// The bytes that the buckets for `count` more values draw.
+    ///
+    /// # Specification
+    /// - ensures: the bytes of each bucket that the next `count` values reach
+    ///   and that this layer has not drawn; `None` when they overflow.
+    /// - panics: none.
+    /// - executable: none — the predicate would repeat the sum it checks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a budget that holds one bucket refuses the value that
+    ///   needs the second.
+    /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     fn draw_for(
         &self,
-        count: u32,
+        count: Count,
     ) -> Option<Budget>
     {
-        let first = self.len.get();
-        let last = first.checked_add(count)?.checked_sub(1_u32)?;
-        let (from, _) = place(first)?;
-        let (to, _) = place(last)?;
+        let first = self.len.get().0;
+        let last = first.checked_add(count.0)?.checked_sub(1_u32)?;
+        let from = Place::of(Count(first))?.bucket.0;
+        let to = Place::of(Count(last))?.bucket.0;
         let mut bytes = 0_usize;
         for bucket in from ..= to {
             let drawn = self
@@ -392,7 +508,7 @@ impl<'below, Value> Layer<'below, Value>
                 .get()
                 .is_some();
             if !drawn {
-                let slots = usize::try_from(bucket_slots(bucket)?).ok()?;
+                let slots = usize::try_from(Bucket(bucket).slots()?.0).ok()?;
                 bytes = bytes.checked_add(slots.checked_mul(size_of::<OnceCell<Value>>())?)?;
             }
         }
@@ -400,45 +516,77 @@ impl<'below, Value> Layer<'below, Value>
     }
 
     /// Append `value` at the next offset and answer the offset.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok(offset)`, [`Layer::get`] of `offset` gives `value` and
+    ///   the layer holds one value more.
+    /// - fails: [`Exhausted`] when the budget cannot draw the value's bucket,
+    ///   or the offsets are full.
+    /// - panics: none.
+    /// - executable: none — the value moves into the layer, and `Value` has no
+    ///   equality that a predicate could compare it by.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — values minted in order read back at their ids, and
+    ///   the value past the budget is refused.
+    /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     fn push(
         &self,
         value: Value,
-    ) -> Result<u32, Exhausted>
+    ) -> Result<Offset, Exhausted>
     {
         let index = self.len.get();
         let offset = self.extent()?;
-        let next = index.checked_add(1_u32).ok_or_else(|| self.exhausted())?;
-        let (bucket, within) = place(index).ok_or_else(|| self.exhausted())?;
-        let cell = usize::try_from(bucket)
+        let next = index
+            .0
+            .checked_add(1_u32)
+            .map(Count)
+            .ok_or_else(|| self.exhausted())?;
+        let place = Place::of(index).ok_or_else(|| self.exhausted())?;
+        let cell = usize::try_from(place.bucket.0)
             .ok()
             .and_then(|bucket| self.buckets.get(bucket))
             .ok_or_else(|| self.exhausted())?;
         let slots = cell
             .get()
             .map(AsRef::as_ref)
-            .map_or_else(|| self.draw(cell, bucket), Ok)?;
-        let slot = usize::try_from(within)
-            .ok()
-            .and_then(|within| slots.get(within))
-            .ok_or_else(|| self.exhausted())?;
+            .map_or_else(|| self.draw(cell, place.bucket), Ok)?;
+        let slot = slots.get(place.within).ok_or_else(|| self.exhausted())?;
         let _stored: &Value = slot.get_or_init(|| value);
         self.len.set(next);
         Ok(offset)
     }
 
     /// Draw `bucket` into `cell` under the budget, and answer its slots.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, the bucket's empty slots, and the layer's drawn
+    ///   bytes grow by the bucket's.
+    /// - fails: [`Exhausted`] when the bucket's bytes pass the remaining
+    ///   budget.
+    /// - panics: none.
+    /// - executable: none — the slots are a fresh allocation, which no
+    ///   predicate reads before the call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a budget that holds one bucket refuses the value that
+    ///   needs the second.
+    /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     fn draw<'cell>(
         &self,
         cell: &'cell OnceCell<Box<[OnceCell<Value>]>>,
-        bucket: u32,
+        bucket: Bucket,
     ) -> Result<&'cell [OnceCell<Value>], Exhausted>
     {
-        let bytes = self.draw_for(1_u32).ok_or_else(|| self.exhausted())?;
+        let bytes = self
+            .draw_for(Count(1_u32))
+            .ok_or_else(|| self.exhausted())?;
         if bytes > self.remaining() {
             return Err(self.exhausted());
         }
-        let count = bucket_slots(bucket)
-            .and_then(|count| usize::try_from(count).ok())
+        let count = bucket
+            .slots()
+            .and_then(|count| usize::try_from(count.0).ok())
             .ok_or_else(|| self.exhausted())?;
         let fresh: Box<[OnceCell<Value>]> =
             core::iter::repeat_with(OnceCell::new).take(count).collect();
@@ -449,6 +597,17 @@ impl<'below, Value> Layer<'below, Value>
 
     /// This layer's own values, in the order of their offsets. Each filled
     /// slot lies below `len`, and each slot past it is empty.
+    ///
+    /// # Specification
+    /// - ensures: each value of the layer once, in the order of its offset.
+    /// - panics: none.
+    /// - executable: none — the opaque iterator cannot be named by the
+    ///   postcondition, or consumed without a change of its output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child's two values read in the parent at the
+    ///   offsets the child minted them at.
+    /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     fn into_values(self) -> impl Iterator<Item = Value>
     {
         self.buckets
@@ -474,6 +633,8 @@ impl<'below, Value> Layer<'below, Value>
 /// - ensures: each id of brand `'region` names a value of this region or of its
 ///   frozen prefix.
 /// - panics: none.
+/// - executable: none — a data declaration has no call boundary; the brand
+///   states the clause, and the constructors keep it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — values minted in order read back at their ids, and a
@@ -481,8 +642,8 @@ impl<'below, Value> Layer<'below, Value>
 /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
 pub struct Region<'region, Value>
 {
-    /// The values and the frozen prefix, owned by the scope or the fork
-    /// that made the region, so a join can take them after the child's body.
+    /// The values and the frozen prefix, owned by the scope or the fork that
+    /// made the region, so a join can take them after the child's body.
     layer: &'region Layer<'region, Value>,
     /// The region's brand.
     brand: Brand<'region>,
@@ -502,8 +663,10 @@ pub struct Region<'region, Value>
 /// ```
 ///
 /// # Specification
-/// - ensures: the body's result, which names no id of the region.
+/// - ensures: the body's answer, which names no id of the region.
 /// - panics: none.
+/// - executable: none — the answer is generic, and the brand states the clause
+///   at compile time.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a scope reads back what its body minted, and the example
@@ -517,7 +680,7 @@ pub fn scoped<Value, Answer, Body>(
 where
     Body: for<'region> FnOnce(&'region Region<'region, Value>, Mint<'region>) -> Answer,
 {
-    let layer = Layer::new(None, 0_u32, budget);
+    let layer = Layer::new(None, Offset(0_u32), budget);
     let region = Region {
         layer: &layer,
         brand: PhantomData,
@@ -530,10 +693,12 @@ impl<'region, Value> Region<'region, Value>
     /// Append `value` and answer its id.
     ///
     /// # Specification
-    /// - ensures: [`Region::get`] of the id gives `value`.
+    /// - ensures: on `Ok(id)`, [`Region::get`] of the id gives `value`.
     /// - fails: [`Exhausted`] when the budget cannot draw the bucket the value
     ///   needs, or the region's offsets are full.
     /// - panics: none.
+    /// - executable: none — the value moves into the region, and `Value` has no
+    ///   equality that a predicate could compare it by.
     ///
     /// # Errors
     /// [`Exhausted`] past the budget or past the last offset.
@@ -563,6 +728,7 @@ impl<'region, Value> Region<'region, Value>
     /// - ensures: the value that [`Region::mint`] stored at `id`, in this
     ///   region or its frozen prefix.
     /// - panics: none.
+    /// - executable: none — the predicate would repeat the lookup it checks.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each of the values minted across two buckets reads
@@ -589,6 +755,7 @@ impl<'region, Value> Region<'region, Value>
     /// - hypothesis: L3 — a key of each of two values seats back as its own id,
     ///   and a key past the region is refused.
     /// - witness: `tests::region::a_key_seats_back_in_its_region_and_a_key_past_it_is_refused`
+    #[spec(ensures: |ret| ret.is_none_or(|id| id.key() == key))]
     #[inline]
     #[must_use]
     pub fn seat(
@@ -597,8 +764,8 @@ impl<'region, Value> Region<'region, Value>
     ) -> Option<Id<'region>>
     {
         let extent = self.layer.extent().ok()?;
-        (key.0 < extent).then_some(Id {
-            offset: key.0,
+        (key.0 < extent.0).then_some(Id {
+            offset: Offset(key.0),
             brand: PhantomData,
         })
     }
@@ -636,6 +803,8 @@ impl<'region, Value> Region<'region, Value>
     /// - fails: [`Exhausted`] when this region's budget cannot draw the buckets
     ///   the suffix needs; the suffix then drops whole.
     /// - panics: none.
+    /// - executable: none — the answer is generic, and the child's values have
+    ///   no equality that a predicate could compare them by.
     ///
     /// # Errors
     /// [`Exhausted`] when the join cannot hold the child's suffix.
@@ -681,9 +850,10 @@ impl<'region, Value> Region<'region, Value>
     /// region's. This region made no id while the child lived, so its next
     /// offset at the join is the child's mark, and each value of the child
     /// keeps its offset.
+    ///
+    /// # Specification
+    /// trivial.
     fn join<'child>() -> impl Fn(Id<'child>) -> Id<'region>
-    where
-        'region: 'child,
     {
         |id| Id {
             offset: id.offset,
@@ -692,13 +862,27 @@ impl<'region, Value> Region<'region, Value>
     }
 
     /// Append the child's own values, whole or not at all.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, each value of `child` at the offset the child minted
+    ///   it at; on `Err`, this region unchanged.
+    /// - fails: [`Exhausted`] when this region's remaining budget cannot draw
+    ///   the buckets of the child's values.
+    /// - panics: none.
+    /// - executable: none — the values move, and `Value` has no equality that a
+    ///   predicate could compare them by.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a child's values read in the parent at the offsets
+    ///   the child minted them at, and the parent's next id follows them.
+    /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     fn fold(
         &self,
         child: Layer<'_, Value>,
     ) -> Result<(), Exhausted>
     {
         let count = child.len.get();
-        if count == 0_u32 {
+        if count == Count(0_u32) {
             return Ok(());
         }
         let bytes = self
@@ -709,7 +893,7 @@ impl<'region, Value> Region<'region, Value>
             return Err(self.layer.exhausted());
         }
         for value in child.into_values() {
-            let _offset: u32 = self.layer.push(value)?;
+            let _offset: Offset = self.layer.push(value)?;
         }
         Ok(())
     }
