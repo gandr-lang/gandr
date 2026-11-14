@@ -109,7 +109,7 @@ tracing-subscriber = { workspace = true, optional = true }
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
-gandr-lang = { workspace = true, features = ["instrument"] }
+gandr-lang = { workspace = true, features = ["counts", "instrument"] }
 gandr-surface-lsp = { workspace = true, features = ["client"] }
 gandr-surface-parser.workspace = true
 gandr-surface-session.workspace = true
@@ -133,6 +133,10 @@ nix.workspace = true
 default = []
 # The parser's report example: the molder keeps its census of decisions.
 census = ["gandr-surface-parser/census"]
+# The small-device bench's count build (#7359): `gandr check --counts` prints
+# the run's allocations over every thread and the frames that its checks pop.
+# It takes the instrument's counting allocator. Off, no count is compiled.
+counts = ["gandr-kernel-core/counts", "instrument"]
 # The `hotpath` bench: the checker's judgement and readmission and the
 # language server's recheck timed and their allocations counted, the report
 # uploaded to hotpath Cloud when CI asks for it.

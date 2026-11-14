@@ -79,6 +79,7 @@ INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','VerdictTag
 INSERT INTO position VALUES('crates/kernel-core/src/admission.rs','Guard','','local',NULL,'An arm in the dense guard order of one point.');
 INSERT INTO position VALUES('crates/kernel-core/src/admission.rs','Point','','local',NULL,'A point in the dense entry order of one check of a schema.');
 INSERT INTO position VALUES('crates/kernel-core/src/admission.rs','Work','','none',NULL,'A count of node operations.');
+INSERT INTO position VALUES('crates/kernel-core/src/check.rs','PoppedFrames','','none',NULL,'A count of popped frames.');
 INSERT INTO position VALUES('crates/kernel-core/src/check/cover.rs','Bound','','none',NULL,'A count of the lambdas that a branch binds.');
 INSERT INTO position VALUES('crates/kernel-core/src/check/occurrence.rs','Telescope','','none',NULL,'The length of a parameter telescope.');
 INSERT INTO position VALUES('crates/kernel-core/src/flow_universe.rs','Allowance','','none',NULL,'A budget.');

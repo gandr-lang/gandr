@@ -147,20 +147,29 @@ uptime | awk -F 'load averages?: ' '{ printf "load %s\n", $2 }'
 # module checks cold, and a host serves the world `far` that a crossing
 # reaches. Each path runs at 1 and 2 cores and at 64 MiB, 256 MiB and 1 GiB,
 # and its row gives its wall time, the time to its first line, its peak
-# resident set, the peak that its scope charged and why it stopped.
+# resident set, the peak that its scope charged and why it stopped. Before
+# those rows come the counts of each check at 1 and 2 cores (#7359): the
+# allocations of every thread and the frames that the kernel's checks pop,
+# from a build with the `counts` feature in `target/counts`, and then the
+# bytes of each frame of the kernel's checks, which rustc prints for
+# `gandr-kernel-core` in `target/sizes`. rustc prints them only when it
+# compiles the crate, so the crate is cleaned there first.
 # `.config/bench/small-device.bash` states each path and the bound, and
-# `.config/bench/small-device.jq` writes each row, held to `check:bench`'s
-# cases. The measure needs a user scope of systemd that bounds memory, so on
-# macOS it refuses before the driver is built. The riscv64 host's table is the
-# verdict, and a fast host's table is never one. `--gandr` names a built
-# driver in place of this checkout's release build. That driver must come
-# from this checkout: a driver reads `library/std` of the tree that it was
-# built from (`package::lock::standard`), so the `std` of another tree loses
-# its host interfaces. `--limit` gives the seconds that bound each run.
+# `.config/bench/small-device.jq`, `small-device-counts.jq` and
+# `small-device-frames.jq` write the rows, held to `check:bench`'s cases. The
+# measure needs a user scope of systemd that bounds memory, so on macOS it
+# refuses before the driver is built. The riscv64 host's table is the verdict,
+# and a fast host's table is never one. `--gandr` names a built driver in
+# place of this checkout's release build, and `--counting` a built driver in
+# place of its count build. Each must come from this checkout: a driver reads
+# `library/std` of the tree that it was built from
+# (`package::lock::standard`), so the `std` of another tree loses its host
+# interfaces. `--limit` gives the seconds that bound each run.
 ["bench:small-device"]
-description = "Run four paths of gandr under bounds of cores and of memory, each with its wall time, its first line, its peak resident set, its charged peak and its stop"
+description = "Count the allocations and the frames of each check, read the bytes of each frame, then run four paths of gandr under bounds of cores and of memory, each with its wall time, its first line, its peak resident set, its charged peak and its stop"
 usage = '''
 flag "--gandr <binary>" help="a gandr built from this checkout, in place of its release build"
+flag "--counting <binary>" help="a gandr built from this checkout with the counts feature, in place of its count build"
 flag "--limit <seconds>" help="the wall-clock limit of each run" default="300"
 '''
 tools.jq = "1.8.1"
@@ -174,7 +183,18 @@ if [[ -z $gandr ]]; then
   .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr
   gandr=target/release/gandr
 fi
-.config/bench/small-device.bash "$gandr" "${usage_limit:?}"
+counting=${usage_counting:-}
+if [[ -z $counting ]]; then
+  .config/mise/scope cargo build --release --locked --quiet --package gandr-lang --bin gandr --features counts \
+    --target-dir target/counts
+  counting=target/counts/release/gandr
+fi
+sizes=$(mktemp)
+trap 'rm -f "$sizes"' EXIT
+cargo clean --quiet --package gandr-kernel-core --target-dir target/sizes
+.config/mise/scope cargo rustc --locked --quiet --package gandr-kernel-core --lib --target-dir target/sizes \
+  -- -Zprint-type-sizes > "$sizes"
+.config/bench/small-device.bash "$gandr" "$counting" "$sizes" "${usage_limit:?}"
 '''
 
 # Catt's wall time on one example, the oracle the rows at dimension 3 are read

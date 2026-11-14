@@ -269,6 +269,10 @@
 //!   presented-spaces plan (§ presented-spaces-crates) — the field label on
 //!   each refusal of a record field's value or a restriction's fixed value, for
 //!   the replay of a patched type's formation and of its meets.
+//! - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile
+//!   — a device fails on the allocation and not on the average, so the `counts`
+//!   feature counts each frame that the machines pop, for the small-device
+//!   bench.
 
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;
@@ -1925,6 +1929,47 @@ impl Owing
 /// toward a condition it cannot bound.
 const MAX_CODE_OBLIGATIONS: TableEntryCount = gandr_kernel_term::MAX_TABLE_ENTRIES;
 
+/// The frames that the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+static POPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// How many frames the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct PoppedFrames(u64);
+
+#[cfg(feature = "counts")]
+impl core::fmt::Display for PoppedFrames
+{
+    /// The count, in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// How many frames the checks of the process popped so far, on both machines.
+/// A check that passes pops each frame that it pushes once, so for such checks
+/// the count is the frames that they push.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "counts")]
+#[inline]
+#[must_use]
+pub fn popped() -> PoppedFrames
+{
+    PoppedFrames(POPPED.load(Ordering::Relaxed))
+}
+
 /// A continuation of the type-formation walk.
 #[derive(Debug)]
 enum TypeLevelFrame
@@ -2419,6 +2464,8 @@ where
             else {
                 return Ok(produced);
             };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
             match frame {
                 TypeLevelFrame::Memoize(question, opened) => {
                     // When the stack does not hold the accrual, its keys are
@@ -5441,6 +5488,8 @@ where
                 };
                 return Ok(produced);
             };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
             match frame {
                 Frame::Pending(mut goals, result) => {
                     let siblings = Siblings {

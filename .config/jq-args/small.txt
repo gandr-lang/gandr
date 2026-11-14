@@ -115,6 +115,7 @@
 --arg url
 --arg workflow
 --argjson alive
+--argjson allocations
 --argjson background
 --argjson brake
 --argjson bytes
@@ -133,6 +134,7 @@
 --argjson first
 --argjson forgo
 --argjson found
+--argjson frames
 --argjson gated
 --argjson gone
 --argjson grace

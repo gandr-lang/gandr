@@ -3531,7 +3531,9 @@ if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
 # `stress.jq` what `bench:stress` prints for gandr's bounded check, and
 # `dimension.jq` names an example's built-ins past n = 3. `small-device.jq`
 # writes the row of a path that `bench:small-device` runs under a bound, and
-# names why it stopped (#7308). Each case in
+# names why it stopped (#7308). `small-device-counts.jq` writes the row of a
+# check's counts, and `small-device-frames.jq` the rows of each frame's bytes
+# (#7359). Each case in
 # `.config/bench/cases.json` holds a recorded run or an example's text, and
 # the row, the outcome or the built-ins it must give. Each case in
 # `.config/bench/timed.json` runs a command under `timed.py`, the timer
@@ -3552,7 +3554,7 @@ tools.python = "3.15.2"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq --raw small-device.jq
+.config/cases/run.bash bench .config/bench/cases.json --programs .config/bench --mode c --raw row.jq --raw stress.jq --raw small-device.jq --raw small-device-counts.jq --raw small-device-frames.jq
 .config/cases/run.bash bench .config/bench/scaling.json --programs .config/bench --mode c
 .config/bench/scaling-cases.bash
 python .config/bench/timed.py --cases .config/bench/timed.json
