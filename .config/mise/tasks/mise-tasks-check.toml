@@ -88,6 +88,14 @@ heavy=$(jq -r --arg selected "$selected" '[.groups[][]] as $heavy | [$selected |
 if (( heavy > 0 )); then
   hold_gate_slot "mise run check"
   gate_bound
+  # The git sources of the workspace, fetched and checked out once before the
+  # checks fork (#7492). The checks share one cargo home. `check:dylint`
+  # checks out quenchant at the rev that the workspace pins, through a
+  # temporary directory. `clippy::cargo` in `check:clippy-enforcing` lists the
+  # same directory in its `cargo metadata`, and failed on the temporary
+  # directory that went away. After the fetch the checkout stands, and no
+  # check writes it during the run.
+  cargo fetch --locked --quiet || { echo "check: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
   echo "check: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $gate_jobs build jobs" >&2
 else
   echo "check: the change selects no Clippy or compiler policy check, so it takes no gate slot" >&2
@@ -185,6 +193,8 @@ if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
 hold_gate_slot "mise run gate:all"
 gate_bound
+# The git sources, fetched once before the checks fork, as in `check` (#7492).
+cargo fetch --locked --quiet || { echo "gate:all: cargo fetch --locked failed, so no check runs (#7492)" >&2; exit 1; }
 echo "gate:all: gate slot $gate_slot of $gate_slots in the lane $gate_lane after $gate_wait_lane s for the lane and $gate_wait_slot s for the slot, $NEXTEST_TEST_THREADS test threads and $gate_jobs build jobs" >&2
 unset GATE_SCOPE GATE_BASE
 tree=$(.config/gate-scope/passed.bash tree)
@@ -650,10 +660,19 @@ export -f policy
 # tracks that revision; --locked uses the source repository's lockfile.
 # A workspace-local install root prevents another consumer's install from
 # replacing the executable between the dependency task and either gate.
+# An install at the pinned revision stands, and the task ends: `cargo install`
+# updates the git source before it reads its record, and so fetched during
+# each gate after the gate's own fetch (#7492).
 ["workflow:install"]
 description = "Install the gate binary at the Dylint metadata revision"
+tools.jq = "1.8.1"
 run = '''
-.config/mise/scope cargo install --git https://github.com/gandr-lang/quenchant --rev "$(mise run --quiet workflow:revision)" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
+rev=$(mise run --quiet workflow:revision)
+if [[ -x target/workflow-tools/bin/quenchant-gates ]] \
+  && jq -e --arg rev "$rev" '.installs | keys | any(startswith("quenchant-gates ") and contains("?rev=\($rev)#\($rev))"))' target/workflow-tools/.crates2.json > /dev/null 2>&1; then
+  exit 0
+fi
+.config/mise/scope cargo install --git https://github.com/gandr-lang/quenchant --rev "$rev" --locked --bin quenchant-gates --root target/workflow-tools quenchant-gates
 '''
 
 # The one quenchant revision the Dylint metadata pins, read without a

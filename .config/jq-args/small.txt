@@ -82,6 +82,7 @@
 --arg repair
 --arg repo
 --arg repository
+--arg rev
 --arg root
 --arg run
 --arg s
