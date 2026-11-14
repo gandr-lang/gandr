@@ -34,22 +34,27 @@ pub struct IoUring<'fd, S = crate::sqe::kind::Sqe64, C = crate::cqe::kind::Cqe16
 
 impl<S, C> Drop for IoUring<'_, S, C>
 {
+    #[inline]
     fn drop(&mut self)
     {
         let ring = &raw mut self.ring;
         // SAFETY: FIXME
-        unsafe { ::liburing_rs::io_uring_queue_exit(ring) };
+        unsafe {
+            ::liburing_rs::io_uring_queue_exit(ring);
+        }
     }
 }
 
 impl<'fd> IoUring<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
 {
     /// # Errors
+    #[inline]
     pub fn new() -> ::std::io::Result<Self>
     {
         Self::builder().build()
     }
 
+    #[inline]
     pub fn builder() -> IoUringBuilder<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
     {
         Self::make()
@@ -171,23 +176,27 @@ where
         })
     }
 
+    #[inline]
     pub fn cqueue(&mut self) -> CompletionQueue<'_, C>
     {
         CompletionQueue::new(self)
     }
 
+    #[inline]
     pub fn squeue(&mut self) -> SubmissionQueue<'_, S>
     {
         SubmissionQueue::new(self)
     }
 
     #[must_use]
+    #[inline]
     pub fn registrar(&self) -> Registrar<'_>
     {
         Registrar::new(self)
     }
 
     #[must_use]
+    #[inline]
     pub const fn ring_fd(&self) -> BorrowedFd<'_>
     {
         // SAFETY:
@@ -195,6 +204,7 @@ where
     }
 
     #[must_use]
+    #[inline]
     pub fn queues(&mut self) -> (SubmissionQueue<'_, S>, CompletionQueue<'_, C>)
     {
         (SubmissionQueue::new(self), CompletionQueue::new(self))
@@ -203,6 +213,7 @@ where
 
 macro_rules! io_uring_flag_setup {
     ($method:ident, $setter:ident, $SetFlagSetup:ident, $FlagSetup:ident) => {
+        #[inline]
         pub fn $method(self) -> IoUringBuilder<'fd, S, C, $SetFlagSetup<State>>
         where
             State::$FlagSetup: IsUnset,
@@ -315,6 +326,7 @@ where
         FlagSetupNoSqarray
     );
 
+    #[inline]
     pub fn setup_cqe32(
         self
     ) -> IoUringBuilder<'fd, S, crate::cqe::kind::Cqe32, SetFlagSetupCqe32<State>>
@@ -322,11 +334,12 @@ where
         State::FlagSetupCqe32: IsUnset,
     {
         // SAFETY:
-        let this: IoUringBuilder<S, crate::cqe::kind::Cqe32, State> =
+        let this: IoUringBuilder<'_, S, crate::cqe::kind::Cqe32, State> =
             unsafe { ::core::mem::transmute(self) };
         this.flag_setup_cqe32(true) // tarpaulin
     }
 
+    #[inline]
     pub fn setup_sqe128(
         self
     ) -> IoUringBuilder<'fd, crate::sqe::kind::Sqe128, C, SetFlagSetupSqe128<State>>
@@ -334,14 +347,14 @@ where
         State::FlagSetupSqe128: IsUnset,
     {
         // SAFETY:
-        let this: IoUringBuilder<crate::sqe::kind::Sqe128, C, State> =
+        let this: IoUringBuilder<'_, crate::sqe::kind::Sqe128, C, State> =
             unsafe { ::core::mem::transmute(self) };
         this.flag_setup_sqe128(true) // tarpaulin
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use crate::ring::IoUring;
 

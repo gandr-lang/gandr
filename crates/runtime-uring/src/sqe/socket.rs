@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_socket(
             &mut self,
             domain: ::socket2::Domain,
@@ -16,28 +17,28 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             let domain = domain.into();
             let r#type = r#type.into();
-            let protocol = protocol.map(Into::into).unwrap_or_default();
+            let protocol = protocol.map_or_default(Into::into);
             let flags = flags.bits();
             if let Some(file_index) = file_index {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
                     ::liburing_rs::io_uring_prep_socket_direct(
                         sqe, domain, r#type, protocol, file_index, flags,
-                    )
-                };
+                    );
+                }
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
-                    ::liburing_rs::io_uring_prep_socket(sqe, domain, r#type, protocol, flags)
-                };
+                    ::liburing_rs::io_uring_prep_socket(sqe, domain, r#type, protocol, flags);
+                }
             }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use ::std::os::fd::BorrowedFd;
     use ::std::os::fd::FromRawFd as _;
@@ -137,7 +138,9 @@ pub(crate) mod test
                 .get_sqe()
                 .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
                 .unwrap();
-            unsafe { sqe.prep_socket(domain, r#type, protocol, flags, socket_slot) };
+            unsafe {
+                sqe.prep_socket(domain, r#type, protocol, flags, socket_slot);
+            }
 
             // prepare sqe flags
             let mut flags = ::core::ffi::c_uint::default();
@@ -147,7 +150,9 @@ pub(crate) mod test
             if cqe_skip {
                 flags |= ::liburing_rs::IOSQE_CQE_SKIP_SUCCESS;
             }
-            unsafe { sqe.set_flags(flags) };
+            unsafe {
+                sqe.set_flags(flags);
+            }
 
             sq.submit().unwrap()
         }
@@ -169,7 +174,7 @@ pub(crate) mod test
 
             let cqe = cq.wait(1).unwrap().next();
             let cqe = cqe
-                .map(Into::<crate::Cqe16>::into)
+                .map(Into::<crate::Cqe16<'_>>::into)
                 .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                 .unwrap();
             let desc = cqe.cqe.res.sys_uint().unwrap();
@@ -210,7 +215,7 @@ pub(crate) mod test
         }
     }
 
-    pub(crate) fn socket_with<S, C>(
+    pub fn socket_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         slots: Option<::core::ffi::c_uint>,
         socket_slot: Option<::core::ffi::c_uint>,

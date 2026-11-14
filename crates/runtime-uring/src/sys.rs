@@ -1,4 +1,4 @@
-pub(crate) trait SysResult: self::private::SysResult
+pub trait SysResult: self::private::SysResult
 {
     fn sys_zero(&self) -> ::std::io::Result<()>;
     fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>;
@@ -36,7 +36,7 @@ mod private
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use crate::sys::SysResult as _;
 

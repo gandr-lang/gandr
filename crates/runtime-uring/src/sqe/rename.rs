@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_rename(
             &mut self,
             oldpath: *const ::core::ffi::c_char,
@@ -12,9 +13,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_rename(sqe, oldpath, newpath) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_rename(sqe, oldpath, newpath);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_renameat(
             &mut self,
             olddfd: ::core::ffi::c_int,
@@ -27,8 +31,8 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_renameat(sqe, olddfd, oldpath, newdfd, newpath, flags)
-            };
+                ::liburing_rs::io_uring_prep_renameat(sqe, olddfd, oldpath, newdfd, newpath, flags);
+            }
         }
     }
 }

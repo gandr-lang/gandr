@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_fgetxattr(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -14,9 +15,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_fgetxattr(sqe, fd, name, value, len) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_fgetxattr(sqe, fd, name, value, len);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_fsetxattr(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -28,9 +32,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_fsetxattr(sqe, fd, name, value, flags, len) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_fsetxattr(sqe, fd, name, value, flags, len);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_getxattr(
             &mut self,
             name: *const ::core::ffi::c_char,
@@ -41,9 +48,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_getxattr(sqe, name, value, path, len) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_getxattr(sqe, name, value, path, len);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_setxattr(
             &mut self,
             name: *const ::core::ffi::c_char,
@@ -55,7 +65,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_setxattr(sqe, name, value, path, flags, len) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_setxattr(sqe, name, value, path, flags, len);
+            }
         }
     }
 }

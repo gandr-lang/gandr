@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_recv(
             &mut self,
             sockfd: ::core::ffi::c_int,
@@ -14,9 +15,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_recv(sqe, sockfd, buf, len, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_recv(sqe, sockfd, buf, len, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_recv_multishot(
             &mut self,
             sockfd: ::core::ffi::c_int,
@@ -27,9 +31,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_recv_multishot(sqe, sockfd, buf, len, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_recv_multishot(sqe, sockfd, buf, len, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_recvmsg(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -39,9 +46,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_recvmsg(sqe, fd, msg, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_recvmsg(sqe, fd, msg, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_recvmsg_multishot(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -51,7 +61,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_recvmsg_multishot(sqe, fd, msg, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_recvmsg_multishot(sqe, fd, msg, flags);
+            }
         }
     }
 }

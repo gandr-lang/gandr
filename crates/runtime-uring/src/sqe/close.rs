@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_close(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -11,9 +12,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_close(sqe, fd) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_close(sqe, fd);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_close_direct(
             &mut self,
             file_index: ::core::ffi::c_uint,
@@ -21,7 +25,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_close_direct(sqe, file_index) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_close_direct(sqe, file_index);
+            }
         }
     }
 }

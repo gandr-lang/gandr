@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_read(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -14,9 +15,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_read(sqe, fd, buf, nbytes, offset) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_read(sqe, fd, buf, nbytes, offset);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_read_fixed(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -29,10 +33,11 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_read_fixed(sqe, fd, buf, nbytes, offset, buf_index)
-            };
+                ::liburing_rs::io_uring_prep_read_fixed(sqe, fd, buf, nbytes, offset, buf_index);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_read_multishot(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -44,10 +49,11 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_read_multishot(sqe, fd, nbytes, offset, buf_group)
-            };
+                ::liburing_rs::io_uring_prep_read_multishot(sqe, fd, nbytes, offset, buf_group);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_readv(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -58,9 +64,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_readv(sqe, fd, iovecs, nr_vecs, offset) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_readv(sqe, fd, iovecs, nr_vecs, offset);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_readv2(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -72,9 +81,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_readv2(sqe, fd, iovecs, nr_vecs, offset, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_readv2(sqe, fd, iovecs, nr_vecs, offset, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_readv_fixed(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -90,8 +102,8 @@ pub mod repr
             unsafe {
                 ::liburing_rs::io_uring_prep_readv_fixed(
                     sqe, fd, iovecs, nr_vecs, offset, flags, buf_index,
-                )
-            };
+                );
+            }
         }
     }
 }

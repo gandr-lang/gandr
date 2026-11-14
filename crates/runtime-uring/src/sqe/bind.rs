@@ -7,6 +7,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_bind<'op>(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
@@ -22,13 +23,15 @@ pub mod repr
             let addr = addr.cast();
 
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_bind(sqe, fd, addr, addrlen) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_bind(sqe, fd, addr, addrlen);
+            }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use ::assert_fs::TempDir;
     use ::assert_fs::assert::PathAssert as _;
@@ -75,7 +78,9 @@ pub(crate) mod test
                 .get_sqe()
                 .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
                 .unwrap();
-            unsafe { sqe.prep_bind(socket, addr) };
+            unsafe {
+                sqe.prep_bind(socket, addr);
+            }
 
             let mut flags = ::core::ffi::c_uint::default();
             if sqe_link {
@@ -87,7 +92,9 @@ pub(crate) mod test
             if socket.is_slot() {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
-            unsafe { sqe.set_flags(flags) };
+            unsafe {
+                sqe.set_flags(flags);
+            }
 
             sq.submit().unwrap()
         }
@@ -130,7 +137,7 @@ pub(crate) mod test
         }
     }
 
-    pub(crate) fn bind_with<S, C>(
+    pub fn bind_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         temp: &::assert_fs::TempDir,
         path: &ChildPath,

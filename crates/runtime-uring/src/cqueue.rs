@@ -18,7 +18,7 @@ impl<'ring, C> CompletionQueue<'ring, C>
 where
     C: crate::cqe::Kind,
 {
-    pub(crate) fn new<S>(ring: &'ring IoUring<S, C>) -> Self
+    pub(crate) fn new<S>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
         let ring = NonNull::from(&ring.ring);
         Self {
@@ -27,12 +27,14 @@ where
         }
     }
 
+    #[inline]
     pub fn ready(&mut self) -> CqesReady<'_, C>
     {
         CqesReady::new(self.ring)
     }
 
     /// # Errors
+    #[inline]
     pub fn wait(
         &mut self,
         count: usize,
@@ -63,7 +65,7 @@ where
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use crate::cqueue::CompletionQueue;
     use crate::ring::IoUring;
@@ -100,7 +102,9 @@ pub(crate) mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let num = 1;
                 let num = sq.submit_and_wait(num).unwrap();
@@ -115,10 +119,14 @@ pub(crate) mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let num = 2;
                 let num = sq.submit_and_wait(num).unwrap();
@@ -148,7 +156,9 @@ pub(crate) mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let num = 1;
                 let num = sq.submit_and_wait(num).unwrap();
@@ -163,10 +173,14 @@ pub(crate) mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let mut sqe = sq.get_sqe().unwrap();
-                unsafe { sqe.prep_nop() };
+                unsafe {
+                    sqe.prep_nop();
+                }
 
                 let num = 2;
                 let num = sq.submit_and_wait(num).unwrap();

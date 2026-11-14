@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_statx(
             &mut self,
             dfd: ::core::ffi::c_int,
@@ -15,7 +16,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_statx(sqe, dfd, path, flags, mask, statxbuf) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_statx(sqe, dfd, path, flags, mask, statxbuf);
+            }
         }
     }
 }

@@ -16,7 +16,7 @@ impl<'ring, S> SubmissionQueue<'ring, S>
 where
     S: crate::sqe::Kind,
 {
-    pub(crate) fn new<C>(ring: &'ring IoUring<S, C>) -> Self
+    pub(crate) fn new<C>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
         let ring = NonNull::from(&ring.ring);
         Self {
@@ -25,12 +25,14 @@ where
         }
     }
 
+    #[inline]
     pub fn get_sqe(&mut self) -> Option<crate::sqe::repr::Sqe<'_>>
     {
         // SAFETY: FIXME
         unsafe { crate::sqe::get_sqe_raw::<S>(self.ring) }.map(Into::into)
     }
 
+    #[inline]
     pub fn get_sqes(
         &mut self,
         len: u32,
@@ -46,6 +48,7 @@ where
     }
 
     /// # Errors
+    #[inline]
     pub fn submit(&mut self) -> ::std::io::Result<u32>
     {
         let ring = self.ring.as_ptr();
@@ -55,6 +58,7 @@ where
     }
 
     /// # Errors
+    #[inline]
     pub fn submit_and_wait(
         &mut self,
         wait_nr: u32,
@@ -69,6 +73,7 @@ where
 
 impl SubmissionQueue<'_, crate::sqe::kind::Sqe128>
 {
+    #[inline]
     pub fn get_sqe128(&mut self) -> Option<crate::sqe::repr::Sqe128<'_>>
     {
         // SAFETY: FIXME
@@ -77,7 +82,7 @@ impl SubmissionQueue<'_, crate::sqe::kind::Sqe128>
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use crate::IoUringBuilder;
     use crate::ring::IoUring;
@@ -240,7 +245,9 @@ pub(crate) mod test
             let mut sq = ring.squeue();
 
             let mut sqe = sq.get_sqe().unwrap();
-            unsafe { sqe.prep_nop() };
+            unsafe {
+                sqe.prep_nop();
+            }
 
             let num = sq.submit_and_wait(1).unwrap();
             assert_eq!(num, 1);

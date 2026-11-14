@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_waitid(
             &mut self,
             idtype: ::liburing_rs::idtype_t,
@@ -15,7 +16,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_waitid(sqe, idtype, id, infop, options, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_waitid(sqe, idtype, id, infop, options, flags);
+            }
         }
     }
 }

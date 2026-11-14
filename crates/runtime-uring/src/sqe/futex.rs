@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_futex_wait(
             &mut self,
             futex: *const u32,
@@ -18,10 +19,11 @@ pub mod repr
             let futex = futex.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_futex_wait(sqe, futex, val, mask, futex_flags, flags)
-            };
+                ::liburing_rs::io_uring_prep_futex_wait(sqe, futex, val, mask, futex_flags, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_futex_waitv(
             &mut self,
             futex: *const ::liburing_rs::futex_waitv,
@@ -33,9 +35,12 @@ pub mod repr
             // FIXME: remove if upstream merges const changes
             let futex = futex.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_futex_waitv(sqe, futex, nr_futex, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_futex_waitv(sqe, futex, nr_futex, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_futex_wake(
             &mut self,
             futex: *const u32,
@@ -50,8 +55,8 @@ pub mod repr
             let futex = futex.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_futex_wake(sqe, futex, val, mask, futex_flags, flags)
-            };
+                ::liburing_rs::io_uring_prep_futex_wake(sqe, futex, val, mask, futex_flags, flags);
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_files_update(
             &mut self,
             fds: *const ::core::ffi::c_int,
@@ -15,7 +16,9 @@ pub mod repr
             // FIXME: remove if upstream merges const changes
             let fds = fds.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_files_update(sqe, fds, nr_fds, offset) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_files_update(sqe, fds, nr_fds, offset);
+            }
         }
     }
 }

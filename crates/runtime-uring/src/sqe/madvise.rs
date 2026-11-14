@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_madvise(
             &mut self,
             addr: *mut ::core::ffi::c_void,
@@ -13,9 +14,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_madvise(sqe, addr, length, advice) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_madvise(sqe, addr, length, advice);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_madvise64(
             &mut self,
             addr: *mut ::core::ffi::c_void,
@@ -25,7 +29,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_madvise64(sqe, addr, length, advice) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_madvise64(sqe, addr, length, advice);
+            }
         }
     }
 }

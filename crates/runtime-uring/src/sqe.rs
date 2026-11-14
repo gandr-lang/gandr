@@ -60,7 +60,7 @@ impl<'sq, 'ring, S> Sqes<'sq, S>
         len: u32,
     ) -> Self
     {
-        let ring = NonNull::clone(&sq.ring);
+        let ring = sq.ring;
         Self {
             ring,
             rem: len,
@@ -75,6 +75,7 @@ where
 {
     type Item = S::Repr<'sq>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.rem == 0 {
@@ -113,6 +114,7 @@ impl Kind for self::kind::Sqe64
 {
     type Repr<'sq> = self::repr::Sqe64<'sq>;
 
+    #[inline]
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>
     {
         // SAFETY:
@@ -124,6 +126,7 @@ impl Kind for self::kind::Sqe128
 {
     type Repr<'sq> = self::repr::Sqe128<'sq>;
 
+    #[inline]
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>
     {
         // SAFETY:
@@ -132,6 +135,7 @@ impl Kind for self::kind::Sqe128
 }
 impl<'sq> From<self::repr::Sqe128<'sq>> for self::repr::Sqe64<'sq>
 {
+    #[inline]
     fn from(value: self::repr::Sqe128<'sq>) -> Self
     {
         let sqe = ::core::ptr::from_mut(value.sqe).cast();
@@ -178,6 +182,7 @@ pub mod repr
     impl<'sq> Sqe64<'sq>
     {
         /// # Safety
+        #[inline]
         pub const unsafe fn new(sqe: &'sq mut ::liburing_rs::io_uring_sqe) -> Self
         {
             Self { sqe }
@@ -192,6 +197,7 @@ pub mod repr
     impl<'sq> Sqe128<'sq>
     {
         /// # Safety
+        #[inline]
         pub const unsafe fn new(sqe: &'sq mut ::liburing_rs::io_uring_sqe) -> Self
         {
             Self { sqe }
@@ -201,6 +207,7 @@ pub mod repr
     {
         type Target = Sqe64<'sq>;
 
+        #[inline]
         fn deref(&self) -> &Self::Target
         {
             let ptr = <*const Self>::cast(self);
@@ -210,6 +217,7 @@ pub mod repr
     }
     impl DerefMut for Sqe128<'_>
     {
+        #[inline]
         fn deref_mut(&mut self) -> &mut Self::Target
         {
             let ptr = <*mut Self>::cast(self);
@@ -221,6 +229,7 @@ pub mod repr
     impl Sqe64<'_>
     {
         /// # Safety
+        #[inline]
         pub unsafe fn prep_rw(
             &mut self,
             op: ::core::ffi::c_uint,
@@ -235,6 +244,7 @@ pub mod repr
             unsafe { ::liburing_rs::io_uring_prep_rw(op, sqe, fd, addr, len, offset) }
         }
 
+        #[inline]
         pub unsafe fn set_flags(
             &mut self,
             flags: ::core::ffi::c_uint,
@@ -242,9 +252,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_sqe_set_flags(sqe, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_sqe_set_flags(sqe, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn set_data(
             &mut self,
             data: *const ::core::ffi::c_void,
@@ -252,9 +265,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_sqe_set_data(sqe, data.cast_mut()) };
+            unsafe {
+                ::liburing_rs::io_uring_sqe_set_data(sqe, data.cast_mut());
+            }
         }
 
+        #[inline]
         pub unsafe fn set_data64(
             &mut self,
             data: u64,
@@ -262,7 +278,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_sqe_set_data64(sqe, data) };
+            unsafe {
+                ::liburing_rs::io_uring_sqe_set_data64(sqe, data);
+            }
         }
     }
 }

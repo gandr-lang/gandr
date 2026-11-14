@@ -9,6 +9,7 @@ pub mod repr
     {
         // #[expect(clippy::needless_pass_by_value, reason = "avoid
         // indirection")]
+        #[inline]
         pub unsafe fn prep_listen(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
@@ -20,13 +21,15 @@ pub mod repr
             let fd = socket.as_raw_fd();
 
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_listen(sqe, fd, backlog) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_listen(sqe, fd, backlog);
+            }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use ::assert_fs::TempDir;
     use ::assert_fs::prelude::PathChild as _;
@@ -70,7 +73,9 @@ pub(crate) mod test
                 .get_sqe()
                 .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
                 .unwrap();
-            unsafe { sqe.prep_listen(socket, backlog) };
+            unsafe {
+                sqe.prep_listen(socket, backlog);
+            }
 
             let mut flags = ::core::ffi::c_uint::default();
             if sqe_link {
@@ -82,7 +87,9 @@ pub(crate) mod test
             if socket.is_slot() {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
-            unsafe { sqe.set_flags(flags) };
+            unsafe {
+                sqe.set_flags(flags);
+            }
 
             sq.submit().unwrap()
         }
@@ -125,7 +132,7 @@ pub(crate) mod test
         }
     }
 
-    pub(crate) fn listen_with<S, C>(
+    pub fn listen_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,
         sqe_link: Option<bool>,

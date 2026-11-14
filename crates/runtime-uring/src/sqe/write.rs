@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_write(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -14,9 +15,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_write(sqe, fd, buf, nbytes, offset) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_write(sqe, fd, buf, nbytes, offset);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_write_fixed(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -29,10 +33,11 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_write_fixed(sqe, fd, buf, nbytes, offset, buf_index)
-            };
+                ::liburing_rs::io_uring_prep_write_fixed(sqe, fd, buf, nbytes, offset, buf_index);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_writev(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -43,9 +48,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_writev(sqe, fd, iovecs, nr_vecs, offset) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_writev(sqe, fd, iovecs, nr_vecs, offset);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_writev2(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -58,10 +66,11 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_writev2(sqe, fd, iovecs, nr_vecs, offset, flags)
-            };
+                ::liburing_rs::io_uring_prep_writev2(sqe, fd, iovecs, nr_vecs, offset, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_writev_fixed(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -77,8 +86,8 @@ pub mod repr
             unsafe {
                 ::liburing_rs::io_uring_prep_writev_fixed(
                     sqe, fd, iovecs, nr_vecs, offset, flags, buf_index,
-                )
-            };
+                );
+            }
         }
     }
 }

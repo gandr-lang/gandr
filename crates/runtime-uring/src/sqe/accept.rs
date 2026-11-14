@@ -7,6 +7,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_accept<'op>(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
@@ -28,15 +29,18 @@ pub mod repr
                 unsafe {
                     ::liburing_rs::io_uring_prep_accept_direct(
                         sqe, fd, addr, addrlen, flags, file_index,
-                    )
-                };
+                    );
+                }
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_accept(sqe, fd, addr, addrlen, flags) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_accept(sqe, fd, addr, addrlen, flags);
+                }
             }
         }
 
+        #[inline]
         pub unsafe fn prep_multishot_accept<'op>(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
@@ -58,21 +62,21 @@ pub mod repr
                 unsafe {
                     ::liburing_rs::io_uring_prep_multishot_accept_direct(
                         sqe, fd, addr, addrlen, flags,
-                    )
-                };
+                    );
+                }
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
-                    ::liburing_rs::io_uring_prep_multishot_accept(sqe, fd, addr, addrlen, flags)
-                };
+                    ::liburing_rs::io_uring_prep_multishot_accept(sqe, fd, addr, addrlen, flags);
+                }
             }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     use ::assert_fs::TempDir;
     // use ::assert_fs::assert::PathAssert as _;
@@ -162,11 +166,11 @@ pub(crate) mod test
                 .unwrap();
 
             match mode {
-                FixtureOpMode::Singleshot => {
-                    unsafe { sqe.prep_accept(socket, addr, addrlen, flags, client_slot) };
+                FixtureOpMode::Singleshot => unsafe {
+                    sqe.prep_accept(socket, addr, addrlen, flags, client_slot);
                 },
-                FixtureOpMode::Multishot { direct, .. } => {
-                    unsafe { sqe.prep_multishot_accept(socket, addr, addrlen, flags, direct) };
+                FixtureOpMode::Multishot { direct, .. } => unsafe {
+                    sqe.prep_multishot_accept(socket, addr, addrlen, flags, direct);
                 },
             }
 
@@ -180,7 +184,9 @@ pub(crate) mod test
             if socket.is_slot() {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
-            unsafe { sqe.set_flags(flags) };
+            unsafe {
+                sqe.set_flags(flags);
+            }
 
             sq.submit().unwrap()
         }
@@ -253,7 +259,7 @@ pub(crate) mod test
         }
     }
 
-    pub(crate) fn connect(path: &Path) -> ::std::thread::JoinHandle<::std::io::Result<()>>
+    pub fn connect(path: &Path) -> ::std::thread::JoinHandle<::std::io::Result<()>>
     {
         ::std::thread::spawn({
             let path = path.to_path_buf();
@@ -269,7 +275,7 @@ pub(crate) mod test
         })
     }
 
-    pub(crate) fn accept_with<'op, S, C>(
+    pub fn accept_with<'op, S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,
         addr: &'op mut ::socket2::SockAddrStorage,

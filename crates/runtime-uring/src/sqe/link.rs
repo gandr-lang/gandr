@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_link(
             &mut self,
             oldpath: *const ::core::ffi::c_char,
@@ -13,9 +14,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_link(sqe, oldpath, newpath, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_link(sqe, oldpath, newpath, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_link_timeout(
             &mut self,
             ts: *const ::liburing_rs::__kernel_timespec,
@@ -26,9 +30,12 @@ pub mod repr
             // FIXME: remove if upstream merges const changes
             let ts = ts.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_link_timeout(sqe, ts, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_link_timeout(sqe, ts, flags);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_linkat(
             &mut self,
             olddfd: ::core::ffi::c_int,
@@ -41,8 +48,8 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
-                ::liburing_rs::io_uring_prep_linkat(sqe, olddfd, oldpath, newdfd, newpath, flags)
-            };
+                ::liburing_rs::io_uring_prep_linkat(sqe, olddfd, oldpath, newdfd, newpath, flags);
+            }
         }
     }
 }

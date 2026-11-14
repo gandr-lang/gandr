@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_tee(
             &mut self,
             fd_in: ::core::ffi::c_int,
@@ -14,7 +15,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_tee(sqe, fd_in, fd_out, nbytes, splice_flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_tee(sqe, fd_in, fd_out, nbytes, splice_flags);
+            }
         }
     }
 }

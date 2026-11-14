@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_symlink(
             &mut self,
             target: *const ::core::ffi::c_char,
@@ -12,9 +13,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_symlink(sqe, target, linkpath) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_symlink(sqe, target, linkpath);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_symlinkat(
             &mut self,
             target: *const ::core::ffi::c_char,
@@ -24,7 +28,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_symlinkat(sqe, target, newdirfd, linkpath) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_symlinkat(sqe, target, newdirfd, linkpath);
+            }
         }
     }
 }

@@ -18,8 +18,6 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("This crate is only supported on Linux");
 
-extern crate alloc;
-
 pub mod cqe;
 mod cqueue;
 mod fd;

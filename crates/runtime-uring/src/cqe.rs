@@ -17,11 +17,14 @@ impl<C> Drop for CqesReady<'_, C>
 where
     C: self::Kind,
 {
+    #[inline]
     fn drop(&mut self)
     {
         let ring = self.ring.as_ptr();
         // SAFETY:
-        unsafe { ::liburing_rs::io_uring_cq_advance(ring, self.seen) };
+        unsafe {
+            ::liburing_rs::io_uring_cq_advance(ring, self.seen);
+        }
     }
 }
 
@@ -48,6 +51,7 @@ where
 {
     type Item = C::Repr<'cq>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
         let mut cqe = MaybeUninit::<C::Repr<'cq>>::uninit();
@@ -62,6 +66,7 @@ where
         Some(unsafe { cqe.assume_init() })
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
         let min = self.iter.tail - self.iter.head;
@@ -89,11 +94,14 @@ impl<C> Drop for CqesWait<'_, C>
 where
     C: self::Kind,
 {
+    #[inline]
     fn drop(&mut self)
     {
         let ring = self.ring.as_ptr();
         // SAFETY:
-        unsafe { ::liburing_rs::io_uring_cq_advance(ring, self.seen) };
+        unsafe {
+            ::liburing_rs::io_uring_cq_advance(ring, self.seen);
+        }
     }
 }
 
@@ -123,6 +131,7 @@ where
 {
     type Item = C::Repr<'cq>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.left == 0 {
@@ -147,6 +156,7 @@ where
         Some(cqe)
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
         let min = self.left;
@@ -165,6 +175,7 @@ impl Kind for self::kind::Cqe16
 {
     type Repr<'cq> = self::repr::Cqe16<'cq>;
 
+    #[inline]
     unsafe fn new(cqe: &::liburing_rs::io_uring_cqe) -> Self::Repr<'_>
     {
         // SAFETY:
@@ -176,6 +187,7 @@ impl Kind for self::kind::Cqe32
 {
     type Repr<'cq> = self::repr::Cqe32<'cq>;
 
+    #[inline]
     unsafe fn new(cqe: &::liburing_rs::io_uring_cqe) -> Self::Repr<'_>
     {
         // SAFETY:
@@ -184,6 +196,7 @@ impl Kind for self::kind::Cqe32
 }
 impl<'cq> From<self::repr::Cqe32<'cq>> for self::repr::Cqe16<'cq>
 {
+    #[inline]
     fn from(value: self::repr::Cqe32<'cq>) -> Self
     {
         let cqe = ::core::ptr::from_ref(value.cqe).cast();
@@ -231,6 +244,7 @@ pub mod repr
     impl<'cq> Cqe16<'cq>
     {
         #[must_use]
+        #[inline]
         pub const unsafe fn new(cqe: &'cq ::liburing_rs::io_uring_cqe) -> Self
         {
             Self { cqe }
@@ -245,6 +259,7 @@ pub mod repr
     impl<'cq> Cqe32<'cq>
     {
         #[must_use]
+        #[inline]
         pub const unsafe fn new(cqe: &'cq ::liburing_rs::io_uring_cqe) -> Self
         {
             Self { cqe }
@@ -254,6 +269,7 @@ pub mod repr
     {
         type Target = Cqe16<'cq>;
 
+        #[inline]
         fn deref(&self) -> &Self::Target
         {
             let ptr = <*const Self>::cast(self);
@@ -263,6 +279,7 @@ pub mod repr
     }
     impl DerefMut for Cqe32<'_>
     {
+        #[inline]
         fn deref_mut(&mut self) -> &mut Self::Target
         {
             let ptr = <*mut Self>::cast(self);

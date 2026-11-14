@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_cmd_sock(
             &mut self,
             cmd_op: ::core::ffi::c_int,
@@ -19,8 +20,8 @@ pub mod repr
             unsafe {
                 ::liburing_rs::io_uring_prep_cmd_sock(
                     sqe, cmd_op, fd, level, optname, optval, optlen,
-                )
-            };
+                );
+            }
         }
     }
 }

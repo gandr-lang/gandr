@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_provide_buffers(
             &mut self,
             addr: *mut ::core::ffi::c_void,
@@ -15,9 +16,12 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_provide_buffers(sqe, addr, len, nr, bgid, bid) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_provide_buffers(sqe, addr, len, nr, bgid, bid);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_remove_buffers(
             &mut self,
             nr: ::core::ffi::c_int,
@@ -26,7 +30,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_remove_buffers(sqe, nr, bgid) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_remove_buffers(sqe, nr, bgid);
+            }
         }
     }
 }

@@ -15,9 +15,9 @@ where
 {
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd
     {
-        match self {
-            &Self::Slot(slot) => slot.cast_signed(),
-            &Self::Desc(ref desc) => desc.as_raw_fd(),
+        match *self {
+            Self::Slot(slot) => slot.cast_signed(),
+            Self::Desc(ref desc) => desc.as_raw_fd(),
         }
     }
 }
@@ -36,17 +36,17 @@ impl<T> SlotDesc<T>
     where
         T: Deref,
     {
-        match self {
-            &Self::Slot(idx) => SlotDesc::Slot(idx),
-            &Self::Desc(ref val) => SlotDesc::Desc(&**val),
+        match *self {
+            Self::Slot(idx) => SlotDesc::Slot(idx),
+            Self::Desc(ref val) => SlotDesc::Desc(&**val),
         }
     }
 
     pub const fn as_ref(&self) -> SlotDesc<&T>
     {
-        match self {
-            &Self::Slot(idx) => SlotDesc::Slot(idx),
-            &Self::Desc(ref val) => SlotDesc::Desc(val),
+        match *self {
+            Self::Slot(idx) => SlotDesc::Slot(idx),
+            Self::Desc(ref val) => SlotDesc::Desc(val),
         }
     }
 

@@ -14,7 +14,7 @@ pub struct Registrar<'ring>
 
 impl<'ring> Registrar<'ring>
 {
-    pub(crate) fn new<S, C>(ring: &'ring IoUring<S, C>) -> Self
+    pub(crate) fn new<S, C>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
         let ring = NonNull::from(&ring.ring);
         Self {
@@ -24,6 +24,7 @@ impl<'ring> Registrar<'ring>
     }
 
     /// # Errors
+    #[inline]
     pub fn register_files(
         &self,
         files: &'ring [BorrowedFd<'ring>],
@@ -38,6 +39,7 @@ impl<'ring> Registrar<'ring>
     }
 
     /// # Errors
+    #[inline]
     pub fn register_files_sparse(
         &self,
         nr_files: usize,

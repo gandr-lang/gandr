@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_splice(
             &mut self,
             fd_in: ::core::ffi::c_int,
@@ -25,8 +26,8 @@ pub mod repr
                     off_out,
                     nbytes,
                     splice_flags,
-                )
-            };
+                );
+            }
         }
     }
 }

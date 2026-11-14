@@ -1,5 +1,3 @@
-#![expect(clippy::missing_docs_in_private_items, reason = "build")]
-
 #[cfg(not(feature = "bindgen"))]
 fn main()
 {

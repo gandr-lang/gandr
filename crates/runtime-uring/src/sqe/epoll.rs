@@ -4,6 +4,7 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        #[inline]
         pub unsafe fn prep_epoll_ctl(
             &mut self,
             epfd: ::core::ffi::c_int,
@@ -16,9 +17,12 @@ pub mod repr
             // FIXME: remove if upstream merges const changes
             let ev = ev.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_epoll_ctl(sqe, epfd, fd, op, ev) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_epoll_ctl(sqe, epfd, fd, op, ev);
+            }
         }
 
+        #[inline]
         pub unsafe fn prep_epoll_wait(
             &mut self,
             fd: ::core::ffi::c_int,
@@ -29,7 +33,9 @@ pub mod repr
         {
             let sqe = &raw mut *self.sqe;
             // SAFETY: The enclosing method preserves the safety interface.
-            unsafe { ::liburing_rs::io_uring_prep_epoll_wait(sqe, fd, events, maxevents, flags) };
+            unsafe {
+                ::liburing_rs::io_uring_prep_epoll_wait(sqe, fd, events, maxevents, flags);
+            }
         }
     }
 }
