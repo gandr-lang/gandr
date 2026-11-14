@@ -326,7 +326,7 @@ fn whole(
 }
 
 /// Write one timing row per edit of the script over a module of `forms`
-/// forms under `root`, submitted at `width`, after a row for the module's
+/// forms under `root`, submitted on `pool`, after a row for the module's
 /// first submission.
 ///
 /// # Specification
@@ -350,7 +350,7 @@ fn whole(
 fn rows(
     grammar: &Pbg,
     root: SourceRoot,
-    width: Width,
+    pool: &Arc<Pool>,
     forms: FormCount,
     repeats: Repeats,
     out: &mut dyn Write,
@@ -358,16 +358,12 @@ fn rows(
 {
     let mut generated = module(forms, root);
     let mut previous = generated.text();
-    let pool = Arc::new(Pool::new(width));
-    // The pool starts before any clock does, so no row times its threads
-    // starting.
-    pool.join(|| (), || ());
-    let mut session = fresh(grammar, root, &pool);
-    let threads = usize::from(NonZeroUsize::from(width.threads()));
+    let mut session = fresh(grammar, root, pool);
+    let threads = usize::from(NonZeroUsize::from(pool.width().threads()));
     let first = whole(
         grammar,
         root,
-        &pool,
+        pool,
         SourceText::from(previous.as_str()),
         repeats,
     )?;
@@ -425,7 +421,7 @@ fn rows(
         let whole = whole(
             grammar,
             root,
-            &pool,
+            pool,
             SourceText::from(edited.as_str()),
             repeats,
         )?;
@@ -623,25 +619,47 @@ fn main() -> Result<(), Failure>
         "| root | threads | edit | molded | judged ms | admitted ms | whole ms | check ms | judged/whole |"
     )?;
     writeln!(out, "|---|---:|---|---:|---:|---:|---:|---:|---:|")?;
-    for root in [SourceRoot::Strict, SourceRoot::Fixture] {
-        for width in [
-            Width::Threads(Threads::from(NonZeroUsize::MIN)),
-            Width::PerformanceCores,
-        ] {
-            rows(&grammar, root, width, forms, repeats, &mut out)?;
+    let mut retained = None;
+    for width in [
+        Width::Threads(Threads::from(NonZeroUsize::MIN)),
+        Width::PerformanceCores,
+    ] {
+        let pool = Arc::new(Pool::new(width));
+        // The pool starts before any clock does, so no row times its threads
+        // starting.
+        pool.join(|| (), || ());
+        // The memory rows count on the calling thread at one thread's width.
+        // So they run after the rows at one thread warm the process, and
+        // before the process installs a wider pool for its readmissions.
+        if retained.is_none() && pool.width().threads() != Threads::ONE {
+            retained = Some(memory(&grammar, forms)?);
+        }
+        // The process installs its pool for the session's readmissions, as
+        // the driver's faces do. A pool of one thread installs nothing, so
+        // each row at one thread runs before the wider pool stands.
+        gandr_surface_dispatcher::install_session(&pool);
+        for root in [SourceRoot::Strict, SourceRoot::Fixture] {
+            rows(&grammar, root, &pool, forms, repeats, &mut out)?;
         }
     }
+    // A host of one core has no wider pool, so its memory rows run last.
+    let retained = match retained {
+        Some(retained) => retained,
+        None => memory(&grammar, forms)?,
+    };
     writeln!(out)?;
-    memory_rows(&memory(&grammar, forms)?, &mut out)?;
+    memory_rows(&retained, &mut out)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
     use core::num::NonZeroUsize;
     use core::time::Duration;
 
+    use gandr_surface_dispatcher::Pool;
     use gandr_surface_dispatcher::SourceRoot;
     use gandr_surface_dispatcher::Threads;
     use gandr_surface_dispatcher::Width;
@@ -675,7 +693,7 @@ mod tests
                 rows(
                     &grammar,
                     root,
-                    width,
+                    &Arc::new(Pool::new(width)),
                     FormCount::from(16_usize),
                     Repeats(NonZeroUsize::MIN),
                     &mut out,

@@ -508,6 +508,7 @@ pub use crate::unfolding::observe_unfoldings;
 pub use crate::verdicts::AlreadyInstalled;
 pub use crate::verdicts::VerdictCache;
 pub use crate::verdicts::VerdictTally;
+pub use crate::verdicts::install_session;
 pub use crate::verdicts::install_verdict_cache;
 pub use crate::verdicts::install_width;
 pub use crate::verdicts::tallied;
