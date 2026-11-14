@@ -12,7 +12,19 @@
 //! happens before the free. A mutable borrow loads the count with `Acquire`,
 //! so the uses of each holder that dropped happen before the write. Under
 //! `cfg(loom)`, the count is `loom`'s atomic, and the crate's model explores
-//! each interleaving of the clones, the drops and the mutable borrows.
+//! each interleaving of the clones, the drops and the mutable borrows on two
+//! and three threads:
+//!
+//! ```sh
+//! RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test -p gandr-kernel-data --test tests --release model
+//! ```
+//!
+//! | Pointer | Holder | Block |
+//! | ------- | ------ | ----- |
+//! | [`Shared<T>`] | one word | one word and `T` |
+//! | `std`'s `Arc<T>` | one word | two words and `T` |
+//! | [`ThinShared<H, T>`](crate::ThinShared) | one word | two words, `H` and the items |
+//! | `std`'s `Arc<[T]>` | two words | two words and the items |
 //!
 //! # Safety
 //! - unsafe invariants: the pointer of a [`Shared`] or a [`Unique`] names a

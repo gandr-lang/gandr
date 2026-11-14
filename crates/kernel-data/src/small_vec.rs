@@ -11,6 +11,13 @@
 //! it was. The length, the emptiness, the index and the iterators come from
 //! the slice that the vector dereferences to.
 //!
+//! | `N` and `T` | Size | Storage |
+//! | ----------- | ---- | ------- |
+//! | two words of items or fewer | three words | in place up to `N` |
+//! | more than two words of items | one word and the array | in place up to `N` |
+//! | `N` of zero | three words | a plain heap vector |
+//! | a zero-sized `T` | three words | a count, and never a block |
+//!
 //! # Safety
 //! - unsafe invariants: the tag names the live half. With the tag clear, the
 //!   inline array is live. With the tag set, the pair is live, and its pointer
