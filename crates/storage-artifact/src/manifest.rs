@@ -710,12 +710,13 @@ impl ArtifactManifest
     ///   does not.
     /// - ensures: on success the artifact the kernel's decoder returns for the
     ///   reassembled records, read only after the manifest's kernel format and
-    ///   boundary commitment matched `expected`, the stored records rebuilt the
-    ///   tree the manifest names, each key was the digest of its bytes, the
-    ///   order placed each record, and each place ended at a segment boundary
-    ///   of the decode. The manifest counts the header, the order and one
-    ///   record for each distinct segment: two records for an artifact with no
-    ///   declaration, and at most two more than its declarations otherwise.
+    ///   boundary commitment matched `expected`, the stored index rebuilt the
+    ///   tree the manifest names, the order placed each record, the store held
+    ///   each record as a value leaf under its key, and each place ended at a
+    ///   segment boundary of the decode. The manifest counts the header, the
+    ///   order and one record for each distinct segment: two records for an
+    ///   artifact with no declaration, and at most two more than its
+    ///   declarations otherwise.
     /// - provides: the checked read: integrity first — the stored bytes are the
     ///   ones the manifest names — then validity, decided by the kernel's
     ///   decoder alone under its work budgets. A decoded artifact is not an
@@ -724,17 +725,19 @@ impl ArtifactManifest
     ///   [`ArtifactError::Records`] for parameters this build does not
     ///   implement, and [`ArtifactError::IncompatibleProfile`], before the
     ///   store is asked for anything; [`ArtifactError::Records`] for a node the
-    ///   store does not hold or cannot authenticate, or a node of the wrong
-    ///   shape; [`ArtifactError::TreeMismatch`];
+    ///   store does not hold or cannot authenticate, a node of the wrong shape,
+    ///   or a leaf that is not a value leaf; [`ArtifactError::TreeMismatch`]
+    ///   for an index that does not rebuild the tree, or an order that holds
+    ///   other than the manifest's count of records;
     ///   [`ArtifactError::MisplacedRecord`]; [`ArtifactError::MalformedOrder`];
     ///   [`ArtifactError::UnheldRecord`]; [`ArtifactError::UnplacedRecord`];
     ///   [`ArtifactError::NamingMismatch`] for an order whose form is not the
     ///   manifest's; [`ArtifactError::Kernel`];
     ///   [`ArtifactError::SegmentBoundary`].
     /// - panics: none.
-    /// - intension: the store is read at the root and, for an internal root, at
-    ///   each child leaf, iteratively; a record tree is one leaf or one
-    ///   internal node over leaves, so nothing descends further.
+    /// - intension: the store is read at the index root and, for an internal
+    ///   root, at each child leaf, iteratively; then at each value leaf the
+    ///   order names. Nothing descends further.
     ///
     /// # Errors
     /// [`ArtifactError`] — as listed above.
@@ -788,11 +791,17 @@ impl ArtifactManifest
         let loaded = load_records(store, self.root_node)?;
         let refs: Vec<RecordRef<'_>> = loaded.iter().map(Record::as_record_ref).collect();
         let rebuilt = RecordTree::build(&refs, expected)?;
-        let named = TreeRoot::seal(expected, self.record_count, self.root_node)?;
+        let named = TreeRoot::seal(expected, RecordCount::from(2_u64), self.root_node)?;
         if rebuilt.root() != named {
             return Err(ArtifactError::TreeMismatch);
         }
-        let set = ArtifactRecordSet::from_stored(rebuilt.records())?;
+        let set = ArtifactRecordSet::from_stored(rebuilt.records(), store)?;
+        let held = u64::try_from(set.records().len())
+            .ok()
+            .and_then(|count| count.checked_add(2_u64));
+        if held != Some(u64::from(self.record_count)) {
+            return Err(ArtifactError::TreeMismatch);
+        }
         if set.naming() != self.naming {
             return Err(ArtifactError::NamingMismatch {
                 manifest: self.naming,

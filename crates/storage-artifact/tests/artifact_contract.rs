@@ -50,6 +50,7 @@ use gandr_storage_records::DecodeWork;
 use gandr_storage_records::EncodingVersion;
 use gandr_storage_records::HashAlgorithm;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::NodeHash;
 use gandr_storage_records::NodeKind;
 use gandr_storage_records::RecordCount;
 use gandr_storage_records::RecordIndex;
@@ -57,9 +58,12 @@ use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::RecordTreeError;
 use gandr_storage_records::SeparatorConvention;
+use gandr_storage_records::StoredNode;
 use gandr_storage_records::TreeKind;
 use gandr_storage_records::TreeParams;
 use gandr_storage_records::decode_node;
+use gandr_storage_records::encode_leaf;
+use gandr_storage_records::hash_node;
 use gandr_storage_values::CanonicalValue;
 use gandr_storage_values::CanonicalWord;
 use gandr_storage_values::ChildIndexBase;
@@ -300,16 +304,17 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
     (manifest, store)
 }
 
-/// `records` written as a record tree under the current parameters, and
-/// the manifest naming that tree exactly.
+/// `records` written as an index tree under the current parameters into
+/// `store`, and the manifest naming that tree exactly.
 ///
 /// # Specification
 /// - requires: records are strictly ascending and within current record-plane
 ///   limits.
 /// - ensures: the manifest counts exactly records and its root is present in
-///   the returned store; the artifact layer has not admitted their keys.
+///   the returned store, beside what `store` held; the artifact layer has not
+///   admitted their keys.
 /// - provides: authenticated but potentially misplaced records for refusal
-///   probes.
+///   probes, over a store that holds an honest set's value leaves or none.
 /// - fails: never.
 /// - panics: if the record plane refuses the supplied fixture.
 ///
@@ -318,10 +323,10 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
 /// parameters.
 ///
 /// # Adequacy
-/// - hypothesis: L3 on a missing-header tree and a skipped-initial-index tree
-///   observes exact misplaced-key positions after authentication. It
-///   distinguishes losing the stored root from the intended key refusal;
-///   arbitrary record-plane refusal paths are outside this helper's domain.
+/// - hypothesis: L3 on forged indexes observes exact misplaced-key positions
+///   after authentication. It distinguishes losing the stored root from the
+///   intended key refusal; arbitrary record-plane refusal paths are outside
+///   this helper's domain.
 /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
 #[spec(
         requires: records.iter().zip(records.iter().skip(1))
@@ -330,11 +335,13 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
             && usize::try_from(u64::from(ret.0.record_count())).ok() == Some(records.len())
             && ret.1.load(ret.0.root_node()).is_ok(),
     )]
-fn stored_as_named(records: &[RecordRef<'_>]) -> (ArtifactManifest, InMemoryBlockStore)
+fn stored_as_named(
+    records: &[RecordRef<'_>],
+    mut store: InMemoryBlockStore,
+) -> (ArtifactManifest, InMemoryBlockStore)
 {
     let params = TreeParams::current();
     let tree = RecordTree::build(records, params).expect("the records build a tree");
-    let mut store = InMemoryBlockStore::new();
     tree.write_to(&mut store).expect("the tree writes");
     let manifest = ArtifactManifest::new(
         FORMAT_VERSION,
@@ -593,7 +600,8 @@ fn a_named_set_reads_back_with_its_names_7340()
     let order = named.order_image();
     let refs = named.record_refs(&order);
     let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
-    let back = ArtifactRecordSet::from_stored(tree.records()).expect("the stored set reads back");
+    let back =
+        ArtifactRecordSet::from_stored(tree.records(), &store).expect("the stored set reads back");
     assert_eq!(back, named, "each name reads back at its place");
     assert!(
         manifest.read_under(&store, TreeParams::current()).is_ok(),
@@ -636,12 +644,31 @@ fn a_named_set_reads_back_with_its_names_7340()
 #[test]
 fn tree_nodes_store_and_reopen()
 {
-    // These concrete fixtures witness both supported root shapes.
-    for (artifact, root_kind) in [
-        (artifact_of(&[Kind::UnitDefinition]), NodeKind::Leaf),
-        (long_artifact(Count(300)), NodeKind::Internal),
+    // The index holds two records. Under the current rule they share one leaf;
+    // a rule that caps a leaf at one record puts each in a leaf of its own,
+    // under an internal root. So these fixtures witness both root shapes.
+    let current = TreeParams::current();
+    let one_per_leaf = TreeParams::new(
+        TreeKind::CURRENT,
+        EncodingVersion::CURRENT,
+        HashAlgorithm::CURRENT,
+        SeparatorConvention::CURRENT,
+        BoundaryParams::new(
+            BoundaryProfile::CURRENT,
+            current.boundary().mask_bits(),
+            BoundaryRecordCap::try_from(1_u32).expect("a record cap"),
+        ),
+    );
+    for (artifact, params, root_kind) in [
+        (
+            artifact_of(&[Kind::UnitDefinition]),
+            current,
+            NodeKind::Leaf,
+        ),
+        (long_artifact(Count(300)), one_per_leaf, NodeKind::Internal),
     ] {
-        let (manifest, store) = committed(&records_of(&artifact));
+        let mut store = InMemoryBlockStore::new();
+        let manifest = build(&records_of(&artifact), params, &mut store).expect("the set commits");
         let root = store
             .load(manifest.root_node())
             .expect("the root is stored");
@@ -654,14 +681,14 @@ fn tree_nodes_store_and_reopen()
         let expected = decode(artifact.as_image()).expect("the artifact decodes");
         assert_eq!(
             Ok(expected.clone()),
-            manifest.read_under(&store, TreeParams::current()),
+            manifest.read_under(&store, params),
             "the stored artifact reads back as the decode of its own image"
         );
         let reread = ArtifactManifest::decode(manifest.encode().as_image())
             .expect("the manifest's image decodes");
         assert_eq!(
             Ok(expected),
-            reread.read_under(&store, TreeParams::current()),
+            reread.read_under(&store, params),
             "a manifest read from its bytes reads the same artifact"
         );
         assert_eq!(
@@ -670,7 +697,7 @@ fn tree_nodes_store_and_reopen()
                     hash: manifest.root_node(),
                 },
             }),
-            manifest.read_under(&InMemoryBlockStore::new(), TreeParams::current()),
+            manifest.read_under(&InMemoryBlockStore::new(), params),
             "a store without the root refuses it by name"
         );
     }
@@ -773,57 +800,66 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
 fn a_stored_tree_with_misplaced_keys_is_refused()
 {
     let honest = records_of(&shared_artifact());
+    let (_honest_manifest, leaves) = committed(&honest);
     let order = honest.order_image();
     let refs = honest.record_refs(&order);
     let place_count = honest.places().len();
-    let refused = |records: &[RecordRef<'_>]| {
-        let (manifest, store) = stored_as_named(records);
+    let record_count = honest.records().len();
+    let refused = |records: &[RecordRef<'_>], store: &InMemoryBlockStore| {
+        let (manifest, store) = stored_as_named(records, store.clone());
         manifest.read_under(&store, TreeParams::current())
     };
-    let segment = honest
+    let header_bytes = honest.header();
+    let header = RecordRef::new(HEADER_KEY, header_bytes.as_ref());
+    let first = honest
         .records()
         .first()
-        .expect("the artifact has a declaration")
-        .segment();
+        .expect("the artifact has a declaration");
+    let segment = first.segment();
     let key = RecordKey::of(segment);
-    let foreign = RecordKey::of(SegmentBytes::from(b"another segment".as_slice()));
-    let stray = b"a segment no place names";
-    let stray_key = RecordKey::of(SegmentBytes::from(stray.as_slice()));
-    let mut strayed: Vec<RecordRef<'_>> = refs.clone();
-    strayed.push(RecordRef::new(stray_key.as_ref(), stray));
-    strayed.sort_by(|lower, higher| lower.key().cmp(&higher.key()));
-    let stray_position = strayed
-        .iter()
-        .position(|record| record.key().as_ref() == stray_key.as_ref())
-        .expect("the stray record is held");
-    let unheld: Vec<RecordRef<'_>> = refs
-        .iter()
-        .filter(|record| record.key().as_ref() != key.as_ref())
-        .copied()
-        .collect();
-    let first_naming = honest
-        .places()
-        .iter()
-        .position(|place| place.record() == key)
-        .expect("a place names the first record");
+    // The order's keys start past its form and its count, and its places
+    // past its keys.
+    let keys_at = 5_usize;
+    let places_at = keys_at.saturating_add(record_count.saturating_mul(RECORD_KEY_LEN));
     let short = order
         .as_ref()
         .get(.. order.as_ref().len().saturating_sub(1))
         .expect("a prefix");
-    let mut cut_short: Vec<RecordRef<'_>> = refs.clone();
-    if let Some(stored) = cut_short.get_mut(1) {
-        *stored = RecordRef::new(ORDER_KEY, short);
-    }
-    let mut unformed: Vec<RecordRef<'_>> = refs.clone();
-    if let Some(stored) = unformed.get_mut(1) {
-        *stored = RecordRef::new(ORDER_KEY, &[0x07]);
-    }
+    let second_key_at = keys_at.saturating_add(RECORD_KEY_LEN);
+    let first_key = order
+        .as_ref()
+        .get(keys_at .. second_key_at)
+        .expect("a first key")
+        .to_vec();
+    let mut repeated = order.as_ref().to_vec();
+    repeated
+        .get_mut(second_key_at .. second_key_at.saturating_add(RECORD_KEY_LEN))
+        .expect("a second key")
+        .copy_from_slice(&first_key);
+    let mut early = order.as_ref().to_vec();
+    early
+        .get_mut(places_at .. places_at.saturating_add(4))
+        .expect("a first place")
+        .copy_from_slice(&1_u32.to_le_bytes());
+    let past_keys = u32::try_from(record_count)
+        .expect("a count fits four bytes")
+        .to_le_bytes();
+    let mut past = order.as_ref().to_vec();
+    past.get_mut(places_at .. places_at.saturating_add(4))
+        .expect("a first place")
+        .copy_from_slice(&past_keys);
+    let mut unplaced = order.as_ref().get(.. 1).expect("the form").to_vec();
+    unplaced.extend_from_slice(
+        &u32::try_from(record_count.saturating_add(1))
+            .expect("a count fits four bytes")
+            .to_le_bytes(),
+    );
+    unplaced.extend_from_slice(order.as_ref().get(keys_at .. places_at).expect("the keys"));
+    unplaced.extend_from_slice(&[0xff; RECORD_KEY_LEN]);
+    unplaced.extend_from_slice(order.as_ref().get(places_at ..).expect("the places"));
     for (records, expected, what) in [
         (
-            vec![
-                RecordRef::new(HEADER_KEY, honest.header().as_ref()),
-                RecordRef::new(key.as_ref(), segment.as_ref()),
-            ],
+            vec![header, RecordRef::new(key.as_ref(), segment.as_ref())],
             ArtifactError::MisplacedRecord {
                 position: RecordIndex::from(1_usize),
             },
@@ -841,50 +877,110 @@ fn a_stored_tree_with_misplaced_keys_is_refused()
         ),
         (
             vec![
-                RecordRef::new(HEADER_KEY, honest.header().as_ref()),
+                header,
                 RecordRef::new(ORDER_KEY, order.as_ref()),
-                RecordRef::new(foreign.as_ref(), segment.as_ref()),
+                RecordRef::new(key.as_ref(), segment.as_ref()),
             ],
-            ArtifactError::MisplacedRecord {
-                position: RecordIndex::from(2_usize),
-            },
-            "a record under another segment's digest is refused",
+            ArtifactError::TreeMismatch,
+            "an index of three records is refused: the manifest names an index of two",
         ),
         (
-            unformed,
+            vec![header, RecordRef::new(ORDER_KEY, &[0x07])],
             ArtifactError::MalformedOrder {
                 place: RecordIndex::ZERO,
             },
             "an order that opens with no form is refused at place zero",
         ),
         (
-            cut_short,
+            vec![header, RecordRef::new(ORDER_KEY, short)],
             ArtifactError::MalformedOrder {
                 place: RecordIndex::from(place_count.saturating_sub(1)),
             },
             "an order one byte short is refused at its last place",
         ),
         (
-            unheld,
-            ArtifactError::UnheldRecord {
-                place: RecordIndex::from(first_naming),
+            vec![header, RecordRef::new(ORDER_KEY, repeated.as_slice())],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::from(3_usize),
             },
-            "a place whose record the tree lacks is refused at that place",
+            "a key the order lists twice is refused at its second listing",
         ),
         (
-            strayed,
-            ArtifactError::UnplacedRecord {
-                position: RecordIndex::from(stray_position),
+            vec![header, RecordRef::new(ORDER_KEY, early.as_slice())],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::from(3_usize),
             },
-            "a record no place names is refused at that record",
+            "a place that names a key before its turn is refused at that key",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, past.as_slice())],
+            ArtifactError::UnheldRecord {
+                place: RecordIndex::ZERO,
+            },
+            "a slot past the keys is refused at its place",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, unplaced.as_slice())],
+            ArtifactError::UnplacedRecord {
+                position: RecordIndex::from(record_count.saturating_add(2)),
+            },
+            "a key no place names is refused at that key",
         ),
     ] {
-        assert_eq!(Err(expected), refused(&records), "{what}");
+        assert_eq!(Err(expected), refused(&records, &leaves), "{what}");
     }
+    let three = [
+        header,
+        RecordRef::new(ORDER_KEY, order.as_ref()),
+        RecordRef::new(key.as_ref(), segment.as_ref()),
+    ];
+    let three = RecordTree::build(&three, TreeParams::current()).expect("the records build a tree");
+    assert_eq!(
+        Err(ArtifactError::MisplacedRecord {
+            position: RecordIndex::from(2_usize),
+        }),
+        ArtifactRecordSet::from_stored(three.records(), &leaves).map(|set| set.records().len()),
+        "a record past the order is refused at its position: no record stores its key beside \
+         its bytes"
+    );
+    assert_eq!(
+        Err(ArtifactError::Records {
+            refusal: RecordTreeError::UnknownNode {
+                hash: NodeHash::from(first.key()),
+            },
+        }),
+        refused(&refs, &InMemoryBlockStore::new()),
+        "an index whose value leaves the store lacks is refused at the first key"
+    );
+    let foreign = encode_leaf(&[RecordRef::new(b"a", b"1")]).expect("the leaf encodes");
+    let foreign_hash = hash_node(foreign.as_borrowed());
+    let mut holding = InMemoryBlockStore::new();
+    holding
+        .insert(StoredNode::new(foreign_hash, foreign.as_borrowed()))
+        .expect("the leaf stores");
+    let mut lone = vec![u8::from(Naming::Bytes)];
+    lone.extend_from_slice(&1_u32.to_le_bytes());
+    lone.extend_from_slice(foreign_hash.as_ref());
+    lone.extend_from_slice(&0_u32.to_le_bytes());
+    assert!(
+        matches!(
+            refused(
+                &[header, RecordRef::new(ORDER_KEY, lone.as_slice())],
+                &holding
+            ),
+            Err(ArtifactError::Records {
+                refusal: RecordTreeError::MalformedNode { .. }
+            })
+        ),
+        "a key that names a node other than a value leaf is refused"
+    );
     assert_eq!(
         order.as_ref().len(),
-        place_count.saturating_mul(RECORD_KEY_LEN).saturating_add(1),
-        "an order of bytes alone holds its form and one key per place"
+        record_count
+            .saturating_mul(RECORD_KEY_LEN)
+            .saturating_add(place_count.saturating_mul(4))
+            .saturating_add(5),
+        "an order of bytes alone holds its form, its count, each key once and four bytes per place"
     );
 }
 
@@ -965,7 +1061,7 @@ fn a_set_is_held_to_the_layout_s_segment_count()
             .records()
             .iter()
             .all(|record| record.key() == RecordKey::of(record.segment())),
-        "each record sits under the digest of its bytes"
+        "each record sits under the identity of its bytes' value leaf"
     );
     let decoded = decode(artifact.as_image()).expect("the artifact decodes");
     let layout = decoded.segments();
@@ -1002,7 +1098,8 @@ fn a_set_is_held_to_the_layout_s_segment_count()
         Err(ArtifactError::MisplacedRecord {
             position: RecordIndex::ZERO,
         }),
-        ArtifactRecordSet::from_stored(&[]).map(|set| set.records().len()),
+        ArtifactRecordSet::from_stored(&[], &InMemoryBlockStore::new())
+            .map(|set| set.records().len()),
         "an empty tree has no header"
     );
 }

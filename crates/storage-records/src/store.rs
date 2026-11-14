@@ -9,17 +9,23 @@
 //!
 //! # Store requirements
 //!
-//! Implementations verify bytes on insertion and load. Corrupted backing
-//! bytes must produce an error rather than propagate to the caller.
+//! Implementations verify bytes on insertion and load. A [`NamedValue`] is
+//! the one exception: the record plane paired its value and its identity
+//! itself, so [`BlockStore::admit_value`] admits its leaf with no second
+//! hash. Corrupted backing bytes must produce an error rather than propagate
+//! to the caller.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map;
 
 use anodized::spec;
 
 use crate::bytes::NodeHash;
 use crate::error::RecordTreeError;
+use crate::node::NamedValue;
 use crate::node::StoredNode;
+use crate::node::encode_value_leaf;
 use crate::node::verify_stored_node;
 
 /// A content-addressed store of canonical node encodings.
@@ -140,6 +146,42 @@ pub trait BlockStore
         &self,
         hash: NodeHash,
     ) -> Result<StoredNode<'_>, RecordTreeError>;
+
+    /// Admits the value leaf of `value` under the identity the record plane
+    /// paired with it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a [`NamedValue`] holds its pairing.
+    /// - ensures: on success the store holds the leaf [`encode_value_leaf`]
+    ///   writes for the value, under the value's identity, and a later load of
+    ///   it yields that leaf.
+    /// - provides: the write of a value whose identity is known, with no second
+    ///   hash where a store overrides this; the default admits the leaf through
+    ///   [`BlockStore::insert`], which hashes it again.
+    /// - fails: [`RecordTreeError::BudgetExceeded`] for a value past the node
+    ///   budget, and the default's insertion refusals.
+    /// - panics: none.
+    /// - executable: none — a provided method of a trait; the concrete stores'
+    ///   own admissions carry the predicates.
+    ///
+    /// # Errors
+    /// [`RecordTreeError`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a value admitted through the in-memory store's own
+    ///   admission loads back as itself, and a repeated admission keeps one
+    ///   entry. The default is [`BlockStore::insert`] of the encoded leaf,
+    ///   which the insertion witnesses cover.
+    /// - witness: `store::tests::a_named_value_is_admitted_under_its_identity`
+    #[inline]
+    fn admit_value(
+        &mut self,
+        value: &NamedValue,
+    ) -> Result<(), RecordTreeError>
+    {
+        let leaf = encode_value_leaf(value.value())?;
+        self.insert(StoredNode::new(value.identity(), leaf.as_borrowed()))
+    }
 }
 
 /// A store held in an ordered map.
@@ -325,6 +367,48 @@ impl BlockStore for InMemoryBlockStore
 
         Ok(node)
     }
+
+    /// Admits a named value's leaf with no second hash, and only where the
+    /// map does not hold its identity yet.
+    ///
+    /// # Specification
+    /// - requires: nothing; a [`NamedValue`] holds its pairing.
+    /// - ensures: on success the map holds a node under the value's identity:
+    ///   the bytes it held before, or the leaf [`encode_value_leaf`] writes for
+    ///   the value; on failure the map is as it was.
+    /// - provides: the trait's admission of a named value. A leaf an edit
+    ///   leaves alone is neither encoded nor copied again.
+    /// - fails: [`RecordTreeError::BudgetExceeded`] for a value past the node
+    ///   budget.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`RecordTreeError`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a value admitted twice loads back as itself from one
+    ///   entry.
+    /// - witness: `store::tests::a_named_value_is_admitted_under_its_identity`
+    #[inline]
+    #[spec(
+        captures: entry = self.nodes.len(),
+        ensures: |ret| match ret {
+            Ok(()) => self.nodes.contains_key(&value.identity()) && self.nodes.len() >= entry,
+            Err(_) => self.nodes.len() == entry,
+        },
+    )]
+    fn admit_value(
+        &mut self,
+        value: &NamedValue,
+    ) -> Result<(), RecordTreeError>
+    {
+        if let btree_map::Entry::Vacant(vacant) = self.nodes.entry(value.identity()) {
+            let leaf = encode_value_leaf(value.value())?;
+            let _held = vacant.insert(Box::from(leaf));
+        }
+
+        Ok(())
+    }
 }
 
 /// How many distinct nodes a store holds.
@@ -379,9 +463,13 @@ mod tests
     use super::StoredNodeCount;
     use crate::bytes::EncodedNode;
     use crate::bytes::NodeHash;
+    use crate::bytes::RecordValue;
     use crate::error::RecordTreeError;
+    use crate::node::NamedValue;
     use crate::node::StoredNode;
+    use crate::node::ValueLeafHasher;
     use crate::node::encode_leaf;
+    use crate::node::encode_value_leaf;
     use crate::node::hash_node;
     use crate::record::RecordRef;
 
@@ -435,6 +523,34 @@ mod tests
         let loaded = BlockStore::load(&store, hash).expect("the node was written");
         assert_eq!(loaded.identity(), hash);
         assert_eq!(loaded.bytes().as_ref(), encoded.as_ref());
+    }
+
+    /// A named value's leaf is admitted under its identity, a second
+    /// admission keeps the one entry, and the verified load reads the value
+    /// back under that identity; an identity the store does not hold names
+    /// no value.
+    #[test]
+    fn a_named_value_is_admitted_under_its_identity()
+    {
+        let named = ValueLeafHasher::new().named(RecordValue::from(b"a declaration segment"));
+        let mut store = InMemoryBlockStore::new();
+        assert_eq!(store.admit_value(&named), Ok(()));
+        assert_eq!(store.admit_value(&named), Ok(()));
+        assert_eq!(store.len(), StoredNodeCount::from(1_usize));
+
+        let leaf = encode_value_leaf(named.value()).expect("the value leaf encodes");
+        let loaded = BlockStore::load(&store, named.identity()).expect("the leaf was admitted");
+        assert_eq!(
+            loaded.bytes().as_ref(),
+            leaf.as_ref(),
+            "the store holds the value's leaf"
+        );
+        assert_eq!(NamedValue::load(&store, named.identity()), Ok(named));
+        let absent = node_hash(HashSeed(7_u8));
+        assert_eq!(
+            NamedValue::load(&store, absent),
+            Err(RecordTreeError::UnknownNode { hash: absent })
+        );
     }
 
     #[test]

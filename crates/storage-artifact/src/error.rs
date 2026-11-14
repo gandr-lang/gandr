@@ -168,13 +168,14 @@ pub enum ArtifactError
         manifest: Naming,
     },
 
-    /// A stored record sits under a key other than the one its position or
-    /// its bytes require: the header first, under the empty key, then the
-    /// order under [`ORDER_KEY`](crate::ORDER_KEY), then each declaration
-    /// record under the digest of its own bytes.
+    /// A stored record sits under a key other than the one its position
+    /// requires: the header first, under the empty key, then the order under
+    /// [`ORDER_KEY`](crate::ORDER_KEY), and nothing past it; or a key of the
+    /// order repeats a key before it, or a place names it before its turn.
     MisplacedRecord
     {
-        /// The record's position in key order.
+        /// The record's position: the header zero, the order one, and each
+        /// key of the order from two.
         position: RecordIndex,
     },
 

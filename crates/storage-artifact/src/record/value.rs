@@ -174,7 +174,7 @@ impl CanonicalValue for ArtifactRecordSet
     /// - requires: `reader` stands at an artifact's constructor.
     /// - ensures: on success the header, the form and the places the stream
     ///   spells, each place naming the record of its segment, and one record
-    ///   per distinct segment, strictly ascending by key.
+    ///   per distinct segment, in the order of its first place.
     /// - provides: the consumer half of the artifact's value-plane codec; a
     ///   reader reassembles what it returns and decodes the image.
     /// - fails: [`ValueError::UnexpectedConstructor`] for a constructor other
@@ -191,9 +191,12 @@ impl CanonicalValue for ArtifactRecordSet
     ///   decoder trusting its stream would not.
     /// - witness: `tests::artifact_contract::a_stream_that_is_no_artifact_is_refused_off_the_value_plane`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|set| set.records.iter()
-        .zip(set.records.iter().skip(1))
-        .all(|(previous, next)| previous.key < next.key)))]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|set| set.places.iter()
+        .try_fold(0_usize, |next, place| match usize::from(place.slot) {
+            slot if slot == next => Some(next.saturating_add(1)),
+            slot if slot < next => Some(next),
+            _ => None,
+        }) == Some(set.records.len())))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
     {
         let position = reader.position();

@@ -36,6 +36,7 @@ An authenticated ordered-record plane with content-defined Merkle leaves and roo
 - `RecordTree` builds from strictly increasing keys and supports lookup, range selection and node export.
 - Membership, non-membership and range proof builders produce evidence checked against a `TreeRoot` alone.
 - Canonical node encoders and decoders reject malformed framing, unsupported parameters and trailing bytes.
+- A value leaf holds one value under the empty key (`encode_value_leaf`, `value_leaf`). `ValueLeafHasher` gives its identity without the leaf, and a `NamedValue` pairs a value with that identity, so `BlockStore::admit_value` stores the leaf with no second hash.
 - `BlockStore` defines verified node storage; `InMemoryBlockStore` supplies an in-memory implementation.
 - `StoredRoot` verifies a root node's presence; `RecordTree::agrees_with` compares complete record sets.
 - Typed `RecordTreeError` values distinguish ordering, authentication, shape and budget failures.

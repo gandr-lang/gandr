@@ -1,6 +1,7 @@
 //! Kernel artifacts on the authenticated record plane and the content-addressed
 //! value plane: one record per distinct declaration segment, keyed by the
-//! digest of its bytes, under a BLAKE3 manifest identity or a content pointer.
+//! identity of the value leaf that holds its bytes, under a BLAKE3 manifest
+//! identity or a content pointer.
 //! In the storage
 //! picture this crate is where the kernel's export enters the CAM, the
 //! content-addressable memory of
@@ -11,10 +12,11 @@
 //! [`ArtifactRecordSet::from_artifact`] cuts a kernel artifact where the
 //! kernel's decoder finds its segments end: the header under the empty key,
 //! the order of the declarations under [`ORDER_KEY`], and each distinct
-//! segment under the digest of its bytes. [`build`] writes the
-//! set's record tree into a [`BlockStore`] and returns the
-//! [`ArtifactManifest`] naming it; [`ArtifactManifest::identity`] is the one
-//! identity an artifact has. [`ArtifactManifest::read_under`] reads the tree
+//! segment as a value leaf. [`build`] writes the header and the order as the
+//! set's index tree, and each value leaf beside it, into a [`BlockStore`], and
+//! returns the [`ArtifactManifest`] naming them;
+//! [`ArtifactManifest::identity`] is the one identity an artifact has.
+//! [`ArtifactManifest::read_under`] reads the tree
 //! back, checks it against the manifest, and hands the reassembled bytes to
 //! the kernel's bounded decoder. On the value plane the set is a
 //! `CanonicalValue` of `gandr-storage-values`, which a value store commits to
@@ -28,10 +30,11 @@
 //! the consumer's.
 //!
 //! A matching identity proves which bytes these are, never that they are a
-//! valid artifact. `read_under` first establishes integrity — the stored
-//! records rebuild exactly the tree the manifest names, under the reader's own
-//! parameters — and then hands validity to the kernel's decoder alone, under
-//! its work budgets.
+//! valid artifact. `read_under` first establishes integrity — the stored index
+//! rebuilds exactly the tree the manifest names, under the reader's own
+//! parameters, and the store's verified load of each value leaf gives its key —
+//! and then hands validity to the kernel's decoder alone, under its work
+//! budgets.
 //! `a_matching_identity_over_bytes_the_kernel_refuses_is_refused` holds the
 //! line: a tree whose identity matches the one the reader holds, over a header
 //! whose magic is one byte off, is refused with the decoder's own refusal.
@@ -76,7 +79,7 @@
 //! | The manifest's image is a fixed layout and its identity is BLAKE3 of it | `manifest::tests::the_manifest_layout_is_golden`, `manifest::tests::the_identity_is_blake3_of_the_canonical_bytes` |
 //! | The golden round-trips; every proper prefix and selected malformed fields receive the named refusal | `manifest::tests::the_manifest_round_trips_through_decode`, `manifest::tests::an_unknown_manifest_version_is_refused`, `manifest::tests::a_malformed_manifest_is_rejected`, `manifest::tests::a_bad_commitment_length_is_rejected`, `manifest::tests::truncation_at_every_prefix_is_rejected` |
 //! | Perturbing each supplied manifest field changes the identity | `manifest::tests::any_field_perturbation_changes_the_identity` |
-//! | Equal segments share one record; each key is the digest of its bytes, each place names a held record and each record stands at a place | `record::tests::equal_segments_share_one_record`, `record::tests::record_refinements_bind_keys_and_places` |
+//! | Equal segments share one record; each key is the identity of its bytes' value leaf, each place's slot names a held record and each record stands at a place | `record::tests::equal_segments_share_one_record`, `record::tests::record_refinements_bind_keys_and_places` |
 //! | A set is named whole or not at all: names stand beside their places in order, a count that differs or an absent name is refused at its place, and a manifest whose naming is not the order's form is refused | `record::tests::names_go_beside_their_places_in_order`, `artifact_contract::a_named_set_reads_back_with_its_names_7340` |
 //! | Cursor reads preserve exact suffixes and distinguish refusal before and after a length prefix | `manifest::tests::cursor_transitions_preserve_suffixes_and_refusal_positions` |
 //! | Identity rendering preserves every byte and propagates sink refusal; diagnostic variants retain their payloads | `manifest::tests::identity_rendering_preserves_all_bytes_and_refusals`, `error::tests::every_refusal_renders_apart`, `error::tests::every_manifest_field_renders_apart` |
@@ -135,6 +138,7 @@ pub mod transport;
 use anodized::spec;
 use gandr_kernel_term::FORMAT_VERSION;
 use gandr_storage_records::BlockStore;
+use gandr_storage_records::RecordCount;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::TreeParams;
 
@@ -156,25 +160,26 @@ pub use crate::record::Naming;
 pub use crate::record::ORDER_KEY;
 pub use crate::record::OrderImage;
 pub use crate::record::Place;
-pub use crate::record::RECORD_DOMAIN;
 pub use crate::record::RECORD_KEY_LEN;
 pub use crate::record::ReassembledArtifact;
 pub use crate::record::RecordKey;
 pub use crate::record::SegmentBytes;
 pub use crate::record::unnamed;
 
-/// Writes a record set's tree into `store` and names it.
+/// Writes a record set's index tree and value leaves into `store` and names
+/// them.
 ///
 /// # Specification
 /// - requires: nothing; a set whose bytes are not an artifact commits, and is
 ///   refused when it is read back.
-/// - ensures: on success every node of the tree built from
-///   [`ArtifactRecordSet::record_refs`] under `params` is loadable from
-///   `store`, and the manifest carries this build's kernel format version,
-///   `params`' boundary commitment, the set's record count — the header, the
-///   order and one per distinct segment — the tree's root node identity, and
-///   the set's naming. The tree is a function of the records alone, and the
-///   records sort by key, so equal sets mint equal identities.
+/// - ensures: on success every node of the index tree built from
+///   [`ArtifactRecordSet::record_refs`] under `params`, and the value leaf of
+///   every record, is loadable from `store`. The manifest carries this build's
+///   kernel format version, `params`' boundary commitment, the set's record
+///   count — the header, the order and one per distinct segment — the index
+///   tree's root node identity, and the set's naming. The index tree is a
+///   function of the records alone, and the order lists them by key, so equal
+///   sets mint equal identities.
 /// - provides: the commit path, and the one place an artifact identity is
 ///   minted.
 /// - fails: [`ArtifactError::Records`] carrying the record plane's refusal of
@@ -215,14 +220,19 @@ where
     S: BlockStore + ?Sized,
 {
     let order = records.order_image();
-    let refs = records.record_refs(&order);
-    let tree = RecordTree::build(&refs, params)?;
+    let tree = RecordTree::build(&records.record_refs(&order), params)?;
     tree.write_to(store)?;
+    records.write_leaves(store)?;
+    // A count of records past sixty-four bits takes the word's ceiling; such
+    // a set holds no order the tree admits.
+    let count = u64::try_from(records.records().len())
+        .unwrap_or(u64::MAX)
+        .saturating_add(2_u64);
 
     Ok(ArtifactManifest::new(
         FORMAT_VERSION,
         params.boundary_commitment(),
-        tree.root().record_count(),
+        RecordCount::from(count),
         tree.root_node_hash(),
         records.naming(),
     ))

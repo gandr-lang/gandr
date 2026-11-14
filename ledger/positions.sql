@@ -205,7 +205,6 @@ INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactI
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactManifestVersion','','none',NULL,'A version of the manifest.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','FieldBytes','','none',NULL,'A carrier of the bytes of a field.');
 INSERT INTO position VALUES('crates/storage-artifact/src/record.rs','ContentName','','none',NULL,'A digest of an entry''s content, which an artifact''s order carries beside a place.');
-INSERT INTO position VALUES('crates/storage-artifact/src/record.rs','RecordKey','','none',NULL,'A digest of a declaration segment, which names its record.');
 INSERT INTO position VALUES('crates/storage-artifact/src/transport.rs','CanonicalU64','','none',NULL,'A carrier of a word of the transport.');
 INSERT INTO position VALUES('crates/storage-artifact/src/transport.rs','TransportStepId','','none',NULL,'A digest of a transport step.');
 INSERT INTO position VALUES('crates/storage-chunker/src/error.rs','RawDiscriminator','','none',NULL,'A tag that a refusal reports.');
