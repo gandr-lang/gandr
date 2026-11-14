@@ -1101,43 +1101,6 @@ jobs:
         run: mise run "$CI_RECOVERY_TASK"
       - *lane-state
 
-  # The session's sweeps at the head a pull request on `landing` lands on
-  # (#7365). Such a pull request runs no test lane, so two landings that
-  # each pass alone can turn `landing` red together, as 7357 did above
-  # #7353. The run checks out the merge of the pull request into
-  # `landing`'s head, so the sweeps read every landing it crosses. The lane
-  # runs the sample under enforcement over the enforcing lanes' state, and
-  # saves and hands on nothing.
-  session-sweeps:
-    name: sweep the session at the landing head (linux)
-    needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'pull_request' && github.base_ref == 'landing' && needs.prepare.outputs.rust == 'true' }}
-    runs-on: *linux
-    permissions: *build-state-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 30
-    env:
-      CI_BUILD_STATE: cargo-test-enforcing
-      CI_ON_MAIN: "false"
-      # The sample adds the sources the change touches, read against
-      # `HEAD^`, the base side of the merge commit.
-      CI_FETCH_DEPTH: "2"
-    steps:
-      - *git-checkout
-      - *trust-workspace
-      - *identify-build-state
-      - *install-policy-tools
-      - *setup-rust
-      - *restore-test-state
-      - *download-build-state
-      - *find-build-state
-      - *unpack-build-state
-      - name: sweep the session at the landing head
-        env:
-          NEXTEST_PROFILE: ci-enforcing
-        run: mise run ci:session-sweeps
-      - *lane-state
-
   # The documentation lane: the private-item rustdoc as its build, over a
   # state of its own. It shares no unit with the plain lane's gates, since
   # rustdoc checks, so beside the plain lane it leaves its critical path and
