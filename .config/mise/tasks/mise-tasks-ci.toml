@@ -2212,14 +2212,18 @@ fi
 list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading")"
 {% endraw %}'''
 
-# A new worktree starts warm (`.config/wt.toml`'s `post-start`): every
+# A new worktree starts warm (`.config/wt.toml`'s `pre-start`, which blocks
+# the creation until the step ends, #7465): every
 # gitignored artifact of the primary worktree — the build directory, the code
 # index, the extension's modules — is copied in by `wt step copy-ignored`,
 # only where the filesystem clones: APFS and btrfs share the blocks until one
 # side writes, while a full copy of the build directory per worktree fills a
-# disk. A filesystem that cannot clone skips the copy, and the worktree's
-# first build is cold. Existing files are never overwritten, so the step is
-# safe to re-run. The probe that asks whether the filesystem clones is
+# disk. The build directory is cloned by `.config/pr-stack/warm-target.bash`
+# without the units of the workspace's members, which cargo builds again
+# here in any case (#7538). A filesystem that cannot clone skips the copy,
+# and the worktree's first build is cold. Existing files are never
+# overwritten, so the step is safe to re-run. The probe that asks whether
+# the filesystem clones is
 # written outside both trees (#3222): its source in the clone's git
 # directory, on the primary's filesystem, and its copy beside the worktree,
 # on the worktree's, so `git add -A` in either never meets it while the copy
@@ -2249,8 +2253,8 @@ probe=$(mktemp "$(realpath "$(git rev-parse --git-common-dir)")/wt-warm-probe.XX
 copy=$(mktemp -u "$(dirname "$here")/.wt-warm-probe.$(basename "$here").XXXXXX")
 trap 'rm -f "$probe" "$copy"' EXIT
 case "$(uname -s)" in
-  Darwin) clone=(cp -c) ;;
-  *) clone=(cp --reflink=always) ;;
+  Darwin) clone=(cp -c) tree=(cp -c -R -p) ;;
+  *) clone=(cp --reflink=always) tree=(cp -a --reflink=always) ;;
 esac
 if ! "${clone[@]}" "$probe" "$copy" 2> /dev/null; then
   echo "wt:warm: $here's filesystem cannot clone from $primary; skipping the copy, the first build is cold"
@@ -2258,8 +2262,10 @@ if ! "${clone[@]}" "$probe" "$copy" 2> /dev/null; then
 fi
 rm -f "$probe" "$copy"
 wt step copy-ignored
-[[ -d $here/target ]] || exit 0
 root=$(realpath "$primary")
+source "$here/.config/pr-stack/warm-target.bash"
+warm_target "$root/target" "$here/target" "${tree[@]}"
+[[ -d $here/target ]] || exit 0
 pattern="^# (env-dep:[^=]*=|checksum:[^ ]* file_len:[0-9]+ )$(sed 's/[][\.*^$+?(){}|]/\\&/g' <<< "$root")(/|\$)"
 named=$(grep -rE --include='*.d' "$pattern" "$here/target") || [[ $? == 1 ]]
 listed=$(jq -R -s --arg root "$root" '{root: $root, named: [split("\n")[] | select(. != "")]}' <<< "$named" \
