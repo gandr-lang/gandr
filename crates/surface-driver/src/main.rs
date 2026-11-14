@@ -342,8 +342,6 @@ use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
-#[cfg(unix)]
-use std::time::Instant;
 
 use anodized::spec;
 use gandr_kernel_core::tallied;
@@ -2945,22 +2943,26 @@ fn view(
 ///   is started detached as `gandr serve --no-toolset` on the socket with
 ///   `--spelling` naming `spelling`, and with the `--run-budget` that the
 ///   invocation names, so the hub serves no toolset and lingers out. The socket
-///   is tried every 20 ms for five seconds.
+///   is tried every 20 ms while the started hub lives. When that hub exits, the
+///   socket is tried once more: a hub that exits because another hub serves the
+///   socket leaves the client to that hub.
 /// - provides: one way every client reaches its workspace's hub.
-/// - fails: when the socket cannot be named, the hub cannot be started, or it
-///   never answers within five seconds.
+/// - fails: when the socket cannot be named, the hub cannot be started, or the
+///   started hub exits and no hub answers.
 /// - panics: none.
 /// - executable: none — the result is a socket connection to another process.
 ///
 /// # Errors
-/// The error naming the socket, starting the hub or connecting last.
+/// The error naming the socket or starting the hub, or the started hub's exit
+/// with the last connect error.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a client finding no hub starts one, and the next client
-///   connects to it.
+///   connects to it; a client whose hub exits with no socket names that exit.
 /// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
 /// - witness: `tests::cli::mcp_reads_what_an_editor_holds_open`
 /// - witness: `tests::cli::a_view_follows_what_an_editor_holds_open`
+/// - witness: `tests::cli::a_client_names_the_exit_of_a_hub_that_binds_no_socket_7524`
 #[cfg(unix)]
 fn reach_hub(
     socket: Option<PathBuf>,
@@ -2980,7 +2982,7 @@ fn reach_hub(
     if matches!(budget.origin(), Origin::Flag) {
         hub.arg("--run-budget").arg(u64::from(budget).to_string());
     }
-    let child = hub
+    let mut child = hub
         .arg("serve")
         .arg("--no-toolset")
         .arg("--socket")
@@ -2998,15 +3000,21 @@ fn reach_hub(
         .env_remove(toolchain::HANDOVER)
         .process_group(0_i32)
         .spawn()?;
-    // The hub outlives this client by its linger; it is never waited on.
-    drop(child);
-    let started = Instant::now();
+    // The wait is bounded by the started hub's life, never by a time that the
+    // host's load moves. The hub outlives this client by its linger, so it is
+    // never waited on once it answers.
     loop {
         std::thread::sleep(Duration::from_millis(20));
-        match UnixStream::connect(&socket) {
+        let error = match UnixStream::connect(&socket) {
             Ok(stream) => return Ok(stream),
-            Err(error) if started.elapsed() >= Duration::from_secs(5) => return Err(error),
-            Err(_) => {},
+            Err(error) => error,
+        };
+        if let Some(exit) = child.try_wait()? {
+            return UnixStream::connect(&socket).map_err(|_again| {
+                std::io::Error::other(format!(
+                    "the hub this client started stopped with {exit} before it answered: {error}"
+                ))
+            });
         }
     }
 }

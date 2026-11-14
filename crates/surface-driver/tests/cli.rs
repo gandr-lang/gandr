@@ -3650,11 +3650,13 @@ fn lsp_clients_share_one_engine_hub()
         OsStr::new("--linger-ms"),
         OsStr::new("2000"),
     ];
+    // The standalone answer comes first, so the linger covers only the step
+    // from one client to the next.
+    let standalone = served(&["lsp", "--standalone"], &session);
     let first = served(&client, &session);
     assert_eq!(code(&first), Code(0_i32), "{}", stderr(&first));
     assert_eq!(
-        first.stdout,
-        served(&["lsp", "--standalone"], &session).stdout,
+        first.stdout, standalone.stdout,
         "a relayed session answers as a standalone one does"
     );
     assert!(
@@ -3689,6 +3691,33 @@ fn lsp_clients_share_one_engine_hub()
     assert!(
         !socket.exists(),
         "the hub exits after its linger, removing its socket"
+    );
+}
+
+/// A client whose hub never comes up stops when that hub stops, and does not
+/// give up at its first failed connect: the hub it starts cannot bind under a
+/// socket directory that is a file, and the client exits `2`, the hub's exit
+/// named.
+#[cfg(unix)]
+#[test]
+fn a_client_names_the_exit_of_a_hub_that_binds_no_socket_7524()
+{
+    use std::ffi::OsStr;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("nohub"));
+    let blocker = scratch.file(Path::new("blocker"), Text::from(""));
+    let socket = blocker.join("hub.sock");
+    let client = ran(gandr(&[
+        OsStr::new("lsp"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+    ]));
+    assert_eq!(code(&client), Code(2_i32), "{}", stderr(&client));
+    assert!(
+        stderr(&client).contains("the hub this client started stopped with exit status: 2"),
+        "the client names the exit of the hub that it started: {}",
+        stderr(&client)
     );
 }
 
@@ -5262,33 +5291,6 @@ fn a_terminal_on_standard_input_alone_is_refused_the_terminal_face()
         stderr(&ran(gandr(&["tui"]))),
         "refused as two pipes are"
     );
-}
-
-/// A client whose hub never comes up keeps trying for five seconds before it
-/// gives up: the hub it starts cannot bind under a socket directory that is a
-/// file, and the client exits `2`, the hub named.
-#[cfg(unix)]
-#[test]
-fn a_client_tries_five_seconds_for_a_hub_that_never_answers()
-{
-    use std::ffi::OsStr;
-
-    let scratch = Scratch::new(Path::new("unreached"));
-    let blocker = scratch.file(Path::new("blocker"), Text::from(""));
-    let socket = blocker.join("hub.sock");
-    let started = std::time::Instant::now();
-    let unreached = ran(gandr(&[
-        OsStr::new("view"),
-        OsStr::new("--socket"),
-        socket.as_os_str(),
-    ]));
-    let waited = started.elapsed();
-    assert_eq!(code(&unreached), Code(2), "{}", stderr(&unreached));
-    assert!(
-        waited >= core::time::Duration::from_secs(5),
-        "the client gave up after {waited:?}"
-    );
-    assert!(stderr(&unreached).starts_with("gandr:"));
 }
 
 /// A script of `text`, written to `name` in `scratch`, run by the driver.
