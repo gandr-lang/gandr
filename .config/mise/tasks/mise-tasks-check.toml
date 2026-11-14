@@ -3962,3 +3962,32 @@ if ! diff -u src/input/table.json "$fresh"; then
 fi
 echo 'input table check OK: the committed table is its sources'"'"''
 '''
+
+# The io_uring UAPI of `gandr-storage-io`, written from the pinned kernel's
+# headers and system-call tables by `.config/uapi/generate.bash`. bindgen and
+# libclang run here and in `check:uapi`, never in the crate's build. Its name
+# keeps it out of the `check:*` glob.
+["uapi:generate"]
+description = "Write the io_uring layouts and the system-call table of gandr-storage-io from the pinned kernel"
+tools."cargo:bindgen-cli" = "0.72.1"
+run = ".config/uapi/generate.bash"
+
+# The UAPI file of `gandr-storage-io` is what the pinned kernel generates:
+# the check writes it again and refuses a difference, so a hand edit or a
+# stale file fails the gate by name. The pinned headers stay in the cache
+# after the first run, so a later run fetches nothing.
+["check:uapi"]
+description = "The io_uring UAPI file of gandr-storage-io is what uapi:generate writes from the pinned kernel"
+tools."cargo:bindgen-cli" = "0.72.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp)
+trap 'rm -f "$fresh"' EXIT
+.config/uapi/generate.bash "$fresh"
+if ! diff -u crates/storage-io/src/uapi.rs "$fresh"; then
+  echo 'uapi check FAILED: crates/storage-io/src/uapi.rs is not what the pinned kernel generates; run `mise run uapi:generate`' >&2
+  exit 1
+fi
+echo 'uapi check OK: crates/storage-io/src/uapi.rs is what the pinned kernel generates'
+'''
