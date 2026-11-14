@@ -208,11 +208,11 @@ fn bounds(available: Threads) -> (Option<Threads>, Option<Threads>)
 /// - witness: `width::tests::a_test_process_takes_its_share_of_the_host`
 #[spec(ensures: |ret| {
     let whole = budget.map_or(host, |budget| host.min(budget));
-    ret <= whole && match tests {
-        Some(tests) => NonZeroUsize::from(ret).get()
-            <= (NonZeroUsize::from(whole).get() / NonZeroUsize::from(tests).get()).max(1),
-        None => ret == whole,
-    }
+    ret <= whole
+        && tests.map_or_else(
+            || ret == whole,
+            |tests| ret == Threads::ONE || ret.0.get().saturating_mul(tests.0.get()) <= whole.0.get(),
+        )
 })]
 fn share(
     host: Threads,
@@ -221,8 +221,12 @@ fn share(
 {
     let whole = budget.map_or(host, |budget| host.min(budget));
     tests.map_or(whole, |tests| {
-        let each = NonZeroUsize::from(whole).get() / NonZeroUsize::from(tests).get();
-        Threads(NonZeroUsize::new(each).unwrap_or(NonZeroUsize::MIN))
+        let each = whole
+            .0
+            .get()
+            .checked_div(tests.0.get())
+            .and_then(NonZeroUsize::new);
+        Threads(each.unwrap_or(NonZeroUsize::MIN))
     })
 }
 
