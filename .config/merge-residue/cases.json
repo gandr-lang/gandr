@@ -25,6 +25,26 @@
     "residue": true
   },
   {
+    "name": "#7588: the driver's annotation under SQL's comment leader",
+    "line": "-- refused_by: merge_ladder_exhausted · collision: none (1 contested hunk(s), neither side deleted the other's lines)",
+    "residue": true
+  },
+  {
+    "name": "#7588: the driver's annotation under a shell's or TOML's comment leader",
+    "line": "  # refused_by: fail_closed · collision: none",
+    "residue": true
+  },
+  {
+    "name": "#7588: the SQL annotation a formatter joined onto a row",
+    "line": "INSERT INTO position VALUES('a','b'); -- refused_by: merge_ladder_exhausted · collision: none",
+    "residue": true
+  },
+  {
+    "name": "a SQL comment that names the word",
+    "line": "-- what refused_by means here",
+    "residue": false
+  },
+  {
     "name": "prose naming the annotation's key mid-line is no annotation",
     "line": "the driver writes a `// refused_by:` line atop each side",
     "residue": false
