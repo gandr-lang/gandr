@@ -635,31 +635,33 @@ pub(crate) fn equal_weakened(
 ) -> Convertibility
 {
     let watermark = arena.watermark();
-    let mut table = ContentTable::new();
-    let mut codomains = Vec::new();
-    let mut read = BTreeSet::new();
-    let mut current = goal;
-    let verdict = loop {
-        if converge(arena, current, Endpoints::Weakening {
-            codomains: &mut codomains,
-        }) == Convertibility::Distinct
-        {
-            break Convertibility::Distinct;
+    let verdict = {
+        let mut table = ContentTable::new();
+        let mut codomains = Vec::new();
+        let mut read = BTreeSet::new();
+        let mut current = goal;
+        loop {
+            if converge(arena, current, Endpoints::Weakening {
+                codomains: &mut codomains,
+            }) == Convertibility::Distinct
+            {
+                break Convertibility::Distinct;
+            }
+            let Some(Codomains { dependent, plain }) =
+                core::iter::from_fn(|| codomains.pop()).find(|pair| read.insert(*pair))
+            else {
+                break Convertibility::Convertible;
+            };
+            let weakened = shift_comp_type(
+                arena,
+                &mut table,
+                &mut NullMemo,
+                plain,
+                BinderDepth::NONE,
+                BinderDepth::from(1_u32),
+            );
+            current = ConversionGoal::CompType(dependent, weakened);
         }
-        let Some(Codomains { dependent, plain }) =
-            core::iter::from_fn(|| codomains.pop()).find(|pair| read.insert(*pair))
-        else {
-            break Convertibility::Convertible;
-        };
-        let weakened = shift_comp_type(
-            arena,
-            &mut table,
-            &mut NullMemo,
-            plain,
-            BinderDepth::NONE,
-            BinderDepth::from(1_u32),
-        );
-        current = ConversionGoal::CompType(dependent, weakened);
     };
     arena.truncate_to(watermark);
     verdict
