@@ -16,10 +16,12 @@
 //!
 //! **A task spins, then leaves.** A lane has no task until the calling thread
 //! hands it a job. A task that finds its ring empty polls up to its spin
-//! budget. Then it gives the claim back, clears the lane's attendance and
-//! ends. Its worker goes back to the pool, and the pool parks the worker. The
-//! calling thread starts a task for a lane that it hands a job while no task
-//! attends the lane. A sequentially consistent fence on each side
+//! budget, then on until the gap reaches the host's park-to-wake cost. A job
+//! that comes within that time needs no new task and no wake, and a longer gap
+//! costs at most twice what a park at once would. Then the task gives the claim
+//! back, clears the lane's attendance and ends. Its worker goes back to the
+//! pool. The calling thread starts a task for a lane that it hands a job while
+//! no task attends the lane. A sequentially consistent fence on each side
 //! orders the write of the job before the read of the attendance, and the
 //! clear of the attendance before the read of the ring. So at least one of the
 //! two parties sees the write of the other, and no job waits for a task that

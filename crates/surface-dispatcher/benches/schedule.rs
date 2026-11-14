@@ -6,7 +6,7 @@
 //! | --- | ------------- |
 //! | `schedule, <graph>, <budget>` | one dependence schedule: each release and each commit on the calling thread, and each job on a worker or on the calling thread; under `park` a waiting party stops at once, and under `spin 10000` it polls 10,000 times first |
 //! | `each` | one `Fork::each`: each item's job on a worker or on the calling thread |
-//! | `each by an atomic cursor` | the hand-written fallback of `each`: one task for each thread of a `rayon` pool of the same width, each taking the next item from one shared atomic counter |
+//! | `each by an atomic cursor` | the hand-written fallback of `each`: one taker for each thread of the same pool, each taking the next item from one shared atomic counter |
 //!
 //! Each job spins for its time. Each figure is the time of the whole fork,
 //! given for each item, apart from the first commit: the median time from a
@@ -232,29 +232,30 @@ fn each(
 }
 
 /// The time of the hand-written fallback of `each` over [`ITEMS`] items whose
-/// jobs each spin for `job`: one task for each thread of `threads`, each
-/// taking the next item from one atomic counter, given for each item.
+/// jobs each spin for `job`: one taker for each thread of `pool`, each taking
+/// the next item from one atomic counter, given for each item.
 ///
 /// # Specification
 /// trivial.
 fn cursor(
-    threads: &rayon::ThreadPool,
+    pool: &Pool,
     job: JobNanos,
     samples: Count,
 ) -> Figures
 {
     let next = AtomicUsize::new(0);
+    let mut takers = vec![(); NonZeroUsize::from(pool.width().threads()).get()];
     per_item(&measure(Count(1), samples, || {
         next.store(0, Ordering::Relaxed);
-        threads.in_place_scope(|scope| {
-            for _ in 0 .. threads.current_num_threads() {
-                scope.spawn(|_scope| {
-                    while next.fetch_add(1, Ordering::Relaxed) < ITEMS {
-                        spin(black_box(job));
-                    }
-                });
-            }
-        });
+        pool.each(
+            black_box(takers.as_mut_slice()),
+            || (),
+            |_state: &mut (), _taker: &mut ()| {
+                while next.fetch_add(1, Ordering::Relaxed) < ITEMS {
+                    spin(black_box(job));
+                }
+            },
+        );
     }))
 }
 
@@ -285,13 +286,6 @@ fn widths() -> Vec<Measured>
 ///
 /// # Specification
 /// trivial.
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        pool_only_threads,
-        reason = "benchmark: the fallback's row builds one rayon pool per measured width"
-    )
-)]
 fn main()
 {
     let output = Output::of_run();
@@ -320,10 +314,6 @@ fn main()
                 Pool::new(Width::Threads(Threads::from(width))).spinning(Spin::from(10_000)),
             ),
         ];
-        let threads = rayon::ThreadPoolBuilder::new()
-            .num_threads(width.get())
-            .build()
-            .expect("the fallback's pool starts");
         for graph in Graph::ALL {
             let after = graph.dependences();
             for &(budget, ref pool) in &pools {
@@ -344,7 +334,7 @@ fn main()
             );
             print(
                 format_args!("each by an atomic cursor | {} | {width} | -", job.0),
-                &cursor(&threads, job, samples),
+                &cursor(pool, job, samples),
             );
         }
     }

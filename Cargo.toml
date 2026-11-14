@@ -1833,16 +1833,14 @@ version = "0.30.2"
 default-features = false
 features = ["crossterm"]
 
-# The work-stealing pool the driver holds: one per process at the driver's
-# width, which a walk forks its components on and a staged program's checks
-# fork onto, nesting a join of two forked halves inside it. The admission
-# observer measures families through the same schedule. The choice, its
-# alternatives and its reversal are in the dispatcher's `pool` module.
+# A work-stealing pool that the checker's admission example measures as a
+# baseline: one standing pool for each measured width, one task for each
+# worker. The driver's own pool left it; the dispatcher's `pool` module records
+# why.
 # features:
 # - none: the pool, `scope` and `join` need no optional feature.
 # consumers:
 # - core-checker (dev)
-# - surface-dispatcher
 [workspace.dependencies.rayon]
 version = "1.12.0"
 default-features = false

@@ -13,15 +13,22 @@
 //! with itself, replays: both paths write the wire under the join's name.
 
 use alloc::vec::Vec;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
+use gandr_core_fork::Fork as _;
 use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::FusionRow;
 use gandr_surface_dispatcher::FusionVerdict;
 use gandr_surface_dispatcher::Fusions;
 use gandr_surface_dispatcher::HoleCount;
+use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Width;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::HoleName;
 use gandr_theory_exact_reals::Dyadic;
@@ -31,45 +38,60 @@ use gandr_theory_ordered_algebras::Lawvere;
 use gandr_theory_ordered_algebras::OrderedSemiring as _;
 use gandr_theory_ordered_algebras::check;
 use quenchant_shape::shape::Maybe;
-use rayon::iter::ParallelIterator as _;
-use rayon::slice::ParallelSlice as _;
 
 /// The fusion rows of every corpus source, each with the source that writes
 /// its block, in path order and then in the census's order. The sources do
 /// not depend on each other, so each part of them has its own census on a
-/// core of its own. A part is a quarter of one worker's share, so a part of
-/// slow sources leaves the other workers busy.
+/// thread of the dispatcher's pool. Each thread takes the next part that no
+/// thread took, and a part is a quarter of one thread's share, so a part of
+/// slow sources leaves the other threads busy.
 ///
 /// # Specification
 /// trivial.
 fn census() -> Vec<(PathBuf, FusionRow)>
 {
     let sources: Vec<PathBuf> = super::coincide::sources().into_iter().collect();
-    let parts = rayon::current_num_threads().saturating_mul(4).max(1);
-    let size = sources.len().div_ceil(parts).max(1);
-    sources
-        .par_chunks(size)
-        .flat_map_iter(|part| {
-            let mut census = Census::new(part.to_vec(), Fusions::Composed);
-            let mut rows = Vec::new();
-            while let Maybe::Present(step) = census.step() {
-                if let CensusStep::Source {
-                    path,
-                    fusions,
-                    over,
-                    ..
-                } = step
-                {
-                    assert!(
-                        over.is_empty(),
-                        "{}: a block passes the fusion budget",
-                        path.display()
-                    );
-                    rows.extend(fusions.into_iter().map(|row| (path.to_path_buf(), row)));
+    let pool = Pool::new(Width::PerformanceCores);
+    let threads = NonZeroUsize::from(pool.width().threads()).get();
+    let size = sources.len().div_ceil(threads.saturating_mul(4)).max(1);
+    let parts: Vec<&[PathBuf]> = sources.chunks(size).collect();
+    let kept: Vec<OnceLock<Vec<(PathBuf, FusionRow)>>> =
+        parts.iter().map(|_| OnceLock::new()).collect();
+    let cursor = AtomicUsize::new(0);
+    let mut takers = vec![(); threads];
+    pool.each(
+        &mut takers,
+        || (),
+        |(), ()| {
+            let at = || cursor.fetch_add(1, Ordering::Relaxed);
+            while let Some((part, rows)) = {
+                let at = at();
+                parts.get(at).zip(kept.get(at))
+            } {
+                let mut census = Census::new(part.to_vec(), Fusions::Composed);
+                let mut found = Vec::new();
+                while let Maybe::Present(step) = census.step() {
+                    if let CensusStep::Source {
+                        path,
+                        fusions,
+                        over,
+                        ..
+                    } = step
+                    {
+                        assert!(
+                            over.is_empty(),
+                            "{}: a block passes the fusion budget",
+                            path.display()
+                        );
+                        found.extend(fusions.into_iter().map(|row| (path.to_path_buf(), row)));
+                    }
                 }
+                assert!(rows.set(found).is_ok(), "each part is taken once");
             }
-            rows
-        })
+        },
+    );
+    kept.into_iter()
+        .flat_map(|rows| rows.into_inner().unwrap_or_default())
         .collect()
 }
 
