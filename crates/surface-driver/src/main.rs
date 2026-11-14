@@ -960,9 +960,11 @@ enum Command
     /// then the first line of the nearest `gandr-toolchain` file in the
     /// working directory or an ancestor, then the default. It runs the
     /// selected toolchain's `gandr` in its own place when that is another
-    /// executable. Exits 0 when the toolchains were changed or listed, and 2
-    /// when a name is not a toolchain's, names none installed, or a file
-    /// cannot be read or written.
+    /// executable. Before it does, it names the toolchain on standard error,
+    /// unless it is the `gandr` that `cargo install` puts in the cargo home's
+    /// `bin`. `GANDR_TOOLCHAIN_HANDOFF=never` makes it run itself. Exits 0 when
+    /// the toolchains were changed or listed, and 2 when a name is not a
+    /// toolchain's, names none installed, or a file cannot be read or written.
     Toolchain
     {
         /// What to do with the toolchains.

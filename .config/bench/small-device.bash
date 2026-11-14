@@ -40,7 +40,11 @@
 # `taskset` holds the cores, since a user manager gives its scopes no `cpuset`
 # controller and so ignores `AllowedCPUs`. Each run reads scratch
 # configuration, cache and data directories, so it reads no verdict and no
-# toolchain, and `<limit>` seconds bound its wall time, 300 unless given.
+# toolchain, and `<limit>` seconds bound its wall time, 300 unless given. Each
+# run also sets `GANDR_TOOLCHAIN_HANDOFF=never`, so it runs the binary that it
+# names and never the default toolchain (#7440). The second line of the output
+# gives what each binary does under the caller's own environment: the line
+# that names its hand-off, or `none`.
 #
 # A host bounds when its user manager runs scopes that enforce `MemoryMax`,
 # and when it has `taskset`, GNU `/usr/bin/time`, `python3` and 2 cores.
@@ -137,7 +141,7 @@ scoped() {
   local cores=$1 memory=$2 out=$3
   shift 3
   mkdir -p "$out.home/config" "$out.home/cache" "$out.home/data"
-  XDG_CONFIG_HOME=$out.home/config XDG_CACHE_HOME=$out.home/cache XDG_DATA_HOME=$out.home/data \
+  GANDR_TOOLCHAIN_HANDOFF=never XDG_CONFIG_HOME=$out.home/config XDG_CACHE_HOME=$out.home/cache XDG_DATA_HOME=$out.home/data \
     systemd-run --user --scope --quiet --collect --unit "small-device-$$-${out##*.}" \
     -p MemoryMax="$memory" -p MemorySwapMax=0 -p OOMPolicy=continue \
     -- "$here/small-device.bash" --inside "$out" "$cores" "$limit" "$@" || true
@@ -220,7 +224,7 @@ crossing() {
     sleep 0.1
   done
   if kill -0 "$hosting" 2> /dev/null; then
-    XDG_CONFIG_HOME=$out.runner XDG_CACHE_HOME=$out.runner XDG_DATA_HOME=$out.runner \
+    GANDR_TOOLCHAIN_HANDOFF=never XDG_CONFIG_HOME=$out.runner XDG_CACHE_HOME=$out.runner XDG_DATA_HOME=$out.runner \
       timeout "$limit" "$gandr" run --manifold "$deploy/offers.manifold.gandr" "$deploy/offers.gandr" > "$out.run" 2>&1 || true
   fi
   wait "$hosting" || true
@@ -228,8 +232,20 @@ crossing() {
   row "host far for offers.gandr" 0 "$cores" "$memory" "$out"
 }
 
+# What the binary `$1` does under the caller's own environment, with no
+# switch: the line that names its hand-off, or `none` (#7440). The runs above
+# refuse each hand-off, so this line tells a reader whether the binary, left
+# alone, runs another build.
+handoff() {
+  local line
+  line=$(cd "$root" && env -u GANDR_TOOLCHAIN_HANDOFF "$1" --version 2>&1 > /dev/null \
+    | awk '/^gandr: .* hands off to / { print; exit }') || true
+  echo "${line:-none}"
+}
+
 printf 'small-device: commit %s, %s, %s cores, gandr %s\n' \
   "$(git -C "$root" rev-parse HEAD)" "$(uname -m)" "$(nproc)" "$gandr"
+printf 'small-device: hand-off of gandr: %s; of the count build: %s\n' "$(handoff "$gandr")" "$(handoff "$counting")"
 echo "| Path | Cores | Allocations | Frames | Stop |"
 echo "| --- | --- | --- | --- | --- |"
 for cores in 1 2; do

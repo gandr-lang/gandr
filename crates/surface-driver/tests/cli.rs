@@ -202,9 +202,10 @@ fn homes() -> PathBuf
 ///   user's configuration, cache, data and state directories are this test's
 ///   own, under [`homes`], so neither a file on the host nor an earlier run or
 ///   another test reaches a case through them, and no case writes the host's
-///   store. Neither `GANDR_TOOLCHAIN` nor the `CARGO_MANIFEST_DIR` the test
-///   runner sets reaches the driver, so it selects as a shell does and, with no
-///   toolchain under the test's data directory, runs itself.
+///   store. Neither `GANDR_TOOLCHAIN`, `GANDR_TOOLCHAIN_HANDOFF` nor the
+///   `CARGO_MANIFEST_DIR` the test runner sets reaches the driver, so it
+///   selects as a shell does and, with no toolchain under the test's data
+///   directory, runs itself.
 /// - provides: a command without starting a process.
 /// - fails: never.
 /// - panics: none.
@@ -231,6 +232,7 @@ where
     command.env("XDG_DATA_HOME", homes.join("data"));
     command.env("XDG_STATE_HOME", homes.join("state"));
     command.env_remove("GANDR_TOOLCHAIN");
+    command.env_remove("GANDR_TOOLCHAIN_HANDOFF");
     command.env_remove("CARGO_MANIFEST_DIR");
     command
 }
@@ -6032,7 +6034,22 @@ where
 #[cfg(unix)]
 fn ran_installed(command: &Command) -> Output
 {
-    let mut moved = Command::new(installed());
+    ran_as(&installed(), command)
+}
+
+/// The finished run of `command` by the driver at `driver`, a link of the
+/// built one, with the same arguments, environment and working directory, its
+/// output captured.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn ran_as(
+    driver: &Path,
+    command: &Command,
+) -> Output
+{
+    let mut moved = Command::new(driver);
     let _arguments = moved.args(command.get_args());
     for (key, value) in command.get_envs() {
         let _set = match value {
@@ -6043,7 +6060,7 @@ fn ran_installed(command: &Command) -> Output
     if let Some(working) = command.get_current_dir() {
         let _placed = moved.current_dir(working);
     }
-    moved.output().expect("the installed driver runs")
+    moved.output().expect("the linked driver runs")
 }
 
 /// A linked build runs in the driver's place with the driver's arguments and
@@ -6188,6 +6205,132 @@ fn a_build_run_from_its_profile_directory_runs_itself_4510()
         in_place(),
         "ran fake --version\n",
         "a profile directory linked as a toolchain selects as an installed build does"
+    );
+}
+
+/// #7440: a driver outside its build that hands off names the hand-off on
+/// its first line of standard error: the source of the selection, the
+/// toolchain and the executable that runs next. `GANDR_TOOLCHAIN_HANDOFF=never`
+/// makes it run itself, and another value is refused before any verb runs.
+#[cfg(unix)]
+#[test]
+fn a_copied_driver_names_its_hand_off_and_the_switch_refuses_it_7440()
+{
+    let scratch = Scratch::new(Path::new("toolchain-hand-off"));
+    let data = scratch.0.join("data");
+    let build = fake_toolchain(&scratch, Path::new("fake"));
+    let link = proxied(
+        &["toolchain", "link", "fake", &build.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    let switched = |value: Maybe<&str, ()>| {
+        let mut command = gandr(&["--version"]);
+        let _placed = command.current_dir(&scratch.0).env("XDG_DATA_HOME", &data);
+        if let Maybe::Present(value) = value {
+            let _switched = command.env("GANDR_TOOLCHAIN_HANDOFF", value);
+        }
+        ran_installed(&command)
+    };
+    let target = std::fs::canonicalize(&build)
+        .expect("the build's directory resolves")
+        .join("gandr");
+    let handed = switched(Maybe::Absent(()));
+    assert_eq!(
+        (code(&handed), stdout(&handed), stderr(&handed)),
+        (
+            Code(0_i32),
+            String::from("ran fake --version\n"),
+            format!(
+                "gandr: the default {} names the toolchain `fake`, so the driver hands off to {}\n",
+                data.join("gandr").join("toolchain").display(),
+                target.display()
+            )
+        ),
+        "a copy names the toolchain it hands off to, and the source of the name"
+    );
+    let refused = switched(Maybe::Present("never"));
+    assert_eq!(
+        (code(&refused), stdout(&refused), stderr(&refused)),
+        (
+            Code(0_i32),
+            format!("gandr {}\n", env!("CARGO_PKG_VERSION")),
+            String::new()
+        ),
+        "the switch runs the copy itself, with no hand-off"
+    );
+    let misspelled = switched(Maybe::Present("nevr"));
+    assert_eq!(
+        (code(&misspelled), stdout(&misspelled), stderr(&misspelled)),
+        (
+            Code(2_i32),
+            String::new(),
+            String::from(concat!(
+                "gandr: `GANDR_TOOLCHAIN_HANDOFF` holds `nevr`: the one value it takes is ",
+                "`never`, which refuses each hand-off\n",
+            ))
+        ),
+        "another value is refused before any verb runs"
+    );
+}
+
+/// #7440: the `gandr` that `cargo install` puts in the cargo home's `bin` is
+/// the proxy, whose work is to hand off, so its hand-off writes no line.
+/// `GANDR_TOOLCHAIN_HANDOFF=never` makes the proxy run itself too.
+#[cfg(unix)]
+#[test]
+fn the_cargo_home_s_proxy_hands_off_with_no_line_7440()
+{
+    let scratch = Scratch::new(Path::new("toolchain-proxy"));
+    let data = scratch.0.join("data");
+    let build = fake_toolchain(&scratch, Path::new("fake"));
+    let link = proxied(
+        &["toolchain", "link", "fake", &build.to_string_lossy()],
+        &scratch.0,
+        &data,
+        Maybe::Absent(()),
+    );
+    assert_eq!(code(&link), Code(0_i32), "{}", stderr(&link));
+    let cargo = homes().join("cargo");
+    let binaries = cargo.join("bin");
+    std::fs::create_dir_all(&binaries).expect("the cargo home's bin is made");
+    let proxy = binaries.join("gandr");
+    if !proxy.is_file() {
+        std::fs::hard_link(env!("CARGO_BIN_EXE_gandr"), &proxy)
+            .expect("the driver is linked into the cargo home's bin");
+    }
+    let switched = |value: Maybe<&str, ()>| {
+        let mut command = gandr(&["--version"]);
+        let _placed = command
+            .current_dir(&scratch.0)
+            .env("XDG_DATA_HOME", &data)
+            .env("CARGO_HOME", &cargo);
+        if let Maybe::Present(value) = value {
+            let _switched = command.env("GANDR_TOOLCHAIN_HANDOFF", value);
+        }
+        ran_as(&proxy, &command)
+    };
+    let handed = switched(Maybe::Absent(()));
+    assert_eq!(
+        (code(&handed), stdout(&handed), stderr(&handed)),
+        (
+            Code(0_i32),
+            String::from("ran fake --version\n"),
+            String::new()
+        ),
+        "the proxy hands off to the selected toolchain and writes no line"
+    );
+    let refused = switched(Maybe::Present("never"));
+    assert_eq!(
+        (code(&refused), stdout(&refused), stderr(&refused)),
+        (
+            Code(0_i32),
+            format!("gandr {}\n", env!("CARGO_PKG_VERSION")),
+            String::new()
+        ),
+        "the switch runs the proxy itself"
     );
 }
 
@@ -6355,7 +6498,9 @@ fn described_toolchain(
 /// that does not is refused by its source, and a constraint none meets by
 /// each clause. Each toolchain describes itself once per image. #4921: the
 /// manifest of a workspace constrains a directory in no package below it. The
-/// proxy reads the manifest of a package in the same directory first.
+/// proxy reads the manifest of a package in the same directory first. #7440:
+/// the line of each hand-off names the source that chose, the default or the
+/// constraint of a manifest.
 #[cfg(unix)]
 #[test]
 fn a_package_s_constraint_chooses_among_the_toolchains()
@@ -6397,16 +6542,48 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
         let output = proxied(&["check"], working, &data, Maybe::Absent(()));
         (code(&output), stdout(&output), stderr(&output))
     };
+    let default = format!(
+        "the default {}",
+        data.join("gandr").join("toolchain").display()
+    );
+    let handed = |source: &str, name: &str| {
+        let executable = scratch
+            .0
+            .join("builds")
+            .join(name)
+            .join("gandr")
+            .canonicalize()
+            .expect("the build resolves");
+        format!(
+            "gandr: {source} names the toolchain `{name}`, so the driver hands off to {}\n",
+            executable.display()
+        )
+    };
     manifest(">= 0.1");
+    let constrained = package
+        .join("package.gandr.toml")
+        .canonicalize()
+        .expect("the manifest resolves");
     assert_eq!(
         checked(&package),
-        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        (
+            Code(0_i32),
+            String::from("ran old check\n"),
+            handed(&default, "old")
+        ),
         "the default meets the constraint, and runs"
     );
     manifest(">= 0.2");
     assert_eq!(
         checked(&package),
-        (Code(0_i32), String::from("ran new check\n"), String::new()),
+        (
+            Code(0_i32),
+            String::from("ran new check\n"),
+            handed(
+                &format!("the constraint of {}", constrained.display()),
+                "new"
+            )
+        ),
         "the highest version that meets the constraint runs; `bare` lacks the feature"
     );
     let described = || std::fs::read_to_string(&log).map_or(0_usize, |lines| lines.lines().count());
@@ -6419,17 +6596,17 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
     );
     assert_eq!(
         checked(&scratch.0),
-        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        (
+            Code(0_i32),
+            String::from("ran old check\n"),
+            handed(&default, "old")
+        ),
         "outside the package no constraint holds"
     );
     let pin = scratch
         .file(Path::new("package/gandr-toolchain"), Text::from("old\n"))
         .canonicalize()
         .expect("the pin resolves");
-    let constrained = package
-        .join("package.gandr.toml")
-        .canonicalize()
-        .expect("the manifest resolves");
     let (pinned, _, refusal) = checked(&package);
     assert_eq!(pinned, Code(2_i32));
     assert!(
@@ -6459,7 +6636,20 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
     );
     assert_eq!(
         checked(&scratch.0),
-        (Code(0_i32), String::from("ran new check\n"), String::new()),
+        (
+            Code(0_i32),
+            String::from("ran new check\n"),
+            handed(
+                &format!(
+                    "the constraint of {}",
+                    workspace
+                        .canonicalize()
+                        .expect("the workspace's manifest resolves")
+                        .display()
+                ),
+                "new"
+            )
+        ),
         "a workspace's manifest constrains a directory in no package"
     );
     let _beside = scratch.file(
@@ -6468,7 +6658,11 @@ fn a_package_s_constraint_chooses_among_the_toolchains()
     );
     assert_eq!(
         checked(&scratch.0),
-        (Code(0_i32), String::from("ran old check\n"), String::new()),
+        (
+            Code(0_i32),
+            String::from("ran old check\n"),
+            handed(&default, "old")
+        ),
         "a package's manifest is read before the workspace's beside it"
     );
     std::fs::remove_file(&workspace).expect("the workspace's manifest is removed");

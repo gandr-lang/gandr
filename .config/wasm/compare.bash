@@ -5,7 +5,10 @@
 # code is compared as that alone. Both drivers start in `/` with an empty
 # store and configuration of their own, so a path prints alike on both.
 # Wasmtime preopens the host's root at `/`: `std::fs::canonicalize` resolves
-# an absolute path only through a root preopen.
+# an absolute path only through a root preopen. The native driver runs with
+# `GANDR_TOOLCHAIN_HANDOFF=never`, so it is the build named and never the
+# default toolchain (#7440). The first line gives what it does under the
+# caller's own environment: the line that names its hand-off, or `none`.
 #
 # Usage: compare.bash <native gandr> <gandr.wasm>
 set -euo pipefail
@@ -17,8 +20,12 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/native/data" "$scratch/native/config" "$scratch/wasm/data" "$scratch/wasm/config"
 
+handoff=$(env -u GANDR_TOOLCHAIN_HANDOFF "$native" --version 2>&1 > /dev/null \
+  | awk '/^gandr: .* hands off to / { print; exit }') || true
+echo "native: $native, hand-off: ${handoff:-none}"
+
 on_native() {
-  (cd / && env -i PATH="$PATH" XDG_DATA_HOME="$scratch/native/data" XDG_CONFIG_HOME="$scratch/native/config" "$native" "$@")
+  (cd / && env -i PATH="$PATH" GANDR_TOOLCHAIN_HANDOFF=never XDG_DATA_HOME="$scratch/native/data" XDG_CONFIG_HOME="$scratch/native/config" "$native" "$@")
 }
 
 on_wasm() {
