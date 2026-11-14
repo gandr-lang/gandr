@@ -56,4 +56,11 @@ cd "$tree"
 # count of gate slots in its mise configuration, so the slot is taken under
 # mise, as a lane's gate takes it.
 export MISE_TRUSTED_CONFIG_PATHS=$tree
+# The workflow's `MISE_DISABLE_TOOLS` replaces the host's `disable_tools`,
+# so mise would install each tool that the host disables, and a tool that
+# does not install stops the night before its first sweep. The variable
+# holds the host's tools and then the workflow's (`disabled-tools.bash`).
+source "$checkout/.config/mise/disabled-tools.bash"
+MISE_DISABLE_TOOLS=$(disabled_tools)
+export MISE_DISABLE_TOOLS
 exec mise exec -- "$checkout/.config/mise/gated" "$checkout/.config/nightly/tree.bash" --take "$checkout" "$@"
