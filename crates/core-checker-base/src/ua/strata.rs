@@ -5,10 +5,13 @@
 //! inhabit, and a `compose[n, k]` composite the one over the chain catalogue
 //! ([`Family`]). A composite of a level-two shape names level two of degree
 //! `n` over the wreath of the chains at total size `k` over themselves
-//! ([`StratumLevel`]). A context builds each catalogue and wreath it needs
-//! once and holds each stratum it certifies or recalls for its own life. No
-//! static outlives the context, so a stratum crosses contexts and processes
-//! only through a store, which keeps no level-one chain stratum.
+//! ([`StratumLevel`]). A context holds each catalogue, wreath and stratum it
+//! needs for its own life. Before it builds one, it asks its store for the
+//! value that another context of the process built under the same key
+//! ([`BuiltKey`]). It shares each value it builds. So the contexts of one
+//! process build each value once. No static outlives the context, so a value
+//! crosses contexts and processes only through a store. The store keeps no
+//! image of a level-one chain stratum.
 //!
 //! A run that keeps strata hands each context a [`StratumStore`]. Before it
 //! certifies, the context asks the store for the stratum's image at its level
@@ -110,7 +113,7 @@ pub type LevelThree = WreathStratum<WreathStratum>;
 pub type LevelFour = WreathStratum<LevelThree>;
 
 /// The wreath of the chains over level two, level three's objects.
-type ThreeWreath = Wreath<Wreath<Catalogue>>;
+pub type ThreeWreath = Wreath<Wreath<Catalogue>>;
 
 /// The largest bound levels three and four are certified at.
 ///
@@ -142,6 +145,125 @@ quenchant_shape::reason_enum! {
             Unattested,
         }
     }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a store answers no built value for a key.
+    pub mod shared {
+        /// The reason no built value is answered.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No context of the process shared a value under the key.
+            Unshared,
+        }
+    }
+}
+
+/// The key of a value that a context builds of the site: each input that the
+/// value is a function of.
+///
+/// A catalogue that a context built under one budget answers a later call of
+/// that context under any other budget. A key that crosses contexts carries
+/// the budget. So a shared value never answers a call that a build under the
+/// call's own budget refuses.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum BuiltKey
+{
+    /// The catalogue of a family at a bound, built under a budget.
+    Catalogue(Family, ShapeSize, ShapeBudget),
+    /// The wreath of the chains at a bound that holds the objects of the
+    /// level named.
+    Wreath(StratumLevel, ShapeSize),
+    /// The stratum at a level and a stratum, over the catalogue of a family
+    /// built under a budget.
+    Stratum(Family, StratumAt, StratumLevel, ShapeBudget),
+}
+
+/// A value that a context builds of the site, frozen once built. The store
+/// shares it with every later context of the process.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub enum Built
+{
+    /// A catalogue.
+    Catalogue(Arc<Catalogue>),
+    /// The wreath of the chains over themselves, the objects of level two.
+    WreathTwo(Arc<Wreath<Catalogue>>),
+    /// The wreath of the chains over level two, the objects of level three.
+    WreathThree(Arc<ThreeWreath>),
+    /// The wreath of the chains over level three, the objects of level four.
+    WreathFour(Arc<Wreath<ThreeWreath>>),
+    /// A stratum over a catalogue.
+    One(Arc<SegalStratum>),
+    /// A stratum of level two.
+    Two(Arc<WreathStratum>),
+    /// A stratum of level three.
+    Three(Arc<LevelThree>),
+    /// A stratum of level four.
+    Four(Arc<LevelFour>),
+}
+
+/// A value that a store shares: the payload of one variant of [`Built`].
+trait Shared: Sized
+{
+    /// `value` in its variant.
+    ///
+    /// # Specification
+    /// trivial.
+    fn wrap(value: Arc<Self>) -> Built;
+
+    /// The value that `built` holds.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// `built` itself, when it holds a value of another kind.
+    fn unwrap(built: Built) -> Result<Arc<Self>, Built>;
+}
+
+/// [`Shared`] for each payload of [`Built`], by its variant.
+macro_rules! shared_as {
+    ($($payload:ty => $variant:ident),* $(,)?) => {$(
+        impl Shared for $payload
+        {
+            /// `value` in its variant.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn wrap(value: Arc<Self>) -> Built
+            {
+                Built::$variant(value)
+            }
+
+            /// The value of its variant, or `built` itself.
+            ///
+            /// # Specification
+            /// trivial.
+            #[inline]
+            fn unwrap(built: Built) -> Result<Arc<Self>, Built>
+            {
+                if let Built::$variant(value) = built { Ok(value) } else { Err(built) }
+            }
+        }
+    )*};
+}
+
+shared_as! {
+    Catalogue => Catalogue,
+    Wreath<Catalogue> => WreathTwo,
+    ThreeWreath => WreathThree,
+    Wreath<ThreeWreath> => WreathFour,
+    SegalStratum => One,
+    WreathStratum => Two,
+    LevelThree => Three,
+    LevelFour => Four,
 }
 
 /// Where a run's certified strata are recalled from and kept to.
@@ -223,6 +345,53 @@ pub trait StratumStore: core::fmt::Debug + Send + Sync
         level: StratumLevel,
         why: Unreplayed,
     );
+
+    /// The value under `key` that a context of this process built and
+    /// shared, when the store holds one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value that [`StratumStore::share`] took first under
+    ///   `key`, or none. The provided body holds none.
+    /// - panics: none.
+    /// - executable: none — a provided method that an implementor overrides.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second context reads each value that a first built,
+    ///   and builds none.
+    /// - witness: `ua::tests::a_second_context_builds_nothing_a_first_shared_7413`
+    #[inline]
+    fn built(
+        &self,
+        _key: &BuiltKey,
+    ) -> Maybe<Built, shared::Absent>
+    {
+        Maybe::Absent(shared::Absent::Unshared)
+    }
+
+    /// Share `built`, the value under `key` that a context of this process
+    /// built, with every later context of the process. Answer the value that
+    /// the store holds under `key`: the first one shared.
+    ///
+    /// # Specification
+    /// - requires: `built` is the value under `key`, built in this process.
+    /// - ensures: the value that the store took first under `key`. The provided
+    ///   body holds nothing and answers `built`.
+    /// - panics: none.
+    /// - executable: none — a provided method that an implementor overrides.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`StratumStore::built`].
+    /// - witness: `ua::tests::a_second_context_builds_nothing_a_first_shared_7413`
+    #[inline]
+    fn share(
+        &self,
+        _key: BuiltKey,
+        built: Built,
+    ) -> Built
+    {
+        built
+    }
 }
 
 /// A store holding nothing, for a context handed none.
@@ -360,13 +529,16 @@ impl Strata
     ///   [`StratumDefect::Condition`] as [`SegalStratum::certify`] refuses.
     /// - panics: none.
     /// - intension: the first call at a family and a bound builds its
-    ///   catalogue. The first at a stratum past the chains asks the store,
-    ///   replays what it answers, and certifies when the store answers nothing
-    ///   or an image that does not replay; the store hears the refusal and
-    ///   keeps what is certified. A chain stratum is certified and held, and
-    ///   the store never hears of it. A refusal of the catalogue or the stratum
-    ///   is not held, so it is checked again. A catalogue built under one
-    ///   budget answers a later call under any other.
+    ///   catalogue. The first call at a stratum asks the store for the stratum
+    ///   that another context of the process built under the same family,
+    ///   stratum and budget. With none, a stratum past the chains asks the
+    ///   store for its image and replays it. It certifies when the store
+    ///   answers nothing or an image that does not replay. The store hears the
+    ///   refusal, keeps what is certified, and shares the stratum. A chain
+    ///   stratum is certified, shared and held, and the store keeps no image of
+    ///   it. A refusal of the catalogue or the stratum is not held or shared,
+    ///   so it is checked again. A catalogue that the context built under one
+    ///   budget answers a later call of the context under any other.
     ///
     /// # Errors
     /// [`StratumDefect`] as above.
@@ -409,13 +581,33 @@ impl Strata
         {
             return Ok(Arc::clone(held));
         }
-        let catalogue = self.catalogue(family, bound, budget)?;
+        let store = Arc::clone(&self.store);
+        let key = BuiltKey::Stratum(family.clone(), at, StratumLevel::One, budget);
+        let stratum = shared_or(&*store, key, || self.stratum_one(family, at, budget))?;
+        Ok(self.hold(family, at, stratum))
+    }
+
+    /// The stratum at `at` over the catalogue of `family` under `budget`: past
+    /// the chains, the image that the store holds, replayed; otherwise the
+    /// stratum certified, which the store keeps past the chains.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as [`Strata::certified`] refuses.
+    fn stratum_one(
+        &mut self,
+        family: &Family,
+        at: StratumAt,
+        budget: ShapeBudget,
+    ) -> Result<SegalStratum, StratumDefect>
+    {
+        let catalogue = self.catalogue(family, at.bound, budget)?;
         let kept = *family != Family::Chains;
         if kept && let Maybe::Present(image) = self.store.recall(family, at, StratumLevel::One) {
             match SegalStratum::replay(Arc::clone(&catalogue), &image) {
-                Ok(stratum) if stratum.degree() == at.degree => {
-                    return Ok(self.hold(family, at, stratum));
-                },
+                Ok(stratum) if stratum.degree() == at.degree => return Ok(stratum),
                 Ok(_) => self
                     .store
                     .refuse(family, at, StratumLevel::One, Unreplayed::Degree),
@@ -435,7 +627,7 @@ impl Strata
             self.store
                 .keep(family, at, StratumLevel::One, &stratum.image());
         }
-        Ok(self.hold(family, at, stratum))
+        Ok(stratum)
     }
 
     /// Level two at `at` over the wreath of the chains at `at`'s bound over
@@ -456,11 +648,13 @@ impl Strata
     ///   [`Strata::certified`] gives them.
     /// - panics: none.
     /// - intension: the first call at a bound builds the chains and their
-    ///   wreath, and certifies level one at the catalogue's reach. The first at
-    ///   a stratum asks the store at level two, replays what it answers, and
-    ///   certifies when the store answers nothing or an image that does not
-    ///   replay; the store hears the refusal and keeps what is certified. A
-    ///   refusal is not held, so it is checked again.
+    ///   wreath, and certifies level one at the catalogue's reach. The first
+    ///   call at a stratum asks the store for the stratum that another context
+    ///   of the process built. With none, it asks the store at level two,
+    ///   replays what it answers, and certifies when the store answers nothing
+    ///   or an image that does not replay. The store hears the refusal, keeps
+    ///   what is certified, and shares the stratum. A refusal is not held or
+    ///   shared, so it is checked again.
     ///
     /// # Errors
     /// [`StratumDefect`] as above.
@@ -488,22 +682,25 @@ impl Strata
         if let Some(held) = self.held_two.get(&at) {
             return Ok(Arc::clone(held));
         }
-        let (catalogue, wreath) = self.wreath_two(at.bound)?;
-        let below = self.certified(
-            &Family::Chains,
-            StratumAt {
-                bound: at.bound,
-                degree: catalogue.reach(),
-            },
-            ShapeBudget::EVERY,
-        )?;
-        let stratum = ascend(
-            &*self.store,
-            wreath,
-            SegalStratum::clone(&below),
-            (at, StratumLevel::Two),
-        )?;
-        let held = Arc::new(stratum);
+        let store = Arc::clone(&self.store);
+        let key = BuiltKey::Stratum(Family::Chains, at, StratumLevel::Two, ShapeBudget::EVERY);
+        let held = shared_or(&*store, key, || {
+            let (catalogue, wreath) = self.wreath_two(at.bound)?;
+            let below = self.certified(
+                &Family::Chains,
+                StratumAt {
+                    bound: at.bound,
+                    degree: catalogue.reach(),
+                },
+                ShapeBudget::EVERY,
+            )?;
+            ascend(
+                &*self.store,
+                wreath,
+                SegalStratum::clone(&below),
+                (at, StratumLevel::Two),
+            )
+        })?;
         let _first = self.held_two.insert(at, Arc::clone(&held));
         Ok(held)
     }
@@ -551,14 +748,17 @@ impl Strata
         if let Some(held) = self.held_three.get(&at) {
             return Ok(Arc::clone(held));
         }
-        let (below, wreath) = self.wreath_three(at.bound)?;
-        let stratum = ascend(
-            &*self.store,
-            wreath,
-            WreathStratum::clone(&below),
-            (at, StratumLevel::Three),
-        )?;
-        let held = Arc::new(stratum);
+        let store = Arc::clone(&self.store);
+        let key = BuiltKey::Stratum(Family::Chains, at, StratumLevel::Three, ShapeBudget::EVERY);
+        let held = shared_or(&*store, key, || {
+            let (below, wreath) = self.wreath_three(at.bound)?;
+            ascend(
+                &*self.store,
+                wreath,
+                WreathStratum::clone(&below),
+                (at, StratumLevel::Three),
+            )
+        })?;
         let _first = self.held_three.insert(at, Arc::clone(&held));
         Ok(held)
     }
@@ -598,33 +798,39 @@ impl Strata
         if let Some(held) = self.held_four.get(&at) {
             return Ok(Arc::clone(held));
         }
-        let (catalogue, _two) = self.wreath_two(at.bound)?;
-        let (_level_two, three) = self.wreath_three(at.bound)?;
-        let below = self.level_three(StratumAt {
-            bound: at.bound,
-            degree: top(&three)?,
+        let store = Arc::clone(&self.store);
+        let key = BuiltKey::Stratum(Family::Chains, at, StratumLevel::Four, ShapeBudget::EVERY);
+        let held = shared_or(&*store, key, || {
+            let (catalogue, _two) = self.wreath_two(at.bound)?;
+            let (_level_two, three) = self.wreath_three(at.bound)?;
+            let below = self.level_three(StratumAt {
+                bound: at.bound,
+                degree: top(&three)?,
+            })?;
+            let wreath = if let Some(wreath) = self.wreaths_four.get(&at.bound) {
+                Arc::clone(wreath)
+            }
+            else {
+                let key = BuiltKey::Wreath(StratumLevel::Four, at.bound);
+                let built = shared_or(&*self.store, key, || {
+                    Ok::<_, StratumDefect>(Wreath::build(&catalogue, below.wreath(), at.bound))
+                })?;
+                let _first = self.wreaths_four.insert(at.bound, Arc::clone(&built));
+                built
+            };
+            ascend(
+                &*self.store,
+                wreath,
+                LevelThree::clone(&below),
+                (at, StratumLevel::Four),
+            )
         })?;
-        let wreath = if let Some(wreath) = self.wreaths_four.get(&at.bound) {
-            Arc::clone(wreath)
-        }
-        else {
-            let built = Arc::new(Wreath::build(&catalogue, below.wreath(), at.bound));
-            let _first = self.wreaths_four.insert(at.bound, Arc::clone(&built));
-            built
-        };
-        let stratum = ascend(
-            &*self.store,
-            wreath,
-            LevelThree::clone(&below),
-            (at, StratumLevel::Four),
-        )?;
-        let held = Arc::new(stratum);
         let _first = self.held_four.insert(at, Arc::clone(&held));
         Ok(held)
     }
 
     /// The catalogue of `family` at `bound`, built under `budget` on the first
-    /// call and held for the context's life.
+    /// call or read from the store, and held for the context's life.
     ///
     /// # Specification
     /// - ensures: under `budget` at `bound`, [`Catalogue::profiles`] for
@@ -660,20 +866,26 @@ impl Strata
         {
             return Ok(Arc::clone(catalogue));
         }
-        let built = match *family {
-            Family::Profiles(ref profiles) => Catalogue::profiles(bound, profiles.clone(), budget),
-            Family::Wirings => Catalogue::within(bound, budget),
-            Family::Chains => Catalogue::chains_within(bound, budget),
-        }
-        .map_err(|obstruction| match obstruction {
-            ShapeObstruction::PastTheBudget { counted } => StratumDefect::Budget { bound, counted },
-            ShapeObstruction::TooManyVertices { .. }
-            | ShapeObstruction::UnknownVertex { .. }
-            | ShapeObstruction::Stick { .. }
-            | ShapeObstruction::UnknownWire { .. }
-            | ShapeObstruction::Carrier(_) => StratumDefect::Allowance { bound },
+        let key = BuiltKey::Catalogue(family.clone(), bound, budget);
+        let built = shared_or(&*self.store, key, || {
+            match *family {
+                Family::Profiles(ref profiles) => {
+                    Catalogue::profiles(bound, profiles.clone(), budget)
+                },
+                Family::Wirings => Catalogue::within(bound, budget),
+                Family::Chains => Catalogue::chains_within(bound, budget),
+            }
+            .map_err(|obstruction| match obstruction {
+                ShapeObstruction::PastTheBudget { counted } => {
+                    StratumDefect::Budget { bound, counted }
+                },
+                ShapeObstruction::TooManyVertices { .. }
+                | ShapeObstruction::UnknownVertex { .. }
+                | ShapeObstruction::Stick { .. }
+                | ShapeObstruction::UnknownWire { .. }
+                | ShapeObstruction::Carrier(_) => StratumDefect::Allowance { bound },
+            })
         })?;
-        let built = Arc::new(built);
         if let Some(by_bound) = self.catalogues.get_mut(family) {
             let _first = by_bound.insert(bound, Arc::clone(&built));
         }
@@ -687,7 +899,8 @@ impl Strata
     }
 
     /// The chain catalogue at `bound` and the wreath of it over itself, each
-    /// built on the first call and held for the context's life.
+    /// built on the first call or read from the store, and held for the
+    /// context's life.
     ///
     /// # Specification
     /// trivial.
@@ -703,15 +916,18 @@ impl Strata
         if let Some(wreath) = self.wreaths.get(&bound) {
             return Ok((catalogue, Arc::clone(wreath)));
         }
-        let level: &Catalogue = &catalogue;
-        let built = Arc::new(Wreath::build(level, level, bound));
+        let key = BuiltKey::Wreath(StratumLevel::Two, bound);
+        let built = shared_or(&*self.store, key, || {
+            let level: &Catalogue = &catalogue;
+            Ok::<_, StratumDefect>(Wreath::build(level, level, bound))
+        })?;
         let _first = self.wreaths.insert(bound, Arc::clone(&built));
         Ok((catalogue, built))
     }
 
     /// Level two at the top degree of the chains' wreath at `bound`, and the
-    /// wreath of the chains over level two, the wreath built on the first call
-    /// and held for the context's life.
+    /// wreath of the chains over level two. The wreath is built on the first
+    /// call or read from the store, and held for the context's life.
     ///
     /// # Specification
     /// trivial.
@@ -731,13 +947,16 @@ impl Strata
         if let Some(wreath) = self.wreaths_three.get(&bound) {
             return Ok((below, Arc::clone(wreath)));
         }
-        let built = Arc::new(Wreath::build(&catalogue, below.wreath(), bound));
+        let key = BuiltKey::Wreath(StratumLevel::Three, bound);
+        let built = shared_or(&*self.store, key, || {
+            Ok::<_, StratumDefect>(Wreath::build(&catalogue, below.wreath(), bound))
+        })?;
         let _first = self.wreaths_three.insert(bound, Arc::clone(&built));
         Ok((below, built))
     }
 
-    /// Hold `stratum` at `at` over `family`'s catalogue for the context's life,
-    /// and answer it.
+    /// Hold `held`, the stratum at `at` over `family`'s catalogue, for the
+    /// context's life, and answer it.
     ///
     /// # Specification
     /// trivial.
@@ -745,10 +964,9 @@ impl Strata
         &mut self,
         family: &Family,
         at: StratumAt,
-        stratum: SegalStratum,
+        held: Arc<SegalStratum>,
     ) -> Arc<SegalStratum>
     {
-        let held = Arc::new(stratum);
         if let Some(by_stratum) = self.held.get_mut(family) {
             let _first = by_stratum.insert(at, Arc::clone(&held));
         }
@@ -781,6 +999,36 @@ where
         .ok_or_else(|| StratumDefect::Degree {
             degree: Degree::from(0_usize),
         })
+}
+
+/// The value under `key` that `store` shares, or else the value that `build`
+/// gives, shared under `key`.
+///
+/// # Specification
+/// - requires: `build` gives the value under `key`.
+/// - ensures: the value that the store took first under `key`, or the value
+///   that `build` gives when the store shares none. A value of another kind
+///   under `key` is not read, and `build` runs.
+/// - fails: as `build` fails. A failure is not shared.
+/// - panics: none.
+///
+/// # Errors
+/// As `build`.
+fn shared_or<Value, Fault>(
+    store: &dyn StratumStore,
+    key: BuiltKey,
+    build: impl FnOnce() -> Result<Value, Fault>,
+) -> Result<Arc<Value>, Fault>
+where
+    Value: Shared,
+{
+    if let Maybe::Present(built) = store.built(&key)
+        && let Ok(value) = Value::unwrap(built)
+    {
+        return Ok(value);
+    }
+    let built = Arc::new(build()?);
+    Ok(Value::unwrap(store.share(key, Value::wrap(Arc::clone(&built)))).unwrap_or(built))
 }
 
 /// The level above `below` at `at` and `level` over `wreath`: the store's

@@ -283,6 +283,8 @@ mod strata;
 #[cfg(test)]
 mod tests;
 
+pub use strata::Built;
+pub use strata::BuiltKey;
 pub use strata::LevelFour;
 pub use strata::LevelThree;
 pub use strata::NoStratumStore;
@@ -290,8 +292,10 @@ pub(crate) use strata::Strata;
 pub use strata::StratumAt;
 pub use strata::StratumLevel;
 pub use strata::StratumStore;
+pub use strata::ThreeWreath;
 pub use strata::above_two_allowance;
 pub use strata::recalled;
+pub use strata::shared;
 
 /// The two translators an equivalence gives at one corolla.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
