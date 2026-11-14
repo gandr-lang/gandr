@@ -54,6 +54,14 @@
 #                  seat's last reported line as `last`. It has no pull request,
 #                  so it is keyed by its lane, paged once while it lasts and
 #                  never stalled or paged again.
+#   measure-owed   an open pull request whose body owes a measure to a seat,
+#                  the `bounded` row's figures or the `parallelism` row's
+#                  curve (`owed by <seat>`, #7572), and no comment opening
+#                  ``measured: `<row>` `` gives them yet. A measure is a debt
+#                  and not a wait: the pull request lands, and the finding
+#                  names each owed row and its seat from the opening on. It
+#                  is paged once while it lasts, never paged again and never
+#                  stalled, since it holds no landing.
 # A pull request's lane is the lane its first closing issue's claim marker
 # names (#4524): the lane that claimed the unit holds what lands it, whatever
 # the branch is called. With no claimed closing issue, it is the longest lane
@@ -218,6 +226,9 @@
       | select($in.now - .merged >= $t.unfiled * 60)
       | finding("verdict-unfiled"; .merged;
           "merged with a `\(.verdict)` refactoring verdict and no `kind:refactor` issue carries `from: #\(.number)`; run `mise run refactor:file \(.number)`")),
+    ($prs[] | select((.owed // []) != [])
+      | finding("measure-owed"; .created;
+          "owes \(.owed | map("`\(.row)` to \(.seat)") | join(", ")); the seat gives the figures in a comment that opens `measured: <row>`")),
     ($idle[]
       | select($in.now - .since >= $t.idle * 60)
       | ($in.now - .since | minutes) as $age
@@ -230,8 +241,8 @@
 | sort_by(.number, .kind, .lane) as $findings
 | def key: "\(.number // .lane):\(.kind)";
   def escalated: $paged[key] as $p | $p != null and $in.now - $p.first >= $t.escalate * 60;
-  [$findings[] | select((.kind == "seat-idle" | not) and escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
-| [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
+  [$findings[] | select((.kind | IN("seat-idle", "measure-owed") | not) and escalated and $in.now - $paged[key].last >= $t.repage * 60)] as $repages
+| [$findings[] | select((.kind | IN("verdict-unfiled", "seat-idle", "measure-owed") | not) and escalated and $stalled["\(.number)"] == null)] as $stalling
 | [$stalled | keys[] | tonumber as $n
     | ([$in.prs[] | select(.number == $n)] | first) as $pr
     | select($pr == null or ($pr.queued and ($pr | off_trunk | not)) or $pr.draft)

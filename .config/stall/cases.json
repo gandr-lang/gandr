@@ -2940,5 +2940,98 @@
         }
       ]
     }
+  },
+  {
+    "name": "#7572: a body's owed measures read as the pull request's debt, less each row a comment gives",
+    "program": "facts.jq",
+    "input": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 7377,
+            "body": "Closes #7377\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Cost | `bounded` | answered: the path runs under the bound; its figures on the riscv64 host are owed by flex-e |\n\n## Engineering\n\n| Row | Answer |\n| --- | --- |\n| parallelism | 0.94 s before, 0.41 s after; the curve of the widest host is owed by flex-e |\n",
+            "isDraft": false,
+            "author": {
+              "__typename": "User",
+              "login": "agent-shade"
+            },
+            "headRefName": "flex-e-7377-small-string",
+            "baseRefName": "landing",
+            "headRefOid": "77aa",
+            "createdAt": "2026-11-14T15:00:00Z",
+            "mergeable": "MERGEABLE",
+            "isInMergeQueue": false,
+            "comments": {
+              "nodes": [
+                {
+                  "body": "measured: `bounded`\n\n38 MiB peak and 140 ms at one core, on the riscv64 host."
+                }
+              ]
+            },
+            "timelineItems": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": null
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "output": "{\"prs\":[{\"number\":7377,\"draft\":false,\"bot\":false,\"head\":\"flex-e-7377-small-string\",\"base\":\"landing\",\"oid\":\"77aa\",\"created\":1794668400,\"mergeable\":\"MERGEABLE\",\"queued\":false,\"queue\":null,\"removals\":[],\"claims\":[],\"checks\":[],\"owed\":[{\"row\":\"parallelism\",\"seat\":\"flex-e\"}]}],\"merged\":[],\"filed\":[],\"claimed\":[]}"
+  },
+  {
+    "name": "#7572: an open pull request that owes a measure is measure-owed from its opening, paged once and never stalled",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "landing",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30,
+        "base_blocked": 10,
+        "escalate": 10,
+        "repage": 10
+      },
+      "paged": {
+        "7377:measure-owed": {
+          "first": 90000,
+          "last": 90000
+        }
+      },
+      "prs": [
+        {
+          "number": 7377,
+          "draft": false,
+          "bot": false,
+          "head": "flex-e-7377-small-string",
+          "base": "landing",
+          "oid": "o7377",
+          "created": 94000,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "owed": [
+            {
+              "row": "parallelism",
+              "seat": "flex-e"
+            }
+          ],
+          "checks": []
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"measure-owed\",\"number\":7377,\"lane\":\"flex\",\"placed\":true,\"age\":100,\"line\":\"STALL measure-owed #7377 flex 100m: owes `parallelism` to flex-e; the seat gives the figures in a comment that opens `measured: <row>`\"}],\"pages\":[],\"repages\":[],\"stall\":[],\"release\":[],\"seen\":{},\"paged\":{\"7377:measure-owed\":{\"first\":90000,\"last\":90000}},\"stalled\":{}}"
   }
 ]

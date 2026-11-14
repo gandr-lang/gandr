@@ -75,7 +75,9 @@
 # restates the row on the issue: `claim:next` claims such a unit and prints
 # the questions, and the landing is where the restating is required. A
 # `bounded` row answered `answered:` reports the path's peak memory and its
-# time at the device's bound (#7350).
+# time at the device's bound (#7350), or names the seat that owes them as
+# `owed by <seat>` (#7572): a measure is a debt, not a wait, and the stall
+# report names the row until a comment gives the figures.
 #
 # The body names each concern it touches (#2523): an item of its
 # `## Concerns`, `` - `<id>` — <verdict> ``, names a concern of the ledger
@@ -141,8 +143,10 @@
 # 0.41 s after`. A measurement stays light (owner, 2026-11-13), so no
 # measure holds a landing: the thread curve of the wide host is no refusal,
 # and it follows the landing as a comment when the lane asks
-# `watch-measures`. An `n/a` answer states its reason, `n/a — <reason>`,
-# which the coordinator reads at the signature.
+# `watch-measures`. A row that owes the curve names its seat as `owed by
+# <seat>`, and the stall report names it until a comment gives the curve
+# (#7572). An `n/a` answer states its reason, `n/a — <reason>`, which the
+# coordinator reads at the signature.
 #
 # A ceiling the change adds cites the open issue that removes it (#5039): a
 # `spec_clause_traversal` waiver or an `economy:` comment carries `#<n>` in
@@ -290,8 +294,9 @@ def readings:
         end),
     ($rows[]
       | select(.cells[1] == "bounded" and (.cells[2] // "" | test("^answered:")))
+      | select(.cells[2] | owed_seat == null)
       | select(.cells[2] | test("[0-9][0-9.,]*\\s*(?:B|KiB|MiB|GiB|kB|KB|MB|GB)\\b") and test("[0-9][0-9.,]*\\s*(?:ns|µs|us|ms|s|sec|seconds?|min|minutes?)\\b") | not)
-      | "the body's `## Readings` answers `bounded` with no peak memory or no time: report the path's peak memory and its time at the device's bound, on the riscv64 host at one core (`units.md` § units-readings), then run `pr:open` again"),
+      | "the body's `## Readings` answers `bounded` with no peak memory or no time: report the path's peak memory and its time at the device's bound, on the riscv64 host at one core (`units.md` § units-readings), or write `owed by <seat>` for the seat that measures them, which the stall report names until a comment gives them (#7572); then run `pr:open` again"),
     (select($unit)
       | [axes[]
           | . as $axis
