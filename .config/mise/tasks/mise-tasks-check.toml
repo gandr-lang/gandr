@@ -534,7 +534,11 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # that the change touches, from the cache that `check:deletes` fills. A run
 # with no `GATE_BASE`, as `gate:all`, writes none, and the lint holds the
 # default's crates alone. A merge group names its base, and the task stops in
-# a group that names none (#7632). After the run, the task names the base and
+# a group that names none (#7632). Cargo tracks no record of the base, so a
+# lint result of a run with no base would stay fresh in a run with one
+# (#7640). So each package whose base's records change from the last run's
+# leaves the lint's check targets first, and cargo lints it again
+# (`.config/policy/fresh.bash`). After the run, the task names the base and
 # counts the functions that the lint holds (`.config/policy/held.bash`).
 env.DYLINT_TOML = '''
 [quenchant-dylints]
@@ -688,6 +692,7 @@ policy() {
 rm -rf target/allocation-base
 mkdir -p target/allocation-base
 if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.bash "$GATE_BASE" target/allocation-base; fi
+.config/policy/fresh.bash target/allocation-base target/dylint/allocation-base target/dylint
 features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
 # shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
 status=0
@@ -699,6 +704,7 @@ export -f policy
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash
 .config/policy/held-cases.bash
+.config/policy/fresh-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
