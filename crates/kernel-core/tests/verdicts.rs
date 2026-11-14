@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
@@ -631,6 +632,9 @@ enum Offered
     Sealed(Width),
     /// A sort of one point.
     Sort,
+    /// The numbers: zero, and the successor of a number, whose field reads
+    /// the type it is a constructor of.
+    Numbers,
     /// The words of one loop at the point of the sort at the position.
     Words(ConstantIndex),
     /// An axiom of the data type at the position.
@@ -715,6 +719,16 @@ fn offer_ranked(
                 kind,
             )
         },
+        Offered::Numbers => {
+            let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let own = arena.value_type_data(next, alloc::vec![]);
+            staging.data(
+                monomorphic(),
+                alloc::vec![],
+                alloc::vec![alloc::vec![], alloc::vec![own]],
+                kind,
+            )
+        },
         Offered::Words(sort) => {
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
             let own = arena.value_type_data(next, alloc::vec![]);
@@ -773,6 +787,131 @@ fn offer_ranked(
         .get(usize::from(admitted.position()))
         .expect("it was appended")
         .admission()
+}
+
+/// The value of a definition of a data type in these tests.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Point
+{
+    /// Its first constructor, with no field.
+    First,
+    /// Its second constructor, over the first.
+    SecondOverFirst,
+}
+
+/// Offer a definition of `point` of the data type at `family`; answer its
+/// check's census.
+///
+/// # Specification
+/// trivial.
+fn point_of(
+    environment: &mut Environment,
+    family: ConstantIndex,
+    point: Point,
+) -> ExpansionCensus
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let declared = arena.value_type_data(family, alloc::vec![]);
+    let first = arena.value_constructor(
+        family,
+        declared,
+        ConstructorTag::from(0_usize),
+        alloc::vec![],
+    );
+    let body = match point {
+        Point::First => first,
+        Point::SecondOverFirst => arena.value_constructor(
+            family,
+            declared,
+            ConstructorTag::from(1_usize),
+            alloc::vec![first],
+        ),
+    };
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    let admitted = environment
+        .add_decl(staged)
+        .expect("the point of a data type admits");
+    match environment
+        .entries()
+        .get(usize::from(admitted.position()))
+        .expect("it was appended")
+        .census()
+    {
+        Maybe::Present(census) => census,
+        Maybe::Absent(absent) => panic!("the point is checked here: {absent:?}"),
+    }
+}
+
+/// #7341: a plain definition that reads a data type keeps the names of its
+/// goals when an edit moves the data type. The edit retires the sort and its
+/// point, admits a unit definition before them, and admits them again two
+/// positions later. The session names the sort by its content key at both
+/// positions, so the outcomes that the first check of the point kept answer
+/// the second.
+#[test]
+fn the_point_of_a_moved_sort_stands_on_the_outcomes_of_its_first_check_7341()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let mut environment = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let sort = ConstantIndex::from(0_usize);
+    assert_eq!(offer(&mut environment, Offered::Sort), Admission::Checked);
+    let first = point_of(&mut environment, sort, Point::First);
+    environment
+        .retire(&[sort, ConstantIndex::from(1_usize)])
+        .expect("the sort and its point retire");
+    assert_eq!(offer(&mut environment, Offered::Unit), Admission::Checked);
+    assert_eq!(offer(&mut environment, Offered::Sort), Admission::Checked);
+    let moved = point_of(&mut environment, ConstantIndex::from(3_usize), Point::First);
+    assert!(
+        u64::from(first.expansions()) > 0,
+        "the first check of the point expands its goals: {first:?}"
+    );
+    assert!(
+        u64::from(moved.kept()) > 0,
+        "the point of the moved sort reads the outcomes that the first check kept: {moved:?}"
+    );
+    assert!(
+        u64::from(moved.expansions()) < u64::from(first.expansions()),
+        "the point of the moved sort expands fewer goals than its first check: {moved:?} \
+         against {first:?}"
+    );
+}
+
+/// #7341: a data type whose constructor reads the type takes one name from
+/// its staging on. A keyed run names the numbers by their content key and a
+/// rechecking run by their position. The check of the successor of zero
+/// expands as many goals under either, so no goal of the keyed run reads the
+/// numbers under two names.
+#[test]
+fn a_data_type_that_reads_itself_takes_one_name_from_its_staging_on_7341()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let checked = |policy: TrustPolicy| {
+        let mut environment = Environment::recalling(policy, Arc::new(NoVerdicts));
+        assert_eq!(
+            offer(&mut environment, Offered::Numbers),
+            Admission::Checked
+        );
+        let census = point_of(
+            &mut environment,
+            ConstantIndex::from(0_usize),
+            Point::SecondOverFirst,
+        );
+        (
+            u64::from(census.expansions()),
+            u64::from(census.recalls()),
+            u64::from(census.kept()),
+        )
+    };
+    assert_eq!(
+        checked(trusting(&signer)),
+        checked(TrustPolicy::Recheck),
+        "the keyed check of the successor of zero expands, recalls and keeps as the rechecking one"
+    );
 }
 
 /// The receipt `signer` gave over a cold run of `program`.

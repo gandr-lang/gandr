@@ -2708,39 +2708,62 @@ impl ContentTable
         self.constants.freeze();
     }
 
-    /// Name the constant at `index` as `name`, when the table named it
-    /// already: a reserved position that a later release named by its
-    /// position before its commit came.
+    /// Name each constant from `first` on as `names` holds, before its commit
+    /// and as the commit names it. When a name changes and `reading` holds a
+    /// watermark, forget each placement at or above it: the content staged
+    /// from there on read those constants past the table's end, by position.
     ///
     /// # Specification
-    /// - requires: no node this table placed reads the constant at `index`,
-    ///   since no content names a reserved position before its commit.
-    /// - ensures: the table names the constant at `index` as `name` when it
-    ///   named it before; nothing changes otherwise.
+    /// - requires: no node placed below `reading`, or anywhere when `reading`
+    ///   is `None`, reads a constant whose name changes here.
+    /// - ensures: the table names each constant that it named before, or that
+    ///   stands at its end in turn, as `names` holds it; it names no constant
+    ///   past its end. When a name changes and `reading` holds a watermark,
+    ///   each node at or above it reads unplaced.
+    /// - provides: one name for each constant from its staging on. Its own
+    ///   check, a later release and every check after its commit read it alike,
+    ///   and a refusal names its position as unadmitted.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a definition committed after a later release named
-    ///   its position reads by its content to the checks after it.
+    /// - hypothesis: L3 — a data type that reads itself checks its readers as a
+    ///   rechecking run does, a definition committed after a later release
+    ///   named its position reads by its content to the checks after it, and a
+    ///   moved data type keeps the names of its readers' goals.
+    /// - witness: `gandr-kernel-core::tests::verdicts::a_data_type_that_reads_itself_takes_one_name_from_its_staging_on_7341`
+    /// - witness: `gandr-kernel-core::tests::verdicts::the_point_of_a_moved_sort_stands_on_the_outcomes_of_its_first_check_7341`
     /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: named_before = usize::from(self.constants.len()),
-        ensures: usize::from(self.constants.len()) == named_before
-            && (usize::from(index) >= named_before || self.constants.get(usize::from(index)) == Some(&name)))]
+        ensures: usize::from(self.constants.len()) >= named_before)]
     #[inline]
-    pub fn rename_constant(
+    pub fn name_ahead(
         &mut self,
-        index: ConstantIndex,
-        name: ConstantName,
+        first: ConstantIndex,
+        names: impl IntoIterator<Item = ConstantName>,
+        reading: Option<ArenaWatermark>,
     )
     {
-        if self.constants.get(usize::from(index)) == Some(&name)
-            || usize::from(index) >= usize::from(self.constants.len())
-        {
-            return;
+        let mut renamed = false;
+        for (index, name) in (usize::from(first) ..).zip(names) {
+            match self.constants.get(index) {
+                Some(&held) if held == name => {},
+                Some(_) => {
+                    if let Some(held) = self.constants.get_mut(index) {
+                        *held = name;
+                    }
+                    renamed = true;
+                },
+                // Past the end, content reads the constant by its position.
+                None if index == usize::from(self.constants.len()) => {
+                    self.constants.push(name);
+                    renamed |= name != ConstantName::Position;
+                },
+                None => {},
+            }
         }
-        if let Some(held) = self.constants.get_mut(usize::from(index)) {
-            *held = name;
+        if let (true, Some(floor)) = (renamed, reading) {
+            self.placed.forget_from(floor);
         }
     }
 

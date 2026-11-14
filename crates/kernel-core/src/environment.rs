@@ -1254,6 +1254,25 @@ impl Environment
             crate::releases::Reservation::new(rank, sway, generative_content, key_name),
             ranked,
         );
+        // The session names the reservation as the commit will, before the
+        // check: a data type's constructors read their type, and a later
+        // release reads the position. Content staged before this read its own
+        // position past the table's end, so its placements go.
+        {
+            let session = self.names.session_mut();
+            session.name_constants(&self.entries);
+            session.table_mut().name_ahead(
+                position,
+                [crate::encoding::ConstantName::table_name(
+                    key_name,
+                    entry_content,
+                )],
+                named
+                    .binary_search(&position)
+                    .is_ok()
+                    .then_some(content_start),
+            );
+        }
         let way = match recalled {
             Maybe::Present(accessibility) => Way::Recalled(accessibility),
             // The check reads through the support its content names, and a
@@ -1751,12 +1770,6 @@ impl Environment
                 if let (true, Maybe::Present(content)) = (generative, content) {
                     alloc::sync::Arc::make_mut(&mut self.commits).generative(content, position);
                 }
-                // A later release named this position while it was reserved;
-                // no content named it then, so the name changes nothing read.
-                self.names.session_mut().table_mut().rename_constant(
-                    position,
-                    crate::encoding::ConstantName::table_name(key_name, entry_content),
-                );
                 self.advance_seals(position);
                 self.fold();
                 Ok(CheckedId::new(position))
@@ -1776,6 +1789,13 @@ impl Environment
                         .truncate_to(rejected.clamped_into(self.admission_floor, content_end));
                 }
                 self.entries.vacate_at(position);
+                // The release named the position by its content; a vacancy is
+                // unadmitted, and content staged from this one on read it.
+                self.names.session_mut().table_mut().name_ahead(
+                    position,
+                    [crate::encoding::ConstantName::Unadmitted],
+                    Some(rejected),
+                );
                 self.fold();
                 Err(error)
             },
@@ -2286,7 +2306,7 @@ impl Environment
             .map(StagedDeclaration::into_declaration)
             .collect::<Vec<_>>();
         let manifest = self.manifest.clone();
-        match self.admit_block(&members, &ranks) {
+        match self.admit_block(&members, &ranks, rejected) {
             Ok(ids) => {
                 self.admission_floor = content_end;
                 Ok(ids)
@@ -2294,13 +2314,20 @@ impl Environment
             Err(error) => {
                 // The members admitted before the refusal leave the
                 // environment, and each member's position stays as a vacancy.
-                // No later admission takes those positions, so the names and
-                // the kept outcomes that read a member stay unread.
+                // No later admission takes those positions, so the kept
+                // outcomes that read a member stay unread.
                 alloc::sync::Arc::make_mut(&mut self.commits).truncate(&self.entries, base);
                 self.entries.truncate(base);
                 for _member in &members {
                     self.vacate();
                 }
+                // The block named its members by their content; a vacancy is
+                // unadmitted, and the content staged from the block on read it.
+                self.names.session_mut().table_mut().name_ahead(
+                    ConstantIndex::from(usize::from(base)),
+                    members.iter().map(|_member| ConstantName::Unadmitted),
+                    Some(rejected),
+                );
                 if self.manifest != manifest {
                     alloc::sync::Arc::make_mut(&mut self.commits).stale_all();
                 }
@@ -2317,8 +2344,8 @@ impl Environment
     ///
     /// # Specification
     /// - requires: `members` were staged into this arena at its watermark, in
-    ///   admission order, and `ranks` holds one free rank per member,
-    ///   ascending.
+    ///   admission order, from `staged` on, and `ranks` holds one free rank per
+    ///   member, ascending.
     /// - ensures: on success one entry per member is appended, each audited
     ///   with the union of the block's audits; on failure some prefix of them
     ///   may be, for the caller to truncate.
@@ -2338,6 +2365,7 @@ impl Environment
         &mut self,
         members: &[Declaration],
         ranks: &[SourceRank],
+        staged: gandr_kernel_term::ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
         let base = usize::from(self.entries.len());
@@ -2373,6 +2401,26 @@ impl Environment
         let end = ConstantIndex::from(base.saturating_add(members.len()));
         // Each member's check reads through the references of the whole block.
         let named = block_references(&self.arena, members, first);
+        let content_of = |offset: usize| match block_content {
+            Maybe::Present(block_content) => {
+                Maybe::Present(block_content.member(crate::verdict::KeyedCount::from(offset)))
+            },
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        };
+        // The session names each member as its admission will, before the
+        // first check: the members read one another, and their staged content
+        // read them past the table's end, so its placements go.
+        {
+            let session = self.names.session_mut();
+            session.name_constants(&self.entries);
+            session.table_mut().name_ahead(
+                first,
+                (0 .. members.len()).map(|offset| {
+                    ConstantName::table_name(ConstantName::Position, content_of(offset))
+                }),
+                Some(staged),
+            );
+        }
         let mut admitted = Vec::with_capacity(members.len());
         // A block records no verdict, so what its checks take is only counted.
         let taken = crate::admitted::Tally::new();
@@ -2440,12 +2488,7 @@ impl Environment
                 position,
                 Admission::Checked,
             );
-            let member_content = match block_content {
-                Maybe::Present(block_content) => {
-                    Maybe::Present(block_content.member(crate::verdict::KeyedCount::from(offset)))
-                },
-                Maybe::Absent(absent) => Maybe::Absent(absent),
-            };
+            let member_content = content_of(offset);
             let member_key = self.entry_key(member_content);
             // The block's families share one stage; a definition stands alone.
             self.enter(AdmittedDeclaration::live(AdmittedParts {
