@@ -5,10 +5,11 @@
 # predicate, so neither removes a worktree in use.
 #
 # `held_read` reads the process table once, as unique working directories.
-# It reads `/proc/<pid>/cwd`, or `lsof -d cwd` on a host with no `/proc`. It
-# leaves out the caller and each of its ancestors: the shell that runs a
-# landing from its branch's worktree does not hold that worktree. A host
-# where neither read works leaves `held_unread` true.
+# It reads `/proc/<pid>/cwd`, or `lsof -d cwd` on a host with no `/proc`.
+# Each process counts, the caller and each of its ancestors among them: the
+# shell that runs a landing from its branch's worktree holds that worktree,
+# as any other shell does. A host where neither read works leaves
+# `held_unread` true.
 #
 # `tree_held <path>` succeeds when a process works in `<path>` or below it,
 # and prints that process's pid. It also succeeds with no pid when the table
@@ -17,22 +18,9 @@
 declare -A held_dirs=()
 held_unread=false
 held_read() {
-  local pid=$BASHPID line dir parent key value field
-  local -A own=()
+  local pid line dir field
   held_dirs=()
   held_unread=false
-  while [[ $pid =~ ^[0-9]+$ ]] && (( pid > 1 )); do
-    own[$pid]=1
-    parent=
-    if [[ -r /proc/$pid/status ]]; then
-      while read -r key value; do
-        if [[ $key == PPid: ]]; then parent=$value; break; fi
-      done < "/proc/$pid/status"
-    else
-      parent=$(ps -o ppid= -p "$pid" 2> /dev/null | tr -d ' ') || parent=
-    fi
-    pid=$parent
-  done
   # Each read runs from `/`, so the reading process holds no worktree. One
   # `stat` reads every link, `/proc/<pid>/cwd -> <directory>`. A link that
   # it cannot read, as another user's, prints no arrow and stays out.
@@ -42,7 +30,7 @@ held_read() {
         pid=${line#/proc/}
         pid=${pid%%/cwd -> *}
         dir=${line#*/cwd -> }
-        if [[ -z ${own[$pid]:-} && -z ${held_dirs[$dir]:-} ]]; then held_dirs[$dir]=$pid; fi
+        if [[ -z ${held_dirs[$dir]:-} ]]; then held_dirs[$dir]=$pid; fi
       fi
     done < <(cd / && QUOTING_STYLE=literal stat -c '%N' /proc/[0-9]*/cwd 2> /dev/null || true)
   elif command -v lsof > /dev/null; then
@@ -50,7 +38,7 @@ held_read() {
     while IFS= read -r field; do
       case $field in
         p*) pid=${field#p} ;;
-        n*) if [[ -n $pid && -z ${own[$pid]:-} && -z ${held_dirs[${field#n}]:-} ]]; then held_dirs[${field#n}]=$pid; fi ;;
+        n*) if [[ -n $pid && -z ${held_dirs[${field#n}]:-} ]]; then held_dirs[${field#n}]=$pid; fi ;;
       esac
     done < <(cd / && lsof -w -a -d cwd -Fpn 2> /dev/null || true)
   else

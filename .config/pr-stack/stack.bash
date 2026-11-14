@@ -1275,14 +1275,16 @@ signed_restack() {
 # The primary worktree is never removed. Prints on stderr only.
 #
 # `pr:land` and `pr:watch` both run this, usually from the branch's own
-# worktree, so whichever sees the merge second finds its working directory
-# gone, and every later git command fails ("Unable to read current working
-# directory"). The function therefore first moves the shell to the primary
-# worktree, read when this file is sourced; the caller exits right after.
+# worktree. The function first moves its own shell to the primary worktree,
+# read when this file is sourced, so its later git commands read a working
+# directory.
 #
-# A worktree that another live process works in stays (#6837, `held.bash`):
-# a gate that runs there would lose its files. `wt:sweep` removes it once no
-# process works there. A process table that cannot be read keeps it too.
+# A worktree that a live process works in stays (#6837, `held.bash`): a gate
+# that runs there would lose its files. The caller's shell and each of its
+# ancestors count, as any other process does (#7502). So a landing from the
+# branch's own worktree keeps that worktree, and the caller's shell keeps its
+# directory. `wt:sweep` removes the worktree once no process works there. A
+# process table that cannot be read keeps it too.
 pr_stack_primary=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
 source "${BASH_SOURCE[0]%/*}/held.bash"
 remove_landed_worktree() {

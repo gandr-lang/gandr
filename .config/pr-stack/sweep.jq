@@ -26,8 +26,8 @@
 #             changed within 4 hours;
 #   watched   null, or the pid of a live `pr:watch` whose mark
 #             (`gandr-watch-<pid>`) the worktree's git directory holds;
-#   held      null, or the pid of a live process other than the sweep and its
-#             ancestors that works in the worktree, or `unread` when the
+#   held      null, or the pid of a live process that works in the worktree,
+#             an ancestor of the sweep among them, or `unread` when the
 #             process table cannot be read (`held.bash`);
 #   commits   null, or for a branch Worktrunk does not read merged, the
 #             `+` lines `git cherry origin/<trunk>` lists, each `{subject,
