@@ -175,8 +175,7 @@ impl<Below: Certificate> WreathStratum<Below>
     /// [`Unreplayed`] — as above.
     ///
     /// # Cost
-    /// - allocation: the vectors of the read and the replayed cocones, growth
-    ///   within the image's counts
+    /// - allocation: the cocone vectors, growth within the image's counts
     ///
     /// # Adequacy
     /// - hypothesis: L3 — level two's own image replays, and an image damaged

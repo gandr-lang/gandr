@@ -493,6 +493,9 @@ fn words(
 /// - panics: none.
 /// - executable: none — the walk is the clause.
 ///
+/// # Cost
+/// - allocation: the rules the sentence breaks, growth within the sentence
+///
 /// # Adequacy
 /// - hypothesis: L3 — each rule's sentence and a twin it must pass: 26 words
 ///   and 25 words with a code span, two instructions joined by `and` and two
