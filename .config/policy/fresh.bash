@@ -31,18 +31,19 @@ dylint=${3:?$usage}
 manifest=${4:-$(git rev-parse --show-toplevel)/Cargo.toml}
 mkdir -p "${stamp%/*}"
 next=$(mktemp "$stamp.XXXXXX")
-trap 'rm -f "$next"' EXIT
+changed=$(mktemp)
+trap 'rm -f "$next" "$changed"' EXIT
 shopt -s nullglob
 files=("$records"/*.jsonl)
 shopt -u nullglob
 if (( ${#files[@]} )); then
   paste -d ' ' <(printf '%s\n' "${files[@]##*/}") <(git hash-object -- "${files[@]}") | sort > "$next"
 fi
-changed=$(comm -3 <(if [[ -f $stamp ]]; then sort "$stamp"; fi) "$next" | awk '{ print $1 }' | sort -u)
+comm -3 <(if [[ -f $stamp ]]; then sort "$stamp"; fi) "$next" | awk '{ print $1 }' | sort -u > "$changed"
 packages=()
-if [[ -n $changed ]]; then
+if [[ -s $changed ]]; then
   mapfile -t packages < <(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$manifest" \
-    | jq -r --arg changed "$changed" '
+    | jq -r --rawfile changed "$changed" '
       (.workspace_root + "/") as $root
       | [.packages[] | {name, prefix: ((.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | gsub("[^A-Za-z0-9_-]"; "_")) + "_")}] as $packages
       | [$changed | split("\n")[] | select(. != "") as $record
@@ -58,5 +59,5 @@ if (( ${#packages[@]} )); then
   done
 fi
 mv "$next" "$stamp"
-trap - EXIT
+trap 'rm -f "$changed"' EXIT
 echo "fresh: ${#packages[@]} packages lint again, as their base's records change${packages[*]:+: ${packages[*]}}" >&2
