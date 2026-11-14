@@ -163,6 +163,15 @@
         "Cargo.toml",
         "crates/"
       ],
+      "check:doc-targets": [
+        ".cargo/",
+        ".config/doc/",
+        ".config/mise/gated",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "rust-toolchain.toml"
+      ],
       "check:find-image": [".github/actions/find-image/"],
       "check:follow": [
         ".cargo/",
