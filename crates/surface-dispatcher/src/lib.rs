@@ -409,6 +409,7 @@ pub use crate::package::toolchain::Unconstrained;
 pub use crate::package::toolchain::Unmet;
 pub use crate::package::toolchain::Version;
 pub use crate::package::toolchain::asking;
+pub use crate::pool::Class;
 pub use crate::pool::Fifo;
 pub use crate::pool::Grant;
 pub use crate::pool::Host;
@@ -416,8 +417,11 @@ pub use crate::pool::HostCounter;
 pub use crate::pool::ItemIndex;
 pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;
+#[cfg(unix)]
+pub use crate::pool::Porter;
 pub use crate::pool::Spin;
 pub use crate::pool::Tokens;
+pub use crate::pool::Wanting;
 #[cfg(feature = "instrument")]
 pub use crate::pool::recording::ActivityFork;
 #[cfg(feature = "instrument")]

@@ -365,6 +365,7 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::AuthorityError;
 use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
+use gandr_surface_dispatcher::Class;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
@@ -1582,7 +1583,7 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
         Ok(held) => held,
         Err(exit) => return exit,
     };
-    let pool = pooled(Width::PerformanceCores);
+    let pool = pooled(Width::PerformanceCores, Class::Batch);
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.lock();
@@ -2390,27 +2391,31 @@ fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
 /// The pool at the host's performance cores that a face's sessions mold on
 /// and its judgements run on. The process installs the pool for its
 /// readmissions too, as `check` installs its own: the sessions readmit at the
-/// host's width, under the speculation group, with the obligations forked.
+/// host's width, under the speculation group, with the obligations forked. A
+/// person waits on each of its readmissions, so it takes as a keystroke.
 ///
 /// # Specification
 /// trivial.
 fn host_pool() -> Arc<Pool>
 {
-    let pool = Arc::new(pooled(Width::PerformanceCores));
+    let pool = Arc::new(pooled(Width::PerformanceCores, Class::Keystroke));
     gandr_surface_dispatcher::install_session(&pool);
     pool
 }
 
-/// A pool of `width` threads under the process's grant, which keeps the
-/// host's measured park-to-wake cost in [`config::pool`]'s directory, so a
-/// later run reads it in place of a fresh measure. A jobserver that the
-/// parent names bounds the parts that the pool runs at once.
+/// A pool of `width` threads under the process's grant, taken as `class`,
+/// which keeps the host's measured park-to-wake cost in [`config::pool`]'s
+/// directory, so a later run reads it in place of a fresh measure. A jobserver
+/// that the parent names bounds the parts that the pool runs at once.
 ///
 /// # Specification
 /// trivial.
-fn pooled(width: Width) -> Pool
+fn pooled(
+    width: Width,
+    class: Class,
+) -> Pool
 {
-    let pool = Pool::new(width).granted(Grant::of_process());
+    let pool = Pool::new(width).granted(Grant::of_process(class));
     match config::pool() {
         Some(directory) => pool.kept_in(directory),
         None => pool,
@@ -3832,7 +3837,7 @@ fn render(
             walk,
             width,
         } => {
-            let pool = Arc::new(pooled(width));
+            let pool = Arc::new(pooled(width, Class::Batch));
             // A process renders one outcome, so no fork or pool is installed
             // yet.
             gandr_surface_dispatcher::install_width(&pool, &walk);
@@ -3875,11 +3880,11 @@ fn render(
             script(&mut runnable, printing.spelling, stdout, stderr)
         },
         Outcome::Stage(staging) => {
-            let pool = pooled(staging.width());
+            let pool = pooled(staging.width(), Class::Batch);
             stage(staging, &pool, stdout, stderr)
         },
         Outcome::Format(formatting) => {
-            let pool = pooled(formatting.width());
+            let pool = pooled(formatting.width(), Class::Batch);
             fmt(formatting, &pool, stdout, stderr)
         },
         Outcome::Cells(census) => cells(census, stdout, stderr),

@@ -135,8 +135,12 @@ pub use self::grant::Fifo;
 pub use self::grant::Grant;
 pub use self::grant::Tokens;
 use self::grant::ungranted;
+pub use self::host::Class;
 pub use self::host::Host;
 pub use self::host::HostCounter;
+#[cfg(unix)]
+pub use self::host::Porter;
+pub use self::host::Wanting;
 pub use self::host::runtime_directory;
 use self::lane::Attendance;
 use self::lane::DEPTH;
@@ -3226,7 +3230,8 @@ mod tests
         std::fs::create_dir_all(&directory).unwrap();
         let counter = super::HostCounter::with(&directory, Threads::ONE).unwrap();
         let sixteen = Width::Threads(Threads::from(NonZeroUsize::new(16_usize).unwrap()));
-        let pool = Pool::new(sixteen).granted(super::Grant::hosted(&directory));
+        let pool =
+            Pool::new(sixteen).granted(super::Grant::hosted(&directory, super::Class::Batch));
         let running = AtomicUsize::new(0);
         let most = AtomicUsize::new(0);
         let caller = std::thread::current().id();
@@ -3259,7 +3264,7 @@ mod tests
             "a worker ran a leaf on the counter's token"
         );
         let Maybe::Present(super::Tokens::Host(second)) =
-            super::Grant::hosted(&directory).into_tokens()
+            super::Grant::hosted(&directory, super::Class::Batch).into_tokens()
         else {
             panic!("a second process joins the hub's counter");
         };

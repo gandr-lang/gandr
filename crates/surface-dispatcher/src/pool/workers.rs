@@ -68,6 +68,7 @@ use super::grant::Token;
 use super::grant::Tokens;
 use super::grant::ungranted;
 use super::grant::untaken;
+use super::host::Wanting;
 use super::lane::Sleeper;
 use crate::width::Threads;
 
@@ -1246,6 +1247,20 @@ impl Shared
         }
     }
 
+    /// Count this pool's wait for a token among the counter's urgent takes
+    /// while the hold stands, when the pool takes as a keystroke: as
+    /// [`Tokens::want`]. A pool with no grant counts nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn want(&self) -> Wanting<'_>
+    {
+        match self.tokens {
+            Maybe::Present(ref tokens) => tokens.want(),
+            Maybe::Absent(_) => Wanting::NONE,
+        }
+    }
+
     /// Wake an idle worker, read after the caller's last write.
     ///
     /// # Specification
@@ -2277,10 +2292,14 @@ fn serve(
                 else {
                     // No token is free. A token that another process frees
                     // wakes no worker here, so wait for a post or the retry,
-                    // and read the grant again.
+                    // and read the grant again. A keystroke's worker counts
+                    // among the counter's urgent takes meanwhile, so a batch
+                    // leaves the next freed token to it.
                     shared.idle.release(worker);
+                    let wanting = shared.want();
                     seat.sleeper
                         .sleep_for(|| seat.holding() == Holding::Posted, UNGRANTED);
+                    drop(wanting);
                     WOKE.with(|woke| woke.set(Wake::Woken));
                     continue;
                 };

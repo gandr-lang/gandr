@@ -19,6 +19,11 @@
 //! before: at the host's count, capped by `-j` or `GANDR_JOBS`. A jobserver
 //! that refuses a read leaves each part on the party that forks it.
 //!
+//! **A face takes as a keystroke.** A process that joins the hub's counter
+//! names its class: a face that a person types into takes as a keystroke, and
+//! a check, a build or a format takes as a batch. A jobserver's FIFO knows no
+//! class, so a grant of a FIFO takes as the build tools do.
+//!
 //! **Two reads for each jobserver.** The grant opens the jobserver's read end
 //! twice: once with `O_NONBLOCK` for the read that does not wait, and once
 //! without it for the party that waits when it wakes. On Linux, a pipe that the
@@ -57,7 +62,9 @@ use std::path::Path;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use super::host::Class;
 use super::host::Host;
+use super::host::Wanting;
 use super::host::runtime_directory;
 
 quenchant_shape::reason_enum! {
@@ -114,15 +121,16 @@ impl Grant
 {
     /// The grant that the process's environment names: the jobserver of the
     /// first of `CARGO_MAKEFLAGS`, `MAKEFLAGS` and `MFLAGS` that names one.
-    /// With no jobserver named, the host's counter, while a hub owns it.
+    /// With no jobserver named, the host's counter as `class`, while a hub
+    /// owns it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the tokens of the named jobserver, when it opens; else the
-    ///   tokens of the hub's counter in the runtime directory; else no grant,
-    ///   so the process runs as with no jobserver. A jobserver that a parent
-    ///   names stands before the hub's counter, since the parent bounds the
-    ///   process.
+    ///   tokens of the hub's counter in the runtime directory, taken as
+    ///   `class`; else no grant, so the process runs as with no jobserver. A
+    ///   jobserver that a parent names stands before the hub's counter, since
+    ///   the parent bounds the process.
     /// - panics: none.
     /// - executable: none — the answer is the environment's and the host's.
     ///
@@ -135,7 +143,7 @@ impl Grant
     /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
     #[inline]
     #[must_use]
-    pub fn of_process() -> Self
+    pub fn of_process(class: Class) -> Self
     {
         for name in ["CARGO_MAKEFLAGS", "MAKEFLAGS", "MFLAGS"] {
             let Some(flags) = std::env::var_os(name)
@@ -150,7 +158,7 @@ impl Grant
                 return Self(opened(named));
             }
         }
-        Self(hosted(&runtime_directory()))
+        Self(hosted(&runtime_directory(), class))
     }
 
     /// The grant of the jobserver that a FIFO at `path` holds.
@@ -167,16 +175,19 @@ impl Grant
         Fifo::open(path).map(|fifo| Self(Maybe::Present(Tokens::Fifo(fifo))))
     }
 
-    /// The grant of the counter in `directory`, while a hub owns it; no grant
-    /// otherwise.
+    /// The grant of the counter in `directory`, taken as `class`, while a hub
+    /// owns it; no grant otherwise.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn hosted(directory: &Path) -> Self
+    pub fn hosted(
+        directory: &Path,
+        class: Class,
+    ) -> Self
     {
-        Self(hosted(directory))
+        Self(hosted(directory, class))
     }
 
     /// The tokens of the grant, when a jobserver or a hub's counter bounds the
@@ -264,6 +275,20 @@ impl Tokens
             Self::Host(ref host) => host.give(token),
         }
     }
+
+    /// Count a keystroke among the counter's urgent takes until the hold
+    /// drops: as [`Host::want`]. A FIFO's hold counts nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn want(&self) -> Wanting<'_>
+    {
+        match *self {
+            Self::Fifo(_) => Wanting::NONE,
+            Self::Host(ref host) => host.want(),
+        }
+    }
 }
 
 /// The ends of one jobserver.
@@ -300,6 +325,23 @@ impl Token
 
     /// A token of the host's counter, which carries no byte of its own.
     pub const COUNTED: Self = Self(b'+');
+}
+
+/// What one read with no wait draws from a FIFO: no byte, one, or two, the
+/// most that the porter reads at once.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Drawn
+{
+    /// The FIFO held no byte.
+    Empty,
+    /// The FIFO held this one byte.
+    One(Token),
+    /// The FIFO held these two bytes, and maybe more.
+    Two(Token, Token),
 }
 
 /// The bit above a token's byte that marks a stored token, so a stored token
@@ -386,7 +428,7 @@ impl Fifo
     /// # Adequacy
     /// - hypothesis: L3 — as [`Grant`].
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-    fn open(path: &Path) -> std::io::Result<Self>
+    pub(super) fn open(path: &Path) -> std::io::Result<Self>
     {
         Ok(Self {
             ready: end(path, Opening::Ready)?,
@@ -508,6 +550,41 @@ impl Fifo
         // A write that the jobserver refuses loses the token for the host's
         // budget: the process can do nothing more with it.
         drop((&self.back).write_all(&[token.0]));
+    }
+
+    /// Draw up to two bytes from the FIFO with one read that does not wait.
+    /// On macOS, `FIONREAD` reads a FIFO as empty whatever it holds, so a read
+    /// counts the bytes, and the reader writes back what it keeps there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the bytes read, two at most; [`Drawn::Empty`] for a FIFO with
+    ///   none, and for a read that fails.
+    /// - panics: none.
+    /// - executable: none — the FIFO is the host's, and tools read it at once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`super::Porter`].
+    /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+    #[cfg(unix)]
+    pub(super) fn draw(&self) -> Drawn
+    {
+        let mut bytes = [0_u8; 2];
+        loop {
+            match (&self.ready).read(&mut bytes) {
+                Ok(2) => {
+                    let [first, second] = bytes;
+                    return Drawn::Two(Token(first), Token(second));
+                },
+                Ok(1) => {
+                    let [first, _] = bytes;
+                    return Drawn::One(Token(first));
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {},
+                // No byte, an end of file or another error: nothing is drawn.
+                Ok(_) | Err(_) => return Drawn::Empty,
+            }
+        }
     }
 }
 
@@ -742,7 +819,8 @@ fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
     }
 }
 
-/// The tokens of the counter in `directory`, while a hub owns it.
+/// The tokens of the counter in `directory`, taken as `class`, while a hub
+/// owns it.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -754,9 +832,12 @@ fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Host::join`].
 /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
-fn hosted(directory: &Path) -> Maybe<Tokens, ungranted::Absent>
+fn hosted(
+    directory: &Path,
+    class: Class,
+) -> Maybe<Tokens, ungranted::Absent>
 {
-    match Host::join(directory) {
+    match Host::join(directory, class) {
         Maybe::Present(host) => Maybe::Present(Tokens::Host(host)),
         Maybe::Absent(_) => Maybe::Absent(ungranted::Absent::Unnamed),
     }
