@@ -58,11 +58,15 @@ use std::sync::MutexGuard;
 use std::thread::Thread;
 use std::time::Instant;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use super::Spin;
+use super::grant::Right;
 use super::grant::Token;
 use super::grant::Tokens;
+use super::grant::ungranted;
+use super::grant::untaken;
 use super::lane::Sleeper;
 use crate::width::Threads;
 
@@ -320,12 +324,19 @@ impl JobRef
 /// # Adequacy
 /// - hypothesis: L3 — as [`release`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+#[spec(ensures: HELD.with(|cell| cell.get().is_none()))]
 unsafe fn run_holding(
     job: JobRef,
-    held: Option<Token>,
+    held: Right,
 )
 {
-    HELD.with(|cell| cell.set(held.map(|token| (job.frame.addr(), token))));
+    let frame = job.frame.addr();
+    HELD.with(|cell| {
+        cell.set(match held {
+            Right::Token(token) => Some((frame, token)),
+            Right::Free => None,
+        });
+    });
     // SAFETY: the caller keeps the frame alive until its part ends.
     let unwound = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
     drop(unwound);
@@ -517,7 +528,7 @@ impl Seat
             return Helped::Idle;
         }
         // The poster stored the token before it stored the post with release.
-        let token = Token::of_stored(self.token.swap(0, Ordering::Relaxed));
+        let held = Right::from(self.token.swap(0, Ordering::Relaxed));
         // SAFETY: the exchange moved this post to running, and the poster
         // wrote the part before it stored the post with release.
         let slot = unsafe { self.job.get().read() };
@@ -526,7 +537,7 @@ impl Seat
         // SAFETY: the poster keeps the frame alive until the part ends, since
         // its wait sees the part running and cannot take it back.
         unsafe {
-            run_holding(job, token);
+            run_holding(job, held);
         }
         self.state
             .store(state.holds(Holding::Nothing).0, Ordering::Release);
@@ -888,7 +899,7 @@ struct Shared
     /// measured or read it, so each worker parks at once meanwhile.
     park: AtomicU64,
     /// The tokens of the host's grant, when a jobserver bounds the process.
-    tokens: Option<Arc<Tokens>>,
+    tokens: Maybe<Arc<Tokens>, ungranted::Absent>,
 }
 
 /// How long a worker waits before it reads the grant again for a queued job,
@@ -924,18 +935,21 @@ impl Shared
     /// grant, or none under no grant.
     ///
     /// # Specification
-    /// - ensures: `None` under no grant; a token when one is free.
+    /// - ensures: [`Right::Free`] under no grant; a token when one is free.
     /// - fails: as [`Tokens::take_now`].
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Workers`].
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-    fn hold(&self) -> Maybe<Option<Token>, super::grant::untaken::Absent>
+    #[spec(ensures: |ref ret| matches!(self.tokens, Maybe::Present(_))
+        || matches!(*ret, Maybe::Present(Right::Free)))]
+    fn hold(&self) -> Maybe<Right, untaken::Absent>
     {
-        self.tokens
-            .as_deref()
-            .map_or(Maybe::Present(None), |tokens| tokens.take_now().map(Some))
+        match self.tokens {
+            Maybe::Present(ref tokens) => tokens.take_now().map(Right::Token),
+            Maybe::Absent(_) => Maybe::Present(Right::Free),
+        }
     }
 
     /// Give back the right that [`Shared::hold`] gave.
@@ -944,10 +958,12 @@ impl Shared
     /// trivial.
     fn give(
         &self,
-        held: Option<Token>,
+        held: Right,
     )
     {
-        if let (Some(token), Some(tokens)) = (held, self.tokens.as_deref()) {
+        if let Right::Token(token) = held
+            && let Maybe::Present(ref tokens) = self.tokens
+        {
             tokens.give(token);
         }
     }
@@ -1127,7 +1143,7 @@ impl Workers
     pub fn start(
         threads: Threads,
         kept: Option<&Path>,
-        tokens: Option<Arc<Tokens>>,
+        tokens: Maybe<Arc<Tokens>, ungranted::Absent>,
     ) -> Result<Self, std::io::Error>
     {
         let count = NonZeroUsize::from(threads);
@@ -1343,7 +1359,7 @@ impl Workers
         // The worker is claimed before the token is read, so a fork that finds
         // no idle worker costs no read of the grant.
         let held = match taking {
-            Taking::Free => None,
+            Taking::Free => Right::Free,
             Taking::Token => {
                 let Maybe::Present(held) = self.shared.hold()
                 else {
@@ -1354,8 +1370,7 @@ impl Workers
             },
         };
         let state = SeatState(seat.state.load(Ordering::Relaxed)).next_post();
-        seat.token
-            .store(held.map_or(0, Token::stored), Ordering::Relaxed);
+        seat.token.store(u16::from(held), Ordering::Relaxed);
         // SAFETY: this party holds the worker's idle bit and the seat holds
         // nothing, so the worker reads no part until the store below.
         unsafe {
@@ -1398,7 +1413,7 @@ impl Workers
                 // The worker never started the part, so its token is still in
                 // the seat, as this party stored it.
                 self.shared
-                    .give(Token::of_stored(seat.token.swap(0, Ordering::Relaxed)));
+                    .give(Right::from(seat.token.swap(0, Ordering::Relaxed)));
                 self.shared.idle.release(posted.worker);
                 Retracted::Back
             },
@@ -1495,7 +1510,7 @@ impl Workers
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
     pub fn park_lent(&self)
     {
-        let Some(tokens) = self.shared.tokens.as_deref()
+        let Maybe::Present(ref tokens) = self.shared.tokens
         else {
             std::thread::park();
             return;
@@ -1572,7 +1587,7 @@ impl Workers
             // Under a grant, a token that came free since the posts above
             // takes the next part. With no grant, a worker that found none
             // idle above leaves the rest to this thread, as before.
-            let granted = self.shared.tokens.is_some();
+            let granted = matches!(self.shared.tokens, Maybe::Present(_));
             for part in next .. parts.get() {
                 if granted {
                     parted.left.fetch_add(1, Ordering::Relaxed);
@@ -1800,7 +1815,7 @@ fn serve(
 )
 {
     CURRENT.with(|current| current.set(Some((Arc::as_ptr(shared).addr(), worker))));
-    if let Some(ref tokens) = shared.tokens {
+    if let Maybe::Present(ref tokens) = shared.tokens {
         // A worker serves one pool for its life, so no grant is set before.
         GRANT.with(|grant| drop(grant.set(Arc::clone(tokens))));
     }

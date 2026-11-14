@@ -121,6 +121,7 @@ use quenchant_shape::shape::Maybe;
 
 pub use self::grant::Grant;
 use self::grant::Tokens;
+use self::grant::ungranted;
 use self::lane::Attendance;
 use self::lane::DEPTH;
 use self::lane::Feed;
@@ -181,7 +182,7 @@ pub struct Pool
     kept: Option<PathBuf>,
     /// The tokens of the host's grant, when the driver names one: each worker
     /// runs a part only while it holds one of them.
-    tokens: Option<Arc<Tokens>>,
+    tokens: Maybe<Arc<Tokens>, ungranted::Absent>,
     /// The threads, once a fork asked for them.
     started: OnceLock<Result<Started, PoolFault>>,
 }
@@ -248,7 +249,7 @@ impl Pool
             width,
             spin: Spin::PARK,
             kept: None,
-            tokens: None,
+            tokens: Maybe::Absent(ungranted::Absent::Unnamed),
             started: OnceLock::new(),
         }
     }
@@ -295,6 +296,8 @@ impl Pool
     ///   the pool starts at its whole width, since the tokens bound the parts
     ///   that run. Under no jobserver, the pool is as before.
     /// - panics: none.
+    /// - executable: none — whether a jobserver bounds the pool is the
+    ///   environment's, and its tokens are the jobserver's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a pool of 16 threads under a jobserver of two tokens
@@ -331,8 +334,8 @@ impl Pool
     fn threads(&self) -> Threads
     {
         match self.tokens {
-            Some(_) => self.width.whole(),
-            None => self.width.threads(),
+            Maybe::Present(_) => self.width.whole(),
+            Maybe::Absent(_) => self.width.threads(),
         }
     }
 

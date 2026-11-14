@@ -102,6 +102,7 @@ quenchant_shape::reason_enum! {
 ///   at most two parts at once, and gives each token back.
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Grant(Maybe<Tokens, ungranted::Absent>);
 
 impl Grant
@@ -134,7 +135,7 @@ impl Grant
             else {
                 continue;
             };
-            if let Maybe::Present(named) = named(flags) {
+            if let Maybe::Present(named) = named(Flags::from(flags)) {
                 return Self(opened(named));
             }
         }
@@ -159,12 +160,9 @@ impl Grant
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn into_tokens(self) -> Option<Tokens>
+    pub(crate) fn into_tokens(self) -> Maybe<Tokens, ungranted::Absent>
     {
-        match self.0 {
-            Maybe::Present(tokens) => Some(tokens),
-            Maybe::Absent(_) => None,
-        }
+        self.0
     }
 }
 
@@ -204,41 +202,77 @@ pub struct Tokens
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
 pub struct Token(u8);
 
 impl Token
 {
-    /// The bit that marks a stored token.
-    const HELD: u16 = 0x100;
-
     /// The token that a party lends while it parks: `+`, the byte that make
     /// writes for a token.
     pub const LENT: Self = Self(b'+');
+}
 
-    /// The token as a seat stores it: never zero, so zero stores no token.
+/// The bit above a token's byte that marks a stored token, so a stored token
+/// is never zero.
+const STORED: u16 = 0x100;
+
+/// What a part runs on: a token of the grant, or none, when no jobserver
+/// bounds the pool or the part is a trip of the park's measure.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Right
+{
+    /// A token of the jobserver, which goes back as the part ends.
+    Token(Token),
+    /// No token.
+    Free,
+}
+
+impl From<Right> for u16
+{
+    /// The part's token as a seat stores it: zero for no token, else the
+    /// token's byte under the bit that marks a stored token.
     ///
     /// # Specification
     /// trivial.
-    pub fn stored(self) -> u16
+    #[inline]
+    fn from(held: Right) -> Self
     {
-        Self::HELD | u16::from(self.0)
+        match held {
+            Right::Token(token) => STORED | Self::from(token.0),
+            Right::Free => 0,
+        }
     }
+}
 
-    /// The token that `stored` holds, when it holds one.
+impl From<u16> for Right
+{
+    /// The token that a seat stores as `stored`, or none.
     ///
     /// # Specification
-    /// - ensures: the token whose [`Token::stored`] is `stored`, or none for
-    ///   zero.
+    /// - ensures: the token whose store is `stored`, or [`Right::Free`] when
+    ///   the bit that marks a stored token is clear.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a token stored and read again is the same byte.
     /// - witness: `pool::grant::tests::a_stored_token_reads_back_unchanged`
-    #[spec(ensures: |ret| ret.as_ref().map_or(stored & Self::HELD == 0, |token| token.0 == stored.to_le_bytes()[0]))]
-    pub fn of_stored(stored: u16) -> Option<Self>
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Self::Token(token) => stored & STORED != 0 && token.0 == stored.to_le_bytes()[0],
+        Self::Free => stored & STORED == 0,
+    })]
+    fn from(stored: u16) -> Self
     {
         let [byte, held] = stored.to_le_bytes();
-        (held != 0).then_some(Self(byte))
+        if held == 0 {
+            Self::Free
+        }
+        else {
+            Self::Token(Token(byte))
+        }
     }
 }
 
@@ -253,6 +287,7 @@ impl Tokens
     /// - fails: the host's error, or [`std::io::ErrorKind::InvalidInput`] when
     ///   the file at `path` is no FIFO.
     /// - panics: none.
+    /// - executable: none — the FIFO is the host's.
     ///
     /// # Errors
     /// Returns the host's error for an open that fails, and
@@ -270,25 +305,34 @@ impl Tokens
         })
     }
 
-    /// The jobserver whose ends the parent hands down as the descriptors
-    /// `read` and `write`, each opened again through `/dev/fd`.
+    /// The jobserver whose ends the parent hands down as the descriptors that
+    /// `spelled` spells, each opened again through `/dev/fd`.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: three ends with descriptions of their own, each a pipe.
-    /// - fails: the host's error, or [`std::io::ErrorKind::InvalidInput`] when
-    ///   a descriptor names no pipe.
+    /// - fails: [`std::io::ErrorKind::InvalidInput`] for a spelling of no
+    ///   descriptor or a descriptor of no pipe, else the host's error.
     /// - panics: none.
+    /// - executable: none — the descriptors are the parent's.
     ///
     /// # Errors
-    /// Returns the host's error for an open that fails, and
-    /// [`std::io::ErrorKind::InvalidInput`] for a descriptor that is no pipe.
+    /// Returns [`std::io::ErrorKind::InvalidInput`] for a spelling of no
+    /// descriptor or a descriptor of no pipe, and the host's error for an
+    /// open that fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the descriptors that cargo hands down open again as
+    ///   the ends of its pipe.
+    /// - witness: `pool::grant::tests::a_pipe_handed_down_by_descriptor_opens_again`
     #[cfg(target_os = "linux")]
-    fn descriptors(
-        read: u32,
-        write: u32,
-    ) -> std::io::Result<Self>
+    fn descriptors(spelled: Descriptors<'_>) -> std::io::Result<Self>
     {
+        let invalid = |_| std::io::Error::from(std::io::ErrorKind::InvalidInput);
+        // No trait reads a descriptor from the flags' text, so the two
+        // spellings are read here, at the one site that opens them.
+        let read = spelled.read.parse::<u32>().map_err(invalid)?;
+        let write = spelled.write.parse::<u32>().map_err(invalid)?;
         let read = alloc::format!("/dev/fd/{read}");
         let write = alloc::format!("/dev/fd/{write}");
         Ok(Self {
@@ -296,6 +340,21 @@ impl Tokens
             waiting: end(Path::new(&read), Opening::Read)?,
             back: end(Path::new(&write), Opening::Write)?,
         })
+    }
+
+    /// The jobserver of a pipe that the parent hands down by descriptor: none
+    /// off Linux, where a read that does not wait would change the parent's
+    /// pipe.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns [`std::io::ErrorKind::Unsupported`] always.
+    #[cfg(not(target_os = "linux"))]
+    fn descriptors(_spelled: Descriptors<'_>) -> std::io::Result<Self>
+    {
+        Err(std::io::ErrorKind::Unsupported.into())
     }
 
     /// A token, when one is free, with no wait.
@@ -392,6 +451,7 @@ enum Opening
 /// - fails: the host's error, or [`std::io::ErrorKind::InvalidInput`] for a
 ///   file that is neither.
 /// - panics: none.
+/// - executable: none — the file is the host's.
 ///
 /// # Errors
 /// Returns the host's error for an open that fails, and
@@ -449,6 +509,7 @@ fn end(
 ///   not wait finds none; a read that a signal ends is tried again.
 /// - fails: [`untaken::Absent::Refused`] for an end of file or another error.
 /// - panics: none.
+/// - executable: none — the byte is the jobserver's.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
@@ -472,6 +533,40 @@ fn token(mut end: &File) -> Maybe<Token, untaken::Absent>
     }
 }
 
+/// The text of a variable of the build tools' flags, as `MAKEFLAGS`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Flags<'text>(&'text str);
+
+impl<'text> From<&'text str> for Flags<'text>
+{
+    /// The flags that `text` spells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(text: &'text str) -> Self
+    {
+        Self(text)
+    }
+}
+
+/// The two descriptors of a pipe as the flags spell them, read end first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Descriptors<'flags>
+{
+    /// The spelling of the read end.
+    read: &'flags str,
+    /// The spelling of the write end.
+    write: &'flags str,
+}
+
 /// A jobserver as the flags of the build tools name it.
 ///
 /// # Specification
@@ -481,12 +576,12 @@ enum Named<'flags>
 {
     /// A FIFO at this path.
     Fifo(&'flags Path),
-    /// A pipe whose ends are these two descriptors, read end first.
-    Descriptors(&'flags str, &'flags str),
+    /// A pipe whose ends are these two descriptors.
+    Descriptors(Descriptors<'flags>),
 }
 
-/// The jobserver that `flags`, a value of `MAKEFLAGS`, names: the last
-/// `--jobserver-auth=` or `--jobserver-fds=` argument.
+/// The jobserver that `flags` names: the last `--jobserver-auth=` or
+/// `--jobserver-fds=` argument.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -499,9 +594,13 @@ enum Named<'flags>
 /// - hypothesis: L3 — make's spelling, cargo's two spellings, a later argument
 ///   over an earlier one, flags with none, and a value of neither form.
 /// - witness: `pool::grant::tests::the_flags_name_the_last_jobserver`
-fn named(flags: &str) -> Maybe<Named<'_>, ungranted::Absent>
+#[spec(ensures: |ref ret| !matches!(*ret, Maybe::Present(_)) || flags.0.contains("--jobserver-"))]
+fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
 {
+    // No trait splits the flags into words, so the text is read here, at the
+    // one site that names the jobserver.
     let value = flags
+        .0
         .split_ascii_whitespace()
         .filter_map(|word| {
             word.strip_prefix("--jobserver-auth=")
@@ -516,7 +615,7 @@ fn named(flags: &str) -> Maybe<Named<'_>, ungranted::Absent>
         return Maybe::Present(Named::Fifo(Path::new(path)));
     }
     match value.split_once(',') {
-        Some((read, write)) => Maybe::Present(Named::Descriptors(read, write)),
+        Some((read, write)) => Maybe::Present(Named::Descriptors(Descriptors { read, write })),
         None => Maybe::Absent(ungranted::Absent::Unopened),
     }
 }
@@ -539,7 +638,7 @@ fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
 {
     let opened = match named {
         Named::Fifo(path) => Tokens::fifo(path),
-        Named::Descriptors(read, write) => descriptors(read, write),
+        Named::Descriptors(spelled) => Tokens::descriptors(spelled),
     };
     match opened {
         Ok(tokens) => Maybe::Present(tokens),
@@ -550,45 +649,6 @@ fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
     }
 }
 
-/// The tokens of a pipe whose ends the parent hands down as the descriptors
-/// that `read` and `write` spell.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// Returns [`std::io::ErrorKind::InvalidInput`] for a spelling of no
-/// descriptor, and the open's error otherwise.
-#[cfg(target_os = "linux")]
-fn descriptors(
-    read: &str,
-    write: &str,
-) -> std::io::Result<Tokens>
-{
-    let invalid = |_| std::io::Error::from(std::io::ErrorKind::InvalidInput);
-    Tokens::descriptors(
-        read.parse().map_err(invalid)?,
-        write.parse().map_err(invalid)?,
-    )
-}
-
-/// The tokens of a pipe that the parent hands down by descriptor: none off
-/// Linux, where a read that does not wait would change the parent's pipe.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// Returns [`std::io::ErrorKind::Unsupported`] always.
-#[cfg(not(target_os = "linux"))]
-fn descriptors(
-    _read: &str,
-    _write: &str,
-) -> std::io::Result<Tokens>
-{
-    Err(std::io::ErrorKind::Unsupported.into())
-}
-
 #[cfg(test)]
 mod tests
 {
@@ -596,7 +656,10 @@ mod tests
 
     use quenchant_shape::shape::Maybe;
 
+    use super::Descriptors;
+    use super::Flags;
     use super::Named;
+    use super::Right;
     use super::Token;
     use super::named;
     use super::ungranted;
@@ -605,29 +668,74 @@ mod tests
     fn the_flags_name_the_last_jobserver()
     {
         assert_eq!(
-            named("-j8 --jobserver-auth=fifo:/tmp/gate-jobs"),
+            named(Flags::from("-j8 --jobserver-auth=fifo:/tmp/gate-jobs")),
             Maybe::Present(Named::Fifo(Path::new("/tmp/gate-jobs"))),
             "make's spelling of a FIFO"
         );
         assert_eq!(
-            named("-j --jobserver-fds=3,4 --jobserver-auth=3,4"),
-            Maybe::Present(Named::Descriptors("3", "4")),
+            named(Flags::from("-j --jobserver-fds=3,4 --jobserver-auth=3,4")),
+            Maybe::Present(Named::Descriptors(Descriptors {
+                read: "3",
+                write: "4"
+            })),
             "cargo's two spellings of one pipe"
         );
         assert_eq!(
-            named("--jobserver-auth=5,6 -j2 --jobserver-auth=fifo:/run/pool"),
+            named(Flags::from(
+                "--jobserver-auth=5,6 -j2 --jobserver-auth=fifo:/run/pool"
+            )),
             Maybe::Present(Named::Fifo(Path::new("/run/pool"))),
             "a later argument stands over an earlier one"
         );
         assert_eq!(
-            named("-s -j4"),
+            named(Flags::from("-s -j4")),
             Maybe::Absent(ungranted::Absent::Unnamed),
             "flags that name no jobserver"
         );
         assert_eq!(
-            named("--jobserver-auth=sem:gandr"),
+            named(Flags::from("--jobserver-auth=sem:gandr")),
             Maybe::Absent(ungranted::Absent::Unopened),
             "a semaphore, the form of Windows, opens on no host here"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_pipe_handed_down_by_descriptor_opens_again()
+    {
+        use std::os::fd::AsRawFd as _;
+
+        use super::Tokens;
+        use super::untaken;
+
+        let (read, write) = std::io::pipe().unwrap();
+        let read = read.as_raw_fd().to_string();
+        let write = write.as_raw_fd().to_string();
+        let tokens = Tokens::descriptors(Descriptors {
+            read: &read,
+            write: &write,
+        })
+        .unwrap();
+        tokens.give(Token(b'x'));
+        assert_eq!(
+            tokens.take_now(),
+            Maybe::Present(Token(b'x')),
+            "the token written through one end reads back through the other"
+        );
+        assert_eq!(
+            tokens.take_now(),
+            Maybe::Absent(untaken::Absent::Busy),
+            "an empty pipe gives no token and does not wait"
+        );
+        assert_eq!(
+            Tokens::descriptors(Descriptors {
+                read: "three",
+                write: &write,
+            })
+            .map(drop)
+            .map_err(|error| error.kind()),
+            Err(std::io::ErrorKind::InvalidInput),
+            "a spelling of no descriptor opens nothing"
         );
     }
 
@@ -636,11 +744,15 @@ mod tests
     {
         for byte in [0_u8, b'+', b'|', u8::MAX] {
             assert_eq!(
-                Token::of_stored(Token(byte).stored()),
-                Some(Token(byte)),
+                Right::from(u16::from(Right::Token(Token(byte)))),
+                Right::Token(Token(byte)),
                 "the byte {byte} goes back unchanged"
             );
         }
-        assert_eq!(Token::of_stored(0), None, "zero stores no token");
+        assert_eq!(
+            Right::from(u16::from(Right::Free)),
+            Right::Free,
+            "zero stores no token"
+        );
     }
 }
