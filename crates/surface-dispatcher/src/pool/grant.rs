@@ -669,9 +669,6 @@ enum Opening
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-///
-/// # Cost
-/// - allocation: the host's error of an open or a metadata read, error path
 #[cfg(unix)]
 fn end(
     path: &Path,
