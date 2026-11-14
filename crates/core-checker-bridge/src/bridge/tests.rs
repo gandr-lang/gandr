@@ -3522,6 +3522,137 @@ fn a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261()
     );
 }
 
+/// A stopwatch that counts each admission it times, across its copies.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
+struct Counted(Arc<core::sync::atomic::AtomicUsize>);
+
+impl super::Stopwatch for Counted
+{
+    type Started = ();
+
+    /// Count one admission.
+    ///
+    /// # Specification
+    /// trivial.
+    fn start(&mut self)
+    {
+        let _before = self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Read no clock.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stop(
+        &mut self,
+        (): (),
+    ) -> super::AdmissionCost
+    {
+        Maybe::Absent(timed::Absent::Untimed)
+    }
+}
+
+#[test]
+fn a_recheck_names_each_formation_in_one_walk_7456()
+{
+    // axiom base : Integer ;
+    // def lead : Integer = base ;
+    // def f : *{port, tls}[.port = lead] = {tls = 1} ;
+    //
+    // The record of the formation reads `lead`, a plain definition that reads
+    // the axiom `base`. A recheck keys nothing, so the kernel names `base` by
+    // its position. The formation table keys `base` on demand and names
+    // `lead` again over that key. So the recheck admits each declaration
+    // once, as a readmission under keys does, and exports the same names.
+    let judged = || {
+        let label = |name: &str| gandr_kernel_term::FieldLabel::from(String::from(name));
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let record_type = arena.value_type_record(BTreeMap::from([
+            (label("port"), integer),
+            (label("tls"), integer),
+        ]));
+        let base = arena.value_constant(ConstantIndex::from(0_usize));
+        let lead = arena.value_constant(ConstantIndex::from(1_usize));
+        let system = arena.value_type_system(
+            record_type,
+            BTreeMap::from([(label("port"), lead)]),
+            Vec::new(),
+        );
+        let free = arena.value_literal(gandr_kernel_term::Literal::Integer(
+            gandr_kernel_term::IntegerLiteral::new(
+                gandr_kernel_term::Sign::NonNegative,
+                gandr_kernel_term::Magnitude::from_decimal_text(String::from("1")).unwrap(),
+            ),
+        ));
+        let body = arena.value_record(BTreeMap::from([(label("tls"), free)]));
+        let declarations = Vec::from([
+            declaration(At(0), Maybe::Present(integer), HOLE),
+            declaration(At(1), Maybe::Present(integer), Maybe::Present(base)),
+            declaration(At(2), Maybe::Present(system), Maybe::Present(body)),
+        ]);
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            check_module(&mut context, &declarations)
+        };
+        (arena, report)
+    };
+    let walked = |recall: &Recall| {
+        let (mut arena, report) = judged();
+        let mut counted = Counted::default();
+        let (readmission, _) = readmit_retiring(
+            &mut arena,
+            &report,
+            (LeadingCount(0), Maybe::Absent(crossed::Absent::Unasked)),
+            recall,
+            &Unretired,
+            &mut counted,
+            &Serial,
+        )
+        .whole();
+        let admissions = counted.0.load(core::sync::atomic::Ordering::Relaxed);
+        (readmission, admissions)
+    };
+    let (rechecked, rechecks) = walked(&Recall::recheck());
+    let (keyed, keyings) = walked(&Recall::trusting(
+        TrustPolicy::Trusted(BTreeSet::new()),
+        Arc::new(NoVerdicts),
+    ));
+    let formations = |readmission: &Readmission| {
+        decode(readmission.export(BTreeMap::new()).as_image())
+            .expect("the module exports")
+            .declarations()
+            .iter()
+            .filter(|marked| {
+                marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .first()
+                    .is_some_and(|first| AsRef::<str>::as_ref(first) == "formation")
+            })
+            .count()
+    };
+    assert_eq!(
+        formations(&rechecked),
+        1,
+        "the formation crosses one witness"
+    );
+    assert_eq!(
+        rechecks, keyings,
+        "the recheck admits each declaration once, as the readmission under keys does"
+    );
+    assert_eq!(
+        rechecked.export(BTreeMap::new()),
+        keyed.export(BTreeMap::new()),
+        "the recheck names the formation as the readmission under keys names it"
+    );
+}
+
 #[test]
 fn a_seal_ending_at_a_skipped_position_closes_before_its_client_2004()
 {

@@ -9,9 +9,11 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_kernel_core::Admission;
+use gandr_kernel_core::DemandedKeys;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_core::Twin;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
@@ -1129,6 +1131,83 @@ fn two_axioms_of_one_type_take_two_keys_6568()
         "the first axiom is not the second"
     );
     assert_eq!(rerun(&signer, &receipt, &twice(at(1_usize))), [Recalled; 3]);
+}
+
+/// #7456: an environment that keys nothing computes each content key on
+/// demand as an admission under keys computes it. The program holds twin
+/// axioms, a reader of the second, an atom manifest at a unit, twin sorts, a
+/// type of words over the first sort with an axiom of that sort, and twin
+/// blocks. The demands run from the last constant down, so each one keys
+/// what its key reads first.
+#[test]
+fn a_key_on_demand_is_the_key_of_its_admission_7456()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let at = ConstantIndex::from;
+    let program = [
+        Offered::Axiom(Width(2)),
+        Offered::Axiom(Width(2)),
+        Offered::Naming(Width(2), at(1_usize)),
+        Offered::Sealed(Width(1)),
+        Offered::Unit,
+        Offered::Sort,
+        Offered::Sort,
+        Offered::Words(at(5_usize)),
+        Offered::Of(at(5_usize)),
+        Offered::Block(Forest::AsWritten),
+        Offered::Block(Forest::AsWritten),
+    ];
+    let mut keyed = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let mut rechecking = Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts));
+    for &offered in &program {
+        let _keyed = offer(&mut keyed, offered);
+        let _rechecked = offer(&mut rechecking, offered);
+    }
+    let length = usize::from(keyed.entries().len());
+    assert_eq!(length, usize::from(rechecking.entries().len()));
+    let mut demanded = DemandedKeys::default();
+    for position in (0 .. length).rev() {
+        let held = keyed.entries().content(at(position));
+        assert!(
+            matches!(held, Maybe::Present(_)),
+            "the admission under keys keys {position}: {held:?}"
+        );
+        assert!(
+            matches!(rechecking.entries().content(at(position)), Maybe::Absent(_)),
+            "the recheck keys nothing at {position}"
+        );
+        assert_eq!(
+            rechecking.demanded_key(at(position), &mut demanded),
+            held,
+            "the key on demand of {position}"
+        );
+    }
+}
+
+/// #7456: two unit definitions under one open atom read it alike, so they
+/// hold one key, and a table that names by key names them alike: the first
+/// is twinned. With the atom's scope over the first alone, the second is a
+/// plain definition, named by its content, and the first is alone.
+#[test]
+fn two_definitions_under_one_atom_are_twins_on_demand_7456()
+{
+    let twin = |scope: Width| {
+        let mut rechecking = Environment::recalling(TrustPolicy::Recheck, Arc::new(NoVerdicts));
+        for offered in [Offered::Sealed(scope), Offered::Unit, Offered::Unit] {
+            let _admitted = offer(&mut rechecking, offered);
+        }
+        rechecking.demanded_twin(ConstantIndex::from(1_usize), &mut DemandedKeys::default())
+    };
+    assert_eq!(
+        twin(Width(2)),
+        Twin::Twinned,
+        "both units stand under the atom"
+    );
+    assert_eq!(
+        twin(Width(1)),
+        Twin::Alone,
+        "the second unit is a plain definition"
+    );
 }
 
 /// #6568: a declaration in an atom's scope reads the atom as its
