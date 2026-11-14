@@ -17,7 +17,8 @@
 # then `, moved` should the refused cut have moved a branch, then the `gh`
 # calls and the chain linked. A case's `artifacts`, when given, is the table
 # of generated artifacts the replay reads before anything moves (#6159,
-# `REPLAY_ARTIFACTS`).
+# `REPLAY_ARTIFACTS`). The base pins a toolchain, since a replay refuses a
+# tree that pins none (#7485).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/stack.bash"
@@ -39,6 +40,7 @@ scenario() {
   cd "$1/clone"
   identity
   commit base.txt base base
+  commit rust-toolchain.toml $'[toolchain]\nchannel = "nightly-case"' pin
   git push --quiet origin main
   if [[ $2 == middle ]]; then
     git switch --quiet --create lower
