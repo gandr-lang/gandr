@@ -470,8 +470,8 @@ struct Seat
     /// The part, written while the seat holds nothing and read once it is
     /// running.
     job: UnsafeCell<MaybeUninit<JobRef>>,
-    /// The token of the host's grant that the posted part runs on, as
-    /// [`Token::stored`] writes it, or zero under no grant.
+    /// The [`Right`] that the posted part runs on, as its conversion to `u16`
+    /// writes it: zero for no token.
     token: AtomicU16,
     /// The worker's park.
     sleeper: Sleeper,
