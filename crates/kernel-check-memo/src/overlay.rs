@@ -406,36 +406,38 @@ where
         }
     }
 
-    /// Fold `child`'s own entries into this memo, in the order the child
-    /// recorded them, keeping each entry that `keep` answers for, when `agree`
-    /// answers that each agrees with what this memo recorded since the
-    /// child's fork.
+    /// Fold `child` into this memo by reference: each layer that the child
+    /// froze after its fork, oldest first, and then its own entries, join
+    /// this memo's stack as layers. No entry is copied. Each entry that `keep`
+    /// refuses leaves its layer first, one removal for each.
     ///
-    /// The entries recorded since the fork are this memo's own entries and
-    /// the entries of each layer frozen after the child's newest one: the
-    /// joins of earlier siblings, which the child did not read. Two entries
-    /// under one support whose outcomes `agree` refuses do not glue. So the
-    /// join refuses them, names both, and folds nothing. Two outcomes that
-    /// `agree` accepts can name one content by two nodes. The child's entry
-    /// then replaces the held one, as a serial run that records it again
-    /// replaces it. A child replaces an entry of a layer that it read in the
-    /// same way. The join first settles this memo, so a serial fold records
-    /// each entry once.
+    /// Each kept entry must agree, under `agree`, with what this memo
+    /// recorded since the child's fork: its own entries and each layer frozen
+    /// after the child's newest one, which hold the joins of earlier siblings.
+    /// A first child meets none of them, so its join compares nothing. Two
+    /// entries under one support whose outcomes `agree` refuses do not glue.
+    /// So the join refuses them, names both, and folds nothing. Two outcomes
+    /// that `agree` accepts can name one content by two nodes. The child's
+    /// layer is the newer, so a recall serves the child's entry, as a serial
+    /// run that records it again serves it. The join does not settle: a later
+    /// settle or compaction merges the layers, off the fork's path.
     ///
     /// # Specification
     /// - requires: `child` was forked from this memo or from a layer below it.
-    /// - ensures: on success, each kept entry of the child is recorded into
-    ///   this memo's own entries, as [`CheckMemo::remember`] records it; the
-    ///   child's hold on its frozen layers ends, and this memo is settled as
-    ///   [`Self::settle`] settles it. On a refusal, this memo serves each
-    ///   support as it served it before the call.
-    /// - provides: the fold of a job's memo at its join or its commit, and the
-    ///   agreement check of two jobs that keep one support.
+    /// - ensures: on success, a recall serves each support as a serial memo
+    ///   serves it that recorded this memo's entries and then each entry of the
+    ///   child that `keep` accepts; no entry that `keep` refuses is served; the
+    ///   child's hold on its frozen layers ends; and this memo's own entries,
+    ///   when it held any, are frozen below the child's layers. On a refusal,
+    ///   this memo serves each support as it served it before the call.
+    /// - provides: the fold of a job's memo at its join or its commit, at the
+    ///   cost of the entries recorded since the fork, and the agreement check
+    ///   of two jobs that keep one support.
     /// - fails: a kept entry of the child and an entry recorded since its fork
     ///   answer one support with two outcomes that `agree` refuses.
     /// - panics: none.
-    /// - executable: none — the fold's order is the caller's, and the child's
-    ///   entries leave with the call, so no predicate reads them after it.
+    /// - executable: none — the fold's order is the caller's, and the child
+    ///   leaves with the call, so no predicate reads it after.
     ///
     /// # Errors
     /// [`Disagreement`], naming the support, the outcome that this memo holds
@@ -444,12 +446,14 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`]; an entry that `keep` drops is
     ///   not served after the join, two siblings that keep two outcomes under
-    ///   one support are refused in either order, and two outcomes that `agree`
-    ///   accepts glue.
+    ///   one support are refused in either order, two outcomes that `agree`
+    ///   accepts glue, a join adds the child's entries as layers and copies
+    ///   none, and a child that forked children of its own brings their layers.
     /// - witness: `overlay::tests::a_join_folds_the_children_in_their_order_as_a_serial_memo_records_them`
     /// - witness: `overlay::tests::a_join_drops_what_the_parent_does_not_keep`
     /// - witness: `overlay::tests::a_join_refuses_two_outcomes_under_one_key_and_names_both`
     /// - witness: `overlay::tests::a_join_glues_two_outcomes_that_agree`
+    /// - witness: `overlay::tests::a_join_links_the_child_s_entries_and_copies_none`
     #[inline]
     pub fn join<Keep, Agree>(
         &mut self,
@@ -464,47 +468,83 @@ where
         Outcome: Clone,
     {
         let Self {
-            layers,
-            own,
+            mut layers,
+            mut own,
             forked,
             ..
         } = child;
+        // The child's own part: each layer that it froze after its fork, then
+        // its own entries. A layer that another memo still shares is copied
+        // before its filter, so the sharer keeps what it read.
+        let first_own = layers.partition_point(|layer| layer.stamp <= forked);
+        for layer in layers.get_mut(first_own ..).unwrap_or_default() {
+            Arc::make_mut(&mut layer.memo).retain(&mut keep);
+        }
+        own.retain(&mut keep);
         // The layers stamped after the child's newest one were frozen after
         // its fork. A settle never merges a layer that a child still holds,
         // and a compaction never merges across a child's fork, so these
         // layers and this memo's own entries came after the child's fork.
         let first = self.layers.partition_point(|layer| layer.stamp <= forked);
         let since = self.layers.get(first ..).unwrap_or_default();
-        for (support, outcome) in own.entries() {
-            if !keep(support, outcome) {
-                continue;
-            }
-            let held = self.own.recall(support).or_else(|| {
-                since
-                    .iter()
-                    .rev()
-                    .find_map(|layer| layer.memo.recall(support))
-            });
-            if let Some(held) = held
-                && !agree(held.outcome(), outcome)
-            {
-                return Err(Disagreement {
-                    support: support.clone(),
-                    held: held.outcome().clone(),
-                    offered: outcome.clone(),
+        if self.own.entry_count() != MemoEntryCount::zero() || !since.is_empty() {
+            let offered = layers
+                .get(first_own ..)
+                .unwrap_or_default()
+                .iter()
+                .flat_map(|layer| layer.memo.entries())
+                .chain(own.entries());
+            for (support, outcome) in offered {
+                let held = self.own.recall(support).or_else(|| {
+                    since
+                        .iter()
+                        .rev()
+                        .find_map(|layer| layer.memo.recall(support))
                 });
+                if let Some(held) = held
+                    && !agree(held.outcome(), outcome)
+                {
+                    return Err(Disagreement {
+                        support: support.clone(),
+                        held: held.outcome().clone(),
+                        offered: outcome.clone(),
+                    });
+                }
             }
         }
-        drop(layers);
-        self.settle();
-        for (support, outcome) in own.into_entries() {
-            if keep(&support, &outcome) {
-                // A memo at its ceiling declines the entry, which costs reuse
-                // alone, as it does at a serial record.
-                let _recorded = self.own.remember(support, outcome);
-            }
+        // What this memo recorded since the fork stays below the child's.
+        if self.own.entry_count() != MemoEntryCount::zero() {
+            let recorded = core::mem::take(&mut self.own);
+            self.link(Arc::new(recorded));
+        }
+        for layer in layers.drain(first_own ..) {
+            self.link(layer.memo);
+        }
+        if own.entry_count() != MemoEntryCount::zero() {
+            self.link(Arc::new(own));
         }
         Ok(())
+    }
+
+    /// Push `memo` onto the stack as the newest layer, under the next stamp,
+    /// when it holds an entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn link(
+        &mut self,
+        memo: Arc<HashedMemo<Support, Outcome>>,
+    )
+    {
+        if memo.entry_count() == MemoEntryCount::zero() {
+            return;
+        }
+        self.frozen = self.frozen.saturating_add(1);
+        self.layers.push(Frozen {
+            memo,
+            stamp: self.frozen,
+        });
     }
 
     /// Merge each frozen layer that no child reads any more into this memo,
@@ -836,6 +876,7 @@ mod tests
     use anodized::spec;
 
     use super::OverlaidMemo;
+    use crate::accounting::MemoEntryCount;
     use crate::digest::ContentAgreement;
     use crate::digest::ContentDigest;
     use crate::digest::DigestWord;
@@ -1244,6 +1285,48 @@ mod tests
             served(&parent, Named(1)),
             Some(Kept(11)),
             "the answer again replaces the entry it read"
+        );
+    }
+
+    #[test]
+    fn a_join_links_the_child_s_entries_and_copies_none()
+    {
+        let mut parent = OverlaidMemo::new();
+        record(&mut parent, &[(Named(1), Kept(10))]);
+        let mut child = parent.fork();
+        record(&mut child, &[(Named(2), Kept(20))]);
+        // The child forks a part of its own. The part records two entries, and
+        // the parent's join keeps one of them.
+        let mut part = child.fork();
+        record(&mut part, &[(Named(3), Kept(30)), (Named(4), Kept(40))]);
+        child
+            .join(part, |_, _| true, PartialEq::eq)
+            .expect("a lone part glues");
+        record(&mut child, &[(Named(5), Kept(50))]);
+        let layers = parent.layers.len();
+        parent
+            .join(child, |named, _| *named != Named(4), PartialEq::eq)
+            .expect("a lone child glues");
+        assert_eq!(
+            MemoEntryCount::zero(),
+            parent.own.entry_count(),
+            "the join records no entry into the parent's own entries"
+        );
+        assert_eq!(
+            layers.saturating_add(3),
+            parent.layers.len(),
+            "the child's layer at its fork, its part's layer and its own entries stand as three layers"
+        );
+        assert_eq!(
+            [1, 2, 3, 4, 5].map(|named| served(&parent, Named(named))),
+            [
+                Some(Kept(10)),
+                Some(Kept(20)),
+                Some(Kept(30)),
+                None,
+                Some(Kept(50))
+            ],
+            "the parent serves each kept entry of the child and of its part, and not the refused one"
         );
     }
 }
