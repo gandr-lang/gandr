@@ -44,6 +44,9 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::FailureClass;
+use gandr_runtime_emitter::regions::Bytes;
+use gandr_runtime_emitter::regions::Memory;
+use gandr_runtime_emitter::regions::Origin;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::KernelImage;
 use gandr_surface_corpus::Membership;
@@ -579,6 +582,74 @@ impl fmt::Display for SourceCount
     }
 }
 
+/// How a walk ended: past each source it reached, or at a bound before the
+/// rest (#7551).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Ended
+{
+    /// The walk reached each source of its paths.
+    #[default]
+    Whole,
+    /// The walk reached the memory bound, holding `held` bytes: the charge of
+    /// its cgroup when the cgroup names a `memory.max`, else its resident
+    /// set. It reached no more sources and judged no more components.
+    Memory
+    {
+        /// The bytes the process held when the walk read them.
+        held: Bytes,
+        /// The memory bound that `--memory` names or the host measures.
+        bound: Memory,
+    },
+    /// The walk reached the count of sources that `--sources` names.
+    Sources(SourceCount),
+}
+
+impl fmt::Display for Ended
+{
+    /// Writes the bound that ended the walk, with the remedy; nothing for a
+    /// whole walk.
+    ///
+    /// # Specification
+    /// - ensures: a bound's line names the bound, its origin and what raises
+    ///   it: the cgroup's `memory.max` for a cgroup's bound, else the flag.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the line is prose.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk under one byte of memory names the memory
+    ///   bound, and a walk under one source names the count.
+    /// - witness: `tests::walk::a_walk_ends_at_its_bound_by_name_7551`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Whole => Ok(()),
+            Self::Memory { held, bound } => write!(
+                f,
+                "the walk reaches its memory bound, {bound}, holding {held} bytes; give a \
+                 narrower path, or raise {}",
+                match bound.origin() {
+                    Origin::Cgroup => "the cgroup's memory.max",
+                    Origin::Flag | Origin::Available | Origin::Physical | Origin::Unread => {
+                        "--memory"
+                    },
+                }
+            ),
+            Self::Sources(count) => write!(
+                f,
+                "the walk reached its bound of {count} sources that --sources names; give a narrower path, or raise --sources"
+            ),
+        }
+    }
+}
+
 /// Everything a walk counted: the runner's report.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RunReport
@@ -598,6 +669,8 @@ pub struct RunReport
     spellings: SpellingCount,
     /// The declarations unsettled by their obligations alone.
     goals: DeclarationCount,
+    /// How the walk ended: whole, or at a bound.
+    ended: Ended,
 }
 
 impl RunReport
@@ -611,6 +684,32 @@ impl RunReport
     pub const fn sources(&self) -> SourceCounts
     {
         self.sources
+    }
+
+    /// How the walk ended: whole, or at the bound that it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ended(&self) -> Ended
+    {
+        self.ended
+    }
+
+    /// Record that the walk ended at `ended`. The first bound stands, since
+    /// the walk ends there.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn end(
+        &mut self,
+        ended: Ended,
+    )
+    {
+        if self.ended == Ended::Whole {
+            self.ended = ended;
+        }
     }
 
     /// The settle counts over every source the lowering read.
@@ -687,12 +786,12 @@ impl RunReport
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`RunVerdict::Faulted`] when a path faulted or a declaration
-    ///   produced an engine-fault refusal, whatever it states; otherwise
-    ///   [`RunVerdict::Unsettled`] when a source was not read as its root
-    ///   expects, or a declaration is unsettled — under `check --goals`,
-    ///   unsettled by more than its obligations; otherwise
-    ///   [`RunVerdict::Settled`].
+    /// - ensures: [`RunVerdict::Faulted`] when a path faulted, a declaration
+    ///   produced an engine-fault refusal, whatever it states, or the walk
+    ///   ended at a bound (#7551); otherwise [`RunVerdict::Unsettled`] when a
+    ///   source was not read as its root expects, or a declaration is unsettled
+    ///   — under `check --goals`, unsettled by more than its obligations;
+    ///   otherwise [`RunVerdict::Settled`].
     /// - provides: the predicate the driver's exit code reports.
     /// - fails: never.
     /// - panics: none.
@@ -706,7 +805,8 @@ impl RunReport
     #[must_use]
     #[spec(ensures: |ret| {
         let fault = self.sources.faulted.0 != 0
-            || usize::from(self.tally.refusals().count(FailureClass::EngineFault)) != 0;
+            || usize::from(self.tally.refusals().count(FailureClass::EngineFault)) != 0
+            || self.ended != Ended::Whole;
         let owed = usize::from(self.tally.declarations().unsettled());
         let unsettled = self.sources.refused.0 != 0 || self.sources.lowered_pending.0 != 0
             || match verb {
@@ -730,7 +830,10 @@ impl RunReport
             Verb::Check(Goals::Reported) => unsettled.saturating_sub(usize::from(self.goals)),
             Verb::Check(Goals::Gated) | Verb::Test => unsettled,
         };
-        if usize::from(self.sources.faulted) > 0_usize || usize::from(engine) > 0_usize {
+        if usize::from(self.sources.faulted) > 0_usize
+            || usize::from(engine) > 0_usize
+            || self.ended != Ended::Whole
+        {
             RunVerdict::Faulted
         }
         else if usize::from(self.sources.refused) > 0_usize

@@ -748,6 +748,49 @@ fn a_tree_is_read_when_visited()
     assert!(removed.try_exists().is_ok_and(|exists| !exists));
 }
 
+/// #7551: a walk limited to one source over a tree of two reads the first and
+/// ends at the count by name, and its verdict is a fault. Without the limit,
+/// the same walk reads both sources and ends whole.
+#[test]
+fn a_walk_ends_at_its_bound_by_name_7551()
+{
+    use gandr_surface_dispatcher::Ended;
+    use gandr_surface_dispatcher::RunVerdict;
+    use gandr_surface_dispatcher::SourceLimit;
+    use gandr_surface_dispatcher::Verb;
+
+    let scratch = Scratch::new(Path::new("bounded-walk"));
+    let root = scratch.0.join("strict/tree");
+    scratch.file(
+        Path::new("strict/tree/a.gandr"),
+        SourceText::from("def first = 1 ;"),
+    );
+    scratch.file(
+        Path::new("strict/tree/b.gandr"),
+        SourceText::from("def last = 2 ;"),
+    );
+    let one = SourceLimit::To(SourceCount::from(1_usize));
+    for (limit, read, ended) in [
+        (one, 1_usize, Ended::Sources(SourceCount::from(1_usize))),
+        (SourceLimit::Unlimited, 2_usize, Ended::Whole),
+    ] {
+        let walk = Walk::new(vec![root.clone()]).limiting(limit);
+        let ControlFlow::Continue(report) = walk.visit::<Evaluator, _, _>(
+            &Pool::new(Width::SERIAL),
+            |_step| -> ControlFlow<Infallible> { ControlFlow::Continue(()) },
+        );
+        assert_eq!(usize::from(report.sources().read()), read, "{limit:?}");
+        assert_eq!(report.ended(), ended, "{limit:?}");
+        let faulted = report.verdict(Verb::Test) == RunVerdict::Faulted;
+        assert_eq!(faulted, ended != Ended::Whole, "{limit:?}");
+    }
+    let line = Ended::Sources(SourceCount::from(1_usize)).to_string();
+    assert!(
+        line.contains("its bound of 1 sources that --sources names"),
+        "the line names the count and its flag: {line}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn an_explicit_link_uses_its_target_root_and_keeps_its_path()

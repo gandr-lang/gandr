@@ -2067,9 +2067,11 @@ INSERT INTO purpose VALUES('runtime-emitter','native::EmitRefusal','enum','Names
 INSERT INTO purpose VALUES('runtime-emitter','native::PatchRefusal','enum','Names why a hole could not be patched: a branch target beyond reach, an address beyond page reach, a value past its field, a wrong shape, or a wrong kind.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','native::memory::MapFailure','struct','Names why mapping a region failed: the host''s error number.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Bytes','struct','A size in bytes, read from its spelling with a unit and written with its digits grouped.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Charge','struct','What the process''s own cgroup charges against its memory.max: the bytes charged, and the count of times the charge met the bound.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Held','struct','A run''s stop at its memory bound: what each region held, at which step, and which region asked for the chunk that did not fit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Memory','struct','The memory bound of the runs of one invocation, and where it comes from.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('runtime-emitter','regions::Origin','enum','Names where a run''s memory bound comes from: the invocation''s flag, the memory the host makes available, half of its physical memory, or the bound of a host that reports none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Origin','enum','Names where a run''s memory bound comes from: the invocation''s flag, the memory the host makes available, the memory.max of the process''s cgroup, half of its physical memory, or the bound of a host that reports none.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::Reached','struct','A count of the times a cgroup''s charge met its memory.max, so a walk ends when the count rises past its start.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Region','enum','Names the region that asked for the chunk a run could not commit: the heap or the window region.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Short','enum','Names what a region found short of the chunk it asked for: the bound, or its reservation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::Spelled','struct','Writes a size as its largest unit that divides it.',NULL,'fits','sound',NULL);
@@ -2078,6 +2080,8 @@ INSERT INTO purpose VALUES('runtime-emitter','regions::Step','struct','The code-
 INSERT INTO purpose VALUES('runtime-emitter','regions::Unsized','enum','Names why a text names no size: no digit, an unknown unit, a zero size, or a size past 64 bits.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::bind','function','Binds the invocation''s memory bound once, before its first run, and returns the bound in force when an earlier binding fixed it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','regions::bound','function','Reads the memory bound every run of the process takes: the bound that bind gave, else the host''s, read once.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::charge','function','Reads what the process''s own cgroup charges, so a walk under a cgroup''s memory.max ends by the bound''s name before the kernel ends it; none outside such a cgroup.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('runtime-emitter','regions::resident','function','Reads the bytes the process holds in memory, so a walk compares them against the memory bound; none on a host that reports none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Choice','enum','Names the tier a run asks for: the one the process''s policy picks, or one tier.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Declined','enum','Names why a run gave no outcome: a form the lowering refused, no patcher, an emission refusal, an unbound label, a cache miss, a stuck run, a spent jump budget with its origin, a frame region past its bound, a stop at the memory bound, a transfer refusal, or a reply the run cannot hold.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('runtime-emitter','run::Kept','struct','Keeps the emitted code a lowering''s first native run found, so a later run of the same lowering takes no cache lookup.',NULL,'fits','sound',NULL);
@@ -2642,6 +2646,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::Unrunnable',
 INSERT INTO purpose VALUES('surface-dispatcher','entry::evaluation::ValueSpelling','struct','A value, spelled: the text `gandr run` prints for a run that returned one, laid out by the printer every face shares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::exercised::Exercised','struct','How many settled declarations carry each row.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::exercised::Row','enum','One row of the fragment''s exercised table that a green fixture can carry.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::report::Ended','enum','How a walk ended: past each source it reached, at the memory bound with the bytes it held, or at the count of sources.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::report::Goals','enum','What `check` does with a declaration unsettled by its obligations alone.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::report::Lints','struct','Where `check` reports each lint''s findings; `test` reports none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::report::Reach','enum','Where a lint reports its findings: only within the declarations and modules an attribute enables it on, or everywhere.',NULL,'fits','sound',NULL);
@@ -2825,6 +2830,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_width','funct
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Reached','enum','What the traversal reached next, at the walk''s current path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::SourceFault','enum','Why a path could not be carried through the pipeline.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','walk::SourceLimit','enum','How many sources a walk reaches at most: no count, or the count that --sources names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Standing','enum','How one source stands against the root it sits under.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Step','enum','One step of a walk.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Traversal','struct','Where a walk is among the paths it was given.',NULL,'fits','sound',NULL);

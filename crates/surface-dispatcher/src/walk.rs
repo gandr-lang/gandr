@@ -93,6 +93,9 @@ use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::HostGrant;
+use gandr_runtime_emitter::regions;
+use gandr_runtime_emitter::regions::Charge;
+use gandr_runtime_emitter::regions::Memory;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
@@ -129,6 +132,7 @@ use crate::compose::lower_parsed_unit;
 use crate::compose::lower_prelude;
 use crate::compose::lower_unit_source;
 use crate::engine::Engine;
+use crate::entry::report::Ended;
 use crate::entry::report::RunReport;
 use crate::entry::report::SourceCount;
 use crate::pool::Helped;
@@ -339,6 +343,109 @@ pub struct Walk
     /// Whether each admission records where each declaration stands in its
     /// artifact, which a measure reads.
     positioning: Positioning,
+    /// The memory bound that the walk draws from: the bytes the process holds
+    /// past it end the walk (#7551).
+    memory: Memory,
+    /// The count of sources that the walk reaches at most.
+    sources: SourceLimit,
+}
+
+/// How many sources a walk reaches at most (#7551).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SourceLimit
+{
+    /// No count ends the walk; the memory bound still does.
+    #[default]
+    Unlimited,
+    /// The walk reaches at most this many sources, as `--sources` names.
+    To(SourceCount),
+}
+
+/// The bound that a walk meets now, having reached `reached` sources: the
+/// count of `sources`, or the bytes held against `memory`. Under a cgroup
+/// that names a finite `memory.max`, the bytes held are the cgroup's charge,
+/// and a `max` event since `start` meets the bound: the kernel holds the
+/// charge under `memory.max` and ends the process there, so the charge never
+/// passes it. Elsewhere the bytes held are the resident set.
+///
+/// # Specification
+/// - ensures: [`Ended::Sources`] when `sources` names a count that `reached`
+///   meets; else, with `start` and a charge now, [`Ended::Memory`] when the
+///   charge's `max` count passes `start`'s or the charge passes `memory`; else,
+///   with no charge, [`Ended::Memory`] when the resident set passes `memory`;
+///   else [`Ended::Whole`].
+/// - fails: never; a host that reports neither figure meets no memory bound.
+/// - panics: none.
+/// - executable: none — the figures are the host's.
+///
+/// # Cost
+/// - allocation: the cgroup's paths, found and kept once, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — a count of two meets the second source and not the first,
+///   a bound of one byte meets the resident set by name, and a `max` count past
+///   the start's meets the bound under a cgroup.
+/// - witness: `walk::tests::met_names_the_bound_that_the_walk_meets_7551`
+fn met(
+    memory: Memory,
+    sources: SourceLimit,
+    reached: SourceCount,
+    start: Option<Charge>,
+) -> Ended
+{
+    if let SourceLimit::To(limit) = sources
+        && usize::from(reached) >= usize::from(limit)
+    {
+        return Ended::Sources(limit);
+    }
+    if let Some(start) = start {
+        return held(memory, start, regions::charge());
+    }
+    match regions::resident() {
+        Some(held) if held > memory.bytes() => Ended::Memory {
+            held,
+            bound: memory,
+        },
+        Some(_) | None => Ended::Whole,
+    }
+}
+
+/// Whether the cgroup's charge `now` meets `memory`, against the charge at
+/// the walk's `start`.
+///
+/// # Specification
+/// - ensures: [`Ended::Memory`] with the charge `now` holds when its `max`
+///   count passes `start`'s or its bytes pass `memory`; else [`Ended::Whole`],
+///   and with no charge `now`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the same charge meets nothing, one more `max` event meets
+///   the bound below it, and a charge past a flag's bound meets it.
+/// - witness: `walk::tests::a_max_event_meets_the_cgroup_s_bound_7551`
+#[spec(
+    captures: [meets = matches!(now, Some(now) if now.reached() > start.reached())
+        || matches!(now, Some(now) if now.held() > memory.bytes())],
+    ensures: |ref ret| matches!(ret, Ended::Memory { .. }) == meets,
+)]
+fn held(
+    memory: Memory,
+    start: Charge,
+    now: Option<Charge>,
+) -> Ended
+{
+    let bound = memory.bytes();
+    match now {
+        Some(now) if now.reached() > start.reached() || now.held() > bound => Ended::Memory {
+            held: now.held(),
+            bound: memory,
+        },
+        Some(_) | None => Ended::Whole,
+    }
 }
 
 /// Where a walk is among the paths it was given.
@@ -602,6 +709,9 @@ impl Walk
     ///   reaches.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the built-in grammar and the traversal's lists, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — missing arguments answer in their given order, and a
     ///   tree created after construction is read when the walk is visited.
@@ -627,6 +737,8 @@ impl Walk
             grant: HostGrant::UNBOUNDED,
             reader: Reader::new(),
             positioning: Positioning::Unpositioned,
+            memory: regions::bound(),
+            sources: SourceLimit::Unlimited,
         }
     }
 
@@ -653,6 +765,31 @@ impl Walk
     ) -> Self
     {
         self.grant = grant;
+        self
+    }
+
+    /// The walk reaching at most the sources that `sources` counts, as
+    /// `--sources` names (#7551). The memory bound still holds.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the walk, unchanged but for its count of sources.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk under one source over a tree of two ends at
+    ///   the count by name.
+    /// - witness: `tests::walk::a_walk_ends_at_its_bound_by_name_7551`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref ret| ret.sources == sources)]
+    pub fn limiting(
+        mut self,
+        sources: SourceLimit,
+    ) -> Self
+    {
+        self.sources = sources;
         self
     }
 
@@ -873,6 +1010,12 @@ impl Walk
     ///   [`kept::Absent::Unasked`] and no admission copied.
     /// - executable: none — as [`Self::visit`].
     ///
+    /// # Cost
+    /// - allocation: the walk's paths, slots and sources, growth within its
+    ///   paths
+    /// - allocation: the components' order, cells and channel, setup
+    /// - allocation: the cgroup's paths, found and kept once, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::visit`]'s witnesses under
     ///   [`Keeping::Composed`], and as [`Self::visit_admitting`]'s under
@@ -898,7 +1041,26 @@ impl Walk
         let mut paths = Vec::new();
         let mut slots = Vec::new();
         let mut given = Vec::new();
-        while let Maybe::Present(reached) = self.traversal.reach() {
+        // The walk draws from its bounds before it reaches each source
+        // (#7551): the count that `--sources` names, and the bytes that the
+        // process holds against the memory bound.
+        // The cgroup's charge at the start, when the cgroup names a finite
+        // `memory.max`: a `max` event after it meets the bound.
+        let (memory, limit, start) = (self.memory, self.sources, regions::charge());
+        let mut reached_sources = SourceCount::default();
+        loop {
+            let ended = met(memory, limit, reached_sources, start);
+            if ended != Ended::Whole {
+                self.report.end(ended);
+                break;
+            }
+            let Maybe::Present(reached) = self.traversal.reach()
+            else {
+                break;
+            };
+            if matches!(reached, Reached::Source) {
+                reached_sources = SourceCount::from(usize::from(reached_sources).saturating_add(1));
+            }
             let path = self.traversal.take_path();
             slots.push(match reached {
                 Reached::NoSource => Slot::NoSource,
@@ -916,6 +1078,14 @@ impl Walk
                 },
             });
             paths.push(path);
+        }
+        // A walk that meets the memory bound while it reads ends there: a
+        // judgement of the sources read holds more bytes again, and the
+        // kernel takes back the mapped pages of the sources, so the reading
+        // at each component sits under the bound while the judgement goes
+        // on (#7551). A walk that meets the count judges what it counted.
+        if matches!(self.report.ended(), Ended::Memory { .. }) {
+            return ControlFlow::Continue(self.report);
         }
         let grammar = match self.grammar {
             Ok(ref grammar) => grammar,
@@ -978,8 +1148,22 @@ impl Walk
             .collect();
         order.sort_unstable();
         let cursor = AtomicUsize::new(0);
+        // The bound that ended the judging, when the bytes that the process
+        // holds pass the memory bound before a component starts (#7551).
+        let stopped: OnceLock<Ended> = OnceLock::new();
         // The component at `position`, lowered and judged.
         let work = |position: usize| {
+            let ended = met(
+                memory,
+                SourceLimit::Unlimited,
+                SourceCount::default(),
+                start,
+            );
+            if ended != Ended::Whole {
+                let _first = stopped.set(ended);
+                cursor.store(order.len(), Ordering::Relaxed);
+                return None;
+            }
             let component = grouped.components.get(position)?;
             let cells = (regrouped.get(position)?, parted.get(position)?);
             Some(pool.job(|| {
@@ -1152,6 +1336,9 @@ impl Walk
                 drop(sender);
                 consume(0)?;
             },
+        }
+        if let Some(&ended) = stopped.get() {
+            self.report.end(ended);
         }
         ControlFlow::Continue(self.report)
     }
@@ -2153,5 +2340,93 @@ mod tests
                 "an unsuccessful read leaves the previous source intact"
             );
         }
+    }
+
+    /// #7551: a walk meets the count of sources that `--sources` names when it
+    /// reaches it, and the memory bound when the process holds more bytes
+    /// than the bound. Under neither bound the walk goes on.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn met_names_the_bound_that_the_walk_meets_7551()
+    {
+        use gandr_runtime_emitter::regions::Bytes;
+        use gandr_runtime_emitter::regions::Memory;
+
+        use super::SourceLimit;
+        use crate::entry::report::Ended;
+        use crate::entry::report::SourceCount;
+
+        let roomy = Memory::flag(Bytes::from(u64::MAX));
+        let two = SourceLimit::To(SourceCount::from(2_usize));
+        assert_eq!(
+            super::met(roomy, two, SourceCount::from(1_usize), None),
+            Ended::Whole,
+            "one source of two leaves the walk whole"
+        );
+        assert_eq!(
+            super::met(roomy, two, SourceCount::from(2_usize), None),
+            Ended::Sources(SourceCount::from(2_usize)),
+            "the second source of two meets the count"
+        );
+        let tiny = Memory::flag(Bytes::from(1_u64));
+        let ended = super::met(tiny, SourceLimit::Unlimited, SourceCount::default(), None);
+        assert!(
+            matches!(ended, Ended::Memory { bound, .. } if bound == tiny),
+            "a process holds more than one byte: {ended:?}"
+        );
+        let line = ended.to_string();
+        assert!(
+            line.contains("reaches its memory bound, --memory 1 B, holding"),
+            "the line names the bound and its flag: {line}"
+        );
+    }
+
+    /// #7551: under a cgroup, the walk's charge meets the bound when the
+    /// kernel counts one more `max` event than at the start, though the
+    /// charge stays below `memory.max`, or when the charge passes a flag's
+    /// bound; the same charge meets nothing.
+    #[test]
+    fn a_max_event_meets_the_cgroup_s_bound_7551()
+    {
+        use gandr_runtime_emitter::regions::Bytes;
+        use gandr_runtime_emitter::regions::Charge;
+        use gandr_runtime_emitter::regions::Memory;
+        use gandr_runtime_emitter::regions::Reached;
+
+        use crate::entry::report::Ended;
+
+        let bound = Memory::flag(Bytes::from(4_u64 << 30_u32));
+        let start = Charge::new(Bytes::from(1_u64 << 30_u32), Reached::from(7_u64));
+        assert_eq!(
+            super::held(bound, start, Some(start)),
+            Ended::Whole,
+            "the charge at the start meets nothing"
+        );
+        let reclaimed = Charge::new(
+            Bytes::from((4_u64 << 30_u32) - (1 << 20_u32)),
+            Reached::from(8_u64),
+        );
+        assert_eq!(
+            super::held(bound, start, Some(reclaimed)),
+            Ended::Memory {
+                held: reclaimed.held(),
+                bound,
+            },
+            "one more max event meets the bound below it"
+        );
+        let past = Charge::new(Bytes::from((4_u64 << 30_u32) + 1), Reached::from(7_u64));
+        assert_eq!(
+            super::held(bound, start, Some(past)),
+            Ended::Memory {
+                held: past.held(),
+                bound,
+            },
+            "a charge past the bound meets it"
+        );
+        assert_eq!(
+            super::held(bound, start, None),
+            Ended::Whole,
+            "no charge read meets nothing"
+        );
     }
 }

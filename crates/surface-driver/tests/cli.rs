@@ -5465,6 +5465,34 @@ fn a_run_past_its_memory_bound_names_the_region_that_asked_6324()
     assert_eq!(code(&malformed), Code(2_i32), "{}", stderr(&malformed));
 }
 
+/// #7551: the walk of `check` draws its held bytes from `--memory`. Under a
+/// bound of 1 MiB the process holds more before its first source, so the walk
+/// ends there, judges nothing and names the bytes, the bound and the remedy.
+/// The same tree checks with no flag.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn a_walk_past_its_memory_bound_names_the_bound_7551()
+{
+    let scratch = Scratch::new(Path::new("walk-memory-bound"));
+    scratch.file(Path::new("tree/a.gandr"), Text::from("def first = 1 ;\n"));
+    scratch.file(Path::new("tree/b.gandr"), Text::from("def last = 2 ;\n"));
+    let tree = scratch.0.join("tree");
+    let bounded = ran(gandr(&[
+        Path::new("--memory"),
+        Path::new("1MiB"),
+        Path::new("check"),
+        tree.as_path(),
+    ]));
+    assert_eq!(code(&bounded), Code(2_i32), "{}", stderr(&bounded));
+    assert!(
+        stderr(&bounded).contains("reaches its memory bound, --memory 1 MiB, holding"),
+        "the walk names the bound and its flag: {}",
+        stderr(&bounded)
+    );
+    let whole = ran(gandr(&[Path::new("check"), tree.as_path()]));
+    assert_eq!(code(&whole), Code(0_i32), "{}", stderr(&whole));
+}
+
 /// #6325: a run holds its code-word jumps within `--run-budget`. A loop of a
 /// hundred thousand passes spends a budget of a thousand jumps. The stop
 /// names the declaration, the count, the flag and the remedy. Without the

@@ -80,6 +80,7 @@ fn check_routes_to_a_walk_under_the_check_verb()
             lints,
             grant: HostGrant::UNBOUNDED,
             paths,
+            sources: gandr_surface_dispatcher::SourceLimit::Unlimited,
             width,
         });
         assert!(
@@ -101,6 +102,7 @@ fn the_test_verb_routes_to_a_walk()
 {
     let outcome = dispatch(Invocation::Test {
         paths: vec![PathBuf::from("no/such/only.gandr")],
+        sources: gandr_surface_dispatcher::SourceLimit::Unlimited,
         width: Width::PerformanceCores,
     });
     assert!(

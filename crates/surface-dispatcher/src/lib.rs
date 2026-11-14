@@ -310,6 +310,7 @@ pub use crate::entry::evaluation::hole_site;
 pub use crate::entry::evaluation::last_declared;
 pub use crate::entry::exercised::Exercised;
 pub use crate::entry::exercised::Row;
+pub use crate::entry::report::Ended;
 pub use crate::entry::report::Goals;
 pub use crate::entry::report::Lints;
 pub use crate::entry::report::Reach;
@@ -534,6 +535,7 @@ pub use crate::verdicts::tallied;
 pub use crate::verdicts::verdict_tally;
 pub use crate::walk::Reached;
 pub use crate::walk::SourceFault;
+pub use crate::walk::SourceLimit;
 pub use crate::walk::Standing;
 pub use crate::walk::Step;
 pub use crate::walk::Traversal;
@@ -569,6 +571,9 @@ pub enum Invocation
         grant: HostGrant,
         /// The sources and directories of sources to check, in order.
         paths: Vec<PathBuf>,
+        /// The count of sources the walk reaches at most, as `--sources`
+        /// names; the memory bound holds besides (#7551).
+        sources: SourceLimit,
         /// The threads the sources are parsed and lowered on.
         width: Width,
     },
@@ -577,6 +582,9 @@ pub enum Invocation
     {
         /// The sources and directories of sources to test, in order.
         paths: Vec<PathBuf>,
+        /// The count of sources the walk reaches at most, as `--sources`
+        /// names; the memory bound holds besides (#7551).
+        sources: SourceLimit,
         /// The threads the sources are parsed and lowered on.
         width: Width,
     },
@@ -767,17 +775,22 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             lints,
             grant,
             paths,
+            sources,
             width,
         } => Outcome::Run {
             verb: Verb::Check(goals),
             lints,
-            walk: Walk::new(paths).granting(grant),
+            walk: Walk::new(paths).granting(grant).limiting(sources),
             width,
         },
-        Invocation::Test { paths, width } => Outcome::Run {
+        Invocation::Test {
+            paths,
+            sources,
+            width,
+        } => Outcome::Run {
             verb: Verb::Test,
             lints: Lints::default(),
-            walk: Walk::new(paths),
+            walk: Walk::new(paths).limiting(sources),
             width,
         },
         Invocation::Run { path, arguments } => {
