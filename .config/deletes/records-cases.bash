@@ -56,6 +56,7 @@ fi
 # names the toolchain that it runs under, as the toolchain's own lines do.
 tool_rustc="rustc 1.0.0-nightly (1 2026-01-01)"
 tool_dylint="cargo-dylint 1.0.0"
+pin=aaaa
 unset DYLINT_LIBRARY_PATH
 rustc() {
   case $1 in
@@ -87,8 +88,9 @@ cargo() {
         echo "{\"unit\": \"$unit\"}" > "$records_work/records/crates_${unit%%.*}_src_lib.rs.${unit#*.}.jsonl"
       done ;;
     metadata)
-      jq -n '{packages: [{name: "a", targets: [{kind: ["lib"]}]},
-        {name: "r", targets: [{kind: ["bin"], "required-features": ["report"]}, {kind: ["bench"], "required-features": ["report", "extra"]}]}]}' ;;
+      jq -n --arg rev "$pin" '{packages: [{name: "a", targets: [{kind: ["lib"]}]},
+        {name: "r", targets: [{kind: ["bin"], "required-features": ["report"]}, {kind: ["bench"], "required-features": ["report", "extra"]}]}],
+        metadata: {dylint: {libraries: [{pattern: "crates/quenchant-dylints", rev: $rev}]}}}' ;;
     clean) rm -f "${6%/}/$4".* ;;
   esac
 }
@@ -340,6 +342,22 @@ records_build a || fail "#7092: the run of a does not build"
 records_build b || fail "#7092: the run of b does not build"
 [[ -e $records_work/records/crates_b_src_lib.rs.lib.jsonl ]] \
   || fail "#7092: the run of b after the run of a records no library unit of b: $(ls "$records_work/records" | tr '\n' ' ')"
+cases=$((cases + 1))
+
+# A run under another pin of the policy library builds each unit again,
+# since cargo can count a library of another revision as fresh, and its
+# units with it. A run under the same pin keeps them (#7384).
+records_stamp
+records_build a || fail "#7384: the run of a does not build"
+records_stamp
+records_build a || fail "#7384: the second run of a does not build"
+[[ ! -e $records_work/records/crates_b_src_lib.rs.lib.jsonl ]] || fail "#7384: a run under the same pin builds the library of b again"
+saved=$pin
+pin=bbbb
+records_stamp
+records_build a || fail "#7384: the run of a under another pin does not build"
+[[ -e $records_work/records/crates_b_src_lib.rs.lib.jsonl ]] || fail "#7384: a run under another pin keeps the library of b from the old pin"
+pin=$saved
 cases=$((cases + 1))
 
 # The run reads the features that the targets of a package require, as the
