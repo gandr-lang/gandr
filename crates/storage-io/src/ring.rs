@@ -1,7 +1,6 @@
 //! The ring: one worker's `io_uring`, with its submission and completion
 //! queues mapped into the process through the system calls of `sys`.
 
-use core::mem::align_of;
 use core::mem::size_of;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicU32;
@@ -13,6 +12,7 @@ use std::os::fd::OwnedFd;
 
 use crate::sys;
 use crate::sys::Errno;
+use crate::sys::Mapped;
 use crate::sys::Word;
 use crate::uapi;
 use crate::uapi::io_uring_cqe;
@@ -106,6 +106,38 @@ impl From<Moved> for u32
     }
 }
 
+/// The bytes that an operation writes from or reads into. A submission
+/// names the buffer, and the buffer stays with its owner until the
+/// completion.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Buffer(Vec<u8>);
+
+impl From<Vec<u8>> for Buffer
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: Vec<u8>) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<Buffer> for Vec<u8>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(buffer: Buffer) -> Self
+    {
+        buffer.0
+    }
+}
+
 /// The end of one submission: its key, and the bytes it moved or the error
 /// number it failed with.
 ///
@@ -131,6 +163,7 @@ pub struct Full;
 ///
 /// # Specification
 /// trivial.
+#[repr(transparent)]
 #[derive(Clone, Copy)]
 pub struct Entry
 {
@@ -177,7 +210,7 @@ impl Entry
         }
     }
 
-    /// A write of `bytes` into `file` at `position`.
+    /// A write of `buffer` into `file` at `position`.
     ///
     /// # Specification
     /// trivial.
@@ -185,7 +218,7 @@ impl Entry
     #[must_use]
     pub fn write(
         file: BorrowedFd<'_>,
-        bytes: &[u8],
+        buffer: &Buffer,
         position: Position,
         key: Key,
     ) -> Self
@@ -193,14 +226,14 @@ impl Entry
         Self::of(
             Word::from(uapi::IORING_OP_WRITE),
             file,
-            Word::from(bytes.as_ptr().expose_provenance()),
-            Word::from(bytes.len()),
+            Word::from(buffer.0.as_ptr().expose_provenance()),
+            Word::from(buffer.0.len()),
             position,
             key,
         )
     }
 
-    /// A read from `file` at `position` into `bytes`.
+    /// A read from `file` at `position` into `buffer`.
     ///
     /// # Specification
     /// trivial.
@@ -208,7 +241,7 @@ impl Entry
     #[must_use]
     pub fn read(
         file: BorrowedFd<'_>,
-        bytes: &mut [u8],
+        buffer: &mut Buffer,
         position: Position,
         key: Key,
     ) -> Self
@@ -216,8 +249,8 @@ impl Entry
         Self::of(
             Word::from(uapi::IORING_OP_READ),
             file,
-            Word::from(bytes.as_mut_ptr().expose_provenance()),
-            Word::from(bytes.len()),
+            Word::from(buffer.0.as_mut_ptr().expose_provenance()),
+            Word::from(buffer.0.len()),
             position,
             key,
         )
@@ -259,11 +292,106 @@ impl Entry
     }
 }
 
+/// A position in one of the ring's queues. It counts each entry ever
+/// queued and wraps; the queue's mask takes it to a slot.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Index(u32);
+
+impl Index
+{
+    /// The position `count` entries past this one.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn plus(
+        self,
+        count: Count,
+    ) -> Self
+    {
+        Self(self.0.wrapping_add(count.0))
+    }
+
+    /// The entries from `earlier` up to this position.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn since(
+        self,
+        earlier: Self,
+    ) -> Count
+    {
+        Count(self.0.wrapping_sub(earlier.0))
+    }
+
+    /// The slot of this position under the queue's `mask`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn masked(
+        self,
+        mask: Self,
+    ) -> Self
+    {
+        Self(self.0 & mask.0)
+    }
+}
+
+impl From<Index> for Word
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: Index) -> Self
+    {
+        Self::from(index.0)
+    }
+}
+
+/// A word of the ring that the kernel and the process share: a head, a
+/// tail or a mask.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct RingWord(AtomicU32);
+
+impl RingWord
+{
+    /// The position that the word holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn load(
+        &self,
+        ordering: Ordering,
+    ) -> Index
+    {
+        Index(self.0.load(ordering))
+    }
+
+    /// Set the word to `index`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn store(
+        &self,
+        index: Index,
+        ordering: Ordering,
+    )
+    {
+        self.0.store(index.0, ordering);
+    }
+}
+
 /// One mapping of the ring's memory, unmapped when it drops.
 struct Mapping
 {
     /// The first byte.
-    start: NonNull<u8>,
+    start: Mapped,
     /// The bytes mapped.
     length: Word,
 }
@@ -289,17 +417,15 @@ impl Mapping
         offset: Word,
     ) -> Option<NonNull<T>>
     {
-        let end = offset.plus(Word::from(size_of::<T>()));
-        if end > self.length {
+        if offset.plus(Word::from(size_of::<T>())) > self.length {
             return None;
         }
-        // SAFETY: `offset` plus the size of a `T` lies inside the mapping, so
-        // the result stays inside it.
-        let place = unsafe { self.start.add(usize::from(offset)) }.cast::<T>();
+        // SAFETY: `offset` plus the size of a `T` lies inside the mapping.
+        let place = unsafe { self.start.at::<T>(offset) };
         place.is_aligned().then_some(place)
     }
 
-    /// The ring word at `offset`, which the kernel and the process share.
+    /// The ring word at `offset`.
     ///
     /// # Specification
     /// - ensures: `Some` of the shared word when it lies inside the mapping at
@@ -314,14 +440,9 @@ impl Mapping
     fn word(
         &self,
         offset: Word,
-    ) -> Option<&AtomicU32>
+    ) -> Option<&RingWord>
     {
-        let place = self.at::<AtomicU32>(offset)?;
-        debug_assert_eq!(
-            align_of::<AtomicU32>(),
-            align_of::<u32>(),
-            "a ring word is a u32"
-        );
+        let place = self.at::<RingWord>(offset)?;
         // SAFETY: `place` lies inside the mapping at its alignment; the
         // mapping lives as long as `self`, and the kernel and the process
         // touch the word only by atomic accesses.
@@ -343,9 +464,6 @@ impl Drop for Mapping
 
 /// The kernel's ring is malformed: an offset it reports lies outside its
 /// mapping.
-///
-/// # Specification
-/// trivial.
 const MALFORMED: Errno = Errno::NO_SYSTEM_CALL;
 
 /// One worker's `io_uring`: its descriptor, and its queues mapped into the
@@ -479,18 +597,18 @@ impl Ring
             .word(Word::from(offsets.ring_mask))
             .ok_or(Full)?
             .load(Ordering::Relaxed);
-        let next = tail.wrapping_add(self.staged.0);
-        if next.wrapping_sub(head) >= self.params.sq_entries {
+        let next = tail.plus(self.staged);
+        if next.since(head) >= Count(self.params.sq_entries) {
             return Err(Full);
         }
-        let slot = next & mask;
+        let slot = next.masked(mask);
         let sqe = self
             .entries
             .at::<io_uring_sqe>(Word::from(slot).times(Word::from(size_of::<io_uring_sqe>())))
             .ok_or(Full)?;
         let index = self
             .queues
-            .at::<u32>(
+            .at::<Index>(
                 Word::from(offsets.array)
                     .plus(Word::from(slot).times(Word::from(size_of::<u32>()))),
             )
@@ -536,7 +654,7 @@ impl Ring
             .word(Word::from(self.params.sq_off.tail))
             .ok_or(MALFORMED)?;
         tail.store(
-            tail.load(Ordering::Relaxed).wrapping_add(self.staged.0),
+            tail.load(Ordering::Relaxed).plus(self.staged),
             Ordering::Release,
         );
         let submit = self.staged;
@@ -585,7 +703,7 @@ impl Ring
         if at == tail {
             return None;
         }
-        let slot = at & mask;
+        let slot = at.masked(mask);
         let place = queue.at::<io_uring_cqe>(
             Word::from(offsets.cqes)
                 .plus(Word::from(slot).times(Word::from(size_of::<io_uring_cqe>()))),
@@ -601,7 +719,7 @@ impl Ring
             key: Key(cqe.user_data),
             outcome,
         };
-        head.store(at.wrapping_add(1), Ordering::Release);
+        head.store(at.plus(Count(1)), Ordering::Release);
         Some(completion)
     }
 }

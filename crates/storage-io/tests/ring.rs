@@ -6,6 +6,7 @@ use std::fs::OpenOptions;
 use std::os::fd::AsFd as _;
 use std::path::PathBuf;
 
+use gandr_storage_io::Buffer;
 use gandr_storage_io::Completion;
 use gandr_storage_io::Count;
 use gandr_storage_io::Entry;
@@ -68,8 +69,8 @@ fn a_linked_write_sync_and_read_complete_in_order()
     let scratch = Scratch::new("linked");
     let file = scratch.open();
     let mut ring = Ring::new(Count::from(8_u32)).expect("the ring sets up");
-    let written = vec![0xa5_u8; BLOCK];
-    let mut read = vec![0_u8; BLOCK];
+    let written = Buffer::from(vec![0xa5_u8; BLOCK]);
+    let mut read = Buffer::from(vec![0_u8; BLOCK]);
     // SAFETY: the buffer outlives its completion, which the test reaps
     // before it reads the buffers.
     unsafe {
@@ -130,7 +131,7 @@ fn a_failed_write_cancels_its_linked_sync()
     drop(scratch.open());
     let readonly = File::open(&scratch.path).expect("the scratch file opens to read");
     let mut ring = Ring::new(Count::from(8_u32)).expect("the ring sets up");
-    let written = vec![0x5a_u8; BLOCK];
+    let written = Buffer::from(vec![0x5a_u8; BLOCK]);
     // SAFETY: the buffer outlives its completion, which the test reaps.
     unsafe {
         ring.push(

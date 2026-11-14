@@ -275,6 +275,42 @@ pub unsafe fn enter(
     }
 }
 
+/// The first byte of a mapping that [`map`] made.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Mapped(NonNull<u8>);
+
+impl Mapped
+{
+    /// The place of a `T` at `offset` bytes past the first byte.
+    ///
+    /// # Specification
+    /// - requires: `offset` and a `T` past it lie inside the mapping.
+    /// - ensures: the pointer `offset` bytes past the first byte, as a `T`.
+    /// - panics: none.
+    /// - executable: none — the predicate would repeat the addition.
+    ///
+    /// # Safety
+    /// - unsafe invariants: `offset` and a `T` past it lie inside the mapping.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the queues read at the kernel's offsets carry a
+    ///   linked write, sync and read to their completions.
+    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    #[inline]
+    pub unsafe fn at<T>(
+        self,
+        offset: Word,
+    ) -> NonNull<T>
+    {
+        // SAFETY: the caller's invariant keeps the result inside the mapping.
+        unsafe { self.0.add(offset.0) }.cast::<T>()
+    }
+}
+
 /// Map `length` bytes of `ring` at `offset`, shared and populated.
 ///
 /// # Specification
@@ -291,7 +327,7 @@ pub fn map(
     ring: BorrowedFd<'_>,
     length: Word,
     offset: Word,
-) -> Result<NonNull<u8>, Errno>
+) -> Result<Mapped, Errno>
 {
     /// Read and write.
     const PROTECTION: Word = Word(0x3);
@@ -306,6 +342,7 @@ pub fn map(
         ])
     }?;
     NonNull::new(core::ptr::with_exposed_provenance_mut::<u8>(answer.0))
+        .map(Mapped)
         .ok_or(Errno::NO_SYSTEM_CALL)
 }
 
@@ -325,14 +362,14 @@ pub fn map(
 ///   or the kernel reports.
 /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
 pub unsafe fn unmap(
-    start: NonNull<u8>,
+    start: Mapped,
     length: Word,
 ) -> Result<(), Errno>
 {
     // SAFETY: the caller's invariants hold for the mapping.
     unsafe {
         call(Number(syscall::MUNMAP), [
-            Word(start.addr().get()),
+            Word(start.0.addr().get()),
             length,
             NONE,
             NONE,
