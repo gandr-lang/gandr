@@ -3327,6 +3327,9 @@ enum Answer
     Ran(Ran, AdmissionCost),
     /// The declaration's crossing, found at its release.
     Crossed(Crossing),
+    /// The declaration kept in place at its release, with what its record
+    /// does beside its entry. The cursor writes the record, in module order.
+    Kept(Tail),
     /// Nothing: the release came after a retirement.
     Skipped,
     /// Nothing yet: the release waits on a running check. The schedule
@@ -3419,6 +3422,8 @@ enum Slot<'report>
     ),
     /// Crossed at its release: its record waits.
     Crossed(Crossing),
+    /// Kept in place at its release: the cursor writes its record.
+    Kept(Tail),
     /// Released after a retirement: nothing to record.
     Skipped,
     /// Dropped by a pair left undecided before it: the cursor releases it
@@ -3603,14 +3608,14 @@ where
             }
         }
         // A walk that keeps crosses each declaration, and each seed it
-        // reads first, at the ranks of its place.
-        // economy: a keep, a retirement and the rank of a place each write the
-        // environment, so each place of a walk that keeps waits for the places
-        // before it; #3476 lifts this when such a place is released beside the
-        // running checks.
+        // reads first, at the ranks of its place. A keep and a retirement go
+        // ahead beside the running checks, and the kernel holds each that a
+        // running check reads into. A module whose pair the kernel may leave
+        // undecided drops later releases, which a retirement's end of the
+        // chain refuses, so each of its places waits for the places before.
         let held = match self.keeping {
             Some(ref keeping) => {
-                if !caught_up {
+                if self.answerable && !caught_up {
                     return Releasing::Held(Answer::Waits);
                 }
                 self.environment.ranking_from(SourceRank::from(
@@ -3664,7 +3669,9 @@ where
                     return Releasing::Settled(Answer::Skipped);
                 }
                 for entry in held.iter().copied().flatten() {
-                    keep::retire_unit(&mut self.environment, entry);
+                    if keep::retire_unit(&mut self.environment, entry).is_err() {
+                        return Releasing::Held(Answer::Waits);
+                    }
                 }
             }
             let crossed = cross_block(
@@ -3690,9 +3697,17 @@ where
         if let (Some(entry), Some(keeping)) = (held, self.keeping.as_ref()) {
             let tail = match keep::position_of(&entry.outcome) {
                 Maybe::Present(position) => {
-                    if !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
-                        && self.environment.keep_in_place(position).is_ok()
-                    {
+                    let kept = !matches!(entry.took, Maybe::Absent(timed::Absent::Block))
+                        && match self.environment.keep_in_place(position) {
+                            Ok(_) => true,
+                            // A running check reads into the key: the place
+                            // waits for its commit.
+                            Err(KernelError::UnsettledReleases { .. }) => {
+                                return Releasing::Held(Answer::Waits);
+                            },
+                            Err(_) => false,
+                        };
+                    if kept {
                         Some(Tail::Last)
                     }
                     else {
@@ -3700,7 +3715,9 @@ where
                             self.misplaced = true;
                             return Releasing::Settled(Answer::Skipped);
                         }
-                        keep::retire_unit(&mut self.environment, entry);
+                        if keep::retire_unit(&mut self.environment, entry).is_err() {
+                            return Releasing::Held(Answer::Waits);
+                        }
                         None
                     }
                 },
@@ -3710,17 +3727,11 @@ where
             };
             if let Some(tail) = tail {
                 self.kept = self.kept.saturating_add(1);
-                // The kernel checks no kept entry in this readmission.
-                let kept = Readmitted {
-                    took: UNOFFERED,
-                    ..keep::keep_entry(
-                        &mut self.positions,
-                        report,
-                        (entry, judged),
-                        &keeping.renames,
-                    )
-                };
-                return Releasing::Settled(Answer::Crossed(Crossing { entry: kept, tail }));
+                // The record of a crossing before this place may wait for its
+                // check, and the record follows module order: a body defined
+                // after a later one is refused. So the cursor writes this
+                // place's record when it reaches it ([`Self::kept_crossing`]).
+                return Releasing::Settled(Answer::Kept(tail));
             }
         }
         let source = self.source;
@@ -3822,12 +3833,12 @@ where
     /// - requires: as [`Self::release`]; `offer` is the offer of `judged`.
     /// - ensures: [`Releasing::Run`] with the check that the kernel released,
     ///   its slot running, when the declaration stages with no seed and the
-    ///   kernel releases it, in a walk that keeps nothing and outside the
-    ///   cursor's release of a dropped declaration. [`Releasing::Held`] while a
-    ///   declaration before it is not recorded, when its staging stops, or when
-    ///   the kernel holds it. [`Releasing::Settled`] with the kernel's refusal
-    ///   of its release, or with [`cross`]'s crossing once each declaration
-    ///   before it is recorded.
+    ///   kernel releases it, outside a walk that keeps in a module whose pair
+    ///   the kernel may leave undecided, and outside the cursor's release of a
+    ///   dropped declaration. [`Releasing::Held`] while a declaration before it
+    ///   is not recorded, when its staging stops, or when the kernel holds it.
+    ///   [`Releasing::Settled`] with the kernel's refusal of its release, or
+    ///   with [`cross`]'s crossing once each declaration before it is recorded.
     /// - panics: none.
     /// - executable: none — as [`Self::release`].
     ///
@@ -3836,6 +3847,7 @@ where
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
     fn offer(
         &mut self,
         item: ItemIndex,
@@ -3858,9 +3870,10 @@ where
                 tail: Tail::Lone,
             }))
         };
-        if self.serially || self.keeping.is_some() {
+        if self.serially || (self.keeping.is_some() && self.answerable) {
             // A dropped declaration crosses again at the cursor. A walk that
-            // keeps crosses each declaration at the ranks of its place.
+            // keeps in a module whose pair may stay undecided crosses each
+            // declaration at the cursor, at the ranks of its place.
             if !caught_up {
                 return Releasing::Held(Answer::Waits);
             }
@@ -3980,6 +3993,7 @@ where
                     | Slot::Ran(..)
                     | Slot::Settled(..)
                     | Slot::Crossed(_)
+                    | Slot::Kept(_)
                     | Slot::Skipped
                     | Slot::Dropped
                     | Slot::Recorded) => {
@@ -3989,6 +4003,7 @@ where
                 }
             },
             Answer::Crossed(crossing) => Slot::Crossed(crossing),
+            Answer::Kept(tail) => Slot::Kept(tail),
             Answer::Skipped => Slot::Skipped,
             // A release holds only while a check runs, and the schedule then
             // releases it again, so no commit takes a hold.
@@ -4025,6 +4040,38 @@ where
             })
     }
 
+    /// The crossing of the declaration at `item` that its release kept in
+    /// place: the record's entry at the declaration's module position, its
+    /// body defined and its kernel position filed in the record as the
+    /// cursor reaches it, so the record follows module order. None when the
+    /// walk keeps no entry at `item`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kept_crossing(
+        &mut self,
+        item: ItemIndex,
+        tail: Tail,
+    ) -> Option<Crossing>
+    {
+        let index = self.from.saturating_add(usize::from(item));
+        let Self {
+            ref keeping,
+            ref mut positions,
+            report,
+            ..
+        } = *self;
+        let keeping = keeping.as_ref()?;
+        let entry = keeping.held.get(index).copied().flatten()?;
+        let judged = report.judged().get(index)?;
+        // The kernel checks no kept entry in this readmission.
+        let kept = Readmitted {
+            took: UNOFFERED,
+            ..keep::keep_entry(positions, report, (entry, judged), &keeping.renames)
+        };
+        Some(Crossing { entry: kept, tail })
+    }
+
     /// Record each declaration from the cursor on whose turn has come, in
     /// module order, as the serial readmission records it: settle a run kept
     /// for the cursor, and release a dropped declaration again.
@@ -4057,6 +4104,9 @@ where
                 },
                 Slot::Dropped => self.again(ItemIndex::from(at)),
                 Slot::Crossed(crossing) => Some(crossing),
+                Slot::Kept(tail) => self
+                    .kept_crossing(ItemIndex::from(at), tail)
+                    .or_else(|| self.unwaited(ItemIndex::from(at))),
                 Slot::Skipped | Slot::Recorded => None,
                 unrecorded @ (Slot::Open | Slot::Member(_) | Slot::Running(..)) => {
                     if let Some(slot) = self.slots.get_mut(at) {
@@ -4171,6 +4221,7 @@ where
                 | Slot::Member(_)
                 | Slot::Settled(..)
                 | Slot::Crossed(_)
+                | Slot::Kept(_)
                 | Slot::Skipped
                 | Slot::Dropped
                 | Slot::Recorded => {},
@@ -4257,6 +4308,9 @@ where
         };
         match answer {
             Answer::Crossed(crossing) => Some(crossing),
+            Answer::Kept(tail) => self
+                .kept_crossing(item, tail)
+                .or_else(|| self.unwaited(item)),
             Answer::Skipped => None,
             Answer::Waits => self.unwaited(item),
             Answer::Ran(ran, took) => {
