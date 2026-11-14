@@ -33,6 +33,21 @@ A `SmallVec<T, N, A>` keeps at most `N` items in place. Past `N`, it keeps all o
 
 `try_reserve` returns the allocator's refusal as a `Refused`, and the vector stays as it was. A conversion from an array of `N` items has the never type as its error.
 
+## The shared pointer
+
+A `Shared<T, A>` shares one value by a count of holders, on `triomphe`'s design. Its block holds the count and the value, with no weak count. So `make_mut` and `get_mut` load the count once, and a sole holder writes in place. A `Unique<T, A>` builds the value before the share, and `into_shared` makes a `Shared` with no atomic operation.
+
+A `ThinShared<H, T, A>` is one word. Its block holds the count, the length, a header and the items, so a holder of a slice is half the size of a fat pointer.
+
+| Pointer | Holder | Block |
+| ------- | ------ | ----- |
+| `Shared<T>` | one word | one word and `T` |
+| `std`'s `Arc<T>` | one word | two words and `T` |
+| `ThinShared<H, T>` | one word | two words, `H` and the items |
+| `std`'s `Arc<[T]>` | two words | two words and the items |
+
+The orderings are `std`'s. A `loom` model explores each interleaving of clones, drops and mutable borrows on two and three threads: `RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test -p gandr-kernel-data --test tests --release model`.
+
 ## References
 
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: the storage programme (§ storage-programme-region-is-an-allocator) — the region is one allocator with a budget that refuses and never aborts, and a fork's suffix is a region of its own that the join folds or drops.

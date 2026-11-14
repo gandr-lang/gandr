@@ -1576,6 +1576,21 @@ default-features = false
 version = "0.2.16"
 default-features = false
 
+# A model checker for atomics under the C11 memory model: the shared
+# pointer's count runs on loom's atomics under `cfg(loom)`, and the model
+# explores each interleaving of its clones, drops and mutable borrows. Chosen
+# over shuttle, which samples schedules at random and so proves nothing on a
+# pass. The lock already holds 0.7.2 through the dependencies that model
+# under `cfg(loom)`. Reversal: an advisory, an unmaintained mark, or a count
+# that outgrows exhaustive search.
+# features:
+# - none: `checkpoint` and `futures` serve models this crate does not write
+# consumers:
+# - kernel-data (cfg(loom))
+[workspace.dependencies.loom]
+version = "0.7.2"
+default-features = false
+
 # File mappings: the dispatcher's reader maps a source at or above its
 # measured crossover, read-only, and the host's counter maps its segment, a
 # shared file, for reads and writes through atomics alone. The reader's
@@ -1798,6 +1813,7 @@ default-features = false
 # - core-term
 # - core-unify
 # - kernel-core
+# - kernel-data
 # - kernel-term
 # - runtime-stencils (dev)
 # - storage-artifact
@@ -2289,7 +2305,7 @@ rust_2024_compatibility = "deny"
 # first for the whole graph. `gandr_stencil_object` is set only by the
 # emitter's build script, compiling the stencil crate into the object its
 # stencil table is read from.
-unexpected_cfgs = { level = "deny", check-cfg = ['cfg(dylint_lib, values("quenchant_dylints"))', "cfg(anodized_panic)", "cfg(anodized_print)", "cfg(anodized_discard_specs)", "cfg(gandr_stencil_object)"] }
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(dylint_lib, values("quenchant_dylints"))', "cfg(anodized_panic)", "cfg(anodized_print)", "cfg(anodized_discard_specs)", "cfg(gandr_stencil_object)", "cfg(loom)"] }
 unknown_or_malformed_diagnostic_attributes = "deny"
 # Nightly-creep guard: consumer crates have no feature exemption. A library
 # producer scopes its rustc_private expectation to the compiler-plugin crate;

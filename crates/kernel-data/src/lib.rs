@@ -14,13 +14,20 @@
 //! A [`SmallVec`] holds up to `N` items in place, and past `N` all of them in
 //! one block of the allocator below. A tag in its length names where the
 //! items live, and a grow that the allocator refuses is a [`Refused`].
+//!
+//! A [`Shared`] shares one value by a count of holders, with no weak count,
+//! so a mutable borrow reads the count with one load and a branch. A
+//! [`Unique`] builds the value before the share. A [`ThinShared`] is one word
+//! that points at one block of a header and a slice.
 
 #![no_std]
 
 extern crate alloc;
 
 mod region;
+mod shared;
 mod small_vec;
+mod thin_shared;
 
 pub use crate::region::Adopt;
 pub use crate::region::Branded;
@@ -38,8 +45,14 @@ pub use crate::region::Translation;
 pub use crate::region::Width;
 pub use crate::region::scoped;
 pub use crate::region::scoped_in;
+pub use crate::shared::Held;
+pub use crate::shared::Holders;
+pub use crate::shared::Identity;
+pub use crate::shared::Shared;
+pub use crate::shared::Unique;
 pub use crate::small_vec::Count;
 pub use crate::small_vec::Drain;
 pub use crate::small_vec::IntoIter;
 pub use crate::small_vec::Refused;
 pub use crate::small_vec::SmallVec;
+pub use crate::thin_shared::ThinShared;

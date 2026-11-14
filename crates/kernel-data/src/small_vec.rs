@@ -125,7 +125,9 @@ where
     items: PhantomData<T>,
 }
 
-/// The refusal of a grow. The vector stays as it was.
+/// The refusal of an allocation: a grow of a vector, or the block of a shared
+/// value. A vector stays as it was, and the build of a shared value gives no
+/// block.
 ///
 /// # Specification
 /// trivial.
@@ -156,10 +158,10 @@ impl Refused
         clippy::panic,
         reason = "a length past `isize::MAX` names no layout for the error handler, so it panics as `Vec` does"
     )]
-    fn raise(self) -> !
+    pub(crate) fn raise(self) -> !
     {
         match self {
-            Self::Overflow => panic!("the length of a small vector passes isize::MAX"),
+            Self::Overflow => panic!("a length passes isize::MAX, or the bytes of its block do"),
             Self::Allocator(layout) => handle_alloc_error(layout),
         }
     }
