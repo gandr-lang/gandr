@@ -2,6 +2,16 @@
 
 This crate holds discrete Morse theory on finite cell complexes for gandr: an acyclic matching that pairs cells with their faces, the check of a matching, the greedy matching, a matching that a caller states pair by pair, Brown's collapsing scheme with the critical cells that remain, the equivalence of a complex with its reduct on the complex's own composites, and the reduct over the integers. It is the crate of the cell family that collapses a space onto its critical cells.
 
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [License](#license)
+<!-- tocstop -->
+
 The equivalence holds at the general level, on the complex's own composites, after Doré's thesis, § 3.5. The reduct over the integers is its shadow, the homology.
 
 <!-- toc -->

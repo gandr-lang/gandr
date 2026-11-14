@@ -4,11 +4,11 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,16 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 **Why.** A checker that answers an editor on every keystroke cannot judge the whole program each time, and a checker that reuses answers it cannot justify answers wrongly. This crate reuses only what the judgement itself says it depended on, compared value by value, so reuse is a saving and never a change of answer: incremental equals batch, and the tests hold it to that over generated programs and edit chains.
 
 **How.** Batch and incremental are one forward pass at two memos. Each item is encoded once into id-free content; the memo recalls a base checkpoint of equal content; the checkpoint is adopted when every signature answer its judgement consulted equals the edited table's answer at that point of the pass, no type position of it reads a definition whose value changed, and its type can be seated in the edited arena. A value change closes over readers once, through reverse read edges. Item identity across revisions rides on an order-maintenance structure from `gandr-theory-order-maintenance`.
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored `FootprintsOverlap` keeps both halves' footprints and what they share.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a record's digest proves only that a key names its bytes.
+- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: § build-owner-store — the one store sits above this layer, so the checkpoint store keeps its own frame.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the strata a pass hands on.
+- `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the checkpoint store publishes through `core-publish`, whose guard owns each temporary.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — newest: § presented-spaces-quasi-coherence — a stored result is a section of a weakly quasi-coherent bundle over its support, so a checkpoint set restricts to a sub-support by its source keys, and no walk.
+- `vault:01a178aa-b725-7820-9a4c-074e3f6d79b0` — anchor: § arc-zero-drift-differential — the zero-drift contract of the pass. A located program keeps it, because its support keeps each register read.
 
 ## Provided features
 
@@ -114,16 +124,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The synthesis stream | [`stream`](src/stream.rs) |
 | Sessions | [`session`](src/session.rs) |
 | Specification evidence, the consumer and references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored `FootprintsOverlap` keeps both halves' footprints and what they share.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a record's digest proves only that a key names its bytes.
-- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: § build-owner-store — the one store sits above this layer, so the checkpoint store keeps its own frame.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the strata a pass hands on.
-- `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the checkpoint store publishes through `core-publish`, whose guard owns each temporary.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — newest: § presented-spaces-quasi-coherence — a stored result is a section of a weakly quasi-coherent bundle over its support, so a checkpoint set restricts to a sub-support by its source keys, and no walk.
-- `vault:01a178aa-b725-7820-9a4c-074e3f6d79b0` — anchor: § arc-zero-drift-differential — the zero-drift contract of the pass. A located program keeps it, because its support keeps each register read.
 
 ## License
 

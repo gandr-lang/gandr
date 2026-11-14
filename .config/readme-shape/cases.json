@@ -1,0 +1,382 @@
+[
+  {
+    "name": "#7616: a README with each part in the rule's order, a table of contents that lists them and the three openers departs in nothing",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#7616: a fenced heading is no part, and an opener in a fence is no opener",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "```text",
+          "## Elsewhere",
+          "**What.** fenced",
+          "```",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#7616: a part after a part that the rule puts after it is out of order, by its line",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [License](#license)",
+          "- [References](#references)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## License",
+          "",
+          "Apache",
+          "",
+          "## References",
+          "",
+          "- a key"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:22: `## References`: out of order, after `## License`"
+  },
+  {
+    "name": "#7616: a part that the rule does not name is refused by its name, and a list of another section names no part",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## Elsewhere",
+          "",
+          "text",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:18: `## Elsewhere`: a part that the rule does not name"
+  },
+  {
+    "name": "#7616: a README with no table of contents after its lead is refused at the line where the table stands",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:5: no table of contents after the lead"
+  },
+  {
+    "name": "#7616: a README with no sentence after its title is refused",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:3: no sentence after the title"
+  },
+  {
+    "name": "#7616: a table of contents that omits a part the README holds names the first part it misses",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:7: the table of contents lists `License` where the README holds `## References`"
+  },
+  {
+    "name": "#7616: the Synopsis's openers stand in the rule's order",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**Why.** a",
+          "",
+          "**What.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:10: `## Synopsis`: the bold openers are **Why.**, **What.**, **How.**, where the rule gives **What.**, **Why.**, **How.**"
+  },
+  {
+    "name": "#7616: a part that the rule holds always is refused when absent",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:19: `## License`: absent, and the rule holds it always"
+  },
+  {
+    "name": "#7616: a README whose first line is no title is refused at line 1",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nEvery crate README follows one order.\n\n1. `# <package>`, always, then one sentence.\n2. A table of contents, always.\n3. `## Synopsis`, always: **What.** the thing, **Why.** the need, **How.** the mechanism.\n4. `## References`: one entry for each key.\n5. `## Where the detail lives`: the modules.\n6. `## License`, always: the licence.\n\n## Compilation\n\n1. `## Elsewhere`: a list of another section.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/x/README.md:1: the first line is not `# <package>`"
+  },
+  {
+    "name": "#7616: a rule with no list of parts names its place",
+    "input": {
+      "rule": "# crates\n\n## Crate README shape\n\nNo list.\n",
+      "readmes": {
+        "crates/x/README.md": [
+          "# gandr-x",
+          "",
+          "`gandr-x` is one crate.",
+          "",
+          "<!-- toc -->",
+          "- [Synopsis](#synopsis)",
+          "- [References](#references)",
+          "- [License](#license)",
+          "",
+          "## Synopsis",
+          "",
+          "**What.** a",
+          "",
+          "**Why.** b",
+          "",
+          "**How.** c",
+          "",
+          "## References",
+          "",
+          "- a key",
+          "",
+          "## License",
+          "",
+          "Apache"
+        ]
+      }
+    },
+    "output": "crates/README.md § Crate README shape lists no part"
+  }
+]

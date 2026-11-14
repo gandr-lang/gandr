@@ -6,11 +6,11 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
+  - [Plans and their bytes](#plans-and-their-bytes)
+  - [Certificates](#certificates)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Plans and their bytes](#plans-and-their-bytes)
-- [Certificates](#certificates)
-- [Measurement](#measurement)
+  - [Measurement](#measurement)
 - [License](#license)
 <!-- tocstop -->
 
@@ -67,6 +67,14 @@ Canonical dyadics, explicitly oriented intervals and the scoped plan DAG: the fi
 - `Sets`, `SetId`, `Ackermann`, `Rank`, `code` and `CodeError`: a table of hereditarily finite sets with Tarau's fold, unfold and successor of Ackermann's code, and the real code of a set of rank at most 3 as a plan. The `ackermann` module states which operations carry over to the real code.
 - `PlanGraph`, `GraphBuilder`: a plan or a recursive system as a graph, its `Core`, its `MinimalForm` and `PlanKey`.
 
+### Plans and their bytes
+
+A plan is a finite DAG of real, open and domain nodes. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. A `PlanBuilder` holds a DAG by construction. `finish` brings the nodes that the root reaches to one canonical form, which holds each distinct subterm once in an order that depends on its structure alone. `Plan::encode` writes the canonical bytes, and `Plan::decode` accepts exactly those bytes and refuses every other input by name. The `plan` module states the node kinds and the canonical walk, and the `codec` module tables the byte layout.
+
+### Certificates
+
+A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The `certificate` and `schema` modules table the rules and the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
+
 ## Expected features
 
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
@@ -105,15 +113,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-exact-reals
 cargo bench -p gandr-theory-exact-reals
 ```
 
-## Plans and their bytes
-
-A plan is a finite DAG of real, open and domain nodes. A cut and the two quantifiers each bind one real variable, and a bound variable names its binder by a de Bruijn index. A `PlanBuilder` holds a DAG by construction. `finish` brings the nodes that the root reaches to one canonical form, which holds each distinct subterm once in an order that depends on its structure alone. `Plan::encode` writes the canonical bytes, and `Plan::decode` accepts exactly those bytes and refuses every other input by name. The `plan` module states the node kinds and the canonical walk, and the `codec` module tables the byte layout.
-
-## Certificates
-
-A `Certificate` is a list of steps, each a primitive rule over the nodes of a plan and over earlier steps. The checker reads a certificate against a validated plan. It uses exact dyadic arithmetic and comparisons alone, and it never calls the interval code. It returns the last step's conclusion, or it refuses the first step that fails and names the check. The checker knows one cut schema, the square root of a positive dyadic, and it refuses a cut of any other shape as forged. `refine` narrows such a cut from its hull to a requested power of two with one step for each halving. The `certificate` and `schema` modules table the rules and the schema. A `Cache` keeps each certificate under the canonical bytes of the plan that its node roots. The checker replays each hit before the machine uses it.
-
-## Measurement
+### Measurement
 
 `cargo bench -p gandr-theory-exact-reals` runs one bench for each stage. Each prints the median, the 99th percentile and the allocations per operation, and its module documentation lists its rows.
 

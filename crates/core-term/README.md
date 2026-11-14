@@ -4,11 +4,11 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,24 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 **Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value.
 
 **How.** [`syntax`](src/syntax.rs) states the alphabet and the grammar, [`arena`](src/arena.rs) the nodes and [`context`](src/context.rs) the zones.
+
+## References
+
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
+- `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` — background: Maximilian Doré. "Dependent Multiplicities in Dependent Linear Type Theory". 2026, [arXiv:2507.08759](https://arxiv.org/abs/2507.08759) — § 2.2's multiplicity as a term of the host theory, which can depend on other variables; the grades here are static elements of `{0, 1, ω}`.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — each two-point grade reads as its bound in the semiring `{0, 1, ω}`, which `gandr-theory-ordered-algebras` holds.
+- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
+- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
+- `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface; the four identity rows of `primitive` compute in the kernel, and every other row stays an opaque assumption.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
+- `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: identity never decides validity.
 
 ## Provided features
 
@@ -92,24 +110,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | The co-de Bruijn carrier, its tiered code and the fence; supports carried on arena nodes | [`support`](src/support.rs), [`arena`](src/arena.rs) |
 | Temporary access, and each grade read as its bound in the usage semiring of `gandr-theory-ordered-algebras` | [`memory`](src/memory.rs) |
 | References and specification attributes | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
-- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
-- `Doré-2026-dependent_multiplicities_dependent_linear_type_theory` — background: Maximilian Doré. "Dependent Multiplicities in Dependent Linear Type Theory". 2026, [arXiv:2507.08759](https://arxiv.org/abs/2507.08759) — § 2.2's multiplicity as a term of the host theory, which can depend on other variables; the grades here are static elements of `{0, 1, ω}`.
-- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities page (§ quant-record, § quant-counts) — each two-point grade reads as its bound in the semiring `{0, 1, ω}`, which `gandr-theory-ordered-algebras` holds.
-- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — background: a solved variable's types read back.
-- `vault:01a18584-cd93-7e42-9b53-9deb10b838fc` — exemplar: Condoluci, Accattoli and Sacerdoti Coen, "Sharing Equality is Linear", PPDP 2019, `doi:10.1145/3354166.3354174` — the blind check (Algorithm 1) that `syntax::shared` runs.
-- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey, Borkowski, Vollmer, Koparkar, Kainen and Singhal, "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory", PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAMs and the CAM `world` and `memory` place their forms in.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: a composite is a former holding its cells' fold.
-- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, University of Strathclyde, 2024 — a grade as a semiring bound on uses.
-- `vault:01a178aa-50dc-70f1-8a3c-3cb1c31f530e` — anchor: the ambient primitive policy — a computational kernel primitive is admissible, priced as permanent trusted surface; the four identity rows of `primitive` compute in the kernel, and every other row stays an opaque assumption.
-- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — newest: § implicits-rule-forced-solutions, a body read with the solutions of its implicits; `Rewrite::Solved` reads them in one walk.
-- `Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments` — newest: Liesnikov, Binder and Süberkrüb, "Filling the Gaps of Polarity", Programming 10(3) 19, 2025, `doi:10.22152/programming-journal.org/2025/10/19` — § 9.3's rule Env-∆.
-- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell (`identity::cong_above`).
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: identity never decides validity.
 
 ## License
 

@@ -513,6 +513,9 @@ fn fastest_parse(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the root's path, each exemplar's text and the tally, setup
 fn recovery() -> Result<RecoveryTally, Failure>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -684,6 +687,10 @@ fn keystrokes(text: SourceText<'_>) -> Maybe<Keystrokes, Untyped>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the root's path, each sample's text, its session and the
+///   times, setup
 fn latency() -> Result<Latency, Failure>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -907,6 +914,10 @@ fn form_edits(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the root's path, each sample's text, its revisions and the
+///   readings, setup
 fn incremental(pbg: &Pbg) -> Result<(Incremental, Incremental), Failure>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -992,6 +1003,10 @@ fn owed(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the root's path, each sample's text, its revisions and the
+///   readings, setup
 fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
 {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

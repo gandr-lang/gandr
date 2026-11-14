@@ -60,6 +60,14 @@
 //! check.
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-hotpath-guard/README.md).
+//!
+//! # Dependencies
+//!
+//! `gandr-workflow-github` runs every `gh` invocation and names the one that
+//! failed. Its `read` runs each read-only invocation again past a transient
+//! server error; a write runs once. `serde` and `serde_json` read `gh`'s
+//! answers and the hotpath reports; `toml` reads the regression policy the
+//! judge applies; each with the features the root `Cargo.toml` records.
 
 // Module documentation in the lane budget's shape: 1 heading outside the
 // vocabulary and 1 decision record. Each allow leaves with the rewrite that

@@ -15,6 +15,16 @@
 //!   renders the table a reviewer reads and the overrides they commit.
 //!
 //! See the [levels and their margins](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-test-timing/README.md#levels-and-margins).
+//!
+//! # Dependencies
+//!
+//! `gandr-workflow-github` runs every `gh` invocation and names the one that
+//! failed. Its `read` runs the run listing and each download again past a
+//! transient server error. `roxmltree` reads the reports: a read-only tree with
+//! no unsafe code and no published advisory, chosen over `quick-xml`, which
+//! carries two advisories from 2026. `toml` reads the nextest configuration.
+//! Both keep their default features off; the root `Cargo.toml` records each
+//! enabled feature and its reason.
 
 pub mod error;
 pub mod fetch;

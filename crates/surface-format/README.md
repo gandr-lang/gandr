@@ -7,12 +7,6 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [The tree, never the core](#the-tree-never-the-core)
-- [What moves and what does not](#what-moves-and-what-does-not)
-- [Groups are brackets](#groups-are-brackets)
-- [Copied as written](#copied-as-written)
-- [The meaning is checked, not assumed](#the-meaning-is-checked-not-assumed)
-- [Not yet laid out](#not-yet-laid-out)
 - [License](#license)
 
 ## Synopsis
@@ -39,30 +33,11 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 - `FormatError`, `Change`: why a source was not formatted.
 - `comments`, `Comment`, `CommentKind`, `Role`, `Column`, `Width`: every comment of a source beside the node it belongs to — its owner and the owner's cross-tree key, its role among the owner's children (leading, trailing or dangling), its kind, its column and its width — the record a layout keeps and a later comment reflow reads (crate docs, § Every comment belongs to a node). Witnesses: `tests::attach::a_comment_on_its_own_line_leads_the_form_below_it`, `tests::attach::a_comment_after_material_on_its_line_trails_it`, `tests::attach::a_comment_before_a_closing_bracket_dangles_on_its_block`, `tests::attach::documentation_and_the_root_keep_their_owners`, `tests::attach::a_layout_that_breaks_or_joins_a_group_keeps_each_comment_with_its_owner`.
 
-## Expected features
-
-A caller parses the source under the grammar it hands `format`, and keeps the `ParseResult` alive while it reads the `Formatted` spans against the source.
-
-## Examples
-
-```rust
-use gandr_surface_format::FormatOptions;
-use gandr_surface_format::format;
-use gandr_surface_grammar::built_in;
-use gandr_surface_parser::parse;
-use gandr_surface_syntax::SourceText;
-
-let grammar = built_in().expect("the built-in grammar builds");
-let parsed = parse(&grammar, SourceText::from("def  answer =  42 ;")).expect("the source parses");
-let formatted = format(&grammar, &parsed, FormatOptions::default()).expect("the source formats");
-assert_eq!(<&str>::from(formatted.text()), "def answer = 42;\n");
-```
-
-## The tree, never the core
+### The tree, never the core
 
 The formatter reads the concrete syntax tree, because the core drops comments and undoes the shorthand the surface exists for. Layout alone never lowers a source, finds its types or marks it. The lowering checks a rewrite between spellings. The explicit form spells the carriers of a forgetting map through the presentation printer (see `src/lib.rs`).
 
-## What moves and what does not
+### What moves and what does not
 
 Only layout changes. Every token and comment is written once, in source order, with its own bytes. Where a line breaks is the source's (below); the space between two tokens on one line is the printer's, whatever the source wrote, as rustfmt decides Rust's. The parse reads no space inside a line. The rules, each form's cases in `src/space.rs`:
 
@@ -81,7 +56,7 @@ The line structure is the source's:
 - **Comments.** A line comment is followed by a line break; a comment the source wrote on its own line stays on its own line.
 - **Line endings.** The text uses the ending most of the source's line breaks use, `\r\n` or `\n`; a comment or a copied form keeps its own.
 
-## Groups are brackets
+### Groups are brackets
 
 A group is a bracket pair — `(`, `[`, `{`, `@[` or `#{` and its closer — matched within one top-level form. An item of a group runs up to and including a `,` or `;`, with a comment written after it on the same line; an element the source started on a new line starts an item too, so a module's members and a block's statements keep their lines.
 
@@ -93,20 +68,39 @@ A group is a bracket pair — `(`, `[`, `{`, `@[` or `#{` and its closer — mat
 
 The engine chooses among the flat and broken layout of every group at once, by least overflow and then fewest lines, so the outermost list that does not fit breaks first only when breaking it saves lines.
 
-## Copied as written
+### Copied as written
 
 The formatter keeps strings, shell blocks, holes, forms the parser repairs and comments that span lines or hold a tab byte for byte, as the crate docs state.
 
-## The meaning is checked, not assumed
+### The meaning is checked, not assumed
 
 The content digest skips layout, so `digest(parse(format(source))) == digest(parse(source))` holds for any correct formatting. `format` parses its own text before returning it, and refuses with `FormatError::Changed` when the digest differs, when the text's tokens and comments, read in order, are not the source's, or when a comment would leave the node it belongs to or change its role there. A rewrite changes tokens, so its check is the lowering instead: a declaration whose rewritten text lowers otherwise keeps its spelling. The corpus tests format every source at three page widths and into either form, and format the result again, asserting nothing moves.
 
-## Not yet laid out
+## Expected features
+
+A caller parses the source under the grammar it hands `format`, and keeps the `ParseResult` alive while it reads the `Formatted` spans against the source.
+
+### Not yet laid out
 
 - **Per-form rules.** As above, the layout is the bracket rule; a long expression with no brackets stays on one line.
 - **A fill layout.** A list too long for one line puts every item on its own line; packing several per line is a later rule.
 - **Range formatting at isolation boundaries.** A caller formats a range by replacing the `Piece`s it touches, so the unit of a range edit is a top-level form.
 - **Comment reflow.** Comments keep their own lines and bytes. A reflow pass that rewraps a comment at the page width would run over the attachment record before layout; it is not built.
+
+## Examples
+
+```rust
+use gandr_surface_format::FormatOptions;
+use gandr_surface_format::format;
+use gandr_surface_grammar::built_in;
+use gandr_surface_parser::parse;
+use gandr_surface_syntax::SourceText;
+
+let grammar = built_in().expect("the built-in grammar builds");
+let parsed = parse(&grammar, SourceText::from("def  answer =  42 ;")).expect("the source parses");
+let formatted = format(&grammar, &parsed, FormatOptions::default()).expect("the source formats");
+assert_eq!(<&str>::from(formatted.text()), "def answer = 42;\n");
+```
 
 ## License
 

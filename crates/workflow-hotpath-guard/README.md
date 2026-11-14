@@ -6,7 +6,7 @@ A commit's hotpath checks, filed on one issue per regressed function.
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -48,9 +48,9 @@ cargo run -p gandr-workflow-hotpath-guard --bin hotpath-judge -- --repository ga
 cargo nextest run -p gandr-workflow-hotpath-guard
 ```
 
-## Dependencies
+## Where the detail lives
 
-`gandr-workflow-github` runs every `gh` invocation and names the one that failed. Its `read` runs each read-only invocation again past a transient server error; a write runs once. `serde` and `serde_json` read `gh`'s answers and the hotpath reports; `toml` reads the regression policy the judge applies; each with the features the root `Cargo.toml` records.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

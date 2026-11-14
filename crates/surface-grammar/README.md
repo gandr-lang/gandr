@@ -4,11 +4,11 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,18 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 **Why.** A tile-based parser asks, for every token, which molds its label can take and how two adjacent molds relate. Both answers are fixed once the grammar is, so they are computed once at build and read by index, and the gates refuse at build any grammar for which a parser's local choice would be ambiguous. A parser's tree stores `MoldId`s, which mean something only under the table that numbered them, so the table carries a fingerprint a consumer stores beside them.
 
 **How.** `Pbg::build` checks rule headers, then Operator Form per rule, then numbers every tile occurrence in rule order and left to right while interning its context, refusing a repeated label in one context (Unique Tiles), then checks Assumption 3 over the sorts each form can begin and end with. One fold per rule computes nullability, first and last tiles, adjacency and required-hole edges; the closing class is a sinks-first fold over the rule's tile-graph condensation. Every walk is iterative, and every table is ordered, so a build is the same on every run.
+
+## References
+
+- `Kovács-2022-staged_compilation_twolevel_type_theorya` — lineage: András Kovács, "Staged Compilation with Two-Level Type Theory", _ICFP_, 2022, `doi:10.1145/3547641` — the splice `~t`.
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-one-kind) — a row entry takes `Model(T) with sort`'s refinement.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index binder over the host's types is a type identifier.
+- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design (§ theories-models-manifest-sorts) — the tail `with sort x = A`.
+- `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — lineage: the syntax bikeshed — the row entry's spelling, `T with sort x = A`.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the directed-univalence design (§ The surface family) — `flow` between two signatures, and an import's `via`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — an import names its translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a renaming is written as a definition by one name.
+- `vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7` — lineage: the closing-class derivation design — the closing class is the form's, and a completion ending at a block hole ends at the block's `}`.
 
 ## Provided features
 
@@ -109,18 +121,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Type operators, the unit value, the splice | [`surface::term`](src/surface/term.rs) |
 | The named-kind inventory | [`parity`](src/parity.rs) |
 | The highlighter | [`highlight`](src/highlight.rs) |
-
-## References
-
-- `Kovács-2022-staged_compilation_twolevel_type_theorya` — lineage: András Kovács, "Staged Compilation with Two-Level Type Theory", _ICFP_, 2022, `doi:10.1145/3547641` — the splice `~t`.
-- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-one-kind) — a row entry takes `Model(T) with sort`'s refinement.
-- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index binder over the host's types is a type identifier.
-- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — background: the theories design (§ theories-models-manifest-sorts) — the tail `with sort x = A`.
-- `vault:01a15620-7fbe-7030-a3af-07ffa620eed2` — lineage: the syntax bikeshed — the row entry's spelling, `T with sort x = A`.
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: the directed-univalence design (§ The surface family) — `flow` between two signatures, and an import's `via`.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — an import names its translation.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a renaming is written as a definition by one name.
-- `vault:01a178aa-5e2b-7ee0-b9de-6d9033be91d7` — lineage: the closing-class derivation design — the closing class is the form's, and a completion ending at a block hole ends at the block's `}`.
 
 ## License
 

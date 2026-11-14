@@ -2,6 +2,18 @@
 
 Insertion-only topological orders and feasible valuations for standing graphs.
 
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+  - [Design decisions](#design-decisions)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+  - [Compatibility floor](#compatibility-floor)
+- [Where the detail lives](#where-the-detail-lives)
+- [License](#license)
+<!-- tocstop -->
+
 ## Synopsis
 
 **What.** `AcyclicityMaintenance` admits a directed edge exactly when it preserves acyclicity. `PotentialMaintenance` admits a weighted constraint `value(target) >= value(source) + offset` when the standing system remains feasible. Both retain their state across calls and return a closed cycle on semantic refusal.
@@ -23,13 +35,7 @@ Insertion-only topological orders and feasible valuations for standing graphs.
 - `CycleWitness`: an offered edge plus an admitted path closing it. For the weighted structure, the caller retains its offset-labelled constraints; the graph witness contains node/edge identities, not offset labels.
 - Saturating telemetry counts offers, refusals, repairs, visited/relocated nodes, raises, and examined constraints. These are declared operation projections, not timings or a complete cost model: they omit adjacency duplicate scans, sorting, allocation, and order-label maintenance.
 
-## Expected features
-
-Nodes have dense `u32` identities. Naming an unseen node creates all intervening nodes. `u32::MAX` cannot be a node identity because its required node count is unrepresentable. Offsets and potentials use checked `i64` arithmetic: a mathematically feasible system can still return `ValueOverflow`. On a propagation failure, previously held values and constraints are restored; nodes newly created by the offer remain present at zero. Allocation failure follows the allocator's behavior.
-
-Neither structure deletes edges, rolls back admitted prefixes, or supports a changing node interpretation. Acyclicity alone is exact for strictly positive offsets. Allowing zero or negative offsets makes it conservative: a zero-sum cycle can be feasible with unequal potentials.
-
-## Design decisions
+### Design decisions
 
 Use bounded order repair for a standing insertion stream, rather than batch traversal after every offer. Reconsider the maintenance strategy when measured adjacency scans, sorting, or order-label work dominate its affected-region work. The single-shot and repeated-query witnesses compare explicit operation projections; they do not establish a universal runtime crossover.
 
@@ -37,7 +43,13 @@ Keep weighted propagation separate from topological-order maintenance. Refusing 
 
 Directed composition remains a **batch** consumer. Its seam-flow graph is rebuilt for each certificate pair and restricted to the current left join; successive calls are not insertion-only extensions of one graph. [`the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`](../theory-decomposition-spaces/tests/composition.rs) compares the same characterized graph in forward and reverse arrival order against the batch gate, without making maintenance a production dependency. Switch only when a consumer actually retains one graph or accumulates constraints monotonically across calls.
 
-## Examples and evidence
+## Expected features
+
+Nodes have dense `u32` identities. Naming an unseen node creates all intervening nodes. `u32::MAX` cannot be a node identity because its required node count is unrepresentable. Offsets and potentials use checked `i64` arithmetic: a mathematically feasible system can still return `ValueOverflow`. On a propagation failure, previously held values and constraints are restored; nodes newly created by the offer remain present at zero. Allocation failure follows the allocator's behavior.
+
+Neither structure deletes edges, rolls back admitted prefixes, or supports a changing node interpretation. Acyclicity alone is exact for strictly positive offsets. Allowing zero or negative offsets makes it conservative: a zero-sum cycle can be feasible with unequal potentials.
+
+## Examples
 
 [`a_standing_graph_preserves_prefixes_across_calls`](tests/standing.rs) holds a public graph through local repairs, a cycle refusal, and a later accepted edge, then checks the exact order, retained adjacency, and comparison errors. The same integration target exercises propagation-overflow rollback, parallel offsets exceeding a node-only budget, and refusal of an unrepresentable node count. It also exhausts 19,683 three-offer systems over three nodes and offsets −1, 0, and 1 against independent Bellman–Ford sweeps, checking positive-cycle evidence and unchanged values after refusal.
 
@@ -78,9 +90,9 @@ All 26 named rows are present. The five public standing-state witnesses and the 
 | `the_probe_catches_a_seeded_converse_divergence` | `tests::probe::tests` |
 | `the_dichotomy_boundary_is_measured` | `tests::probe::tests` |
 
-## Mutation backlog
+## Where the detail lives
 
-A standalone campaign over `1793badece8881bb2d6b5ce06105dbdf9e4b781b..HEAD`, restricted to this crate and its composition comparison, should mutate bounded-search cutoffs, predecessor reconstruction, relocation ordering, constraint signs, rollback, and duplicate handling. Hypotheses: batch agreement rejects changed cycle verdicts; checked walks reject invalid evidence; unaffected-slot and exact-value boundaries reject overbroad repairs and lost rollback. No mutation score is claimed and this campaign is not a landing gate.
+The mutation campaign that this crate owes is a row of #510.
 
 ## License
 

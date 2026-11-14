@@ -4,10 +4,10 @@ The kernel bridge of the core checking judgement. The kernel re-derives each dec
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,13 @@ The kernel bridge of the core checking judgement. The kernel re-derives each dec
 **Why.** The kernel is the authority on every acceptance. The judgement does not need the bridge, so the bridge is a crate over the base.
 
 **How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate, or tests of the base's integration target named with the base's package. The tests build on the base's `fixture` feature.
+
+## References
+
+- `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: one skeleton replays every certificate.
 
 ## Provided features
 
@@ -37,13 +44,6 @@ The kernel bridge of the core checking judgement. The kernel re-derives each dec
 | ----- | ------ |
 | Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits, deep handlers and export | [`bridge`](src/bridge.rs) |
 | Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |
-
-## References
-
-- `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
-- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: a family is one descent datum.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: § kernel-verdict-reuse — a resumed readmission signs only its own checks.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: one skeleton replays every certificate.
 
 ## License
 

@@ -4,12 +4,12 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
+  - [The procedural form](#the-procedural-form)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [The procedural form](#the-procedural-form)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -20,6 +20,16 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 **Why.** A refusal names bytes and a rule; a reader wants the line those bytes sit on and the rules the checker stood inside when it refused. Deciding that in one place keeps the terminal, the editor and a test from disagreeing about a refusal's loci and causes. The alternative, each face reading the step and the producers' refusals itself, is what this crate replaced.
 
 **How.** A checker refusal's `Failure` names the frames the machine stood inside, each a `FrameRole` read through an exhaustive sentence table with no catch-all arm, and the term and type each frame judged. Each core node resolves through the origin table the composition kept; a frame with no recorded bytes stays a context with no locus, which a face shows as a note rather than a guessed span. The types a refusal compares are spelled by `Spellings` while the arena is at hand. Every locus is checked against the text it names before it is kept.
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the `FootprintsOverlap` label, authority both halves of a fork hold and one may change.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a member answering a `Type[-]` sort lands in the computation types.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the directed-univalence design (§ The surface family) — `NotATranslation`'s help declares the flow its `via` names.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — that help names the importer or the source as the flow's supplier.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a missing member is one declaration to write.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each worded by what the stratum, the chain or a wire lacks.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — background: the presented-spaces plan (§ presented-spaces-frame, § presented-spaces-reorganisation) — every analysis's obstruction as a set of cells and a witness, in one shape.
 
 ## Provided features
 
@@ -33,34 +43,7 @@ The diagnostics model: what a refusal, an unsettled declaration, a goal, a shado
 | `advice`, `help` | The help of a refusal: one imperative sentence that tells the reader what to do. A name with no help yet is `help::Absent::Unworded`. |
 | `Obstruction`, `PartingPair`, `parting` | What obstructs a refused global property: the cells it lives on and its witness, both borrowed from the analysis. A critical pair whose sides part fills it with the two rules, the peak and the two normal forms, and the refusal's message names the peak and both normal forms. |
 
-## Expected features
-
-- **A text that is the text the producer read.** A span the text cannot answer leaves its diagnostic unlocated rather than quoting the wrong line.
-- **A face.** The model writes nothing; a renderer or a server projects it.
-
-## Examples
-
-```rust
-use gandr_surface_diagnostics::Subject;
-use gandr_surface_diagnostics::diagnose;
-use gandr_surface_diagnostics::report_span;
-use gandr_surface_syntax::SourceText;
-use quenchant_shape::shape::Maybe;
-
-let diagnostic = diagnose(
-    std::path::Path::new("ledger.gandr"),
-    SourceText::from(""),
-    Subject::Ledger {
-        line: "unsettled: a pending source",
-        at: Maybe::Absent(report_span::Absent::Standing),
-    },
-);
-assert_eq!(diagnostic.message.text, "unsettled: a pending source");
-```
-
-The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the crate-level example runs with `cargo test -p gandr-surface-diagnostics --doc`.
-
-## The procedural form
+### The procedural form
 
 A refusal reads as a procedure, in the form of ASD-STE100's procedures. The message states what is wrong in one sentence. The primary label names the place in one phrase. The help tells the reader what to do in one imperative sentence. A refusal that an issue tracks ends with that issue instead. The technical vocabulary is free.
 
@@ -110,6 +93,33 @@ error[MalformedForm]: `type` is a keyword and cannot stand here in this theory d
   ╰ help: write `Type` instead
 ```
 
+## Expected features
+
+- **A text that is the text the producer read.** A span the text cannot answer leaves its diagnostic unlocated rather than quoting the wrong line.
+- **A face.** The model writes nothing; a renderer or a server projects it.
+
+## Examples
+
+```rust
+use gandr_surface_diagnostics::Subject;
+use gandr_surface_diagnostics::diagnose;
+use gandr_surface_diagnostics::report_span;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+let diagnostic = diagnose(
+    std::path::Path::new("ledger.gandr"),
+    SourceText::from(""),
+    Subject::Ledger {
+        line: "unsettled: a pending source",
+        at: Maybe::Absent(report_span::Absent::Standing),
+    },
+);
+assert_eq!(diagnostic.message.text, "unsettled: a pending source");
+```
+
+The crate's tests run with `cargo nextest run -p gandr-surface-diagnostics`; the crate-level example runs with `cargo test -p gandr-surface-diagnostics --doc`.
+
 ## Where the detail lives
 
 Mechanism, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
@@ -128,16 +138,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Verbosity | [`verbosity`](src/verbosity.rs) |
 | Lints, `explicit-exits` and `explicit-runs` among them | [`lint`](src/lint.rs) |
 | The obstruction shape and its parting-pair filling | [`obstruction`](src/obstruction.rs) |
-
-## References
-
-- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the `FootprintsOverlap` label, authority both halves of a fork hold and one may change.
-- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a member answering a `Type[-]` sort lands in the computation types.
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: the directed-univalence design (§ The surface family) — `NotATranslation`'s help declares the flow its `via` names.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: the univalence design (§ The trust story) — that help names the importer or the source as the flow's supplier.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-zero-cost) — a missing member is one declaration to write.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each worded by what the stratum, the chain or a wire lacks.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — background: the presented-spaces plan (§ presented-spaces-frame, § presented-spaces-reorganisation) — every analysis's obstruction as a set of cells and a witness, in one shape.
 
 ## License
 

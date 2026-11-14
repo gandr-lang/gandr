@@ -4,10 +4,10 @@ The expression part of gandr's lowering. It plans and mints each expression and 
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,12 @@ The expression part of gandr's lowering. It plans and mints each expression and 
 **Why.** The expression part is the longest part of the lowering. In a crate of its own, it type-checks apart from the top, which holds the closure, the dispatch of the families and the entry points. An edit of the top then does not type-check it again.
 
 **How.** The part reads the lowering through its host, `F: Families`, a trait of the base. The host holds the lowering's context and answers each call into a family. `gandr-surface-lowering` is the host, and a call from it into this crate builds `Expressions::new(self)`. Each call is static. A reading of the lowering builds `ExpressionsRef::new(self)`, which borrows the host and never writes it. The tests stay in `gandr-surface-lowering`, because each test lowers a source.
+
+## References
+
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The part reads the lowering only through `Families`, a trait of the base, so it compiles over the base and the family crates alone.
+- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 
 ## Provided features
 
@@ -47,12 +53,6 @@ The expression part of gandr's lowering. It plans and mints each expression and 
 | Boundary checks of a layout | [`lower::boundary`](src/lower/boundary.rs) |
 | Univalence and strata | [`lower::ua`](src/lower/ua.rs) |
 | A program's entry | [`lower::entry`](src/lower/entry.rs) |
-
-## References
-
-- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The part reads the lowering only through `Families`, a trait of the base, so it compiles over the base and the family crates alone.
-- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design — a boundary check is the layout program's verdict.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — exemplar: `compose[n, k]` reads its stratum as `ua[n, k]` does.
 
 ## License
 

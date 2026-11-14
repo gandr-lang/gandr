@@ -4,11 +4,11 @@ The `gandr` binary is the entry point of the gandr language toolchain. `gandr ch
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,23 @@ The `gandr` binary is the entry point of the gandr language toolchain. `gandr ch
 **Why.** The driver owns the argument surface and the process boundary, and routes everything after that through `gandr-surface-dispatcher`, which composes the pipeline and decides the gate without a process. The registry name `gandr` belongs to an unrelated crate, so the package is `gandr-lang` and the binary is `gandr`.
 
 **How.** `clap` parses the arguments before anything is written. The driver visits the walk that the dispatcher returns, prints each diagnostic as `gandr-surface-render-terminal` lays it out, then the report and its verdict, and returns the verdict as its exit code. `gandr run` runs the dispatcher's `Script` with the operands after the path and the world bindings of its `--world` flags, and `gandr host` hands the same `Script` the migrations to host instead. `gandr stage` runs the dispatcher's `Staging` at the width the invocation asked for, `gandr fmt` steps its `Formatting`, `gandr cells` its `Census`, and `gandr doc` its `Traversal` into `gandr-surface-lsp`'s `site` or `page`; what each prints and why each fails is [`main`](src/main.rs)'s verb table. `gandr lsp` reaches the hub, starting one when none answers, and hands the standard streams and the connection to `gandr-surface-lsp`'s `relay`, or under `--standalone` the streams to `serve`. `gandr mcp`, `gandr view` and `gandr serve` reach or run the hub as their functions in [`main`](src/main.rs) state. `gandr repl` hands the standard streams to `gandr-surface-repl`'s `run_batch` or `run_interactive` and returns how the loop ended; `gandr tui` checks that standard input and output are a terminal, then hands the terminal to `gandr-surface-tui`'s `run`, or standard output to its `run_smoke` under `--smoke`, and returns how the face ended. Each verb's function in [`main`](src/main.rs) names its witnesses, each spawning the binary.
+
+## References
+
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — `gandr cells` reports each cell's counts.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — the installation's key signs; the policy is the user's.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the stratum store a `check` installs.
+- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — lineage: § build-owner-store — the receipts and the strata a `check` keeps, each in the storage tier's store.
+- `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed hydration — a dependent reads each dependency's export by its address and re-admits it through the kernel.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's worlds — `gandr host` is the process a migration runs at.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local artifact, the endpoint of a one-role choreography.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, beside `check --measure`.
+- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
+- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the shared pool's local hub — the sessions of a face readmit on the host's one pool, which `host_pool` installs.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-activity.
+- `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each allocation of the process, in `allocator`.
+- `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — the bound `gandr cells` prints.
 
 ## Provided features
 
@@ -122,23 +139,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The user's configuration file | [`config`](src/config.rs) |
 | The global allocator | [`allocator`](src/allocator.rs) |
 | Installed toolchains, their selection and the exec proxy | [`toolchain`](src/toolchain.rs) |
-
-## References
-
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-try-first) — `gandr cells` reports each cell's counts.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — the installation's key signs; the policy is the user's.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the stratum store a `check` installs.
-- `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — lineage: § build-owner-store — the receipts and the strata a `check` keeps, each in the storage tier's store.
-- `vault:01a178aa-d585-7822-9cf0-40459729a925` — background: the package design's typed hydration — a dependent reads each dependency's export by its address and re-admits it through the kernel.
-- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's worlds — `gandr host` is the process a migration runs at.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local artifact, the endpoint of a one-role choreography.
-- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, beside `check --measure`.
-- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
-- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the shared pool's local hub — the sessions of a face readmit on the host's one pool, which `host_pool` installs.
-- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-activity.
-- `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each allocation of the process, in `allocator`.
-- `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — the bound `gandr cells` prints.
 
 ## License
 

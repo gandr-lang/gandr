@@ -7,11 +7,6 @@ An authenticated ordered-record plane with content-defined Merkle leaves and roo
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Tree and proof shapes](#tree-and-proof-shapes)
-- [Decode budgets](#decode-budgets)
-- [Identity and agreement](#identity-and-agreement)
-- [Storage planes](#storage-planes)
-- [Specification attributes](#specification-attributes)
 - [License](#license)
 
 ## Synopsis
@@ -41,11 +36,40 @@ An authenticated ordered-record plane with content-defined Merkle leaves and roo
 - `StoredRoot` verifies a root node's presence; `RecordTree::agrees_with` compares complete record sets.
 - Typed `RecordTreeError` values distinguish ordering, authentication, shape and budget failures.
 
+### Tree and proof shapes
+
+A tree is one leaf or one internal root over a run of leaves. Node encodings and proof shapes enforce this two-level limit; the child ceiling bounds the number of leaves a root can address. The tree retains its child references and leaf runs, so proving requires no decoding of its own nodes.
+
+Each proof kind admits one layout, with carried nodes checked in their required positions. Prover and verifier share child selection, successor-leaf selection, bracketing and selected-run rules. Proofs carry whole leaves and are Rust values; transport framing belongs to the consumer.
+
+`StoredRoot` attests only that the root node is present and verifies. It does not traverse children or establish that all leaves are available. Queries and proof construction use the in-memory `RecordTree`.
+
+### Identity and agreement
+
+`TreeRoot` equality compares commitments. `RecordTree::agrees_with` decides equality of the records themselves: with matching parameters, different root identities establish disagreement; equal identities still require the record comparison. Different parameter sets also require that comparison, because the same records can have different commitments.
+
+A store or proof verifier recomputes each identity from the bytes it holds. Authentication establishes integrity under the supplied root, not application-level admissibility or permission to skip a deciding comparison.
+
+### Storage planes
+
+Record nodes and value chunks have separate byte languages and verification boundaries.
+
+| Plane | Content | Cut positions | Store trait |
+| ----- | ------- | ------------- | ----------- |
+| `gandr-storage-records` | Sorted keyed records | Between records | `BlockStore` |
+| `gandr-storage-values` | One typed value | Constructor exits | `ChunkStore` |
+
+One backing object can implement both traits. Wrapping a value chunk as a record leaf would make its identity depend on leaf framing rather than the value's canonical bytes. Separate traits preserve each plane's admission rule, while domain strings inside hashed preimages separate their identities. Node, root-manifest, record-encoding and boundary-decision hashes each use a distinct domain; committed integers are fixed-width little-endian.
+
 ## Expected features
 
 Callers supply canonical key and value bytes in strictly increasing key order. Duplicate or unsorted keys are errors; the builder does not sort or repair them. Writers sharing identities must agree on `TreeParams`.
 
 Persistent storage implements `BlockStore` and verifies canonical node material on both insertion and load. Verifiers require a trusted expected root and the query being authenticated. The crate uses `core` and `alloc` under `no_std`, so consumers supply an allocator.
+
+### Decode budgets
+
+Verification bounds both individual structures and total work. Ceilings cover node bytes, leaf records, children and carried nodes; a saturating accumulator bounds work across one proof. Separate per-node limits alone would permit work proportional to their product with the node count. Exhaustion returns `RecordTreeError::BudgetExceeded`.
 
 ## Examples
 
@@ -84,36 +108,7 @@ The verification call uses neither the store nor the tree. Run the crate's tests
 mise exec -- cargo test -p gandr-storage-records
 ```
 
-## Tree and proof shapes
-
-A tree is one leaf or one internal root over a run of leaves. Node encodings and proof shapes enforce this two-level limit; the child ceiling bounds the number of leaves a root can address. The tree retains its child references and leaf runs, so proving requires no decoding of its own nodes.
-
-Each proof kind admits one layout, with carried nodes checked in their required positions. Prover and verifier share child selection, successor-leaf selection, bracketing and selected-run rules. Proofs carry whole leaves and are Rust values; transport framing belongs to the consumer.
-
-`StoredRoot` attests only that the root node is present and verifies. It does not traverse children or establish that all leaves are available. Queries and proof construction use the in-memory `RecordTree`.
-
-## Decode budgets
-
-Verification bounds both individual structures and total work. Ceilings cover node bytes, leaf records, children and carried nodes; a saturating accumulator bounds work across one proof. Separate per-node limits alone would permit work proportional to their product with the node count. Exhaustion returns `RecordTreeError::BudgetExceeded`.
-
-## Identity and agreement
-
-`TreeRoot` equality compares commitments. `RecordTree::agrees_with` decides equality of the records themselves: with matching parameters, different root identities establish disagreement; equal identities still require the record comparison. Different parameter sets also require that comparison, because the same records can have different commitments.
-
-A store or proof verifier recomputes each identity from the bytes it holds. Authentication establishes integrity under the supplied root, not application-level admissibility or permission to skip a deciding comparison.
-
-## Storage planes
-
-Record nodes and value chunks have separate byte languages and verification boundaries.
-
-| Plane | Content | Cut positions | Store trait |
-| ----- | ------- | ------------- | ----------- |
-| `gandr-storage-records` | Sorted keyed records | Between records | `BlockStore` |
-| `gandr-storage-values` | One typed value | Constructor exits | `ChunkStore` |
-
-One backing object can implement both traits. Wrapping a value chunk as a record leaf would make its identity depend on leaf framing rather than the value's canonical bytes. Separate traits preserve each plane's admission rule, while domain strings inside hashed preimages separate their identities. Node, root-manifest, record-encoding and boundary-decision hashes each use a distinct domain; committed integers are fixed-width little-endian.
-
-## Specification attributes
+### Specification attributes
 
 `# Specification` states admitted behavior; each nontrivial item pairs it with a bounded `# Adequacy` hypothesis and same-crate test witnesses. Executable `#[spec(...)]` predicates check state transitions, decoded observations and refusal conditions on executed calls. Constant functions use predicates over their inner fields.
 

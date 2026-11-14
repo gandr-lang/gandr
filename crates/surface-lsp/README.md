@@ -4,11 +4,11 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 **Why.** An editor should show what `gandr check` prints, where it prints it, while the source is written. The server is a face over the pipeline's own outputs, never a second pipeline: its diagnostics are projections of the diagnostics `gandr-surface-diagnostics` builds for the dispatcher's step, the same ones the terminal lays out, and its tokens are the roles `gandr-surface-grammar`'s highlighter classifies, so an editor, a terminal and a test cannot disagree about a refusal or a token.
 
 **How.** Each connection's copy of an open document holds a `gandr-surface-session` session under the source root its `file` URI's path classifies as. A synchronisation applies the client's changes to the connection's copy; the copy's session judges the text on the worker pool, off the serving loop, a later change retiring it, and the server reads the judgement's step and publishes each diagnostic the model builds as one LSP diagnostic, mapped as [`recheck`](../surface-lsp-diagnostics/src/recheck.rs) tabulates. Then it runs the kernel admission the judgement left. Each structural request, name request and formatting request reads what the table below names.
+
+## References
+
+- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: the shared pool page, § pool-tokens: the hub owns the host's counter of tokens, and it reaps the slot of each dead holder.
 
 ## Provided features
 
@@ -88,10 +92,6 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The families that the server's handlers call, which their READMEs tabulate | [`gandr-surface-lsp-core`](../surface-lsp-core/README.md), [`gandr-surface-lsp-navigation`](../surface-lsp-navigation/README.md), [`gandr-surface-lsp-diagnostics`](../surface-lsp-diagnostics/README.md) |
 | The parts that read neither the dispatcher nor the session, which the base's README tabulates | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: the shared pool page, § pool-tokens: the hub owns the host's counter of tokens, and it reaps the slot of each dead holder.
 
 ## License
 

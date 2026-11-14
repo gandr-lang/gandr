@@ -4,11 +4,11 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,17 @@ Normalization by evaluation for the core language: the glued value domain, the p
 **Why.** A conversion checker compares neutral forms first and unfolds only when they disagree, and an elaborator wants a normal form that keeps the source term wherever nothing reduced. Both need a domain that holds both readings at once, and both run on terms whose depth is whatever an elaborator built, so neither machine may recurse on the host stack.
 
 **How.** Evaluation and readback are machines over an explicit task stack and two result stacks split by polarity, so depth lives on the heap. Evaluation keeps a node's source term exactly when every child came back denoting the corresponding source child, and turns a manifest constant into a neutral carrying its body's content id unforced. Readback chooses a face by mode, goes under a binder by minting a fresh variable at a de Bruijn level and evaluating the closure's body against it, and converts each level back to an index. Both machines draw on one fuel budget, because β and `force` alone suffice to loop. Laziness is a scheduling restriction rather than a representation, so a definitional height is a share of attention, never a gate on which unfoldings are tried.
+
+## References
+
+- `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — background: sharing as descent; the spinal granularity makes the Courant and Leroy row finer along the spinal row.
+- `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing installs only behind a replayed trace.
+- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises, and every nesting of its chain evaluates to that fold.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, whose arm at a cell `eval::words` reads.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the ruling on the presented type and its loop space, which `eval::words` follows when a loop moves past two empty images of a cell.
 
 ## Provided features
 
@@ -111,17 +122,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Closed-configuration sharing and the certifying path | [`traced`](src/traced.rs) |
 | Live evaluation | [`live`](src/live.rs) |
 | References | [`src/lib.rs`](src/lib.rs), [`policy`](src/policy.rs) |
-
-## References
-
-- `Dybjer-2012-program_testing_meaning_explanations_intuitionistic_type_theory` — background: Peter Dybjer, "Program Testing and the Meaning Explanations of Intuitionistic Type Theory", _Epistemology versus Ontology_, 2012 — a judgement tested by running it on generated input, the reading the spinal stance enters on.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — background: § 6 — a sharing mechanism enters on a property test against its reference and an informal simulation argument.
-- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — background: sharing as descent; the spinal granularity makes the Courant and Leroy row finer along the spinal row.
-- `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — background: a finer sharing installs only behind a replayed trace.
-- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep, and § 4.2's useful sharing, whose compact normal form readback builds.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite evaluates as the fold it realises, and every nesting of its chain evaluates to that fold.
-- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, whose arm at a cell `eval::words` reads.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the ruling on the presented type and its loop space, which `eval::words` follows when a loop moves past two empty images of a cell.
 
 ## License
 

@@ -7,8 +7,6 @@
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Three profiles](#three-profiles)
-- [Parameter commitments](#parameter-commitments)
 - [License](#license)
 
 ## Synopsis
@@ -36,6 +34,24 @@
 - Validated parameter types reject zero kappa, zero token cap, inconsistent record-safe limits and byte limits under the 64-byte Gear window.
 - `ParameterCommitment` encodes each profile for downstream root commitments.
 - `ChunkerError` distinguishes invalid parameters, invalid spans and arithmetic failures.
+
+### Three profiles
+
+The profiles admit different cut positions and commit only the fields they use.
+
+| Profile | Input | Cut rule | Parameters |
+| ------- | ----- | -------- | ---------- |
+| Record-safe (`ChunkerParams`) | Canonical record slices, or one buffer with record spans | Masked Gear predicate between complete records, subject to minimums and byte or record caps | Gear table, seed policy and salt, normalization, record-boundary rule, byte limits, record limits |
+| Byte (`ByteChunkerParams`) | One byte string | Masked Gear predicate after any byte, its state shifted left, subject to the minimum and the byte cap | Gear table, byte limits |
+| Typed (`TypedChunkerParams`) | Token count and residue at each admissible boundary | Pending count reaches the token cap, otherwise residue is divisible by kappa | Kappa and token cap |
+
+The typed scanner cuts only at reported events; a multi-token event can take the pending count past the cap. The cap takes precedence over the hash predicate, and a cut resets the count. One token per record with a power-of-two kappa gives the record-boundary rule used by `gandr-storage-records`.
+
+The Gear state shifts left by one for each byte, as the Gear hash of FastCDC does, so a cut far from an edit stays where it was. The build makes the unsalted Gear table at compile time from the first 256 outputs of `SplitMix64`. The seed of `SplitMix64` is the first sixty-four fractional bits of the square root of two. A public salt seeds the table from that value xored with the salt's fold, so a salted profile cuts at other places. Version 2 of the Gear names this step and this table, and a profile under version 1 is refused.
+
+### Parameter commitments
+
+A commitment opens with `gandr:storage-chunker:params:v1`, followed by an algorithm discriminator and that profile's fields. Every integer has a fixed width and little-endian encoding; the typed profile's kappa and token cap are both sixty-four bits. This framing distinguishes profiles without padding one profile with another's unused fields.
 
 ## Expected features
 
@@ -85,24 +101,6 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing mise exec -- 
 ```
 
 Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Const operations carry executable predicates; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
-
-## Three profiles
-
-The profiles admit different cut positions and commit only the fields they use.
-
-| Profile | Input | Cut rule | Parameters |
-| ------- | ----- | -------- | ---------- |
-| Record-safe (`ChunkerParams`) | Canonical record slices, or one buffer with record spans | Masked Gear predicate between complete records, subject to minimums and byte or record caps | Gear table, seed policy and salt, normalization, record-boundary rule, byte limits, record limits |
-| Byte (`ByteChunkerParams`) | One byte string | Masked Gear predicate after any byte, its state shifted left, subject to the minimum and the byte cap | Gear table, byte limits |
-| Typed (`TypedChunkerParams`) | Token count and residue at each admissible boundary | Pending count reaches the token cap, otherwise residue is divisible by kappa | Kappa and token cap |
-
-The typed scanner cuts only at reported events; a multi-token event can take the pending count past the cap. The cap takes precedence over the hash predicate, and a cut resets the count. One token per record with a power-of-two kappa gives the record-boundary rule used by `gandr-storage-records`.
-
-The Gear state shifts left by one for each byte, as the Gear hash of FastCDC does, so a cut far from an edit stays where it was. The build makes the unsalted Gear table at compile time from the first 256 outputs of `SplitMix64`. The seed of `SplitMix64` is the first sixty-four fractional bits of the square root of two. A public salt seeds the table from that value xored with the salt's fold, so a salted profile cuts at other places. Version 2 of the Gear names this step and this table, and a profile under version 1 is refused.
-
-## Parameter commitments
-
-A commitment opens with `gandr:storage-chunker:params:v1`, followed by an algorithm discriminator and that profile's fields. Every integer has a fixed width and little-endian encoding; the typed profile's kappa and token cap are both sixty-four bits. This framing distinguishes profiles without padding one profile with another's unused fields.
 
 ## License
 

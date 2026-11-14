@@ -30,6 +30,11 @@
 //! # References
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-build-state/README.md).
+//!
+//! # Dependencies
+//!
+//! `serde` and `serde_json` read Cargo's messages, with the features the root
+//! `Cargo.toml` records.
 
 pub mod error;
 pub mod join;

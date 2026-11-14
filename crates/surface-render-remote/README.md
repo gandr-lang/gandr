@@ -4,11 +4,11 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 **Why.** A highlighter, a checker's report and a session loop each produce something a terminal, a language server or an agent paints, and each renderer must read the same vocabulary or the renderers fork. Putting that vocabulary in a crate that parses, lowers, types and marks nothing lets every renderer link it without linking the pipeline, and lets the pipeline project into it once. The frame is the same vocabulary for a renderer in another process.
 
 **How.** Every type is owned data — strings, validated ranges and closed enums — so it crosses a thread channel as it is. The default-off `serde` feature derives a serde image for every type; the decode of a range and of a frame validates, so a decoded value holds every invariant a constructed one does. The character projection walks the text once per query; the line index records each row's start once and walks one row per query.
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that `visual` checks.
 
 ## Provided features
 
@@ -112,10 +116,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The derivation card | [`derivation`](src/derivation.rs) |
 | The frame | [`wire`](src/wire.rs) |
 | The warrant palette, the rendering data and the twenty rules | [`visual`](src/visual.rs) |
-
-## References
-
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that `visual` checks.
 
 ## License
 

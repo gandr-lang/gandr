@@ -4,11 +4,11 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,11 @@ The elaborator seam of the cell-rewriting stack: a levitated description's rules
 **Why.** A description states rules and the engines rewrite cells. Something has to decide which of a description's rules a cell store can hold, refuse the rest with a reason a reader can act on, and fix the cut each cell fires at; that is this crate, and it is the one place those decisions are made. A circuit rule whose body holds two redexes denotes a horizontal composite only where its two sequentializations are shift-equal, which is a question about two cells at two positions of one term, so it is asked at an application rather than at the declaration.
 
 **How.** Face elaboration is the sequent-machine flattening: an operation application cuts its first argument against the operation's frame, and a constructor wrapping an operation becomes a return-side frame on the continuation. Every walk is a loop or an explicit stack, so no term's depth reaches the call stack. Cells enter the store through one seam that refuses a copied hole, then a hole worn at both polarities. Instantiation reads its positions from the body's occurrence record, asks the shift guard, asks the caller's supply point where the store withholds its convexity discharge, fires both orders, and replays the witness before handing it back. Refusal is data: every decline is a typed value carried to the caller.
+
+## References
+
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — the term alphabet reads whether an image holds a hole, and the witnesses record their substitutions.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — the cells this crate elaborates carry each hole's occurrence count.
 
 ## Provided features
 
@@ -120,11 +125,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Instantiation and the convexity supply point | [`instantiate`](src/instantiate.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | The closed tier, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — the term alphabet reads whether an image holds a hole, and the witnesses record their substitutions.
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — the cells this crate elaborates carry each hole's occurrence count.
 
 ## License
 

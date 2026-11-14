@@ -128,6 +128,11 @@
 //! rotation unnecessary.
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-sweep/README.md).
+//!
+//! # Dependencies
+//!
+//! `blake3` ranks the sources; it is already in the build graph for content
+//! identities, with default features off.
 
 // Module documentation that predates the shape lint: 1 heading outside the
 // vocabulary, 1 decision record, 2 issue references and 2 budgets exceeded.

@@ -4,11 +4,11 @@ The code universe of gandr's levitated descriptions: codes, the declaration tabl
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ The code universe of gandr's levitated descriptions: codes, the declaration tabl
 **Why.** When a datatype's description is a first-class value, a generic operation over datatypes is an ordinary program over descriptions: structural equality, a canonical wire encoding and an inspectable rendering are written once and cover builtins and declared data alike, and the cell layer above reads one table for every declaration. Every former is finite syntax, a function former's domains symbolic types, so code equality is decidable, which content addressing and the matching-modulo engines key on; what a function former gives up is the equality of the values it describes, which `generic_eq` does not decide there. A levitated universe is also an inductive object a program can recurse over, which an open universe is not. The same holds for binding: a signature with restricted binders generates its own substitution calculus and its own evaluator, so a theory with binding is declared once rather than hand-written per theory.
 
 **How.** Every recursive datum — a code, a value-type reference, a free term, a payload — is one flat table in reverse pre-order with its root apart, each subtree a contiguous range carrying its node count; a borrowed node (`CodeNode`, `TermNode`, `PayloadNode`, `ValueTypeNode`) answers a view (`CodeView`, `TermView`, `PayloadView`, `ValueTypeView`) whose children are an iterator, so every walk is a loop and nothing recurses on the host stack. Circuit-rule derivation unfolds a wiring with an explicit stack, refusing a cycle and bounding the unfolded size by an explicit `CircuitNodeBudget`. Absence is a value: a lookup that can miss returns `Maybe` with a named reason, and a refusal is a typed error.
+
+## References
+
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a sort's index ranges over the host's types.
 
 ## Provided features
 

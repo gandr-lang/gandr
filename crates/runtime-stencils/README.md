@@ -9,7 +9,6 @@ The L machine's transitions written once: the stencils copy-and-patch emits, and
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [Mutation backlog](#mutation-backlog)
 - [License](#license)
 <!-- tocstop -->
 
@@ -56,9 +55,7 @@ cargo test -p gandr-runtime-stencils
 
 `src/lib.rs` states the registers, the holes, the call stencil, the authoring rules a stencil must keep, the agreement differential and the feature gates; `src/layout.rs` the header and the exit statuses; `src/transitions.rs` each stencil's transition; `src/holes.rs` the two definitions of every hole; `src/executor.rs` the dispatch table and the entries.
 
-## Mutation backlog
-
-A standalone campaign over this crate's first landing, restricted to `src/transitions.rs`, `src/holes.rs` and `src/layout.rs`, should mutate operand selection, field order in the constructor and frame stencils, the header shifts and masks, the match comparisons and the fuel decrement. Hypotheses: the agreement suite rejects a changed answer on either tier; the exit witnesses reject a moved limit or an unspent jump; the layout witnesses reject overlapping fields. No mutation score is claimed.
+The mutation campaign that this crate owes is a row of #510.
 
 ## License
 

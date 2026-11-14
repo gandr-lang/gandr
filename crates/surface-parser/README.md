@@ -4,11 +4,11 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,12 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 **Why.** An editor, a REPL and a batch checker all meet partial programs. A parser that stops at the first error gives each of them less than it has: no tree past the error, and one diagnostic where several independent gaps exist. A parser that completes every input with explicit, located, ranked material gives every consumer a whole tree and the full list of what the source still owes, and the batch checker reads "no obligations" as "well-formed".
 
 **How.** The labeler is a hand-written total scanner. The molder enumerates a token's candidate molds from the grammar's per-label menus, discards those the slope head cannot admit, and dry-runs the survivors inside a mark/rollback transaction, keeping the least obligation delta with a deterministic tie-break; a tie it breaks by the window of tokens after it (`tables`). The melder is the paper's first-order push machine: Shift, Reduce and Degrout over one slope of cells, with grout at the bottom of the precedence order so every push concludes, and every emission appended to a log that `commit` replays into an arena laid out by form.
+
+## References
+
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `flow` is reserved; `via` stays contextual.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `via` names a translation.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming molds as a definition.
 
 ## Provided features
 
@@ -90,12 +96,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Mid tiles, required tails, the committed tree, checkpoints, repair at the declaration boundary | [`meld`](src/meld.rs) |
 | The completion query is a bound | [`closing`](src/closing.rs) |
 | No recursion over input, the corpus, grammar contracts, specification evidence, references | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `flow` is reserved; `via` stays contextual.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: `via` names a translation.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a renaming molds as a definition.
 
 ## License
 

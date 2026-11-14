@@ -8,6 +8,19 @@
 //! binary alone. The binary `ledger` runs a [`LedgerTask`] for each of
 //! its five verbs, and the task files run the binary. The `ledger` module
 //! states how each ledger is built and checked.
+//!
+//! # Dependencies
+//!
+//! `gandr-surface-grammar`, `gandr-surface-parser`, `gandr-surface-syntax` and
+//! `gandr-surface-lowering` give the grammar, the molder and the lowering. Each
+//! task reads its rows and its exemplars with them. `gandr-surface-dispatcher`
+//! walks each mutant of the recovery sweep. `gandr-surface-corpus` reads the
+//! expectations of an exemplar. `gandr-surface-diagnostics` gives the
+//! identifier and the severity of each first error. `gandr-surface-features`
+//! reads the features ledger. `gandr-core-term` gives the arena for the terms
+//! of an exemplar. `gandr-theory-graphs` gives the bound that the decision
+//! analysis reads. `clap` reads the arguments. `serde_json` writes the machine
+//! form. The root `Cargo.toml` records the features of each.
 
 // Module documentation that predates the shape lint, moved with the `ledger`
 // module: 15 headings outside the vocabulary, 9 decision records, 4 issue

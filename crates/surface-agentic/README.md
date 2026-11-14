@@ -4,11 +4,11 @@ The agentic face of gandr's engine hub: the Reactive Agent Protocol's toolset fo
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -27,6 +27,13 @@ The `Toolset` acknowledges each invocation at once with a row in its store under
 `check`, `test`, `replay` and `run` are long operations, which the manifest offers and `tools/list` does not. Each runs as a job, on the hub's pool where it does work, and its result goes when the job ends: the verdict line that `gandr check` or `gandr test` prints with every line it prints as the display, the counts of a revision's admission by the kernel's warrant, or the line of a declaration's run. A run holds the lock of the workspace only to read what it runs, so an editor goes on while it runs. A revision newer than the one at the acknowledgement retires a `check`, a `test`, a `replay` or a `run` that reads the document, also when the edit comes before the job starts. The retired call names the document and its version. A cancel or a closed thread ends a job. With the `instrument` feature, each running job hears the activity of the hub's pool as a `view_update`.
 
 The Model Context Protocol stays for compatibility, and `gandr mcp` serves it on request. A runtime that proxies MCP servers reaches `gandr mcp` as any server. A runtime that speaks RAP reads the manifest directly and needs no proxy.
+
+## References
+
+- `vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8` — anchor: § agent-layer-stream: `subscribe_activity` hears the work ledger as it moves.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-stream: the activity card only appends, keyed by the sequence number.
+- `vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad` — anchor: the long operations of a toolset, acknowledged at once and answered by a callback, and the `view_update` of a running call.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan — the toolset's file of rows, with one writer and no lock.
 
 ## Provided features
 
@@ -81,13 +88,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The table of the subscriptions, its file and its resume | [`rap::subscriptions`](src/rap/subscriptions.rs) |
 | The work ledger of a subscription to the activity, its bound and its state in flight | [`rap::activity`](src/rap/activity.rs) |
 | The long operations, their jobs, their retirement and their views | [`rap::jobs`](src/rap/jobs.rs) |
-
-## References
-
-- `vault:01a1c6b9-f57a-73c2-b24a-a7b1663d22a8` — anchor: § agent-layer-stream: `subscribe_activity` hears the work ledger as it moves.
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-stream: the activity card only appends, keyed by the sequence number.
-- `vault:01a1c6b9-f57a-73c2-b24a-a7c22a34adad` — anchor: the long operations of a toolset, acknowledged at once and answered by a callback, and the `view_update` of a running call.
-- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan — the toolset's file of rows, with one writer and no lock.
 
 ## License
 

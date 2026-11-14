@@ -6,10 +6,7 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Levels and margins](#levels-and-margins)
-- [The lane a test is timed in](#the-lane-a-test-is-timed-in)
-- [The store](#the-store)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -28,6 +25,29 @@ nextest priority levels proposed from the per-test durations of recent merge-que
 - `Overrides::parse` reads the priority overrides whose filters are unions of `test(=NAME)` and `test(TEXT)` terms, and refuses any other filter by name.
 - `TimingError` names the file, command or configuration term behind every refusal.
 
+### Levels and margins
+
+| Priority | Boundary | Enters at or above | Leaves below |
+| -------: | -------: | -----------------: | -----------: |
+| 100 | 120 s | 150 s | 96 s |
+| 90 | 60 s | 75 s | 48 s |
+| 80 | 30 s | 37.5 s | 24 s |
+| 70 | 15 s | 18.75 s | 12 s |
+
+A test below a level enters it when its median reaches the boundary plus a quarter; a test at or above a level stays in it until its median falls below the boundary less a fifth. A median that wanders across a boundary between windows therefore leaves the level unchanged. A test proposed for no level runs at nextest's default of 0.
+
+The summary is the lower median, the sample at position ⌊(n − 1) / 2⌋ in ascending order: a time a run actually took, and over five runs it ignores the two slowest. A row whose slowest and fastest samples differ by more than half the median is marked `unsteady`, and its level is the reviewer's decision.
+
+The alternative was timing-balanced partitions generated from the same data; nextest's own partitioning is count- and hash-based, so balancing by time would mean generating filter expressions per shard. The priorities serve one runner; the choice reverses when the suite is sharded across runners.
+
+### The lane a test is timed in
+
+A test's priority applies in every lane, so it is chosen by the lane where the test takes longest: the enforcing lanes, where executable specifications run, are the critical path. A test name shared by two binaries takes the slower binary's summary, because nextest's `test()` filter matches the name in every binary.
+
+### The store
+
+Runs are stored under `target/test-timing`, one directory per run identifier. A download lands in a scratch directory and is renamed into place when complete, so an interrupted fetch leaves nothing a later report reads, and a stored run is never fetched again.
+
 ## Expected features
 
 `gh` on the path, authenticated for the repository, unless `--offline`. Runs older than the artifacts' retention cannot be fetched.
@@ -43,32 +63,9 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 
 A reviewer reads the table, replaces the priority-setting overrides in `.config/nextest.toml` with the accepted part of the generated tables, and commits the change with the report's run identifiers.
 
-## Levels and margins
+## Where the detail lives
 
-| Priority | Boundary | Enters at or above | Leaves below |
-| -------: | -------: | -----------------: | -----------: |
-| 100 | 120 s | 150 s | 96 s |
-| 90 | 60 s | 75 s | 48 s |
-| 80 | 30 s | 37.5 s | 24 s |
-| 70 | 15 s | 18.75 s | 12 s |
-
-A test below a level enters it when its median reaches the boundary plus a quarter; a test at or above a level stays in it until its median falls below the boundary less a fifth. A median that wanders across a boundary between windows therefore leaves the level unchanged. A test proposed for no level runs at nextest's default of 0.
-
-The summary is the lower median, the sample at position ⌊(n − 1) / 2⌋ in ascending order: a time a run actually took, and over five runs it ignores the two slowest. A row whose slowest and fastest samples differ by more than half the median is marked `unsteady`, and its level is the reviewer's decision.
-
-The alternative was timing-balanced partitions generated from the same data; nextest's own partitioning is count- and hash-based, so balancing by time would mean generating filter expressions per shard. The priorities serve one runner; the choice reverses when the suite is sharded across runners.
-
-## The lane a test is timed in
-
-A test's priority applies in every lane, so it is chosen by the lane where the test takes longest: the enforcing lanes, where executable specifications run, are the critical path. A test name shared by two binaries takes the slower binary's summary, because nextest's `test()` filter matches the name in every binary.
-
-## The store
-
-Runs are stored under `target/test-timing`, one directory per run identifier. A download lands in a scratch directory and is renamed into place when complete, so an interrupted fetch leaves nothing a later report reads, and a stored run is never fetched again.
-
-## Dependencies
-
-`gandr-workflow-github` runs every `gh` invocation and names the one that failed. Its `read` runs the run listing and each download again past a transient server error. `roxmltree` reads the reports: a read-only tree with no unsafe code and no published advisory, chosen over `quick-xml`, which carries two advisories from 2026. `toml` reads the nextest configuration. Both keep their default features off; the root `Cargo.toml` records each enabled feature and its reason.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

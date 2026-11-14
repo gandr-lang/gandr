@@ -4,10 +4,10 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,19 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 **Why.** The record, its rewriting and its refusals name no module of the judgement, and the judgement names each of them. So the record compiles first, and an edit of the judgement does not rebuild it.
 
 **How.** `gandr-kernel-core` imports each module of this crate under its old name and re-exports each path that a consumer names today; [`src/lib.rs`](src/lib.rs) lists the modules. The judgement's build script writes the build identity, and the judgement passes it as a `BuildIdentity` to each derivation of a key, so a key binds the files of both crates. The tests that admit through `Environment` are tests of `gandr-kernel-core`.
+
+## References
+
+- `Grodin-2026-potential_functions_types` — background: Grodin and coauthors, 2026 — amortised cost.
+- `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
+- `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: content addressing as strictified descent (§ storage-conjecture-chunk-descent) — a record's name is its key up to an identification, with the identification as a parameter; `RecordName` takes `Exact`, the identity on content.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `encoding` and `support` name the items each takes.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
+- `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: the storage metatheory programme (§ storage-programme-gluing) — an admission recalls its verdict by its entry key alone, and no key names a place in the admission order.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance programme (§ performance-picture) — a worker's steady state allocates nothing from the global allocator, and the form or the host derives each bound; `RewriteKey` holds its words inline at the bound that its form gives.
 
 ## Provided features
 
@@ -54,19 +67,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Verdict keys and receipts | [`verdict`](src/verdict.rs) |
 | Levels, presented spaces, seals and theory rules | [`levels`](src/levels.rs), [`presented`](src/presented.rs), [`seal`](src/seal.rs), [`theory_rules`](src/theory_rules.rs) |
 | Fixtures | [`fixture`](src/fixture.rs), [`generated`](src/generated.rs) |
-
-## References
-
-- `Grodin-2026-potential_functions_types` — background: Grodin and coauthors, 2026 — amortised cost.
-- `vault:01a05203-4468-7931-8246-761a8f853a27` — lineage: the incremental memoization results (§ successor-synthesized-context) — the memo records an entry by the context its judgement synthesized.
-- `vault:01a12317-453f-7980-9c86-68f75917f3a6` — lineage: the bicontextual core (§ bicontextual-judgement, § codebruijn-carrier, § footprint-from-support) — the judgement returns the binders it read as its output.
-- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — anchor: content addressing as strictified descent (§ storage-conjecture-chunk-descent) — a record's name is its key up to an identification, with the identification as a parameter; `RecordName` takes `Exact`, the identity on content.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `encoding` and `support` name the items each takes.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — keys, receipts and the re-check.
-- `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
-- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: the storage metatheory programme (§ storage-programme-gluing) — an admission recalls its verdict by its entry key alone, and no key names a place in the admission order.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
-- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance programme (§ performance-picture) — a worker's steady state allocates nothing from the global allocator, and the form or the host derives each bound; `RewriteKey` holds its words inline at the bound that its form gives.
 
 ## License
 

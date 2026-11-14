@@ -9,7 +9,6 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [Mutation backlog](#mutation-backlog)
 - [License](#license)
 <!-- tocstop -->
 
@@ -74,9 +73,7 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test corpus/model
 
 `src/budget.rs` states the jump budget of a run and its origin.
 
-## Mutation backlog
-
-A standalone campaign over this crate's first landing should mutate the patch arithmetic in `src/native/aarch64.rs` and `src/native/x86_64.rs` (page offsets, displacements, addends, reach checks), the lowering's slot and label assignment, and the transfer's field order and capture binding. Hypotheses: the agreement suites reject a changed answer or a crash on either tier; the build script's refusals reject an unpatchable relocation. No mutation score is claimed.
+The mutation campaign that this crate owes is a row of #510.
 
 ## License
 

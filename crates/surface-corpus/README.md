@@ -4,13 +4,13 @@ The expectation language over a lowered module and its verdicts — the nine cla
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
+  - [Writing to the corpus](#writing-to-the-corpus)
+  - [Comments](#comments)
 - [Examples](#examples)
-- [Writing to the corpus](#writing-to-the-corpus)
-- [Comments](#comments)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -21,6 +21,18 @@ The expectation language over a lowered module and its verdicts — the nine cla
 **Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its refinements, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
 **How.** `settle` reads each declared name's attributes off the lowering's side table and walks the declarations in admission order beside the checker's verdicts. A stated run goes through the caller's `Runner`, a stated normal form through `LoweredModule::normal_form`. One equality decides each declaration, and the tally counts it once.
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
+- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design (§ layouts-semantic-abi) — the clauses `BoundaryClause` names.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a port at a `Type[-]` sort.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `NotATranslation`, a `via` riding no flow.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a `via` naming no flow is a malformed source.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a flow's code is demanded by a `via` alone.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each a malformed source.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-quantities-probability) — the exact discrete semantics of a probability effect, which `distributed` settles.
+- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: data owns rules.
 
 ## Provided features
 
@@ -40,13 +52,7 @@ The expectation language over a lowered module and its verdicts — the nine cla
 - **The module's own verdicts.** The caller supplies the checker's report for exactly the declarations the lowering did not refuse, in admission order; `settle` refuses a missing, shifted or surplus one by position.
 - **`alloc`.** The crate is `no_std` with `alloc`, and does no I/O, no file walking and no process exit.
 
-## Examples
-
-The crate-level doctest (`src/lib.rs`, § Example) is the example.
-
-The control subjects write cases that are hard in other languages as gandr writes them. The table of the subjects, with the languages each one compares, is in [`root`](src/root.rs) § The corpus.
-
-## Writing to the corpus
+### Writing to the corpus
 
 The corpus is a proof library and a test suite at once, and it grows by subject, not by accretion (#435). A change that adds a source or an item is held to these rules in review.
 
@@ -62,7 +68,7 @@ The corpus is a proof library and a test suite at once, and it grows by subject,
 
 The test suite follows the same shape: one witness per behaviour, in the crate that owns it, named as the sentence it proves; a corpus-wide property is a `sweeps` module test, and nothing else walks the corpus; a setup two crates share is one function called twice; a duplicate witness is deleted when found and the survivor named in the commit.
 
-## Comments
+### Comments
 
 Write as ASD-STE100 writes. Use short sentences, one topic a paragraph, the active voice and the present tense. Keep the technical vocabulary free.
 
@@ -73,6 +79,12 @@ An item comment holds at most two sentences, and a third when it states a limit.
 A comment answers to its reader, not to an earlier text. Keep each claim that a reader of the example needs and that the code does not state: a trust boundary, a limit, a departure from the cited work, an effect the example relies on, the reason for a choice. Drop a claim that restates the code, and detail that makes the example harder to follow. An earlier text can say too much. When a cause and its effect become two sentences, the second opens with `So`. A rewrite says in its pull request what it drops, and why.
 
 `check:prose` reads these rules. Two sources under higher cells and desc show the shape.
+
+## Examples
+
+The crate-level doctest (`src/lib.rs`, § Example) is the example.
+
+The control subjects write cases that are hard in other languages as gandr writes them. The table of the subjects, with the languages each one compares, is in [`root`](src/root.rs) § The corpus.
 
 ## Where the detail lives
 
@@ -88,18 +100,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Membership, the corpus directories, the control subjects, one walk, the pending set, the sketch set | [`root`](src/root.rs) |
 | The kernel export suite | [`kernel_export`](src/kernel_export.rs) |
 | A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments.rs) |
-
-## References
-
-- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
-- `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the layouts design (§ layouts-semantic-abi) — the clauses `BoundaryClause` names.
-- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ The declaration) — a port at a `Type[-]` sort.
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — background: `NotATranslation`, a `via` riding no flow.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — background: a `via` naming no flow is a malformed source.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: a flow's code is demanded by a `via` alone.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the composite's three refusals, each a malformed source.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-quantities-probability) — the exact discrete semantics of a probability effect, which `distributed` settles.
-- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: data owns rules.
 
 ## License
 

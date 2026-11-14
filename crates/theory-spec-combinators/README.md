@@ -3,14 +3,12 @@
 The bounded checks a specification clause makes of state its function has accumulated.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
+  - [Clause cost](#clause-cost)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Clause cost](#clause-cost)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -28,6 +26,10 @@ The bounded checks a specification clause makes of state its function has accumu
 - `pushed(items, mark, value)`: whether `items` is exactly one element longer than `mark` and ends with `value`.
 - `sorted_around(items, at)`: whether the element at `at` is greater than the one before it and less than the one after it.
 - `Holds`: a combinator's answer, read with `bool::from`.
+
+### Clause cost
+
+Each combinator's bound is a property its tests check over every length up to 256: `appended` compares no element, `pushed` at most one, `sorted_around` at most two. The claims are separated from the nearest wrong claim by boundary inputs: `pushed` refuses the expected last element after two pushes, `sorted_around` holds of a sequence that is out of order away from the insertion point.
 
 ## Expected features
 
@@ -63,10 +65,6 @@ Run the tests, then the enforcing twin with every specification checked:
 cargo nextest run -p gandr-theory-spec-combinators
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-spec-combinators
 ```
-
-## Clause cost
-
-Each combinator's bound is a property its tests check over every length up to 256: `appended` compares no element, `pushed` at most one, `sorted_around` at most two. The claims are separated from the nearest wrong claim by boundary inputs: `pushed` refuses the expected last element after two pushes, `sorted_around` holds of a sequence that is out of order away from the insertion point.
 
 ## License
 

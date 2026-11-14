@@ -4,10 +4,10 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,23 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 **Why.** The lowering is the longest crate in the build of the driver. A part that reads nothing of the lowering compiles in a crate of its own, before the lowering and beside its code generation. Each later split of the lowering adds its parts here or in a family crate over this one.
 
 **How.** Each module states its mechanism and its decisions in its rustdoc. A witness of an item is a test of this crate, or a test of `gandr-surface-lowering` spelled with that package's name, where the case lowers a source. The integration target takes `gandr-surface-lowering` as a dev-dependency, its `fixture` feature on, so a case can lower a unit over this crate's items. The `fixture` feature opens the test fixtures to the tests of `gandr-surface-lowering`.
+
+## References
+
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. A crate boundary encloses a strongly connected component of the module graph, so the base takes the lowering's tables, refusals, descriptions and module pass whole.
+- `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — a scope's subject normalises by its theory's laws.
+- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — lineage: the theories design — a model meets the laws it owes by conversion or by certificate, so a law applying a value operation is the model's to state.
+- `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
+- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
+- `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
+- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
+- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
 
 ## Provided features
 
@@ -60,23 +77,6 @@ The base of gandr's lowering: the parts of `gandr-surface-lowering` that read no
 | The records the module pass and the lowering share | [`lower::exits`](src/lower/exits.rs), [`lower::runs`](src/lower/runs.rs) |
 | A theory read as a capability's interface, and the refusal of a `cells` node | [`lower::capability::theory`](src/lower/capability/theory.rs), [`lower::cells`](src/lower/cells.rs) |
 | The lowering's context and the types of its fields | [`lower::context`](src/lower/context.rs), [`lower`](src/lower.rs), [`lower::native`](src/lower/native.rs), [`lower::capability`](src/lower/capability.rs), [`lower::identity`](src/lower/identity.rs), [`lower::model`](src/lower/model.rs) and the other modules of [`lower`](src/lower.rs) |
-
-## References
-
-- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. A crate boundary encloses a strongly connected component of the module graph, so the base takes the lowering's tables, refusals, descriptions and module pass whole.
-- `vault:01a178aa-61bf-70f2-a24f-b3a69dfcd199` — newest: a merge on a marked wire is a spider.
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
-- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
-- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — a scope's subject normalises by its theory's laws.
-- `vault:01a14daa-a317-7d92-bd17-3f20e87634cd` — lineage: the theories design — a model meets the laws it owes by conversion or by certificate, so a law applying a value operation is the model's to state.
-- `vault:01a178aa-e578-7e31-8903-9f223de2dd91` — anchor: the ornaments design — a mutual block reads as one description.
-- `vault:01a178aa-aa31-70c2-bdff-7d4f48020c0a` — anchor: the data design — a sibling field is a recursive occurrence.
-- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the implicit-arguments design — a telescope on no function is malformed source.
-- `vault:01a178aa-a7bd-7d03-a728-feae5af9d1a8` — background: the foreign-calls design — an extern block is an effect interface.
-- `vault:01a178aa-9a6d-7c20-a9c5-131d35beda06` — lineage: a flow is a functor, and `via` its application.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — lineage: a flow is named, never found.
-- `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — lineage: a renaming mints no constant.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the face cover reads the meet of two faces from a graded poset of the faces of a record type.
 
 ## License
 

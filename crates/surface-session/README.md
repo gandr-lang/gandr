@@ -4,11 +4,11 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,15 @@ The interactive session: each revision of one source lowered, judged exactly as 
 **Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
 
 **How.** `judge` parses the revision through the session's form store, which molds only the top-level forms whose identity it does not hold, then calls the dispatcher's `lower_parsed`, then the dispatcher's `judge` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena, and keeps the dispatcher's `Admission` for `admit`. A whole-revision refusal is `Composed::Refused`: it retains the accepted resume, imports, and snapshot but advances the lowering-attempt count. Checkpoints use `CheckpointStore`; a store failure becomes `Persistence::Failed` when a resume remains available, otherwise `SessionFault::Store`. `Persistence` and `KernelCheckpoint` state how a block-store refusal and a store that keeps nothing are carried.
+
+## References
+
+- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing format's one table per artifact, which `Admitted`'s positions index.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, Example 1.4 and § 6.
+- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps its node across an edit while its stratum, pasting and cell count hold.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel re-assessment (§ kernel-reassessment-design item 9), each declaration's kernel tier, which `Session::account` hands to the editor.
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the engine-surface blueprint, § engine-surface-layers, which decides the one sink, the silent sink, the `instrument` feature and the choice of sink for each recheck.
 
 ## Provided features
 
@@ -94,15 +103,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Edits as a diff of the lowered core, native snapshots, localization | [`edit`](src/edit.rs) |
 | A declaration's type and documentation | [`typed`](src/typed.rs) |
 | Live match checkpoints | [`live_match`](src/live_match.rs) |
-
-## References
-
-- `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the sharing format's one table per artifact, which `Admitted`'s positions index.
-- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, Example 1.4 and § 6.
-- `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite keeps its node across an edit while its stratum, pasting and cell count hold.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: the core and kernel re-assessment (§ kernel-reassessment-design item 9), each declaration's kernel tier, which `Session::account` hands to the editor.
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the engine-surface blueprint, § engine-surface-layers, which decides the one sink, the silent sink, the `instrument` feature and the choice of sink for each recheck.
 
 ## License
 

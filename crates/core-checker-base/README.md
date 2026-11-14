@@ -4,10 +4,10 @@ The base of the core checking judgement. It gives one verdict for each name-free
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,23 @@ The base of the core checking judgement. It gives one verdict for each name-free
 **Why.** A frontend needs stable per-declaration verdicts that distinguish what the author owes from what is wrong. The judgement and the module run read the context's private state, so they share one crate.
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`, one for a value goal met again; [`src/lib.rs`](src/lib.rs) states its shape and the boundary each module owns. The witnesses of an item are tests of this crate, or tests of a crate over it named with that crate's package. The integration target takes the bridge and the top as dev-dependencies, so a case can judge a module and readmit it. The `fixture` feature opens the test fixtures to the tests of the bridge and the top.
+
+## References
+
+- `Cockx-2018-elaborating_dependent_copattern_matching` — exemplar: Cockx and Abel, _ICFP_, 2018 — the solution step.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's sphere eliminator, in `loops`.
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: separation at a fork, its halves sharing an interface only to read it.
+- `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule reads its type at its weak head.
+- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a certified stratum persists in the store.
+- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a recalled stratum is believed only once it is replayed.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 2 of the performance picture — a value that the contexts of a process share is frozen.
+- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
+- `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
+- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
+- `vault:01a1b567-b34b-77a2-9ace-075796f0eb3e` — exemplar: Hancock and Hyvernat, _APAL_, 2006 — a loop that follows its protocol is a demonic iteration.
+- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the ∃! rule — a refusal names the slot or every candidate.
+- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, Strathclyde, 2024 — graded access at `{0, 1, ω}`.
 
 ## Provided features
 
@@ -85,23 +102,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Nominal data | [`former`](src/former.rs) |
 | Accessibility, stage typing, derived eliminators, divergence | [`occurrence`](src/occurrence.rs), [`recursion`](src/recursion.rs), [`eliminator`](src/eliminator.rs), [`divergence`](src/divergence.rs) |
 | The experimental stage universe | [`stage`](src/stage.rs) |
-
-## References
-
-- `Cockx-2018-elaborating_dependent_copattern_matching` — exemplar: Cockx and Abel, _ICFP_, 2018 — the solution step.
-- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's sphere eliminator, in `loops`.
-- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: separation at a fork, its halves sharing an interface only to read it.
-- `vault:01a12318-1fa4-7ce3-a8cd-541363ad6ed4` — exemplar: a former's rule reads its type at its weak head.
-- `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a certified stratum persists in the store.
-- `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a recalled stratum is believed only once it is replayed.
-- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 2 of the performance picture — a value that the contexts of a process share is frozen.
-- `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
-- `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
-- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
-- `vault:01a1b567-b34b-77a2-9ace-075796f0eb3e` — exemplar: Hancock and Hyvernat, _APAL_, 2006 — a loop that follows its protocol is a demonic iteration.
-- `vault:01a178aa-b5ea-75c1-8677-c85c447790b4` — anchor: the ∃! rule — a refusal names the slot or every candidate.
-- `Wood-2024-framework_semiringannotated_type_systems` — newest: Wood, PhD thesis, Strathclyde, 2024 — graded access at `{0, 1, ω}`.
 
 ## License
 

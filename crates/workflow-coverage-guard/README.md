@@ -6,7 +6,7 @@ Main's nightly coverage upload against the one before it, filed on one issue whe
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -36,9 +36,9 @@ mise run ci:coverage-guard --repository gandr-lang/gandr --sha "$(git rev-parse 
 cargo nextest run -p gandr-workflow-coverage-guard
 ```
 
-## Dependencies
+## Where the detail lives
 
-`gandr-workflow-github` runs every `gh` invocation and names the one that failed. Its `read` runs the issue listing again past a transient server error; a write runs once. `serde` and `serde_json` read Codecov's answers and `gh`'s issue listing, with the features the root `Cargo.toml` records.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

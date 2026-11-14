@@ -2,6 +2,16 @@
 
 Coherent resolution of a cell rewriting system. A cell fires under the alphabet's discipline, and normalization runs within a budget. The multi-sum overlap enumerator lists the critical pairs with their support relation. The crate can replay each coherence certificate. Knuth–Bendix and Squier completion runs within a budget and declines with a report. The crate also holds the bar complex of the Lawvere theory that a first-order block presents, and Brown's collapsing scheme on that complex.
 
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [License](#license)
+<!-- tocstop -->
+
 Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces them by the 4-cells of the critical triples. The bar complex is a chain complex over the integers alone, and #5962 owes the cells above the triples.
 
 <!-- toc -->
@@ -50,7 +60,7 @@ Each certificate is a 3-cell of a coherent presentation, and `Basis` reduces the
 - `LawvereTheory`, `TermTable`, `TermNode`, `TermHead`, `root_rewrite`: the Lawvere theory of a first-order block that the caller states, with its terms interned once and its normal forms innermost first within a `NormalizationBudget`.
 - `BarCell`, `Arrow`, `Degeneracy`, `BarBound`, `Truncation`, `truncated`, `LawvereError`: the bar complex of that theory as a `Complex` of `gandr-theory-discrete-morse`, which states the faces of a cell when a caller asks, and the largest subcomplex inside a bound.
 - `Scheme` for `LawvereTheory`, `LawvereTheory::overlapping`, `overlapped`, `TermTable::generator`: Brown's collapsing scheme on that bar complex as a `Scheme` of `gandr-theory-discrete-morse`, along the leftmost innermost redex, and the second rule of each essential overlap.
-- The boundary wrappers (`NormalizationBudget`, `CompletionStepBudget`, `CompletionCellBudget`, `CertificateIndex`, `TripleIndex`, `BatchIndex`, `OverlapIndex`, `PairDecisions`, `StepPlace`, `MovePlace`, `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`, `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`, `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences`, `BarDegree`): every budget, index and verdict a signature here crosses.
+- The boundary wrappers: every budget, index and verdict that a signature here crosses, which [`src/lib.rs`](src/lib.rs) § Boundaries names.
 
 ## Expected features
 

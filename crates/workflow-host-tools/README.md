@@ -6,7 +6,7 @@ Some tools of `mise.toml` publish no binary for the target of a host of ours. A 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -40,9 +40,9 @@ mise run tools:check
 cargo nextest run -p gandr-workflow-host-tools
 ```
 
-## Dependencies
+## Where the detail lives
 
-`serde` and `toml` read the table, the lock and the configuration. `serde_json` reads mise's listing of a checkout's tools. `clap` reads the invocation. The root `Cargo.toml` records their features.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

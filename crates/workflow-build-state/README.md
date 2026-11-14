@@ -6,7 +6,7 @@ The `build-state` binary prunes a Cargo profile directory to the units the recor
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -43,9 +43,9 @@ build-state join --profile-dir target/enforcing/debug shards/*/target/enforcing/
 cargo nextest run -p gandr-workflow-build-state
 ```
 
-## Dependencies
+## Where the detail lives
 
-`serde` and `serde_json` read Cargo's messages, with the features the root `Cargo.toml` records.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

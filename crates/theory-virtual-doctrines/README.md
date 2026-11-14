@@ -3,18 +3,16 @@
 Virtual double categories, reflected judgments and directed laws over replayable rewriting evidence.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
+  - [Reflection and replay](#reflection-and-replay)
+  - [Flat syntax and borrowed checking](#flat-syntax-and-borrowed-checking)
+  - [Directed and finite laws](#directed-and-finite-laws)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Reflection and replay](#reflection-and-replay)
-- [Flat syntax and borrowed checking](#flat-syntax-and-borrowed-checking)
-- [Directed and finite laws](#directed-and-finite-laws)
-- [Law witnesses](#law-witnesses)
+  - [Law witnesses](#law-witnesses)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -39,6 +37,32 @@ Virtual double categories, reflected judgments and directed laws over replayable
 - `Query`: budgeted rewrite paths, path folds, overlap-indexed seam families, confluence candidates and relation tabulators.
 - `IsoWitness` and `ProtypeIso`: paired certificate witnesses whose two round trips are checked by engine replay.
 - Directed contexts, directed hom and restricted J, finite discrete ends and coends, Fubini, co-Yoneda and metadata-sensitive directed cut.
+
+### Reflection and replay
+
+A relation names generating cells and remembers its two restriction frames. Tight composition is canonical renaming composition; restriction composes the frames in the split order. Cell equality compares the loose-arrow boundaries and then the engine transformations by replay, not by certificate allocation or syntax identity.
+
+Elaboration admits identities, certificate leaves and sequential grafts with an agreeing seam. A graft with multiple nontrivial parallel inputs, or a broken sequential seam, yields `Elaborated::Stuck`. This is the supported interpretation of the derivation grammar, not an arbitrary choice of a parallel composite.
+
+A certificate judgment requires a path or relation protype, a bound derivation and successful replay. It does not translate a reflected `TermRef` endpoint into a command pattern or claim that the recorded engine endpoints equal the reflected endpoints: those are distinct representations. Isomorphism validity separately checks both replaying round trips to identity.
+
+- **Alternatives.** Structural equality of certificates confuses different replay-equivalent witnesses; endpoint equality alone admits fabricated paths. A second matcher in the reflection would duplicate the engine's semantics.
+- **Reversal.** A shared, checked interpretation of reflected faces into engine commands can strengthen the certificate judgment with endpoint agreement. A different identity criterion requires corresponding replacement laws, rather than a silent change to replay equivalence.
+
+### Flat syntax and borrowed checking
+
+Every recursive syntax value is one flat tree, and every traversal uses an explicit worklist. Borrowed node views let checking compare protypes and signatures without cloning the successful judgment. Scope entries point to their parent binding, so an extension's local hypothesis neither leaks to a sibling nor destroys an outer binding when shadowed. Certificate leaves elaborate by borrowing their stored evidence; composition owns only the certificate it constructs.
+
+- **Alternatives.** Recursively boxed syntax moves depth-sensitive work into traversal and destruction. Cloning the hypothesis environment at every lambda and cloning expected protypes at every child makes successful checking allocate in proportion to repeated subtree size.
+- **Reversal.** A measured cost from concatenating flat tables during construction can justify a shared arena, provided structural equality, borrowed checking and bounded-stack destruction remain observable contracts.
+
+### Directed and finite laws
+
+An object variable has one directed variance. Engine producer and consumer metadata select the corresponding variance; a mixed hole cannot be assigned either one. Context lookup observes the innermost binding. Directed J accepts a covariant-target or constant motive and refuses the contravariant-source motive, including the proposed symmetry operation.
+
+Ends and coends are products and coproducts over explicitly enumerated discrete carriers. Fubini swaps both carrier coordinates while preserving each payload. Co-Yoneda selects the first diagonal component and reports a named absence off the carrier. These operations do not assert naturality over non-discrete morphisms.
+
+Directed cut reads every participating cell's current metadata. Entirely invertible evidence uses unconditional composition. Otherwise the decomposition-space engine decides the variable-flow obstruction. The law suite includes store-mediated reconvergence and a dropped seam hole: pairwise overlap data alone does not determine that verdict.
 
 ## Expected features
 
@@ -73,33 +97,7 @@ cargo nextest run -p gandr-theory-virtual-doctrines
 RUSTFLAGS='--cfg anodized_panic' CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-theory-virtual-doctrines
 ```
 
-## Reflection and replay
-
-A relation names generating cells and remembers its two restriction frames. Tight composition is canonical renaming composition; restriction composes the frames in the split order. Cell equality compares the loose-arrow boundaries and then the engine transformations by replay, not by certificate allocation or syntax identity.
-
-Elaboration admits identities, certificate leaves and sequential grafts with an agreeing seam. A graft with multiple nontrivial parallel inputs, or a broken sequential seam, yields `Elaborated::Stuck`. This is the supported interpretation of the derivation grammar, not an arbitrary choice of a parallel composite.
-
-A certificate judgment requires a path or relation protype, a bound derivation and successful replay. It does not translate a reflected `TermRef` endpoint into a command pattern or claim that the recorded engine endpoints equal the reflected endpoints: those are distinct representations. Isomorphism validity separately checks both replaying round trips to identity.
-
-- **Alternatives.** Structural equality of certificates confuses different replay-equivalent witnesses; endpoint equality alone admits fabricated paths. A second matcher in the reflection would duplicate the engine's semantics.
-- **Reversal.** A shared, checked interpretation of reflected faces into engine commands can strengthen the certificate judgment with endpoint agreement. A different identity criterion requires corresponding replacement laws, rather than a silent change to replay equivalence.
-
-## Flat syntax and borrowed checking
-
-Every recursive syntax value is one flat tree, and every traversal uses an explicit worklist. Borrowed node views let checking compare protypes and signatures without cloning the successful judgment. Scope entries point to their parent binding, so an extension's local hypothesis neither leaks to a sibling nor destroys an outer binding when shadowed. Certificate leaves elaborate by borrowing their stored evidence; composition owns only the certificate it constructs.
-
-- **Alternatives.** Recursively boxed syntax moves depth-sensitive work into traversal and destruction. Cloning the hypothesis environment at every lambda and cloning expected protypes at every child makes successful checking allocate in proportion to repeated subtree size.
-- **Reversal.** A measured cost from concatenating flat tables during construction can justify a shared arena, provided structural equality, borrowed checking and bounded-stack destruction remain observable contracts.
-
-## Directed and finite laws
-
-An object variable has one directed variance. Engine producer and consumer metadata select the corresponding variance; a mixed hole cannot be assigned either one. Context lookup observes the innermost binding. Directed J accepts a covariant-target or constant motive and refuses the contravariant-source motive, including the proposed symmetry operation.
-
-Ends and coends are products and coproducts over explicitly enumerated discrete carriers. Fubini swaps both carrier coordinates while preserving each payload. Co-Yoneda selects the first diagonal component and reports a named absence off the carrier. These operations do not assert naturality over non-discrete morphisms.
-
-Directed cut reads every participating cell's current metadata. Entirely invertible evidence uses unconditional composition. Otherwise the decomposition-space engine decides the variable-flow obstruction. The law suite includes store-mediated reconvergence and a dropped seam hole: pairwise overlap data alone does not determine that verdict.
-
-## Law witnesses
+### Law witnesses
 
 The integration target exercises the public surface rather than a second reflection implementation. Its named suites cover tight composition, split restriction, grafting, cartesian obligations, formation and judgment boundaries, query faces, isomorphism replay, directed laws and overlap-indexed composition and confluence factorization.
 

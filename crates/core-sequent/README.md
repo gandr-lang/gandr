@@ -4,11 +4,11 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,19 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 **Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit as a cut whose two sides say what is sent where. The L machine's transitions step that structure directly, cell rules reify into it, and effect handlers walk its frames without inspecting opaque host closures.
 
 **How.** Every node is minted only over children the arena already holds, so the arena is acyclic by construction, and a `SequentWatermark` with `CommandArena::truncate_to` drops exactly what a refused build minted. Binders count outward, producers and covariables in separate index spaces, so equal inputs build identical nodes and no translation keeps a name supply. Each node's scope, its co-de Bruijn support, is built at mint and stored beside it, never walked (`src/il.rs`); readback reads the store in address order (`src/readback.rs`).
+
+## References
+
+- `Sullivan-2023-reflections_closures` — lineage: Zachary J. Sullivan, "Reflections of Closures", PhD thesis, University of Oregon, 2023, ch. 4 — the abstract closure, its β and the one-variable conversion rule.
+- `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
+- `vault:01a183de-4e71-7f03-aa71-7821123f3c40` — exemplar: Espírito Santo, Kesner and Peyrot, the distant β of λJn (2024) — a closure at the end of a bind chain enters at the hole, and the frame's continuation stays outside the chain.
+- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey et al., PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — the store as the LAM the runtime's value representation is specified against.
+- `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
+- `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
+- `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a free variable's value and the spine it grew.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite focuses as its fold.
 
 ## Provided features
 
@@ -127,19 +140,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The differential against normalisation by evaluation, references | [`src/lib.rs`](src/lib.rs) |
 
 Running a command is `gandr-runtime-emitter`'s: `src/lower.rs` states the linear form and `src/host.rs` the control.
-
-## References
-
-- `Sullivan-2023-reflections_closures` — lineage: Zachary J. Sullivan, "Reflections of Closures", PhD thesis, University of Oregon, 2023, ch. 4 — the abstract closure, its β and the one-variable conversion rule.
-- `Sullivan-2023-closure_conversion_little_pieces` — lineage: Sullivan, Downen and Ariola, "Closure Conversion in Little Pieces", PPDP 2023, `doi:10.1145/3610612.3610622` — conversion as equalities local to the IL.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design item 4) — abstract closures in the sequent IL.
-- `vault:01a183de-4e71-7f03-aa71-7821123f3c40` — exemplar: Espírito Santo, Kesner and Peyrot, the distant β of λJn (2024) — a closure at the end of a bind chain enters at the hole, and the frame's continuation stays outside the chain.
-- `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Rainey et al., PACMPL 10 (ICFP) 290, 2026, `doi:10.1145/3828688` — the LAM the `Store` is.
-- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — lineage: the storage programme's memory-model reading (§ storage-programme-memory-model-reading) — the store as the LAM the runtime's value representation is specified against.
-- `vault:01a178aa-608d-75d0-8f71-e6fe4289f327` — lineage: the compiled runtime programme — the representation this store states.
-- `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — lineage: the futures design (§ futures-in-gandr item 1) — a cut whose writer performs no operation is independent, so focus records each bind's writer and the arena marks its binder.
-- `vault:01a1813c-69c4-7402-97c9-fd16b5893f9f` — exemplar: Courant's `ACCU` (ch. 10) — a free variable's value and the spine it grew.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite focuses as its fold.
 
 ## License
 

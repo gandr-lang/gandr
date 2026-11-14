@@ -7,7 +7,6 @@ The record plane under the C-set discipline: a schema of objects, total arrows, 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Measurement](#measurement)
 - [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
@@ -70,7 +69,7 @@ assert_eq!(answer, Answer::Preimage(Box::from([joined])));
 # Ok::<(), gandr_storage_schema::StoreError>(())
 ```
 
-## Measurement
+### Measurement
 
 `cargo bench -p gandr-storage-schema` times a store of 6400 parts — a cycle of 3200 vertices and 3200 edges, both arrows indexed — as the mean of one million operations on one x86-64 desktop:
 

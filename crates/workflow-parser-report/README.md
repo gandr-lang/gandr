@@ -6,7 +6,7 @@ The parser's report reads today's grammar on each axis that a syntax candidate t
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -15,7 +15,7 @@ The parser's report reads today's grammar on each axis that a syntax candidate t
 
 **Why.** A comparison sets each syntax candidate against today's grammar on these axes. The report gives the numbers of today's grammar, so that a candidate has a stated base.
 
-**How.** The binary molds the corpus that `gandr-workflow-sweep` lists, and it counts the decisions of the molder. It types sample sources into a language-server session through the client of the driver's benchmark report. It reads the recovery sweep of `gandr-workflow-ledger-tasks`.
+**How.** The binary molds the corpus that `gandr-workflow-sweep` lists, and it counts the decisions of the molder. It types sample sources into a language-server session through the client of the driver's benchmark report. It reads the recovery sweep of `gandr-workflow-ledger-tasks`. Each dependency is a crate of this workspace or is already in the build graph. Each is optional, and the `census` feature turns all of them on with the binary.
 
 ## Provided features
 
@@ -32,9 +32,9 @@ mise run parser:report                 # the release build, the table written to
 mise run parser:report target/a.md     # the table written to another file
 ```
 
-## Dependencies
+## Where the detail lives
 
-Each dependency is a crate of this workspace or is already in the build graph. Each is optional, and the `census` feature turns all of them on with the binary. Cargo then counts each dependency as used only when the binary uses it.
+[`src/main.rs`](src/main.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

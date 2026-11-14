@@ -6,7 +6,7 @@ Each CI lane's median job time over the latest runs that hold it, against the bu
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -36,9 +36,9 @@ mise run ci:lane-budget --budget 'check Clippy wall=300' --budget 'test enforcin
 cargo nextest run -p gandr-workflow-lane-budget
 ```
 
-## Dependencies
+## Where the detail lives
 
-`gandr-workflow-github` runs every `gh` invocation and names the one that failed. `serde` and `serde_json` read `gh`'s issue listing, with the features the root `Cargo.toml` records.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

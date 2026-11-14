@@ -4,10 +4,10 @@ The navigation of gandr's language server: references, highlights, rename, the c
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,10 @@ The navigation of gandr's language server: references, highlights, rename, the c
 **Why.** No family of this crate reads the diagnostics. So this crate compiles beside the diagnostics, and an edit of a navigation family recompiles neither the diagnostics nor the core.
 
 **How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate, or tests of `gandr-surface-lsp` that read the item through the server, spelled with that package's name.
+
+## References
+
+- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## Provided features
 
@@ -44,10 +48,6 @@ The navigation of gandr's language server: references, highlights, rename, the c
 | Paste with imports | [`paste`](src/paste.rs) |
 | Shadowing binders | [`shadowed`](src/shadowed.rs) |
 | The documentation | [`doc`](src/doc.rs), [`site`](src/site.rs) |
-
-## References
-
-- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — anchor: a shadow is a diagnostic, off by default.
 
 ## License
 

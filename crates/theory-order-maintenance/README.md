@@ -3,17 +3,15 @@
 An order-maintenance structure: a total order over payload-carrying elements in which any two elements compare in constant time.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
+  - [List labeling](#list-labeling)
 - [Expected features](#expected-features)
+  - [Handles and failures](#handles-and-failures)
 - [Examples](#examples)
-- [List labeling](#list-labeling)
-- [Handles and failures](#handles-and-failures)
-- [Specification attributes](#specification-attributes)
+  - [Specification attributes](#specification-attributes)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -41,10 +39,26 @@ An order-maintenance structure: a total order over payload-carrying elements in 
 - `OrderError`: every failure as a typed value — capacity exhaustion, structure-id exhaustion, an unknown handle, an inconsistent arena.
 - `LiveLen`, `OrderIsEmpty`, `HandleMembership`, `IntervalContainment`: the nominal results of the observation queries.
 
+### List labeling
+
+Insertion is two-level list labeling. Consecutive elements share a group. A group's label is a point on a circle of `2^64` labels, and its place in the order is its distance around the circle from the first group's label. An element's label lies in `[0, 2^w)` within its group, `w` the group width. An insertion takes the midpoint of its neighbours' labels in their group: the predecessor's group, or the successor's at the front, the group's ends standing in for a neighbour in another group.
+
+When a group has no label between the neighbours, it splits. Its last `w/2` elements become a new group after it, placed at the midpoint of the room between it and the next group around the circle, and the cut is repeated until `w/2` or fewer remain; each group the split makes, and the one it cut, spreads its elements evenly over its labels. When the room after the full group is under two labels, the groups after it are relabelled first: the walk takes successors around the circle until the `j`th lies more than `j²` labels on, and spreads the `j - 1` it passed evenly over that room. Past the last group the walk continues from the first, so the first group's label may move; every distance from it keeps its order. Insertion is O(1) amortized: a split is paid for by the `w/2` insertions that filled the group, and a group's insertion on the circle by the walk's own amortization. The structure is total up to the `u32` slot ceiling, because a circle of `2^64` labels holds the square of the most groups a structure can have.
+
+The group width is a parameter. `GroupWidth::DEFAULT` is the widest, 31, which the crate's bench (`cargo bench -p gandr-theory-order-maintenance`) measures fastest, or within a few nanoseconds of the fastest, at every size from a thousand elements to a million. Its workloads are appends, insertion behind one element, random insertion, comparison, removal and a churn of the two.
+
+Labels are internal and never exposed, so no caller depends on a numeric encoding a relabel is free to change. `Pos` is the only identity.
+
 ## Expected features
 
 - **An atomic compare-exchange.** Each structure draws a process-unique identity from a shared `AtomicUsize`, so a handle from one structure is refused by another. The crate requires `target_has_atomic = "ptr"`. Every hosted target qualifies, as does every embedded target with a compare-exchange instruction, including 32-bit targets without 64-bit atomics such as `thumbv7m-none-eabi` and `riscv32imac-unknown-none-elf`. Load/store-only cores such as `thumbv6m-none-eabi` would need a critical section for a sound process-wide counter, which the crate has no way to obtain; building for one fails with an explanatory `compile_error!`.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
+
+### Handles and failures
+
+A slot's generation counter is bumped each time the slot is freed, so a handle minted before the reuse does not resolve. A slot whose generation counter is exhausted is retired rather than wrapped. A handle carries its structure's identity, and a handle from another structure is refused.
+
+Handle liveness is a returned classification, never a precondition: an operation on a stale or foreign handle returns `None` or `OrderError::UnknownPosition`. Every internal write returns a typed result, so a violated arena invariant surfaces as `OrderError::Inconsistent` rather than as a dropped write. `remove` returns `Result<Option<T>, OrderError>`: `Ok(None)` is a stale handle, `Err` a corrupted arena. Construction is fallible too, so the process-wide structure-id counter never wraps.
 
 ## Examples
 
@@ -71,23 +85,7 @@ cargo nextest run -p gandr-theory-order-maintenance
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-order-maintenance
 ```
 
-## List labeling
-
-Insertion is two-level list labeling. Consecutive elements share a group. A group's label is a point on a circle of `2^64` labels, and its place in the order is its distance around the circle from the first group's label. An element's label lies in `[0, 2^w)` within its group, `w` the group width. An insertion takes the midpoint of its neighbours' labels in their group: the predecessor's group, or the successor's at the front, the group's ends standing in for a neighbour in another group.
-
-When a group has no label between the neighbours, it splits. Its last `w/2` elements become a new group after it, placed at the midpoint of the room between it and the next group around the circle, and the cut is repeated until `w/2` or fewer remain; each group the split makes, and the one it cut, spreads its elements evenly over its labels. When the room after the full group is under two labels, the groups after it are relabelled first: the walk takes successors around the circle until the `j`th lies more than `j²` labels on, and spreads the `j - 1` it passed evenly over that room. Past the last group the walk continues from the first, so the first group's label may move; every distance from it keeps its order. Insertion is O(1) amortized: a split is paid for by the `w/2` insertions that filled the group, and a group's insertion on the circle by the walk's own amortization. The structure is total up to the `u32` slot ceiling, because a circle of `2^64` labels holds the square of the most groups a structure can have.
-
-The group width is a parameter. `GroupWidth::DEFAULT` is the widest, 31, which the crate's bench (`cargo bench -p gandr-theory-order-maintenance`) measures fastest, or within a few nanoseconds of the fastest, at every size from a thousand elements to a million. Its workloads are appends, insertion behind one element, random insertion, comparison, removal and a churn of the two.
-
-Labels are internal and never exposed, so no caller depends on a numeric encoding a relabel is free to change. `Pos` is the only identity.
-
-## Handles and failures
-
-A slot's generation counter is bumped each time the slot is freed, so a handle minted before the reuse does not resolve. A slot whose generation counter is exhausted is retired rather than wrapped. A handle carries its structure's identity, and a handle from another structure is refused.
-
-Handle liveness is a returned classification, never a precondition: an operation on a stale or foreign handle returns `None` or `OrderError::UnknownPosition`. Every internal write returns a typed result, so a violated arena invariant surfaces as `OrderError::Inconsistent` rather than as a dropped write. `remove` returns `Result<Option<T>, OrderError>`: `Ok(None)` is a stale handle, `Err` a corrupted arena. Construction is fallible too, so the process-wide structure-id counter never wraps.
-
-## Specification attributes
+### Specification attributes
 
 The `# Specification` prose states the obligation. Executable `#[spec(...)]` clauses check the locally observable part under `--cfg anodized_panic`; each `# Adequacy` block names same-crate witnesses and the boundary of their evidence. Contracts use scalar captures and borrowed identity, not whole-arena or payload snapshots.
 

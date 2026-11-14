@@ -4,10 +4,10 @@ The base of the glued value domain: the per-run arena that owns it, its closures
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,10 @@ The base of the glued value domain: the per-run arena that owns it, its closures
 **Why.** The domain, its identity and its overlay name no module of the evaluator, and the evaluator names each of them. So the domain compiles first, and an edit of the evaluator does not rebuild it.
 
 **How.** `gandr-core-nbe` imports each module of this crate under its old name and re-exports each path a consumer names today; [`src/lib.rs`](src/lib.rs) lists the modules. The tests of element identity evaluate and read back, so they are tests of `gandr-core-nbe`.
+
+## References
+
+- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep.
 
 ## Provided features
 
@@ -49,10 +53,6 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Element identity | [`identity`](src/identity.rs) |
 | The sharing overlay, erasure and the measure | [`overlay`](src/overlay.rs), [`measure`](src/measure.rs), [`spec`](src/spec.rs) |
 | Strict stage terms | [`stage`](src/stage.rs) |
-
-## References
-
-- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the environment's value ids keep.
 
 ## License
 

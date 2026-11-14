@@ -3,18 +3,16 @@
 Finite register presentations of nominal word and tree automata over caller-owned names.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
-- [Nominal reading](#nominal-reading)
 - [References](#references)
 - [Provided features](#provided-features)
+  - [Nominal reading](#nominal-reading)
+  - [Representation](#representation)
 - [Expected features](#expected-features)
+  - [Model boundary](#model-boundary)
 - [Examples](#examples)
-- [Representation](#representation)
-- [Model boundary](#model-boundary)
-- [Behavioral floor](#behavioral-floor)
+  - [Behavioral floor](#behavioral-floor)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -24,10 +22,6 @@ Finite register presentations of nominal word and tree automata over caller-owne
 **Why.** Resource-lifecycle traces need to distinguish a remembered name from a fresh allocation and to reject unmatched release or a live resource at an accepting boundary. Symbolic register rules express those conditions independently of any compiler name supply.
 
 **How.** Constructors validate controls, arities, reads and injective transfers. Literal word membership follows a deduplicated frontier with iterative epsilon closure. Allocation-only word and tree handles share transfer validation; a flat term arena computes free names under lexical scope.
-
-## Nominal reading
-
-A unit answers the `nominal` reading axis and the `nominal` concern in this crate's terms (#4181). Its names are a `Store`'s, each held at most once, and a name is `Fresh` or `Remembered` against the store's support. Its lifecycle is a word of `Letter`s, each a free use, an allocation, a release or an immediate release, or a tree that an `Rnta` reads. A `Transfer` states what each step retains, allocates or erases. The crate decides literal `Membership` of a word in an `Nda`'s language, and `name_dropping` closes that language under renaming. Emptiness, inclusion and determinization belong to the classical back end, deferred here. A unit that needs one of them names that back end's issue.
 
 ## References
 
@@ -48,9 +42,29 @@ A unit answers the `nominal` reading axis and the `nominal` concern in this crat
 | `rnta::Rnta` | Validated allocation-only tree handles with ordered child transfers. |
 | `rnta::Term` | Flat, acyclic term arena with lexical free-name computation. |
 
+### Nominal reading
+
+A unit answers the `nominal` reading axis and the `nominal` concern in this crate's terms (#4181). Its names are a `Store`'s, each held at most once, and a name is `Fresh` or `Remembered` against the store's support. Its lifecycle is a word of `Letter`s, each a free use, an allocation, a release or an immediate release, or a tree that an `Rnta` reads. A `Transfer` states what each step retains, allocates or erases. The crate decides literal `Membership` of a word in an `Nda`'s language, and `name_dropping` closes that language under renaming. Emptiness, inclusion and determinization belong to the classical back end, deferred here. A unit that needs one of them names that back end's issue.
+
+### Representation
+
+**Caller-owned names.** The automaton is generic over name identity rather than coupled to a fresh-name allocator. This keeps lifecycle reasoning independent of de Bruijn indices, admission positions and compiler allocation policy. Alternative: a crate-owned sort-tagged supply; it adds identity machinery the automaton never needs. Reversal: an automaton operation must generate globally fresh identities rather than check supplied names.
+
+**Flat terms.** Child indices point to earlier arena entries. Traversal, cloning and destruction have no ownership recursion. Sharing denotes repeated occurrences, so a shared node can be free in one scope and bound in another. Alternative: recursively owned child terms; depth-dependent clone and drop would violate the arena's totality boundary. Reversal: a different flat storage representation demonstrably reduces cost while preserving lexical observations.
+
+**Validated transfers.** Retained source registers must exist and occur at most once in each target transfer. Allocation appears at most once and only on allocating rules. Close and epsilon-drop rules cannot retain the erased register. Each tree child validates independently: separate child stores may each retain the allocated name. These checks make internal transfer application preserve partial injectivity. Alternative: validate every resulting store at runtime; that repeats structural work on every input letter. Reversal: an event-dependent transfer representation needs dynamic validation.
+
+**Lossless indices.** Controls, registers, arities and degrees wrap `usize`; vector lengths never saturate into a narrower identity. Register lookup distinguishes an empty slot from an out-of-range register through `Maybe` and `RegisterAbsent`.
+
 ## Expected features
 
 Names implement `Copy + Ord` with stable equality and ordering. Their identity belongs to the caller; the crate neither mints names nor assigns a unification role. Tree symbols are caller-owned values. The library is `no_std` and needs `alloc`. Optional executable specifications are selected graph-wide by `--cfg anodized_panic`. `gandr-theory-shapes` reads a shape's carrier as a `Store` of its names: a face fixed is a set of names retained, an inclusion releases names, and a leak is a name left unreleased at an accepting boundary.
+
+### Model boundary
+
+The word runner decides literal membership for supplied traces. Name dropping adds epsilon erasures over partial stores; the directed remembered-name example witnesses its effect on an alpha variant. The finite suite does not establish a general nominal-language theorem.
+
+Allocation-only word and tree surfaces validate symbolic handles. Tree rules carry their rank through their ordered child targets; symbols have no separately declared global rank table. Tree execution, bounded-alphabet reduction, emptiness, inclusion, equivalence, determinization and expression compilation belong to the classical back end. A static theorem catalogue is documentation, not an implemented procedure.
 
 ## Examples
 
@@ -64,23 +78,7 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing \
   cargo test -p gandr-theory-nominal-automata --all-targets
 ```
 
-## Representation
-
-**Caller-owned names.** The automaton is generic over name identity rather than coupled to a fresh-name allocator. This keeps lifecycle reasoning independent of de Bruijn indices, admission positions and compiler allocation policy. Alternative: a crate-owned sort-tagged supply; it adds identity machinery the automaton never needs. Reversal: an automaton operation must generate globally fresh identities rather than check supplied names.
-
-**Flat terms.** Child indices point to earlier arena entries. Traversal, cloning and destruction have no ownership recursion. Sharing denotes repeated occurrences, so a shared node can be free in one scope and bound in another. Alternative: recursively owned child terms; depth-dependent clone and drop would violate the arena's totality boundary. Reversal: a different flat storage representation demonstrably reduces cost while preserving lexical observations.
-
-**Validated transfers.** Retained source registers must exist and occur at most once in each target transfer. Allocation appears at most once and only on allocating rules. Close and epsilon-drop rules cannot retain the erased register. Each tree child validates independently: separate child stores may each retain the allocated name. These checks make internal transfer application preserve partial injectivity. Alternative: validate every resulting store at runtime; that repeats structural work on every input letter. Reversal: an event-dependent transfer representation needs dynamic validation.
-
-**Lossless indices.** Controls, registers, arities and degrees wrap `usize`; vector lengths never saturate into a narrower identity. Register lookup distinguishes an empty slot from an out-of-range register through `Maybe` and `RegisterAbsent`.
-
-## Model boundary
-
-The word runner decides literal membership for supplied traces. Name dropping adds epsilon erasures over partial stores; the directed remembered-name example witnesses its effect on an alpha variant. The finite suite does not establish a general nominal-language theorem.
-
-Allocation-only word and tree surfaces validate symbolic handles. Tree rules carry their rank through their ordered child targets; symbols have no separately declared global rank table. Tree execution, bounded-alphabet reduction, emptiness, inclusion, equivalence, determinization and expression compilation belong to the classical back end. A static theorem catalogue is documentation, not an implemented procedure.
-
-## Behavioral floor
+### Behavioral floor
 
 The named floor contains **25 ported**, **5 deferred** and **5 retired** obligations. Ported rows retain their names and execute through the public API in one automatically discovered integration target. The bounded language-enlargement witness exhausts all 2,396,745 words of length at most seven over eight letters, retaining the full input-length bound. Three additional behavioral witnesses cover malformed transfers across all models, cyclic epsilon closure with nondeterministic branching, and 10,000-deep flat terms.
 

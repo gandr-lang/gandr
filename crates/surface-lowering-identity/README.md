@@ -4,10 +4,10 @@ The identity family of gandr's lowering. It lowers path, bridge and flow types, 
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,11 @@ The identity family of gandr's lowering. It lowers path, bridge and flow types, 
 **Why.** The lowering is the longest crate in the build of the driver. In a crate of its own, the family type-checks once. An edit of another family then does not type-check it again.
 
 **How.** The family reads the lowering through its host, `F: Families`, a trait of the base. The host holds the lowering's context and answers each call into another family. `gandr-surface-lowering` is the host, and a call from it into this family builds `Identities::new(self)`. Each call is static. A reading of the lowering, such as the minting of a transport, builds `IdentitiesRef::new(self)`, which borrows the host and never writes it. The family's tests stay in `gandr-surface-lowering`, because each test lowers a source.
+
+## References
+
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The family reads the lowering only through `Families`, a trait of the base, so the family compiles over the base alone.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell.
 
 ## Provided features
 
@@ -35,11 +40,6 @@ The identity family of gandr's lowering. It lowers path, bridge and flow types, 
 | Topic | Module |
 | ----- | ------ |
 | Identity types, identity operations, transports and derived operations | [`lower::identity`](src/lower/identity.rs) |
-
-## References
-
-- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The family reads the lowering only through `Families`, a trait of the base, so the family compiles over the base alone.
-- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's action of a map out of a sphere on its cell.
 
 ## License
 

@@ -6,7 +6,6 @@ The debt ledger two workflow gates share: the findings a gate has committed to o
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
 - [License](#license)
 
 ## Synopsis
@@ -32,10 +31,6 @@ None: the caller reads and writes the file.
 ```sh
 cargo nextest run -p gandr-workflow-debt-ledger
 ```
-
-## Dependencies
-
-None beyond the standard library.
 
 ## License
 

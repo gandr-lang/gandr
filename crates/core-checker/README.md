@@ -4,11 +4,11 @@ This crate gives the core judgement one name for its consumers. It re-exports th
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ This crate gives the core judgement one name for its consumers. It re-exports th
 **Why.** A consumer names one crate. A staged program reads the bridge's templates, and the session readmits what it resumes, so both stand over the two lower crates.
 
 **How.** [`src/lib.rs`](src/lib.rs) states the judgement's shape and re-exports each path. Each module states its mechanism and its decisions in its rustdoc.
+
+## References
+
+- `Wood-2024-framework_semiringannotated_type_systems` — dependency: the usage annotations of λR and their subusaging, which the access rules read, § 4.2
 
 ## Provided features
 
@@ -42,10 +46,6 @@ The crate rustdoc's example lives in [`src/lib.rs`](src/lib.rs).
 | Staged programs and their forks | [`staging`](src/staging.rs) |
 | The elaboration session | [`elaborating`](src/elaborating.rs) |
 | Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
-
-## References
-
-- `Wood-2024-framework_semiringannotated_type_systems` — dependency: the usage annotations of λR and their subusaging, which the access rules read, § 4.2
 
 ## License
 

@@ -2,6 +2,16 @@
 
 This crate holds a proof-producing e-graph for gandr. It closes the equations over the term table of a Lawvere theory under congruence. A proof forest gives each equality an explanation, and a checker replays that explanation. The crate also follows egg in three parts: it rebuilds after the unions, it keeps an analysis on each class, and it saturates in phases. It is the crate of the rewriting family that closes equations under congruence and explains each equality that it finds.
 
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [License](#license)
+<!-- tocstop -->
+
 Congruence closure is ground completion, so an e-graph is a convergent ground rewriting system. Completion replays its certificates, and an explanation is a certificate of that kind.
 
 <!-- toc -->

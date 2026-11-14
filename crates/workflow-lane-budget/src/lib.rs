@@ -52,6 +52,12 @@
 //! # References
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-lane-budget/README.md).
+//!
+//! # Dependencies
+//!
+//! `gandr-workflow-github` runs every `gh` invocation and names the one that
+//! failed. `serde` and `serde_json` read `gh`'s issue listing, with the
+//! features the root `Cargo.toml` records.
 
 pub mod budget;
 pub mod cone;

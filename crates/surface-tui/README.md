@@ -4,11 +4,11 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 **Why.** The line editor prints a transcript that scrolls away; a full-screen face keeps the transcript in view beside the line being written. It is a renderer and nothing more: every line goes to the same loop `gandr repl` runs, every block is the loop's, and every row is laid out by the loop's `rows`, so the terminal face, the line editor and a pipe show the same lines.
 
 **How.** `ratatui` lays out the three panes and diffs each frame onto the terminal through its `crossterm` backend, which also puts the terminal in raw mode on the alternate screen and reads its keys. The transcript pane counts the transcript's rows and paints the newest that fit: a row's lead in its kind's style, an echo row's text clipped against the block's highlight spans and painted by role, any other row's text in its kind's style. The loop renders refusals plainly, so the only styles in the pane are the face's own. The face parses, lowers, types and marks nothing.
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that the side view keeps.
 
 ## Provided features
 
@@ -57,10 +61,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The transcript pane | [`view`](src/view.rs) |
 | The SVG capture | [`capture`](src/capture.rs) |
 | Keys | [`app`](src/app.rs) |
-
-## References
-
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the visual language that the side view keeps.
 
 ## License
 

@@ -133,7 +133,23 @@ crates/
 
 The policy library and the gate binary are not members: they come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
-A crate README's shape is [`ledger/README.md` § Crate READMEs](../ledger/README.md#crate-readmes).
+## Crate README shape
+
+A crate's `README.md` is its only document. It is an overview and a conceptual entry, and it links into the crate's `src/lib.rs` `//!` docs and the owning module. Mechanism, invariants and specification detail live there, and `check:doc` builds them. A decision's choice, alternatives and reversal live in its pull request and its issue. A crate has no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, and the README links it once. A measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside its README allowlist, and a README over its budget in `sizelint.toml`.
+
+Every crate README follows one order. A part marked "always" stands in each README. Another part stands when the crate has content for it. `check:readme-shape` reads this list and holds each `crates/*/README.md` to it.
+
+1. `# <package>`, always, then one sentence that states what the crate is.
+2. A table of contents, always, with one link for each part below that the README holds, in the README's order. A `<!-- toc -->` line may open it.
+3. `## Synopsis`, always: three paragraphs, each with a bold opener. **What.** names the thing that the crate is. **Why.** names the need that it answers. **How.** names the mechanism concretely. The prose is dense, technical and in the present tense, and it carries no history.
+4. `## References`: one entry for each key that the crate's modules cite, `` - `<key>` — <role>: `` then the full title, the authors, the venue, the date, a stable identifier (DOI, ISBN, arXiv, HAL) and one clause on what the crate takes from it.
+5. `## Provided features`: what the crate provides, as items.
+6. `## Expected features`: what the crate needs from its consumer or its environment, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not in this list.
+7. `## Examples`: runnable usage and the command that runs the crate's tests.
+8. `## Where the detail lives`: the modules whose rustdoc states each mechanism and decision, as a table or one sentence.
+9. `## License`, always: `Apache-2.0 WITH LLVM-exception`, the workspace licence, whose text is at the repository root.
+
+A part that this list does not name is a departure. Its content goes into the part that the list gives it, or into the crate's `src/lib.rs` docs with a link from `## Where the detail lives`.
 
 ## Compilation
 

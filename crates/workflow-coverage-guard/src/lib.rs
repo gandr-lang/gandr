@@ -50,6 +50,13 @@
 //! required check.
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-coverage-guard/README.md).
+//!
+//! # Dependencies
+//!
+//! `gandr-workflow-github` runs every `gh` invocation and names the one that
+//! failed. Its `read` runs the issue listing again past a transient server
+//! error; a write runs once. `serde` and `serde_json` read Codecov's answers
+//! and `gh`'s issue listing, with the features the root `Cargo.toml` records.
 
 // Module documentation in the lane budget's shape: 1 heading outside the
 // vocabulary and 1 decision record. Each allow leaves with the rewrite that

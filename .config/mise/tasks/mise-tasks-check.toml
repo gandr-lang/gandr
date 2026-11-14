@@ -821,6 +821,7 @@ depends = [
   "check:publish",
   "check:crate-map",
   "check:crate-lead",
+  "check:readme-shape",
   "check:purposes",
   "check:positions",
   "check:shared",
@@ -2034,6 +2035,37 @@ if (( failed )); then
   exit 1
 fi
 echo "crate lead check OK: ${#paths[@]} crates of the storage picture each open with a lead naming its layer, its wall and its paper"
+{% endraw %}'''
+
+# The shape of each crate README (#7616, `.config/readme-shape/shape.jq`):
+# each `crates/*/README.md` holds the parts that `crates/README.md` § Crate
+# README shape lists, in that order, with its title, its lead sentence, its
+# table of contents, the Synopsis's bold openers and each part that the rule
+# holds always. The check reads the parts from the rule's list, so the rule
+# has one home. A refusal names the README, the line and the first departure.
+# Each case in `.config/readme-shape/cases.json` holds an input and what the
+# program gives for it.
+["check:readme-shape"]
+description = "Each crate README holds the parts of crates/README.md § Crate README shape, in order"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+.config/cases/run.bash 'readme shape' .config/readme-shape/cases.json --program .config/readme-shape/shape.jq || failed=1
+readmes=(crates/*/README.md)
+findings=$(jq -nR 'reduce inputs as $line ({}; .[input_filename] += [$line])' "${readmes[@]}" \
+  | jq -r --rawfile rule crates/README.md '{rule: $rule, readmes: .}' \
+  | jq -r -f .config/readme-shape/shape.jq)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'readme shape check FAILED: mend each README above to crates/README.md § Crate README shape' >&2
+  exit 1
+fi
+echo "readme shape check OK: ${#readmes[@]} crate READMEs hold the parts of crates/README.md § Crate README shape, in order"
 {% endraw %}'''
 
 # The bootstrap census's programs (#2896): each case in

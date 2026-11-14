@@ -4,11 +4,11 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,24 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 **Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
 
 **How.** The checker is a defunctionalized machine over explicit stacks. It is total on depth. Conversion is structural comparison with a positive-only id-equality fast path. Both machines consult a content-keyed check memo per call, then the environment's kept outcomes. [`src/lib.rs`](src/lib.rs) states how admission truncates the arena, and why the four are decided together.
+
+## References
+
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `replay` and `descent` name the items each takes.
+- `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
+- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
+- `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
+- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
+- `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
+- `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.
+- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the field label on each refusal of a patched type's replayed formation.
+- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2, whose holders the kernel validates.
+- `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace-certificate design — the replay runs a held operand's steps, which the trace does not record.
+- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
+- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
+- `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — anchor: the loops design (§ loops-shapes) — productivity as a guard on observations, in `check::guard`.
+- `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each frame that the machines pop, in `check`.
 
 ## Provided features
 
@@ -72,24 +90,6 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | The stage universe and residual readmission | [`src/stage.rs`](src/stage.rs) |
 | Guarded admission of equation families | [`src/admission.rs`](src/admission.rs) |
 | The replay of a match's cover derivation against its tree | [`src/check/cover.rs`](src/check/cover.rs) |
-
-## References
-
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — lineage: the kernel re-assessment's design (§ kernel-reassessment-design); the `# References` of `replay` and `descent` name the items each takes.
-- `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
-- `vault:01a16be2-3ad1-73e2-9e54-d28a053edcaa` — exemplar: sharing as descent (§ sharing-rule-descent, § sharing-rule-probe) — a cover glued once and replayed.
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
-- `Courant-2026-lazy_concurrent_convertibility_checker` — lineage: § 4.2's weak-head machine with environments, which the replay runs.
-- `vault:01a183de-4ab1-7660-a88a-04b9e8d318e3` — exemplar: the source page of Beniamino Accattoli. "Back to the Future of Lambda: Refreshing the Lambda-Calculus for the 21st Century." Habilitation, Institut Polytechnique de Paris, 2025. `hal:tel-05454767` — § 3.9's practical values, which the replay's alias keeps.
-- `vault:01a1567c-2c32-7ed3-a102-45e54f702b4f` — anchor: Eremondi and Kammar, "Coverage Semantics for Dependent Pattern Matching", ESOP 2025, `doi:10.1007/978-3-031-91118-7_11` — § 5's `var`, `split` and `compose`, which the replay walks.
-- `vault:01a1567c-2c32-7ed3-a102-45dc5330206a` — anchor: the coverage design (§ coverage-evidence-form) — the derivation that the kernel replays step by step.
-- `vault:01a1aa2d-a69c-7030-91e0-337d68d88151` — anchor: the presented-spaces plan (§ presented-spaces-crates) — the field label on each refusal of a patched type's replayed formation.
-- `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signatures, `E` and `F` of § 2.2, whose holders the kernel validates.
-- `vault:01a178aa-fe00-7121-9fe8-2df35cbb1aeb` — anchor: the trace-certificate design — the replay runs a held operand's steps, which the trace does not record.
-- `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
-- `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
-- `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — anchor: the loops design (§ loops-shapes) — productivity as a guard on observations, in `check::guard`.
-- `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each frame that the machines pop, in `check`.
 
 ## License
 

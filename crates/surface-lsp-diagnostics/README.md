@@ -4,10 +4,10 @@ The diagnostics of gandr's language server: the recheck of a document, the kerne
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,6 +18,11 @@ The diagnostics of gandr's language server: the recheck of a document, the kerne
 **Why.** No family of this crate reads the navigation. So this crate compiles beside the navigation, and an edit of a diagnostics family recompiles neither the navigation nor the core.
 
 **How.** Each module states its mechanism and its decisions in its rustdoc. The witnesses of an item are tests of this crate, or tests of `gandr-surface-lsp` that read the item through the server, spelled with that package's name. The tests of this crate also hold the tests of the core that run a recheck.
+
+## References
+
+- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
+- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
 
 ## Provided features
 
@@ -41,11 +46,6 @@ The diagnostics of gandr's language server: the recheck of a document, the kerne
 | Quick fixes | [`fix`](src/fix.rs) |
 | A model's proposals | [`proposal`](src/proposal.rs) |
 | Saves | [`saved`](src/saved.rs) |
-
-## References
-
-- `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: the warrants that `tier` draws.
-- `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — anchor: § kernel-reassessment-design item 9.
 
 ## License
 

@@ -47,6 +47,12 @@
 //! # References
 //!
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-host-tools/README.md).
+//!
+//! # Dependencies
+//!
+//! `serde` and `toml` read the table, the lock and the configuration.
+//! `serde_json` reads mise's listing of a checkout's tools. `clap` reads the
+//! invocation. The root `Cargo.toml` records their features.
 
 pub mod build;
 pub mod error;

@@ -4,11 +4,11 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,13 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 **Why.** Completion, firing and normalization over cells all ask the same questions of a term language: does this pattern match here, do these two overlap, which side of this pair is larger, what replaces the subterm at this position. Answering them once, behind one trait, lets each engine be written and tested against any term language that keeps the trait's laws, and keeps the sequent command language — the first language the engines run on — out of the engines' code.
 
 **How.** Patterns are flat node tables, so every walk over one is a loop and a pattern of any depth is matched, ordered and dropped on a small stack. Matching and unification run explicit worklists over borrowed subtrees and copy bindings into the substitution only when the whole walk succeeds. The reduction order lays both commands out as one node table each and fills the lexicographic path order's relation bottom-up, pair by pair. Absence and refusal are values: a lookup that can miss returns `Maybe` with a named reason, a refused operation returns `Result` with a typed refusal.
+
+## References
+
+- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — an alphabet reads whether an image holds a hole.
+- `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems` — exemplar: § 8.2's Lemma 9, the stretch of one step bounded by how often the contractum writes a hole — the count `CellContractumUse::occurrences` reports.
+- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a cell keeps each hole's occurrence count, recorded rather than refused.
+- `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — the convexity that `ConvexityDischarge` warrants; the general check stays unbuilt.
 
 ## Provided features
 
@@ -130,13 +137,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Linearity admission | [`linearity`](src/linearity.rs) |
 | Boundary wrappers | [`boundary`](src/boundary.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: the acyclicity page (§ gate-substitution-read) — an alphabet reads whether an image holds a hole.
-- `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems` — exemplar: § 8.2's Lemma 9, the stretch of one step bounded by how often the contractum writes a hole — the count `CellContractumUse::occurrences` reports.
-- `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a cell keeps each hole's occurrence count, recorded rather than refused.
-- `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — the convexity that `ConvexityDischarge` warrants; the general check stays unbuilt.
 
 ## License
 

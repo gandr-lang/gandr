@@ -22,6 +22,16 @@
 //!   tests whose checks dominate them: the `spec-cost-ratio` binary.
 //!
 //! See [how a sample is charged](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-spec-cost/README.md#how-a-sample-is-charged).
+//!
+//! # Dependencies
+//!
+//! `syn` reads the attribute spans; `proc-macro2` with `span-locations` gives
+//! them line numbers. Both are already in the build graph through the
+//! proc-macros, with default features off. `syn` was chosen over
+//! `ra_ap_syntax`, which tracks rust-analyzer's release cadence and API churn,
+//! and over `tree-sitter-rust`, which needs a C build and a separate grammar
+//! crate. The root `Cargo.toml` records each enabled feature. The test-timing
+//! store is read through `gandr-workflow-test-timing`.
 
 pub mod error;
 pub mod ledger;

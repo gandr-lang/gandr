@@ -6,7 +6,6 @@ The workflow crates' one boundary to GitHub's `gh`: the runner every invocation 
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
 - [License](#license)
 
 ## Synopsis
@@ -33,10 +32,6 @@ The workflow crates' one boundary to GitHub's `gh`: the runner every invocation 
 ```sh
 cargo nextest run -p gandr-workflow-github
 ```
-
-## Dependencies
-
-None beyond the standard library.
 
 ## License
 

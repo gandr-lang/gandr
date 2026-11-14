@@ -6,7 +6,7 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
-- [Dependencies](#dependencies)
+- [Where the detail lives](#where-the-detail-lives)
 - [License](#license)
 
 ## Synopsis
@@ -39,9 +39,9 @@ GANDR_SWEEP_BASE=HEAD~3 cargo nextest run -p gandr-surface-format  # the last th
 cargo nextest run -p gandr-workflow-sweep
 ```
 
-## Dependencies
+## Where the detail lives
 
-`blake3` ranks the sources; it is already in the build graph for content identities, with default features off.
+[`src/lib.rs`](src/lib.rs) § Dependencies names each dependency and the reason for it.
 
 ## License
 

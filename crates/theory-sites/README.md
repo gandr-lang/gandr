@@ -2,6 +2,16 @@
 
 The carrier's shapes as a site with stick-free objects: a morphism class over the wirings `gandr-theory-circuit-algebras` admits, its degree, and the finite checks of its generalized Reedy structure.
 
+<!-- toc -->
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Where the detail lives](#where-the-detail-lives)
+- [License](#license)
+<!-- tocstop -->
+
 A circuit algebra has two units. The identity wire, a bare wire from an input port to an output port with no operation on it, is the unit of contraction; the empty diagram is the unit of the external product. The site keeps the second and drops the first: **a stick is not a shape**.
 
 The Segal condition up to homotopy, over presheaves of types, waits on #5964.
@@ -24,7 +34,7 @@ The Segal condition up to homotopy, over presheaves of types, waits on #5964.
 
 **How.** The carrier enumerates the shapes up to a size bound, one validator states the class, and each condition reports its case count and its smallest counter-example; [`catalogue`](src/catalogue.rs) states the enumeration.
 
-**Levels.** A pasting diagram above dimension one is a shape of the same site under the wreath product, an outer shape whose vertices each carry a shape of the level below. Restricted to the chains at every level, it holds Θₙ's objects, Joyal's pasting schemes, under the site's own maps. Henry draws the parallel one level up: polygraphs whose generators have no identity as source or target form a presheaf category, as the site has a degree because no stick is an object. One level up, the external product's unit of level one is the contraction unit of level two, and the site keeps that object and fences only its deletion. Level two's Segal certificate is built from level one's, its cells each column's corollas on the outer vertex's corolla.
+Above dimension one, a pasting diagram is a shape of the same site under the wreath product, an outer shape whose vertices each carry a shape of the level below. Restricted to the chains at every level, it holds Θₙ's objects, Joyal's pasting schemes, under the site's own maps. Henry draws the parallel one level up: polygraphs whose generators have no identity as source or target form a presheaf category, as the site has a degree because no stick is an object. One level up, the external product's unit of level one is the contraction unit of level two, and the site keeps that object and fences only its deletion. Level two's Segal certificate is built from level one's, its cells each column's corollas on the outer vertex's corolla.
 
 The level-two unit is a fat object. The site does not drop it, which is the stick move. The site does not read it as an identity map, which is the Eilenberg-Zilber move. It is an object of a direct category, and the nerve theorem characterises its Segal condition. That is the `Grounded` move, now with a published nerve theorem (de Jong, Kraus, Paoli and Pradal 2026, Theorems 4.22 and 4.23). Its proof machinery, monads with arities, is the machinery the vault already uses for the circuit nerve.
 
@@ -50,11 +60,11 @@ One site serves two uses. The wiring site indexes the ambient model, where a typ
 - `Shape::chain`, `Boundary`, `Unfilled`, `fills`: the chain of `n` composable vertices, and the check that a diagram's cells have their vertices' profiles and meet along the inner wires, answering the diagram's boundary and naming the first defect.
 - `Degree`: vertices plus inner wires.
 - `Site`, `identities`, `closure`, `intersection`, `invertibility`, `degree_order`, `direct_core`, `latching`, `factorization`, `rigidity`, `dual_rigidity`, `split_lowering`, `pushouts`, `Outcome`: the generalized Reedy conditions, each answering with its case count and its smallest counter-example; all but latching run at any level, the direct core over each level's grounded objects.
-- `Level`, `HomIndex`, `MapPosition`, `Wreath`, `WreathShape`, `WreathMap`, `WreathKey`, `WreathShapeObstruction`: what the conditions read of a site, the catalogue as level one, the wreath over a level as the next, the chain restriction at every level, and `Level::find`, an object's class at any level or why none holds it.
+- `Level`, `HomIndex`, `MapPosition`, `Wreath`, `WreathShape`, `WreathMap`, `WreathKey`, `WreathShapeObstruction`: the levels that the conditions read, the catalogue first and the wreath over a level next, as [`src/lib.rs`](src/lib.rs) § The strata states them.
 - `core_decomposition`, `grounded_stratum`, `deletion_classes`, `codegeneracies`, `corolla`: the point-count grade.
 - `merge`, `scalars`, `labelled_by_arity`, `unit_property`: the external product and the finite check that the empty diagram is its one weak unit.
-- `segal`, `Cocones`, `Cocone`, `Inclusion`, `Graft`, `Leg`, `SegalFailure`, `SegalDefect`: the Segal condition at degree `n`, each shape of degree two to `n` the colimit of its corollas along its grafting pushouts, over the families of maps whose images are disjoint, and refused at the first shape, test shape and family over the blanket families.
-- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`, `StratumImage`, `Unreplayed`, `SitesBuild`: the stratum certified at degree `n` through the corolla and Segal conditions, its image and the replay of its structure, graphical species and their terms at every shape, and an equivalence of species with its extension and its restriction, `ua` and `ua-desc` as [`stratum`](src/stratum.rs) states them.
+- `segal`, `Cocones`, `Cocone`, `Inclusion`, `Graft`, `Leg`, `SegalFailure`, `SegalDefect`: the Segal condition at degree `n`, refused at the first shape, test shape and family over the blanket families, as [`src/lib.rs`](src/lib.rs) § The strata states it.
+- `SegalStratum`, `Uncertified`, `Vacuity`, `Species`, `Profile`, `Element`, `Labelling`, `Table`, `Bijection`, `Equivalence`, `Natural`, `restrict`, `Defect`, `StratumImage`, `Unreplayed`, `SitesBuild`: the stratum certified at degree `n`, its image and its replay, and the graphical species over it with their equivalences, `ua` and `ua-desc` as [`stratum`](src/stratum.rs) states them.
 - `WreathStratum`, `Certificate`, `Cover`, `WreathCocone`, `Cell`, `Spot`, `ColumnGlue`, `segal_above`, `LevelFailure`, `LevelDefect`, `LevelUncertified`: level `n + 1` certified at degree `k` from level `n`'s certificate, its grounded objects direct with automorphisms and each object of degree two to `k` the colimit of its cells, its image and the replay of its cocones.
 
 Each item's rustdoc names its witnesses under `# Adequacy`.

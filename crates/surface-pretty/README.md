@@ -4,11 +4,11 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,10 @@ The presentation printer: a checked core type, a normal-form value or an elabora
 **Why.** A transcript line, a hover and a diagnostic operand each name a type or show a value, and each must say it the same way, in the syntax a reader can type back. One producer of that spelling, laid out by one engine, keeps every face in agreement on both the words and where a line breaks. The sugared form writes the sugar a reader writes — `A => B`, `A * B`, `A + B`, `C & D`, `(a, b)` — where the core's shape is exactly the one it stands for; the explicit form writes the formers the core is made of.
 
 **How.** The walk reads the root's former, spells it or schedules its children, and joins their documents on an explicit task stack. Every break point is a choice between the byte the one-line spelling carries there and a line break, so a page the one-line spelling fits selects it unchanged; the layout engine chooses among the rest by least overflow, then fewest lines. A pre-scan over the same nodes collects the names a type mentions, so a generated binder name never shadows one. The walk names a binder when it opens it. It writes a dependent arrow's or a dependent pair's binder only where an occurrence names it. When a pass leaves out a binder whose name a name inside its scope passed over, the walk makes one pass more, and that pass reserves no name for the binder. So the names inside its scope are the names the reprint gives them (#5402).
+
+## References
+
+- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is written as the fold it realises until the printer writes the former.
 
 ## Provided features
 
@@ -104,10 +108,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Two forms of one walk, two spellings, a body's canonical form with its exits elided, the answers the lint wall checks at compile time, tests and their limits, references | [`src/lib.rs`](src/lib.rs) |
 | The input is a source | [`former`](src/former.rs) |
 | Products, sums and tuples between their braces, native universe paths, break points, a body's statements breaking together, binder names, bounds | [`walk`](src/walk.rs) |
-
-## References
-
-- `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: a composite is written as the fold it realises until the printer writes the former.
 
 ## License
 

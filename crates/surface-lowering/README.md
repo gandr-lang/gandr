@@ -4,11 +4,11 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
-- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -19,6 +19,11 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and the class of each failure, which [`classify`](../surface-lowering-base/src/classify.rs) states.
 
 **How.** The crate rustdoc holds the mechanism: the dispatch on each mold's named kind (_The grammar names every form_), and the two sweeps that plan and mint every node under one `LoweringBudget` (_Two sweeps, no recursion_). The sweeps compile in `gandr-surface-lowering-expression`. This crate is their host: it holds the context, the closure, the dispatch of the families and the entry points.
+
+## References
+
+- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
+- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 
 ## Provided features
 
@@ -111,11 +116,6 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Attributes | [`attribute`](../surface-lowering-base/src/attribute.rs) |
 | Origins | [`origin`](../surface-lowering-base/src/origin.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
-
-## References
-
-- `vault:01a178aa-5497-7042-b9f4-56ce571601b1` — anchor: the build-out map, its seam test. The module pass reads nothing of the lowering's context, so it compiles in the base, and this crate reads it there.
-- `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 
 ## License
 

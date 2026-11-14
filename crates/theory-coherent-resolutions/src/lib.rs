@@ -77,6 +77,17 @@
 //! metavariables, wrong constructors or arities, and values outside zero
 //! through 63 successors. The exemption ends when opaque returns are supported.
 //!
+//! # Boundaries
+//!
+//! Every budget, index and verdict that a signature here crosses is a
+//! transparent wrapper: `NormalizationBudget`, `CompletionStepBudget`,
+//! `CompletionCellBudget`, `CertificateIndex`, `TripleIndex`, `BatchIndex`,
+//! `OverlapIndex`, `PairDecisions`, `StepPlace`, `MovePlace`,
+//! `BudgetExhaustion`, `TraceletReplay`, `TraceletEquivalence`,
+//! `StepIndependence`, `CompletionStatus`, `Operation`, `Variable`,
+//! `TermPlace`, `RulePlace`, `Arity`, `TermSize`, `Occurrences` and
+//! `BarDegree`.
+//!
 //! # References
 //!
 //! - `vault:01a178aa-4e61-7143-9414-8eb3d0de397f` — anchor: a certificate step
