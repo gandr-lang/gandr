@@ -35,7 +35,7 @@ A `SmallVec<T, N, A>` keeps at most `N` items in place. Past `N`, it keeps all o
 
 ## The shared pointer
 
-A `Shared<T, A>` shares one value by a count of holders, on `triomphe`'s design. Its block holds the count and the value, with no weak count. So `make_mut` and `get_mut` read the count with one load, and a sole holder writes in place. A `Unique<T, A>` builds the value before the share, and `into_shared` makes a `Shared` with no atomic operation.
+A `Shared<T, A>` shares one value by a count of holders, on `triomphe`'s design. Its block holds the count and the value, with no weak count. So `make_mut` and `get_mut` load the count once, and a sole holder writes in place. A `Unique<T, A>` builds the value before the share, and `into_shared` makes a `Shared` with no atomic operation.
 
 A `ThinShared<H, T, A>` is one word. Its block holds the count, the length, a header and the items, so a holder of a slice is half the size of a fat pointer.
 
