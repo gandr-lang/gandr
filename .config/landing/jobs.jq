@@ -28,11 +28,21 @@
 # 'push'` to skip it. The fault applies only when `pushes`, the branches of
 # the workflow's `on.push`, holds `landing`.
 #
-# Input: `{jobs, landing, states, pushes}`. `jobs` is
+# The integration cycle runs each check of `cycle`, and `landing` runs none
+# of them (#7478). No job that can run in a merge group on `landing` or on a
+# pull request runs one, `check:landing` names none, and a job that the
+# cycle's dispatch runs runs each. A job can run on a pull request when its
+# `if` holds no `github.event_name ==` test, names `pull_request`, or tests
+# an event with `!=`. Its `if` holds `github.base_ref != 'landing'` to skip
+# it. A job runs on the dispatch when its `if` holds no `github.event_name ==`
+# test or names `workflow_dispatch`, and it does not hold `!inputs.cycle`.
+#
+# Input: `{jobs, landing, states, pushes, cycle}`. `jobs` is
 # `.github/workflows/landing-checks.yml`'s `jobs`, anchors expanded. `landing` is the
 # list of tasks that `check:landing` depends on. `states` is the build states
 # that `.github/workflows/nightly-sweeps.yml` restores, none when absent. `pushes`
-# is the branches of `on.push`, none when absent.
+# is the branches of `on.push`, none when absent. `cycle` is the checks that
+# the integration cycle runs alone, none when absent.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def skip: "github.event.merge_group.base_ref != 'refs/heads/landing'";
@@ -77,6 +87,19 @@ def pushes:
   | ($if | contains("github.event_name == 'push'") or contains("github.event_name != '")) as $pushed
   | ($skipped | not) and ($eventless or $pushed);
 
+def pulls:
+  condition as $if
+  | ($if | contains(pull) | not)
+    and (($if | test("github\\.event_name == ") | not)
+      or ($if | contains("github.event_name == 'pull_request'"))
+      or ($if | test("github\\.event_name != '")));
+
+def dispatches:
+  condition as $if
+  | ($if | contains("!inputs.cycle") | not)
+    and (($if | test("github\\.event_name == ") | not)
+      or ($if | contains("github.event_name == 'workflow_dispatch'")));
+
 .landing as $landing
 | .jobs as $jobs
 | [$jobs | to_entries[] | select(.key != "template" and (.value | grouped) and (.value | skips | not))] as $running
@@ -113,4 +136,16 @@ def pushes:
      | select(any(.value | needed[]; IN($lanes[])) | not)
      | select(.value | pushes)
      | "`\(.key)` can run on a push to `landing` outside its report lanes: add `\(landed)` to its `if` (#6993)"
-   else empty end)]
+   else empty end),
+  ((.cycle // [])[] as $check
+    | [$jobs | to_entries[] | select(.key != "template" and any(.value | checks[]; . == $check))] as $runners
+    | ($runners[]
+        | select((.value | grouped) and (.value | skips | not))
+        | "`\(.key)` runs `\($check)` in a merge group on `landing`, and the integration cycle runs it alone: add `\(skip)` to its `if` (#7478)"),
+      ($runners[]
+        | select(.value | pulls)
+        | "`\(.key)` can run `\($check)` on a pull request on `landing`, and the integration cycle runs it alone: test the event in its `if` (#7478)"),
+      (select($landing | index($check))
+        | "`check:landing` names `\($check)`, and the integration cycle runs it alone: take it off the list (#7478)"),
+      (select(any($runners[]; .value | dispatches) | not)
+        | "no job runs `\($check)` on the integration cycle's dispatch: add its step to a job that the dispatch runs (#7478)"))]

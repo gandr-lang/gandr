@@ -1176,5 +1176,90 @@
       "pushes": ["main", "landing"]
     },
     "output": []
+  },
+  {
+    "name": "#7478: the plain lane runs check:local-paths on the cycle's dispatch, and no run on landing runs it",
+    "input": {
+      "jobs": {
+        "clippy": {
+          "name": "check Clippy wall",
+          "if": "${{ !cancelled() && github.base_ref != 'landing' }}",
+          "steps": [{ "run": "mise run check:clippy-plain-only" }]
+        },
+        "plain": {
+          "name": "test plain-only targets",
+          "if": "${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}",
+          "steps": [{ "run": "mise run check:corpus" }, { "run": "mise run check:local-paths" }]
+        }
+      },
+      "landing": ["check:clippy-plain-only"],
+      "cycle": ["check:local-paths"]
+    },
+    "output": []
+  },
+  {
+    "name": "#7478: a gate that tests no event but the schedule runs check:local-paths on each pull request on landing",
+    "input": {
+      "jobs": {
+        "clippy": {
+          "name": "check Clippy wall",
+          "if": "${{ !cancelled() && github.base_ref != 'landing' }}",
+          "steps": [{ "run": "mise run check:clippy-plain-only" }]
+        },
+        "gate": {
+          "name": "check formatting and lint gates",
+          "if": "${{ !cancelled() && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name != 'schedule' }}",
+          "steps": [{ "run": "mise run check:format" }, { "run": "mise run check:local-paths" }]
+        }
+      },
+      "landing": ["check:clippy-plain-only"],
+      "cycle": ["check:local-paths"]
+    },
+    "output": [
+      "`gate` can run `check:local-paths` on a pull request on `landing`, and the integration cycle runs it alone: test the event in its `if` (#7478)"
+    ]
+  },
+  {
+    "name": "#7478: check:landing that names check:local-paths runs it in each merge group on landing",
+    "input": {
+      "jobs": {
+        "clippy": {
+          "name": "check Clippy wall",
+          "if": "${{ !cancelled() && github.base_ref != 'landing' }}",
+          "steps": [
+            { "run": "mise run check:clippy-plain-only" },
+            { "run": "mise run check:local-paths" }
+          ]
+        }
+      },
+      "landing": ["check:clippy-plain-only", "check:local-paths"],
+      "cycle": ["check:local-paths"]
+    },
+    "output": [
+      "`clippy` runs `check:local-paths` in a merge group on `landing`, and the integration cycle runs it alone: add `github.event.merge_group.base_ref != 'refs/heads/landing'` to its `if` (#7478)",
+      "`check:landing` names `check:local-paths`, and the integration cycle runs it alone: take it off the list (#7478)"
+    ]
+  },
+  {
+    "name": "#7478: a lane that skips the cycle's dispatch leaves check:local-paths unrun by the cycle",
+    "input": {
+      "jobs": {
+        "clippy": {
+          "name": "check Clippy wall",
+          "if": "${{ !cancelled() && github.base_ref != 'landing' }}",
+          "steps": [{ "run": "mise run check:clippy-plain-only" }]
+        },
+        "macos": {
+          "name": "test enforcing targets (macos-arm64)",
+          "if": "${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}",
+          "steps": [{ "run": "mise run check:local-paths" }]
+        }
+      },
+      "landing": ["check:clippy-plain-only"],
+      "cycle": ["check:local-paths"]
+    },
+    "output": [
+      "no job runs `check:local-paths` on the integration cycle's dispatch: add its step to a job that the dispatch runs (#7478)"
+    ]
   }
 ]

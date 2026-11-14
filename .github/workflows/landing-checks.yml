@@ -50,7 +50,9 @@
 # - The integration cycle dispatches this workflow on `integration` with the
 #   input `cycle` (`landing-integration-cycle.yml`, #5440). That run tests every lane that
 #   a merge group tests on Linux, with no fail-fast. It runs no macOS, no
-#   obligations, no mutants and no hotpath lane.
+#   obligations, no mutants and no hotpath lane. Its plain lane refuses the
+#   path of a home directory in the tree (`check:local-paths`, #7478), and no
+#   run on `landing` runs that check (`check:landing-queue`).
 name: landing-checks
 
 on:
@@ -1028,6 +1030,12 @@ jobs:
       - name: settle the exemplars
         if: *plain-gate
         run: mise run check:exemplars
+      # The check reads the tree alone, so it waits on no build, and the
+      # plain lane alone runs it. A pull request and a group on `landing` run
+      # no step of it (#7478).
+      - name: refuse the path of a home directory in the tree
+        if: ${{ !cancelled() && env.CI_ENFORCING != 'true' && env.CI_PLAIN_BASELINE != 'true' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
+        run: mise run check:local-paths
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state
