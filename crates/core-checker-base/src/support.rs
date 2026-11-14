@@ -410,8 +410,10 @@ pub enum OtherTables
 }
 
 /// The entries one declaration's judgement added to the tables that the
-/// bridge reads: the rows records and the handlers, each with its value, and
-/// whether it added an entry to another table.
+/// bridge reads.
+///
+/// It holds the rows records, the handlers and the reflexivities, each with
+/// its value, and whether the judgement added an entry to another table.
 ///
 /// # Specification
 /// - executable: none — data declaration; the judgement writes it and a
@@ -428,28 +430,31 @@ pub struct Tabled
     rows: crate::program::Rows,
     /// The types of each handler, by node.
     handled: alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>,
+    /// The dialogues of each reflexivity, by node.
+    reflexivities: alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::code::Reflexivity>,
     /// Whether the judgement added an entry to another table.
     others: OtherTables,
 }
 
 impl Tabled
 {
-    /// The entries `rows` and `handled`, beside `others`.
+    /// The entries `rows`, `handled` and `reflexivities`, beside `others`.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn new(
-        rows: crate::program::Rows,
-        handled: alloc::collections::BTreeMap<
-            gandr_core_term::ComputationId,
-            crate::handler::Handled,
-        >,
+    pub(crate) fn new(
+        (rows, handled, reflexivities): (
+            crate::program::Rows,
+            alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>,
+            alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::code::Reflexivity>,
+        ),
         others: OtherTables,
     ) -> Self
     {
         Self {
             rows,
             handled,
+            reflexivities,
             others,
         }
     }
@@ -476,6 +481,19 @@ impl Tabled
     ) -> &alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>
     {
         &self.handled
+    }
+
+    /// The dialogues of each reflexivity, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reflexivities(
+        &self
+    ) -> &alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::code::Reflexivity>
+    {
+        &self.reflexivities
     }
 
     /// Whether the judgement added an entry to another table.

@@ -62,6 +62,8 @@ use gandr_core_checker::session::Capture;
 use gandr_core_checker::session::ForkSide;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::signature;
+use gandr_core_nbe::DomainCompId;
+use gandr_core_nbe::DomainValueId;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Sort as TypeSort;
 use gandr_core_term::SortParameter;
@@ -89,6 +91,9 @@ use gandr_core_term::session::SessionType;
 use gandr_core_term::session::WebPiece;
 use gandr_core_term::support::Scope;
 use gandr_core_term::support::Thinning;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_conversion_trace::ConversionSide;
+use gandr_kernel_conversion_trace::SubgoalPosition;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelOffset;
@@ -163,13 +168,16 @@ use crate::report::CrossingContent;
 use crate::report::ElaborationContent;
 use crate::report::EquationContent;
 use crate::report::HandledContent;
+use crate::report::MetContent;
 use crate::report::NestingContent;
 use crate::report::OperandContent;
 use crate::report::Place as ReportPlace;
+use crate::report::ReflexivityContent;
 use crate::report::ReportContent;
 use crate::report::RowContent;
 use crate::report::SuspensionContent;
 use crate::report::TableContent;
+use crate::report::TraceContent;
 use crate::report::nesting;
 use crate::report::reported;
 use crate::report::tabled;
@@ -187,15 +195,15 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x1a` keeps the entries that the judgement added to the rows and the
-/// handlers, beside what the judgement reported of an item that `0x19`
-/// keeps, the table parts that `0x18` keeps of an item that its judgement
-/// entered elaborated, the failure content that `0x17` keeps and the located
-/// program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1a";
+/// `0x1b` keeps the reflexivities that the judgement added, beside the
+/// entries of the rows and the handlers that `0x1a` keeps, what the
+/// judgement reported of an item that `0x19` keeps, the table parts that
+/// `0x18` keeps of an item that its judgement entered elaborated, the failure
+/// content that `0x17` keeps and the located program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1b";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1a`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1b`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1515,15 +1523,16 @@ const TABLEDS: [tabled::Absent; 4] = [
     tabled::Absent::Unplaced,
 ];
 
-/// Write the entries a checkpoint keeps of the rows and the handlers: tag 0
-/// and why it keeps none; else tag 1, the entries' own table and the place
-/// of each root in it, then the rows records and the handlers, each a count
-/// and its entries.
+/// Write the entries a checkpoint keeps of the rows, the handlers and the
+/// reflexivities: tag 0 and why it keeps none; else tag 1, the entries' own
+/// table and the place of each root in it, then the rows records, the
+/// handlers and the reflexivities, each a count and its entries.
 ///
 /// # Specification
 /// - ensures: [`read_tables`] reads back `tables` from what was written, given
 ///   the table of the body that the checkpoint keeps.
-/// - fails: as [`write_nodes`], [`write_report_place`] and [`write_level`].
+/// - fails: as [`write_nodes`], [`write_report_place`], [`write_level`] and
+///   [`write_dialogue`].
 /// - panics: none.
 /// - executable: none — the witness reads the bytes back.
 ///
@@ -1534,6 +1543,7 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// - hypothesis: L3 — the entries of a handler at a row read back as written,
 ///   and seat as the entries of a fresh judgement.
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 fn write_tables<Out>(
     writer: &mut Writer<'_, Out>,
     tables: Maybe<&TableContent, tabled::Absent>,
@@ -1583,17 +1593,292 @@ where
         write_report_place(writer, &types.answer)?;
         write_level(writer, &types.level)?;
     }
+    writer.count(Count(tables.reflexivities().len()))?;
+    for &(ref at, ref reflexivity) in tables.reflexivities() {
+        write_report_place(writer, at)?;
+        write_dialogue(writer, &reflexivity.left)?;
+        write_dialogue(writer, &reflexivity.right)?;
+        for met in &reflexivity.met {
+            match *met {
+                None => writer.tag(Tag(0)),
+                Some(ref pair) => {
+                    writer.tag(Tag(1));
+                    write_report_place(writer, &pair.point)?;
+                    write_report_place(writer, &pair.endpoint)?;
+                    writer.count(Count(pair.returning.len()))?;
+                    for &index in &pair.returning {
+                        writer.word(Word(u64::from(u32::from(index))));
+                    }
+                },
+            }
+        }
+    }
     Ok(())
 }
 
-/// Read the entries a checkpoint keeps of the rows and the handlers, as
-/// [`write_tables`] writes them, a judged node's support read against
-/// `body`, the table of the body that the checkpoint keeps.
+/// Write a kept dialogue: a count, then each decision as its tag and its
+/// fields in declaration order.
+///
+/// # Specification
+/// - ensures: [`read_dialogue`] reads back `dialogue` from what was written.
+/// - fails: as [`write_reference`] fails for a constant.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+fn write_dialogue<Out>(
+    writer: &mut Writer<'_, Out>,
+    dialogue: &[ConversionDecision<TraceContent>],
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let side = |writer: &mut Writer<'_, Out>, side: ConversionSide| {
+        writer.tag(Tag(match side {
+            ConversionSide::Left => 0,
+            ConversionSide::Right => 1,
+        }));
+    };
+    writer.count(Count(dialogue.len()))?;
+    for decision in dialogue {
+        match *decision {
+            ConversionDecision::ReduceLeft { ref redex } => {
+                writer.tag(Tag(0));
+                write_trace(writer, redex)?;
+            },
+            ConversionDecision::ReduceRight { ref redex } => {
+                writer.tag(Tag(1));
+                write_trace(writer, redex)?;
+            },
+            ConversionDecision::ConstShortcut { ref constant } => {
+                writer.tag(Tag(2));
+                write_trace(writer, constant)?;
+            },
+            ConversionDecision::Unfold { ref constant } => {
+                writer.tag(Tag(3));
+                write_trace(writer, constant)?;
+            },
+            ConversionDecision::Postpone { ref constant } => {
+                writer.tag(Tag(4));
+                write_trace(writer, constant)?;
+            },
+            ConversionDecision::Freeze {
+                ref constant,
+                side: frozen,
+            } => {
+                writer.tag(Tag(5));
+                write_trace(writer, constant)?;
+                side(writer, frozen);
+            },
+            ConversionDecision::EtaExpand {
+                side: applied,
+                ref variable,
+            } => {
+                writer.tag(Tag(6));
+                side(writer, applied);
+                write_trace(writer, variable)?;
+            },
+            ConversionDecision::ReturnEta { side: at } => {
+                writer.tag(Tag(7));
+                side(writer, at);
+            },
+            ConversionDecision::Reassociate { side: at } => {
+                writer.tag(Tag(8));
+                side(writer, at);
+            },
+            ConversionDecision::Discard { side: at } => {
+                writer.tag(Tag(9));
+                side(writer, at);
+            },
+            ConversionDecision::Hold { side: at } => {
+                writer.tag(Tag(10));
+                side(writer, at);
+            },
+            ConversionDecision::Force { ref thunk } => {
+                writer.tag(Tag(11));
+                write_trace(writer, thunk)?;
+            },
+            ConversionDecision::ComparedShared {
+                ref left,
+                ref right,
+            } => {
+                writer.tag(Tag(12));
+                write_trace(writer, left)?;
+                write_trace(writer, right)?;
+            },
+            ConversionDecision::Decompose => writer.tag(Tag(13)),
+            ConversionDecision::NegativeSubgoal { position } => {
+                writer.tag(Tag(14));
+                writer.word(Word(u64::from(u32::from(position))));
+            },
+            ConversionDecision::Evaluate => writer.tag(Tag(15)),
+            ConversionDecision::Admitted => writer.tag(Tag(16)),
+        }
+    }
+    Ok(())
+}
+
+/// Write one node of a kept dialogue: tag 0 and a constant's reference, or
+/// tag 1 or 2 and a run's domain id as a word.
+///
+/// # Specification
+/// - ensures: [`read_trace`] reads back `node` from what was written.
+/// - fails: as [`write_reference`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+fn write_trace<Out>(
+    writer: &mut Writer<'_, Out>,
+    node: &TraceContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *node {
+        TraceContent::Constant(ref reference) => {
+            writer.tag(Tag(0));
+            write_reference(writer, reference)
+        },
+        TraceContent::Value(value) => {
+            writer.tag(Tag(1));
+            writer.word(Word(u64::from(u32::from(value))));
+            Ok(())
+        },
+        TraceContent::Computation(computation) => {
+            writer.tag(Tag(2));
+            writer.word(Word(u64::from(u32::from(computation))));
+            Ok(())
+        },
+    }
+}
+
+/// Read a kept dialogue as [`write_dialogue`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag that no decision or side takes;
+///   as [`read_trace`] fails.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+fn read_dialogue(
+    reader: &mut Reader<'_>
+) -> Result<Vec<ConversionDecision<TraceContent>>, CodecError>
+{
+    let side = |reader: &mut Reader<'_>| match reader.tag()?.0 {
+        0 => Ok(ConversionSide::Left),
+        1 => Ok(ConversionSide::Right),
+        _ => Err(CodecError::Corrupt),
+    };
+    let count = reader.count()?.0;
+    let mut dialogue = Vec::new();
+    for _ in 0 .. count {
+        dialogue.push(match reader.tag()?.0 {
+            0 => ConversionDecision::ReduceLeft {
+                redex: read_trace(reader)?,
+            },
+            1 => ConversionDecision::ReduceRight {
+                redex: read_trace(reader)?,
+            },
+            2 => ConversionDecision::ConstShortcut {
+                constant: read_trace(reader)?,
+            },
+            3 => ConversionDecision::Unfold {
+                constant: read_trace(reader)?,
+            },
+            4 => ConversionDecision::Postpone {
+                constant: read_trace(reader)?,
+            },
+            5 => ConversionDecision::Freeze {
+                constant: read_trace(reader)?,
+                side: side(reader)?,
+            },
+            6 => ConversionDecision::EtaExpand {
+                side: side(reader)?,
+                variable: read_trace(reader)?,
+            },
+            7 => ConversionDecision::ReturnEta {
+                side: side(reader)?,
+            },
+            8 => ConversionDecision::Reassociate {
+                side: side(reader)?,
+            },
+            9 => ConversionDecision::Discard {
+                side: side(reader)?,
+            },
+            10 => ConversionDecision::Hold {
+                side: side(reader)?,
+            },
+            11 => ConversionDecision::Force {
+                thunk: read_trace(reader)?,
+            },
+            12 => ConversionDecision::ComparedShared {
+                left: read_trace(reader)?,
+                right: read_trace(reader)?,
+            },
+            13 => ConversionDecision::Decompose,
+            14 => ConversionDecision::NegativeSubgoal {
+                position: read_narrow::<SubgoalPosition>(reader)?,
+            },
+            15 => ConversionDecision::Evaluate,
+            16 => ConversionDecision::Admitted,
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    Ok(dialogue)
+}
+
+/// Read one node of a kept dialogue as [`write_trace`] writes it.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a tag past 2 or a word past 32 bits; as
+///   [`read_reference`] fails.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(TraceContent::Constant(read_reference(reader)?)),
+        1 => Ok(TraceContent::Value(read_narrow::<DomainValueId>(reader)?)),
+        2 => Ok(TraceContent::Computation(read_narrow::<DomainCompId>(
+            reader,
+        )?)),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Read the entries a checkpoint keeps of the rows, the handlers and the
+/// reflexivities, as [`write_tables`] writes them, a judged node's support
+/// read against `body`, the table of the body that the checkpoint keeps.
 ///
 /// # Specification
 /// - fails: [`CodecError::Corrupt`] as [`read_report`] fails on a place or a
-///   root; [`CodecError::NonCanonical`] for a table not numbered from its
-///   roots, or entries out of the order of their keys.
+///   root, or as [`read_dialogue`] fails; [`CodecError::NonCanonical`] for a
+///   table not numbered from its roots, or entries out of the order of their
+///   keys.
 /// - panics: none.
 /// - executable: none — the witness reads the bytes back.
 ///
@@ -1603,6 +1888,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 fn read_tables(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -1650,8 +1936,40 @@ fn read_tables(
     if !handled.is_sorted_by(|left, right| left.0 < right.0) {
         return Err(CodecError::NonCanonical);
     }
+    let count = reader.count()?.0;
+    let mut reflexivities = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let left = read_dialogue(reader)?;
+        let right = read_dialogue(reader)?;
+        let mut met = [None, None];
+        for slot in &mut met {
+            *slot = match reader.tag()?.0 {
+                0 => None,
+                1 => {
+                    let point = places.read(reader)?;
+                    let endpoint = places.read(reader)?;
+                    let binders = reader.count()?.0;
+                    let mut returning = Vec::new();
+                    for _ in 0 .. binders {
+                        returning.push(read_narrow::<DeBruijnIndex>(reader)?);
+                    }
+                    Some(MetContent {
+                        point,
+                        endpoint,
+                        returning,
+                    })
+                },
+                _ => return Err(CodecError::Corrupt),
+            };
+        }
+        reflexivities.push((at, ReflexivityContent { left, right, met }));
+    }
+    if !reflexivities.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
     Ok(Maybe::Present(TableContent::from_parts(
-        (rows, handled),
+        (rows, handled, reflexivities),
         (outside, roots),
     )))
 }

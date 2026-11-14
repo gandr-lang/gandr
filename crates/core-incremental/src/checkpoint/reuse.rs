@@ -355,8 +355,8 @@ impl Taking for Reuse<'_>
             return unheld;
         };
         self.supplied.own.push(answer);
-        if let Some((rows, handled)) = tables {
-            context.adopt_tabled(&rows, handled);
+        if let Some((rows, handled, reflexivities)) = tables {
+            context.adopt_tabled(&rows, (handled, reflexivities));
         }
         self.taken = ItemCount::from(usize::from(self.taken).saturating_add(1));
         let verdict = match (kind, context.signature(declaration.constant())) {
