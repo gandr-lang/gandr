@@ -10,6 +10,7 @@ use std::os::fd::AsRawFd as _;
 use std::os::fd::BorrowedFd;
 use std::os::fd::OwnedFd;
 
+use crate::buffer::Buffer;
 use crate::sys;
 use crate::sys::Errno;
 use crate::sys::Mapped;
@@ -87,6 +88,35 @@ impl From<u64> for Position
     }
 }
 
+impl From<Position> for u64
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: Position) -> Self
+    {
+        position.0
+    }
+}
+
+impl Position
+{
+    /// The position `moved` bytes past this one, saturated at the last
+    /// byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn plus(
+        self,
+        moved: Moved,
+    ) -> Self
+    {
+        Self(self.0.saturating_add(u64::from(moved.0)))
+    }
+}
+
 /// A count of bytes that an operation moved.
 ///
 /// # Specification
@@ -94,6 +124,17 @@ impl From<u64> for Position
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Moved(u32);
+
+impl From<u32> for Moved
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(moved: u32) -> Self
+    {
+        Self(moved)
+    }
+}
 
 impl From<Moved> for u32
 {
@@ -103,38 +144,6 @@ impl From<Moved> for u32
     fn from(moved: Moved) -> Self
     {
         moved.0
-    }
-}
-
-/// The bytes that an operation writes from or reads into. A submission
-/// names the buffer, and the buffer stays with its owner until the
-/// completion.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Buffer(Vec<u8>);
-
-impl From<Vec<u8>> for Buffer
-{
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(bytes: Vec<u8>) -> Self
-    {
-        Self(bytes)
-    }
-}
-
-impl From<Buffer> for Vec<u8>
-{
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(buffer: Buffer) -> Self
-    {
-        buffer.0
     }
 }
 
@@ -173,14 +182,14 @@ pub struct Entry
 
 impl Entry
 {
-    /// An entry of `opcode` on `file` over `length` bytes at `address`, at
-    /// `position`, with `key`.
+    /// An entry of `opcode` on `file`, or on no file, over `length` bytes at
+    /// `address`, at `position`, with `key`.
     ///
     /// # Specification
     /// trivial.
     fn of(
         opcode: Word,
-        file: BorrowedFd<'_>,
+        file: Option<BorrowedFd<'_>>,
         address: Word,
         length: Word,
         position: Position,
@@ -192,7 +201,7 @@ impl Entry
                 opcode: u8::try_from(usize::from(opcode)).unwrap_or(u8::MAX),
                 flags: 0,
                 ioprio: 0,
-                fd: file.as_raw_fd(),
+                fd: file.map_or(-1, |file| file.as_raw_fd()),
                 __bindgen_anon_1: uapi::io_uring_sqe__bindgen_ty_1 { off: position.0 },
                 __bindgen_anon_2: uapi::io_uring_sqe__bindgen_ty_2 {
                     addr: u64::try_from(usize::from(address)).unwrap_or(u64::MAX),
@@ -225,9 +234,9 @@ impl Entry
     {
         Self::of(
             Word::from(uapi::IORING_OP_WRITE),
-            file,
-            Word::from(buffer.0.as_ptr().expose_provenance()),
-            Word::from(buffer.0.len()),
+            Some(file),
+            buffer.address(),
+            Word::from(u32::from(buffer.length())),
             position,
             key,
         )
@@ -246,11 +255,12 @@ impl Entry
         key: Key,
     ) -> Self
     {
+        let length = Word::from(u32::from(buffer.length()));
         Self::of(
             Word::from(uapi::IORING_OP_READ),
-            file,
-            Word::from(buffer.0.as_mut_ptr().expose_provenance()),
-            Word::from(buffer.0.len()),
+            Some(file),
+            buffer.address_mut(),
+            length,
             position,
             key,
         )
@@ -269,8 +279,29 @@ impl Entry
     {
         Self::of(
             Word::from(uapi::IORING_OP_FSYNC),
-            file,
+            Some(file),
             Word::from(0_usize),
+            Word::from(0_usize),
+            Position(0),
+            key,
+        )
+    }
+
+    /// A cancel of the submission keyed `target`, itself keyed `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cancel(
+        target: Key,
+        key: Key,
+    ) -> Self
+    {
+        Self::of(
+            Word::from(uapi::IORING_OP_ASYNC_CANCEL),
+            None,
+            Word::from(usize::try_from(target.0).unwrap_or(usize::MAX)),
             Word::from(0_usize),
             Position(0),
             key,
@@ -411,7 +442,7 @@ impl Mapping
     /// # Adequacy
     /// - hypothesis: L3 — the queues read at the kernel's offsets carry a
     ///   linked write, sync and read to their completions.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     fn at<T>(
         &self,
         offset: Word,
@@ -436,7 +467,7 @@ impl Mapping
     /// # Adequacy
     /// - hypothesis: L3 — the queue's head and tail, read here, carry a linked
     ///   write, sync and read to their completions.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     fn word(
         &self,
         offset: Word,
@@ -479,8 +510,10 @@ pub struct Ring
     completions: Option<Mapping>,
     /// The submission entries.
     entries: Mapping,
-    /// The entries pushed and not yet submitted.
-    staged: Count,
+    /// The entries pushed since the tail last moved.
+    pushed: Count,
+    /// The entries past the tail that no `io_uring_enter` consumed yet.
+    unsubmitted: Count,
     /// The ring's descriptor, dropped after each mapping.
     descriptor: OwnedFd,
 }
@@ -490,26 +523,32 @@ impl Ring
     /// Set up a ring of `entries` submission entries and map its queues.
     ///
     /// # Specification
-    /// - ensures: on `Ok`, an empty ring whose queues the process can read and
-    ///   write.
+    /// - ensures: on `Ok`, an empty ring of at least `entries` submission
+    ///   entries, whose queues the process can read and write, on a kernel that
+    ///   keeps each submission stable once it is consumed.
     /// - fails: the kernel's error number, such as [`Errno::PERMISSION`] or
-    ///   [`Errno::NO_SYSTEM_CALL`].
+    ///   [`Errno::NO_SYSTEM_CALL`], or [`Errno::NOT_SUPPORTED`] for a kernel
+    ///   without `IORING_FEAT_SUBMIT_STABLE`.
     /// - panics: none.
     /// - executable: none — the ring is a kernel object, which no predicate
     ///   reads.
     ///
     /// # Errors
-    /// The kernel's error number, when it refuses the ring or a mapping.
+    /// The kernel's error number, when it refuses the ring or a mapping, and
+    /// [`Errno::NOT_SUPPORTED`] when its submissions are not stable.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a ring set up here completes a linked write, sync and
     ///   read in order.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     #[inline]
     pub fn new(entries: Count) -> Result<Self, Errno>
     {
         let mut params = io_uring_params::default();
         let descriptor = sys::setup(Word::from(entries.0), &mut params)?;
+        if params.features & uapi::IORING_FEAT_SUBMIT_STABLE == 0 {
+            return Err(Errno::NOT_SUPPORTED);
+        }
         let ring = descriptor.as_fd();
         let submit = Word::from(params.sq_off.array)
             .plus(Word::from(params.sq_entries).times(Word::from(size_of::<u32>())));
@@ -541,7 +580,8 @@ impl Ring
             queues,
             completions,
             entries,
-            staged: Count(0),
+            pushed: Count(0),
+            unsubmitted: Count(0),
             descriptor,
         })
     }
@@ -574,7 +614,7 @@ impl Ring
     ///
     /// # Adequacy
     /// - hypothesis: L3 — three entries staged in order complete in order.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     #[inline]
     pub unsafe fn push(
         &mut self,
@@ -597,7 +637,7 @@ impl Ring
             .word(Word::from(offsets.ring_mask))
             .ok_or(Full)?
             .load(Ordering::Relaxed);
-        let next = tail.plus(self.staged);
+        let next = tail.plus(self.pushed);
         if next.since(head) >= Count(self.params.sq_entries) {
             return Err(Full);
         }
@@ -623,15 +663,16 @@ impl Ring
         unsafe {
             index.write(slot);
         }
-        self.staged = Count(self.staged.0.wrapping_add(1));
+        self.pushed = Count(self.pushed.0.wrapping_add(1));
         Ok(())
     }
 
-    /// Submit each staged entry and wait until `wait` completions stand.
+    /// Submit each entry that no call consumed yet, and wait until `wait`
+    /// completions stand.
     ///
     /// # Specification
-    /// - ensures: on `Ok`, the count of entries the kernel consumed; no entry
-    ///   stays staged.
+    /// - ensures: on `Ok`, the count of entries the kernel consumed; an entry
+    ///   that the kernel did not consume stays for the next call.
     /// - fails: the kernel's error number.
     /// - panics: none.
     /// - executable: none — the queue is shared with the kernel.
@@ -642,7 +683,7 @@ impl Ring
     /// # Adequacy
     /// - hypothesis: L3 — one submission of three linked entries gives three
     ///   completions in order.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     #[inline]
     pub fn submit(
         &mut self,
@@ -654,11 +695,12 @@ impl Ring
             .word(Word::from(self.params.sq_off.tail))
             .ok_or(MALFORMED)?;
         tail.store(
-            tail.load(Ordering::Relaxed).plus(self.staged),
+            tail.load(Ordering::Relaxed).plus(self.pushed),
             Ordering::Release,
         );
-        let submit = self.staged;
-        self.staged = Count(0);
+        let submit = Count(self.unsubmitted.0.wrapping_add(self.pushed.0));
+        self.pushed = Count(0);
+        self.unsubmitted = submit;
         // SAFETY: each pushed entry's buffers stay valid by `push`'s
         // invariant, and the mappings live as long as `self`.
         let consumed = unsafe {
@@ -669,9 +711,13 @@ impl Ring
                 Word::from(uapi::IORING_ENTER_GETEVENTS),
             )
         }?;
-        Ok(Count(
-            u32::try_from(usize::from(consumed)).unwrap_or(u32::MAX),
-        ))
+        let consumed = Count(
+            u32::try_from(usize::from(consumed))
+                .unwrap_or(u32::MAX)
+                .min(submit.0),
+        );
+        self.unsubmitted = Count(submit.0.wrapping_sub(consumed.0));
+        Ok(consumed)
     }
 
     /// The next completion, which frees its slot; `None` when none stands.
@@ -685,10 +731,10 @@ impl Ring
     /// - hypothesis: L3 — a write, a sync and a read linked in that order
     ///   complete in that order, and a failed write's linked sync completes
     ///   cancelled.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
-    /// - witness: `tests::ring::a_failed_write_cancels_its_linked_sync`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_failed_write_cancels_its_linked_sync`
     #[inline]
-    pub fn complete(&mut self) -> Option<Completion>
+    pub fn complete(&self) -> Option<Completion>
     {
         let offsets = self.params.cq_off;
         let queue = self.completion_queue();
