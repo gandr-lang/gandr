@@ -1579,14 +1579,22 @@ default-features = false
 # feature no crate here builds; portable-pty brings a pty layer and its
 # dependencies for one `openpty`. Reversal: rustyline leaving nix, or an
 # advisory against it.
+#
+# The store's load bench names the filesystem of its directory and the CPU
+# of each row. rustix carries `statfs` and no `getrusage`, and libc alone
+# needs `unsafe` for both. Reversal: rustix gaining `getrusage`.
 # features:
-# - term: `pty::openpty`; every other module stays off
+# - term: `pty::openpty`
+# - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS
+# - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
+#   of each row of the store's load
 # consumers:
+# - storage-store (dev)
 # - surface-driver (dev)
 [workspace.dependencies.nix]
 version = "0.31.3"
 default-features = false
-features = ["term"]
+features = ["fs", "resource", "term"]
 
 # The operating system's file events: the hub's watch over the files open
 # documents import, for connections whose client watches none, and the
