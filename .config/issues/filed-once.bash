@@ -66,6 +66,10 @@ while IFS= read -r case; do
   mkdir "$work/stub"
   echo '[]' > "$work/stub/board.json"
   cp "$work/pr.json" "$work/stub/pr.json"
+  # The stub appends each call to `calls`. A run that makes no call writes no
+  # line, so the file stands empty from the start, and the case reports the
+  # runs' status where awk would otherwise stop on a missing file (#7509).
+  : > "$work/stub/calls"
   case $(jq -r .kind <<< "$case") in
     epic)
       status=0
