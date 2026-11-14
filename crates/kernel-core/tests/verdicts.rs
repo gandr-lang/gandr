@@ -567,17 +567,16 @@ enum Run
     Second,
 }
 
-/// Admit a constant of `kind` at the next position of `environment`: of the
-/// unit in the first run and of the pair of units in the second, after its
-/// abstract type for [`Positional::Unkeyed`]. Then offer `b`, which reads it
-/// as of the unit, and answer whether `b` admits.
+/// Admit a constant of `kind` at the next position of `environment`, and
+/// answer its position: of the unit in the first run and of the pair of units
+/// in the second, after its abstract type for [`Positional::Unkeyed`].
 ///
 /// # Specification
 /// trivial.
-fn named_positional(
+fn positional_constant(
     environment: &mut Environment,
     (kind, run): (Positional, Run),
-) -> Result<(), KernelError>
+) -> ConstantIndex
 {
     let first = ConstantIndex::from(usize::from(environment.entries().len()));
     let mut staging = environment.stage();
@@ -587,7 +586,7 @@ fn named_positional(
         Run::First => unit,
         Run::Second => arena.value_type_product(&[unit, unit]),
     };
-    let positional = match kind {
+    match kind {
         Positional::Bypassed => {
             let staged = staging.axiom(LevelSignature::monomorphic(), held);
             let _bypassed = environment
@@ -625,7 +624,19 @@ fn named_positional(
                     .position()
             }
         },
-    };
+    }
+}
+
+/// Offer `b`, which reads the constant of `kind` at `positional` as of the
+/// unit, and answer whether `b` admits.
+///
+/// # Specification
+/// trivial.
+fn reader_of(
+    environment: &mut Environment,
+    (kind, positional): (Positional, ConstantIndex),
+) -> Result<(), KernelError>
+{
     let mut staging = environment.stage();
     let arena = staging.arena();
     let staged = match kind {
@@ -663,8 +674,9 @@ fn a_declaration_that_names_a_constant_with_no_content_key_is_checked_in_each_ru
     ] {
         let mut first = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
         let _unit = admit_one(&mut first, None);
+        let positional = positional_constant(&mut first, (kind, Run::First));
         assert!(
-            named_positional(&mut first, (kind, Run::First)).is_ok(),
+            reader_of(&mut first, (kind, positional)).is_ok(),
             "{kind:?}: the first run admits `b`"
         );
         let Maybe::Present(receipt) = first.receipt(&signer)
@@ -677,8 +689,9 @@ fn a_declaration_that_names_a_constant_with_no_content_key_is_checked_in_each_ru
             Admission::Recalled,
             "{kind:?}: the unit recalls at position 0"
         );
+        let positional = positional_constant(&mut second, (kind, Run::Second));
         assert!(
-            named_positional(&mut second, (kind, Run::Second)).is_err(),
+            reader_of(&mut second, (kind, positional)).is_err(),
             "{kind:?}: the second run checks `b` and refuses it"
         );
         assert_eq!(
