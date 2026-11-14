@@ -9,6 +9,8 @@
 //! formatter's motive of a path composite written as its transport.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -36,9 +38,11 @@ use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::ChildSlot;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Scopes;
+use gandr_surface_pretty::Style;
 use gandr_surface_pretty::WrittenForms;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
@@ -334,23 +338,31 @@ impl Naming
     }
 
     /// The binders of one declaration, whose declared type and body are
-    /// `roots`, each named by what the record keeps for it.
+    /// `roots`, each named by what the record keeps for it, under the
+    /// renaming that the elaboration of the body records.
     ///
     /// # Specification
     /// - requires: `arena` holds the declaration's nodes and `names` its
-    ///   module's constants'.
-    /// - ensures: the scopes of every node reachable from `roots`, and for each
-    ///   binder, at its position, the intuitionistic binder around it and its
-    ///   name: for the lambda a model implicit's component opens, the path the
-    ///   body reads it by, `s.x`; else the one written for the lambda or bind
-    ///   that opens it, or for the split component it is, counted from the
-    ///   split's outermost binder along the chain each component stands under
-    ///   the one before in, or the label of the dependent record field whose
-    ///   pair opens it, else the one written at a use's binder; a split
-    ///   component a label pattern leaves unwritten, or that holds a dependent
-    ///   record's rest, is named by its field's label, primed (`′`) until no
-    ///   other binder of the declaration holds the name; a dependent split's
-    ///   motive binder, the scrutinee's again, keeps none.
+    ///   module's constants'; `renaming` is the elaboration of this
+    ///   declaration's body, or empty.
+    /// - ensures: the scopes of every node reachable from `roots` and from each
+    ///   root of `renaming`, and for each binder, at its position, the
+    ///   intuitionistic binder around it and its name: for the lambda a model
+    ///   implicit's component opens, the path the body reads it by, `s.x`; else
+    ///   the one written for the lambda or bind that opens it, or for the split
+    ///   component it is, counted from the split's outermost binder along the
+    ///   chain each component stands under the one before in, or the label of
+    ///   the dependent record field whose pair opens it, else the one written
+    ///   at a use's binder; a split component a label pattern leaves unwritten,
+    ///   or that holds a dependent record's rest, is named by its field's
+    ///   label, primed (`′`) until no other binder of the declaration holds the
+    ///   name; a dependent split's motive binder, the scrutinee's again, keeps
+    ///   none. A binder that a copy opens is named as the binder its first
+    ///   source opens. A binder that a minted bind opens is named by the run it
+    ///   binds, printed on one line under the binders around the run, and
+    ///   parenthesized unless it is one word. A binder that a copy opens, with
+    ///   neither name, takes a letter marked `′` that no other binder of the
+    ///   declaration holds.
     /// - provides: the context a node inside the declaration is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -359,6 +371,7 @@ impl Naming
     /// - hypothesis: L3 — a binder left unnamed spells `?` where a node under
     ///   it is spelled, which the test fails on.
     /// - witness: `tests::diagnostics::a_declaration_s_binders_are_named_as_written_803`
+    /// - witness: `gandr-surface-session::tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
     #[spec(ensures: |ret| ret.bound.len() == ret.scopes.binders().len())]
     #[inline]
     #[must_use]
@@ -367,11 +380,24 @@ impl Naming
         arena: &CoreArena,
         names: &[String],
         roots: [Option<CoreNode>; 2],
+        renaming: &Renaming,
     ) -> Scoped
     {
         let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
         let printer = CoreSource::new(arena, &names);
-        let scopes = Scopes::of(&printer, roots.into_iter().flatten());
+        // A later run reads the elaborated body from a root of its own.
+        let later = renaming
+            .roots
+            .iter()
+            .copied()
+            .filter(|&root| !roots.contains(&Some(root)));
+        let scopes = Scopes::of(&printer, roots.into_iter().flatten().chain(later));
+        let sources = renaming.sources();
+        let runs = renaming.runs();
+        // The binders that a minted bind opens, each beside its run, and those
+        // that a copy opens.
+        let mut minted: Vec<(usize, ValueId)> = Vec::new();
+        let mut copied: Vec<usize> = Vec::new();
         // A model implicit's components are named by the path a body reads
         // each by, `s.x`: the lambdas the declaration's body opens first, at
         // the components' positions.
@@ -402,11 +428,20 @@ impl Naming
                             Some(_) | None => 0,
                         };
                         split = Some((opener, index, component));
-                        let key = (opener, SplitComponent::from(component));
-                        let opened = paths.get(&opener).cloned().or_else(|| {
+                        let source = sources.get(&opener).copied();
+                        if let Some(&run) = runs.get(&opener) {
+                            minted.push((at, run));
+                        }
+                        else if source.is_some() {
+                            copied.push(at);
+                        }
+                        // A copy keeps the names its first source keeps.
+                        let written = source.unwrap_or(opener);
+                        let key = (written, SplitComponent::from(component));
+                        let opened = paths.get(&written).cloned().or_else(|| {
                             let &(_, span) = self
                                 .openers
-                                .binary_search_by_key(&opener, |&(held, _)| held)
+                                .binary_search_by_key(&written, |&(held, _)| held)
                                 .ok()
                                 .and_then(|at| self.openers.get(at))?;
                             self.written(span)
@@ -508,7 +543,69 @@ impl Naming
                 }
             }
         }
-        Scoped { scopes, bound }
+        let mut scoped = Scoped { scopes, bound };
+        // A minted bind's binder reads as the run it binds: the renaming's
+        // own case, printed under the binders around the run.
+        let forms = named_forms(&self.forms, self.text());
+        let openers = renaming.openers(self.openers());
+        let mut printed: Vec<(usize, String)> = Vec::with_capacity(minted.len());
+        {
+            // One buffer holds the binders around each run in turn.
+            let mut context: Vec<Option<Name<'_>>> = Vec::new();
+            for &(at, run) in &minted {
+                context.clear();
+                context.extend(
+                    scoped
+                        .around(CoreNode::Value(run))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|binder| binder.name.map(Name::from)),
+                );
+                let source = CoreSource::new(arena, &names)
+                    .writing(&forms)
+                    .opening(&openers)
+                    .within(&context);
+                if let Ok(presented) = gandr_surface_pretty::present_value_line(
+                    &source,
+                    CoreNode::Value(run),
+                    Style::from(Form::Sugared),
+                ) {
+                    printed.push((at, parenthesized(format!("{presented}"))));
+                }
+            }
+        }
+        for (at, text) in printed {
+            if let Some(held) = scoped.bound.get_mut(at)
+                && held.name.is_none()
+            {
+                held.name = Some(text);
+            }
+        }
+        // A copy's binder with neither name takes a letter marked as the
+        // elaboration's. The held names are read once, at the first such
+        // binder.
+        let mut held: Option<BTreeSet<String>> = None;
+        for at in copied {
+            if scoped
+                .bound
+                .get(at)
+                .is_some_and(|binder| binder.name.is_none())
+            {
+                let held = held.get_or_insert_with(|| {
+                    scoped
+                        .bound
+                        .iter()
+                        .filter_map(|binder| binder.name.clone())
+                        .collect()
+                });
+                let name = unheld(held);
+                held.insert(name.clone());
+                if let Some(binder) = scoped.bound.get_mut(at) {
+                    binder.name = Some(name);
+                }
+            }
+        }
+        scoped
     }
 
     /// The lambda each component of a model implicit opens in the body
@@ -794,6 +891,155 @@ fn copied<Id, Held, Make>(
     };
     let _first = first.insert(image, held.clone());
     kept.push((image, held));
+}
+
+/// The renaming that one elaboration of a body records.
+///
+/// It holds each node the elaboration copied beside its source, each bind it
+/// minted beside the run that the bind binds, and the root of each later run
+/// over the elaborated body.
+///
+/// A binder that a copy opens takes the name of the binder that its source
+/// opens, and a binder that a minted bind opens takes the run that it binds.
+/// The renaming keeps one pair for each copy and each bind. [`Naming::scoped`]
+/// builds the lookups it reads only while it names the binders.
+///
+/// # Specification
+/// - requires: built by [`Renaming::new`] from one elaboration of one arena.
+/// - ensures: the pairs in the order the elaboration minted them.
+/// - panics: none.
+/// - executable: none — a data declaration; [`Naming::scoped`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Naming::scoped`].
+/// - witness: `gandr-surface-session::tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Renaming
+{
+    /// Each copy beside its source, in the order minted.
+    carried: Vec<Carried>,
+    /// Each minted bind beside the run it binds, in the order minted.
+    binds: Vec<(ValueId, ComputationId)>,
+    /// The root of each run over the elaborated body.
+    roots: Vec<CoreNode>,
+}
+
+impl Renaming
+{
+    /// The renaming of the copies `carried` and the binds `binds`, which
+    /// the runs at `roots` read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        carried: Vec<Carried>,
+        binds: Vec<(ValueId, ComputationId)>,
+        roots: Vec<CoreNode>,
+    ) -> Self
+    {
+        Self {
+            carried,
+            binds,
+            roots,
+        }
+    }
+
+    /// `openers` with each copy of a lambda or a bind that it names, named as
+    /// its first source, ascending by the opener.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn openers<'name>(
+        &self,
+        openers: Vec<(ComputationId, Name<'name>)>,
+    ) -> Vec<(ComputationId, Name<'name>)>
+    {
+        let copies: Vec<(ComputationId, Name<'name>)> = self
+            .sources()
+            .into_iter()
+            .filter_map(|(copy, source)| {
+                let at = openers
+                    .binary_search_by_key(&source, |&(held, _)| held)
+                    .ok()?;
+                Some((copy, openers.get(at)?.1))
+            })
+            .collect();
+        let mut openers = openers;
+        openers.extend(copies);
+        openers.sort_unstable_by_key(|&(opener, _)| opener);
+        openers
+    }
+
+    /// Each copied computation beside its first source: a copy of a copy
+    /// reaches the source of the first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sources(&self) -> BTreeMap<ComputationId, ComputationId>
+    {
+        let mut sources = BTreeMap::new();
+        for &pair in &self.carried {
+            if let Carried::Computation(source, copy) = pair {
+                let first = sources.get(&source).copied().unwrap_or(source);
+                let _first = sources.entry(copy).or_insert(first);
+            }
+        }
+        sources
+    }
+
+    /// Each minted bind beside the run it binds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn runs(&self) -> BTreeMap<ComputationId, ValueId>
+    {
+        self.binds.iter().map(|&(run, bind)| (bind, run)).collect()
+    }
+}
+
+/// `text` as a binder's name: as it is when it is one word, else in
+/// parentheses.
+///
+/// # Specification
+/// trivial.
+fn parenthesized(text: String) -> String
+{
+    if text
+        .chars()
+        .all(|glyph| glyph.is_alphanumeric() || glyph == '_')
+    {
+        text
+    }
+    else {
+        format!("({text})")
+    }
+}
+
+/// The first letter marked `′` that `held` does not hold: `a′` to `z′`, then
+/// each letter with one more prime for each round.
+///
+/// # Specification
+/// trivial.
+fn unheld(held: &BTreeSet<String>) -> String
+{
+    let mut name = String::new();
+    // The set holds fewer names than the letters of this many rounds, so one
+    // letter of them is unheld.
+    for primes in 1 ..= held.len().saturating_add(1) {
+        for letter in 'a' ..= 'z' {
+            name.clear();
+            name.push(letter);
+            name.extend(core::iter::repeat_n('′', primes));
+            if !held.contains(name.as_str()) {
+                return name;
+            }
+        }
+    }
+    name
 }
 
 /// One binder a node stands under: the intuitionistic binder around it, the

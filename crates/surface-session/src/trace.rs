@@ -58,6 +58,7 @@ use alloc::vec::Vec;
 use core::num::NonZeroUsize;
 
 use gandr_core_checker::CoreNode;
+use gandr_core_checker::NestedElaboration;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::judged;
@@ -75,6 +76,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Renaming;
 use gandr_surface_diagnostics::Scoped;
 use gandr_surface_diagnostics::named_forms;
 use gandr_surface_dispatcher::KernelTier;
@@ -401,20 +403,26 @@ impl DerivationNode
 /// - requires: built by the fold of a [`TraceColumn`].
 /// - ensures: the first node is at depth zero, and each node is at most one
 ///   deeper than the node before it; each node's count of visited nodes is one
-///   more than the sum of its children's.
-/// - provides: the nodes of the derivation pane, in its order.
+///   more than the sum of its children's. The renaming is the elaboration of
+///   the declaration's body, read from the root of each run, or empty.
+/// - provides: the nodes of the derivation pane, in its order, and the renaming
+///   that the goals of a later run print under.
 /// - panics: none.
 /// - executable: none — a data declaration; the fold builds it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Trace`].
 /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
-#[repr(transparent)]
+/// - witness: `tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DerivationTree
 {
     /// The nodes, in pre-order.
     nodes: Vec<DerivationNode>,
+    /// The copies and the binds that the elaboration of the body made, with
+    /// the root of each run; empty for a body that holds no nested
+    /// computation.
+    renaming: Renaming,
 }
 
 impl DerivationTree
@@ -558,29 +566,34 @@ impl TraceColumn
     }
 
     /// Fold `buffer`, the steps of the item at `constant`, into the item's
-    /// tree.
+    /// tree, beside `elaboration`, the elaboration of the item's body.
     ///
     /// # Specification
     /// - requires: `buffer` holds the steps of one item, from its first run's
     ///   opening.
     /// - ensures: the column's last entry is the item's: a tree with one node
     ///   for each started or answered step, in their order, or
-    ///   [`underived::Absent::Overflowed`] when the buffer overflowed.
+    ///   [`underived::Absent::Overflowed`] when the buffer overflowed. The tree
+    ///   keeps the copies and the binds of `elaboration`, with each root term
+    ///   node as the root of a run.
     /// - panics: none.
     /// - economy: one read of each step, and one push for each node; the stacks
     ///   of the goals and the runs under way keep their buffers across items.
     ///   The pass folds the items the edit reaches, and #4369 bounds them by
-    ///   the edit.
+    ///   the edit. One pair for each copy and each bind of an elaborated body,
+    ///   and none for a body with no elaboration.
     /// - executable: none — the tree is a projection of the steps, which a
     ///   predicate would fold again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Trace`].
     /// - witness: `tests::trace::each_judged_declaration_keeps_the_tree_its_judgement_visited`
+    /// - witness: `tests::trace::the_second_run_prints_its_goals_in_the_source_s_names_6745`
     pub(crate) fn fold(
         &mut self,
         constant: ConstantIndex,
         buffer: &StepBuffer,
+        elaboration: Option<&NestedElaboration>,
     )
     {
         let steps = match buffer.steps() {
@@ -687,8 +700,28 @@ impl TraceColumn
         while let Some(open) = self.open.pop() {
             close(&mut nodes, open, last, None);
         }
+        let renaming = elaboration.map_or_else(Renaming::default, |elaboration| {
+            let roots = nodes
+                .iter()
+                .filter(|node| u32::from(node.depth) == 0)
+                .filter_map(|node| match node.node {
+                    CoreNode::Term(TermNode::Value(id)) => {
+                        Some(gandr_surface_pretty::CoreNode::Value(id))
+                    },
+                    CoreNode::Term(TermNode::Computation(id)) => {
+                        Some(gandr_surface_pretty::CoreNode::Computation(id))
+                    },
+                    CoreNode::Type(_) => None,
+                })
+                .collect();
+            Renaming::new(
+                elaboration.carried().to_vec(),
+                elaboration.binds().to_vec(),
+                roots,
+            )
+        });
         self.folded
-            .push((constant, Maybe::Present(DerivationTree { nodes })));
+            .push((constant, Maybe::Present(DerivationTree { nodes, renaming })));
     }
 }
 
@@ -1022,10 +1055,10 @@ impl<'account> Derivation<'account>
                 .map(|name| Name::from(name.as_str()))
                 .collect(),
             forms: named_forms(naming.forms(), naming.text()),
-            openers: naming.openers(),
+            openers: self.tree.renaming.openers(naming.openers()),
             scoped: naming
                 .roots(self.constant)
-                .map(|roots| naming.scoped(arena, &printing.names, roots)),
+                .map(|roots| naming.scoped(arena, &printing.names, roots, &self.tree.renaming)),
         }
     }
 

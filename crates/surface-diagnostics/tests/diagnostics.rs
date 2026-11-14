@@ -35,6 +35,7 @@ use gandr_surface_diagnostics::Fix;
 use gandr_surface_diagnostics::Identifier;
 use gandr_surface_diagnostics::Lint;
 use gandr_surface_diagnostics::Naming;
+use gandr_surface_diagnostics::Renaming;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Subject;
 use gandr_surface_diagnostics::Unsettlement;
@@ -949,7 +950,7 @@ fn a_declaration_s_binders_are_named_as_written_803()
     let around: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
-            let scoped = naming.scoped(&arena, &names, roots);
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
             variables
                 .iter()
                 .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
@@ -1002,7 +1003,7 @@ fn a_model_implicit_s_components_are_named_by_their_paths_2364()
     let around: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
-            let scoped = naming.scoped(&arena, &names, roots);
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
             variables
                 .iter()
                 .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
@@ -1061,7 +1062,7 @@ fn a_shared_field_variable_answers_at_the_depth_it_was_judged_1515()
         })
     };
     for (_, roots) in naming.declarations() {
-        let scoped = naming.scoped(&arena, &names, roots);
+        let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
         for &variable in &variables {
             let node = CoreNode::Value(variable);
             assert_eq!(
@@ -1115,7 +1116,7 @@ fn a_node_stands_in_the_regions_of_each_scope_and_hold_around_it()
     let regions: Vec<Vec<Option<String>>> = naming
         .declarations()
         .flat_map(|(_, roots)| {
-            let scoped = naming.scoped(&arena, &names, roots);
+            let scoped = naming.scoped(&arena, &names, roots, &Renaming::default());
             variables
                 .iter()
                 .filter_map(|&variable| scoped.regions(CoreNode::Value(variable)))

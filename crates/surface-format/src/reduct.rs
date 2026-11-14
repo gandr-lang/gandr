@@ -415,7 +415,12 @@ fn forgets(
         if pending.is_empty() {
             break;
         }
-        let scoped = naming.scoped(arena, &owned, roots);
+        let scoped = naming.scoped(
+            arena,
+            &owned,
+            roots,
+            &gandr_surface_diagnostics::Renaming::default(),
+        );
         let mut binders: Vec<Option<Name<'_>>> = Vec::new();
         pending.retain(|&&(value, ref forgetting)| {
             let Some(around) = scoped.around(CoreNode::Value(value))

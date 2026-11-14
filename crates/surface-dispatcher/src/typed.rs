@@ -5071,7 +5071,12 @@ impl TypeTable
         else {
             return Context::default();
         };
-        let scoped = self.naming.scoped(&self.arena, &self.names, roots);
+        let scoped = self.naming.scoped(
+            &self.arena,
+            &self.names,
+            roots,
+            &gandr_surface_diagnostics::Renaming::default(),
+        );
         // A node the term shares between places of other depths is read at
         // the place its type was judged at.
         let (around, regions) = depth.map_or_else(

@@ -148,6 +148,7 @@ pub use crate::advice::advice;
 pub use crate::advice::help;
 pub use crate::binders::Around;
 pub use crate::binders::Naming;
+pub use crate::binders::Renaming;
 pub use crate::binders::Scoped;
 pub use crate::binders::carry_labels;
 pub use crate::binders::modelled;

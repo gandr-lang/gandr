@@ -629,7 +629,7 @@ where
         if let (Maybe::Present(column), Maybe::Present(steps), Adoption::Judged) =
             (self.sink.trace(), item.steps, item.adoption)
         {
-            column.fold(item.constant, steps);
+            column.fold(item.constant, steps, item.elaboration);
         }
     }
 
