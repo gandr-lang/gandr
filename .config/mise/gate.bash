@@ -282,12 +282,17 @@ gate_exit() {
 # own, so a gate runs at most the share plus one `rustc` for each cargo. A
 # jobserver that `MAKEFLAGS` already names stays, and so does a lower
 # `NEXTEST_TEST_THREADS`.
+#
+# A driver that a test starts takes the host's width unless `GANDR_JOBS` caps
+# it, so the gate sets `GANDR_JOBS` to the share too, and keeps a lower one
+# (#7447).
 gate_bound() {
   local share
   share=$(( gate_cores / gate_slots ))
   (( share >= 1 )) || share=1
   NEXTEST_TEST_THREADS=$(gate_lower "${NEXTEST_TEST_THREADS:-}" "$share")
-  export NEXTEST_TEST_THREADS
+  GANDR_JOBS=$(gate_lower "${GANDR_JOBS:-}" "$share")
+  export NEXTEST_TEST_THREADS GANDR_JOBS
   gate_jobs=$share
   if [[ ${MAKEFLAGS:-} == *--jobserver-auth=* ]]; then
     gate_jobs="the inherited jobserver's"
