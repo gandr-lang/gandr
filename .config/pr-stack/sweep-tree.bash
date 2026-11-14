@@ -34,8 +34,10 @@ tree() {
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
   # A listing is a snapshot: the run of another seat can remove a worktree
   # after the listing and before its judgement. Such a worktree is pruned, as
-  # one that git lists as prunable is.
-  if ! key=$(realpath "$path" 2> /dev/null); then
+  # one that git lists as prunable is. The guard reads the directory itself:
+  # GNU `realpath` resolves a path whose last component is missing, and the
+  # `realpath` of macOS refuses it.
+  if ! key=$(cd -- "$path" 2> /dev/null && pwd -P); then
     pruned+=("pruned $path${branch:+ ($branch)}: its directory went away after the listing")
     return 0
   fi
