@@ -159,7 +159,10 @@ fn main()
     )
     .expect("the counter opens");
     let sources = [
-        ("counter", Grant::hosted(&directory).into_tokens()),
+        (
+            "counter",
+            Grant::hosted(&directory, gandr_surface_dispatcher::Class::Batch).into_tokens(),
+        ),
         (
             "FIFO",
             Grant::fifo(&path).expect("the FIFO opens").into_tokens(),

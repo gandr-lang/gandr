@@ -408,6 +408,20 @@ where
         },
         None => None,
     };
+    // The porter carries the host's tokens between the counter and the build
+    // tools' FIFO beside it while the hub runs. Another hub's porter may carry
+    // them already.
+    let _porter = match tokens.as_ref().map(HostCounter::carry) {
+        Some(Ok(porter)) => Some(porter),
+        Some(Err(error)) => {
+            drop(writeln!(
+                log,
+                "the hub carries no tokens to the build tools: {error}"
+            ));
+            None
+        },
+        None => None,
+    };
     let mut reaped = Instant::now();
     let log = Arc::new(Mutex::new(log));
     let open = Arc::new(AtomicU64::new(0));

@@ -40,6 +40,30 @@
 //! waits a second reaps the segment itself, so a dead holder's tokens come
 //! back after a hub dies too.
 //!
+//! **A keystroke goes first.** Each process takes as a keystroke or as a
+//! batch. A keystroke's take that finds no token counts itself among the
+//! counter's urgent takes while it waits, and a give wakes an urgent take
+//! first. A batch take that finds an urgent take refuses once, so the token
+//! stays free for the keystroke. The next take of the batch after the refusal
+//! takes the token all the same. So a batch waits at most one retry at each
+//! boundary of its jobs, and a stream of keystrokes starves no batch.
+//!
+//! **The porter carries tokens to the build tools.** The hub makes the build
+//! tools' FIFO beside the segment, and its porter joins the counter with a
+//! slot of its own. The porter makes two crossings, and nothing else moves a
+//! token between the FIFO and the counter. It moves a byte of the FIFO to the
+//! counter while a take of gandr waits, or while the FIFO holds more than one
+//! byte. It moves a free token of the counter to the FIFO while the FIFO holds
+//! no byte and no take of gandr waits. So the FIFO holds at most one spare
+//! token. The porter's slot counts each token in the FIFO or in the hands of a
+//! tool, so the reap gives them back when the hub dies. A give wakes a porter
+//! whose FIFO is empty, and a take of gandr that waits wakes a porter whose
+//! FIFO holds a spare. A tool's read or write of the FIFO wakes nothing, so
+//! the porter reads the FIFO again at its tick. It counts the FIFO's bytes by
+//! one read of two bytes at most, since `FIONREAD` reads a FIFO as empty on
+//! macOS, and it writes a lone spare back. Its slot counts the spare all the
+//! while, so that write moves no token.
+//!
 //! **Alternatives.** The jobserver's FIFO costs two system calls for each
 //! token, and it keeps no record of the holder of a byte. A pid alone names a
 //! holder that the kernel may give to another process before the reap. On
@@ -57,6 +81,7 @@
 //!   pid.
 
 use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicI32;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicU64;
@@ -77,6 +102,12 @@ use super::grant::untaken;
 use crate::width::Threads;
 use crate::width::Width;
 
+#[cfg(unix)]
+mod porter;
+
+#[cfg(unix)]
+pub use self::porter::Porter;
+
 quenchant_shape::reason_enum! {
     /// Why a process takes no token of the host's counter.
     pub mod unhosted {
@@ -93,8 +124,21 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The first word of a segment whose counter is set: `gandrtk1`.
-const MAGIC: u64 = u64::from_le_bytes(*b"gandrtk1");
+/// Whom the takes of a process serve.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Class
+{
+    /// An edit that a person waits on: its takes go first.
+    Keystroke,
+    /// A check, a build or a tool: its takes wait behind a keystroke's.
+    Batch,
+}
+
+/// The first word of a segment whose counter is set: `gandrtk2`.
+const MAGIC: u64 = u64::from_le_bytes(*b"gandrtk2");
 
 /// The slots of a segment: the processes that hold the host's tokens at once.
 const SLOTS: usize = 256;
@@ -138,6 +182,33 @@ const SETTER: &str = "tokens.set";
 
 /// The directory of the slots' files.
 const SLOT_FILES: &str = "tokens.d";
+
+/// The build tools' FIFO, in the runtime directory. A tool names it as
+/// `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`.
+const FIFO: &str = "tokens.fifo";
+
+/// The porter's file: the hub whose porter carries the tokens holds an
+/// exclusive lock on it.
+const PORTER: &str = "tokens.porter";
+
+/// How long the porter waits before it reads the FIFO again.
+///
+/// economy: 10 ms. A tool's read or write of the FIFO wakes no porter, so a
+/// tool that took the spare waits at most this long for the next one when no
+/// give wakes the porter. An idle porter reads the FIFO, writes its spare back
+/// and waits once each tick: three system calls. #7605 wakes the porter at a
+/// tool's read on Linux, and the tick goes there.
+const TICK: Duration = Duration::from_millis(10);
+
+/// The porter's word: no event wakes the porter.
+const IDLE: u32 = 0;
+
+/// The porter's word: the FIFO holds no byte, so a give wakes the porter.
+const HUNGRY: u32 = 1;
+
+/// The porter's word: the FIFO holds a spare, so a take of gandr that waits
+/// wakes the porter.
+const STOCKED: u32 = 2;
 
 /// The directory of the host's runtime files for this user:
 /// `$XDG_RUNTIME_DIR/gandr`, or `<temporary directory>/gandr-$USER` without
@@ -183,10 +254,19 @@ struct Counter
 {
     /// The free tokens in the low 32 bits, and the generation above them.
     word: AtomicU64,
-    /// The takes that wait for a token.
+    /// The batch takes that wait for a token.
     waiters: AtomicU32,
-    /// The count of wakes, which a waiting take waits on.
-    wakes: AtomicU32,
+    /// The count of wakes, which a waiting batch take waits on.
+    wakes: Eventcount,
+    /// The keystroke takes that wait for a token: a batch take that finds one
+    /// refuses once.
+    urgent: AtomicU32,
+    /// The count of wakes, which a waiting keystroke take waits on.
+    urgent_wakes: Eventcount,
+    /// What wakes the porter: [`IDLE`], [`HUNGRY`] or [`STOCKED`].
+    porting: AtomicU32,
+    /// The count of the porter's wakes, which the porter waits on.
+    porter_wakes: Eventcount,
 }
 
 /// One holder's slot, on a cache line of its own.
@@ -203,8 +283,11 @@ struct Slot
     /// process's own token.
     held: AtomicI32,
     /// The holder's moves of a token between the slot and the counter that are
-    /// under way.
+    /// under way, and its moves into or out of the urgent takes.
     marked: AtomicU32,
+    /// The holder's keystroke takes that wait, which the counter's urgent
+    /// takes count too.
+    urging: AtomicU32,
 }
 
 /// The segment that the file maps: the head, the counter and the slots.
@@ -271,6 +354,19 @@ enum Owned
 #[repr(transparent)]
 struct Place(usize);
 
+/// Whether the counter holds a free token.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Left
+{
+    /// A token is free.
+    Free,
+    /// No token is free.
+    Spent,
+}
+
 /// A count of tokens that goes back to the counter.
 ///
 /// # Specification
@@ -286,6 +382,36 @@ struct Count(u32);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 struct Wakes(u32);
+
+/// A count of wakes, which a waiter waits on with a futex.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+#[repr(transparent)]
+struct Eventcount(AtomicU32);
+
+impl Eventcount
+{
+    /// The count that a waiter reads before it counts itself and waits.
+    ///
+    /// # Specification
+    /// trivial.
+    fn seen(&self) -> Wakes
+    {
+        Wakes(self.0.load(Ordering::Acquire))
+    }
+
+    /// Raise the count and wake one waiter.
+    ///
+    /// # Specification
+    /// trivial.
+    fn raise(&self)
+    {
+        self.0.fetch_add(1, Ordering::Release);
+        wake(self);
+    }
+}
 
 /// A segment mapped into this process.
 ///
@@ -351,8 +477,11 @@ impl Mapping
                     slot.pid.store(0, Ordering::Relaxed);
                     slot.held.store(0, Ordering::Relaxed);
                     slot.marked.store(0, Ordering::Relaxed);
+                    slot.urging.store(0, Ordering::Relaxed);
                 }
                 segment.counter.waiters.store(0, Ordering::Relaxed);
+                segment.counter.urgent.store(0, Ordering::Relaxed);
+                segment.counter.porting.store(IDLE, Ordering::Relaxed);
                 segment.head.width.store(width, Ordering::Relaxed);
                 segment
                     .counter
@@ -404,6 +533,8 @@ pub struct HostCounter
 {
     /// The segment.
     mapping: Mapping,
+    /// The runtime directory, which holds the segment and the porter's FIFO.
+    directory: PathBuf,
     /// The directory of the slots' files.
     slots: PathBuf,
     /// The owner's file, which this hub holds a shared lock on.
@@ -484,6 +615,7 @@ impl HostCounter
         owner.lock_shared()?;
         let counter = Self {
             mapping,
+            directory: directory.to_path_buf(),
             slots,
             _owner: owner,
         };
@@ -508,6 +640,34 @@ impl HostCounter
     pub fn reap(&self)
     {
         reap(self.mapping.segment(), &self.slots);
+    }
+
+    /// Start the porter, which carries tokens between the counter and the build
+    /// tools' FIFO, [`FIFO`] in the counter's directory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a porter with a slot of its own and the porter's lock, and an
+    ///   empty FIFO at its path, which the porter stocks with one spare token.
+    /// - fails: the host's error for a file, a lock, a FIFO or a thread that
+    ///   fails; [`std::io::ErrorKind::WouldBlock`] while the porter of another
+    ///   hub carries the tokens.
+    /// - panics: none.
+    /// - executable: none — the FIFO and the counter are the host's.
+    ///
+    /// # Errors
+    /// Returns the host's error for a file, a lock, a FIFO or a thread that
+    /// fails, and [`std::io::ErrorKind::WouldBlock`] while another hub's porter
+    /// holds the porter's lock.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Porter`].
+    /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+    #[cfg(unix)]
+    #[inline]
+    pub fn carry(&self) -> std::io::Result<Porter>
+    {
+        Porter::start(&self.directory)
     }
 }
 
@@ -534,13 +694,18 @@ pub struct Host
     slots: PathBuf,
     /// The slot that this process claimed.
     place: Place,
+    /// Whom this process's takes serve.
+    class: Class,
+    /// Whether a batch take refused since this process last took a token, so
+    /// its next take takes the token all the same.
+    deferred: AtomicBool,
     /// The slot's file, which this process holds an exclusive lock on.
     _claim: File,
 }
 
 impl Host
 {
-    /// Join the host's counter in `directory`, while a hub owns it.
+    /// Join the host's counter in `directory` as `class`, while a hub owns it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -559,7 +724,10 @@ impl Host
     /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
     /// - witness: `pool::host::tests::no_process_joins_a_counter_that_no_hub_owns`
     #[inline]
-    pub fn join(directory: &Path) -> Maybe<Self, unhosted::Absent>
+    pub fn join(
+        directory: &Path,
+        class: Class,
+    ) -> Maybe<Self, unhosted::Absent>
     {
         if owned(directory) == Owned::Unowned {
             return Maybe::Absent(unhosted::Absent::Unowned);
@@ -584,6 +752,8 @@ impl Host
                         mapping,
                         slots,
                         place: Place(at),
+                        class,
+                        deferred: AtomicBool::new(false),
                         _claim: file,
                     });
                 },
@@ -611,18 +781,28 @@ impl Host
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a token that the counter held, now counted in this process's
-    ///   slot, or [`untaken::Absent::Busy`] when the counter holds none.
+    ///   slot, or [`untaken::Absent::Busy`] when the counter holds none. A
+    ///   batch take that finds an urgent take refuses once, and its next take
+    ///   after the refusal reads the counter all the same.
     /// - panics: none.
     /// - executable: none — the counter is the host's, and other processes
     ///   change it at once.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Host`].
+    /// - hypothesis: L3 — as [`Host`]; a batch refuses one take for each urgent
+    ///   take that it finds, and takes on the next.
     /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
+    /// - witness: `pool::host::tests::a_batch_take_refuses_once_for_a_waiting_keystroke`
     #[inline]
     pub fn take_now(&self) -> Maybe<Token, untaken::Absent>
     {
         let counter = &self.mapping.segment().counter;
+        if self.class == Class::Batch
+            && counter.urgent.load(Ordering::SeqCst) > 0
+            && !self.deferred.swap(true, Ordering::Relaxed)
+        {
+            return Maybe::Absent(untaken::Absent::Busy);
+        }
         let slot = self.slot();
         slot.marked.fetch_add(1, Ordering::SeqCst);
         // The add raises the generation and lowers the count. On a counter with
@@ -642,6 +822,9 @@ impl Host
         }
         slot.held.fetch_add(1, Ordering::Relaxed);
         slot.marked.fetch_sub(1, Ordering::Release);
+        if self.deferred.load(Ordering::Relaxed) {
+            self.deferred.store(false, Ordering::Relaxed);
+        }
         Maybe::Present(Token::COUNTED)
     }
 
@@ -668,18 +851,64 @@ impl Host
             if let Maybe::Present(token) = self.take_now() {
                 return Maybe::Present(token);
             }
-            let seen = Wakes(counter.wakes.load(Ordering::Acquire));
-            counter.waiters.fetch_add(1, Ordering::SeqCst);
-            let free = counter.word.load(Ordering::SeqCst) & FREE;
-            if free == 0 || free >= BELOW_ZERO {
-                wait(counter, seen, WAIT);
+            match self.class {
+                Class::Keystroke => {
+                    let seen = counter.urgent_wakes.seen();
+                    let wanting = self.want();
+                    if left(counter) == Left::Spent {
+                        wait(&counter.urgent_wakes, seen, WAIT);
+                    }
+                    drop(wanting);
+                },
+                Class::Batch => {
+                    let seen = counter.wakes.seen();
+                    counter.waiters.fetch_add(1, Ordering::SeqCst);
+                    summon(counter);
+                    if left(counter) == Left::Spent {
+                        wait(&counter.wakes, seen, WAIT);
+                    }
+                    counter.waiters.fetch_sub(1, Ordering::SeqCst);
+                },
             }
-            counter.waiters.fetch_sub(1, Ordering::SeqCst);
             if since.elapsed() >= STARVED {
                 reap(self.mapping.segment(), &self.slots);
                 since = Instant::now();
             }
         }
+    }
+
+    /// Count a keystroke of this process among the counter's urgent takes
+    /// until the hold drops, so a batch take refuses once and a give wakes it
+    /// first. A batch's hold counts nothing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: while the hold stands, the counter's urgent takes and this
+    ///   process's slot each count it once; a porter whose FIFO holds a spare
+    ///   wakes and carries it to the counter.
+    /// - panics: none.
+    /// - executable: none — the counter is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a batch take refuses once while a keystroke wants a
+    ///   token, and a dead keystroke's want is reaped.
+    /// - witness: `pool::host::tests::a_batch_take_refuses_once_for_a_waiting_keystroke`
+    #[inline]
+    pub fn want(&self) -> Wanting<'_>
+    {
+        if self.class == Class::Batch {
+            return Wanting::NONE;
+        }
+        let counter = &self.mapping.segment().counter;
+        let slot = self.slot();
+        // The mark keeps an audit off the two counts while they differ, and a
+        // holder that dies between them leaves the audit due.
+        slot.marked.fetch_add(1, Ordering::SeqCst);
+        counter.urgent.fetch_add(1, Ordering::SeqCst);
+        slot.urging.fetch_add(1, Ordering::SeqCst);
+        slot.marked.fetch_sub(1, Ordering::Release);
+        summon(counter);
+        Wanting(Some(self))
     }
 
     /// Give `token` back to the counter.
@@ -707,6 +936,44 @@ impl Host
         counter.word.fetch_add(1 + GENERATION, Ordering::SeqCst);
         slot.marked.fetch_sub(1, Ordering::Release);
         rouse(counter);
+    }
+}
+
+/// A keystroke's place among the counter's urgent takes, which it leaves when
+/// it drops.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+#[repr(transparent)]
+#[must_use = "a dropped hold leaves the urgent takes at once"]
+pub struct Wanting<'host>(Option<&'host Host>);
+
+impl Wanting<'_>
+{
+    /// A hold that counts nothing: a batch's, or a FIFO's.
+    pub const NONE: Self = Self(None);
+}
+
+impl Drop for Wanting<'_>
+{
+    /// Leave the counter's urgent takes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn drop(&mut self)
+    {
+        let Some(host) = self.0
+        else {
+            return;
+        };
+        let counter = &host.mapping.segment().counter;
+        let slot = host.slot();
+        slot.marked.fetch_add(1, Ordering::SeqCst);
+        slot.urging.fetch_sub(1, Ordering::SeqCst);
+        counter.urgent.fetch_sub(1, Ordering::SeqCst);
+        slot.marked.fetch_sub(1, Ordering::Release);
     }
 }
 
@@ -781,7 +1048,10 @@ fn reap(
 {
     let mut audit_due = Audit::Whole;
     for (at, slot) in segment.slots.iter().enumerate() {
-        if slot.held.load(Ordering::Acquire) == 0_i32 && slot.marked.load(Ordering::Acquire) == 0 {
+        if slot.held.load(Ordering::Acquire) == 0_i32
+            && slot.marked.load(Ordering::Acquire) == 0
+            && slot.urging.load(Ordering::Acquire) == 0
+        {
             continue;
         }
         let Ok(file) = slot_file(slots, Place(at))
@@ -799,12 +1069,14 @@ fn reap(
     }
 }
 
-/// Give back the tokens of `slot`, whose holder died or ends, and empty it.
+/// Give back the tokens of `slot`, whose holder died or ends, take its urgent
+/// takes off the counter, and empty it.
 ///
 /// # Specification
 /// - requires: the caller holds the slot's lock.
-/// - ensures: the slot holds no token and no mark; the tokens it held are free
-///   again. [`Audit::Due`] when the slot held a mark or a lent token.
+/// - ensures: the slot holds no token, no urgent take and no mark; the tokens
+///   it held are free again. [`Audit::Due`] when the slot held a mark or a lent
+///   token.
 /// - panics: none.
 /// - executable: none — the counter is the host's.
 ///
@@ -818,7 +1090,17 @@ fn reclaim(
 {
     let marked = slot.marked.swap(0, Ordering::SeqCst);
     let held = slot.held.swap(0, Ordering::SeqCst);
+    let urging = slot.urging.swap(0, Ordering::SeqCst);
     slot.pid.store(0, Ordering::Relaxed);
+    if urging != 0 {
+        // The holder counts its want in the counter before its slot, so the
+        // counter holds at least the slot's count.
+        let _left = counter
+            .urgent
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |urgent| {
+                Some(urgent.saturating_sub(urging))
+            });
+    }
     let lent = match u32::try_from(held) {
         Ok(0) => Audit::Whole,
         Ok(count) => {
@@ -848,27 +1130,65 @@ fn give_back(
     }
 }
 
-/// Wake one waiter of `counter`, when one waits.
+/// Wake one waiter of `counter`: an urgent take first, then a batch take, then
+/// a porter whose FIFO is empty.
 ///
 /// # Specification
 /// trivial.
 fn rouse(counter: &Counter)
 {
-    if counter.waiters.load(Ordering::SeqCst) > 0 {
-        counter.wakes.fetch_add(1, Ordering::Release);
-        wake(counter);
+    let word = if counter.urgent.load(Ordering::SeqCst) > 0 {
+        &counter.urgent_wakes
+    }
+    else if counter.waiters.load(Ordering::SeqCst) > 0 {
+        &counter.wakes
+    }
+    else if counter.porting.load(Ordering::SeqCst) == HUNGRY {
+        &counter.porter_wakes
+    }
+    else {
+        return;
+    };
+    word.raise();
+}
+
+/// Wake the porter when its FIFO holds a spare, so it carries the spare to a
+/// take of gandr that waits.
+///
+/// # Specification
+/// trivial.
+fn summon(counter: &Counter)
+{
+    if counter.porting.load(Ordering::SeqCst) == STOCKED {
+        counter.porter_wakes.raise();
+    }
+}
+
+/// Whether `counter` holds a free token.
+///
+/// # Specification
+/// trivial.
+fn left(counter: &Counter) -> Left
+{
+    let free = counter.word.load(Ordering::SeqCst) & FREE;
+    if free == 0 || free >= BELOW_ZERO {
+        Left::Spent
+    }
+    else {
+        Left::Free
     }
 }
 
 /// Count the free tokens and each slot's tokens, and give back what the count
-/// lacks against the host's tokens, or take off a surplus.
+/// lacks against the host's tokens, or take off a surplus. Count the urgent
+/// takes of the slots, and set the counter's to their sum.
 ///
 /// # Specification
 /// - requires: each dead holder's slot is reclaimed.
 /// - ensures: when a count reads two equal words around the slots and no slot
-///   marked, the free tokens and the slots' tokens sum to the host's tokens.
-///   After [`AUDITS`] counts that no move leaves alone, the counter stays as it
-///   was, for the next reap.
+///   marked, the free tokens and the slots' tokens sum to the host's tokens,
+///   and the counter's urgent takes are the slots'. After [`AUDITS`] counts
+///   that no move leaves alone, the counter stays as it was, for the next reap.
 /// - panics: none.
 /// - executable: none — the holders move tokens at once.
 ///
@@ -880,8 +1200,10 @@ fn audit(segment: &Segment)
 {
     let width = i64::from(segment.head.width.load(Ordering::Relaxed));
     for _ in 0 .. AUDITS {
+        let urgent = segment.counter.urgent.load(Ordering::SeqCst);
         let before = segment.counter.word.load(Ordering::SeqCst);
         let mut held = 0_i64;
+        let mut urging = 0_u32;
         let mut quiet = Audit::Whole;
         for slot in &segment.slots {
             if slot.marked.load(Ordering::SeqCst) != 0 {
@@ -889,12 +1211,20 @@ fn audit(segment: &Segment)
                 break;
             }
             held = held.saturating_add(i64::from(slot.held.load(Ordering::SeqCst)));
+            urging = urging.saturating_add(slot.urging.load(Ordering::SeqCst));
         }
         let after = segment.counter.word.load(Ordering::SeqCst);
         if quiet == Audit::Due || before != after {
             std::thread::yield_now();
             continue;
         }
+        // A want that moved since the first read leaves the count to it.
+        let _set = segment.counter.urgent.compare_exchange(
+            urgent,
+            urging,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        );
         let free = i64::try_from(after & FREE).unwrap_or(i64::MAX);
         let lost = width.saturating_sub(free).saturating_sub(held);
         let Ok(next) = u64::try_from(free.saturating_add(lost))
@@ -921,14 +1251,14 @@ fn audit(segment: &Segment)
     }
 }
 
-/// Wait on the count of wakes of `counter` while it holds `seen`, for at most
+/// Wait on `word`, a count of wakes, while it holds `seen`, for at most
 /// `timeout`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "linux")]
 fn wait(
-    counter: &Counter,
+    word: &Eventcount,
     seen: Wakes,
     timeout: Duration,
 )
@@ -939,32 +1269,31 @@ fn wait(
     };
     // A wait that a signal or a changed word ends reads the counter again.
     let _ended = rustix::thread::futex::wait(
-        &counter.wakes,
+        &word.0,
         rustix::thread::futex::Flags::empty(),
         seen.0,
         Some(&timeout),
     );
 }
 
-/// Wake one waiter on the count of wakes of `counter`.
+/// Wake one waiter on `word`, a count of wakes.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "linux")]
-fn wake(counter: &Counter)
+fn wake(word: &Eventcount)
 {
-    let _woken =
-        rustix::thread::futex::wake(&counter.wakes, rustix::thread::futex::Flags::empty(), 1);
+    let _woken = rustix::thread::futex::wake(&word.0, rustix::thread::futex::Flags::empty(), 1);
 }
 
-/// Wait on the count of wakes of `counter` while it holds `seen`, for at most
+/// Wait on `word`, a count of wakes, while it holds `seen`, for at most
 /// `timeout`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "macos")]
 fn wait(
-    counter: &Counter,
+    word: &Eventcount,
     seen: Wakes,
     timeout: Duration,
 )
@@ -974,7 +1303,7 @@ fn wait(
     // map that outlives the call, and the call reads it and writes nothing.
     let _ended = unsafe {
         libc::os_sync_wait_on_address_with_timeout(
-            counter.wakes.as_ptr().cast(),
+            word.0.as_ptr().cast(),
             u64::from(seen.0),
             size_of::<AtomicU32>(),
             libc::OS_SYNC_WAIT_ON_ADDRESS_SHARED,
@@ -984,18 +1313,18 @@ fn wait(
     };
 }
 
-/// Wake one waiter on the count of wakes of `counter`.
+/// Wake one waiter on `word`, a count of wakes.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "macos")]
-fn wake(counter: &Counter)
+fn wake(word: &Eventcount)
 {
     // SAFETY: the count of wakes is an aligned atomic of four bytes in a shared
     // map that outlives the call, and the call writes nothing.
     let _woken = unsafe {
         libc::os_sync_wake_by_address_any(
-            counter.wakes.as_ptr().cast(),
+            word.0.as_ptr().cast(),
             size_of::<AtomicU32>(),
             libc::OS_SYNC_WAKE_BY_ADDRESS_SHARED,
         )
@@ -1009,7 +1338,7 @@ fn wake(counter: &Counter)
 /// trivial.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn wait(
-    _counter: &Counter,
+    _word: &Eventcount,
     _seen: Wakes,
     timeout: Duration,
 )
@@ -1023,7 +1352,7 @@ fn wait(
 /// # Specification
 /// trivial.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn wake(_counter: &Counter)
+fn wake(_word: &Eventcount)
 {
 }
 
@@ -1041,6 +1370,7 @@ mod tests
 
     use quenchant_shape::shape::Maybe;
 
+    use super::Class;
     use super::FREE;
     use super::Host;
     use super::HostCounter;
@@ -1097,7 +1427,7 @@ mod tests
     /// trivial.
     fn hold_four(directory: &Path)
     {
-        let Maybe::Present(host) = Host::join(directory)
+        let Maybe::Present(host) = Host::join(directory, Class::Batch)
         else {
             panic!("the child joins the hub's counter");
         };
@@ -1199,7 +1529,7 @@ mod tests
         let directory = scratch(Scratch("beside"));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(4).unwrap())).unwrap();
-        let Maybe::Present(host) = Host::join(&directory)
+        let Maybe::Present(host) = Host::join(&directory, Class::Batch)
         else {
             panic!("the process joins the hub's counter");
         };
@@ -1238,11 +1568,79 @@ mod tests
         drop(counter);
         assert!(
             matches!(
-                Host::join(&directory),
+                Host::join(&directory, Class::Batch),
                 Maybe::Absent(unhosted::Absent::Unowned)
             ),
             "a counter whose hub let go of the owner's lock takes no joiner"
         );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    #[test]
+    fn a_batch_take_refuses_once_for_a_waiting_keystroke()
+    {
+        let directory = scratch(Scratch("classes"));
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(1).unwrap())).unwrap();
+        let (Maybe::Present(keystroke), Maybe::Present(batch)) = (
+            Host::join(&directory, Class::Keystroke),
+            Host::join(&directory, Class::Batch),
+        )
+        else {
+            panic!("both processes join the hub's counter");
+        };
+        let Maybe::Present(token) = batch.take_now()
+        else {
+            panic!("the batch takes the one token");
+        };
+        assert!(
+            matches!(keystroke.take_now(), Maybe::Absent(_)),
+            "the keystroke finds no token"
+        );
+        let wanting = keystroke.want();
+        batch.give(token);
+        assert!(
+            matches!(batch.take_now(), Maybe::Absent(_)),
+            "the batch's next take refuses once while the keystroke waits"
+        );
+        let Maybe::Present(token) = keystroke.take_now()
+        else {
+            panic!("the freed token stays for the keystroke");
+        };
+        keystroke.give(token);
+        let Maybe::Present(token) = batch.take_now()
+        else {
+            panic!("the take after the refusal takes the token all the same");
+        };
+        batch.give(token);
+        assert!(
+            matches!(batch.take_now(), Maybe::Absent(_)),
+            "the next boundary refuses once again while the keystroke waits"
+        );
+        let Maybe::Present(token) = batch.take_now()
+        else {
+            panic!("and the take after it takes the token");
+        };
+        batch.give(token);
+        drop(wanting);
+        // A keystroke that dies while it waits leaves its want counted in its
+        // slot and in the counter, as its hold never drops.
+        keystroke.slot().urging.fetch_add(1, Ordering::SeqCst);
+        counter
+            .mapping
+            .segment()
+            .counter
+            .urgent
+            .fetch_add(1, Ordering::SeqCst);
+        drop(keystroke);
+        let Maybe::Present(token) = batch.take_now()
+        else {
+            panic!("the end of the keystroke's process takes its want off the counter");
+        };
+        batch.give(token);
+        drop(batch);
+        assert_eq!(free(&counter), Free(1), "the counter holds its token again");
+        drop(counter);
         drop(std::fs::remove_dir_all(&directory));
     }
 }
