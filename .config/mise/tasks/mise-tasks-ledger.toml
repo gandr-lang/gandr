@@ -74,6 +74,21 @@ sqlite3 -bail "$fresh/purposes.db" < ledger/purposes.sql
 sqlite3 "$fresh/purposes.db" .dump > ledger/purposes.sql
 '''
 
+# The sharing ledger, `ledger/shared.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:shared` holds the round trip.
+["ledger:shared"]
+description = "Normalize ledger/shared.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/shared.db" < ledger/shared.sql
+sqlite3 "$fresh/shared.db" .dump > ledger/shared.sql
+'''
+
 # The entries the purposes ledger rows: each named crate's library documented
 # as rustdoc JSON without private items, each read by
 # `.config/purposes/items.jq`, one tab-separated line per entry: crate, path,

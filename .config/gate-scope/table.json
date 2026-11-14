@@ -288,6 +288,13 @@
       ],
       "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
       "check:service": [".config/cases/", ".config/service/"],
+      "check:shared": [
+        ".config/cases/",
+        ".config/mise/tasks/mise-tasks-ledger.toml",
+        ".config/shared/",
+        "crates/",
+        "ledger/shared.sql"
+      ],
       "check:sites": ["crates/theory-sites/"],
       "check:spec-cost-landed": [
         ".cargo/",

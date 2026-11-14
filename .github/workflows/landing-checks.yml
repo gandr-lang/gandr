@@ -2488,6 +2488,9 @@ jobs:
       - name: check the purposes ledger
         if: *keep-going
         run: mise run check:purposes
+      - name: check the sharing ledger
+        if: *keep-going
+        run: mise run check:shared
       # No library or vault is configured here, so keys are read for their
       # shape; a seat's local run resolves them.
       - name: check the references ledger

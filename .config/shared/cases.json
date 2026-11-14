@@ -1,0 +1,69 @@
+[
+  {
+    "name": "a field that holds an Arc alone, in an Option, a Maybe or a Vec is a hit, and a field of another type is not",
+    "input": [
+      "crates/kernel-core/src/environment.rs:390:pub struct Environment",
+      "crates/kernel-core/src/environment.rs:393:    commits: alloc::sync::Arc<CommitLog>,",
+      "crates/kernel-core/src/environment.rs:394:    admission_floor: ConstantIndex,",
+      "crates/kernel-core-base/src/env.rs:1728:pub struct Entries",
+      "crates/kernel-core-base/src/env.rs:1732:    log: Option<alloc::sync::Arc<EntryLog>>,",
+      "crates/kernel-core-base/src/env.rs:1740:    spares: alloc::vec::Vec<alloc::sync::Arc<crate::weakening::Support>>,",
+      "crates/kernel-core-base/src/verdict.rs:1401:pub struct Verdicts",
+      "crates/kernel-core-base/src/verdict.rs:1409:    chain: Maybe<Arc<Chain>, keyed::Absent>,",
+      ""
+    ],
+    "output": "crates/kernel-core-base/src/env.rs\tEntries.log\ncrates/kernel-core-base/src/env.rs\tEntries.spares\ncrates/kernel-core-base/src/verdict.rs\tVerdicts.chain\ncrates/kernel-core/src/environment.rs\tEnvironment.commits"
+  },
+  {
+    "name": "a parameter after a function that opens is not a hit, and a field after a type that opens later is",
+    "input": [
+      "crates/kernel-core-base/src/verdict.rs:1401:pub struct Verdicts",
+      "crates/kernel-core-base/src/verdict.rs:1406:    source: Arc<dyn VerdictSource>,",
+      "crates/kernel-core-base/src/verdict.rs:1520:    pub fn with_source(",
+      "crates/kernel-core-base/src/verdict.rs:1528:        source: Arc<dyn VerdictSource>,",
+      "crates/kernel-core-base/src/verdict.rs:1700:pub(crate) struct Later",
+      "crates/kernel-core-base/src/verdict.rs:1702:    pub(crate) held: Arc<Chain>,"
+    ],
+    "output": "crates/kernel-core-base/src/verdict.rs\tLater.held\ncrates/kernel-core-base/src/verdict.rs\tVerdicts.source"
+  },
+  {
+    "name": "a tuple variant's field names its variant, and a tuple struct's field is its first",
+    "input": [
+      "crates/kernel-core-base/src/fork.rs:195:pub struct SharedFork(Option<Arc<dyn ObligationFork + Send>>);",
+      "crates/kernel-core-base/src/support.rs:1000:pub enum Recall",
+      "crates/kernel-core-base/src/support.rs:1004:    Owed(Arc<[NodeSupport]>),",
+      "crates/kernel-core-base/src/support.rs:1006:    Plain(NodeSupport),"
+    ],
+    "output": "crates/kernel-core-base/src/fork.rs\tSharedFork.0\ncrates/kernel-core-base/src/support.rs\tRecall.Owed"
+  },
+  {
+    "name": "one field of many variants of an enum is one hit",
+    "input": [
+      "crates/kernel-term/src/term.rs:330:pub enum Value",
+      "crates/kernel-term/src/term.rs:366:        dialogues: alloc::sync::Arc<crate::EndpointDialogues>,",
+      "crates/kernel-term/src/term.rs:382:        dialogues: alloc::sync::Arc<[crate::Dialogue]>,",
+      "crates/kernel-term/src/term.rs:449:        program: alloc::sync::Arc<crate::HigherProgram>,"
+    ],
+    "output": "crates/kernel-term/src/term.rs\tValue.dialogues\ncrates/kernel-term/src/term.rs\tValue.program"
+  },
+  {
+    "name": "a field after a file's inline test module is left out, and a module that ends in a semicolon opens no tests",
+    "input": [
+      "crates/kernel-core/src/environment.rs:4750:struct Names",
+      "crates/kernel-core/src/environment.rs:4758:    shared: Option<alloc::sync::Arc<crate::support::SupportContext>>,",
+      "crates/kernel-core/src/environment.rs:5304:#[cfg(test)]",
+      "crates/kernel-core/src/environment.rs:5305:mod encoding_tests;",
+      "crates/kernel-core/src/environment.rs:5314:#[cfg(test)]",
+      "crates/kernel-core/src/environment.rs:5315:mod tests",
+      "crates/kernel-core/src/environment.rs:8134:    struct Recorded(Vec<alloc::sync::Arc<crate::verdict::StoredReceipt>>);",
+      "crates/kernel-core/src/environment.rs:8140:    struct Store",
+      "crates/kernel-core/src/environment.rs:8142:        held: alloc::sync::Arc<crate::verdict::StoredReceipt>,"
+    ],
+    "output": "crates/kernel-core/src/environment.rs\tNames.shared"
+  },
+  {
+    "name": "no line gives no hit",
+    "input": [],
+    "output": ""
+  }
+]
