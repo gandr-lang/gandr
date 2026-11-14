@@ -111,13 +111,42 @@ records_objects() {
 # of the record run.
 records_run() { tree_exec "$records_tree" records_env "$@"; }
 
-# Runs `$@` with the variables of the record run.
+# Runs `$@` with the variables of the record run. In the policy mode, the run
+# unifies features over the workspace, as the policy run of `check:dylint`
+# does (#7654).
 records_env() {
+  if [[ -n ${records_policy:-} ]]; then
+    CARGO_UNSTABLE_FEATURE_UNIFICATION=true CARGO_RESOLVER_FEATURE_UNIFICATION=workspace records_vars "$@"
+  else
+    records_vars "$@"
+  fi
+}
+
+# Runs `$@` with the variables that every record run shares.
+records_vars() {
   CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$records_target" \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=dylint-link CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=dylint-link \
     CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=dylint-link CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=dylint-link \
     CARGO_ENCODED_RUSTFLAGS=$records_rustflags DYLINT_TOML=$records_config DYLINT_RUSTFLAGS=$records_flags \
     "$@"
+}
+
+# The selection of a run over package `$1`: `-p` for it, and for each other
+# package that owns a feature of `$2`, the features joined by commas. Cargo
+# turns on a feature only of a package that the run selects.
+records_selection() {
+  local feature owner owners=() seen=" $1 "
+  printf '%s\n' -p "$1"
+  [[ -n ${2:-} ]] || return 0
+  IFS=, read -ra owners <<< "$2"
+  for feature in "${owners[@]}"; do
+    [[ $feature == */* ]] || continue
+    owner=${feature%%/*}
+    [[ $seen == *" $owner "* ]] && continue
+    seen+="$owner "
+    printf '%s\n' -p "$owner"
+  done
+  printf '%s\n' --features "$2"
 }
 
 # Sets the root tree of the working state of the tree: a temporary index
@@ -179,8 +208,8 @@ records_fixed() {
 # Cargo's unit graph of the run over package `$1`, as JSON. A second
 # argument names the features to turn on, joined by commas.
 records_units() {
-  local args=(-p "$1")
-  [[ -z ${2:-} ]] || args+=(--features "$2")
+  local args
+  mapfile -t args < <(records_selection "$1" "${2:-}")
   records_run cargo check --unit-graph -Z unstable-options "${args[@]}" --all-targets --locked
 }
 
@@ -430,8 +459,8 @@ records_stamp() {
 # package that depends on it builds its library there, a fresh unit gives no
 # record, and the entry would then hold no library unit (#7092).
 records_build() {
-  local dir args=(-p "$1")
-  [[ -z ${2:-} ]] || args+=(--features "$2")
+  local dir args
+  mapfile -t args < <(records_selection "$1" "${2:-}")
   rm -rf "$records_work/records"
   mkdir -p "$records_work/records"
   : > "$records_work/dylint.log"
@@ -456,6 +485,18 @@ records_errors() {
       else .[0].message.rendered, "\(length) errors of the compiler in all" end' "$1"
 }
 
+# The features of the policy run for package `$1`: its own, `$2`, under its
+# name, then the scope's, `records_policy_features`. Beside other packages,
+# cargo takes a feature only as `<package>/<feature>`.
+records_policy_features() {
+  local feature own=() all=()
+  [[ -z ${2:-} ]] || IFS=, read -ra own <<< "$2"
+  for feature in "${own[@]}"; do all+=("$1/$feature"); done
+  [[ -z $records_policy_features ]] || all+=("$records_policy_features")
+  local IFS=,
+  echo "${all[*]}"
+}
+
 records_main() {
   local tree=${1:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
   local target=${2:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
@@ -465,6 +506,8 @@ records_main() {
   records_cache=${GANDR_DELETES_RECORDS:-${XDG_CACHE_HOME:-$HOME/.cache}/gandr/deletes-records}
   mkdir -p "$out" "$records_cache"
   records_open "$tree" "$target"
+  records_policy=${RECORDS_POLICY:-}
+  records_policy_features=${RECORDS_POLICY_FEATURES:-}
   trap 'rm -rf "$records_work"' EXIT
   if [[ -z $(tree_channel "$records_tree") ]]; then
     echo "check:deletes: $records_tree pins no toolchain in rust-toolchain.toml, so its records do not build under the caller's" >&2
@@ -476,6 +519,9 @@ records_main() {
   for i in "${!names[@]}"; do
     features[i]=$(records_required "${names[i]}") \
       || { echo "check:deletes: no metadata of ${names[i]} at $records_tree" >&2; return 2; }
+    if [[ -n ${records_policy:-} ]]; then
+      features[i]=$(records_policy_features "${names[i]}" "${features[i]}")
+    fi
     records_units "${names[i]}" "${features[i]}" > "$records_work/units-$i.json" 2> "$records_work/units.log" \
       || { echo "check:deletes: no unit graph of ${names[i]} at $records_tree:" >&2; tail -n 20 "$records_work/units.log" >&2; return 2; }
     records_closure "$records_work/units-$i.json" "${dirs[i]}" > "$records_work/closure-$i"

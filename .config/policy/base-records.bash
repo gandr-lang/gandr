@@ -63,5 +63,19 @@ while IFS=$'\t' read -r name dir products; do
 done < <(jq -r '.[] | [.name, .dir, (.products | join(" "))] | @tsv' <<< "$touched")
 (( ${#args[@]} )) || exit 0
 git -C "$root" worktree add --quiet --detach "$scratch/base" "$base"
-summary=$("$here/../deletes/records.bash" "$scratch/base" "$root/target/deletes" "$out" "${args[@]}") || exit 2
+# The base builds as the policy run of `check:dylint` builds the head: its
+# features unify over the workspace, and the scope's required features stand
+# on, each with the package that owns it (#7654). Built per package with its
+# own features alone, a record lacks each function behind a feature that the
+# policy run turns on, and the lint holds each such function as new. The
+# base's own `required.bash` reads the scope, so a feature that the base
+# lacks is not asked.
+policy_features=
+if [[ -x $scratch/base/.config/policy/required.bash ]]; then
+  # shellcheck disable=SC2086 # `GATE_SCOPE` is a list of arguments.
+  policy_features=$(cargo metadata --no-deps --locked --format-version 1 --manifest-path "$scratch/base/Cargo.toml" \
+    | "$scratch/base/.config/policy/required.bash" ${GATE_SCOPE:---workspace})
+fi
+summary=$(RECORDS_POLICY=1 RECORDS_POLICY_FEATURES=${policy_features#--features } \
+  "$here/../deletes/records.bash" "$scratch/base" "$root/target/deletes" "$out" "${args[@]}") || exit 2
 echo "base-records: ${#args[@]} touched packages at ${base:0:12}; ${summary#*: }" >&2
