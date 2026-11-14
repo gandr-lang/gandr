@@ -83,7 +83,6 @@ pub mod recording;
 mod spawning;
 mod workers;
 
-use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::cell::UnsafeCell;
@@ -1300,7 +1299,7 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
     .min(count);
     // Both counts are at least two here, so `tasks` is at least one.
     let tasks = NonZeroUsize::new(tasks).map_or(Threads::ONE, Threads::from);
-    let (schedule, ledger) = Scheduled::new(pooled.workers, tasks, items, run, pooled.spin);
+    let (schedule, ledger) = Scheduled::new(pooled.workers, tasks, run, pooled.spin);
     let waiting = Waiting::new(after, items);
     schedule.drive(ledger, items, waiting, (&mut release, &mut commit));
 }
@@ -1372,9 +1371,9 @@ struct Scheduled<Job, Out, Run>
 ///
 /// # Specification
 /// - provides: the calling thread's end of each lane, the lanes that hold a job
-///   not yet committed, the count of lanes with room, the released jobs that no
-///   lane holds, the lane that the next hand-off tries first, and the posts of
-///   the lanes' tasks.
+///   not yet committed, the count of lanes with room, the calling thread's one
+///   slot for a released job that no lane holds, the lane that the next
+///   hand-off tries first, and the posts of the lanes' tasks.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
@@ -1386,8 +1385,8 @@ struct Ledger<'pool, Job, Out>
     busy: Vec<usize>,
     /// How many lanes hold fewer than [`DEPTH`] jobs.
     room: usize,
-    /// The released jobs that no lane holds, in release order.
-    kept: VecDeque<Ready<Job>>,
+    /// The released job that no lane holds: the calling thread's one slot.
+    kept: Option<Ready<Job>>,
     /// The lane that the next hand-off tries first.
     turn: usize,
     /// The workers, and the posts of the lanes' tasks.
@@ -1669,13 +1668,11 @@ where
     Run: Fn(ItemIndex, Job) -> Out + Sync,
 {
     /// A schedule on one lane for each of `tasks` threads of `workers`, whose
-    /// jobs `run` runs, and the calling thread's ledger of it, with room for a
-    /// job of each of `items`.
+    /// jobs `run` runs, and the calling thread's ledger of it.
     ///
     /// # Specification
     /// - ensures: one lane and one feed for each task, each lane empty and its
-    ///   claim free, and room kept for a job of every item, so no later
-    ///   hand-off allocates. No task runs yet.
+    ///   claim free, and the calling thread's slot empty. No task runs yet.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1684,11 +1681,10 @@ where
     #[spec(ensures: |ret| ret.0.lanes.len() == NonZeroUsize::from(tasks).get()
         && ret.1.feeds.len() == NonZeroUsize::from(tasks).get()
         && ret.1.room == NonZeroUsize::from(tasks).get()
-        && ret.1.kept.capacity() >= items.len())]
-    fn new<'pool, Item>(
+        && ret.1.kept.is_none())]
+    fn new<'pool>(
         workers: &'pool Workers,
         tasks: Threads,
-        items: &[Item],
         run: Run,
         spin: Spin,
     ) -> (Self, Ledger<'pool, Job, Out>)
@@ -1712,7 +1708,7 @@ where
                 feeds,
                 busy: Vec::with_capacity(lanes_count),
                 room: lanes_count,
-                kept: VecDeque::with_capacity(items.len()),
+                kept: None,
                 turn: 0,
                 tasks: Tasks {
                     workers,
@@ -1728,23 +1724,23 @@ where
     ///
     /// # Specification
     /// - ensures: `release` ran on every item in slice order, each first time
-    ///   once `waiting` counts no item that it waits on and fewer than
-    ///   [`DEPTH`] + 1 released jobs for each lane were not committed. A
-    ///   release that answered [`Releasing::Held`] while a released job was not
-    ///   committed ran again once every released job was committed. `commit`
-    ///   ran once on every item, with its job's result as the job returned, or
-    ///   with the result of its release. Each commit counts down the items that
-    ///   wait on the committed one. After a release holds while a job runs, the
-    ///   schedule runs as a chain: the calling thread keeps each job that a
-    ///   release gives and runs it, and it tries a release beside a running job
-    ///   once in [`CHAIN_PROBE`] releases. A release that gives a job beside a
-    ///   running job ends the chain. Out of a chain, after each release that
-    ///   gives a job, and after each result, the calling thread hands kept jobs
-    ///   to lanes with room. A job that no other job runs beside stays with the
-    ///   calling thread: the only one not committed, while the next item waits
-    ///   on a commit. While it can neither release nor commit, it runs its
-    ///   oldest kept job, or else a job of a lane whose task does not run, or
-    ///   else it waits for a result. Once the call returns, each task ends.
+    ///   once `waiting` counts no item that it waits on and no released job
+    ///   waits for a slot. A release that answered [`Releasing::Held`] while a
+    ///   released job was not committed ran again once every released job was
+    ///   committed. `commit` ran once on every item, with its job's result as
+    ///   the job returned, or with the result of its release. Each commit
+    ///   counts down the items that wait on the committed one. After a release
+    ///   holds while a job runs, the schedule runs as a chain: the calling
+    ///   thread keeps each job that a release gives and runs it, and it tries a
+    ///   release beside a running job once in [`CHAIN_PROBE`] releases. A
+    ///   release that gives a job beside a running job ends the chain. Out of a
+    ///   chain, after each release that gives a job, and after each result, the
+    ///   calling thread hands its kept job to a lane with room. A job that no
+    ///   other job runs beside stays with the calling thread: the only one not
+    ///   committed, while the next item waits on a commit. While it can neither
+    ///   release nor commit, it runs its kept job, or else a job of a lane
+    ///   whose task does not run, or else it waits for a result. Once the call
+    ///   returns, each task ends.
     /// - panics: the first panic of `release`, of a job or of `commit`, after
     ///   it ends the schedule so that no task starts another job.
     /// - executable: none — each release and commit is a call of the caller's
@@ -1784,13 +1780,6 @@ where
         let mut holding = false;
         let mut chained = false;
         let mut put_off = 0_usize;
-        // The window is the capacity of the lanes: a full lane and one more
-        // job for each lane. A released job holds what its run reads until its
-        // commit. That is its check's support, one stamp for each position of
-        // the module, and the layers that its open fork keeps from a
-        // compaction (#7339). So what the jobs hold stays a bound of the width
-        // (#7299, #7335).
-        let window = self.lanes.len().saturating_mul(DEPTH.saturating_add(1));
         let mut commit_one =
             |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
                 let place = gandr_core_fork::ItemIndex::from(position.0);
@@ -1802,7 +1791,14 @@ where
                 waiting.commit(position);
             };
         while committed < count {
-            while !holding && outstanding < window && waiting.free(next) == Released::Free {
+            // A release with no slot waits for one. A lane's ring holds DEPTH
+            // jobs, its running one among them, and the calling thread holds
+            // the one released job that no ring takes. So the released jobs
+            // that are not committed stay within the rings' capacity and the
+            // calling thread's slot, a bound of no number of its own. DEPTH is
+            // the one number left, and #7339 owes a depth that the host
+            // measures.
+            while !holding && ledger.kept.is_none() && waiting.free(next) == Released::Free {
                 // A chain releases beside a running job only once in
                 // `CHAIN_PROBE` releases: each other try stages the item and
                 // then gives the staging back.
@@ -1826,7 +1822,7 @@ where
                         if outstanding > 0 {
                             chained = false;
                         }
-                        ledger.kept.push_back((next, job));
+                        ledger.kept = Some((next, job));
                         outstanding = outstanding.saturating_add(1);
                         next = ItemIndex(next.0.saturating_add(1));
                         if !chained && (outstanding > 1 || waiting.free(next) == Released::Free) {
@@ -1886,7 +1882,7 @@ where
             }
             // Neither a release nor a commit is possible: run a job here, or
             // wait for one to return.
-            if let Some((position, job)) = ledger.kept.pop_front() {
+            if let Some((position, job)) = ledger.kept.take() {
                 let (position, out) = self
                     .run_job(position, job)
                     .unwrap_or_else(|panic| self.stop(panic));
@@ -1905,15 +1901,15 @@ where
         }
     }
 
-    /// Hand the jobs that the calling thread keeps to lanes with room: first
-    /// one job to each lane that holds none, then more to each lane up to
-    /// [`DEPTH`], each try from the lane after the last one tried.
+    /// Hand the job that the calling thread keeps to a lane with room: first a
+    /// lane that holds none, then a lane with fewer than [`DEPTH`] jobs, each
+    /// try from the lane after the last one tried.
     ///
     /// # Specification
-    /// - ensures: the oldest kept jobs move to lanes in release order, and no
-    ///   lane holds more than [`DEPTH`] jobs, so no push is refused. Each lane
-    ///   handed a job while no task attends it gets a task, so a job runs while
-    ///   the calling thread releases.
+    /// - ensures: the kept job moves to a lane with room, and no lane holds
+    ///   more than [`DEPTH`] jobs, so no push is refused. A lane handed a job
+    ///   while no task attends it gets a task, so a job runs while the calling
+    ///   thread releases.
     /// - panics: none.
     /// - executable: none — a task may take a handed job before a postcondition
     ///   reads its lane.
@@ -1933,7 +1929,7 @@ where
             while tried < lanes
                 && ledger.room > 0
                 && (depth > 1 || ledger.busy.len() < lanes)
-                && !ledger.kept.is_empty()
+                && ledger.kept.is_some()
             {
                 let lane = ledger.turn;
                 ledger.turn = lane
@@ -1945,12 +1941,12 @@ where
                 else {
                     continue;
                 };
-                let Some(ready) = ledger.kept.pop_front()
+                let Some(ready) = ledger.kept.take()
                 else {
                     break;
                 };
                 if let Err(rtrb::PushError::Full(ready)) = feed.jobs.push(ready) {
-                    ledger.kept.push_front(ready);
+                    ledger.kept = Some(ready);
                     continue;
                 }
                 tried = 0;
@@ -3246,9 +3242,10 @@ mod tests
         );
     }
 
-    /// A schedule whose jobs run slower than its releases keeps at most a
-    /// full lane and one more job for each lane released and not committed,
-    /// so what the released jobs hold stays a bound of the width (#7299).
+    /// A schedule whose jobs run slower than its releases keeps at most the
+    /// capacity of its lanes' rings and the calling thread's one slot released
+    /// and not committed, so what the released jobs hold stays a bound of the
+    /// width (#7299).
     #[test]
     fn a_schedule_releases_at_most_a_window_ahead_of_its_commits_7299()
     {
@@ -3282,8 +3279,8 @@ mod tests
             "every released job is committed"
         );
         assert!(
-            most.load(Ordering::SeqCst) <= threads_count.saturating_mul(DEPTH.saturating_add(1)),
-            "at most a full lane and one more job for each lane wait for their commits, not {}",
+            most.load(Ordering::SeqCst) <= threads_count.saturating_mul(DEPTH).saturating_add(1),
+            "at most the rings' capacity and the calling thread's slot wait for their commits, not {}",
             most.load(Ordering::SeqCst)
         );
     }
