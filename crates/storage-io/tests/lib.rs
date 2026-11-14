@@ -3,6 +3,14 @@
 //! One target rather than one per area, so a witness path names the area it
 //! belongs to (`tests::io::…`) instead of a file.
 
+#[cfg(all(
+    target_os = "linux",
+    any(
+        target_arch = "aarch64",
+        target_arch = "riscv64",
+        target_arch = "x86_64"
+    )
+))]
 extern crate alloc;
 
 #[cfg(test)]
