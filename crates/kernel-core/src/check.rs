@@ -9347,8 +9347,8 @@ where
             ledger: part_ledger,
             ..
         } = part;
-        // A failed fork folds no entry: the join only lets the memo settle
-        // its frozen layer. An outcome that names a node of the part's own
+        // A failed fork folds no entry: the join drops each entry of the part
+        // and links no layer. An outcome that names a node of the part's own
         // names a node that the join leaves out, so the memo does not keep it.
         // Two parts can name one type by two nodes, and the two outcomes agree.
         memo.join_child(
@@ -9671,8 +9671,8 @@ where
             census: part_census,
             ..
         } = part;
-        // A refused fork folds no entry: the join only lets the memo settle
-        // its frozen layer. An outcome that names a node of the part's own
+        // A refused fork folds no entry: the join drops each entry of the part
+        // and links no layer. An outcome that names a node of the part's own
         // names a node that the join leaves out, so the memo does not keep it.
         // Two parts can name one type by two nodes, and the two outcomes agree.
         memo.join_child(
