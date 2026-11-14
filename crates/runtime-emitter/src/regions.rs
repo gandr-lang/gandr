@@ -332,9 +332,12 @@ pub enum Origin
     /// The invocation's `--memory`.
     Flag,
     /// The memory that the host makes available at start: the least of
-    /// `MemAvailable`, the `memory.max` of the process's cgroup and
-    /// `RLIMIT_AS`.
+    /// `MemAvailable` and `RLIMIT_AS`, when the cgroup's `memory.max` is not
+    /// less.
     Available,
+    /// The `memory.max` of the process's own cgroup, when it is the least of
+    /// the host's three figures.
+    Cgroup,
     /// Half of the host's physical memory, on a host that reports no
     /// available memory.
     Physical,
@@ -440,7 +443,12 @@ impl Memory
         if let Some(bytes) = available {
             return Self {
                 bytes,
-                origin: Origin::Available,
+                origin: if readings.cgroup == Some(bytes) {
+                    Origin::Cgroup
+                }
+                else {
+                    Origin::Available
+                },
             };
         }
         physical().map_or(
@@ -499,6 +507,11 @@ impl fmt::Display for Memory
         match self.origin {
             Origin::Flag => write!(f, "--memory {}", self.bytes.spelled()),
             Origin::Available => write!(f, "the host's available memory, {} bytes", self.bytes),
+            Origin::Cgroup => write!(
+                f,
+                "the memory.max of the process's cgroup, {} bytes",
+                self.bytes
+            ),
             Origin::Physical => {
                 write!(
                     f,
@@ -1598,6 +1611,296 @@ const fn physical() -> Option<Bytes>
     None
 }
 
+/// The bytes that the process holds in memory now: its resident set.
+///
+/// # Specification
+/// - ensures: the resident set of the calling process as the host reports it,
+///   read from `/proc/self/statm` into the stack; none when the read or its
+///   parse fails.
+/// - fails: never; a figure that does not read is none.
+/// - panics: none.
+/// - executable: none — the figure is the host's.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a process that touches 64 MiB more holds at least 32 MiB
+///   more by its own reading.
+/// - witness: `regions::tests::the_resident_set_grows_with_the_memory_touched_7551`
+#[cfg(target_os = "linux")]
+#[inline]
+#[must_use]
+pub fn resident() -> Option<Bytes>
+{
+    Small::read(c"/proc/self/statm")?.resident()
+}
+
+/// The bytes that the process holds in memory now: its resident set, as
+/// `proc_pid_rusage` reports it.
+///
+/// # Specification
+/// - ensures: the resident set of the calling process as the host reports it;
+///   none when the call fails.
+/// - fails: never; a figure that does not read is none.
+/// - panics: none.
+/// - executable: none — the figure is the host's.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as on Linux.
+/// - witness: `regions::tests::the_resident_set_grows_with_the_memory_touched_7551`
+#[cfg(target_os = "macos")]
+#[inline]
+#[must_use]
+pub fn resident() -> Option<Bytes>
+{
+    let mut usage = core::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+    // SAFETY: `usage` is a live record of the type the flavour writes, and
+    // the call writes nothing else.
+    let read = unsafe {
+        libc::proc_pid_rusage(
+            libc::getpid(),
+            libc::RUSAGE_INFO_V2,
+            usage.as_mut_ptr().cast(),
+        )
+    };
+    // SAFETY: a zeroed `rusage_info_v2` is a valid record, and a call that
+    // succeeds fills it.
+    (read == 0).then(|| Bytes(unsafe { usage.assume_init() }.ri_resident_size))
+}
+
+/// The bytes that the process holds in memory now, which a host other than
+/// Linux or macOS does not report here.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[inline]
+#[must_use]
+pub const fn resident() -> Option<Bytes>
+{
+    None
+}
+
+/// A count of the times a cgroup's charge met its `memory.max`: the `max`
+/// count of its `memory.events`.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Reached(u64);
+
+impl From<u64> for Reached
+{
+    /// The count `count`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u64) -> Self
+    {
+        Self(count)
+    }
+}
+
+/// What the process's own cgroup charges against its `memory.max` now, on the
+/// unified hierarchy: the bytes charged and the count of times the charge met
+/// the bound.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Charge
+{
+    /// The bytes that the cgroup charges: its `memory.current`.
+    held: Bytes,
+    /// The `max` count of the cgroup's `memory.events`: each time the charge
+    /// met `memory.max` and the kernel reclaimed to hold it there.
+    reached: Reached,
+}
+
+impl Charge
+{
+    /// A charge of `held` bytes whose charge met `memory.max` `reached`
+    /// times, as [`charge`] reads one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        held: Bytes,
+        reached: Reached,
+    ) -> Self
+    {
+        Self { held, reached }
+    }
+
+    /// The bytes that the cgroup charges.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn held(self) -> Bytes
+    {
+        self.held
+    }
+
+    /// The count of times the charge met the cgroup's `memory.max`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reached(self) -> Reached
+    {
+        self.reached
+    }
+}
+
+/// The `memory.current` and `memory.events` of the process's own cgroup on
+/// the unified hierarchy, found once; none when the cgroup names no finite
+/// `memory.max`, on the legacy hierarchy, or with no cgroup named.
+#[cfg(target_os = "linux")]
+static CHARGED: OnceLock<Option<(alloc::ffi::CString, alloc::ffi::CString)>> = OnceLock::new();
+
+/// What the process's own cgroup charges now, when it names a finite
+/// `memory.max` on the unified hierarchy.
+///
+/// # Specification
+/// - ensures: the cgroup's `memory.current` and the `max` count of its
+///   `memory.events`, each read into the stack; the cgroup's paths are found on
+///   the first call alone.
+/// - fails: never; none when the cgroup names no finite `memory.max`, on the
+///   legacy hierarchy, with no cgroup named, or when a read fails.
+/// - panics: none.
+/// - executable: none — the figures are the kernel's.
+///
+/// # Cost
+/// - allocation: the cgroup's paths, found and kept once, setup
+///
+/// # Adequacy
+/// - hypothesis: L2 — the `max` count reads from the kernel's form of the file;
+///   the charge itself is the kernel's.
+/// - witness: `regions::tests::the_max_count_reads_from_the_events_7551`
+#[cfg(target_os = "linux")]
+#[inline]
+#[must_use]
+pub fn charge() -> Option<Charge>
+{
+    let &(ref current, ref events) = CHARGED
+        .get_or_init(|| {
+            let cgroups = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+            let path = cgroups.lines().find_map(|line| line.strip_prefix("0::"))?;
+            let dir = std::path::PathBuf::from(alloc::format!("/sys/fs/cgroup{path}"));
+            let max = std::fs::read_to_string(dir.join("memory.max")).ok()?;
+            max.trim().parse::<u64>().ok()?;
+            let file = |name: &str| {
+                alloc::ffi::CString::new(dir.join(name).into_os_string().into_encoded_bytes()).ok()
+            };
+            Some((file("memory.current")?, file("memory.events")?))
+        })
+        .as_ref()?;
+    let held = Small::read(current)?.figure()?;
+    let reached = Small::read(events)?.max()?;
+    Some(Charge { held, reached })
+}
+
+/// What the process's cgroup charges, which only Linux's unified hierarchy
+/// reports.
+///
+/// # Specification
+/// trivial.
+#[cfg(not(target_os = "linux"))]
+#[inline]
+#[must_use]
+pub const fn charge() -> Option<Charge>
+{
+    None
+}
+
+/// A small file of the kernel's, read whole into the stack with no
+/// allocation: a file of `/proc` or of a cgroup, under 512 bytes.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+struct Small
+{
+    /// The bytes read.
+    bytes: [u8; 512],
+    /// How many of `bytes` the read filled.
+    read: usize,
+}
+
+#[cfg(target_os = "linux")]
+impl Small
+{
+    /// The file at `path`, read whole; none when the open or the read fails.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read(path: &core::ffi::CStr) -> Option<Self>
+    {
+        // SAFETY: `path` ends in its NUL, and `open` reads nothing past it.
+        let fd = unsafe { libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC) };
+        if fd < 0_i32 {
+            return None;
+        }
+        let mut small = Self {
+            bytes: [0; 512],
+            read: 0,
+        };
+        // SAFETY: `bytes` is a live buffer of its own length, and `read`
+        // writes no byte past that length.
+        let read = unsafe { libc::read(fd, (&raw mut small.bytes).cast(), small.bytes.len()) };
+        // SAFETY: `fd` is the descriptor that `open` gave, and nothing else
+        // holds it.
+        unsafe {
+            libc::close(fd);
+        }
+        small.read = usize::try_from(read).ok()?;
+        Some(small)
+    }
+
+    /// The file's one figure in bytes, as `memory.current` holds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn figure(&self) -> Option<Bytes>
+    {
+        let text = core::str::from_utf8(self.bytes.get(.. self.read)?).ok()?;
+        text.trim().parse().ok().map(Bytes)
+    }
+
+    /// The `max` count of a `memory.events` file.
+    ///
+    /// # Specification
+    /// trivial.
+    fn max(&self) -> Option<Reached>
+    {
+        let text = core::str::from_utf8(self.bytes.get(.. self.read)?).ok()?;
+        text.lines()
+            .find_map(|line| line.strip_prefix("max "))?
+            .trim()
+            .parse()
+            .ok()
+            .map(Reached)
+    }
+
+    /// The resident set that a `statm` file names: its second field, in pages.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resident(&self) -> Option<Bytes>
+    {
+        let text = core::str::from_utf8(self.bytes.get(.. self.read)?).ok()?;
+        let pages: u64 = text.split_ascii_whitespace().nth(1)?.parse().ok()?;
+        // SAFETY: `sysconf` reads a configuration value and writes nothing.
+        let size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
+        pages.checked_mul(size).map(Bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1689,6 +1992,7 @@ mod tests
         let rendered = [
             Origin::Flag,
             Origin::Available,
+            Origin::Cgroup,
             Origin::Physical,
             Origin::Unread,
         ]
@@ -1700,6 +2004,59 @@ mod tests
                 assert_ne!(text, other, "two origins render alike");
             }
         }
+    }
+
+    /// #7551: a cgroup whose `memory.max` is the least of the three readings
+    /// gives the bound, by its own origin; a larger one gives way to the
+    /// host's available memory.
+    #[test]
+    fn the_cgroup_s_bound_binds_when_it_is_the_least_7551()
+    {
+        let tight = Memory::of(super::Readings {
+            available: Some(Bytes(8 << 30)),
+            cgroup: Some(Bytes(4 << 30)),
+            address_space: None,
+        });
+        assert_eq!(
+            (Bytes(4 << 30), Origin::Cgroup),
+            (tight.bytes(), tight.origin())
+        );
+        let loose = Memory::of(super::Readings {
+            available: Some(Bytes(8 << 30)),
+            cgroup: Some(Bytes(16 << 30)),
+            address_space: None,
+        });
+        assert_eq!(
+            (Bytes(8 << 30), Origin::Available),
+            (loose.bytes(), loose.origin())
+        );
+    }
+
+    /// #7551: the `max` count reads from the kernel's form of `memory.events`,
+    /// read into the stack as `charge` reads it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_max_count_reads_from_the_events_7551()
+    {
+        let read = |name: &str, text: &str| {
+            let path = std::env::temp_dir()
+                .join(alloc::format!("gandr-7551-{}-{name}", std::process::id()));
+            std::fs::write(&path, text).expect("the scratch file writes");
+            let named =
+                alloc::ffi::CString::new(path.clone().into_os_string().into_encoded_bytes())
+                    .expect("the path holds no NUL");
+            let small = super::Small::read(&named).expect("the scratch file reads");
+            std::fs::remove_file(&path).expect("the scratch file leaves");
+            small.max()
+        };
+        assert_eq!(
+            Some(super::Reached(1287)),
+            read(
+                "events",
+                "low 0\nhigh 0\nmax 1287\noom 0\noom_kill 0\noom_group_kill 0\n"
+            )
+        );
+        assert_eq!(None, read("none", "low 0\nhigh 0\n"));
     }
 
     /// A stop at the bound names the sum, both regions, the region that
@@ -1922,7 +2279,37 @@ mod tests
         let readings = super::Readings::now();
         let available = readings.available.expect("Linux reports MemAvailable");
         let host = Memory::of(readings);
-        assert_eq!(Origin::Available, host.origin(), "{host}");
+        let origin = if readings.cgroup == Some(host.bytes()) {
+            Origin::Cgroup
+        }
+        else {
+            Origin::Available
+        };
+        assert_eq!(origin, host.origin(), "{host}");
         assert!(host.bytes() <= available, "{host} past {available}");
+    }
+
+    /// #7551: the walk of a verb reads the bytes that the process holds before
+    /// each source, so the reading follows memory that the process touches.
+    /// The test touches 64 MiB, one byte in each page, and reads at least
+    /// 32 MiB more.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn the_resident_set_grows_with_the_memory_touched_7551()
+    {
+        const TOUCHED: usize = 64 << 20;
+        let before = super::resident().expect("the host reports the resident set");
+        let mut held = alloc::vec![0_u8; TOUCHED];
+        for page in held.chunks_mut(4096) {
+            if let Some(first) = page.first_mut() {
+                *first = 1;
+            }
+        }
+        let after = super::resident().expect("the host reports the resident set");
+        core::hint::black_box(&held);
+        assert!(
+            after.0 >= before.0.saturating_add(32 << 20),
+            "the resident set grows from {before} to {after} over 64 MiB touched"
+        );
     }
 }

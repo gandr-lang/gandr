@@ -80,6 +80,7 @@ pub fn check_at(
         lints: Lints::default(),
         grant: HostGrant::UNBOUNDED,
         paths,
+        sources: gandr_surface_dispatcher::SourceLimit::Unlimited,
         width,
     })
     else {

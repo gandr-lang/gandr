@@ -25,6 +25,7 @@
 //! | `gandr check --grant <operations> <paths>` | as `check`, every capability a declaration holds bounded by the host operations named, comma-separated and repeatable (`--grant read,write`): one claiming another is refused by name; without the flag every held capability is owed | as `check`, and an operation no host interface offers |
 //! | `gandr check --entry <worlds> <paths>` | as `check`, every declaration entered at the worlds named, comma-separated as an `entry` attribute names them (`--entry operator,seat`): its home first, then one capability per later world; a declaration stating its own entry is checked within it, and a source declaring one of the worlds nowhere grants nothing; without the flag a declaration stands where it states | as `check` |
 //! | `gandr check --jobs <threads> <paths>` | as `check`, its sources parsed and lowered on that many threads | as `check` |
+//! | `gandr check --sources <count> <paths>` | as `check`, its walk ending once it reaches that many sources: the walk stops, names the count and the flag, and judges no source after it; `test` takes the flag too; without the flag no count ends the walk | as `check`, and a walk that reaches the count faults |
 //! | `gandr check --lint explicit-exits <paths>` | as `check`, plus a warning for every exit the lowering inferred where a body ends, each with the fix that writes its keyword; without the flag only the declarations and modules marked `@[ explicit_exits ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
@@ -65,7 +66,7 @@
 //! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
 //! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
 //! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
-//! | `gandr --memory <size> <verb>` | as the verb, each run it starts — a fixture's, a cut's, a world's, `gandr run`'s — holding its heap and its window region within the size, `512MiB` or `2GiB`: a run that asks past it stops, naming each region's bytes, the step and the remedy; without the flag, the least of the host's available memory, its cgroup's `memory.max` and its address-space limit | as the verb; a size that does not read is a malformed invocation |
+//! | `gandr --memory <size> <verb>` | as the verb, each run it starts — a fixture's, a cut's, a world's, `gandr run`'s — holding its heap and its window region within the size, `512MiB` or `2GiB`: a run that asks past it stops, naming each region's bytes, the step and the remedy; the walk of `check` or `test` stops before its next source or component once it reaches the size, naming the bytes it holds, the bound and the remedy: under a cgroup that names a `memory.max`, the cgroup's charge passes the size or the cgroup's `max` count rises, else the process's resident set passes the size; without the flag, the least of the host's available memory, its cgroup's `memory.max` and its address-space limit | as the verb; a size that does not read is a malformed invocation |
 //! | `gandr --run-budget <jumps> <verb>` | as the verb, each run it starts holding its code-word jumps within the count, `16777216`: a run that spends it stops, naming the count, the flag and the remedy; without the flag, a run of `check`, `test` or `run` has no budget, and a run of `lsp` or `serve` takes the server's budget of 16 777 216 jumps; a client that starts a hub passes the flag on | as the verb; a count that does not read, or zero, is a malformed invocation |
 //!
 //! A path is a source file of any name, or a directory searched for `.gandr`
@@ -412,6 +413,8 @@ use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::Secrets;
 use gandr_surface_dispatcher::Site;
+use gandr_surface_dispatcher::SourceCount;
+use gandr_surface_dispatcher::SourceLimit;
 use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
@@ -616,6 +619,9 @@ enum Command
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
+        /// The count of sources the walk reaches at most.
+        #[command(flatten)]
+        limit: Limit,
         /// Source files, and directories searched for `.gandr` sources. A
         /// path inside a package checks the whole package, and writes its
         /// `package.gandr.toml` and, when it has dependencies, its lock; a
@@ -637,6 +643,9 @@ enum Command
         /// The threads the sources are parsed and lowered on.
         #[command(flatten)]
         jobs: Jobs,
+        /// The count of sources the walk reaches at most.
+        #[command(flatten)]
+        limit: Limit,
         /// Source files, and directories searched for `.gandr` sources. A
         /// path inside a package runs the whole package, a workspace's
         /// directory each member it names; with no path, the package the
@@ -1054,6 +1063,33 @@ impl From<Jobs> for Width
     {
         jobs.jobs.map_or(Self::PerformanceCores, |threads| {
             Self::Threads(Threads::from(threads))
+        })
+    }
+}
+
+/// The count of sources that `check` and `test` reach at most.
+#[derive(Debug, clap::Args)]
+#[repr(transparent)]
+struct Limit
+{
+    /// Reach at most this many sources, then stop and name the count. With
+    /// none, only the memory bound that `--memory` names, or the host's,
+    /// ends the walk.
+    #[arg(long, value_name = "SOURCES")]
+    sources: Option<NonZeroUsize>,
+}
+
+impl From<Limit> for SourceLimit
+{
+    /// The limit that `limit` names: its count, or none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(limit: Limit) -> Self
+    {
+        limit.sources.map_or(Self::Unlimited, |count| {
+            Self::To(SourceCount::from(count.get()))
         })
     }
 }
@@ -1796,6 +1832,10 @@ enum Screen
 /// - executable: none — `run` exits with a program's own status, any byte, so
 ///   the codes the other verbs keep to are observed by the witnesses.
 ///
+/// # Cost
+/// - allocation: the parsed invocation, the verb's policies and report, setup
+/// - allocation: a fault's line on standard error, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — finite settled, refused, owed, missing and malformed
 ///   inputs exercise each process status and stream role. Closed output pipes
@@ -1926,6 +1966,7 @@ fn main() -> ExitCode
             report,
             verbosity,
             jobs,
+            limit,
             paths,
         }) => {
             if measure {
@@ -1999,6 +2040,7 @@ fn main() -> ExitCode
                     lints: enabled(&lint),
                     grant,
                     paths,
+                    sources: SourceLimit::from(limit),
                     width: Width::from(jobs),
                 },
                 Verbosity::from(verbosity),
@@ -2007,6 +2049,7 @@ fn main() -> ExitCode
         Some(Command::Test {
             verbosity,
             jobs,
+            limit,
             paths,
         }) => (
             Invocation::Test {
@@ -2014,6 +2057,7 @@ fn main() -> ExitCode
                     Ok((paths, ..)) => paths,
                     Err(unpackaged) => return unpathed(&unpackaged),
                 },
+                sources: SourceLimit::from(limit),
                 width: Width::from(jobs),
             },
             Verbosity::from(verbosity),
@@ -3358,6 +3402,10 @@ impl HubVerbs
     ///
     /// # Errors
     /// The first write error, which stops the walk.
+    ///
+    /// # Cost
+    /// - allocation: the packages, the store and the walk's report, setup
+    /// - allocation: a fault's line, diagnostic
     fn walked(
         self,
         (verb, paths): (Verb, Vec<PathBuf>),
@@ -3375,10 +3423,12 @@ impl HubVerbs
                 lints: enabled(&[]),
                 grant: HostGrant::UNBOUNDED,
                 paths,
+                sources: SourceLimit::Unlimited,
                 width: Width::PerformanceCores,
             },
             Verb::Test => Invocation::Test {
                 paths,
+                sources: SourceLimit::Unlimited,
                 width: Width::PerformanceCores,
             },
         };
@@ -4292,6 +4342,10 @@ fn stage(
 /// # Errors
 /// The [`std::io::Error`] of the first write that failed.
 ///
+/// # Cost
+/// - allocation: the walk's report and its rendered lines, setup
+/// - allocation: a fault's line on standard error, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — mixed settled, refused and unreadable paths and
 ///   fixture/pending roots expose continuation, stream separation and fault
@@ -4463,6 +4517,11 @@ fn run(
         ControlFlow::Continue(report) => report,
         ControlFlow::Break(error) => return Err(error),
     };
+    // A walk that ends at a bound names the bound and the flag that raises
+    // it; its verdict is a fault (#7551).
+    if report.ended() != gandr_surface_dispatcher::Ended::Whole {
+        writeln!(stderr, "gandr: {}", report.ended())?;
+    }
     #[cfg(feature = "instrument")]
     if let Some(occupied) = occupied {
         occupied.print(stderr)?;
