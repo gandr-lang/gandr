@@ -89,6 +89,8 @@ pub use crate::entries::Output;
 #[cfg(unix)]
 pub use crate::entries::TreeRef;
 pub use crate::plane::NodeBatch;
+pub use crate::plane::Seal;
+pub use crate::plane::SealBytes;
 pub use crate::register::Namer;
 pub use crate::register::Register;
 pub use crate::roots::RootName;

@@ -23,12 +23,18 @@
 //! [`Batch::publish`] appends the records of one call in one positioned write
 //! and marks the segment. A put syncs nothing. Before a naming, the register
 //! syncs each marked segment once, so one sync covers every put since the
-//! last naming. A write that
-//! fails leaves the shard's end where it was, and the next batch writes over
-//! the torn tail. The open of a plane reads every segment's headers in order
-//! of the segments' identities, and stops each segment at its first header
-//! that does not check. A later record of one identity takes the index from
-//! an earlier one.
+//! last naming. A write that fails leaves the shard's end where it was, and
+//! the next batch writes over the torn tail.
+//!
+//! A shard seals its segment once the segment reaches the host's extent size
+//! ([`Seal`]), and at the close of the plane. The seal appends a trailer, a
+//! record that lists each record of the segment with its place, and a footer
+//! that points at the trailer; no shard appends to the segment after. The
+//! open of a plane reads the trailer of each sealed segment that the newest
+//! roots log line names, then the footer and the trailer of each other
+//! sealed segment, and scans the headers only of a segment with no trailer,
+//! which a crash left open. A later record of one identity takes the index
+//! from an earlier one.
 //!
 //! # Boundaries
 //!
@@ -41,8 +47,9 @@
 //! of one object that race both append, and the index keeps the later: the
 //! other record stays in its segment, dead.
 //!
-//! The open reads the header of every record, so its cost grows with the
-//! store. A root that carries the index removes that cost.
+//! The open reads one entry of 44 bytes for each record of a sealed segment,
+//! so its cost still grows with the store. A persistent tree from identity to
+//! place, whose root alone the open reads, removes that cost.
 //!
 //! # References
 //!
@@ -98,9 +105,6 @@ use crate::store::StoreError;
 /// each own a shard.
 const SHARDS: usize = 64_usize;
 
-/// The size past which a shard opens a new segment for its next batch.
-const SEGMENT_LIMIT: u64 = 64_u64 << 20_u32;
-
 /// How many identities a writer tries for a new segment before it gives up.
 const SEGMENT_ATTEMPTS: usize = 64_usize;
 
@@ -117,12 +121,53 @@ const CHECKED: usize = 56_usize;
 /// The bytes a record's header opens with.
 const MAGIC: [u8; 4] = *b"gsg1";
 
+/// The bytes a trailer's header opens with, in place of a record's magic.
+const TRAILER_MAGIC: [u8; 4] = *b"gst1";
+
 /// The domain a header's checksum is taken in, so it meets no other digest
 /// of the store.
 const HEADER_DOMAIN: &[u8] = b"gandr storage-store segment record header\0";
 
+/// The domain a trailer's digest is taken in.
+const TRAILER_DOMAIN: &[u8] = b"gandr storage-store segment trailer\0";
+
+/// The bytes of one entry of a trailer: the identity, the record's offset as
+/// eight little-endian bytes and its length as four.
+const ENTRY: usize = 44_usize;
+
+/// The bytes of a sealed segment's footer: the trailer's offset as eight
+/// little-endian bytes, its length as four, four zero bytes, the magic and
+/// four bytes of a checksum.
+const FOOTER: usize = 24_usize;
+
+/// The bytes a footer's checksum covers: the offset, the length and the zero
+/// bytes.
+const FOOTED: usize = 16_usize;
+
+/// The magic of a footer.
+const FOOTER_MAGIC: [u8; 4] = *b"gsf1";
+
+/// The domain a footer's checksum is taken in.
+const FOOTER_DOMAIN: &[u8] = b"gandr storage-store segment footer\0";
+
 /// The bytes the open reads ahead of each header.
 const SCAN_BUFFER: usize = 64_usize << 10_u32;
+
+/// When a shard seals its open segment: it writes the segment's trailer and
+/// footer, and appends no more to it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Seal
+{
+    /// At the close of the store alone, for a host that names no extent size.
+    AtClose,
+    /// Once the segment holds at least this many bytes, and at the close.
+    At(SealBytes),
+}
+
+/// The extent size at which a segment seals, as the host measures it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SealBytes(pub core::num::NonZeroU64);
 
 /// The ordinal that the next thread to publish in the process takes.
 static ORDINALS: AtomicUsize = AtomicUsize::new(0_usize);
@@ -191,6 +236,16 @@ pub struct Image<'bytes>(pub &'bytes [u8]);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct FileName<'text>(pub &'text str);
+
+/// A word of a roots log line.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Word<'line>(pub &'line str);
+
+/// The bytes of one positioned write to a segment.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Written(Vec<u8>);
 
 /// A segment's identity: unique in its plane, and ordered as the writers
 /// created the segments.
@@ -293,13 +348,27 @@ struct Place
     length: Length,
 }
 
+/// What a header stands before: an object's record, or a sealed segment's
+/// trailer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Kind
+{
+    /// An object's bytes, under its identity.
+    Record,
+    /// The list of the segment's records, under the digest of the list.
+    Trailer,
+}
+
 /// A record's header, as it stands before the record's bytes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Header<Name>
 {
+    /// What the header stands before.
+    kind: Kind,
     /// The length of the record's bytes.
     length: Length,
-    /// The identity of the object the record holds.
+    /// The identity of the object the record holds, or the digest of a
+    /// trailer's entries.
     name: Name,
     /// The segment the record stands in.
     segment: SegmentId,
@@ -335,6 +404,97 @@ fn checksum(checked: &Checked) -> Checksum
     Checksum(sum)
 }
 
+/// The digest of a trailer's entries.
+///
+/// # Specification
+/// trivial.
+fn trailer_digest(entries: Image<'_>) -> TrailerDigest
+{
+    let mut hasher = blake3::Hasher::new();
+    let _domain = hasher.update(TRAILER_DOMAIN);
+    let _entries = hasher.update(entries.0);
+    TrailerDigest(*hasher.finalize().as_bytes())
+}
+
+/// A footer's bytes: the trailer's offset and length, the magic, and the
+/// first eight bytes of a checksum over the offset and the length.
+#[repr(transparent)]
+struct FooterBytes([u8; FOOTER]);
+
+impl FooterBytes
+{
+    /// The footer that points at a trailer of `length` at `offset`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(
+        offset: Offset,
+        length: Length,
+    ) -> Self
+    {
+        let mut bytes = [0_u8; FOOTER];
+        let (footed, rest) = bytes.split_at_mut(FOOTED);
+        let (at, long) = footed.split_at_mut(8);
+        at.copy_from_slice(&offset.0.to_le_bytes());
+        let (long, _pad) = long.split_at_mut(4);
+        long.copy_from_slice(&length.0.to_le_bytes());
+        let sum = footer_checksum(Image(footed));
+        let (magic, check) = rest.split_at_mut(FOOTER_MAGIC.len());
+        magic.copy_from_slice(&FOOTER_MAGIC);
+        check.copy_from_slice(sum.0.get(.. check.len()).unwrap_or_default());
+        Self(bytes)
+    }
+
+    /// The trailer's offset and length these bytes point at, when their magic
+    /// and their checksum hold.
+    ///
+    /// # Specification
+    /// trivial.
+    fn trailer(&self) -> Maybe<(Offset, Length), unrecorded::Absent>
+    {
+        let unchecked = Maybe::Absent(unrecorded::Absent::Unchecked);
+        let Some((footed, rest)) = self.0.split_first_chunk::<FOOTED>()
+        else {
+            return unchecked;
+        };
+        let Some((magic, check)) = rest.split_first_chunk::<4>()
+        else {
+            return unchecked;
+        };
+        if *magic != FOOTER_MAGIC
+            || footer_checksum(Image(footed)).0.get(.. check.len()) != Some(check)
+        {
+            return unchecked;
+        }
+        let Some((at, long)) = footed.split_first_chunk::<8>()
+        else {
+            return unchecked;
+        };
+        let Some((long, _pad)) = long.split_first_chunk::<4>()
+        else {
+            return unchecked;
+        };
+        Maybe::Present((
+            Offset(u64::from_le_bytes(*at)),
+            Length(u32::from_le_bytes(*long)),
+        ))
+    }
+}
+
+/// The checksum over a footer's first [`FOOTED`] bytes.
+///
+/// # Specification
+/// trivial.
+fn footer_checksum(footed: Image<'_>) -> Checksum
+{
+    let mut hasher = blake3::Hasher::new();
+    let _domain = hasher.update(FOOTER_DOMAIN);
+    let _footed = hasher.update(footed.0);
+    let mut sum = [0_u8; 8];
+    hasher.finalize_xof().fill(&mut sum);
+    Checksum(sum)
+}
+
 impl<Name> Header<Name>
 where
     Name: ObjectName,
@@ -347,7 +507,10 @@ where
     {
         let mut checked = Checked([0_u8; CHECKED]);
         let (magic, rest) = checked.0.split_at_mut(MAGIC.len());
-        magic.copy_from_slice(&MAGIC);
+        magic.copy_from_slice(match self.kind {
+            Kind::Record => &MAGIC,
+            Kind::Trailer => &TRAILER_MAGIC,
+        });
         let (length, rest) = rest.split_at_mut(4);
         length.copy_from_slice(&self.length.0.to_le_bytes());
         let (name, rest) = rest.split_at_mut(32);
@@ -421,10 +584,13 @@ impl HeaderBytes
         else {
             return unchecked;
         };
-        if *magic != MAGIC {
-            return unchecked;
-        }
+        let kind = match *magic {
+            MAGIC => Kind::Record,
+            TRAILER_MAGIC => Kind::Trailer,
+            _ => return unchecked,
+        };
         let header = Header {
+            kind,
             length: Length(u32::from_le_bytes(*length)),
             name: Name::from(*name),
             segment: SegmentId(u64::from_le_bytes(*at_segment)),
@@ -469,6 +635,40 @@ struct Segment
     scanned: AtomicU64,
     /// Whether a batch wrote to the segment since its last sync.
     dirty: AtomicBool,
+    /// Where the segment's trailer stands, once the segment is sealed.
+    sealed: OnceLock<Sealed>,
+}
+
+/// The digest of a trailer's entries, which its header names in place of an
+/// identity.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TrailerDigest([u8; 32]);
+
+/// A sealed segment and the place of its trailer, as a root names it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Sealed
+{
+    /// The segment.
+    segment: SegmentId,
+    /// The offset of the trailer's header.
+    offset: Offset,
+    /// The length of the trailer's entries.
+    length: Length,
+    /// The digest of the entries.
+    digest: TrailerDigest,
+}
+
+/// One entry of a trailer: a record's identity and its place in the segment.
+#[derive(Clone, Copy, Debug)]
+struct Entry
+{
+    /// The identity's bytes.
+    name: [u8; 32],
+    /// The offset of the record's header.
+    offset: Offset,
+    /// The length of the record's bytes.
+    length: Length,
 }
 
 /// One record a plane indexed.
@@ -515,10 +715,16 @@ struct Open
     end: Offset,
 }
 
-/// A shard's open segment, or none before its first batch.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Tail(Option<Open>);
+/// A shard's open segment, or none before its first batch and after a seal,
+/// and the entries of the records the shard appended to it.
+#[derive(Debug)]
+struct Tail
+{
+    /// The open segment.
+    open: Option<Open>,
+    /// One entry for each record of the open segment, in order.
+    entries: Vec<Entry>,
+}
 
 /// What a plane holds under a name, for an insertion to read.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -559,6 +765,8 @@ where
     index: papaya::HashMap<Name, Slot>,
     /// The open segment of each shard.
     shards: [Mutex<Tail>; SHARDS],
+    /// When a shard seals its open segment.
+    seal: Seal,
     /// The identity the next new segment tries first.
     next: AtomicU64,
     /// The lock a scan of the other writers' tails holds, so one scan runs at
@@ -571,31 +779,41 @@ where
     Name: ObjectName,
 {
     /// The directory at `path`, made when missing, and every record its
-    /// segments hold indexed.
+    /// segments hold indexed: from the trailer of each segment that `named`
+    /// lists, then from the footer and the trailer of each other sealed
+    /// segment, then by a scan of each segment that has none.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a directory at `path`; each record of each segment indexed
-    ///   under its identity, up to the segment's first header that does not
-    ///   check or record that does not fit, the segments read in order of their
-    ///   identities; every other file ignored.
+    ///   under its identity: a sealed segment's from its trailer when the
+    ///   trailer's digest holds, and any other segment's up to its first header
+    ///   that does not check or record that does not fit; every other file
+    ///   ignored. Each shard seals its segment as `seal` asks.
     /// - provides: a plane's index as the store opens.
     /// - fails: [`StoreError::Io`] when the directory cannot be made or listed,
     ///   or a segment cannot be opened or read.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
-    /// - intension: the open reads each record's header and no record's bytes.
+    /// - intension: the open reads one trailer for each sealed segment, and
+    ///   each header of a segment that has no trailer; no record's bytes.
     ///
     /// # Errors
     /// [`StoreError::Io`], as above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a missing root is made, a committed value loads after
-    ///   reopening, and a torn tail is cut.
+    ///   reopening, a torn tail is cut, and a store opens from its root's
+    ///   trailers.
     /// - witness: `tests::store::a_missing_root_directory_is_made_on_opening`
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_torn_segment_tail_is_cut_on_opening_7462`
-    pub fn open(path: PathBuf) -> Result<Self, StoreError>
+    /// - witness: `tests::store::a_store_opens_from_the_trailers_its_root_names_7481`
+    pub(crate) fn open(
+        path: PathBuf,
+        seal: Seal,
+        named: &[Sealed],
+    ) -> Result<Self, StoreError>
     {
         std::fs::create_dir_all(&path).map_err(|error| StoreError::io(&path, &error))?;
         let plane = Self {
@@ -604,12 +822,55 @@ where
             known: papaya::HashMap::new(),
             objects: boxcar::Vec::new(),
             index: papaya::HashMap::new(),
-            shards: [const { Mutex::new(Tail(None)) }; SHARDS],
+            shards: [const {
+                Mutex::new(Tail {
+                    open: None,
+                    entries: Vec::new(),
+                })
+            }; SHARDS],
+            seal,
             next: AtomicU64::new(0_u64),
             catching: Mutex::new(()),
         };
+        for sealed in named {
+            let file = plane.path.join(sealed.segment.file_name());
+            let Ok(opened) = File::open(&file)
+            else {
+                continue;
+            };
+            let slot = plane.known_segment(sealed.segment, opened);
+            if let Some(segment) = plane.segments.get(slot.0) {
+                let _read = plane.trailer(slot, segment, *sealed)?;
+            }
+        }
         plane.catch_up()?;
         Ok(plane)
+    }
+
+    /// The slot of the segment `id` of another writer, open as `file`, pushed
+    /// into the plane's segments and its identity made known.
+    ///
+    /// # Specification
+    /// trivial.
+    fn known_segment(
+        &self,
+        id: SegmentId,
+        file: File,
+    ) -> Slot
+    {
+        let slot = Slot(self.segments.push(Segment {
+            id,
+            file,
+            writer: Writer::Other,
+            scanned: AtomicU64::new(0_u64),
+            dirty: AtomicBool::new(false),
+            sealed: OnceLock::new(),
+        }));
+        let _known = self.known.pin().insert(id, slot);
+        let _past = self
+            .next
+            .fetch_max(id.0.saturating_add(1_u64), Ordering::Relaxed);
+        slot
     }
 
     /// Index every record of the other writers' segments that the plane has
@@ -658,17 +919,15 @@ where
             }
             let file = path.join(id.file_name());
             let opened = File::open(&file).map_err(|error| StoreError::io(&file, &error))?;
-            let slot = Slot(self.segments.push(Segment {
-                id,
-                file: opened,
-                writer: Writer::Other,
-                scanned: AtomicU64::new(0_u64),
-                dirty: AtomicBool::new(false),
-            }));
-            let _known = known.insert(id, slot);
+            let slot = self.known_segment(id, opened);
+            if let Some(segment) = self.segments.get(slot.0)
+                && let Maybe::Present(sealed) = self.footer(segment)?
+            {
+                let _read = self.trailer(slot, segment, sealed)?;
+            }
         }
         for (at, segment) in &self.segments {
-            if segment.writer == Writer::Other {
+            if segment.writer == Writer::Other && segment.sealed.get().is_none() {
                 self.scan(Slot(at), segment)?;
             }
         }
@@ -728,6 +987,18 @@ where
             if end.0 > size {
                 break;
             }
+            if header.kind == Kind::Trailer {
+                // A trailer ends the segment's records: past it stand the
+                // footer, and torn bytes at most.
+                let _sealed = segment.sealed.set(Sealed {
+                    segment: segment.id,
+                    offset: at,
+                    length: header.length,
+                    digest: TrailerDigest(header.name.as_ref().try_into().unwrap_or([0_u8; 32])),
+                });
+                at = Offset(size);
+                break;
+            }
             reader
                 .seek_relative(i64::from(header.length.0))
                 .map_err(io)?;
@@ -742,6 +1013,218 @@ where
         }
         segment.scanned.store(at.0, Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Index each record that the trailer `sealed` lists, when the trailer
+    /// stands where `sealed` says and its entries' digest holds.
+    ///
+    /// # Specification
+    /// - requires: `segment` stands at `slot` of the plane's segments, and is
+    ///   the segment that `sealed` names.
+    /// - ensures: `Present(sealed)` when the trailer's header checks at its
+    ///   place, names the length and the digest of `sealed`, and its entries
+    ///   hash to that digest: then each entry is indexed under its identity,
+    ///   the segment is sealed and its scan is done. `Unchecked` otherwise,
+    ///   with nothing indexed.
+    /// - provides: the open of a sealed segment, which reads its trailer and no
+    ///   header of a record.
+    /// - fails: [`StoreError::Io`] when the segment's size cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one positioned read of the trailer's header and entries.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from the trailers its root names, and a
+    ///   torn trailer leaves the segment to the scan.
+    /// - witness: `tests::store::a_store_opens_from_the_trailers_its_root_names_7481`
+    /// - witness: `tests::store::a_torn_trailer_leaves_its_segment_to_the_scan_7481`
+    fn trailer(
+        &self,
+        slot: Slot,
+        segment: &Segment,
+        sealed: Sealed,
+    ) -> Result<Maybe<Sealed, unrecorded::Absent>, StoreError>
+    {
+        let file = self.path.join(segment.id.file_name());
+        let size = segment
+            .file
+            .metadata()
+            .map_err(|error| StoreError::io(&file, &error))?
+            .len();
+        let unchecked = Ok(Maybe::Absent(unrecorded::Absent::Unchecked));
+        let body = usize::try_from(sealed.length.0).unwrap_or(usize::MAX);
+        let mut bytes = vec![0_u8; body.saturating_add(HEADER)];
+        if sealed.offset.after(sealed.length).0 > size
+            || segment
+                .file
+                .read_exact_at(&mut bytes, sealed.offset.0)
+                .is_err()
+        {
+            return unchecked;
+        }
+        let Some((head, entries)) = bytes.split_first_chunk::<HEADER>()
+        else {
+            return unchecked;
+        };
+        let Maybe::Present(header) = HeaderBytes(*head).header::<Name>(segment.id, sealed.offset)
+        else {
+            return unchecked;
+        };
+        if header.kind != Kind::Trailer
+            || header.length != sealed.length
+            || header.name.as_ref() != sealed.digest.0.as_slice()
+            || trailer_digest(Image(entries)) != sealed.digest
+            || entries.len() % ENTRY != 0
+        {
+            return unchecked;
+        }
+        let index = self.index.pin();
+        for entry in entries.as_chunks::<ENTRY>().0 {
+            let Some((name, rest)) = entry.split_first_chunk::<32>()
+            else {
+                continue;
+            };
+            let Some((offset, rest)) = rest.split_first_chunk::<8>()
+            else {
+                continue;
+            };
+            let Some((length, _rest)) = rest.split_first_chunk::<4>()
+            else {
+                continue;
+            };
+            let place = Place {
+                segment: slot,
+                offset: Offset(u64::from_le_bytes(*offset)),
+                length: Length(u32::from_le_bytes(*length)),
+            };
+            let name = Name::from(*name);
+            let filed = Slot(self.objects.push(Filed::at(name, place)));
+            let _indexed = index.insert(name, filed);
+        }
+        let _sealed = segment.sealed.set(sealed);
+        segment.scanned.store(size, Ordering::Relaxed);
+        Ok(Maybe::Present(sealed))
+    }
+
+    /// The trailer that the footer of `segment` points at, with the digest
+    /// its header names, or none when the segment ends in no footer that
+    /// checks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the trailer's place and digest when the segment's last
+    ///   [`FOOTER`] bytes open no torn tail, their checksum holds and the
+    ///   header they point at checks as a trailer; `Unchecked` otherwise.
+    /// - provides: the open of a sealed segment that no root names.
+    /// - fails: [`StoreError::Io`] when the segment's size cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: two positioned reads, the footer's and the trailer
+    ///   header's.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store whose roots log is lost rebuilds its index
+    ///   from the footers and the trailers.
+    /// - witness: `tests::store::a_store_with_no_roots_log_reads_its_trailers_7481`
+    fn footer(
+        &self,
+        segment: &Segment,
+    ) -> Result<Maybe<Sealed, unrecorded::Absent>, StoreError>
+    {
+        let unchecked = Ok(Maybe::Absent(unrecorded::Absent::Unchecked));
+        let file = self.path.join(segment.id.file_name());
+        let size = segment
+            .file
+            .metadata()
+            .map_err(|error| StoreError::io(&file, &error))?
+            .len();
+        let Some(at) = size.checked_sub(u64::try_from(FOOTER).unwrap_or(u64::MAX))
+        else {
+            return unchecked;
+        };
+        let mut bytes = [0_u8; FOOTER];
+        if segment.file.read_exact_at(&mut bytes, at).is_err() {
+            return unchecked;
+        }
+        let Maybe::Present((offset, length)) = FooterBytes(bytes).trailer()
+        else {
+            return unchecked;
+        };
+        let mut head = [0_u8; HEADER];
+        if segment.file.read_exact_at(&mut head, offset.0).is_err() {
+            return unchecked;
+        }
+        match HeaderBytes(head).header::<Name>(segment.id, offset) {
+            Maybe::Present(header) if header.kind == Kind::Trailer && header.length == length => {
+                Ok(Maybe::Present(Sealed {
+                    segment: segment.id,
+                    offset,
+                    length,
+                    digest: TrailerDigest(header.name.as_ref().try_into().unwrap_or([0_u8; 32])),
+                }))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => unchecked,
+        }
+    }
+
+    /// The bytes that seal the segment `id` at `end`: the trailer that lists
+    /// `entries`, then the footer that points at it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sealing(
+        id: SegmentId,
+        end: Offset,
+        entries: &[Entry],
+        bytes: &mut Written,
+    ) -> Result<Sealed, StoreError>
+    {
+        let mut body = Vec::with_capacity(entries.len().saturating_mul(ENTRY));
+        for entry in entries {
+            body.extend_from_slice(&entry.name);
+            body.extend_from_slice(&entry.offset.0.to_le_bytes());
+            body.extend_from_slice(&entry.length.0.to_le_bytes());
+        }
+        let length = Length::of(Image(&body))?;
+        let digest = trailer_digest(Image(&body));
+        let header = Header {
+            kind: Kind::Trailer,
+            length,
+            name: Name::from(digest.0),
+            segment: id,
+            offset: end,
+        };
+        bytes.0.extend_from_slice(&header.bytes().0);
+        bytes.0.extend_from_slice(&body);
+        bytes.0.extend_from_slice(&FooterBytes::of(end, length).0);
+        Ok(Sealed {
+            segment: id,
+            offset: end,
+            length,
+            digest,
+        })
+    }
+
+    /// Each segment the plane knows as sealed, with its trailer's place, in
+    /// order of the segments' identities.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn sealed(&self) -> Vec<Sealed>
+    {
+        let mut sealed: Vec<Sealed> = self
+            .segments
+            .iter()
+            .filter_map(|(_at, segment)| segment.sealed.get().copied())
+            .collect();
+        sealed.sort_unstable_by_key(|each| each.segment);
+        sealed
     }
 
     /// The record the plane indexes under `name`, after a scan of the other
@@ -833,7 +1316,11 @@ where
             return Read(Err(io::ErrorKind::InvalidData));
         };
         match HeaderBytes(*head).header::<Name>(segment.id, place.offset) {
-            Maybe::Present(header) if header.name == name && header.length == place.length => {
+            Maybe::Present(header)
+                if header.kind == Kind::Record
+                    && header.name == name
+                    && header.length == place.length =>
+            {
                 Read(Ok(bytes))
             },
             Maybe::Present(_) | Maybe::Absent(_) => Read(Err(io::ErrorKind::InvalidData)),
@@ -943,14 +1430,14 @@ where
         Holding::Held
     }
 
-    /// The open segment of a shard, a new one when the shard has none or its
-    /// segment is past [`SEGMENT_LIMIT`].
+    /// The open segment of a shard, a new one when the shard has none: before
+    /// its first batch, or after its last segment sealed.
     ///
     /// # Specification
-    /// - requires: `open` is the shard's tail, read under the shard's lock.
-    /// - ensures: on success a segment of this process with its end below the
-    ///   limit, or a new empty one; a new segment's file and its directory
-    ///   entry are durable.
+    /// - requires: `open` is the shard's open segment, read under the shard's
+    ///   lock.
+    /// - ensures: on success the shard's open segment, or a new empty one; a
+    ///   new segment's file and its directory entry are durable.
     /// - provides: where a batch appends.
     /// - fails: [`StoreError::Io`] when no new segment can be created or its
     ///   directory cannot be synced.
@@ -967,12 +1454,10 @@ where
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     fn tail(
         &self,
-        open: Tail,
+        open: Option<Open>,
     ) -> Result<Open, StoreError>
     {
-        if let Tail(Some(open)) = open
-            && open.end.0 < SEGMENT_LIMIT
-        {
+        if let Some(open) = open {
             return Ok(open);
         }
         let path = &self.path;
@@ -998,6 +1483,7 @@ where
                 writer: Writer::Own,
                 scanned: AtomicU64::new(0_u64),
                 dirty: AtomicBool::new(false),
+                sealed: OnceLock::new(),
             }));
             let _known = self.known.pin().insert(id, slot);
             return Ok(Open {
@@ -1049,6 +1535,121 @@ where
             }
         }
         Ok(())
+    }
+}
+
+impl Sealed
+{
+    /// The word a roots log line spells the sealed segment with: its
+    /// identity in hexadecimal, the trailer's offset and length in decimal,
+    /// and the trailer's digest in hexadecimal, joined by colons.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn spelled(&self) -> String
+    {
+        let mut word = format!(
+            "{:016x}:{}:{}:",
+            self.segment.0, self.offset.0, self.length.0
+        );
+        for byte in self.digest.0 {
+            let _written = core::fmt::Write::write_fmt(&mut word, format_args!("{byte:02x}"));
+        }
+        word
+    }
+
+    /// The sealed segment that `word` spells, as [`Sealed::spelled`] writes
+    /// it, or none for any other word.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn parsed(word: Word<'_>) -> Maybe<Self, unrecorded::Absent>
+    {
+        let unchecked = Maybe::Absent(unrecorded::Absent::Unchecked);
+        let mut parts = word.0.split(':');
+        let (Some(segment), Some(offset), Some(length), Some(digest), None) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        )
+        else {
+            return unchecked;
+        };
+        let (Ok(segment), Ok(offset), Ok(length)) = (
+            u64::from_str_radix(segment, 16),
+            offset.parse::<u64>(),
+            length.parse::<u32>(),
+        )
+        else {
+            return unchecked;
+        };
+        let Maybe::Present(digest) = hexadecimal::<ChunkDigest>(FileName(digest))
+        else {
+            return unchecked;
+        };
+        Maybe::Present(Self {
+            segment: SegmentId(segment),
+            offset: Offset(offset),
+            length: Length(length),
+            digest: TrailerDigest(digest.as_ref().try_into().unwrap_or([0_u8; 32])),
+        })
+    }
+}
+
+impl<Name> Drop for Directory<Name>
+where
+    Name: ObjectName,
+{
+    /// The close of the plane: each shard seals its open segment with its
+    /// trailer and footer, and syncs it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each open segment of this process ends in a trailer that
+    ///   lists its records and a footer, durable on the device, so the next
+    ///   open reads the trailer and scans no header. A seal that fails leaves
+    ///   the segment as it stood, and the next open scans it.
+    /// - provides: the seal at the close, which a host with no extent size
+    ///   relies on alone.
+    /// - fails: never; a failed seal costs the next open a scan.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one positioned write and one data sync for each open
+    ///   segment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store closed with no extent size opens from its
+    ///   trailers.
+    /// - witness: `tests::store::a_store_with_no_roots_log_reads_its_trailers_7481`
+    fn drop(&mut self)
+    {
+        let mut bytes = Written::default();
+        for shard in &self.shards {
+            let (open, entries) = {
+                let mut tail = shard.lock().unwrap_or_else(PoisonError::into_inner);
+                (tail.open.take(), core::mem::take(&mut tail.entries))
+            };
+            let Some(open) = open
+            else {
+                continue;
+            };
+            let Some(segment) = self.segments.get(open.segment.0)
+            else {
+                continue;
+            };
+            bytes.0.clear();
+            let Ok(sealed) = Self::sealing(segment.id, open.end, &entries, &mut bytes)
+            else {
+                continue;
+            };
+            if segment.file.write_all_at(&bytes.0, open.end.0).is_ok()
+                && segment.file.sync_data().is_ok()
+            {
+                let _sealed = segment.sealed.set(sealed);
+            }
+        }
     }
 }
 
@@ -1189,10 +1790,10 @@ where
         let [ref first, ..] = self.plane.shards;
         let tail = self.plane.shards.get(shard).unwrap_or(first);
         let mut open = tail.lock().unwrap_or_else(PoisonError::into_inner);
-        let at = self.plane.tail(*open)?;
+        let at = self.plane.tail(open.open)?;
         // A new segment stays the shard's, so a failed write leaves no
         // segment behind that no shard appends to.
-        *open = Tail(Some(at));
+        open.open = Some(at);
         let Some(segment) = self.plane.segments.get(at.segment.0)
         else {
             return Err(StoreError::io(
@@ -1200,40 +1801,76 @@ where
                 &io::Error::from(io::ErrorKind::NotFound),
             ));
         };
-        let mut bytes = Vec::with_capacity(self.taken.values().fold(0_usize, |sum, image| {
-            sum.saturating_add(image.len()).saturating_add(HEADER)
-        }));
+        let mut bytes = Written(Vec::with_capacity(
+            self.taken.values().fold(0_usize, |sum, image| {
+                sum.saturating_add(image.len()).saturating_add(HEADER)
+            }),
+        ));
         let mut places = Vec::with_capacity(self.taken.len());
+        let listed = open.entries.len();
         let mut end = at.end;
         for (&name, image) in &self.taken {
-            let length = Length::of(Image(image))?;
+            let length = match Length::of(Image(image)) {
+                Ok(length) => length,
+                Err(error) => {
+                    open.entries.truncate(listed);
+                    return Err(error);
+                },
+            };
             let header = Header {
+                kind: Kind::Record,
                 length,
                 name,
                 segment: segment.id,
                 offset: end,
             };
-            bytes.extend_from_slice(&header.bytes().0);
-            bytes.extend_from_slice(image);
+            bytes.0.extend_from_slice(&header.bytes().0);
+            bytes.0.extend_from_slice(image);
             places.push((name, Place {
                 segment: at.segment,
                 offset: end,
                 length,
             }));
+            open.entries.push(Entry {
+                name: name.as_ref().try_into().unwrap_or([0_u8; 32]),
+                offset: end,
+                length,
+            });
             end = end.after(length);
         }
+        // The batch that takes the segment to the host's extent size seals it
+        // in the same write.
+        let sealed = match self.plane.seal {
+            Seal::At(SealBytes(limit)) if end.0 >= limit.get() => {
+                match Directory::<Name>::sealing(segment.id, end, &open.entries, &mut bytes) {
+                    Ok(sealed) => Some(sealed),
+                    Err(error) => {
+                        open.entries.truncate(listed);
+                        return Err(error);
+                    },
+                }
+            },
+            Seal::At(_) | Seal::AtClose => None,
+        };
         let file = self.plane.path.join(segment.id.file_name());
-        segment
-            .file
-            .write_all_at(&bytes, at.end.0)
-            .map_err(|error| StoreError::io(&file, &error))?;
+        if let Err(error) = segment.file.write_all_at(&bytes.0, at.end.0) {
+            open.entries.truncate(listed);
+            return Err(StoreError::io(&file, &error));
+        }
         // Set after the write, so a sync that clears the mark first still
         // covers the bytes, or the mark stands for the next sync.
         segment.dirty.store(true, Ordering::Release);
-        *open = Tail(Some(Open {
-            segment: at.segment,
-            end,
-        }));
+        if let Some(sealed) = sealed {
+            let _sealed = segment.sealed.set(sealed);
+            open.open = None;
+            open.entries.clear();
+        }
+        else {
+            open.open = Some(Open {
+                segment: at.segment,
+                end,
+            });
+        }
         drop(open);
         let index = self.plane.index.pin();
         for (name, place) in places {
@@ -1288,9 +1925,13 @@ impl ChunkDirectory
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn open(path: PathBuf) -> Result<Self, StoreError>
+    pub(crate) fn open(
+        path: PathBuf,
+        seal: Seal,
+        named: &[Sealed],
+    ) -> Result<Self, StoreError>
     {
-        Directory::open(path).map(Self)
+        Directory::open(path, seal, named).map(Self)
     }
 
     /// Sync the value plane's segments, as [`Directory::sync`] syncs them.
@@ -1300,6 +1941,15 @@ impl ChunkDirectory
     pub(crate) fn sync(&self) -> Result<(), StoreError>
     {
         self.0.sync()
+    }
+
+    /// The value plane's sealed segments, as [`Directory::sealed`] lists them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn sealed(&self) -> Vec<Sealed>
+    {
+        self.0.sealed()
     }
 }
 
@@ -1425,9 +2075,13 @@ impl NodeDirectory
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn open(path: PathBuf) -> Result<Self, StoreError>
+    pub(crate) fn open(
+        path: PathBuf,
+        seal: Seal,
+        named: &[Sealed],
+    ) -> Result<Self, StoreError>
     {
-        Directory::open(path).map(Self)
+        Directory::open(path, seal, named).map(Self)
     }
 
     /// Sync the record plane's segments, as [`Directory::sync`] syncs them.
@@ -1437,6 +2091,16 @@ impl NodeDirectory
     pub(crate) fn sync(&self) -> Result<(), StoreError>
     {
         self.0.sync()
+    }
+
+    /// The record plane's sealed segments, as [`Directory::sealed`] lists
+    /// them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn sealed(&self) -> Vec<Sealed>
+    {
+        self.0.sealed()
     }
 }
 

@@ -75,6 +75,8 @@ use std::time::Instant;
 
 use gandr_storage_store::Output;
 use gandr_storage_store::RootName;
+use gandr_storage_store::Seal;
+use gandr_storage_store::SealBytes;
 use gandr_storage_store::Store;
 use nix::sys::resource::UsageWho;
 use nix::sys::resource::getrusage;
@@ -312,10 +314,10 @@ fn records(store: &Path) -> Count
 fn load(
     store: &Path,
     files: &[PathBuf],
-    width: Count,
+    (width, seal): (Count, Seal),
 ) -> Pass
 {
-    let (opened, mut register) = Store::open(store).expect("a fresh store opens");
+    let (opened, mut register) = Store::open_with(store, seal).expect("a fresh store opens");
     let before = Spent::now();
     let started = Instant::now();
     let mut calls: Vec<Duration> = std::thread::scope(|scope| {
@@ -368,10 +370,13 @@ fn load(
 ///
 /// # Specification
 /// trivial.
-fn reopened(store: &Path) -> Duration
+fn reopened(
+    store: &Path,
+    seal: Seal,
+) -> Duration
 {
     let started = Instant::now();
-    let opened = Store::open(store).expect("the loaded store opens again");
+    let opened = Store::open_with(store, seal).expect("the loaded store opens again");
     let wall = started.elapsed();
     drop(opened);
     wall
@@ -537,10 +542,13 @@ struct Arguments
     directory: PathBuf,
     /// The widths that `--widths` names, if it names any.
     widths: Option<Vec<Count>>,
+    /// When each store seals its segments: at `--seal-bytes`, or at the close.
+    seal: Seal,
 }
 
 /// The arguments of the process: `--bench`, `--files <n>`, `--directory
-/// <path>` and `--widths <list>`, each width of the list a count above zero.
+/// <path>`, `--widths <list>`, each width of the list a count above zero, and
+/// `--seal-bytes <n>`, a size above zero.
 ///
 /// # Specification
 /// trivial.
@@ -551,6 +559,7 @@ fn arguments() -> Arguments
         files: FULL,
         directory: std::env::temp_dir(),
         widths: None,
+        seal: Seal::AtClose,
     };
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
@@ -563,6 +572,14 @@ fn arguments() -> Arguments
                         .and_then(|count| count.parse().ok())
                         .expect("--files names a count"),
                 );
+            },
+            "--seal-bytes" => {
+                parsed.seal = Seal::At(SealBytes(
+                    words
+                        .next()
+                        .and_then(|size| size.parse().ok())
+                        .expect("--seal-bytes names a size above zero"),
+                ));
             },
             "--directory" => {
                 parsed.directory = words
@@ -647,12 +664,12 @@ fn main()
     }
     for width in widths {
         let store = root.join(format!("store-{}", width.0));
-        let pass = load(&store, &sources, width);
+        let pass = load(&store, &sources, (width, asked.seal));
         assert!(
             pass.records.0 >= files.0,
             "each file puts at least its one piece"
         );
-        let open = reopened(&store);
+        let open = reopened(&store, asked.seal);
         if full {
             row(width, &pass, open, &substrate);
         }

@@ -702,7 +702,10 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
     }
     let roots = root.join("roots.log");
     let named = std::fs::read_to_string(&roots).expect("the roots log names a tree");
-    let node = named.trim();
+    let node = named
+        .split_whitespace()
+        .next()
+        .expect("the line opens with its tree");
     for segment in files(&root.join("nodes")) {
         std::fs::remove_file(segment).expect("the record plane's segment is removed");
     }
@@ -1258,4 +1261,147 @@ fn the_register_is_the_one_writer_by_its_type_6899()
         let _reader = scope.spawn(|| store.roots());
         drop(owner.join().expect("the register moves to its owner"));
     });
+}
+
+/// The bytes at which the trailer tests seal a segment: small, so a few values
+/// fill several segments.
+const SEAL_BYTES: u64 = 512_u64;
+
+/// The magic each sealed segment's footer holds, four bytes before its end.
+const FOOTER_MAGIC: &[u8; 4] = b"gsf1";
+
+/// Assert that each segment of `segments` ends in a footer's magic.
+///
+/// # Specification
+/// trivial.
+fn assert_sealed(segments: &[PathBuf])
+{
+    for segment in segments {
+        let bytes = std::fs::read(segment).expect("the segment reads");
+        assert_eq!(
+            bytes
+                .len()
+                .checked_sub(8)
+                .and_then(|at| bytes.get(at .. at.saturating_add(4))),
+            Some(FOOTER_MAGIC.as_slice()),
+            "{} ends in a footer",
+            segment.display()
+        );
+    }
+}
+
+/// A store whose shards seal at a small size writes each segment's trailer,
+/// its roots log line names each sealed segment, and a store opened later
+/// reads every value from the trailers that line names (#7481).
+#[test]
+fn a_store_opens_from_the_trailers_its_root_names_7481()
+{
+    let root = scratch(Path::new("root-trailers"));
+    let seal = gandr_storage_store::Seal::At(gandr_storage_store::SealBytes(
+        core::num::NonZeroU64::new(SEAL_BYTES).expect("the seal is above zero"),
+    ));
+    let values: Vec<Labels> = (8_u8 .. 24_u8).map(|count| labels(Count(count))).collect();
+    let pointers: Vec<ContentPtr> = {
+        let (store, mut register) = Store::open_with(&root, seal).expect("the store opens");
+        let pointers: Vec<ContentPtr> = values
+            .iter()
+            .map(|value| store.commit(value).expect("a value commits"))
+            .collect();
+        for (index, &pointer) in pointers.iter().enumerate() {
+            register
+                .name(RootName::new(format!("trailers/{index}")), pointer)
+                .expect("each value is named");
+        }
+        pointers
+    };
+    let segments = files(&root.join("chunks"));
+    assert!(
+        segments.len() > 1,
+        "the values fill more than one segment: {segments:?}"
+    );
+    assert_sealed(&segments);
+    let log = std::fs::read_to_string(root.join("roots.log")).expect("the roots log reads");
+    let line = log.lines().last().expect("the log holds a line");
+    assert!(
+        line.contains(" chunks ") && line.contains(" nodes"),
+        "the line names the sealed segments of both planes: {line}"
+    );
+    let (reopened, _register) = Store::open_with(&root, seal).expect("the store opens again");
+    for (pointer, value) in pointers.iter().zip(&values) {
+        assert_eq!(
+            reopened.deref::<Labels>(*pointer),
+            Ok(value.clone()),
+            "each value derefs from the trailers"
+        );
+    }
+}
+
+/// A sealed segment whose trailer is changed on disk leaves that segment to
+/// the scan, and every value of it still derefs (#7481).
+#[test]
+fn a_torn_trailer_leaves_its_segment_to_the_scan_7481()
+{
+    let root = scratch(Path::new("torn-trailer"));
+    let value = labels(Count(12));
+    let pointer = Store::open(&root)
+        .expect("the store opens")
+        .0
+        .commit(&value)
+        .expect("the value commits");
+    let segments = files(&root.join("chunks"));
+    let [ref segment] = *segments
+    else {
+        panic!("one commit appends to one segment: {segments:?}");
+    };
+    assert_sealed(&segments);
+    let mut bytes = std::fs::read(segment).expect("the segment reads");
+    // The byte before the footer is the trailer's last entry byte.
+    let at = bytes
+        .len()
+        .checked_sub(25)
+        .expect("a sealed segment holds a trailer");
+    let byte = bytes.get_mut(at).expect("the trailer's last byte stands");
+    *byte ^= 0xFF_u8;
+    std::fs::write(segment, &bytes).expect("the trailer is changed");
+    let (reopened, _register) = Store::open(&root).expect("the store opens again");
+    assert_eq!(
+        reopened.deref::<Labels>(pointer),
+        Ok(value),
+        "the value derefs from the scan of its segment"
+    );
+}
+
+/// A store closed with no extent size, whose roots log is gone, reads every
+/// value from the footers and the trailers of its sealed segments (#7481).
+#[test]
+fn a_store_with_no_roots_log_reads_its_trailers_7481()
+{
+    let root = scratch(Path::new("no-roots-log"));
+    let first = labels(Count(9));
+    let second = labels(Count(10));
+    let pointers = {
+        let (store, mut register) = Store::open(&root).expect("the store opens");
+        let pointers = [
+            store.commit(&first).expect("the first value commits"),
+            store.commit(&second).expect("the second value commits"),
+        ];
+        register
+            .name(RootName::new(String::from("lost/first")), pointers[0])
+            .expect("the first value is named");
+        pointers
+    };
+    assert_sealed(&files(&root.join("chunks")));
+    std::fs::remove_file(root.join("roots.log")).expect("the roots log is removed");
+    std::fs::remove_file(root.join("roots.log.journal")).expect("the journal is removed");
+    let (reopened, _register) = Store::open(&root).expect("the store opens with no roots");
+    assert_eq!(
+        reopened.deref::<Labels>(pointers[0]),
+        Ok(first),
+        "the first value derefs"
+    );
+    assert_eq!(
+        reopened.deref::<Labels>(pointers[1]),
+        Ok(second),
+        "the second value derefs"
+    );
 }
