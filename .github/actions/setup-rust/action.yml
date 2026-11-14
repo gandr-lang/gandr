@@ -48,13 +48,16 @@ runs:
       shell: bash
     # `.cargo/config.toml` links every Linux build with mold. The CI image
     # carries it, and a bare Linux runner does not. So the job installs it.
+    # The liburing crate of `gandr-runtime-uring` runs bindgen in its build,
+    # so the job installs `libclang-dev` too, until #7638 takes that crate
+    # out.
     - name: "read the package index"
       if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
       run: sudo apt-get update
       shell: bash
-    - name: "install mold"
+    - name: "install mold and libclang"
       if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
-      run: sudo apt-get install -y --no-install-recommends mold
+      run: sudo apt-get install -y --no-install-recommends mold libclang-dev
       shell: bash
     # mise reads rust-toolchain.toml as its `rust` tool, so every later
     # `mise run` would install that toolchain again through rustup, and on
