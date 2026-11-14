@@ -573,13 +573,20 @@ pub mod test
                 .unwrap();
         }
 
+        // The kernel refuses `IORING_SETUP_NO_MMAP` with `ENOMEM` when the
+        // caller gives no memory for the rings, and the owner's test gives
+        // none. #7645 owes the mend that gives it.
         #[test]
+        #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_no_mmap()
         {
             IoUring::builder().setup_no_mmap().build().unwrap();
         }
 
+        // `IORING_SETUP_REGISTERED_FD_ONLY` needs `IORING_SETUP_NO_MMAP`, so
+        // the kernel refuses it with `ENOMEM` as above. #7645 owes the mend.
         #[test]
+        #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_registered_fd_only()
         {
             IoUring::builder()
