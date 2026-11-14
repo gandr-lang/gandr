@@ -95,9 +95,13 @@
 //! Then the release holds, and [`Released::Held`] gives the declaration back.
 //! The caller settles the outstanding releases and releases it again. A
 //! refusal below the content of a later staging keeps its content as an
-//! orphan, as the clamp of a rejection does. The bypass, a block, a
-//! retirement and a keep read every commit. Each refuses with
-//! [`KernelError::UnsettledReleases`] while a release is outstanding.
+//! orphan, as the clamp of a rejection does. The bypass, a block and the move
+//! of a seed read every commit. Each refuses with
+//! [`KernelError::UnsettledReleases`] while a release is outstanding. A keep
+//! in place and a retirement go ahead beside the outstanding releases. Each
+//! refuses the same way while a release reads into what it writes. The end of
+//! the chain that a retirement makes waits for the cursor
+//! ([`crate::releases::Releases::end_chain`]).
 //!
 //! # Receipts and the audit
 //!
@@ -1473,13 +1477,15 @@ impl Environment
     ///
     /// # Errors
     /// [`KernelError::UnboundConstant`] at the position of `pending` when the
-    /// cursor passed it, or when an admission after it is committed.
+    /// cursor passed it, when an admission after it is committed, or when a
+    /// retirement beside the releases ends the chain after a later release.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a drop that keeps a later slot, an index or staged
     ///   content gives the releases again other positions, ranks or content
     ///   than the serial run.
     /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
+    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     #[spec(captures: [entry_len = self.entries.len(), place = pending.place.0], ensures: |ret| match ret.as_ref() {
         Ok(&()) => usize::from(self.entries.len()) == usize::from(place).saturating_add(1),
         Err(_) => self.entries.len() == entry_len,
@@ -1814,7 +1820,8 @@ impl Environment
     /// Fold each slot at the cursor whose commit came, in position order: the
     /// rank that a release predicted, the rows of the dependents, the order,
     /// the chain key and the record of the verdict. A refused slot folds its
-    /// vacancy, and its chain key steps back when its release took one.
+    /// vacancy, and its chain key steps back when its release took one. The
+    /// chain ends after the slot that a retirement beside the releases marks.
     ///
     /// # Specification
     /// - requires: each committed slot from the cursor on holds its commit.
@@ -1828,9 +1835,11 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fold out of position order moves the order flag,
-    ///   the reach or the chain key off the serial run's.
+    ///   the reach or the chain key off the serial run's; an end of the chain
+    ///   folded at another slot keys a record that the serial run does not.
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     /// - witness: `environment::tests::a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476`
+    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     fn fold(&mut self)
     {
         loop {
@@ -1838,6 +1847,7 @@ impl Environment
                 usize::from(self.entries.len())
                     .saturating_sub(usize::from(self.releases.unfolded())),
             );
+            let past = self.releases.past_front();
             let Maybe::Present((ranked, unfolded)) = self.releases.next()
             else {
                 return;
@@ -1854,20 +1864,18 @@ impl Environment
                         ref arena,
                         ..
                     } = *self;
-                    let Some(entry) = entries.live(position)
-                    else {
-                        continue;
-                    };
-                    alloc::sync::Arc::make_mut(commits)
-                        .fold((position, entry.rank()), entry.references());
-                    let chain = match chained {
-                        crate::releases::Chained::Taken(key) => key,
-                        crate::releases::Chained::Deferred => {
-                            verdicts.key(arena, (entry.declaration(), entry.rank()))
-                        },
-                    };
-                    if let Some(accessibility) = record {
-                        verdicts.checked(entry.key(), chain, accessibility);
+                    if let Some(entry) = entries.live(position) {
+                        alloc::sync::Arc::make_mut(commits)
+                            .fold((position, entry.rank()), entry.references());
+                        let chain = match chained {
+                            crate::releases::Chained::Taken(key) => key,
+                            crate::releases::Chained::Deferred => {
+                                verdicts.key(arena, (entry.declaration(), entry.rank()))
+                            },
+                        };
+                        if let Some(accessibility) = record {
+                            verdicts.checked(entry.key(), chain, accessibility);
+                        }
                     }
                 },
                 crate::releases::Unfolded::Vacated(chained) => {
@@ -1878,6 +1886,9 @@ impl Environment
                     }
                 },
                 crate::releases::Unfolded::Reserved(_) => return,
+            }
+            if past == crate::releases::Past::Ends {
+                self.verdicts.end();
             }
         }
     }
@@ -2141,6 +2152,95 @@ impl Environment
             return Ok(());
         }
         Err(KernelError::UnsettledReleases { unsettled })
+    }
+
+    /// End the chain of keys: now when no slot waits for the cursor, or once
+    /// the cursor folds the slot at the back of the queue, as the serial run
+    /// ends it after the commits of the releases made before this call.
+    ///
+    /// # Specification
+    /// trivial.
+    fn end_chain(&mut self)
+    {
+        if self.releases.end_chain() == crate::releases::Ending::Now {
+            self.verdicts.end();
+        }
+    }
+
+    /// Refuse a keep in place of the unit whose first member stands at
+    /// `first`, at `ranks`, while an outstanding release reads into its key
+    /// or its name: a manifest atom, a release that each later check reads, a
+    /// reservation at or above the lowest rank or a predicted rank, a
+    /// generative release of the unit's content below it, or a plain
+    /// definition below a lone one that its name counts.
+    ///
+    /// # Specification
+    /// - requires: `ranks` names each member of the unit, ascending.
+    /// - ensures: `Ok` exactly when no release is outstanding, or none reads
+    ///   into the key or the name that the unit's check in place computes.
+    /// - fails: [`KernelError::UnsettledReleases`] otherwise.
+    /// - panics: none.
+    /// - executable: none — the reads are those of [`Self::check_in_place`],
+    ///   which no predicate over one call restates.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a keep beside a release that reads into its key reads
+    ///   a key or a name that the serial run, which commits the release first,
+    ///   does not read.
+    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
+    fn keeps_beside(
+        &mut self,
+        (first, ranks): (ConstantIndex, &[SourceRank]),
+    ) -> Result<(), KernelError>
+    {
+        let unsettled = self.releases.outstanding();
+        if usize::from(unsettled) == 0 {
+            return Ok(());
+        }
+        let held = KernelError::UnsettledReleases { unsettled };
+        let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
+        if !self.manifest.is_empty()
+            || matches!(
+                self.releases.ordering(crate::releases::Sway::Free),
+                Maybe::Present(_)
+            )
+            || matches!(self.releases.reaches(below), Maybe::Present(_))
+        {
+            return Err(held);
+        }
+        let Some(entry) = self.entries.live(first)
+        else {
+            return Ok(());
+        };
+        // The unit key counts the generative entries of its own content
+        // below it; its content is computed only while such a release waits.
+        if let Maybe::Present(_) = self.releases.generative_below(below)
+            && let Maybe::Present(UnitKey {
+                generative: Some(content),
+                ..
+            }) = self.unit_key(entry, (first, ranks))
+            && let Maybe::Present(_) = self.releases.generative(content, below)
+        {
+            return Err(held);
+        }
+        let name = match entry.unit().shape {
+            UnitShape::Lone => entry.key_name(),
+            UnitShape::Block => ConstantName::Position,
+        };
+        if let ConstantName::Definition { digest, .. } = name
+            && crate::encoding::likeness(
+                self.names.session_mut().table_mut(),
+                &self.arena,
+                name,
+                self.releases.definitions(digest, below),
+            ) == crate::encoding::Likeness::Alike
+        {
+            return Err(held);
+        }
+        Ok(())
     }
 
     /// Admit a mutual block through the checked choke point: its families, a
@@ -2477,16 +2577,16 @@ impl Environment
     /// - requires: nothing.
     /// - ensures: on success, each entry at `positions` is retired, with each
     ///   member of its unit, and every other entry is as it was; the key chain
-    ///   ends when `positions` names any entry, so each later admission is
-    ///   recalled by its entry key alone. On refusal, the environment is
-    ///   unchanged. Either way the entries keep their number, and the arena
-    ///   mints nothing.
+    ///   ends when `positions` names any entry, at once or after the folds of
+    ///   the outstanding releases, so each later admission is recalled by its
+    ///   entry key alone. On refusal, the environment is unchanged. Either way
+    ///   the entries keep their number, and the arena mints nothing.
     /// - provides: the retire of a readmission that keeps each entry outside
-    ///   the reach of an edit live.
+    ///   the reach of an edit live, beside the checks it released.
     /// - fails: [`KernelError::UnboundConstant`] at a position that holds no
     ///   entry, [`KernelError::Retired`] at an entry retired already, and
-    ///   [`KernelError::UnsettledReleases`] while a released check is not
-    ///   settled.
+    ///   [`KernelError::UnsettledReleases`] while an outstanding release
+    ///   reaches the rank of an entry that the call retires.
     /// - panics: none.
     ///
     /// # Errors
@@ -2500,6 +2600,7 @@ impl Environment
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
     /// - witness: `environment::tests::a_retired_entry_keeps_its_position_and_frees_its_declaration_7194`
     /// - witness: `environment::tests::an_admission_after_a_retirement_recalls_by_its_entry_key_alone_6846`
+    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     #[spec(captures: [length = self.entries.len(), watermark = self.arena.watermark()],
         ensures: |ret| self.entries.len() == length && self.arena.watermark() == watermark
             && (ret.is_err() || positions.iter().all(|&position| self.entries.live(position).is_none())))]
@@ -2509,7 +2610,6 @@ impl Environment
         positions: &[ConstantIndex],
     ) -> Result<(), KernelError>
     {
-        self.settled()?;
         for &position in positions {
             match self.entries.family().get(usize::from(position)) {
                 Some(&Slot::Admitted(_)) => {},
@@ -2522,11 +2622,26 @@ impl Environment
         if positions.is_empty() {
             return Ok(());
         }
+        // An outstanding release ranked at or above a retired entry may read
+        // it, and the serial run retires the entry after that release's
+        // commit.
+        let unsettled = self.releases.outstanding();
+        if usize::from(unsettled) != 0
+            && positions
+                .iter()
+                .filter_map(|&position| self.entries.live(position).map(AdmittedDeclaration::unit))
+                .flat_map(|unit| usize::from(unit.first) .. usize::from(unit.end))
+                .filter_map(|member| self.entries.rank_of(ConstantIndex::from(member)))
+                .any(|rank| matches!(self.releases.reaches(rank), Maybe::Present(_)))
+        {
+            return Err(KernelError::UnsettledReleases { unsettled });
+        }
         // A chain key holds each admission and no retirement, so a recall
         // under it after a retirement could read an environment that holds the
         // retired entries: the chain ends, and a later admission is recalled
-        // by its entry key alone.
-        self.verdicts.end();
+        // by its entry key alone. The serial run ends it after the commits of
+        // the outstanding releases.
+        self.end_chain();
         for &position in positions {
             let Some(unit) = self.entries.live(position).map(AdmittedDeclaration::unit)
             else {
@@ -3023,8 +3138,8 @@ impl Environment
     ///   retired; [`KernelError::Unkept`] when `first` is not the first member
     ///   of its unit, or when the unit or its check now has no key, or when the
     ///   key its check reads now is another key; and
-    ///   [`KernelError::UnsettledReleases`] while a released check is not
-    ///   settled.
+    ///   [`KernelError::UnsettledReleases`] while an outstanding release reads
+    ///   into the unit's key or its name ([`Self::keeps_beside`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -3036,6 +3151,7 @@ impl Environment
     ///   twin kept after an appended one reads as after it; a lookup after a
     ///   second rank rewrite answers as the check does.
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
+    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     /// - witness: `environment::tests::an_entry_that_reads_a_retired_one_is_refused_in_place_6846`
     /// - witness: `environment::tests::an_entry_kept_in_place_after_an_appended_twin_reads_as_after_it_6846`
     /// - witness: `environment::tests::a_held_key_answers_until_an_admission_below_it_7197`
@@ -3050,7 +3166,6 @@ impl Environment
         first: ConstantIndex,
     ) -> Result<CheckedId, KernelError>
     {
-        self.settled()?;
         let Some(entry) = self.entries.live(first)
         else {
             return Err(match self.entries.family().get(usize::from(first)) {
@@ -3067,10 +3182,20 @@ impl Environment
                 refusal: crate::error::KeepRefusal::Unit,
             });
         }
+        // A held key answers by lookup only while no outstanding release
+        // reads into it, as the check in place does.
+        let beside = if usize::from(self.releases.outstanding()) == 0 {
+            None
+        }
+        else {
+            let ranks = self.unit_ranks(unit);
+            self.keeps_beside((first, &ranks))?;
+            Some(ranks)
+        };
         if self.lookup(unit) == Lookup::Answers {
             return Ok(CheckedId::new(first));
         }
-        let ranks = self.unit_ranks(unit);
+        let ranks = beside.unwrap_or_else(|| self.unit_ranks(unit));
         self.check_in_place(first, &ranks)?;
         self.key_through(unit, &ranks);
         Ok(CheckedId::new(first))
@@ -3205,6 +3330,7 @@ impl Environment
             let gap_ranks = self.unit_ranks(gap);
             if gap.first != position
                 || gap_ranks.last().is_none_or(|&last| last > through)
+                || self.keeps_beside((position, &gap_ranks)).is_err()
                 || self.check_in_place(position, &gap_ranks).is_err()
             {
                 return;
@@ -8432,6 +8558,180 @@ mod tests
             3_usize,
             "the refused drop keeps every entry"
         );
+    }
+
+    /// Stage `offer` alone in `environment`, at `rank`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn staged_at(
+        environment: &mut Environment,
+        (offer, rank): (&Offer, SourceRank),
+    ) -> StagedDeclaration
+    {
+        stage_offer(environment, offer, &InScope::default(), Ranking::Unranked)
+            .pop()
+            .expect("a lone offer stages one declaration")
+            .ranked(rank)
+    }
+
+    /// Release `offer` alone in `environment` at `rank`, with its check.
+    ///
+    /// # Specification
+    /// trivial.
+    fn released_at(
+        environment: &mut Environment,
+        (offer, rank): (&Offer, SourceRank),
+    ) -> (super::Pending, super::Check)
+    {
+        let staged = staged_at(environment, (offer, rank));
+        let Ok(Released::Running(pending, check)) = environment.release(staged)
+        else {
+            panic!("the offer releases at its rank");
+        };
+        (pending, check)
+    }
+
+    /// #7281: a keep in place and a retirement go ahead beside two
+    /// outstanding releases below them. The environment folds as the serial
+    /// run's, which commits the releases first: the chain ends after the fold
+    /// of the second release, so its record carries its chain key. A release
+    /// ranked above, one that reads order, a generative release of the same
+    /// content and a twin below each hold the keep; and a drop past the end
+    /// of the chain is refused.
+    #[test]
+    fn a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281()
+    {
+        let signer = crate::verdict::KernelSigner::from([7_u8; 32]);
+        let level = LevelConstant::from(0);
+        let admitted = [
+            (Offer::Unit(None, Dip::Ascending), 0_usize),
+            (Offer::Lone(Member::Axiom(Field::Unit), Dip::Ascending), 10),
+            (
+                Offer::Lone(Member::Codata(level, Field::Unit), Dip::Ascending),
+                12,
+            ),
+            (Offer::Unit(None, Dip::Ascending), 20),
+        ];
+        let beside = [
+            (
+                Offer::Lone(Member::Data(level, vec![Field::Unit]), Dip::Ascending),
+                4_usize,
+            ),
+            (
+                Offer::Lone(Member::Axiom(Field::Universe(level)), Dip::Ascending),
+                6,
+            ),
+        ];
+        let kept = ConstantIndex::from(1_usize);
+        let retired = ConstantIndex::from(2_usize);
+        let twin = ConstantIndex::from(3_usize);
+        let admit = |environment: &mut Environment| {
+            for &(ref offer, rank) in &admitted {
+                let staged = staged_at(environment, (offer, SourceRank::from(rank)));
+                assert!(
+                    environment.add_decl(staged).is_ok(),
+                    "each admitted offer admits"
+                );
+            }
+        };
+
+        let mut serial = keyed();
+        admit(&mut serial);
+        for &(ref offer, rank) in &beside {
+            let staged = staged_at(&mut serial, (offer, SourceRank::from(rank)));
+            assert!(serial.add_decl(staged).is_ok(), "each offer beside admits");
+        }
+        assert_eq!(
+            serial.keep_in_place(kept).map(CheckedId::position),
+            Ok(kept),
+            "the serial run keeps the axiom"
+        );
+        assert_eq!(
+            serial.retire(&[retired]),
+            Ok(()),
+            "the serial run retires the codata"
+        );
+
+        let mut environment = keyed();
+        admit(&mut environment);
+        let [first, second] = beside.each_ref().map(|&(ref offer, rank)| {
+            released_at(&mut environment, (offer, SourceRank::from(rank)))
+        });
+        assert_eq!(
+            environment.keep_in_place(kept).map(CheckedId::position),
+            Ok(kept),
+            "the axiom keeps beside the releases below it"
+        );
+        assert_eq!(
+            environment.retire(&[retired]),
+            Ok(()),
+            "the codata retires beside the releases below it"
+        );
+        assert!(
+            environment.drop_after(&first.0).is_err(),
+            "a drop past the end of the chain is refused"
+        );
+        for (pending, check) in [first, second] {
+            assert!(
+                environment.settle(pending, check.run()).is_ok(),
+                "each release admits"
+            );
+        }
+        assert_eq!(
+            folded(&environment, &signer),
+            folded(&serial, &signer),
+            "the environment folds as the serial run's"
+        );
+
+        let mut above = keyed();
+        admit(&mut above);
+        let _released = released_at(
+            &mut above,
+            (
+                &Offer::Unit(None, Dip::Ascending),
+                SourceRank::from(14_usize),
+            ),
+        );
+        assert!(
+            matches!(
+                above.retire(&[retired]),
+                Err(KernelError::UnsettledReleases { .. })
+            ),
+            "a release ranked above the codata holds its retirement"
+        );
+        for (reads, offer, rank, at) in [
+            (
+                "a release ranked above it",
+                Offer::Unit(None, Dip::Ascending),
+                14_usize,
+                kept,
+            ),
+            ("a release that reads order", Offer::Atom(Some(0)), 8, kept),
+            (
+                "a generative release of its content",
+                Offer::Lone(Member::Axiom(Field::Unit), Dip::Ascending),
+                8,
+                kept,
+            ),
+            (
+                "a twin below it",
+                Offer::Unit(None, Dip::Ascending),
+                16,
+                twin,
+            ),
+        ] {
+            let mut holding = keyed();
+            admit(&mut holding);
+            let _released = released_at(&mut holding, (&offer, SourceRank::from(rank)));
+            assert!(
+                matches!(
+                    holding.keep_in_place(at),
+                    Err(KernelError::UnsettledReleases { .. })
+                ),
+                "{reads} holds the keep"
+            );
+        }
     }
 
     /// The ranks between the first members of two admissions: room for the

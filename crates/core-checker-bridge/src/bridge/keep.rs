@@ -47,6 +47,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::KernelError;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::SourceRank;
 use quenchant_shape::shape::Maybe;
@@ -281,26 +282,36 @@ pub(super) fn keep_entry(
 ///
 /// # Specification
 /// - ensures: the unit of the entry's kernel position is retired when that
-///   entry was live; nothing changes otherwise.
-/// - fails: never.
+///   entry was live and no outstanding release holds the retirement; nothing
+///   changes otherwise.
+/// - fails: [`KernelError::UnsettledReleases`] while an outstanding release
+///   ranks at or above the unit: the place waits for the running checks.
 /// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a refused keep retires the unit and the place crosses, as
-///   a fresh admission crosses it.
+///   a fresh admission crosses it; a retirement that a running check reads
+///   waits, and the place does not cross beside a live entry of its own.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
 #[spec(captures: length = environment.entries().len(), ensures: environment.entries().len() == length)]
 pub(super) fn retire_unit(
     environment: &mut Environment,
     entry: &Readmitted,
-)
+) -> Result<(), KernelError>
 {
     if let Maybe::Present(position) = position_of(&entry.outcome)
         && environment.entries().get(usize::from(position)).is_some()
     {
-        // A live entry retires: its position stands below the entries.
-        let _retired = environment.retire(&[position]);
+        // A live entry retires: its position stands below the entries. An
+        // entry retired already, or a vacancy, holds nothing to retire.
+        if let Err(held @ KernelError::UnsettledReleases { .. }) = environment.retire(&[position]) {
+            return Err(held);
+        }
     }
+    Ok(())
 }
 
 /// Define in `definitions` the core body or the data signature that the
