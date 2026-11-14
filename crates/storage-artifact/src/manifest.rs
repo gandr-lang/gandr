@@ -736,8 +736,15 @@ impl ArtifactManifest
     ///   [`ArtifactError::SegmentBoundary`].
     /// - panics: none.
     /// - intension: the store is read at the index root and, for an internal
-    ///   root, at each child leaf, iteratively; then at each value leaf the
-    ///   order names. Nothing descends further.
+    ///   root, at each child leaf, iteratively; then at each chunk of the order
+    ///   its chain reaches, and at each value leaf the order names. Nothing
+    ///   descends further.
+    ///
+    /// # Cost
+    /// - allocation: the loaded records, growth within the record count.
+    /// - allocation: the rebuilt tree, growth within the record count.
+    /// - allocation: the set, growth within the record count.
+    /// - allocation: the decoded artifact, growth within the record count.
     ///
     /// # Errors
     /// [`ArtifactError`] — as listed above.
@@ -791,7 +798,7 @@ impl ArtifactManifest
         let loaded = load_records(store, self.root_node)?;
         let refs: Vec<RecordRef<'_>> = loaded.iter().map(Record::as_record_ref).collect();
         let rebuilt = RecordTree::build(&refs, expected)?;
-        let named = TreeRoot::seal(expected, RecordCount::from(2_u64), self.root_node)?;
+        let named = TreeRoot::seal(expected, rebuilt.root().record_count(), self.root_node)?;
         if rebuilt.root() != named {
             return Err(ArtifactError::TreeMismatch);
         }

@@ -1,20 +1,23 @@
-//! The declaration-record model: a kernel artifact as an index of two records
-//! and one value leaf for each distinct declaration segment.
+//! The declaration-record model: a kernel artifact as an index tree of a
+//! header and an order, and one value leaf for each distinct declaration
+//! segment.
 //!
 //! # The records
 //!
 //! ```text
-//! key        value
-//! ""         header: magic, version, minted-atom table, count
-//! 0x00       the order: the form, the record keys, then one slot per place
+//! key                value
+//! ""                 header: magic, version, minted-atom table, count
+//! 0x00               the order's head: the form, the count of places, the first chunk's key
+//! a chunk's key      the key of the order's next chunk
 //! ```
 //!
 //! | Key | Value |
 //! | --- | ----- |
 //! | the empty key | the header: magic, version, minted-atom table, declaration count |
-//! | [`ORDER_KEY`], one zero byte | the order: the set's form; the number of records, four bytes; each record's key, [`RECORD_KEY_LEN`] bytes, in the order of its first place; then for each declaration in admission order the slot of its record among the keys, four bytes, and in a named set its content name, [`CONTENT_NAME_LEN`] bytes |
+//! | [`ORDER_KEY`], one zero byte | the order's head, as [`StoredOrder`] states it |
+//! | a chunk's key, [`CHUNK_KEY_LEN`] bytes | the key of the order's next chunk, as [`StoredOrder`] states it |
 //!
-//! The two records make the index tree that the manifest names. Each
+//! The header and the order make the index tree that the manifest names. Each
 //! declaration record is a value leaf of its own: one node that holds the
 //! segment under the empty key. The record's key is the identity of that node,
 //! so no record stores a key beside its bytes. The store hashes a node once
@@ -23,12 +26,14 @@
 //! declaration share each record whose bytes the edit leaves, at any position.
 //! Two places with equal bytes share one record.
 //!
-//! The order is the one record that an insertion always rewrites. It holds
-//! each key once, and four bytes for each place. It opens with the set's form,
-//! [`Naming`]. In a named set, each place also holds the kernel's content key
-//! of its entry. A set never mixes the two forms. An admission whose artifact
-//! the store keeps names every place, and an export cut from bytes alone names
-//! none.
+//! The order holds the key of each place's record. It is a chain of
+//! content-defined chunks, each under a key of its own. So an insertion
+//! rewrites the chunk it lands in, the record of the chunk before it and the
+//! order's head, and each other chunk stays. The head opens with the set's
+//! form, [`Naming`]. In a named set, each place also holds the kernel's
+//! content key of its entry. A set never mixes the two forms. An admission
+//! whose artifact the store keeps names every place, and an export cut from
+//! bytes alone names none.
 //!
 //! A declaration segment may reference subterm-table entries that an earlier
 //! segment introduced, and constants by their admission index. So a record is
@@ -46,7 +51,7 @@
 //! admissible; those refinements do not certify kernel validity.
 //!
 //! **Choice.** A record's key is the identity of the value leaf that holds its
-//! bytes, and the order holds each key once and a slot for each place.
+//! bytes, and the order holds that key at each place, in chunks.
 //! **Alternatives.** The admission index as the key moves every record past an
 //! insertion. A probe of 2,000 declarations shares 28 of the 1,000 records
 //! past one insertion under that key. The kernel's content key shares 600 of
@@ -117,13 +122,16 @@ use quenchant_shape::shape::Maybe;
 
 use crate::error::ArtifactError;
 
+mod chain;
 mod value;
+
+pub use self::chain::CHUNK_CAP;
+pub use self::chain::CHUNK_KAPPA;
+pub use self::chain::CHUNK_KEY_LEN;
+pub use self::chain::StoredOrder;
 
 /// The byte width of a declaration record's key: one node identity.
 pub const RECORD_KEY_LEN: usize = 0x20_usize;
-
-/// The byte width of a count and of a slot in the order.
-pub(crate) const SLOT_LEN: usize = 0x04_usize;
 
 /// The byte width of a content name: the kernel's content key of an entry.
 pub const CONTENT_NAME_LEN: usize = 0x20_usize;
@@ -375,24 +383,6 @@ impl Place
     pub const fn slot(&self) -> RecordIndex
     {
         self.slot
-    }
-}
-
-/// The order of a record set as the one record it is stored as.
-#[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrderImage(Box<[u8]>);
-
-impl AsRef<[u8]> for OrderImage
-{
-    /// Borrows the order's bytes.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn as_ref(&self) -> &[u8]
-    {
-        &self.0
     }
 }
 
@@ -965,57 +955,58 @@ impl ArtifactRecordSet
         Ok(self)
     }
 
-    /// Reads a stored artifact back into a set: the two records of its index
-    /// tree, then the value leaf of each record the order names.
+    /// Reads a stored artifact back into a set: the records of its index tree,
+    /// then the value leaf of each record the order names.
     ///
     /// # Specification
     /// - requires: `stored` is strictly ascending by key, as a record tree's
     ///   records are.
     /// - ensures: on success the first record is the header, under
-    ///   [`HEADER_KEY`]; the second and last is the order, under [`ORDER_KEY`];
-    ///   the order's keys are distinct and stand in the order of their first
-    ///   place, each place's slot names one of them, each stands at a place,
-    ///   and each names a value leaf that `store` holds, whose value is the
-    ///   record's bytes.
+    ///   [`HEADER_KEY`]; the second is the order's head, under [`ORDER_KEY`];
+    ///   each record past it is a chunk of the order that its chain reaches;
+    ///   the set's places are the chain's places, in order; and each record of
+    ///   the set is the value leaf that `store` holds under the key of its
+    ///   first place.
     /// - provides: the read path's key check: the store's verified load hashes
     ///   each leaf once, and that hash is the record's key. The order is read
-    ///   whole before any leaf is loaded.
+    ///   whole before any record's leaf is loaded.
     /// - fails: [`ArtifactError::MisplacedRecord`] naming the first stored
     ///   record whose key is not the one its position requires (the empty set
-    ///   fails at position zero, and a record past the order at position two),
-    ///   the first key of the order, counted from two, that repeats a key
-    ///   before it, or the first key a place names before its turn;
-    ///   [`ArtifactError::MalformedOrder`] naming place zero for an order that
-    ///   opens with no form or holds fewer keys than it counts, and otherwise
-    ///   the first place the order does not hold whole;
-    ///   [`ArtifactError::UnheldRecord`] naming the first place whose slot is
-    ///   past the keys; [`ArtifactError::UnplacedRecord`] naming the first key,
-    ///   counted from two, that no place names; and [`ArtifactError::Records`]
-    ///   for a leaf the store does not hold or cannot authenticate, or a node
-    ///   that is not a value leaf.
+    ///   fails at position zero, and a tree with no head at position one), or a
+    ///   chunk out of its turn or cut where the chunker does not cut; and each
+    ///   refusal of the order's chain that [`StoredOrder`] states:
+    ///   [`ArtifactError::MalformedOrder`], [`ArtifactError::UnheldRecord`] and
+    ///   [`ArtifactError::UnplacedRecord`]; and [`ArtifactError::Records`] for
+    ///   a leaf the store does not hold or cannot authenticate, or a node that
+    ///   is not a value leaf.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the places and the names, growth within the order.
+    /// - allocation: the records, growth within the order.
     ///
     /// # Errors
     /// - [`ArtifactError::MisplacedRecord`] — a record's key is not the one its
     ///   position requires.
     /// - [`ArtifactError::MalformedOrder`] — the order holds bytes that are not
-    ///   a place.
-    /// - [`ArtifactError::UnheldRecord`] — a place names a record the order
+    ///   a place, or a chain that comes back or counts other places.
+    /// - [`ArtifactError::UnheldRecord`] — the chain names a chunk the tree
     ///   does not hold.
-    /// - [`ArtifactError::UnplacedRecord`] — a record stands at no place.
+    /// - [`ArtifactError::UnplacedRecord`] — the chain does not reach a chunk.
     /// - [`ArtifactError::Records`] — a leaf does not load as a value leaf.
     ///
     /// # Adequacy
     /// - hypothesis: L2 through stored reads observes complete reconstruction
     ///   for one- and 300-declaration artifacts. L3 supplies a missing header,
-    ///   a missing order, a record past the order, keys out of order, an order
-    ///   cut short, a slot past the keys, a key at no place and a leaf the
-    ///   store does not hold, and observes each refusal at its exact position.
+    ///   a missing head, a forged head, a chunk cut short, a dangling link, a
+    ///   chain that comes back, a chunk the chain does not reach, a count that
+    ///   differs and a leaf the store does not hold, and observes each refusal
+    ///   at its exact position.
     /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
     /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
     #[inline]
     #[spec(ensures: |ret| match ret {
-        Ok(ref set) => stored.len() == 2 && stored.first().is_some_and(|header| {
+        Ok(ref set) => stored.len() >= 2 && stored.first().is_some_and(|header| {
             header.key().as_ref() == HEADER_KEY && set.header.as_ref() == header.value().as_ref()
         }),
         Err(
@@ -1041,101 +1032,24 @@ impl ArtifactRecordSet
             .first()
             .filter(|header| header.key().as_ref() == HEADER_KEY)
             .ok_or_else(|| misplaced(0_usize))?;
-        let order = stored
+        let head = stored
             .get(1_usize)
-            .filter(|order| order.key().as_ref() == ORDER_KEY)
+            .filter(|head| head.key().as_ref() == ORDER_KEY)
             .ok_or_else(|| misplaced(1_usize))?;
-        if stored.len() > 2_usize {
-            return Err(misplaced(2_usize));
-        }
-        // The order opens with its form and the number of keys, then holds
-        // each key, then each place at the width the form gives: the slot of
-        // its record, and the name when the set has names.
-        let unformed = ArtifactError::MalformedOrder {
-            place: RecordIndex::ZERO,
-        };
-        let order_value = order.value();
-        let (naming, order) = match order_value.as_ref().split_first() {
-            Some((&NAMED, rest)) => (Naming::Named, rest),
-            Some((&FROM_BYTES, rest)) => (Naming::Bytes, rest),
-            _ => return Err(unformed),
-        };
-        let (&count, order) = order
-            .split_first_chunk::<SLOT_LEN>()
-            .ok_or_else(|| unformed.clone())?;
-        let count = usize::try_from(u32::from_le_bytes(count)).map_err(|_wide| unformed.clone())?;
-        // The count is the order's claim, so it reserves nothing until the
-        // order holds that many keys.
-        let (keys, mut order) = order
-            .split_at_checked(count.saturating_mul(RECORD_KEY_LEN))
-            .ok_or(unformed)?;
-        let keys = keys.as_chunks::<RECORD_KEY_LEN>().0;
-        let keys: Vec<RecordKey> = keys
-            .iter()
-            .map(|&key| RecordKey(NodeHash::from(key)))
-            .collect();
-        if let Some(repeat) = slots_by_first_appearance(&keys)
-            .iter()
-            .enumerate()
-            .position(|(position, &slot)| usize::from(slot) != position)
-        {
-            return Err(misplaced(repeat.saturating_add(2_usize)));
-        }
-        let width = match naming {
-            Naming::Named => SLOT_LEN.saturating_add(CONTENT_NAME_LEN),
-            Naming::Bytes => SLOT_LEN,
-        };
-        let places_held = order.len().checked_div(width).unwrap_or_default();
-        let mut places = Vec::with_capacity(places_held);
-        let mut names = Vec::with_capacity(match naming {
-            Naming::Named => places_held,
-            Naming::Bytes => 0_usize,
-        });
-        // Each key takes its turn at its first place: a place names a key an
-        // earlier place names, or the next key no place has named.
-        let mut next = 0_usize;
-        while !order.is_empty() {
-            let place = RecordIndex::from(places.len());
-            let malformed = ArtifactError::MalformedOrder { place };
-            let Some((&slot, rest)) = order.split_first_chunk::<SLOT_LEN>()
-            else {
-                return Err(malformed);
-            };
-            order = match naming {
-                Naming::Named => {
-                    let Some((&name, rest)) = rest.split_first_chunk::<CONTENT_NAME_LEN>()
-                    else {
-                        return Err(malformed);
-                    };
-                    names.push(ContentName(name));
-                    rest
-                },
-                Naming::Bytes => rest,
-            };
-            let slot = usize::try_from(u32::from_le_bytes(slot))
-                .ok()
-                .filter(|&slot| slot < keys.len())
-                .ok_or(ArtifactError::UnheldRecord { place })?;
-            if slot == next {
-                next = next.saturating_add(1);
+        // Each key takes the next slot at its first place, and the record of
+        // its bytes loads once there.
+        let (naming, keys, names) =
+            chain::read(head, stored.get(2_usize ..).unwrap_or_default(), store)?.into_parts();
+        let slots = slots_by_first_appearance(&keys);
+        let mut records = Vec::new();
+        let mut places = Vec::with_capacity(slots.len());
+        for (&slot, &key) in slots.iter().zip(&keys) {
+            if usize::from(slot) == records.len() {
+                records.push(ArtifactRecord {
+                    value: NamedValue::load(store, NodeHash::from(key))?,
+                });
             }
-            else if slot > next {
-                return Err(misplaced(slot.saturating_add(2_usize)));
-            }
-            places.push(Place {
-                slot: RecordIndex::from(slot),
-            });
-        }
-        if next < keys.len() {
-            return Err(ArtifactError::UnplacedRecord {
-                position: RecordIndex::from(next.saturating_add(2_usize)),
-            });
-        }
-        let mut records = Vec::with_capacity(keys.len());
-        for key in keys {
-            records.push(ArtifactRecord {
-                value: NamedValue::load(store, NodeHash::from(key))?,
-            });
+            places.push(Place { slot });
         }
         let set = Self {
             header: Box::from(header.value().as_ref()),
@@ -1237,78 +1151,58 @@ impl ArtifactRecordSet
         })
     }
 
-    /// Returns the order as the one record it is stored as.
+    /// Returns the order as its index tree stores it: the head and a chain of
+    /// content-defined chunks.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the form's tag; the number of records, four bytes
-    ///   little-endian; each record's [`RECORD_KEY_LEN`] bytes in the order of
-    ///   its first place; then each place in admission order: its slot, four
-    ///   bytes little-endian, and the [`CONTENT_NAME_LEN`] bytes of its name
-    ///   when the set is [`Naming::Named`].
-    /// - provides: the order's value for [`record_refs`](Self::record_refs).
+    /// - ensures: the chunks hold each place's record key in admission order,
+    ///   and the place's name beside it when the set is [`Naming::Named`], cut
+    ///   where the value plane's chunker cuts; the head holds the form, the
+    ///   count of places and the first chunk's key.
+    /// - provides: the order's records for [`record_refs`](Self::record_refs),
+    ///   and its leaves for the commit.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — [`StoredOrder`]'s constructor states the chain.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — a set stored and read back is the set.
+    /// - hypothesis: L2 — a set stored and read back is the set; L3 an
+    ///   insertion rewrites the chunk it lands in, the record before it and the
+    ///   head, and no other record.
     /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
     /// - witness: `tests::artifact_contract::a_named_set_reads_back_with_its_names_7340`
-    #[spec(ensures: |ret| ret.0.len() == self.places.len().saturating_mul(match self.names {
-        Maybe::Present(_) => SLOT_LEN.saturating_add(CONTENT_NAME_LEN),
-        Maybe::Absent(_) => SLOT_LEN,
-    }).saturating_add(self.records.len().saturating_mul(RECORD_KEY_LEN))
-        .saturating_add(SLOT_LEN.saturating_add(1)))]
+    /// - witness: `tests::artifact_contract::an_insertion_rewrites_only_the_chunks_it_touches_7432`
     #[inline]
     #[must_use]
-    pub fn order_image(&self) -> OrderImage
+    pub fn stored_order(&self) -> StoredOrder
     {
-        let width = match self.names {
-            Maybe::Present(_) => SLOT_LEN.saturating_add(CONTENT_NAME_LEN),
-            Maybe::Absent(_) => SLOT_LEN,
+        let name = |at: usize| match self.names {
+            Maybe::Present(ref names) => names.get(at).copied(),
+            Maybe::Absent(_) => None,
         };
-        let mut order = Vec::with_capacity(
-            self.places
-                .len()
-                .saturating_mul(width)
-                .saturating_add(self.records.len().saturating_mul(RECORD_KEY_LEN))
-                .saturating_add(SLOT_LEN.saturating_add(1_usize)),
-        );
-        // A set of more than `u32::MAX` records holds an order past the record
-        // plane's node budget, which the tree refuses; so the ceiling here
-        // names no stored order.
-        let narrow = |count: usize| u32::try_from(count).unwrap_or(u32::MAX).to_le_bytes();
-        order.push(u8::from(self.naming()));
-        order.extend_from_slice(&narrow(self.records.len()));
-        for record in &self.records {
-            order.extend_from_slice(record.key().as_ref());
-        }
-        match self.names {
-            Maybe::Present(ref names) => {
-                for (place, name) in self.places.iter().zip(names.iter()) {
-                    order.extend_from_slice(&narrow(usize::from(place.slot)));
-                    order.extend_from_slice(&name.0);
-                }
-            },
-            Maybe::Absent(_) => {
-                for place in &self.places {
-                    order.extend_from_slice(&narrow(usize::from(place.slot)));
-                }
-            },
-        }
-
-        OrderImage(order.into_boxed_slice())
+        StoredOrder::of(
+            self.naming(),
+            self.places.iter().enumerate().filter_map(|(at, place)| {
+                Some((self.records.get(usize::from(place.slot))?.key(), name(at)))
+            }),
+        )
     }
 
     /// Returns the set's index as record-plane records: the header under
-    /// [`HEADER_KEY`], then the order under [`ORDER_KEY`].
+    /// [`HEADER_KEY`], then the order's head under [`ORDER_KEY`], then each
+    /// chunk of the order.
     ///
     /// # Specification
-    /// - requires: `order` is [`order_image`](Self::order_image)'s.
-    /// - ensures: the two records, strictly ascending by key.
+    /// - requires: `order` is [`stored_order`](Self::stored_order)'s.
+    /// - ensures: the records, strictly ascending by key, the header first and
+    ///   the order's head second.
     /// - provides: the input the index tree is built from.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the index's records, growth within the order's chunks.
     ///
     /// # Adequacy
     /// - hypothesis: L2 through building, storing and reopening a one- and a
@@ -1317,30 +1211,30 @@ impl ArtifactRecordSet
     /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
     /// - witness: `tests::artifact_contract::any_perturbation_changes_the_identity`
     #[spec(ensures: |ret| ret.first().is_some_and(|header| header.key().as_ref() == HEADER_KEY)
-        && ret.last().is_some_and(|order| order.key().as_ref() == ORDER_KEY))]
+        && ret.get(1).is_some_and(|head| head.key().as_ref() == ORDER_KEY)
+        && ret.is_sorted_by(|lower, higher| lower.key() < higher.key()))]
     #[inline]
     #[must_use]
     pub fn record_refs<'set>(
         &'set self,
-        order: &'set OrderImage,
-    ) -> [RecordRef<'set>; 2]
+        order: &'set StoredOrder,
+    ) -> Vec<RecordRef<'set>>
     {
-        [
-            RecordRef::new(HEADER_KEY, &*self.header),
-            RecordRef::new(ORDER_KEY, &*order.0),
-        ]
+        core::iter::once(RecordRef::new(HEADER_KEY, &*self.header))
+            .chain(order.records())
+            .collect()
     }
 
-    /// Admits the value leaf of each record into `store`, under the record's
-    /// key.
+    /// Admits the value leaf of each record and of each chunk of `order` into
+    /// `store`, under its identity.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `order` is [`stored_order`](Self::stored_order)'s.
     /// - ensures: on success `store` holds the value leaf of each record, under
-    ///   its key.
-    /// - provides: the commit path's write of the records, beside the index
-    ///   tree. Each record's leaf is admitted as a [`NamedValue`], so a store
-    ///   that overrides [`BlockStore::admit_value`] hashes no record again.
+    ///   its key, and of each chunk image of the order.
+    /// - provides: the commit path's write of the records and the chunks,
+    ///   beside the index tree. Each leaf is admitted as a [`NamedValue`], so a
+    ///   store that overrides [`BlockStore::admit_value`] hashes no leaf again.
     /// - fails: [`ArtifactError::Records`] for a leaf past the node budget, or
     ///   a leaf the store does not admit.
     /// - panics: none.
@@ -1356,6 +1250,7 @@ impl ArtifactRecordSet
     #[inline]
     pub(crate) fn write_leaves<S>(
         &self,
+        order: &StoredOrder,
         store: &mut S,
     ) -> Result<(), ArtifactError>
     where
@@ -1365,7 +1260,7 @@ impl ArtifactRecordSet
             store.admit_value(&record.value)?;
         }
 
-        Ok(())
+        order.write_leaves(store)
     }
 
     /// Reassembles the artifact: the header, then the segment at each place.
