@@ -1,9 +1,25 @@
+//! The preparers of epoll controls and waits.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for the epoll control `op` for `fd` on the epoll
+        /// instance `epfd`, with the event at `ev`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `ev` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `epfd` and `fd` are open descriptors, or slots of the ring's file
+        ///   table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_epoll_ctl(
             &mut self,
@@ -14,7 +30,9 @@ pub mod repr
         )
         {
             let sqe = &raw mut *self.sqe;
-            // FIXME: remove if upstream merges const changes
+            // liburing's signature takes a mutable pointer here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant pointer.
             let ev = ev.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
@@ -22,6 +40,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a wait for at most `maxevents` events on the
+        /// epoll instance `fd`, written to `events`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `events` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_epoll_wait(
             &mut self,

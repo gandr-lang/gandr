@@ -1,9 +1,23 @@
+//! The preparers of hard links and the timeouts of linked entries.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a hard link at `newpath` to `oldpath`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `oldpath` and `newpath` point to memory that
+        ///   stays valid, and does not move, until the kernel posts the entry's
+        ///   completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_link(
             &mut self,
@@ -19,6 +33,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a timeout of `ts` for the entry that comes
+        /// before this one in its link.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `ts` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_link_timeout(
             &mut self,
@@ -27,7 +52,9 @@ pub mod repr
         )
         {
             let sqe = &raw mut *self.sqe;
-            // FIXME: remove if upstream merges const changes
+            // liburing's signature takes a mutable pointer here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant pointer.
             let ts = ts.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
@@ -35,6 +62,20 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a hard link at `newpath` under `newdfd` to
+        /// `oldpath` under `olddfd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `oldpath` and `newpath` point to memory that
+        ///   stays valid, and does not move, until the kernel posts the entry's
+        ///   completion. `olddfd` and `newdfd` are open descriptors, or slots
+        ///   of the ring's file table when the entry carries the fixed-file
+        ///   flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_linkat(
             &mut self,

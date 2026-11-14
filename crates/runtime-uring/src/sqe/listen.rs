@@ -1,3 +1,6 @@
+//! The preparers of listens on sockets.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use ::std::os::fd::AsRawFd as _;
@@ -9,6 +12,17 @@ pub mod repr
     {
         // #[expect(clippy::needless_pass_by_value, reason = "avoid
         // indirection")]
+        /// Prepares the entry for a listen on `socket` with a queue of
+        /// `backlog` connections.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `socket` is an open descriptor, or a slot of
+        ///   the ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_listen(
             &mut self,
@@ -53,6 +67,12 @@ pub mod test
 
     impl Fixture<'_>
     {
+        /// Prepares the fixture's entry and submits it, and gives the count of
+        /// entries that the kernel takes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -94,6 +114,11 @@ pub mod test
             sq.submit().unwrap()
         }
 
+        /// Submits the fixture's entry and waits for its completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit_and_wait<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -116,6 +141,11 @@ pub mod test
             cqe.cqe.res.sys_zero().unwrap();
         }
 
+        /// Runs the fixture on `ring` and checks the outcome.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn run<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -132,6 +162,11 @@ pub mod test
         }
     }
 
+    /// Runs the listen fixture on `ring` with these arguments.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn listen_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,

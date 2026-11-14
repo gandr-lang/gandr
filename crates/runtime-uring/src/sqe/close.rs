@@ -1,9 +1,22 @@
+//! The preparers of closes of descriptors and slots.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a close of `fd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_close(
             &mut self,
@@ -17,6 +30,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a close of the slot `file_index` of the
+        /// ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_close_direct(
             &mut self,

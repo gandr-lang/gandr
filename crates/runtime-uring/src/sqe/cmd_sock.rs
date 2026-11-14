@@ -1,9 +1,25 @@
+//! The preparers of socket commands.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for the socket command `cmd_op` on `fd`, for the
+        /// option `optname` at `level`, with its value at `optval`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `optval` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_cmd_sock(
             &mut self,

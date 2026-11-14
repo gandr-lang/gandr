@@ -1,9 +1,23 @@
+//! The preparers of advice on ranges of a file.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for the advice `advice` for `len` bytes at
+        /// `offset` of `fd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_fadvise(
             &mut self,
@@ -20,6 +34,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for the advice `advice` for `len` bytes at
+        /// `offset` of `fd`, with a length of 64 bits.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_fadvise64(
             &mut self,

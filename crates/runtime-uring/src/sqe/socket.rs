@@ -1,9 +1,25 @@
+//! The preparers of sockets.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a socket of `domain`, `type` and `protocol`.
+        /// With `file_index` the kernel puts it in that slot of the ring's file
+        /// table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_socket(
             &mut self,
@@ -72,6 +88,11 @@ pub mod test
 
     impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S>
     {
+        /// The fixture that the builder holds.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn build(self) -> Fixture<'fds>
         {
             let this = self.build_internal();
@@ -95,6 +116,12 @@ pub mod test
 
     impl Fixture<'_>
     {
+        /// Prepares the fixture's entry and submits it, and gives the count of
+        /// entries that the kernel takes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -157,6 +184,11 @@ pub mod test
             sq.submit().unwrap()
         }
 
+        /// Submits the fixture's entry and waits for its completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit_and_wait<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -188,6 +220,11 @@ pub mod test
             }
         }
 
+        /// Runs the fixture on `ring` and checks the outcome.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[must_use]
         pub fn run<S, C>(
             self,
@@ -215,6 +252,11 @@ pub mod test
         }
     }
 
+    /// Runs the socket fixture on `ring` with these arguments.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn socket_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         slots: Option<::core::ffi::c_uint>,

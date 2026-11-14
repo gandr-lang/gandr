@@ -1,3 +1,6 @@
+//! The ring: its setup through a typed builder, with each setup flag at most
+//! once, and the borrows of its two queues and its registrar.
+
 use ::bon::bon;
 use ::core::marker::PhantomData;
 use ::std::os::fd::AsRawFd as _;
@@ -25,20 +28,31 @@ use crate::ring::io_uring_builder::SetFlagSetupSubmitAll;
 use crate::ring::io_uring_builder::SetFlagSetupTaskrunFlag;
 use crate::sys::SysResult as _;
 
+/// The kernel's ring, held by liburing. `S` and `C` are the sizes of its
+/// submission and completion entries.
 #[non_exhaustive]
 pub struct IoUring<'fd, S = crate::sqe::kind::Sqe64, C = crate::cqe::kind::Cqe16>
 {
+    /// The ring that liburing holds.
     pub(crate) ring: ::liburing_rs::io_uring,
+    /// The borrow of the shared work queue's descriptor, and the two sizes
+    /// of entry.
     marker: PhantomData<(&'fd ::liburing_rs::io_uring, S, C)>,
 }
 
 impl<S, C> Drop for IoUring<'_, S, C>
 {
+    /// Tears the ring down: liburing unmaps its queues and closes it.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn drop(&mut self)
     {
         let ring = &raw mut self.ring;
-        // SAFETY: FIXME
+        // SAFETY: `ring` is the ring that `make` set up, and no borrow of it
+        // outlives the ring.
         unsafe {
             ::liburing_rs::io_uring_queue_exit(ring);
         }
@@ -47,13 +61,27 @@ impl<S, C> Drop for IoUring<'_, S, C>
 
 impl<'fd> IoUring<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
 {
+    /// A ring of 4096 entries with no setup flag.
+    ///
     /// # Errors
+    ///
+    /// The kernel refuses the ring and gives its error number.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the kernel refuses the ring.
+    /// - executable: none — the outcome is the kernel's.
     #[inline]
     pub fn new() -> ::std::io::Result<Self>
     {
         Self::builder().build()
     }
 
+    /// The builder of a ring with entries of the default sizes.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn builder() -> IoUringBuilder<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
     {
@@ -67,7 +95,19 @@ where
     C: crate::cqe::Kind,
     S: crate::sqe::Kind,
 {
+    /// Sets up a ring of `entries` entries with the flags and the values
+    /// that the builder holds. The builder's macro makes one setter for
+    /// each argument.
+    ///
     /// # Errors
+    ///
+    /// The kernel refuses the ring or the mark against fork, and gives its
+    /// error number.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the kernel refuses the ring or the mark against fork.
+    /// - executable: none — the outcome is the kernel's.
     #[builder(builder_type = IoUringBuilder, finish_fn = build, state_mod(vis = "pub(crate)"))]
     pub fn make(
         #[builder(default = 4096)] entries: u32,
@@ -159,14 +199,15 @@ where
         params.sq_thread_cpu = sq_thread_cpu;
         params.sq_thread_idle = sq_thread_idle;
 
-        // SAFETY: FIXME
+        // SAFETY: `ring` and `params` are this frame's own, and liburing
+        // fills `ring` when the answer is zero.
         unsafe {
             ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params)
         }
         .sys_zero()?;
 
         if dontfork {
-            // SAFETY: FIXME
+            // SAFETY: `ring` is the ring that the call above set up.
             unsafe { ::liburing_rs::io_uring_ring_dontfork(&raw mut ring) }.sys_zero()?;
         }
 
@@ -176,18 +217,33 @@ where
         })
     }
 
+    /// A borrow of the completion queue.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn cqueue(&mut self) -> CompletionQueue<'_, C>
     {
         CompletionQueue::new(self)
     }
 
+    /// A borrow of the submission queue.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn squeue(&mut self) -> SubmissionQueue<'_, S>
     {
         SubmissionQueue::new(self)
     }
 
+    /// The registrar of the ring's file table.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn registrar(&self) -> Registrar<'_>
@@ -195,14 +251,25 @@ where
         Registrar::new(self)
     }
 
+    /// The ring's own descriptor.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub const fn ring_fd(&self) -> BorrowedFd<'_>
     {
-        // SAFETY:
+        // SAFETY: the descriptor stays open while the ring lives, and the
+        // borrow ends with the borrow of `self`.
         unsafe { BorrowedFd::borrow_raw(self.ring.ring_fd) }
     }
 
+    /// Borrows of both queues at once.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn queues(&mut self) -> (SubmissionQueue<'_, S>, CompletionQueue<'_, C>)
@@ -211,8 +278,16 @@ where
     }
 }
 
+/// A builder method that sets one setup flag: the method's name, the
+/// builder's setter, and the builder's two state types of the flag.
 macro_rules! io_uring_flag_setup {
     ($method:ident, $setter:ident, $SetFlagSetup:ident, $FlagSetup:ident) => {
+        /// Sets the setup flag that the method names. The builder's type
+        /// refuses a second call.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub fn $method(self) -> IoUringBuilder<'fd, S, C, $SetFlagSetup<State>>
         where
@@ -326,6 +401,12 @@ where
         FlagSetupNoSqarray
     );
 
+    /// Sets the flag for completion entries of 32 bytes, and makes them the
+    /// ring's completion type.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn setup_cqe32(
         self
@@ -333,12 +414,19 @@ where
     where
         State::FlagSetupCqe32: IsUnset,
     {
-        // SAFETY:
+        // SAFETY: the two builder types differ in a type parameter alone,
+        // which the builder holds as a marker of no size.
         let this: IoUringBuilder<'_, S, crate::cqe::kind::Cqe32, State> =
             unsafe { ::core::mem::transmute(self) };
         this.flag_setup_cqe32(true) // tarpaulin
     }
 
+    /// Sets the flag for submission entries of 128 bytes, and makes them the
+    /// ring's submission type.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn setup_sqe128(
         self
@@ -346,7 +434,8 @@ where
     where
         State::FlagSetupSqe128: IsUnset,
     {
-        // SAFETY:
+        // SAFETY: the two builder types differ in a type parameter alone,
+        // which the builder holds as a marker of no size.
         let this: IoUringBuilder<'_, crate::sqe::kind::Sqe128, C, State> =
             unsafe { ::core::mem::transmute(self) };
         this.flag_setup_sqe128(true) // tarpaulin

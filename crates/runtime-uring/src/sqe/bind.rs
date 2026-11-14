@@ -1,3 +1,6 @@
+//! The preparers of binds of sockets to addresses.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use ::std::os::fd::AsRawFd as _;
@@ -7,6 +10,18 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a bind of `socket` to `addr`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `addr` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `socket` is an open descriptor, or a slot of the ring's file table
+        ///   when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_bind<'op>(
             &mut self,
@@ -17,7 +32,9 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
-            // FIXME: remove `.cast_mut()` once upstream fixes signature
+            // liburing's signature takes a mutable address here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant address.
             let addrlen = addr.len();
             let addr = ::core::ptr::from_ref(addr).cast_mut();
             let addr = addr.cast();
@@ -58,6 +75,12 @@ pub mod test
 
     impl Fixture<'_>
     {
+        /// Prepares the fixture's entry and submits it, and gives the count of
+        /// entries that the kernel takes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -99,6 +122,11 @@ pub mod test
             sq.submit().unwrap()
         }
 
+        /// Submits the fixture's entry and waits for its completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit_and_wait<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -121,6 +149,11 @@ pub mod test
             cqe.cqe.res.sys_zero().unwrap();
         }
 
+        /// Runs the fixture on `ring` and checks the outcome.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn run<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -137,6 +170,11 @@ pub mod test
         }
     }
 
+    /// Runs the bind fixture on `ring` with these arguments.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn bind_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         temp: &::assert_fs::TempDir,

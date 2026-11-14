@@ -1,9 +1,22 @@
+//! The preparers of syncs of ranges of a file.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a sync of `len` bytes at `offset` of `fd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_sync_file_range(
             &mut self,

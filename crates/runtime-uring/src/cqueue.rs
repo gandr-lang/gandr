@@ -1,3 +1,5 @@
+//! The completion queue: it gives the ready completions, or waits for them.
+
 use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
 
@@ -8,16 +10,24 @@ use crate::cqe::kind::Cqe16;
 use crate::sqe::kind::Sqe64;
 use crate::sys::SysResult as _;
 
+/// A borrow of the ring's completion queue.
 #[non_exhaustive]
 pub struct CompletionQueue<'ring, C = Cqe16>
 {
+    /// The ring that liburing holds.
     pub(crate) ring: NonNull<::liburing_rs::io_uring>,
+    /// The borrow of the ring.
     marker: PhantomData<&'ring mut IoUring<'static, Sqe64, C>>,
 }
 impl<'ring, C> CompletionQueue<'ring, C>
 where
     C: crate::cqe::Kind,
 {
+    /// The completion queue of `ring`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub(crate) fn new<S>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
         let ring = NonNull::from(&ring.ring);
@@ -27,13 +37,27 @@ where
         }
     }
 
+    /// The completions that are ready now.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn ready(&mut self) -> CqesReady<'_, C>
     {
         CqesReady::new(self.ring)
     }
 
+    /// Waits until `count` completions are ready, and gives them.
+    ///
     /// # Errors
+    ///
+    /// The kernel refuses the wait and gives its error number.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the kernel refuses the wait.
+    /// - executable: none — the outcome is the kernel's.
     #[inline]
     pub fn wait(
         &mut self,
@@ -54,7 +78,8 @@ where
         )]
         let wait_nr = count as u32;
 
-        // SAFETY:
+        // SAFETY: `ring` is the live ring that this queue borrows, and
+        // `cqe_ptr` has room for the pointer that liburing writes.
         unsafe {
             ::liburing_rs::io_uring_wait_cqe_nr(ring.as_ptr(), (&raw mut cqe_ptr).cast(), wait_nr)
         }

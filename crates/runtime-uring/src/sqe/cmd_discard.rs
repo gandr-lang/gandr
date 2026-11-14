@@ -1,9 +1,23 @@
+//! The preparers of discards of ranges of a block device.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a discard of `nbytes` bytes at `offset` of
+        /// the block device `fd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_cmd_discard(
             &mut self,

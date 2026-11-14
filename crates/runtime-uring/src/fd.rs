@@ -1,10 +1,18 @@
+//! A file that an entry names: a slot of the ring's file table or a
+//! descriptor of the process.
+
 use ::core::ops::Deref;
 use ::std::os::fd::AsRawFd;
 
+/// A file that an entry names. The kernel reads a slot of the ring's file
+/// table when the entry carries the fixed-file flag, and a descriptor of the
+/// process otherwise.
 #[derive(Clone, Copy)]
 pub enum SlotDesc<T>
 {
+    /// A slot of the ring's file table.
     Slot(::core::ffi::c_uint),
+    /// A descriptor of the process, behind its owner.
     Desc(T),
 }
 
@@ -13,6 +21,11 @@ where
     T: Deref,
     T::Target: AsRawFd,
 {
+    /// The slot's index, or the descriptor's number.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd
     {
         match *self {
@@ -24,6 +37,11 @@ where
 
 impl<T> From<T> for SlotDesc<T>
 {
+    /// A descriptor of the process.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     fn from(value: T) -> Self
     {
         Self::Desc(value)
@@ -32,6 +50,11 @@ impl<T> From<T> for SlotDesc<T>
 
 impl<T> SlotDesc<T>
 {
+    /// The same slot, or the descriptor's target by reference.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn as_deref(&self) -> SlotDesc<&<T as Deref>::Target>
     where
         T: Deref,
@@ -42,6 +65,11 @@ impl<T> SlotDesc<T>
         }
     }
 
+    /// The same slot, or the descriptor by reference.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub const fn as_ref(&self) -> SlotDesc<&T>
     {
         match *self {
@@ -50,11 +78,21 @@ impl<T> SlotDesc<T>
         }
     }
 
+    /// Whether this is a descriptor of the process.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub const fn is_desc(&self) -> bool
     {
         matches!(self, &Self::Desc(..))
     }
 
+    /// Whether this is a slot of the ring's file table.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub const fn is_slot(&self) -> bool
     {
         matches!(self, &Self::Slot(..))

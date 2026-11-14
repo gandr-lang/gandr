@@ -1,9 +1,23 @@
+//! The preparers of opens of files.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for an open of `path` with the flags `flags` and
+        /// the mode `mode`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_open(
             &mut self,
@@ -19,6 +33,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an open of `path` into the slot `file_index`
+        /// of the ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_open_direct(
             &mut self,
@@ -35,6 +60,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an open of `path` under `dfd` with the flags
+        /// `flags` and the mode `mode`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `dfd` is an open descriptor, or a slot of the ring's file table
+        ///   when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_openat(
             &mut self,
@@ -51,6 +89,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an open of `path` under `dfd` as `how` says.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` and `how` point to memory that stays
+        ///   valid, and does not move, until the kernel posts the entry's
+        ///   completion. `dfd` is an open descriptor, or a slot of the ring's
+        ///   file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_openat2(
             &mut self,
@@ -60,7 +110,9 @@ pub mod repr
         )
         {
             let sqe = &raw mut *self.sqe;
-            // FIXME: remove if upstream merges const changes
+            // liburing's signature takes a mutable pointer here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant pointer.
             let how = how.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
@@ -68,6 +120,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an open of `path` under `dfd` as `how` says,
+        /// into the slot `file_index` of the ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` and `how` point to memory that stays
+        ///   valid, and does not move, until the kernel posts the entry's
+        ///   completion. `dfd` is an open descriptor, or a slot of the ring's
+        ///   file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_openat2_direct(
             &mut self,
@@ -78,7 +143,9 @@ pub mod repr
         )
         {
             let sqe = &raw mut *self.sqe;
-            // FIXME: remove if upstream merges const changes
+            // liburing's signature takes a mutable pointer here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant pointer.
             let how = how.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
@@ -86,6 +153,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an open of `path` under `dfd` into the slot
+        /// `file_index` of the ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `path` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `dfd` is an open descriptor, or a slot of the ring's file table
+        ///   when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_openat_direct(
             &mut self,

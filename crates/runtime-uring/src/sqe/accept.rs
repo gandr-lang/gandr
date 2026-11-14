@@ -1,3 +1,6 @@
+//! The preparers of accepts of connections.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use ::std::os::fd::AsRawFd as _;
@@ -7,6 +10,21 @@ pub mod repr
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for an accept of one connection on `socket`, with
+        /// the peer's address written to `addr` and `addrlen`.
+        /// With `file_index` the kernel puts the new socket in that slot of the
+        /// ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `addr` and `addrlen` point to memory that stays
+        ///   valid, and does not move, until the kernel posts the entry's
+        ///   completion. `socket` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_accept<'op>(
             &mut self,
@@ -20,7 +38,9 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
-            // SAFETY:
+            // SAFETY: `addr` is the storage of a socket address, which the
+            // kernel fills; `view_as` gives the same bytes as a
+            // `sockaddr`.
             let addr = unsafe { addr.view_as() };
             let flags = flags.bits().cast_signed();
 
@@ -40,6 +60,21 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an accept that stays armed and posts one
+        /// completion for each connection on `socket`.
+        /// With `direct` the kernel puts each new socket in a free slot of the
+        /// ring's file table.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `addr` and `addrlen` point to memory that stays
+        ///   valid, and does not move, until the kernel posts the entry's
+        ///   completion. `socket` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_multishot_accept<'op>(
             &mut self,
@@ -53,7 +88,9 @@ pub mod repr
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
-            // SAFETY:
+            // SAFETY: `addr` is the storage of a socket address, which the
+            // kernel fills; `view_as` gives the same bytes as a
+            // `sockaddr`.
             let addr = unsafe { addr.view_as() };
             let flags = flags.bits().cast_signed();
 
@@ -123,6 +160,11 @@ pub mod test
 
     impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S>
     {
+        /// The fixture that the builder holds.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn build(self) -> Fixture<'fds>
         {
             let this = self.build_internal();
@@ -140,6 +182,12 @@ pub mod test
 
     impl Fixture<'_>
     {
+        /// Prepares the fixture's entry and submits it, and gives the count of
+        /// entries that the kernel takes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -191,6 +239,11 @@ pub mod test
             sq.submit().unwrap()
         }
 
+        /// Submits the fixture's entry and waits for its completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         fn submit_and_wait<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -243,6 +296,11 @@ pub mod test
             descs
         }
 
+        /// Runs the fixture on `ring` and checks the outcome.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn run<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
@@ -259,6 +317,11 @@ pub mod test
         }
     }
 
+    /// Connects a client to the socket at `path` on a thread of its own.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn connect(path: &Path) -> ::std::thread::JoinHandle<::std::io::Result<()>>
     {
         ::std::thread::spawn({
@@ -275,6 +338,11 @@ pub mod test
         })
     }
 
+    /// Runs the accept fixture on `ring` with these arguments.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub fn accept_with<'op, S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,

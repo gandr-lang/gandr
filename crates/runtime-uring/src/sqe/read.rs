@@ -1,9 +1,25 @@
+//! The preparers of reads.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a read of at most `nbytes` bytes at `offset`
+        /// of `fd` into `buf`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `buf` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_read(
             &mut self,
@@ -20,6 +36,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a read of at most `nbytes` bytes at `offset`
+        /// of `fd` into `buf`, a registered buffer of index `buf_index`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `buf` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_read_fixed(
             &mut self,
@@ -37,6 +66,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a read of `fd` that stays armed and takes
+        /// each buffer from the group `buf_group`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_read_multishot(
             &mut self,
@@ -53,6 +93,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a read at `offset` of `fd` into the `nr_vecs`
+        /// buffers that `iovecs` lists.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `iovecs` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_readv(
             &mut self,
@@ -69,6 +122,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a read at `offset` of `fd` into the `nr_vecs`
+        /// buffers that `iovecs` lists, with the flags `flags`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `iovecs` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_readv2(
             &mut self,
@@ -86,6 +152,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a read at `offset` of `fd` into the `nr_vecs`
+        /// registered buffers that `iovecs` lists, from index `buf_index`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `iovecs` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_readv_fixed(
             &mut self,

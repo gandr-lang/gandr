@@ -1,9 +1,23 @@
+//! The preparers of pipes.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a pipe whose two descriptors the kernel
+        /// writes to `fds`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fds` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_pipe(
             &mut self,
@@ -18,6 +32,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a pipe whose two ends go to the ring's file
+        /// table from the slot `file_index`, with the slots written to `fds`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fds` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_pipe_direct(
             &mut self,

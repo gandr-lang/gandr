@@ -1,9 +1,22 @@
+//! The preparers of polls of descriptors.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a poll of `fd` for the events of `poll_mask`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_poll_add(
             &mut self,
@@ -18,6 +31,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a poll of `fd` that stays armed and posts one
+        /// completion for each event of `poll_mask`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_poll_multishot(
             &mut self,
@@ -32,6 +56,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a removal of the poll whose user data is
+        /// `user_data`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_poll_remove(
             &mut self,
@@ -45,6 +81,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for an update of the poll whose user data is
+        /// `old_user_data`, to `new_user_data` and the events of `poll_mask`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_poll_update(
             &mut self,

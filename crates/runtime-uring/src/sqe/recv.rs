@@ -1,9 +1,25 @@
+//! The preparers of receives on sockets.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a receive of at most `len` bytes from
+        /// `sockfd` into `buf`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `buf` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `sockfd` is an open descriptor, or a slot of the ring's file table
+        ///   when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_recv(
             &mut self,
@@ -20,6 +36,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a receive from `sockfd` that stays armed and
+        /// posts one completion for each message.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `buf` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///   `sockfd` is an open descriptor, or a slot of the ring's file table
+        ///   when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_recv_multishot(
             &mut self,
@@ -36,6 +65,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a receive of one message from `fd` into the
+        /// header at `msg`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `msg` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_recvmsg(
             &mut self,
@@ -51,6 +93,19 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a receive from `fd` that stays armed, with
+        /// the header at `msg` as its template.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `msg` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_recvmsg_multishot(
             &mut self,

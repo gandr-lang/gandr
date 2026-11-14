@@ -1,3 +1,6 @@
+//! The submission entries: the two sizes of entry, a run of free entries,
+//! and one module of preparers for each kind of operation.
+
 pub(crate) mod accept;
 pub(crate) mod bind;
 pub(crate) mod buffers;
@@ -45,15 +48,25 @@ use ::core::ptr::NonNull;
 
 use crate::SubmissionQueue;
 
+/// A run of free entries of the submission queue, each given once.
 pub struct Sqes<'sq, S>
 {
+    /// The ring that liburing holds.
     ring: NonNull<::liburing_rs::io_uring>,
+    /// The count of entries that the run still gives.
     rem: u32,
+    /// The borrow of the submission queue.
     marker: PhantomData<&'sq mut SubmissionQueue<'sq, S>>,
 }
 
 impl<'sq, 'ring, S> Sqes<'sq, S>
 {
+    /// A run of `len` free entries of `sq`. The caller checks that the queue
+    /// has `len` free entries.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[expect(clippy::needless_pass_by_ref_mut, reason = "API")]
     pub(crate) fn new(
         sq: &'sq mut SubmissionQueue<'ring, S>,
@@ -75,6 +88,11 @@ where
 {
     type Item = S::Repr<'sq>;
 
+    /// The next free entry, until the run has given its count.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -82,11 +100,23 @@ where
             return None;
         }
         self.rem -= 1;
-        // SAFETY: FIXME
+        // SAFETY: `ring` is the live ring that the run borrows, and the
+        // queue had `rem` free entries when the run began.
         unsafe { self::get_sqe_raw::<S>(self.ring) }
     }
 }
 
+/// The next free entry of `ring`, or nothing when the queue is full.
+///
+/// # Safety
+///
+/// - unsafe invariants: `ring` is a live ring set up with entries of the size
+///   that `S` names, and the caller holds the borrow of its submission queue
+///   for `'sq`.
+///
+/// # Specification
+///
+/// trivial.
 pub(crate) unsafe fn get_sqe_raw<'sq, S>(
     ring: NonNull<::liburing_rs::io_uring>
 ) -> Option<S::Repr<'sq>>
@@ -94,19 +124,31 @@ where
     S: self::Kind,
 {
     let ring = ring.as_ptr();
-    // SAFETY: FIXME
+    // SAFETY: the caller gives a live ring.
     let sqe = unsafe { ::liburing_rs::io_uring_get_sqe(ring) };
-    // SAFETY: FIXME
+    // SAFETY: liburing gives a null pointer or an entry of the ring, which
+    // the caller's borrow of the queue holds alone.
     let sqe = unsafe { sqe.as_mut() }?;
-    // SAFETY: FIXME
+    // SAFETY: the ring's entries have the size that `S` names.
     Some(unsafe { S::new(sqe) })
 }
 
+/// A size of submission entry: 64 bytes or 128 bytes.
 pub trait Kind: self::sealed::Kind
 {
+    /// The entry of this size.
     type Repr<'sq>: Into<self::repr::Sqe64<'sq>>;
 
+    /// The entry of this size over `sqe`.
+    ///
     /// # Safety
+    ///
+    /// - unsafe invariants: `sqe` is an entry of a ring set up with entries of
+    ///   this size.
+    ///
+    /// # Specification
+    ///
+    /// - executable: none — a trait declaration has no body.
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>;
 }
 
@@ -114,10 +156,19 @@ impl Kind for self::kind::Sqe64
 {
     type Repr<'sq> = self::repr::Sqe64<'sq>;
 
+    /// The entry of 64 bytes over `sqe`.
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: `sqe` is an entry of a ring.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>
     {
-        // SAFETY:
+        // SAFETY: the caller gives an entry of a ring.
         unsafe { Self::Repr::new(sqe) }
     }
 }
@@ -126,27 +177,45 @@ impl Kind for self::kind::Sqe128
 {
     type Repr<'sq> = self::repr::Sqe128<'sq>;
 
+    /// The entry of 128 bytes over `sqe`.
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: `sqe` is an entry of a ring set up with entries of
+    ///   128 bytes.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>
     {
-        // SAFETY:
+        // SAFETY: the caller gives an entry of 128 bytes.
         unsafe { Self::Repr::new(sqe) }
     }
 }
 impl<'sq> From<self::repr::Sqe128<'sq>> for self::repr::Sqe64<'sq>
 {
+    /// The first 64 bytes of an entry of 128 bytes.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn from(value: self::repr::Sqe128<'sq>) -> Self
     {
         let sqe = ::core::ptr::from_mut(value.sqe).cast();
-        // SAFETY:
+        // SAFETY: an entry of 128 bytes starts with the fields of an entry of
+        // 64 bytes, and the borrow moves from `value` to the result.
         let sqe = unsafe { &mut *sqe };
         Self { sqe }
     }
 }
 
+/// The seal: no type outside the crate is a size of entry.
 mod sealed
 {
+    /// The sealed trait.
     pub trait Kind
     {
     }
@@ -158,30 +227,46 @@ mod sealed
     }
 }
 
+/// The two sizes of submission entry, as types.
 pub mod kind
 {
+    /// The entry of 64 bytes, the kernel's default.
     #[non_exhaustive]
     pub struct Sqe64;
 
+    /// The entry of 128 bytes, for the commands that need the space.
     #[non_exhaustive]
     pub struct Sqe128;
 }
 
+/// The submission entries, each a borrow of an entry of the ring.
 pub mod repr
 {
     use ::core::ops::Deref;
     use ::core::ops::DerefMut;
 
+    /// The entry of the default size.
     pub type Sqe<'sq> = Sqe64<'sq>;
 
+    /// An entry of 64 bytes, borrowed from the submission queue.
     #[repr(transparent)]
     pub struct Sqe64<'sq>
     {
+        /// The entry that liburing holds.
         pub(crate) sqe: &'sq mut ::liburing_rs::io_uring_sqe,
     }
     impl<'sq> Sqe64<'sq>
     {
+        /// The entry over `sqe`.
+        ///
         /// # Safety
+        ///
+        /// - unsafe invariants: `sqe` is an entry of a ring, and the caller
+        ///   holds the borrow of its submission queue for `'sq`.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub const unsafe fn new(sqe: &'sq mut ::liburing_rs::io_uring_sqe) -> Self
         {
@@ -189,14 +274,26 @@ pub mod repr
         }
     }
 
+    /// An entry of 128 bytes, borrowed from the submission queue.
     #[repr(transparent)]
     pub struct Sqe128<'sq>
     {
+        /// The entry that liburing holds.
         pub(crate) sqe: &'sq mut ::liburing_rs::io_uring_sqe,
     }
     impl<'sq> Sqe128<'sq>
     {
+        /// The entry over `sqe`.
+        ///
         /// # Safety
+        ///
+        /// - unsafe invariants: `sqe` is an entry of a ring set up with entries
+        ///   of 128 bytes, and the caller holds the borrow of its submission
+        ///   queue for `'sq`.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub const unsafe fn new(sqe: &'sq mut ::liburing_rs::io_uring_sqe) -> Self
         {
@@ -207,28 +304,52 @@ pub mod repr
     {
         type Target = Sqe64<'sq>;
 
+        /// The entry as an entry of 64 bytes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         fn deref(&self) -> &Self::Target
         {
             let ptr = <*const Self>::cast(self);
-            // SAFETY:
+            // SAFETY: both types are transparent over the same borrow of an
+            // entry, so the cast keeps the layout.
             unsafe { &*ptr }
         }
     }
     impl DerefMut for Sqe128<'_>
     {
+        /// The entry as an entry of 64 bytes.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         fn deref_mut(&mut self) -> &mut Self::Target
         {
             let ptr = <*mut Self>::cast(self);
-            // SAFETY:
+            // SAFETY: both types are transparent over the same borrow of an
+            // entry, so the cast keeps the layout.
             unsafe { &mut *ptr }
         }
     }
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for the operation `op` on `fd`, with `addr`,
+        /// `len` and `offset` in the fields that the operation reads.
+        ///
         /// # Safety
+        ///
+        /// - unsafe invariants: `addr` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion. `fd`
+        ///   is an open descriptor, or a slot of the ring's file table when the
+        ///   entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_rw(
             &mut self,
@@ -244,6 +365,17 @@ pub mod repr
             unsafe { ::liburing_rs::io_uring_prep_rw(op, sqe, fd, addr, len, offset) }
         }
 
+        /// Sets the entry's flags to `flags`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `flags` holds only the entry flags that the
+        ///   kernel knows, and a fixed-file flag only when the entry names a
+        ///   slot of the file table.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn set_flags(
             &mut self,
@@ -257,6 +389,17 @@ pub mod repr
             }
         }
 
+        /// Sets the entry's user data to the pointer `data`, which its
+        /// completion gives back.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The kernel does not read `data`; the caller
+        ///   that reads it back from the completion keeps it valid until then.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn set_data(
             &mut self,
@@ -270,6 +413,18 @@ pub mod repr
             }
         }
 
+        /// Sets the entry's user data to `data`, which its completion gives
+        /// back.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each setter `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn set_data64(
             &mut self,

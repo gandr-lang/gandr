@@ -1,9 +1,23 @@
+//! The preparers of messages to other rings.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a message to the ring `fd`, which posts a
+        /// completion there with `len` and `data`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_msg_ring(
             &mut self,
@@ -20,6 +34,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a message to the ring `fd`, which posts a
+        /// completion there with `len`, `data` and the completion flags
+        /// `cqe_flags`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_msg_ring_cqe_flags(
             &mut self,
@@ -39,6 +65,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a transfer of the slot `source_fd` of this
+        /// ring's file table to the slot `target_fd` of the ring `fd`, with
+        /// `data` in the completion.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_msg_ring_fd(
             &mut self,

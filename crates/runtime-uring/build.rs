@@ -1,8 +1,23 @@
+//! The build script. With the `bindgen` feature off it does nothing, and the
+//! build reads the checked-in declarations. With the feature on it makes the
+//! kernel's `io_uring` declarations for the target's architecture.
+
+/// Does nothing: the build reads the checked-in declarations.
+///
+/// # Specification
+///
+/// trivial.
 #[cfg(not(feature = "bindgen"))]
 fn main()
 {
 }
 
+/// Makes the kernel's `io_uring` declarations for the target.
+///
+/// # Specification
+///
+/// - fails: the target's architecture has no headers variable, the variable is
+///   not set, or bindgen refuses the headers.
 #[cfg(feature = "bindgen")]
 fn main() -> ::std::io::Result<()>
 {
@@ -13,6 +28,12 @@ fn main() -> ::std::io::Result<()>
 #[cfg(feature = "bindgen")]
 mod bindgen
 {
+    /// The name of the variable that holds the kernel's headers for an
+    /// architecture.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the architecture is not one of the eight that the script names.
     fn linux_headers(target_arch: &str) -> ::std::io::Result<&'static str>
     {
         match target_arch {
@@ -37,6 +58,13 @@ mod bindgen
 #include <linux/io_uring.h>
 "#;
 
+    /// Makes the declarations from the headers that the target's variable
+    /// names, and writes them to `src/sys/sys_<arch>.rs`.
+    ///
+    /// # Specification
+    ///
+    /// - fails: a variable is not set, bindgen refuses the headers, or the file
+    ///   cannot be written.
     pub fn bind() -> ::std::io::Result<()>
     {
         use ::std::path::PathBuf;

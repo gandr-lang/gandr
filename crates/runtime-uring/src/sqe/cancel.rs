@@ -1,9 +1,23 @@
+//! The preparers of cancels of entries.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a cancel of the entry whose user data is the
+        /// pointer `user_data`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `user_data` points to memory that stays valid,
+        ///   and does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_cancel(
             &mut self,
@@ -12,7 +26,9 @@ pub mod repr
         )
         {
             let sqe = &raw mut *self.sqe;
-            // FIXME: remove if upstream merges const changes
+            // liburing's signature takes a mutable pointer here, though the
+            // kernel only reads it; the cast leaves when liburing
+            // takes a constant pointer.
             let user_data = user_data.cast_mut();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
@@ -20,6 +36,18 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a cancel of the entry whose user data is
+        /// `user_data`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_cancel64(
             &mut self,
@@ -34,6 +62,16 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for a cancel of the entries that operate on `fd`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd` is an open descriptor, or a slot of the
+        ///   ring's file table when the entry carries the fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_cancel_fd(
             &mut self,

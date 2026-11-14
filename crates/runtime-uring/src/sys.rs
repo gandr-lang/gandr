@@ -1,11 +1,44 @@
+//! The answer of a liburing call as a result: a negative answer is an error
+//! number.
+
+/// The answer of a liburing call, read as a result.
 pub trait SysResult: self::private::SysResult
 {
+    /// Zero as success, and any other answer as its error number.
+    ///
+    /// # Errors
+    ///
+    /// The answer is not zero.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the answer is not zero.
+    /// - executable: none — a trait declaration has no body.
     fn sys_zero(&self) -> ::std::io::Result<()>;
+    /// A count as success, and a negative answer as its error number.
+    ///
+    /// # Errors
+    ///
+    /// The answer is negative.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the answer is negative.
+    /// - executable: none — a trait declaration has no body.
     fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>;
 }
 
 impl SysResult for ::core::ffi::c_int
 {
+    /// Zero as success, and any other answer as its error number.
+    ///
+    /// # Errors
+    ///
+    /// The answer is not zero.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     fn sys_zero(&self) -> ::std::io::Result<()>
     {
         if *self != 0i32 {
@@ -14,6 +47,15 @@ impl SysResult for ::core::ffi::c_int
         Ok(())
     }
 
+    /// A count as success, and a negative answer as its error number.
+    ///
+    /// # Errors
+    ///
+    /// The answer is negative.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>
     {
         if self.is_negative() {
@@ -25,8 +67,10 @@ impl SysResult for ::core::ffi::c_int
     }
 }
 
+/// The seal: no type outside the crate reads an answer as a result.
 mod private
 {
+    /// The sealed trait.
     pub trait SysResult
     {
     }

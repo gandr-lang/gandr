@@ -1,9 +1,24 @@
+//! The preparers of splices between descriptors.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for a splice of `nbytes` bytes from `fd_in` at
+        /// `off_in` to `fd_out` at `off_out`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `fd_in` and `fd_out` are open descriptors, or
+        ///   slots of the ring's file table when the entry carries the
+        ///   fixed-file flag.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_splice(
             &mut self,

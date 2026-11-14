@@ -1,9 +1,24 @@
+//! The preparers of the operation that does nothing.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for an operation that does nothing and posts one
+        /// completion.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: The owner's crate marks each preparer `unsafe`.
+        ///   This one reads no pointer and names no descriptor, so it holds no
+        ///   invariant of its own.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_nop(&mut self)
         {

@@ -1,9 +1,23 @@
+//! The preparers of advice on ranges of memory.
+
+/// The preparers, as methods of the submission entry.
 pub mod repr
 {
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
     {
+        /// Prepares the entry for the advice `advice` for `length` bytes of
+        /// memory at `addr`.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `addr` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_madvise(
             &mut self,
@@ -19,6 +33,17 @@ pub mod repr
             }
         }
 
+        /// Prepares the entry for the advice `advice` for `length` bytes of
+        /// memory at `addr`, with a length of 64 bits.
+        ///
+        /// # Safety
+        ///
+        /// - unsafe invariants: `addr` points to memory that stays valid, and
+        ///   does not move, until the kernel posts the entry's completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         #[inline]
         pub unsafe fn prep_madvise64(
             &mut self,

@@ -1,3 +1,5 @@
+//! The submission queue: it gives entries to prepare and submits them.
+
 use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
 
@@ -5,10 +7,13 @@ use crate::IoUring;
 use crate::sqe::Sqes;
 use crate::sys::SysResult as _;
 
+/// A borrow of the ring's submission queue.
 #[non_exhaustive]
 pub struct SubmissionQueue<'ring, S>
 {
+    /// The ring that liburing holds.
     pub(crate) ring: NonNull<::liburing_rs::io_uring>,
+    /// The borrow of the ring.
     marker: PhantomData<&'ring mut IoUring<'static, S, crate::cqe::kind::Cqe16>>,
 }
 
@@ -16,6 +21,11 @@ impl<'ring, S> SubmissionQueue<'ring, S>
 where
     S: crate::sqe::Kind,
 {
+    /// The submission queue of `ring`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub(crate) fn new<C>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
         let ring = NonNull::from(&ring.ring);
@@ -25,13 +35,24 @@ where
         }
     }
 
+    /// The next free entry, or nothing when the queue is full.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn get_sqe(&mut self) -> Option<crate::sqe::repr::Sqe<'_>>
     {
-        // SAFETY: FIXME
+        // SAFETY: `ring` is the live ring that this queue borrows, and the
+        // entry's borrow ends with the borrow of `self`.
         unsafe { crate::sqe::get_sqe_raw::<S>(self.ring) }.map(Into::into)
     }
 
+    /// `len` free entries in a row, or nothing when the queue has fewer.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn get_sqes(
         &mut self,
@@ -39,7 +60,7 @@ where
     ) -> Option<Sqes<'_, S>>
     {
         let ring = self.ring.as_ptr();
-        // SAFETY:
+        // SAFETY: `ring` is the live ring that this queue borrows.
         let rem = unsafe { ::liburing_rs::io_uring_sq_space_left(ring) };
         if rem < len {
             return None;
@@ -47,17 +68,37 @@ where
         Some(Sqes::new(self, len))
     }
 
+    /// Submits the prepared entries, and gives how many the kernel takes.
+    ///
     /// # Errors
+    ///
+    /// The kernel refuses the submission and gives its error number.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the kernel refuses the submission.
+    /// - executable: none — the outcome is the kernel's.
     #[inline]
     pub fn submit(&mut self) -> ::std::io::Result<u32>
     {
         let ring = self.ring.as_ptr();
-        // SAFETY:
+        // SAFETY: `ring` is the live ring that this queue borrows.
         let code = unsafe { ::liburing_rs::io_uring_submit(ring) };
         code.sys_uint()
     }
 
+    /// Submits the prepared entries and waits for `wait_nr` completions, and
+    /// gives how many entries the kernel takes.
+    ///
     /// # Errors
+    ///
+    /// The kernel refuses the submission or the wait and gives its error
+    /// number.
+    ///
+    /// # Specification
+    ///
+    /// - fails: the kernel refuses the submission or the wait.
+    /// - executable: none — the outcome is the kernel's.
     #[inline]
     pub fn submit_and_wait(
         &mut self,
@@ -65,7 +106,7 @@ where
     ) -> ::std::io::Result<u32>
     {
         let ring = self.ring.as_ptr();
-        // SAFETY:
+        // SAFETY: `ring` is the live ring that this queue borrows.
         let code = unsafe { ::liburing_rs::io_uring_submit_and_wait(ring, wait_nr) };
         code.sys_uint()
     }
@@ -73,10 +114,17 @@ where
 
 impl SubmissionQueue<'_, crate::sqe::kind::Sqe128>
 {
+    /// The next free entry of 128 bytes, or nothing when the queue is full.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     pub fn get_sqe128(&mut self) -> Option<crate::sqe::repr::Sqe128<'_>>
     {
-        // SAFETY: FIXME
+        // SAFETY: `ring` is the live ring that this queue borrows, set up
+        // with entries of 128 bytes, and the entry's borrow ends with the
+        // borrow of `self`.
         unsafe { crate::sqe::get_sqe_raw::<crate::sqe::kind::Sqe128>(self.ring) }
     }
 }
@@ -97,6 +145,12 @@ pub mod test
 
             use super::*;
 
+            /// A check of the submission queue of a ring that `builder` sets
+            /// up, for the case where it gives no entry.
+            ///
+            /// # Specification
+            ///
+            /// trivial.
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             pub fn none<S, C, State>(builder: IoUringBuilder<'_, S, C, State>)
             where
@@ -111,6 +165,12 @@ pub mod test
                 squeue.get_sqe().unwrap();
             }
 
+            /// A check of the submission queue of a ring that `builder` sets
+            /// up, for the case where it gives an entry.
+            ///
+            /// # Specification
+            ///
+            /// trivial.
             pub fn some<S, C, State>(builder: IoUringBuilder<'_, S, C, State>)
             where
                 S: crate::sqe::Kind,
@@ -128,6 +188,12 @@ pub mod test
         {
             use super::*;
 
+            /// A check of the submission queue of a ring that `builder` sets
+            /// up, for the case where it gives no entry.
+            ///
+            /// # Specification
+            ///
+            /// trivial.
             #[should_panic(expected = r#"called `Option::unwrap()` on a `None` value"#)]
             pub fn none<S, C, State>(builder: IoUringBuilder<'_, S, C, State>)
             where
@@ -142,6 +208,12 @@ pub mod test
                 squeue.get_sqes(len).unwrap();
             }
 
+            /// A check of the submission queue of a ring that `builder` sets
+            /// up, for a run of one entry.
+            ///
+            /// # Specification
+            ///
+            /// trivial.
             pub fn some_one<S, C, State>(builder: IoUringBuilder<'_, S, C, State>)
             where
                 S: crate::sqe::Kind,
@@ -160,6 +232,12 @@ pub mod test
                 assert_eq!(num, len);
             }
 
+            /// A check of the submission queue of a ring that `builder` sets
+            /// up, for a run of many entries.
+            ///
+            /// # Specification
+            ///
+            /// trivial.
             pub fn some_many<S, C, State>(builder: IoUringBuilder<'_, S, C, State>)
             where
                 S: crate::sqe::Kind,
