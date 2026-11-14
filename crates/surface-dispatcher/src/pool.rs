@@ -89,6 +89,15 @@ mod host;
 mod lane;
 #[cfg(feature = "instrument")]
 pub mod recording;
+#[cfg(all(
+    target_os = "linux",
+    any(
+        target_arch = "aarch64",
+        target_arch = "riscv64",
+        target_arch = "x86_64"
+    )
+))]
+pub mod ring;
 mod spawning;
 mod workers;
 
