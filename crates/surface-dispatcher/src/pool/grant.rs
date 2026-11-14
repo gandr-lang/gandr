@@ -63,6 +63,7 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use super::host::Class;
+use super::host::FIFO;
 use super::host::Host;
 use super::host::Wanting;
 use super::host::runtime_directory;
@@ -121,26 +122,32 @@ impl Grant
 {
     /// The grant that the process's environment names: the jobserver of the
     /// first of `CARGO_MAKEFLAGS`, `MAKEFLAGS` and `MFLAGS` that names one.
-    /// With no jobserver named, the host's counter as `class`, while a hub
-    /// owns it.
+    /// A FIFO that a hub's porter carries names the hub's counter, which the
+    /// process takes as `class` and never reads through the FIFO. With no
+    /// jobserver named, the host's counter as `class`, while a hub owns it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the tokens of the named jobserver, when it opens; else the
-    ///   tokens of the hub's counter in the runtime directory, taken as
-    ///   `class`; else no grant, so the process runs as with no jobserver. A
-    ///   jobserver that a parent names stands before the hub's counter, since
-    ///   the parent bounds the process.
+    /// - ensures: the counter's tokens, taken as `class`, when the named FIFO
+    ///   is a porter's and the process joins its counter; else the tokens of
+    ///   the named jobserver, when it opens; else the tokens of the hub's
+    ///   counter in the runtime directory, taken as `class`; else no grant, so
+    ///   the process runs as with no jobserver. A jobserver that a parent names
+    ///   stands before the hub's counter, since the parent bounds the process.
     /// - panics: none.
     /// - executable: none — the answer is the environment's and the host's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the flags are read as the build tools write them, a
-    ///   FIFO that a test makes opens as a jobserver, and a counter that a test
-    ///   hub owns takes a joiner.
+    ///   FIFO that a test makes opens as a jobserver, a counter that a test hub
+    ///   owns takes a joiner, and a porter's FIFO opens as its counter.
     /// - witness: `pool::grant::tests::the_flags_name_the_last_jobserver`
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
     /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
+    /// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+    ///
+    /// # Cost
+    /// - allocation: the value of each flag from the environment, setup
     #[inline]
     #[must_use]
     pub fn of_process(class: Class) -> Self
@@ -155,7 +162,7 @@ impl Grant
                 continue;
             };
             if let Maybe::Present(named) = named(Flags::from(flags)) {
-                return Self(opened(named));
+                return Self(opened(named, class));
             }
         }
         Self(hosted(&runtime_directory(), class))
@@ -327,21 +334,21 @@ impl Token
     pub const COUNTED: Self = Self(b'+');
 }
 
-/// What one read with no wait draws from a FIFO: no byte, one, or two, the
-/// most that the porter reads at once.
+/// What the porter's count of a FIFO finds: no byte, the one spare, which
+/// stays in the FIFO, or a byte past the spare, which the count takes out.
 ///
 /// # Specification
 /// trivial.
 #[cfg(unix)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Drawn
+pub(super) enum Counted
 {
-    /// The FIFO held no byte.
+    /// The FIFO holds no byte.
     Empty,
-    /// The FIFO held this one byte.
-    One(Token),
-    /// The FIFO held these two bytes, and maybe more.
-    Two(Token, Token),
+    /// The FIFO holds one byte, its spare, and the byte stays there.
+    Spare,
+    /// The FIFO holds more than the spare: this byte comes out of it.
+    Past(Token),
 }
 
 /// The bit above a token's byte that marks a stored token, so a stored token
@@ -552,37 +559,69 @@ impl Fifo
         drop((&self.back).write_all(&[token.0]));
     }
 
-    /// Draw up to two bytes from the FIFO with one read that does not wait.
-    /// On macOS, `FIONREAD` reads a FIFO as empty whatever it holds, so a read
-    /// counts the bytes, and the reader writes back what it keeps there.
+    /// Count the FIFO's bytes with no wait, and take out one byte past the
+    /// spare. On Linux, `FIONREAD` counts the bytes, so the count reads no byte
+    /// that stays.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the bytes read, two at most; [`Drawn::Empty`] for a FIFO with
-    ///   none, and for a read that fails.
+    /// - ensures: [`Counted::Past`] with a byte that the count takes out when
+    ///   the FIFO holds two bytes or more; [`Counted::Spare`] for one byte,
+    ///   which stays; [`Counted::Empty`] for none, and for a count or a read
+    ///   that fails.
     /// - panics: none.
     /// - executable: none — the FIFO is the host's, and tools read it at once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`super::Porter`].
     /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
-    #[cfg(unix)]
-    pub(super) fn draw(&self) -> Drawn
+    #[cfg(target_os = "linux")]
+    pub(super) fn count(&self) -> Counted
+    {
+        match rustix::io::ioctl_fionread(&self.ready) {
+            Ok(0) | Err(_) => Counted::Empty,
+            Ok(1) => Counted::Spare,
+            Ok(_) => match self.take_now() {
+                Maybe::Present(token) => Counted::Past(token),
+                // The tools took the bytes between the count and the read.
+                Maybe::Absent(_) => Counted::Empty,
+            },
+        }
+    }
+
+    /// Count the FIFO's bytes with no wait, and take out one byte past the
+    /// spare. On macOS, `FIONREAD` reads a FIFO as empty whatever it holds, so
+    /// one read of two bytes counts them, and the count writes back the byte
+    /// that stays.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as the count on Linux.
+    /// - panics: none.
+    /// - executable: none — the FIFO is the host's, and tools read it at once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`super::Porter`].
+    /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+    #[cfg(all(unix, not(target_os = "linux")))]
+    pub(super) fn count(&self) -> Counted
     {
         let mut bytes = [0_u8; 2];
         loop {
             match (&self.ready).read(&mut bytes) {
                 Ok(2) => {
                     let [first, second] = bytes;
-                    return Drawn::Two(Token(first), Token(second));
+                    self.give(Token(second));
+                    return Counted::Past(Token(first));
                 },
                 Ok(1) => {
                     let [first, _] = bytes;
-                    return Drawn::One(Token(first));
+                    self.give(Token(first));
+                    return Counted::Spare;
                 },
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {},
-                // No byte, an end of file or another error: nothing is drawn.
-                Ok(_) | Err(_) => return Drawn::Empty,
+                // No byte, an end of file or another error: nothing is counted.
+                Ok(_) | Err(_) => return Counted::Empty,
             }
         }
     }
@@ -630,6 +669,9 @@ enum Opening
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+///
+/// # Cost
+/// - allocation: the path as a C string past the stack's 384 bytes, setup
 #[cfg(unix)]
 fn end(
     path: &Path,
@@ -790,12 +832,15 @@ fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
     }
 }
 
-/// The tokens of the jobserver that `named` names, when it opens.
+/// The tokens of the jobserver that `named` names, when it opens: for a
+/// porter's FIFO, the tokens of its counter, taken as `class`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the tokens of a FIFO that opens; on Linux, the tokens of a pipe
-///   whose descriptors open again through `/dev/fd`.
+/// - ensures: the counter's tokens when `named` is a porter's FIFO whose
+///   counter the process joins, with no read of the FIFO; else the tokens of a
+///   FIFO that opens; on Linux, the tokens of a pipe whose descriptors open
+///   again through `/dev/fd`.
 /// - fails: [`ungranted::Absent::Unopened`] for an end that does not open or is
 ///   no pipe; [`ungranted::Absent::Shared`] for descriptors off Linux.
 /// - panics: none.
@@ -804,10 +849,17 @@ fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
+/// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+fn opened(
+    named: Named<'_>,
+    class: Class,
+) -> Maybe<Tokens, ungranted::Absent>
 {
     let opened = match named {
-        Named::Fifo(path) => Fifo::open(path),
+        Named::Fifo(path) => match carried(path, class) {
+            Maybe::Present(tokens) => return Maybe::Present(tokens),
+            Maybe::Absent(_) => Fifo::open(path),
+        },
         Named::Descriptors(spelled) => Fifo::descriptors(spelled),
     };
     match opened {
@@ -816,6 +868,33 @@ fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
             Maybe::Absent(ungranted::Absent::Shared)
         },
         Err(_) => Maybe::Absent(ungranted::Absent::Unopened),
+    }
+}
+
+/// The tokens of the counter beside `path`, taken as `class`, when `path` is
+/// the FIFO that a hub's porter carries: the hub makes the FIFO beside its
+/// segment, so a FIFO of the porter's name whose directory holds a counter
+/// that a hub owns is the porter's.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the counter's tokens when the file's name is the porter's and the
+///   process joins the counter in its directory; else
+///   [`ungranted::Absent::Unnamed`].
+/// - panics: none.
+/// - executable: none — the hub is another process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Host::join`].
+/// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+fn carried(
+    path: &Path,
+    class: Class,
+) -> Maybe<Tokens, ungranted::Absent>
+{
+    match (path.file_name(), path.parent()) {
+        (Some(name), Some(directory)) if name == FIFO => hosted(directory, class),
+        _ => Maybe::Absent(ungranted::Absent::Unnamed),
     }
 }
 
@@ -846,17 +925,33 @@ fn hosted(
 #[cfg(test)]
 mod tests
 {
+    #[cfg(unix)]
+    use core::num::NonZeroUsize;
     use std::path::Path;
+    #[cfg(unix)]
+    use std::process::Command;
 
     use quenchant_shape::shape::Maybe;
 
+    #[cfg(unix)]
+    use super::super::host::HostCounter;
+    #[cfg(unix)]
+    use super::Class;
     use super::Descriptors;
+    #[cfg(unix)]
+    use super::FIFO;
     use super::Flags;
     use super::Named;
     use super::Right;
     use super::Token;
+    #[cfg(unix)]
+    use super::Tokens;
     use super::named;
+    #[cfg(unix)]
+    use super::opened;
     use super::ungranted;
+    #[cfg(unix)]
+    use crate::width::Threads;
 
     #[test]
     fn the_flags_name_the_last_jobserver()
@@ -948,5 +1043,43 @@ mod tests
             Right::Free,
             "zero stores no token"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-grant-porter-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        let hub = directory.join("hub");
+        let alone = directory.join("alone");
+        std::fs::create_dir_all(&hub).unwrap();
+        std::fs::create_dir_all(&alone).unwrap();
+        let counter =
+            HostCounter::with(&hub, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
+        let porter = counter.carry().unwrap();
+        assert!(
+            matches!(
+                opened(Named::Fifo(&hub.join(FIFO)), Class::Batch),
+                Maybe::Present(Tokens::Host(_))
+            ),
+            "the porter's FIFO opens as the hub's counter, which reads no byte of the FIFO"
+        );
+        let made = Command::new("mkfifo")
+            .arg(alone.join(FIFO))
+            .status()
+            .unwrap();
+        assert!(made.success(), "mkfifo makes a FIFO with no hub beside it");
+        assert!(
+            matches!(
+                opened(Named::Fifo(&alone.join(FIFO)), Class::Batch),
+                Maybe::Present(Tokens::Fifo(_))
+            ),
+            "a FIFO of the porter's name with no counter beside it opens as a jobserver"
+        );
+        drop(porter);
+        drop(counter);
+        drop(std::fs::remove_dir_all(&directory));
     }
 }

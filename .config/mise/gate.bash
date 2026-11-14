@@ -253,8 +253,9 @@ gate_row() {
 
 # The one trap that ends a gate (#7021): the row of an open gate, read before
 # the release so that its count of the gates beside still holds, then the
-# release of the lane's lock and the slot, and of the jobserver's FIFO. Each
-# step guards its own failure, so the trap keeps the status of the gate.
+# release of the lane's lock and the slot, of the hold on the host's counter,
+# and of the jobserver's FIFO. Each step guards its own failure, so the trap
+# keeps the status of the gate.
 gate_exit() {
   local status=$?
   if [[ -n ${gate_name:-} ]]; then
@@ -265,6 +266,7 @@ gate_exit() {
     host_unlock 9 || :
     host_unlock 8 || :
   fi
+  gate_unhold || :
   if [[ -n ${gate_jobs_fifo:-} ]]; then rm -f "$gate_jobs_fifo" || :; fi
 }
 
@@ -283,6 +285,9 @@ gate_exit() {
 # jobserver that `MAKEFLAGS` already names stays, and so does a lower
 # `NEXTEST_TEST_THREADS`.
 #
+# Before it makes its own FIFO, the gate draws on the host's counter
+# (`gate_hosted`, #7605), so the gates of the host share one bound.
+#
 # A driver that a test starts takes the host's width unless `GANDR_JOBS` caps
 # it, so the gate sets `GANDR_JOBS` to the share too, and keeps a lower one
 # (#7447).
@@ -298,12 +303,52 @@ gate_bound() {
     gate_jobs="the inherited jobserver's"
     return
   fi
+  trap gate_exit EXIT
+  if gate_hosted "$share"; then return; fi
   gate_jobs_fifo=$(mktemp -u "${TMPDIR:-/tmp}/gandr-gate-jobs.XXXXXX")
   mkfifo -m 600 "$gate_jobs_fifo"
   exec {gate_jobs_fd}<>"$gate_jobs_fifo"
   printf '%*s' "$share" '' >&"$gate_jobs_fd"
   export MAKEFLAGS="-j$share --jobserver-auth=fifo:$gate_jobs_fifo"
-  trap gate_exit EXIT
+}
+
+# The host's counter (#7605): `gandr tokens` holds the hub of the deployed
+# build and names the FIFO that the hub's porter carries. `MAKEFLAGS` names
+# that FIFO, so each cargo of each gate on the host draws on the counter, and
+# each process of gandr takes the counter directly. The hold lasts until
+# `gate_exit` closes its input. A deployed build that predates the verb, a hub
+# with no porter, or a line that names no FIFO leaves the gate to its own
+# FIFO. `$1` is the gate's share, the `-j` that make reads.
+gate_hosted() {
+  local fifo=
+  command -v gandr > /dev/null 2>&1 || return 1
+  coproc gate_tokens { exec gandr tokens 2> /dev/null; }
+  # Bash unsets the coprocess's names when it reaps it, so they are kept.
+  # shellcheck disable=SC2154 # `coproc` sets `gate_tokens_PID`.
+  gate_tokens_pid=$gate_tokens_PID
+  gate_tokens_in=${gate_tokens[1]}
+  gate_tokens_out=${gate_tokens[0]}
+  if IFS= read -r -t 20 fifo <&"$gate_tokens_out" 2> /dev/null && [[ -p $fifo ]]; then
+    export MAKEFLAGS="-j$1 --jobserver-auth=fifo:$fifo"
+    gate_jobs="the host's counter's"
+    return 0
+  fi
+  kill "$gate_tokens_pid" 2> /dev/null || :
+  gate_unhold
+  return 1
+}
+
+# Ends the hold of `gandr tokens` on the hub: its input closes, so it exits,
+# and the gate waits for it. A coprocess that bash reaped has its ends closed
+# and its names unset already, and the numbers may name other files by now, so
+# the ends close only while the names stand. The `exec` carries no other
+# redirection, since an `exec` keeps each redirection for the rest of the
+# shell.
+gate_unhold() {
+  [[ -n ${gate_tokens_pid:-} ]] || return 0
+  if [[ -v 'gate_tokens[1]' ]]; then exec {gate_tokens_in}>&- {gate_tokens_out}<&-; fi
+  wait "$gate_tokens_pid" 2> /dev/null || :
+  gate_tokens_pid=
 }
 
 # The lower of a value already set, when it is a positive count, and a share.

@@ -293,6 +293,9 @@ pub enum Damage
 /// - hypothesis: L3 — a store refuses a damaged chunk, and a later commit
 ///   writes it afresh.
 /// - witness: `receipts::tests::a_damaged_receipt_is_passed_over_until_it_is_kept_again`
+///
+/// # Cost
+/// - allocation: the paths and the bytes of the store's segments, setup
 #[inline]
 pub fn damage(
     store: &Path,

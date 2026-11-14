@@ -65,6 +65,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::PoisonError;
+#[cfg(not(unix))]
 use std::time::SystemTime;
 
 use anodized::spec;
@@ -96,7 +97,12 @@ struct Identity
 {
     /// Its length in bytes.
     len: u64,
+    /// When it was last modified: its seconds and nanoseconds since the epoch,
+    /// as the host records them.
+    #[cfg(unix)]
+    modified: (i64, i64),
     /// When it was last modified, where the host records it.
+    #[cfg(not(unix))]
     modified: Option<SystemTime>,
     /// Its device and inode.
     #[cfg(unix)]
@@ -113,6 +119,15 @@ impl Identity
     {
         Self {
             len: metadata.len(),
+            // On unix the host's time reads as two integers, with no error to
+            // make: `Metadata::modified` makes only constant errors, yet its
+            // `io::Result` reads to `allocation_free_region` as an allocation.
+            #[cfg(unix)]
+            modified: (
+                std::os::unix::fs::MetadataExt::mtime(metadata),
+                std::os::unix::fs::MetadataExt::mtime_nsec(metadata),
+            ),
+            #[cfg(not(unix))]
             modified: metadata.modified().ok(),
             #[cfg(unix)]
             node: (

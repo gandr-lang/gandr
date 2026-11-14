@@ -1961,16 +1961,21 @@ default-features = false
 # The futex of the host's counter on Linux: `thread::futex::wait` and `wake`
 # on a word in a shared map, with no `unsafe`. The build already carries
 # rustix 1.1 through crossterm. `libc` reaches the futex through a raw
-# `syscall` alone, and `atomic-wait` waits within one process. Reversal: a
-# futex across processes in `std`, or rustix dropping its futex.
+# `syscall` alone, and `atomic-wait` waits within one process. The porter's
+# watch of the build tools' FIFO takes `fs::inotify` from the same crate, and
+# its count takes `io::ioctl_fionread`. Reversal: a futex across processes in
+# `std`, or rustix dropping its futex.
 # features:
+# - fs: `fs::inotify`
+# - std: `AsFd` of `std`'s files and descriptors, which the porter's count and
+#   watch borrow, and `std::io::Error` from `io::Errno`
 # - thread: `thread::futex`
 # consumers:
 # - surface-dispatcher (Linux)
 [workspace.dependencies.rustix]
 version = "1.1.6"
 default-features = false
-features = ["thread"]
+features = ["fs", "std", "thread"]
 
 # The line editor of the read-evaluate loop's terminal face: raw-mode input,
 # editing keys and in-memory history. Defaults off: `with-file-history` writes

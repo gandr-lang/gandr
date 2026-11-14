@@ -3721,6 +3721,35 @@ fn a_client_names_the_exit_of_a_hub_that_binds_no_socket_7524()
     );
 }
 
+/// `gandr tokens` starts the hub of its socket, names the FIFO that the hub's
+/// porter makes beside the socket, and exits `0` once its input ends.
+#[cfg(unix)]
+#[test]
+fn tokens_names_the_fifo_of_the_hub_s_porter_7605()
+{
+    use std::ffi::OsStr;
+
+    // The name is short: a socket path must fit the platform's limit.
+    let scratch = Scratch::new(Path::new("tok"));
+    let socket = scratch.0.join("hub.sock");
+    let held = piped(
+        &[
+            OsStr::new("tokens"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--linger-ms"),
+            OsStr::new("200"),
+        ],
+        Text::from(""),
+    );
+    assert_eq!(code(&held), Code(0_i32), "{}", stderr(&held));
+    assert_eq!(
+        stdout(&held).trim_end(),
+        scratch.0.join("tokens.fifo").display().to_string(),
+        "the verb names the porter's FIFO beside the hub's socket"
+    );
+}
+
 #[test]
 fn serve_offers_the_toolset_by_default()
 {
