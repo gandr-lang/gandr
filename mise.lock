@@ -166,6 +166,11 @@ checksum = "sha256:4e4cb599cdc41bf2109d1464c127b5bcbddf548ce3e322e612afb691338b4
 url = "https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36247-habf1de7_41.conda"
 checksum = "sha256:731e043390c9457299484d39e427221fc868a9249540a498a5a4f6456c7744d1"
 
+[[tools."cargo:bindgen-cli"]]
+version = "0.72.1"
+backend = "cargo:bindgen-cli"
+specifiers = ["0.72.1"]
+
 [[tools."cargo:cargo-dylint"]]
 version = "6.3.2"
 backend = "cargo:cargo-dylint"
