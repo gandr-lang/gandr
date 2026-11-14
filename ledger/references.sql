@@ -505,7 +505,7 @@ INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kerne
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','descent','lineage','c4675519f2fc68f6e8c289bbc29de0eae3abdfc7','2026-10-29','f69d6a7559364f8975c6703d516f594e90adc0e7');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','replay','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','census','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','encoding','lineage','e3bd8a29b81963ea819568013096a8d0070ad1c8','2026-11-12','9e4842118bebc103791a4b10401ad604db34ff4a');
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','encoding','lineage','6d0adb0e7819005d199c31b3df21d4892fb55e97','2026-11-14','1c44b14a6c5313f19ce62de841b658e6141ef220');
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','fork','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','support','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core-base','weakening','lineage',NULL,NULL,NULL);
@@ -760,6 +760,7 @@ INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surfa
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','surface-driver','allocator','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','core-checker-base','ua::strata','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','kernel-core-base','encoding','newest','6d0adb0e7819005d199c31b3df21d4892fb55e97','2026-11-14','1c44b14a6c5313f19ce62de841b658e6141ef220');
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','kernel-data','region','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-sites','map','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
