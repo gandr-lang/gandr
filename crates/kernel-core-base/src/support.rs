@@ -427,7 +427,7 @@ impl SupportContext
     /// [`ContentTable::compact`] and the memo's compaction merge them. A
     /// session that forks a job at each release, while jobs stay open,
     /// keeps its layers to the open jobs and a logarithm of its records and
-    /// outcomes, so each join and each recall reads as many (#7335).
+    /// outcomes, so each join and each recall reads as many.
     ///
     /// # Specification
     /// - requires: `arena` is the arena this session names nodes of.

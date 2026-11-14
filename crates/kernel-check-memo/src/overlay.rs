@@ -11,7 +11,7 @@
 //! merges a frozen layer that no child reads any more back into its owner. A
 //! compaction merges two neighbouring layers where no open child forked
 //! between them, so the layers grow with the open forks and the logarithm of
-//! the entries, never with the forks (#7335).
+//! the entries, never with the forks.
 //!
 //! The layers are a flat stack, oldest first, and no layer points at another:
 //! a drop and a walk of the stack are loops. Each layer carries the stamp of
@@ -103,18 +103,35 @@ struct ForkPoint
     open: Arc<()>,
 }
 
+/// How many children hold a fork point.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Holders(usize);
+
 impl ForkPoint
 {
-    /// Whether a child still holds the point.
+    /// How many children still hold the point: the count of its token
+    /// beside the memo's own.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn is_open(&self) -> bool
+    fn holders(&self) -> Holders
     {
-        Arc::strong_count(&self.open) > 1
+        Holders(Arc::strong_count(&self.open).saturating_sub(1))
     }
 }
+
+/// The place of a frozen layer in a memo's stack, from the oldest.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct LayerAt(usize);
 
 impl<Support, Outcome> Clone for OverlaidMemo<Support, Outcome>
 where
@@ -367,7 +384,7 @@ where
         let stamp = self.layers.last().map_or(0, |newest| newest.stamp);
         // A settle keeps each layer at or below an open point, so the newest
         // stamp is at or above each open point, and the points stay in order.
-        self.points.retain(ForkPoint::is_open);
+        self.points.retain(|point| point.holders() != Holders(0));
         let point = match self.points.last() {
             Some(last) if last.stamp == stamp => Arc::clone(&last.open),
             Some(_) | None => {
@@ -508,7 +525,7 @@ where
     #[inline]
     pub fn settle(&mut self)
     {
-        self.points.retain(ForkPoint::is_open);
+        self.points.retain(|point| point.holders() != Holders(0));
         let guard = self.points.last().map(|point| point.stamp);
         while let Some(newest) = self
             .layers
@@ -568,45 +585,43 @@ where
         Support: Clone,
         Outcome: Clone,
     {
-        self.points.retain(ForkPoint::is_open);
+        self.points.retain(|point| point.holders() != Holders(0));
         let mut upper = self.layers.len();
         while let Some(lower) = upper.checked_sub(2) {
-            if self.mergeable(lower) {
+            if let Some(lower) = self.mergeable_at(LayerAt(lower)) {
                 self.merge_above(lower);
             }
             upper = upper.saturating_sub(1);
         }
     }
 
-    /// Whether the layer at `lower` and the one above it may merge: no open
+    /// The layer at `lower`, when it and the one above it may merge: no open
     /// point between them, the older at most twice the newer, and not a layer
     /// of the parent beside one that this memo froze after its own fork. A
     /// settle of that merged layer would take the parent's entries into the
-    /// own entries.
+    /// own entries. The points are the open ones that the compaction kept, and
+    /// a point that closes since only keeps two layers apart.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn mergeable(
+    fn mergeable_at(
         &self,
-        lower: usize,
-    ) -> bool
+        lower: LayerAt,
+    ) -> Option<LayerAt>
     {
-        let (Some(older), Some(newer)) = (
-            self.layers.get(lower),
-            self.layers.get(lower.saturating_add(1)),
-        )
-        else {
-            return false;
-        };
+        let older = self.layers.get(lower.0)?;
+        let newer = self.layers.get(lower.0.saturating_add(1))?;
         let across = older.stamp <= self.forked && newer.stamp > self.forked;
-        let parted = self.points.iter().any(|point| {
-            point.is_open() && older.stamp <= point.stamp && point.stamp < newer.stamp
-        });
-        !across
+        let parted = self
+            .points
+            .iter()
+            .any(|point| older.stamp <= point.stamp && point.stamp < newer.stamp);
+        (!across
             && !parted
             && usize::from(older.memo.entry_count())
-                <= usize::from(newer.memo.entry_count()).saturating_mul(2)
+                <= usize::from(newer.memo.entry_count()).saturating_mul(2))
+        .then_some(lower)
     }
 
     /// Merge the layer above `lower` into the layer at `lower`, as a settle
@@ -618,7 +633,7 @@ where
     #[inline]
     fn merge_above(
         &mut self,
-        lower: usize,
+        LayerAt(lower): LayerAt,
     ) where
         Support: Clone,
         Outcome: Clone,

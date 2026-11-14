@@ -1649,9 +1649,9 @@ impl TableLayer
     /// # Specification
     /// trivial.
     #[inline]
-    const fn size(&self) -> usize
+    const fn size(&self) -> LayerSize
     {
-        self.spans.len().saturating_add(self.count.0)
+        LayerSize(self.spans.len().saturating_add(self.count.0))
     }
 
     /// Take `newer`, the layer above this one, into this layer: its records
@@ -1839,6 +1839,17 @@ enum Placement
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 struct PlacementCount(usize);
+
+/// What a merge of a frozen layer copies: its records and the nodes it
+/// places.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct LayerSize(usize);
+
+/// The place of a frozen layer among a table's layers, from the oldest.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct LayerAt(usize);
 
 /// One node's slot as a column page stores it: the placed id, or
 /// [`PlacementSlot::UNPLACED`], an id no table assigns.
@@ -4587,7 +4598,7 @@ impl ContentTable
     /// floor with one above it. A layer that only this table holds merges in
     /// place, and a layer that an overlay holds is copied, so the overlay
     /// keeps what it read. An overlay's fold reads no layer of this table, so
-    /// a merge changes no fold (#7335).
+    /// a merge changes no fold.
     ///
     /// The halving bound copies each record at most once for each doubling
     /// of the layers below it. So a table that forks an overlay at each step,
@@ -4620,33 +4631,30 @@ impl ContentTable
         let now = arena.watermark();
         let mut upper = self.placed.layers.len();
         while let Some(lower) = upper.checked_sub(2) {
-            if self.mergeable(lower) {
+            if let Some(lower) = self.mergeable_at(LayerAt(lower)) {
                 self.merge_above(lower, now);
             }
             upper = upper.saturating_sub(1);
         }
     }
 
-    /// Whether the layer at `lower` and the one above it may merge: the
+    /// The layer at `lower`, when it and the one above it may merge: the
     /// older at most twice the newer, and the newer not the first layer that
     /// this table froze above its floor.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn mergeable(
+    fn mergeable_at(
         &self,
-        lower: usize,
-    ) -> bool
+        lower: LayerAt,
+    ) -> Option<LayerAt>
     {
-        let (Some(older), Some(newer)) = (
-            self.placed.layers.get(lower),
-            self.placed.layers.get(lower.saturating_add(1)),
-        )
-        else {
-            return false;
-        };
-        newer.layer.base != self.floor && older.layer.size() <= newer.layer.size().saturating_mul(2)
+        let older = self.placed.layers.get(lower.0)?;
+        let newer = self.placed.layers.get(lower.0.saturating_add(1))?;
+        (newer.layer.base != self.floor
+            && older.layer.size().0 <= newer.layer.size().0.saturating_mul(2))
+        .then_some(lower)
     }
 
     /// Merge the layer above `lower` into the layer at `lower`, as
@@ -4658,7 +4666,7 @@ impl ContentTable
     #[inline]
     fn merge_above(
         &mut self,
-        lower: usize,
+        LayerAt(lower): LayerAt,
         now: ArenaWatermark,
     )
     {
