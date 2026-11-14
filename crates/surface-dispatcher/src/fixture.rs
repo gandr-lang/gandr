@@ -108,6 +108,9 @@ impl Listed
     /// - fails: never.
     /// - panics: if the standard library is not checked out.
     ///
+    /// # Cost
+    /// - allocation: the laid text and the library's path, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the type table of a laid source answers for a binder
     ///   of the source's own text, at the source's own offsets.

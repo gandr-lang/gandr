@@ -5385,6 +5385,9 @@ impl TypeTable
     /// - intension: one lowering and one judgement of the probes per call,
     ///   whatever the number of types; equal declarations are appended once.
     ///
+    /// # Cost
+    /// - allocation: the probe source and each read back, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a data type, a thunked function type in its sugared
     ///   spelling, a universe, a computation type and a declaration read back
@@ -8609,6 +8612,34 @@ mod tests
                 .iter()
                 .any(|&(ref written, _)| written == "std.list.List(Integer)"),
             "the list type prints after its home's path: {trips:?}"
+        );
+        assert!(
+            trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type reads back: {trips:?}"
+        );
+    }
+
+    /// #7563: the type of an inert definition names another inert
+    /// definition. Only an inert declaration reads an inert declaration, so
+    /// the probe of the type is inert too, and the type reads back to its
+    /// certificate.
+    #[test]
+    fn a_type_that_names_an_inert_declaration_reads_back_7563()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = hosted_table(SourceText::from(include_str!(
+            "typed/unformatted/a-type-that-names-an-inert-declaration-reads-back-7563.gandr"
+        )));
+        let trips: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref written, _)| written.contains("same n")),
+            "the path's type prints the inert `same`: {trips:?}"
         );
         assert!(
             trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
