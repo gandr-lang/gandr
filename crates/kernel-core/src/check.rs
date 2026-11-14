@@ -8850,9 +8850,11 @@ where
 ///   recorded, each with the context its code stands in; `continuation` is the
 ///   check's own, which each run of the drain empties first.
 /// - ensures: `Ok(())` when every pending or generated obligation checks before
-///   the operational ceiling is exhausted. An empty worklist is a no-op;
-///   otherwise the first attempted check charges a term-plane event when the
-///   budget is nonzero. Counters never decrease and the arena prefix remains.
+///   the operational ceiling is exhausted. An empty worklist is a no-op.
+///   Otherwise the first attempted check charges a term-plane event when the
+///   budget is nonzero, unless the check's forked children drained first: a key
+///   that they met is not checked again, so a drain whose every key they met
+///   attempts no check. Counters never decrease and the arena prefix remains.
 /// - provides: the deferred half of formation, without recursive calls between
 ///   the two machines. A memo hit can suppress repeated obligations, so the
 ///   occurrence budget can refuse a valid declaration under one memo policy but
@@ -8876,6 +8878,7 @@ where
 /// - witness: `check::tests::obligation_ceiling_can_separate_memoized_and_memoless_checks`
 /// - witness: `element_identity::tests::native_evidence_checks_against_the_fold_fibre`
 #[spec(captures: [entry_mark = arena.watermark(), entry_empty = owed.is_empty(),
+    entry_forked = usize::from(session.drained()),
     entry_term_expanded = u64::from(census.plane_expansions(SupportPlane::Term)),
     entry_term_recalled = u64::from(census.plane_recalls(SupportPlane::Term)),
     entry_term_kept = u64::from(census.plane_kept(SupportPlane::Term)),
@@ -8905,6 +8908,7 @@ where
                 && type_kept == entry_type_kept
             } else {
                 (usize::from(MAX_CODE_OBLIGATIONS) == 0
+                    || entry_forked > 0
                     || term_expanded.saturating_add(term_recalled).saturating_add(term_kept)
                         >= entry_term_expanded
                             .saturating_add(entry_term_recalled)
