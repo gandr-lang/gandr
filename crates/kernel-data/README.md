@@ -48,6 +48,20 @@ A `ThinShared<H, T, A>` is one word. Its block holds the count, the length, a he
 
 The orderings are `std`'s. A `loom` model explores each interleaving of clones, drops and mutable borrows on two and three threads: `RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test -p gandr-kernel-data --test tests --release model`.
 
+## The small string
+
+A `SmallString<A>` holds its text in one of three forms:
+
+| Form | Holds |
+| ---- | ----- |
+| inline | a text of up to 23 bytes, in the string itself |
+| static | a static text, which the string never frees |
+| heap | a block of the allocator `A`, of the text's exact length |
+
+The inline form keeps its length, from 0 to 23, as an enum of 24 values. The compiler keeps the form's tag in that byte's other values, so the string and an `Option` of it are 24 bytes for the global allocator. Each read of the text or its length takes one branch on that byte. A borrow of a region is an allocator, so a long text can live in a region. A refusal of the region is a `Refused`, as for the small vector, and never an abort.
+
+The string takes and gives its text as a `Text`, and gives its length as a `ByteLength`. A `Fits` is a text of at most 23 bytes, and its string builds with no refusal to answer. `Clone` copies as a boxed `str` copies, and `try_clone` answers a refusal instead. The one `unsafe` of the type reads the text's bytes as UTF-8.
+
 ## References
 
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: the storage programme (§ storage-programme-region-is-an-allocator) — the region is one allocator with a budget that refuses and never aborts, and a fork's suffix is a region of its own that the join folds or drops.

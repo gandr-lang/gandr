@@ -19,6 +19,10 @@
 //! so a mutable borrow reads the count with one load and a branch. A
 //! [`Unique`] builds the value before the share. A [`ThinShared`] is one word
 //! that points at one block of a header and a slice.
+//!
+//! A [`SmallString`] holds a text of up to 23 bytes inline, a static text, or
+//! a block of its allocator, in 24 bytes for the global allocator, and reads
+//! its text with one branch on its tag.
 
 #![no_std]
 
@@ -26,6 +30,7 @@ extern crate alloc;
 
 mod region;
 mod shared;
+mod small_string;
 mod small_vec;
 mod thin_shared;
 
@@ -50,6 +55,11 @@ pub use crate::shared::Holders;
 pub use crate::shared::Identity;
 pub use crate::shared::Shared;
 pub use crate::shared::Unique;
+pub use crate::small_string::ByteLength;
+pub use crate::small_string::Emptiness;
+pub use crate::small_string::Fits;
+pub use crate::small_string::SmallString;
+pub use crate::small_string::Text;
 pub use crate::small_vec::Count;
 pub use crate::small_vec::Drain;
 pub use crate::small_vec::IntoIter;

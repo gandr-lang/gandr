@@ -116,6 +116,7 @@ INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Key','','local',
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Offset','','local',NULL,'A value''s offset in the id space of one region, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Sibling','','local',NULL,'A child''s place among the children of one fork in one process, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-data/src/shared.rs','Holders','','none',NULL,'A number of holders of one block.');
+INSERT INTO position VALUES('crates/kernel-data/src/small_string.rs','ByteLength','','none',NULL,'A length of a text in bytes.');
 INSERT INTO position VALUES('crates/kernel-data/src/small_vec.rs','Count','','local',NULL,'A number of items of one vector, and the slot past that many in it, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-strata/src/entail.rs','WitnessPrefixLength','','none',NULL,'A length of a witness prefix.');
 INSERT INTO position VALUES('crates/kernel-strata/src/horn.rs','ClauseIndex','','local',NULL,'A clause''s index in one compilation.');

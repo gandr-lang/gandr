@@ -10,6 +10,9 @@ mod region;
 mod shared;
 
 #[cfg(test)]
+mod small_string;
+
+#[cfg(test)]
 mod small_vec;
 
 #[cfg(test)]
