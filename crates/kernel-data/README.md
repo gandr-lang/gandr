@@ -16,6 +16,19 @@ Three crossings move an id between regions, and nothing else does:
 
 `Region::fork` borrows the parent's mint for the fork's whole life. So the parent makes no id while a child lives, and each id that a child adopts lies in its frozen prefix. A body that answers `None` drops the child's suffix whole. A body that answers `Some` folds the suffix into the parent at the offsets the child minted it at.
 
+## The small vector
+
+A `SmallVec<T, N, A>` keeps at most `N` items in place. Past `N`, it keeps all of its items in one block of the allocator `A`, `Global` by default. One word holds the length, and its high bit says where the items live. A union holds the inline array or the block's pointer and capacity, so each access branches once on that bit.
+
+| `N` and `T` | Size | Storage |
+| ----------- | ---- | ------- |
+| two words of items or fewer | three words | in place up to `N` |
+| more than two words of items | one word and the array | in place up to `N` |
+| `N` of zero | three words | a plain heap vector |
+| a zero-sized `T` | three words | a count, and never a block |
+
+`try_reserve` returns the allocator's refusal as a `Refused`, and the vector stays as it was. A conversion from an array of `N` items has the never type as its error.
+
 ## References
 
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: the storage programme (§ storage-programme-region-is-an-allocator) — the region is one allocator with a budget that refuses and never aborts, and a fork's suffix is a region of its own that the join folds or drops.

@@ -114,6 +114,7 @@ INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Budget','','none
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Count','','none',NULL,'A count of values.');
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Key','','local',NULL,'A value''s offset in one region, which only that region seats back; no key, name or byte form writes it.');
 INSERT INTO position VALUES('crates/kernel-data/src/region.rs','Offset','','local',NULL,'A value''s offset in the id space of one region, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/kernel-data/src/small_vec.rs','Count','','local',NULL,'A number of items of one vector, and the slot past that many in it, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-strata/src/entail.rs','WitnessPrefixLength','','none',NULL,'A length of a witness prefix.');
 INSERT INTO position VALUES('crates/kernel-strata/src/horn.rs','ClauseIndex','','local',NULL,'A clause''s index in one compilation.');
 INSERT INTO position VALUES('crates/kernel-strata/src/level.rs','LevelConstant','','none',NULL,'A constant level.');
