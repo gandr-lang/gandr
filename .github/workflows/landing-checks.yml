@@ -965,6 +965,7 @@ jobs:
       - *download-build-state
       - *find-build-state
       - *unpack-build-state
+      - *fetch-dependencies
       # A shard names its packages; the rest shard takes every package no
       # named shard does, so a new crate is tested before anyone places it.
       # The mark dates the restored state: what the shard builds after it is
