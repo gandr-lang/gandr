@@ -24,6 +24,11 @@ mod uapi;
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "riscv64")
 ))]
+pub use crate::ring::Buffer;
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "riscv64")
+))]
 pub use crate::ring::Completion;
 #[cfg(all(
     target_os = "linux",
