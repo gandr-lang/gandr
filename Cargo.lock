@@ -1441,6 +1441,7 @@ dependencies = [
  "gandr-surface-render-terminal",
  "gandr-surface-repl",
  "gandr-surface-tui",
+ "gandr-theory-levitation",
  "getrandom 0.4.3",
  "hotpath",
  "nix",

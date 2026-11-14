@@ -62,8 +62,18 @@ use crate::tree::TreeRef;
 /// A boxed string, so [`Code`] stays a plain value with derived structural
 /// equality.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Name(Box<str>);
+
+impl Clone for Name
+{
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        crate::probe_7415::note(&self.0);
+        Self(self.0.clone())
+    }
+}
 
 impl From<&str> for Name
 {

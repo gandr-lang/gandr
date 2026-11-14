@@ -2268,6 +2268,7 @@ fn main() -> ExitCode
             allocator::counting::allocations(),
             gandr_kernel_core::check::popped()
         ));
+        drop(writeln!(stderr, "{}", gandr_theory_levitation::probe_7415::report()));
     }
     let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
     match flushed {

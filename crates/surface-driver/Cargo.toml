@@ -71,6 +71,7 @@ gandr-kernel-core.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
+gandr-theory-levitation.workspace = true
 gandr-surface-agentic.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true

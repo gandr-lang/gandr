@@ -239,6 +239,79 @@
 
 extern crate alloc;
 
+/// The probe of #7415, which never lands: each clone of a name, by its text.
+pub mod probe_7415
+{
+    extern crate std;
+
+    use alloc::boxed::Box;
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use core::fmt::Write as _;
+
+    /// The clones of each name, by its text.
+    static NAMES: std::sync::Mutex<BTreeMap<Box<str>, u64>> =
+        std::sync::Mutex::new(BTreeMap::new());
+
+    /// Count one clone of `name`.
+    pub fn note(name: &str)
+    {
+        if let Ok(mut names) = NAMES.lock() {
+            match names.get_mut(name) {
+                Some(count) => *count = count.saturating_add(1),
+                None => {
+                    let _old = names.insert(name.into(), 1);
+                },
+            }
+        }
+    }
+
+    /// The distinct names, the clones and their lengths, on one line.
+    pub fn report() -> String
+    {
+        let mut out = String::from("names-probe:");
+        let Ok(names) = NAMES.lock()
+        else {
+            return out;
+        };
+        let bounds = [7_usize, 15, 23, 24, 31, 63, usize::MAX];
+        let mut distinct = [0_u64; 7];
+        let mut clones = [0_u64; 7];
+        let mut total = 0_u64;
+        let mut bytes = 0_u64;
+        let mut longest = 0_usize;
+        for (name, count) in names.iter() {
+            let length = name.len();
+            longest = longest.max(length);
+            total = total.saturating_add(*count);
+            bytes = bytes.saturating_add(count.saturating_mul(u64::try_from(length).unwrap_or(u64::MAX)));
+            if let Some(bucket) = bounds.iter().position(|bound| length <= *bound) {
+                if let Some(slot) = distinct.get_mut(bucket) {
+                    *slot = slot.saturating_add(1);
+                }
+                if let Some(slot) = clones.get_mut(bucket) {
+                    *slot = slot.saturating_add(*count);
+                }
+            }
+        }
+        let _written = write!(
+            out,
+            " distinct={} clones={total} bytes={bytes} longest={longest}",
+            names.len()
+        );
+        for ((bound, distinct), clones) in bounds.iter().zip(distinct).zip(clones) {
+            let _written = write!(out, " le{bound}:distinct={distinct},clones={clones}");
+        }
+        let mut top: Vec<_> = names.iter().collect();
+        top.sort_by(|left, right| right.1.cmp(left.1));
+        for (name, count) in top.iter().take(24) {
+            let _written = write!(out, " [{name}]={count}");
+        }
+        out
+    }
+}
+
 mod arity;
 mod binding;
 mod boundary;
