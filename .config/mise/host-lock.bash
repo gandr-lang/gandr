@@ -1,6 +1,7 @@
 # The host-wide locks the workflow takes (#3105), sourced by `gate.bash`,
 # `mutants.bash` and `ci:act`: the gate's slots (#3057), the mutation run's
-# one lock (#2726) and `ci:act`'s two slots.
+# one lock (#2726) and `ci:act`'s two slots; and the lease of a scratch
+# directory (#7615).
 #
 # `host_lock [--no-wait] [--fd <n>] <name> <slots> <holder>...` takes one of
 # `<slots>` slots, `<name>.<n>.lock` under `gandr/` in the user's runtime
@@ -31,6 +32,17 @@
 #
 # The lock is `flock(1)`'s where the host has it and perl's `flock` where it
 # has not (macOS); either way it belongs to the open file the caller keeps.
+#
+# `host_scratch <prefix>` makes a scratch directory `<prefix>.XXXXXX` that
+# outlives no run (#7615). An EXIT trap does not run when `KILL` ends its
+# shell, so the caller holds a lease on the directory's `held` for its life,
+# on descriptor 7, and the kernel drops the lease when the caller ends. Each
+# call first removes each `<prefix>.*` whose `held` it can lock, on
+# descriptor 6. A directory with no `held` stays: another call makes it now.
+# The call locks `held` under another name and then renames it, so no sweep
+# finds an unlocked `held`. It runs in the caller's shell, not in `$(…)`, and
+# sets `host_scratch_dir`. A caller closes descriptor 7 in a child that can
+# outlive it.
 
 # Takes a free slot of `<name>`, waiting for one unless `--no-wait`, and
 # records the holder; sets `host_slot` to its number.
@@ -168,4 +180,20 @@ host_flock() {
   else
     perl -MFcntl=:flock -e 'open(my $fh, ">&=", $ARGV[0]) or die "fd $ARGV[0]: $!"; flock($fh, LOCK_EX | LOCK_NB) or exit 1' "$fd"
   fi
+}
+
+# Removes each dead `<prefix>.*`, then makes one and holds its lease on
+# descriptor 7; sets `host_scratch_dir` to it.
+host_scratch() {
+  local prefix=$1 old
+  for old in "$prefix".*; do
+    [[ -f $old/held ]] || continue
+    if { host_flock 6; } 6<> "$old/held" 2> /dev/null; then
+      rm -rf -- "$old"
+    fi
+  done
+  host_scratch_dir=$(mktemp -d "$prefix.XXXXXX")
+  exec 7> "$host_scratch_dir/holding"
+  host_flock 7
+  mv "$host_scratch_dir/holding" "$host_scratch_dir/held"
 }
