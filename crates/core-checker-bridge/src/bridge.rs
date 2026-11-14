@@ -544,7 +544,6 @@ use gandr_core_fork::ItemIndex;
 use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Serial;
-use gandr_core_fork::unpriced;
 use gandr_core_nbe::TraceNode;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
@@ -588,7 +587,6 @@ use gandr_kernel_core::held_on;
 use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
-use gandr_kernel_core::speculation::Setting;
 use gandr_kernel_core::speculation::Speculation;
 use gandr_kernel_core::verdict::EntryContentKey;
 use gandr_kernel_core::verdict::NoVerdicts;
@@ -642,7 +640,6 @@ use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
-use crate::report::Judged;
 use crate::report::ModuleReport;
 use crate::report::Verdict;
 use crate::retire::Demand;
@@ -1325,10 +1322,6 @@ pub trait Stopwatch: Clone + Send
     /// What a start leaves for its stop to read against.
     type Started: Copy;
 
-    /// Whether the stopwatch reads a clock: false for one that answers each
-    /// admission untimed.
-    const CLOCKED: bool;
-
     /// Begin timing one admission.
     ///
     /// # Specification
@@ -1352,8 +1345,6 @@ pub struct Untimed;
 impl Stopwatch for Untimed
 {
     type Started = ();
-
-    const CLOCKED: bool = false;
 
     /// Read nothing.
     ///
@@ -1402,8 +1393,6 @@ where
     C: Clock + Clone + Send,
 {
     type Started = Duration;
-
-    const CLOCKED: bool = true;
 
     /// The clock's reading at the start.
     ///
@@ -1485,8 +1474,6 @@ where
     M: Meter + Clone + Send,
 {
     type Started = (Duration, AllocationCount);
-
-    const CLOCKED: bool = true;
 
     /// The clock's and the meter's readings at the start.
     ///
@@ -3251,20 +3238,6 @@ where
         environment
     };
     let fresh = || Vec::with_capacity(judged_all.len());
-    // The record that the readmission resumes or keeps holds the measured
-    // cost of each check that it ran, which the plan of the schedule reads.
-    let recorded: &[Readmitted] = match resume {
-        Resume::Leading {
-            crossed: Maybe::Present(record),
-            ..
-        }
-        | Resume::Kept { record, .. } => &record.readmitted,
-        Resume::Leading {
-            crossed: Maybe::Absent(_),
-            ..
-        }
-        | Resume::Whole { .. } => &[],
-    };
     let (boundary, keys, keeping, (environment, positions, readmitted)) = match resume {
         Resume::Whole { keyed } => (
             None,
@@ -3327,9 +3300,6 @@ where
     // The kernel takes an admitted result exactly where the run that recorded
     // it ran under the policy: fresh, recalled or handed on.
     let environment = environment.admitting(report.admitting());
-    // The plan folds only under the fold policy, which the record's measure
-    // answers to.
-    let folding = environment.speculation().fold;
     let from = readmitted.len();
     let count = judged_all.len().saturating_sub(from);
     // A pair the kernel reports undecided is answered, and its declaration is
@@ -3377,50 +3347,16 @@ where
         misplaced: false,
     });
     let mut items = alloc::vec![(); count];
-    let run = |(check, mut stopwatch): (Check, Watch)| {
-        let (ran, took) = run_check(check, &mut stopwatch);
-        Answer::Ran(ran, took)
-    };
-    let commit = |item: ItemIndex, &mut (): &mut (), answer: Answer| {
-        underway.borrow_mut().commit(item, answer);
-    };
-    // Under the fold policy, the plan prices each check by its record's
-    // measured cost, or by the fork's price of its size, against the fork's
-    // measured hand-off. A plan that folds nothing releases through the closure
-    // that reads no mark, and one that folds reads one mark for each release.
-    let plan = match folding {
-        Setting::On => fold_plan(
-            recorded,
-            (First(from), judged_all.get(from ..).unwrap_or_default()),
-            after.sizes(),
-            (fork.hand_off(), |size| fork.price(size)),
-        ),
-        Setting::Off => Maybe::Absent(unfolded::Absent::Off),
-    };
-    match plan {
-        Maybe::Absent(_) => fork.schedule(
-            &mut items,
-            &after,
-            |item, &mut ()| underway.borrow_mut().release(item),
-            run,
-            commit,
-        ),
-        Maybe::Present(Folds(marks)) => fork.schedule(
-            &mut items,
-            &after,
-            |item, &mut ()| match underway.borrow_mut().release(item) {
-                Releasing::Run(job) if marks.get(usize::from(item)) == Some(&Mark::Fold) => {
-                    Releasing::Fold(job)
-                },
-                released @ (Releasing::Run(_)
-                | Releasing::Fold(_)
-                | Releasing::Settled(_)
-                | Releasing::Held(..)) => released,
-            },
-            run,
-            commit,
-        ),
-    }
+    fork.schedule(
+        &mut items,
+        &after,
+        |item, &mut ()| underway.borrow_mut().release(item),
+        |(check, mut stopwatch): (Check, Watch)| {
+            let (ran, took) = run_check(check, &mut stopwatch);
+            Answer::Ran(ran, took)
+        },
+        |item, &mut (), answer| underway.borrow_mut().commit(item, answer),
+    );
     underway.into_inner().finish()
 }
 
@@ -3531,137 +3467,6 @@ where
     let started = stopwatch.start();
     let ran = check.run();
     (ran, stopwatch.stop(started))
-}
-
-/// How many times its price a folded check may take and still cost no more
-/// than the hand-off that the fold saves.
-const FOLD_MARGIN: u32 = 2;
-
-quenchant_shape::reason_enum! {
-    /// Why the plan of a schedule folds no check.
-    mod unfolded {
-        /// The reason the plan marks no item.
-        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub enum Absent {
-            /// The fold setting of the speculation group is off.
-            Off,
-            /// The fork measures no hand-off, as the serial fork does.
-            Unmeasured,
-            /// No check is priced below the cost of a hand-off.
-            Dear,
-        }
-    }
-}
-
-/// Where the plan of a schedule sends the check of one item.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Mark
-{
-    /// The check goes to the pool as its release gives it.
-    Hand,
-    /// The check folds onto the calling thread at its release.
-    Fold,
-}
-
-/// The plan's mark for each item, in item order.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Debug, Eq, PartialEq)]
-struct Folds(Vec<Mark>);
-
-/// The module position of a schedule's first item.
-///
-/// # Specification
-/// trivial.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct First(usize);
-
-/// The plan of a schedule: for each item, whether its check folds onto the
-/// calling thread, since its price is below the cost of a hand-off.
-///
-/// # Specification
-/// - requires: `judged` holds the declarations of the items in item order, from
-///   the module position `first`; `recorded` is the record that the readmission
-///   resumes or keeps, empty for a fresh one; `sizes` holds the size of each
-///   item in item order, or is empty.
-/// - ensures: absent when no item folds. Otherwise one mark for each item. An
-///   item's price is the measured cost of the record's entry at its module
-///   position, when the entry names its constant and holds a measure; else
-///   `price` of its size, when it has a size. An item is marked [`Mark::Fold`]
-///   only when [`FOLD_MARGIN`] times its price is at most `hand_off`. The
-///   prices of a run of folded items with no handed item between them sum to at
-///   most `hand_off`.
-/// - panics: a panic of `price`.
-/// - executable: none — the marks read each entry's measured cost.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an untimed record with no price, a record of other
-///   constants and a zero hand-off fold nothing; a cheap entry folds beside a
-///   dear one; a run of cheap entries hands the one that passes the budget; and
-///   a check with no record folds by the price of its size, while an unsized
-///   one does not.
-/// - witness: `bridge::tests::a_plan_folds_nothing_from_a_record_with_no_measure_7285`
-/// - witness: `bridge::tests::a_plan_folds_a_check_its_record_measured_below_the_hand_off_7285`
-/// - witness: `bridge::tests::a_plan_folds_within_one_hand_off_between_two_hand_offs_7285`
-/// - witness: `bridge::tests::a_plan_folds_a_check_with_no_record_by_the_price_of_its_size_7285`
-fn fold_plan<Price>(
-    recorded: &[Readmitted],
-    (first, judged): (First, &[Judged]),
-    sizes: &[ItemSize],
-    (hand_off, price): (Duration, Price),
-) -> Maybe<Folds, unfolded::Absent>
-where
-    Price: Fn(ItemSize) -> Maybe<Duration, unpriced::Absent>,
-{
-    if hand_off.is_zero() {
-        return Maybe::Absent(unfolded::Absent::Unmeasured);
-    }
-    let mut folded: Option<Vec<Mark>> = None;
-    // The price of the run of folded items since the last hand-off.
-    let mut since = Duration::ZERO;
-    for (at, declaration) in judged.iter().enumerate() {
-        let measured =
-            recorded
-                .get(first.0.saturating_add(at))
-                .and_then(|entry| match entry.took {
-                    Maybe::Present(spent) if entry.constant == declaration.constant() => {
-                        Some(spent.wall())
-                    },
-                    Maybe::Present(_) | Maybe::Absent(_) => None,
-                });
-        // A job of no size reads no node, so its size prices nothing.
-        let cost = measured.or_else(|| match sizes.get(at) {
-            Some(&size) if usize::from(size) > 0 => match price(size) {
-                Maybe::Present(priced) => Some(priced),
-                Maybe::Absent(_) => None,
-            },
-            Some(_) | None => None,
-        });
-        match cost {
-            Some(cost)
-                if cost.saturating_mul(FOLD_MARGIN) <= hand_off
-                    && since.saturating_add(cost) <= hand_off =>
-            {
-                since = since.saturating_add(cost);
-                if let Some(mark) = folded
-                    .get_or_insert_with(|| alloc::vec![Mark::Hand; judged.len()])
-                    .get_mut(at)
-                {
-                    *mark = Mark::Fold;
-                }
-            },
-            Some(_) | None => since = Duration::ZERO,
-        }
-    }
-    folded.map_or(Maybe::Absent(unfolded::Absent::Dear), |marks| {
-        Maybe::Present(Folds(marks))
-    })
 }
 
 /// What the release of one declaration of a scheduled readmission hands its
@@ -4874,7 +4679,7 @@ where
         self.serially = false;
         let answer = match released {
             Releasing::Settled(answer) | Releasing::Held(answer, ..) => answer,
-            Releasing::Run((check, mut stopwatch)) | Releasing::Fold((check, mut stopwatch)) => {
+            Releasing::Run((check, mut stopwatch)) => {
                 let (ran, took) = run_check(check, &mut stopwatch);
                 Answer::Ran(ran, took)
             },
