@@ -532,8 +532,10 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # every crate. The run writes those records to `target/allocation-base`
 # (`.config/policy/base-records.bash`): the base's records of the packages
 # that the change touches, from the cache that `check:deletes` fills. A run
-# with no `GATE_BASE`, as `gate:all` and the merge group, writes none, and the
-# lint holds the default's crates alone.
+# with no `GATE_BASE`, as `gate:all`, writes none, and the lint holds the
+# default's crates alone. A merge group names its base, and the task stops in
+# a group that names none (#7632). After the run, the task names the base and
+# counts the functions that the lint holds (`.config/policy/held.bash`).
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -680,17 +682,23 @@ policy() {
   .config/mise/gated "${run[@]}"
 }
 # The base's records for `allocation_free_region` (#7419), built in a gate
-# slot as the policy run is: an empty directory when no base stands.
+# slot as the policy run is: an empty directory when no base stands. A merge
+# group with no base would hold no changed function, so it stops (#7632).
+.config/policy/group-base.bash
 rm -rf target/allocation-base
 mkdir -p target/allocation-base
 if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.bash "$GATE_BASE" target/allocation-base; fi
 features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
 # shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
-policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features
+status=0
+policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$?
+.config/policy/held.bash target/allocation-base target/evidence/records "${GATE_BASE:-}" >&2
+(( status == 0 )) || exit "$status"
 export toolchain
 export -f policy
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash
+.config/policy/held-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
