@@ -1,7 +1,12 @@
 #!/bin/sh
 # A stand-in for the spaCy venv's interpreter: it drains the passages it is
-# fed and prints the parse the case wrote, or fails as asked.
-cat >/dev/null
+# fed, into the file `FAKE_PYTHON_INPUT` names when a case names one, and
+# prints the parse the case wrote, or fails as asked.
+if [ -n "$FAKE_PYTHON_INPUT" ]; then
+  cat >"$FAKE_PYTHON_INPUT"
+else
+  cat >/dev/null
+fi
 if [ "$FAKE_PYTHON_MODE" = fail ]; then
   echo "ModuleNotFoundError: No module named 'spacy'" >&2
   exit 1

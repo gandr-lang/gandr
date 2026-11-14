@@ -1,25 +1,35 @@
-//! `prose`: the sentence rules over the corpus comments, the rendered
-//! diagnostics and the crate READMEs, against the committed debt, and over a
-//! pull request's or an issue's body.
+//! `prose`: the sentence rules over the corpus comments and the rendered
+//! diagnostics against the committed debt, over the paragraphs a change wrote
+//! in the markdown documents, and over a pull request's or an issue's body.
 //!
 //! `prose --python PATH [--root DIR] [--write]` gathers the text under the
 //! root, parses it by running `crates/workflow-prose/parse.py` under the given
 //! interpreter, judges every sentence and diagnostic, and compares the
 //! findings with `corpus/prose.ledger`. With `--write` it writes the ledger
-//! instead. `prose --python PATH --body FILE` judges the one body in `FILE`
-//! under the body rules, with no ledger.
+//! instead. With `--base REV` it also reads each markdown document the change
+//! touched since `REV`, and each paragraph whose digest `REV` does not hold
+//! meets every sentence rule with no ledger. `--override FILE` reads the
+//! `prose-override:` lines of a pull request body, which admit the paragraphs
+//! of a mechanical change. `--cache DIR --model NAME` keeps each parse by its
+//! passage's digest, so a passage parses once. `prose --python PATH --body
+//! FILE` judges the one body in `FILE` under the body rules, with no ledger.
 //!
 //! # Exit codes
 //!
-//! - `0`: every finding is in the ledger and every ledger line is a finding; or
-//!   the ledger was written; or the body breaks no rule; also `--help` and
-//!   `--version`.
-//! - `1`: a finding the ledger lacks, a ledger line no finding matches, or a
+//! - `0`: every finding is in the ledger, every ledger line is a finding, no
+//!   written paragraph breaks a rule and each override admits the count it
+//!   claims; or the ledger was written; or the body breaks no rule; also
+//!   `--help` and `--version`.
+//! - `1`: a finding the ledger lacks, a ledger line no finding matches, a
+//!   finding in a written paragraph, an override whose count differs, or a
 //!   finding in the body.
-//! - `2`: a refusal — an unreadable file, a malformed glossary or ledger, a
-//!   failed parse, or standard output closed; also a malformed invocation.
+//! - `2`: a refusal — an unreadable file, a malformed glossary, ledger or
+//!   override, a failed parse or git read, or standard output closed; also a
+//!   malformed invocation.
 
+use std::collections::HashSet;
 use std::io::Write as _;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -30,10 +40,22 @@ use gandr_workflow_prose::Finding;
 use gandr_workflow_prose::Glossary;
 use gandr_workflow_prose::Key;
 use gandr_workflow_prose::ProseError;
+use gandr_workflow_prose::cache::Cache;
+use gandr_workflow_prose::cache::Model;
+use gandr_workflow_prose::cache::Script;
+use gandr_workflow_prose::digest::Digest;
+use gandr_workflow_prose::documents;
+use gandr_workflow_prose::documents::Base;
 use gandr_workflow_prose::ledger;
+use gandr_workflow_prose::mechanical;
+use gandr_workflow_prose::mechanical::Override;
+use gandr_workflow_prose::mechanical::Unread;
 use gandr_workflow_prose::parse;
+use gandr_workflow_prose::parse::Fresh;
 use gandr_workflow_prose::passage;
 use gandr_workflow_prose::passage::Advice;
+use gandr_workflow_prose::passage::Passage;
+use gandr_workflow_prose::passage::Source;
 use gandr_workflow_prose::passage::Text;
 use gandr_workflow_prose::rules;
 use gandr_workflow_prose::rules::Fix;
@@ -55,13 +77,45 @@ struct Cli
     /// The repository root.
     #[arg(long, default_value = ".")]
     root: PathBuf,
-    /// Write the ledger from the findings instead of comparing.
+    /// Write the ledger instead of comparing.
     #[arg(long, conflicts_with = "body")]
     write: bool,
     /// Judge the pull request or issue bodies in these files instead, with no
     /// ledger.
     #[arg(long, num_args = 1..)]
     body: Vec<PathBuf>,
+    /// The merge base: each paragraph a change wrote since it in a markdown
+    /// document meets every sentence rule.
+    #[arg(long, conflicts_with_all = ["body", "write"])]
+    base: Option<String>,
+    /// The pull request bodies whose `prose-override:` lines admit the
+    /// paragraphs of a mechanical change.
+    #[arg(long = "override", num_args = 1.., requires = "base")]
+    overrides: Vec<PathBuf>,
+    /// Keep each parse under this directory, by its passage's digest.
+    #[arg(long, requires = "model")]
+    cache: Option<PathBuf>,
+    /// The parser's and the model's versions, which name the cache.
+    #[arg(long, requires = "cache")]
+    model: Option<String>,
+}
+
+/// The paragraphs a change wrote in the markdown documents.
+///
+/// # Specification
+/// - provides: what the documents reader hands the parse, and the counts the
+///   run reports.
+#[derive(Debug, Default)]
+struct Written
+{
+    /// The documents the change touched.
+    touched: usize,
+    /// Their paragraphs whose digest the base holds.
+    held: usize,
+    /// The paragraphs that parse: written, and admitted by no override.
+    passages: Vec<Passage>,
+    /// The body's overrides, each with the count it admitted.
+    overrides: Vec<Override>,
 }
 
 /// What a run concluded.
@@ -159,21 +213,25 @@ fn print(
 }
 
 /// Parses and judges the bodies in `paths` under the body rules, in one
-/// parse.
+/// parse, the cache read first.
 ///
 /// # Specification
-/// - requires: `cli.python` can import spaCy and `en_core_web_sm`.
+/// - requires: `cli.python` can import spaCy and `en_core_web_sm` when a
+///   passage misses the cache.
 /// - ensures: each finding of [`passage::body`]'s passages of each file is
 ///   printed with its file, line, rule, sentence and fix, and the outcome is
 ///   agreed exactly when none was printed.
 /// - provides: the body mode `pr:open`, `issue:file` and the nightly sweep run.
-/// - fails: [`ProseError::Io`] when a body cannot be read or standard output
-///   cannot be written; every refusal of [`parse::parse`].
+/// - fails: [`ProseError::Io`] when a body or the parse script cannot be read
+///   or standard output cannot be written; every refusal of [`parse::parse`].
 /// - panics: none.
 /// - executable: none — the outcome is the bytes printed.
 ///
 /// # Errors
 /// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the bodies' texts, passages and findings, growth within paths
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a body with a finding beside one with none, and a clean
@@ -207,16 +265,22 @@ fn judge(
     }
     let inputs: Vec<&passage::Passage> = passages.iter().collect();
     let script = cli.root.join("crates/workflow-prose/parse.py");
-    let parsed = parse::parse(&cli.python, &script, &inputs)?;
     let glossary = Glossary::default();
     let mut out = std::io::stdout().lock();
     let mut found = false;
-    for (passage, sentences) in passages.iter().zip(&parsed) {
-        for finding in rules::sentences(passage, sentences, &glossary) {
-            print(&mut out, &finding)?;
-            found = true;
-        }
-    }
+    parse::parse(
+        &cli.python,
+        &script,
+        &inputs,
+        &cache(cli, &script)?,
+        |passage, sentences| {
+            for finding in rules::sentences(passage, sentences, &glossary) {
+                print(&mut out, &finding)?;
+                found = true;
+            }
+            Ok(())
+        },
+    )?;
     if found {
         return Ok(Outcome::Disagreed);
     }
@@ -229,30 +293,159 @@ fn judge(
     Ok(Outcome::Agreed)
 }
 
-/// Gathers, parses, judges and compares with the ledger, or writes it.
+/// The cache the invocation names, under the parse script's text.
 ///
 /// # Specification
-/// - requires: `cli.python` can import spaCy and `en_core_web_sm`.
+/// - requires: nothing.
+/// - ensures: [`Cache::under`] the named directory for the named model and the
+///   text of `script`; [`Cache::none`] when the invocation names no cache.
+/// - provides: the cache both modes read.
+/// - fails: [`ProseError::Io`] when the script cannot be read.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the parse script's text, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`parse::parse`].
+/// - witness: `tests::cli::a_second_run_reads_every_parse_from_the_cache`
+fn cache(
+    cli: &Cli,
+    script: &Path,
+) -> Result<Cache, ProseError>
+{
+    match (&cli.cache, &cli.model) {
+        (&Some(ref dir), &Some(ref model)) => {
+            let text = std::fs::read(script).map_err(|error| ProseError::Io {
+                path: script.to_owned(),
+                message: error.to_string(),
+            })?;
+            Ok(Cache::under(dir, Model(model), Script(&text)))
+        },
+        _ => Ok(Cache::none()),
+    }
+}
+
+/// The paragraphs a change wrote since `base` in the markdown documents it
+/// touched, the overrides of `cli.overrides` applied.
+///
+/// # Specification
+/// - requires: `cli.root` is a repository checkout that holds `base`.
+/// - ensures: the documents [`documents::touched`] lists, each read at the
+///   head; the paragraphs whose digest no paragraph of [`documents::held`]
+///   shares, less those [`mechanical::admit`] admits; each override with its
+///   admitted count.
+/// - provides: the paragraphs [`run`] parses and judges with no ledger.
+/// - fails: every refusal of [`documents::touched`] and [`documents::held`];
+///   [`ProseError::Io`] for a document or a body that cannot be read;
+///   [`ProseError::Override`] for a body's line [`mechanical::read`] refuses.
+/// - panics: none.
+/// - executable: none — the outcome is git's and the file system's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the head's and the base's paragraphs of the touched documents
+///   and the held digests, growth within the change
+///
+/// # Adequacy
+/// - hypothesis: L3 — a change that keeps a paragraph, re-wraps one, writes one
+///   with a finding and renames a word through two under an override; the kept
+///   or re-wrapped one judged, the written one passed, or the renamed ones
+///   refused changes the output.
+/// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+/// - witness: `tests::cli::an_override_admits_its_substitution_and_counts_it`
+fn written(
+    cli: &Cli,
+    base: Base<'_>,
+) -> Result<Written, ProseError>
+{
+    let touched = documents::touched(&cli.root, base)?;
+    let mut head = Vec::new();
+    for path in &touched {
+        let full = cli.root.join(path);
+        let text = std::fs::read_to_string(&full).map_err(|error| ProseError::Io {
+            path: full.clone(),
+            message: error.to_string(),
+        })?;
+        head.extend(passage::document(Text(path), Text(&text)));
+    }
+    let base_passages = documents::held(&cli.root, base, &touched)?;
+    let held: HashSet<Digest> = base_passages
+        .iter()
+        .map(|passage| Digest::of(Text(&passage.text)))
+        .collect();
+    let mut overrides = Vec::new();
+    for body in &cli.overrides {
+        let text = std::fs::read_to_string(body).map_err(|error| ProseError::Io {
+            path: body.clone(),
+            message: error.to_string(),
+        })?;
+        overrides.extend(mechanical::read(Text(&text)).map_err(|Unread(line)| {
+            ProseError::Override {
+                path: body.clone(),
+                line,
+            }
+        })?);
+    }
+    let fresh: Vec<&Passage> = head
+        .iter()
+        .filter(|passage| !held.contains(&Digest::of(Text(&passage.text))))
+        .collect();
+    let held_count = head.len().saturating_sub(fresh.len());
+    let passages = mechanical::admit(&mut overrides, &base_passages, fresh)
+        .into_iter()
+        .cloned()
+        .collect();
+    Ok(Written {
+        touched: touched.len(),
+        held: held_count,
+        passages,
+        overrides,
+    })
+}
+
+/// Gathers, parses, judges and compares with the ledger, or writes it; with
+/// a base, judges the paragraphs a change wrote in the markdown documents.
+///
+/// # Specification
+/// - requires: `cli.python` can import spaCy and `en_core_web_sm` when a
+///   passage misses the cache.
 /// - ensures: with `--write`, the ledger holds one line per distinct finding
-///   and the outcome is agreed; otherwise each finding the ledger lacks is
-///   printed with its line, rule, sentence and fix, each ledger line no finding
-///   matches is printed as stale, and the outcome is agreed exactly when
-///   neither was printed.
+///   and the outcome is agreed. Otherwise each finding the ledger lacks is
+///   printed with its line, rule, sentence and fix, and each ledger line no
+///   finding matches is printed as stale. With `--base`, each finding of a
+///   written paragraph is printed as its parse arrives, before the ledger's
+///   verdict, and each override is printed with the count it admits beside the
+///   count it claims. The run prints the passages and words it parsed afresh,
+///   and the outcome is agreed exactly when no finding, stale line or differing
+///   count was printed. The written paragraphs, the ledger's passages and the
+///   diagnostics' advice parse in one run of the script, in that order.
 /// - provides: the whole command.
-/// - fails: every refusal of [`passage::gather`], [`Glossary::read`] and
-///   [`parse::parse`]; [`ProseError::Ledger`] for a ledger line
-///   [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger, the glossary
-///   or standard output cannot be read or written.
+/// - fails: every refusal of [`passage::gather`], [`Glossary::read`],
+///   [`written`] and [`parse::parse`]; [`ProseError::Ledger`] for a ledger line
+///   [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger, the
+///   glossary, the parse script or standard output cannot be read or written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes printed and the ledger file.
 ///
 /// # Errors
 /// As `fails` lists.
 ///
+/// # Cost
+/// - allocation: the gathered passages, the parse and the findings, growth
+///   within the tree
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`main`].
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
 /// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
+/// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 fn run(cli: &Cli) -> Result<Outcome, ProseError>
 {
     let io = |path: PathBuf| {
@@ -266,15 +459,44 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         &std::fs::read_to_string(&glossary_path).map_err(io(glossary_path))?,
     ))?;
     let gathered = passage::gather(&cli.root)?;
-    let mut inputs: Vec<&passage::Passage> = gathered.passages.iter().collect();
+    let written = match cli.base {
+        Some(ref base) => Some(written(cli, Base(base))?),
+        None => None,
+    };
+    let mut inputs: Vec<&passage::Passage> = Vec::new();
+    if let Some(ref written) = written {
+        inputs.extend(written.passages.iter());
+    }
+    let documents = inputs.len();
+    inputs.extend(gathered.passages.iter());
     for golden in &gathered.goldens {
         if let Advice::Help(ref help) = golden.advice {
             inputs.push(help);
         }
     }
     let script = cli.root.join("crates/workflow-prose/parse.py");
-    let parsed = parse::parse(&cli.python, &script, &inputs)?;
-    let mut parses = parsed.iter();
+    let mut out = std::io::stdout().lock();
+    let output = |error: std::io::Error| ProseError::Io {
+        path: PathBuf::from("<stdout>"),
+        message: error.to_string(),
+    };
+    let mut refused = false;
+    let parsed = parse::parse(
+        &cli.python,
+        &script,
+        &inputs,
+        &cache(cli, &script)?,
+        |passage, sentences| {
+            if passage.source == Source::Document {
+                for finding in rules::sentences(passage, sentences, &glossary) {
+                    print(&mut out, &finding)?;
+                    refused = true;
+                }
+            }
+            Ok(())
+        },
+    )?;
+    let mut parses = parsed.sentences.iter().skip(documents);
     let mut findings: Vec<Finding> = Vec::new();
     let mut passage_parses = Vec::new();
     for (passage, sentences) in gathered.passages.iter().zip(parses.by_ref()) {
@@ -294,11 +516,6 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         findings.extend(rules::procedure(golden, help));
     }
     let ledger_path = cli.root.join("corpus/prose.ledger");
-    let mut out = std::io::stdout().lock();
-    let output = |error: std::io::Error| ProseError::Io {
-        path: PathBuf::from("<stdout>"),
-        message: error.to_string(),
-    };
     if cli.write {
         let text = gandr_workflow_debt_ledger::write(ledger::HEADER, findings.iter().map(Key::of));
         let lines = text.lines().filter(|line| !line.starts_with('#')).count();
@@ -323,6 +540,45 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         .map_err(output)?;
     }
     if verdict.standing() == Standing::Disagreed {
+        refused = true;
+    }
+    if let Some(ref written) = written {
+        for stated in &written.overrides {
+            writeln!(
+                out,
+                "prose: `{}` admits {} paragraph(s) of the {} it claims",
+                stated.line, stated.admitted, stated.claimed
+            )
+            .map_err(output)?;
+            if stated.admitted != stated.claimed {
+                refused = true;
+            }
+        }
+    }
+    let Fresh {
+        passages,
+        words,
+        unkept,
+    } = parsed.fresh;
+    writeln!(
+        out,
+        "prose: parsed {passages} passage(s) of {words} word(s) afresh, of {} read; {unkept} \
+         parse(s) not kept in the cache",
+        inputs.len()
+    )
+    .map_err(output)?;
+    if let (&Some(ref base), &Some(ref written)) = (&cli.base, &written) {
+        writeln!(
+            out,
+            "prose: {} document(s) touched since {base}: {} paragraph(s) kept from the base, {} \
+             written and judged",
+            written.touched,
+            written.held,
+            written.passages.len()
+        )
+        .map_err(output)?;
+    }
+    if refused {
         return Ok(Outcome::Disagreed);
     }
     writeln!(

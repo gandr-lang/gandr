@@ -41,6 +41,15 @@ pub enum ProseError
         /// Why it did not start, how it exited, or what it printed.
         message: String,
     },
+    /// A body's `prose-override:` line is not a mechanical change in
+    /// backticks, its count of paragraphs and its reason.
+    Override
+    {
+        /// The body.
+        path: PathBuf,
+        /// The line.
+        line: String,
+    },
 }
 
 impl fmt::Display for ProseError
@@ -80,6 +89,12 @@ impl fmt::Display for ProseError
                 ref command,
                 ref message,
             } => write!(f, "`{command}` failed: {message}"),
+            Self::Override { ref path, ref line } => write!(
+                f,
+                "{}: `{line}` is not `prose-override: mechanical `<old>` -> `<new>` (<count> \
+                 paragraphs), reason: <why>`",
+                path.display()
+            ),
         }
     }
 }
@@ -126,6 +141,14 @@ mod tests
                     message: "exit status: 1: No module named 'spacy'".into(),
                 },
                 "`python parse.py` failed: exit status: 1: No module named 'spacy'",
+            ),
+            (
+                ProseError::Override {
+                    path: PathBuf::from("body.md"),
+                    line: "prose-override: mechanical rename".into(),
+                },
+                "body.md: `prose-override: mechanical rename` is not `prose-override: \
+                 mechanical `<old>` -> `<new>` (<count> paragraphs), reason: <why>`",
             ),
         ];
         for (error, expected) in cases {

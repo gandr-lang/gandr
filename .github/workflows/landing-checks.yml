@@ -2777,15 +2777,28 @@ jobs:
   # task pins Python, uv and spaCy with its model; their installs are cached
   # by those pins and saved on main, where every ref can read them. The
   # sentence parse is the spaCy venv's Python, so the lane builds only the
-  # `prose` binary.
+  # `prose` binary. The markdown documents answer for the paragraphs the
+  # change wrote since `PROSE_BASE` (#7621), so the checkout holds the
+  # history, as the format gate's does. The bodies of the pull requests the
+  # change lands give their named overrides, and the architect's comments
+  # sign them. The parse cache is saved on main beside the tools.
   prose-gate:
     name: check the prose against its ledger
     needs: *rust-needs
     if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && needs.prepare.outputs.landed != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
-    permissions: *image-read-permissions
+    permissions:
+      contents: read
+      packages: read
+      # The bodies of the pull requests the change lands, and the comments
+      # that sign an override.
+      pull-requests: read
+      issues: read
     container: *ci-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 15
+    env:
+      CI_FETCH_DEPTH: "0"
+      PROSE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -2796,6 +2809,7 @@ jobs:
         shell: bash
         run: |
           printf 'installs=%s/installs\n' "${MISE_DATA_DIR:-$HOME/.local/share/mise}" >> "$GITHUB_OUTPUT"
+          printf 'parses=%s/gandr/prose\n' "${XDG_CACHE_HOME:-$HOME/.cache}" >> "$GITHUB_OUTPUT"
           printf 'pins=%s\n' "$(sed -n '/^\["check:prose"\]/,/^usage/p' .config/mise/tasks/mise-tasks-check.toml | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - name: restore the prose tools
         id: prose-tools-restore
@@ -2806,7 +2820,32 @@ jobs:
             ${{ steps.prose-tools.outputs.installs }}/github-astral-sh-uv
             ${{ steps.prose-tools.outputs.installs }}/pipx-spacy
           key: prose-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}
+      - name: restore the parse cache
+        uses: *cache-restore
+        with:
+          path: ${{ steps.prose-tools.outputs.parses }}
+          key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
+          restore-keys: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-
+      # The signers of an override are those of a deletion (#6962): the
+      # repository variable holds them, and the owner alone sets it.
+      - name: write the signers of an override
+        if: ${{ vars.GANDR_DELETE_SIGNERS != '' }}
+        shell: bash
+        env:
+          GANDR_DELETE_SIGNERS: ${{ vars.GANDR_DELETE_SIGNERS }}
+        run: install -D -m 644 /dev/stdin "${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt" <<< "$GANDR_DELETE_SIGNERS"
+      - name: read the bodies of the pull requests the change lands
+        if: ${{ env.PROSE_BASE != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: printf 'PROSE_OVERRIDE=%s\n' "$(.config/prose/bodies.bash "$PROSE_BASE" "$RUNNER_TEMP/prose-bodies" ${PR_NUMBER:+"$PR_NUMBER"})" >> "$GITHUB_ENV"
       - name: check the prose against its ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: mise run check:prose
       - name: save the prose tools
         if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prose-tools-restore.outputs.cache-hit != 'true' }}
@@ -2814,6 +2853,12 @@ jobs:
         with:
           path: *prose-tools
           key: ${{ steps.prose-tools-restore.outputs.cache-primary-key }}
+      - name: save the parse cache
+        if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+        uses: *cache-save
+        with:
+          path: ${{ steps.prose-tools.outputs.parses }}
+          key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
 
   # Light lane: pull requests, the merge group, dispatch and a push no merge
   # group built. The changes filter keeps a Rust-only diff off this job. The

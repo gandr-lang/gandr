@@ -3,7 +3,7 @@ name = "gandr-workflow-prose"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The sentence rules over the corpus comments, the diagnostics goldens and the crate READMEs, read from spaCy's parse"
+description = "The sentence rules over the corpus comments, the diagnostics goldens and the paragraphs a change writes in the markdown documents, read from spaCy's parse"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -22,9 +22,10 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
-# blake3 names a finding's sentence in the ledger; clap reads the invocation;
-# serde reads the parse script's JSON and the glossary's TOML; the shape crate
-# supplies the `Maybe` a sentence without a root has.
+# blake3 names a finding's sentence in the ledger and a passage in the parse
+# cache and the base; clap reads the invocation; serde reads the parse
+# script's JSON and the glossary's TOML; the shape crate supplies the `Maybe`
+# a sentence without a root has.
 [dependencies]
 blake3.workspace = true
 clap.workspace = true
