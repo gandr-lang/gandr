@@ -28,6 +28,16 @@
 //! the toolchains whatever is selected. A name that names no installed
 //! toolchain is refused before any verb runs.
 //!
+//! The driver names each hand-off, so no measure compares one build with
+//! itself unseen. Before it replaces itself, it writes one line on standard
+//! error: the source of the selection, the toolchain and the executable that
+//! runs next. The `gandr` that `cargo install` puts in the cargo home's `bin`
+//! is the proxy. Its work is to hand off, as a rustup proxy does, so its
+//! hand-off writes no line. A copy anywhere else writes the line.
+//! `GANDR_TOOLCHAIN_HANDOFF=never` refuses each hand-off, the proxy's too:
+//! the driver then runs itself, whatever the selection names. A measure that
+//! runs two builds sets it. Each other value is refused before any verb runs.
+//!
 //! The nearest package manifest's `[toolchain]` constraint then holds the
 //! selection: [`constraint`] refuses a toolchain named outright that leaves
 //! it unmet, and otherwise picks the default or the highest version meeting it.
@@ -45,6 +55,7 @@ use alloc::collections::BTreeMap;
 use core::fmt;
 use std::ffi::OsString;
 use std::io;
+use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -56,6 +67,13 @@ mod constraint;
 /// The variable that names the selected toolchain, ahead of every other
 /// source.
 pub const SELECTING: &str = "GANDR_TOOLCHAIN";
+
+/// The variable that refuses each hand-off: with [`NEVER`], the driver runs
+/// itself, whatever the selection names.
+pub const HANDING_OFF: &str = "GANDR_TOOLCHAIN_HANDOFF";
+
+/// The one value [`HANDING_OFF`] takes.
+const NEVER: &str = "never";
 
 /// The file a directory pins its toolchain in, its first line the name.
 const PIN: &str = "gandr-toolchain";
@@ -250,6 +268,12 @@ pub enum ToolchainFault
         nearest:
             Maybe<(Name, Vec<gandr_surface_dispatcher::Unmet>), constraint::undescribed::Absent>,
     },
+    /// `GANDR_TOOLCHAIN_HANDOFF` holds a value other than `never`.
+    Misswitched
+    {
+        /// The value, as written.
+        value: OsString,
+    },
 }
 
 impl fmt::Display for ToolchainFault
@@ -324,6 +348,11 @@ impl fmt::Display for ToolchainFault
                 }
                 Ok(())
             },
+            Self::Misswitched { ref value } => write!(
+                f,
+                "`{HANDING_OFF}` holds `{}`: the one value it takes is `{NEVER}`, which refuses each hand-off",
+                value.display()
+            ),
         }
     }
 }
@@ -465,20 +494,29 @@ fn select(
 /// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745`
 fn executable(
     toolchains: &Path,
-    selected: Selected,
+    selected: &Selected,
 ) -> Result<PathBuf, ToolchainFault>
 {
-    let Selected { name, source } = selected;
+    let Selected {
+        ref name,
+        ref source,
+    } = *selected;
     let Maybe::Present(directory) = first_line(&toolchains.join(&name.0))?
     else {
-        return Err(ToolchainFault::Unknown { name, source });
+        return Err(ToolchainFault::Unknown {
+            name: name.clone(),
+            source: source.clone(),
+        });
     };
     let path = Path::new(&directory).join(EXECUTABLE);
     if path.is_file() {
         Ok(path)
     }
     else {
-        Err(ToolchainFault::Unexecutable { name, path })
+        Err(ToolchainFault::Unexecutable {
+            name: name.clone(),
+            path,
+        })
     }
 }
 
@@ -500,17 +538,22 @@ pub enum Proxied
 ///
 /// # Specification
 /// - requires: called before the driver reads its arguments.
-/// - ensures: [`Proxied::Itself`] when nothing names a toolchain, when the
-///   arguments open with `toolchain`, when `CARGO_MANIFEST_DIR` is the
-///   directory this build was built from, when the running executable sits in a
-///   cargo profile directory no toolchain links, or when the selected
-///   toolchain's `gandr` is the running executable. The selection is
-///   [`select`]'s, held to the nearest manifest's constraint as
-///   [`constraint::constrained`] holds it. Otherwise, on Unix, the process is
-///   replaced by that executable with the same arguments and environment;
-///   elsewhere it runs as a child and its status is returned.
-/// - fails: [`ToolchainFault`] when the selection cannot be read, names no
-///   installed toolchain, leaves the constraint unmet, or the exec fails.
+/// - ensures: [`Proxied::Itself`] when `GANDR_TOOLCHAIN_HANDOFF` is `never`,
+///   when nothing names a toolchain, when the arguments open with `toolchain`,
+///   when `CARGO_MANIFEST_DIR` is the directory this build was built from, when
+///   the running executable sits in a cargo profile directory no toolchain
+///   links, or when the selected toolchain's `gandr` is the running executable.
+///   The selection is [`select`]'s, held to the nearest manifest's constraint
+///   as [`constraint::constrained`] holds it. Otherwise the driver writes one
+///   line on standard error that names the selection's source, the toolchain
+///   and its executable, unless the running executable sits in the cargo home's
+///   `bin`. Then, on Unix, the process is replaced by that executable with the
+///   same arguments and environment; elsewhere it runs as a child and its
+///   status is returned.
+/// - fails: [`ToolchainFault::Misswitched`] when `GANDR_TOOLCHAIN_HANDOFF`
+///   holds another value, and [`ToolchainFault`] when the selection cannot be
+///   read, names no installed toolchain, leaves the constraint unmet, or the
+///   exec fails.
 /// - panics: none.
 /// - executable: none — the outcome is another process's.
 ///
@@ -519,16 +562,22 @@ pub enum Proxied
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a linked toolchain runs in the driver's place, the
-///   selection's sources rank in order, an unknown name is refused, and a cargo
-///   run of the driver's own package, or a run from its profile directory, runs
-///   that build.
+///   selection's sources rank in order, an unknown name is refused, a cargo run
+///   of the driver's own package, or a run from its profile directory, runs
+///   that build, a copy names its hand-off, the cargo home's proxy hands off
+///   with no line, and the switch refuses both.
 /// - witness: `tests::cli::a_linked_toolchain_is_the_one_the_proxy_runs`
 /// - witness: `tests::cli::the_environment_outranks_the_pin_and_the_pin_the_default`
 /// - witness: `tests::cli::a_name_no_toolchain_answers_is_refused_by_its_source_4745`
 /// - witness: `tests::cli::a_cargo_run_of_the_driver_runs_its_own_build_4511`
 /// - witness: `tests::cli::a_build_run_from_its_profile_directory_runs_itself_4510`
+/// - witness: `tests::cli::a_copied_driver_names_its_hand_off_and_the_switch_refuses_it_7440`
+/// - witness: `tests::cli::the_cargo_home_s_proxy_hands_off_with_no_line_7440`
 pub fn proxy() -> Result<Proxied, ToolchainFault>
 {
+    if Handoff::now()? == Handoff::Refused {
+        return Ok(Proxied::Itself);
+    }
     let mut arguments = std::env::args_os();
     let _program = arguments.next();
     let arguments: Vec<OsString> = arguments.collect();
@@ -565,13 +614,24 @@ pub fn proxy() -> Result<Proxied, ToolchainFault>
         Maybe::Present(selected) => selected,
         Maybe::Absent(unselected::Absent::Unnamed) => return Ok(Proxied::Itself),
     };
-    let path = executable(&toolchains, selected)?;
+    let path = executable(&toolchains, &selected)?;
     let running = std::env::current_exe().and_then(std::fs::canonicalize);
     let target = std::fs::canonicalize(&path);
-    if let (Ok(running), Ok(target)) = (running, target)
+    if let (&Ok(ref running), &Ok(ref target)) = (&running, &target)
         && running == target
     {
         return Ok(Proxied::Itself);
+    }
+    if Running::of(running.as_deref().ok()) == Running::Other {
+        let line = format!(
+            "gandr: {} names the toolchain `{}`, so the driver hands off to {}\n",
+            selected.source,
+            selected.name,
+            path.display()
+        );
+        // One write keeps the line whole in a log that several processes
+        // share. A write that fails leaves the hand-off as it is (#7440).
+        let _written = io::stderr().write_all(line.as_bytes());
     }
     let mut command = std::process::Command::new(&path);
     let _prepared = command.args(arguments);
@@ -768,7 +828,7 @@ pub fn moved(running: Image) -> Maybe<PathBuf, unmoved::Absent>
         },
         Err(_unreadable) => return Maybe::Absent(unmoved::Absent::Unreadable),
     };
-    let Ok(path) = executable(&toolchains, selected)
+    let Ok(path) = executable(&toolchains, &selected)
     else {
         return Maybe::Absent(unmoved::Absent::Unreadable);
     };
@@ -904,6 +964,90 @@ impl InPlace
     }
 }
 
+/// Whether the caller lets the driver hand off: `GANDR_TOOLCHAIN_HANDOFF`
+/// unset lets it, and `never` refuses it, so a measure that names a build
+/// runs that build.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Handoff
+{
+    /// The driver hands off to the selected toolchain, as the selection says.
+    Allowed,
+    /// The driver runs itself, whatever the selection names.
+    Refused,
+}
+
+impl Handoff
+{
+    /// The reading of `GANDR_TOOLCHAIN_HANDOFF`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Allowed` when the variable is unset, and `Refused` when it
+    ///   is `never`.
+    /// - fails: [`ToolchainFault::Misswitched`] when it holds another value.
+    /// - panics: none.
+    /// - executable: none — the answer is the environment's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `never` runs the copy and the proxy themselves, and
+    ///   another value is refused before any verb runs.
+    /// - witness: `tests::cli::a_copied_driver_names_its_hand_off_and_the_switch_refuses_it_7440`
+    /// - witness: `tests::cli::the_cargo_home_s_proxy_hands_off_with_no_line_7440`
+    fn now() -> Result<Self, ToolchainFault>
+    {
+        match std::env::var_os(HANDING_OFF) {
+            None => Ok(Self::Allowed),
+            Some(value) if value == NEVER => Ok(Self::Refused),
+            Some(value) => Err(ToolchainFault::Misswitched { value }),
+        }
+    }
+}
+
+/// Whether the running executable is the proxy: the `gandr` that
+/// `cargo install` puts in the cargo home's `bin`, whose work is to hand off,
+/// so its hand-off writes no line. A copy anywhere else names its hand-off.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Running
+{
+    /// The executable sits in the cargo home's `bin`.
+    Proxy,
+    /// The executable sits anywhere else, or its path cannot be read.
+    Other,
+}
+
+impl Running
+{
+    /// The reading of `running`, the canonical path of the running executable.
+    ///
+    /// # Specification
+    /// - requires: `running` is canonical when present.
+    /// - ensures: `Proxy` exactly when the directory of `running` is the
+    ///   canonical `bin` of the cargo home; `Other` when `running` is absent or
+    ///   that `bin` cannot be read.
+    /// - panics: none.
+    /// - executable: none — the answer is the environment's and the file
+    ///   system's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a driver in a scratch cargo home's `bin` hands off
+    ///   with no line, and a copy in another directory names its hand-off.
+    /// - witness: `tests::cli::a_copied_driver_names_its_hand_off_and_the_switch_refuses_it_7440`
+    /// - witness: `tests::cli::the_cargo_home_s_proxy_hands_off_with_no_line_7440`
+    fn of(running: Option<&Path>) -> Self
+    {
+        let binaries =
+            crate::config::cargo_binaries().and_then(|bin| std::fs::canonicalize(bin).ok());
+        let proxy = running
+            .and_then(Path::parent)
+            .zip(binaries)
+            .is_some_and(|(directory, binaries)| directory == binaries);
+        if proxy { Self::Proxy } else { Self::Other }
+    }
+}
+
 /// Link the build in `path` as the toolchain `name`, replacing any link of
 /// that name, and make it the default when none is set.
 ///
@@ -982,7 +1126,7 @@ pub fn make_default(name: &Name) -> Result<(), ToolchainFault>
         name: name.clone(),
         source: Source::Default(default.clone()),
     };
-    let _path = executable(&toolchains, selected)?;
+    let _path = executable(&toolchains, &selected)?;
     std::fs::write(&default, format!("{name}\n")).map_err(|error| ToolchainFault::Io {
         path: default,
         error,

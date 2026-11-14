@@ -518,6 +518,35 @@ pub fn toolchains() -> Option<(PathBuf, PathBuf)>
     Some((data.join("toolchains"), data.join("toolchain")))
 }
 
+/// The directory `cargo install` puts executables in, `bin` under the cargo
+/// home by [`directory`]'s rule.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<cargo>/bin`, where `<cargo>` is `$CARGO_HOME` when absolute,
+///   else `$HOME/.cargo`; absent when neither names a directory.
+/// - provides: where the proxy runs from, whose hand-off writes no line.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment, which the
+///   clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a driver run from a scratch cargo home's `bin` hands off
+///   with no line.
+/// - witness: `tests::cli::the_cargo_home_s_proxy_hands_off_with_no_line_7440`
+pub fn cargo_binaries() -> Option<PathBuf>
+{
+    Some(
+        directory(
+            std::env::var_os("CARGO_HOME").map(PathBuf::from),
+            std::env::var_os("HOME").map(PathBuf::from),
+            Path::new(".cargo"),
+        )?
+        .join("bin"),
+    )
+}
+
 /// The directory the kernel's receipts and strata are kept under,
 /// `gandr/verdicts` under the cache directory [`checkpoints`] sits in.
 ///

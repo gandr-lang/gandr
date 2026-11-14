@@ -178,8 +178,8 @@ fn described(
     selected: Selected,
 ) -> Result<Described, ToolchainFault>
 {
-    let name = selected.name.clone();
-    let path = executable(toolchains, selected)?;
+    let path = executable(toolchains, &selected)?;
+    let Selected { name, .. } = selected;
     let undescribed = || ToolchainFault::Undescribed {
         name: name.clone(),
         path: path.clone(),
