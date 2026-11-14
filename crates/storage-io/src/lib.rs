@@ -26,7 +26,7 @@
 /// The crate's items stand on Linux on x86-64, aarch64 and riscv64 alone,
 /// where the crate issues each system call by the architecture's own
 /// instruction. A target outside that set, as macOS, holds this module
-/// alone. The entries of powerpc64 and s390x are #7591.
+/// alone. powerpc64 and s390x have no entries yet, so they hold it too.
 #[cfg(not(all(
     target_os = "linux",
     any(
