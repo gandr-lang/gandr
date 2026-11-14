@@ -1003,10 +1003,10 @@ INSERT INTO purpose VALUES('core-term','effect::host::partiality','function','Th
 INSERT INTO purpose VALUES('core-term','failure::FailureClass','enum','Whose fact a refusal records: a user absence, an unimplemented feature, a malformed source, or an engine fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','failure::TrackingIssue','struct','The issue on gandr''s tracker whose landing builds what a refusal or an editor answer is missing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::Derived','struct','A derived declaration: an equality, or a law law proves of one, with its declared type, its body and its data cases.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','generic::Signatures','type_alias','The data signatures a derivation reads, by admission position.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','generic::Signatures','trait','The data signatures a derivation reads, by admission position, as a closure each derivation takes as a generic.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::Uncovered','enum','Why no equality derives for a declaration, naming the declaration it stopped at and a field''s alternative the constructor and field.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::equality','function','Derives the equality of the closed, free data declaration at a position, the body of a definition written Eq.generic(T).',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('core-term','generic::law::Hosted','type_alias','The law the host asserts of its equality at an integer or a string field, as a value of the law''s type.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','generic::law::Hosted','trait','The law the host asserts of its equality at an integer or a string field, as a closure each law''s derivation takes as a generic.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::law::Statement','enum','A law a derived equality proves: reflexivity or symmetry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','generic::law::law','function','Derives a statement of the equality of the closed, free data declaration at a position, the body of Eq.generic.refl(T) or Eq.generic.sym(T).',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::Arity','struct','How many values an operation sends and is replied: its payload and its reply.',NULL,'fits','sound',NULL);
@@ -2676,6 +2676,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','generation::Delivered','struct'
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Generations','struct','Jobs on the driver''s pool, each keyed by what its result is valid under, with one current generation per slot.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Retired','struct','A job''s generation was retired by a newer submission for its slot.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Submitted','enum','What a submission did.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','generation::Unwoken','struct','The wake of an owner that does not sleep until a job ends, which does nothing.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','generation::Wake','trait','What a job''s end wakes once it is sent: the owner''s loop, which sleeps until something arrives.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','generation::Watch','struct','What a running job polls at its step boundaries.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Manifold','struct','The binding of a program''s worlds onto sites, as its file''s `Manifold` model and `placements` state it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','manifold::Secreted','enum','Where a secret was read, for a refusal naming it without its value.',NULL,'fits','sound',NULL);
@@ -3783,6 +3785,7 @@ INSERT INTO purpose VALUES('surface-lsp-base','edit::apply','function','Applies 
 INSERT INTO purpose VALUES('surface-lsp-base','edit::edit_text','function','Applies a change to a text as `apply` does, the caret it leaves unread.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','elsewhere::Declared','struct','One name a text declares: its name, the name folded to lower case, what it declares, the declaration holding it and the range of its name in the text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','elsewhere::Elsewhere','struct','The sources of the opened folders'' projects a document does not import, and how an import of one is written into it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lsp-base','elsewhere::ImportEdit','trait','The edit importing the source at a path into a document, as a closure the completion and the code actions take as a generic.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','elsewhere::Unimported','struct','A source the document''s import closure does not reach, under a folder an editor opened: its path and the names its file declares.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','elsewhere::unimported_as','function','How a slot of `category` offers `declared`, a name of a source the document does not import, among `names`, every name that source declares: as the protocol''s kind for it, or not at all.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp-base','fragment::coloured','function','The highlighter''s spans over `fragment`, relative to it, when it lexes and parses clean.',NULL,'fits','sound',NULL);
