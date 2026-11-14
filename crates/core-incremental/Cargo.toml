@@ -32,15 +32,18 @@ path = "tests/lib.rs"
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. The kernel's admission policy is what a program
 # hands each pass's tier. The checkpoint store publishes its records through
-# the one writer.
+# the one writer. A checkpoint keeps a reflexivity's dialogues, so it reads
+# the conversion trace's decisions and the normaliser's trace nodes.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 foldhash.workspace = true
 gandr-core-checker.workspace = true
+gandr-core-nbe.workspace = true
 gandr-core-publish.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true

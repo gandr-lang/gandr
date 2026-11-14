@@ -109,6 +109,7 @@ pub use crate::code::Derivation;
 pub use crate::code::EndpointRelation;
 pub use crate::code::Evaluation;
 pub use crate::code::Lift;
+pub use crate::code::MetPair;
 pub use crate::code::Reading;
 pub use crate::code::Reflexivity;
 pub use crate::code::Stalled;

@@ -152,9 +152,11 @@ digraph crates {
   "core-checker-bridge" -> "kernel-term";
   "core-checker-bridge" -> "theory-deep-inference";
   "core-incremental" -> "core-checker";
+  "core-incremental" -> "core-nbe";
   "core-incremental" -> "core-publish";
   "core-incremental" -> "core-term";
   "core-incremental" -> "kernel-check-memo";
+  "core-incremental" -> "kernel-conversion-trace";
   "core-incremental" -> "kernel-core";
   "core-incremental" -> "kernel-strata";
   "core-incremental" -> "kernel-term";

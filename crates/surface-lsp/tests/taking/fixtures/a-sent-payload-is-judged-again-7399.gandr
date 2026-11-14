@@ -1,0 +1,6 @@
+/// A send and a receive over a session endpoint. The judgement records the
+/// payload type of each, a table that a checkpoint does not keep yet.
+def deliver() -> -F Unit =
+  let desk = fork (seat : ?Integer. end) { let n = recv seat; close seat };
+  send desk 1
+  close desk

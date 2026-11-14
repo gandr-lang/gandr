@@ -115,6 +115,60 @@ pub struct DomainValueId(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DomainCompId(u32);
 
+impl From<DomainValueId> for u32
+{
+    /// The index an id carries: a checkpoint keeps a trace's ids as opaque
+    /// numbers, since the bridge reads none of them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: DomainValueId) -> Self
+    {
+        id.0
+    }
+}
+
+impl From<u32> for DomainValueId
+{
+    /// The id at `index`, as a checkpoint reads a trace's id back; it names
+    /// no node of a live arena.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: u32) -> Self
+    {
+        Self(index)
+    }
+}
+
+impl From<DomainCompId> for u32
+{
+    /// As [`DomainValueId`]'s.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(id: DomainCompId) -> Self
+    {
+        id.0
+    }
+}
+
+impl From<u32> for DomainCompId
+{
+    /// As [`DomainValueId`]'s.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(index: u32) -> Self
+    {
+        Self(index)
+    }
+}
+
 /// The id of a [`Neutral`] in a [`DomainArena`].
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

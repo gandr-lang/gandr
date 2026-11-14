@@ -333,6 +333,8 @@ enum Tabling
     Row(crate::program::Gained),
     /// The types of the handler at this node.
     Handled(ComputationId),
+    /// The reflexivity at this node.
+    Reflexivity(ValueId),
 }
 
 /// How many rows records the gained log held: where [`CheckingContext`]
@@ -4554,8 +4556,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// How many entries the tables hold that no checkpoint keeps yet: the
     /// lifts, the function extensionalities, the coercions, the
     /// equivalences, the session statements, the directed flows, the motives,
-    /// the payloads, the reflexivities and the native paths by node, and the
-    /// relations and the restatements by position.
+    /// the payloads and the native paths by node, and the relations and the
+    /// restatements by position.
     ///
     /// # Specification
     /// trivial.
@@ -4571,7 +4573,6 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 self.directed.len(),
                 self.motives.len(),
                 self.payloads.len(),
-                self.reflexivities.len(),
                 self.natives.len(),
                 self.relations.len(),
                 self.restatements.len(),
@@ -4628,14 +4629,24 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             .iter()
             .filter_map(|&record| match record {
                 Tabling::Row(gained) => Some(gained),
-                Tabling::Handled(_) => None,
+                Tabling::Handled(_) | Tabling::Reflexivity(_) => None,
             })
             .collect();
         let handled = log
             .iter()
             .filter_map(|&record| match record {
                 Tabling::Handled(at) => self.handled.get(&at).map(|types| (at, types.clone())),
-                Tabling::Row(_) => None,
+                Tabling::Row(_) | Tabling::Reflexivity(_) => None,
+            })
+            .collect();
+        let reflexivities = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Reflexivity(at) => self
+                    .reflexivities
+                    .get(&at)
+                    .map(|reflexivity| (at, reflexivity.clone())),
+                Tabling::Row(_) | Tabling::Handled(_) => None,
             })
             .collect();
         let others = if self.table_census().0 > before.0 {
@@ -4644,17 +4655,21 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         else {
             crate::support::OtherTables::Untouched
         };
-        crate::support::Tabled::new(self.rows.of_gained(&gained), handled, others)
+        crate::support::Tabled::new(
+            (self.rows.of_gained(&gained), handled, reflexivities),
+            others,
+        )
     }
 
-    /// Enter the rows records and the handlers of an adopted declaration, as
-    /// its judgement added them.
+    /// Enter the rows records, the handlers and the reflexivities of an
+    /// adopted declaration, as its judgement added them.
     ///
     /// # Specification
     /// - requires: each node and type is minted in this context's arena, at the
     ///   place that the declaration's judgement read it.
     /// - ensures: each record and each handler reads here, the first one where
-    ///   a key already reads.
+    ///   a key already reads; each reflexivity reads here, as
+    ///   [`Self::record_reflexivity`] records it.
     /// - panics: none.
     /// - executable: none — the witness compares a taken item's report with a
     ///   fresh judgement's.
@@ -4663,17 +4678,22 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - hypothesis: L3 — a taken item that enters its entries here gives the
     ///   kernel checkpoint of a fresh judgement.
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     #[inline]
-    pub fn adopt_tabled<Entries>(
+    pub fn adopt_tabled<Entries, Reflexivities>(
         &mut self,
         rows: &crate::program::Rows,
-        handled: Entries,
+        (handled, reflexivities): (Entries, Reflexivities),
     ) where
         Entries: IntoIterator<Item = (ComputationId, crate::handler::Handled)>,
+        Reflexivities: IntoIterator<Item = (ValueId, crate::code::Reflexivity)>,
     {
         self.rows.absorb(rows);
         for (at, types) in handled {
             let _first = self.handled.entry(at).or_insert(types);
+        }
+        for (at, reflexivity) in reflexivities {
+            let _replaced = self.reflexivities.insert(at, reflexivity);
         }
     }
 
@@ -4773,7 +4793,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         reflexivity: crate::code::Reflexivity,
     )
     {
-        self.reflexivities.insert(at, reflexivity);
+        let _replaced = self.reflexivities.insert(at, reflexivity);
+        if let Some(ref mut log) = self.tabling {
+            log.push(Tabling::Reflexivity(at));
+        }
     }
 
     /// Record how the judgement decided the computation `at` stands for where

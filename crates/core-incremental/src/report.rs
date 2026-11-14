@@ -36,16 +36,22 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_checker::Handled;
+use gandr_core_checker::MetPair;
 use gandr_core_checker::NestedElaboration;
 use gandr_core_checker::Nesting;
 use gandr_core_checker::OtherTables;
+use gandr_core_checker::Reflexivity;
 use gandr_core_checker::Tabled;
 use gandr_core_checker::elaboration::Equation;
 use gandr_core_checker::elaboration::Suspension;
 use gandr_core_checker::program::RowRecord;
 use gandr_core_checker::program::Rows;
 use gandr_core_checker::untabled;
+use gandr_core_nbe::DomainCompId;
+use gandr_core_nbe::DomainValueId;
+use gandr_core_nbe::TraceNode;
 use gandr_core_term::Carried;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -53,8 +59,11 @@ use gandr_core_term::CrossedOperand;
 use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::Purity;
+use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_core::EndpointSide;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::Discovery;
@@ -202,8 +211,141 @@ pub struct HandledContent
     pub level: Level,
 }
 
-/// The entries that an item's judgement added to the rows and the handlers,
-/// each node at its place, as a checkpoint keeps them.
+/// A node that a kept dialogue names: a definition by the item that holds
+/// it, or an id of the normaliser's run, which the bridge reads as no node.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TraceContent
+{
+    /// A definition, by the item that holds it.
+    Constant(Reference),
+    /// A domain value of the run.
+    Value(DomainValueId),
+    /// A weak-head domain computation of the run.
+    Computation(DomainCompId),
+}
+
+/// The pair that the tier met at one endpoint of a kept reflexivity, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct MetContent
+{
+    /// The reflexivity's point.
+    pub point: Place,
+    /// The endpoint the tier met the point at.
+    pub endpoint: Place,
+    /// The intuitionistic binders whose calls return, by index.
+    pub returning: Vec<DeBruijnIndex>,
+}
+
+/// The dialogues that a checkpoint keeps of one reflexivity, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ReflexivityContent
+{
+    /// The derivation from the point to the left endpoint, in order.
+    pub left: Vec<ConversionDecision<TraceContent>>,
+    /// The derivation from the point to the right endpoint, in order.
+    pub right: Vec<ConversionDecision<TraceContent>>,
+    /// The pair the tier met at the left endpoint, then at the right.
+    pub met: [Option<MetContent>; 2],
+}
+
+/// A kept dialogue, each constant at the item that holds it.
+///
+/// # Specification
+/// - ensures: `None` when a constant stands at a position that no item takes;
+///   otherwise each decision with its ids at their content, one for each
+///   decision of `dialogue`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reopened take seats the content at shifted constants,
+///   and the kernel re-derives the law only from the dialogue it gives.
+/// - witness: `gandr-surface-lsp::tests::taking::a_reopened_take_replays_a_kept_dialogue_7399`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|content| content.len() == dialogue.len()))]
+fn dialogue_content(
+    layout: &Layout,
+    dialogue: &[ConversionDecision<TraceNode>],
+) -> Option<Vec<ConversionDecision<TraceContent>>>
+{
+    let mut placed = true;
+    let content = dialogue
+        .iter()
+        .map(|&decision| {
+            decision.map(|node| match node {
+                TraceNode::Constant(constant) => {
+                    let reference = layout.resolve(constant);
+                    placed &= reference != Reference::Unoccupied;
+                    TraceContent::Constant(reference)
+                },
+                TraceNode::Value(value) => TraceContent::Value(value),
+                TraceNode::Computation(computation) => TraceContent::Computation(computation),
+            })
+        })
+        .collect();
+    placed.then_some(content)
+}
+
+/// A kept dialogue seated, each constant at the position of its item in
+/// `layout`.
+///
+/// # Specification
+/// - ensures: on success, the decisions whose content is `dialogue`, one for
+///   each.
+/// - fails: as [`place`] fails for a constant's item.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`dialogue_content`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_reopened_take_replays_a_kept_dialogue_7399`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |seated| seated.len() == dialogue.len()))]
+fn seated_dialogue(
+    layout: &Layout,
+    dialogue: &[ConversionDecision<TraceContent>],
+) -> Result<Vec<ConversionDecision<TraceNode>>, seating::Absent>
+{
+    let mut fault = None;
+    let seated = dialogue
+        .iter()
+        .map(|decision| {
+            decision.clone().map(|node| match node {
+                TraceContent::Constant(ref reference) => match place(layout, reference) {
+                    Maybe::Present(constant) => TraceNode::Constant(constant),
+                    Maybe::Absent(reason) => {
+                        let _first = fault.get_or_insert(reason);
+                        TraceNode::Constant(constant_placeholder())
+                    },
+                },
+                TraceContent::Value(value) => TraceNode::Value(value),
+                TraceContent::Computation(computation) => TraceNode::Computation(computation),
+            })
+        })
+        .collect();
+    fault.map_or(Ok(seated), Err)
+}
+
+/// The constant a seat writes where a constant's item does not place; the
+/// seat then fails, so the constant reaches no reflexivity.
+///
+/// # Specification
+/// trivial.
+fn constant_placeholder() -> ConstantIndex
+{
+    ConstantIndex::from(0_usize)
+}
+
+/// The entries that an item's judgement added to the rows, the handlers and
+/// the reflexivities, each node at its place, as a checkpoint keeps them.
 ///
 /// A key is a node of the item, at its place in the item's walk, or a node
 /// of the judged body. A type inside an entry stands at any of the three
@@ -217,6 +359,7 @@ pub struct HandledContent
 /// - hypothesis: L3 — a taken item whose entries seat from this content gives
 ///   the kernel checkpoint of a fresh judgement.
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -224,12 +367,22 @@ pub struct TableContent
     rows: Vec<RowContent>,
     /// The types of each handler, in the order of its node's place.
     handled: Vec<(Place, HandledContent)>,
+    /// The dialogues of each reflexivity, in the order of its node's place.
+    reflexivities: Vec<(Place, ReflexivityContent)>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
     /// The place in `outside` of each such node, by its index.
     roots: Vec<TablePlace>,
 }
+
+/// The rows records, the handlers and the reflexivities of a
+/// [`TableContent`], each in the order of its key.
+pub type TableEntries = (
+    Vec<RowContent>,
+    Vec<(Place, HandledContent)>,
+    Vec<(Place, ReflexivityContent)>,
+);
 
 impl TableContent
 {
@@ -238,13 +391,14 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled): (Vec<RowContent>, Vec<(Place, HandledContent)>),
+        (rows, handled, reflexivities): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
         Self {
             rows,
             handled,
+            reflexivities,
             outside,
             roots,
         }
@@ -268,6 +422,15 @@ impl TableContent
         &self.handled
     }
 
+    /// The dialogues of each reflexivity, in the order of its node's place.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn reflexivities(&self) -> &[(Place, ReflexivityContent)]
+    {
+        &self.reflexivities
+    }
+
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds, beside the place of each such node in it.
     ///
@@ -289,8 +452,9 @@ impl TableContent
     ///   entries; [`tabled::Absent::Unkept`] when it added an entry to another
     ///   table; [`tabled::Absent::Untabled`] when it added none;
     ///   [`tabled::Absent::Unplaced`] when a key stands outside the item and
-    ///   the body; otherwise each entry, every node at the first place that
-    ///   holds it, in the order of the places.
+    ///   the body, or a dialogue names a constant that no item holds; otherwise
+    ///   each entry, every node at the first place that holds it, in the order
+    ///   of the places.
     /// - panics: none.
     /// - executable: none — a predicate would place every node again, which the
     ///   witness does through a seat.
@@ -298,6 +462,7 @@ impl TableContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -311,7 +476,10 @@ impl TableContent
         if tabled.others() == OtherTables::Written {
             return Maybe::Absent(tabled::Absent::Unkept);
         }
-        if tabled.rows().records().next().is_none() && tabled.handled().is_empty() {
+        if tabled.rows().records().next().is_none()
+            && tabled.handled().is_empty()
+            && tabled.reflexivities().is_empty()
+        {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
         let mut placing = Placing {
@@ -355,11 +523,34 @@ impl TableContent
                 level: types.level.clone(),
             }));
         }
+        let mut reflexivities = Vec::with_capacity(tabled.reflexivities().len());
+        for (&at, reflexivity) in tabled.reflexivities() {
+            let Some(at) = placing.key(ArenaNode::Value(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            let (Some(left), Some(right)) = (
+                dialogue_content(layout, reflexivity.left()),
+                dialogue_content(layout, reflexivity.right()),
+            )
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            let met = [EndpointSide::Left, EndpointSide::Right].map(|side| {
+                reflexivity.met(side).map(|pair| MetContent {
+                    point: placing.place(ArenaNode::Value(pair.point())),
+                    endpoint: placing.place(ArenaNode::Value(pair.endpoint())),
+                    returning: pair.returning().to_vec(),
+                })
+            });
+            reflexivities.push((at, ReflexivityContent { left, right, met }));
+        }
         let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
             rows,
             handled,
+            reflexivities,
             outside,
             roots,
         };
@@ -378,6 +569,10 @@ impl TableContent
         content.rows.dedup();
         content.handled.sort_by(|left, right| left.0.cmp(&right.0));
         content.handled.dedup();
+        content
+            .reflexivities
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        content.reflexivities.dedup();
         Maybe::Present(content)
     }
 
@@ -405,6 +600,13 @@ impl TableContent
             visit(&mut types.subject);
             visit(&mut types.answer);
         }
+        for &mut (ref mut at, ref mut reflexivity) in &mut self.reflexivities {
+            visit(at);
+            for pair in reflexivity.met.iter_mut().flatten() {
+                visit(&mut pair.point);
+                visit(&mut pair.endpoint);
+            }
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -414,12 +616,14 @@ impl TableContent
     /// # Specification
     /// - requires: `walk` is the item's walk in `arena`, and the item is
     ///   entered as written, so no key is a node of a judged body.
-    /// - ensures: on success, the rows records and the handlers whose
-    ///   projection through the same places is this content.
+    /// - ensures: on success, the rows records, the handlers and the
+    ///   reflexivities whose projection through the same places is this
+    ///   content.
     /// - fails: [`seating::Absent::Unwalked`] for a place past the walk;
     ///   [`seating::Absent::Unplaceable`] for a judged place or a table place
     ///   that no mint reached; [`seating::Absent::IllSorted`] for a node of the
-    ///   wrong sort; and otherwise as the mint of the outside table fails.
+    ///   wrong sort; as [`place`] fails for a dialogue's constant; and
+    ///   otherwise as the mint of the outside table fails.
     /// - panics: none.
     /// - executable: none — the witness compares a taken item's report with a
     ///   fresh judgement's.
@@ -427,6 +631,7 @@ impl TableContent
     /// # Adequacy
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -467,13 +672,39 @@ impl TableContent
                 level: types.level.clone(),
             }));
         }
-        Ok((Rows::from_records(records), handled))
+        let mut reflexivities = Vec::with_capacity(self.reflexivities.len());
+        for &(ref at, ref content) in &self.reflexivities {
+            let [ref left_met, ref right_met] = content.met;
+            let mut met = [None, None];
+            for (slot, pair) in met.iter_mut().zip([left_met, right_met]) {
+                if let Some(pair) = pair.as_ref() {
+                    *slot = Some(MetPair::new(
+                        value_of(seat.node(&pair.point)?)?,
+                        value_of(seat.node(&pair.endpoint)?)?,
+                        pair.returning.clone(),
+                    ));
+                }
+            }
+            reflexivities.push((
+                value_of(seat.node(at)?)?,
+                Reflexivity::new(
+                    seated_dialogue(layout, &content.left)?,
+                    seated_dialogue(layout, &content.right)?,
+                )
+                .meeting(met),
+            ));
+        }
+        Ok((Rows::from_records(records), handled, reflexivities))
     }
 }
 
-/// The rows records and the handlers that a seat of a [`TableContent`]
-/// builds in an edited arena.
-pub type SeatedTables = (Rows, Vec<(ComputationId, Handled)>);
+/// The rows records, the handlers and the reflexivities that a seat of a
+/// [`TableContent`] builds in an edited arena.
+pub type SeatedTables = (
+    Rows,
+    Vec<(ComputationId, Handled)>,
+    Vec<(ValueId, Reflexivity)>,
+);
 
 /// Where a node of a report stands.
 ///

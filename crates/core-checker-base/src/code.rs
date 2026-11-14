@@ -637,7 +637,7 @@ impl MetPair
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         point: ValueId,
         endpoint: ValueId,
         returning: Vec<DeBruijnIndex>,
@@ -659,6 +659,28 @@ impl MetPair
     pub const fn point(&self) -> ValueId
     {
         self.point
+    }
+
+    /// The endpoint the tier met the point at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn endpoint(&self) -> ValueId
+    {
+        self.endpoint
+    }
+
+    /// The intuitionistic binders whose calls return, by index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn returning(&self) -> &[DeBruijnIndex]
+    {
+        &self.returning
     }
 
     /// The machine's dialogue from the point to the endpoint under
@@ -703,7 +725,7 @@ impl Reflexivity
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) const fn new(
+    pub const fn new(
         left: Vec<ConversionDecision<TraceNode>>,
         right: Vec<ConversionDecision<TraceNode>>,
     ) -> Self
@@ -722,7 +744,7 @@ impl Reflexivity
     /// trivial.
     #[inline]
     #[must_use]
-    pub(crate) fn meeting(
+    pub fn meeting(
         self,
         met: [Option<MetPair>; 2],
     ) -> Self
