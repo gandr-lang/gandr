@@ -161,31 +161,17 @@ impl Watch
     ///
     /// # Errors
     /// Returns the host's error for an instance or a watch that the host
-    /// refuses, and [`std::io::ErrorKind::InvalidInput`] for a path that holds
-    /// a NUL.
+    /// refuses, and for a path that holds a NUL.
     fn on(path: &Path) -> std::io::Result<Self>
     {
-        let spelled = CString::new(path.as_os_str().as_bytes())
-            .map_err(|nul| std::io::Error::new(std::io::ErrorKind::InvalidInput, nul))?;
-        let instance = inotify::init(inotify::CreateFlags::CLOEXEC).map_err(refused)?;
+        let instance = inotify::init(inotify::CreateFlags::CLOEXEC)?;
         let fifo = inotify::add_watch(
             &instance,
-            spelled.as_c_str(),
+            path,
             inotify::WatchFlags::ACCESS | inotify::WatchFlags::MODIFY,
-        )
-        .map_err(refused)?;
+        )?;
         Ok(Self { instance, fifo })
     }
-}
-
-/// The host's error for a call that the host refuses with `errno`.
-///
-/// # Specification
-/// trivial.
-#[cfg(target_os = "linux")]
-fn refused(errno: rustix::io::Errno) -> std::io::Error
-{
-    std::io::Error::from_raw_os_error(errno.raw_os_error())
 }
 
 impl Porter
