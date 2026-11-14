@@ -11,9 +11,13 @@
 # A case of kind `epic` runs `issue:file --epic 4481` from one clone, over an
 # epic that holds the case's `subs` sub-issues. A case of kind `race` runs
 # `refactor:file 5` from both clones at once, over a merged pull request #5
-# with a `yes` verdict. The result is the exit statuses, the open and closed
-# issues on the board, and the links or the closes the runs called, compared
-# with the case's `output`.
+# with a `yes` verdict. A case of kind `unit` runs `issue:file` from one
+# clone over the case's `body`, a whole unit, under the case's `title`, a
+# title that `unit:check` refuses after the filing or one that it passes
+# (#7545).
+# The result is the exit statuses, the open and closed issues on the board,
+# and the links, the closes or the sign the runs called, compared with the
+# case's `output`.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck source=../mise/disabled-tools.bash
@@ -94,6 +98,20 @@ while IFS= read -r case; do
       wait "$second" || b=$?
       statuses="$a $b"
       tail="closed: $(awk '/^issue close/ { printf "%s`%s`", (n++ ? ", " : ""), $0 }' "$work/stub/calls")"
+      ;;
+    unit)
+      status=0
+      jq -r .body <<< "$case" > "$work/unit.md"
+      run a a mise run --quiet issue:file "$(jq -r .title <<< "$case")" "$work/unit.md" \
+        kind:feature area:workflow priority:medium effort:easy || status=$?
+      # Where `shape:signed` stands (#7545): on the create, or on an edit
+      # after it, and that edit's place beside the frame's marker.
+      created=$(awk '/^issue create / { print (/ --label shape:signed( |$)/ ? "yes" : "no"); exit }' "$work/stub/calls")
+      after=$(awk '/^issue comment 1 / { printf "%smarker", (n++ ? ", " : "") }
+        /^issue edit 1 --add-label shape:signed$/ { printf "%slabel", (n++ ? ", " : "") }
+        END { if (!n) printf "nothing" }' "$work/stub/calls")
+      tail="signed at the create: $created; after it: $after"
+      statuses=$status
       ;;
   esac
   board=$(jq -r '"\(map(select(.state == "OPEN")) | length) open, \(map(select(.state == "CLOSED")) | length) closed"' "$work/stub/board.json")

@@ -3,10 +3,11 @@
 # for every run of a case, kept in the directory `$STUB_GH`. The epic #4481
 # holds `$STUB_SUBS` sub-issues. Above 99 it refuses a link as GitHub does,
 # after the issue exists. The board of refactor issues is `board.json`, and
-# each create adds its issue to it. `deps_issues`' query (#5709) is answered
-# from the board and the epic. The first two board reads wait for each
-# other, so two runs both read the board before either one creates. Every call
-# is a line of `calls`.
+# each create adds its issue to it with its labels. An edit adds a label, and
+# a comment is a call alone (#7545). `deps_issues`' query (#5709) is answered
+# from the board and the epic, each board issue with its body and labels. The
+# first two board reads wait for each other, so two runs both read the board
+# before either one creates. Every call is a line of `calls`.
 set -euo pipefail
 dir=${STUB_GH:?}
 board=$dir/board.json
@@ -41,7 +42,7 @@ case "$*" in
       | {data: {repository: ([$query | scan("i([0-9]+): issueOrPullRequest") | .[0] | tonumber]
         | map(. as $n | {key: "i\($n)", value: (
             if $n == 4481 then {number: $n, state: "OPEN", title: "epic", labels: {nodes: [{name: "kind:epic"}]}, subIssues: listed($subs)}
-            else first($board[] | select(.number == $n) | {number: $n, state, title, labels: {nodes: []}, subIssues: listed(0)}) // null
+            else first($board[] | select(.number == $n) | {number: $n, state, title, body, labels: {nodes: (.labels // [])}, subIssues: listed(0)}) // null
             end
             | if . == null then null else . + {fullDatabaseId: "\($n)", parent: null, blockedBy: listed(0), blocking: listed(0)} end)})
         | from_entries)}}' "$board"
@@ -61,21 +62,29 @@ case "$*" in
     cat "$board"
     ;;
   "issue create"*)
-    file= title=
+    file='' title='' labels='[]'
     args=("$@")
     for ((i = 0; i < ${#args[@]}; i++)); do
       [[ ${args[i]} != --body-file ]] || file=${args[i + 1]}
       [[ ${args[i]} != --title ]] || title=${args[i + 1]}
+      [[ ${args[i]} != --label ]] || labels=$(jq -c --arg l "${args[i + 1]}" '. + [{name: $l}]' <<< "$labels")
     done
     locked
     number=$(($(jq length "$board") + 1))
-    jq --argjson n "$number" --arg title "$title" --rawfile body "$file" '. + [{number: $n, state: "OPEN", title: $title, body: $body}]' "$board" > "$board.new"
+    jq --argjson n "$number" --arg title "$title" --rawfile body "$file" --argjson labels "$labels" \
+      '. + [{number: $n, state: "OPEN", title: $title, body: $body, labels: $labels}]' "$board" > "$board.new"
     mv "$board.new" "$board"
     echo "https://github.com/case/case/issues/$number"
     ;;
   "issue close"*)
     locked
     jq --argjson n "$3" 'map(if .number == $n then .state = "CLOSED" else . end)' "$board" > "$board.new"
+    mv "$board.new" "$board"
+    ;;
+  "issue comment"*) ;;
+  "issue edit "*" --add-label "*)
+    locked
+    jq --argjson n "$3" --arg l "$5" 'map(if .number == $n then .labels += [{name: $l}] else . end)' "$board" > "$board.new"
     mv "$board.new" "$board"
     ;;
   "api -X POST repos/{owner}/{repo}/issues/4481/sub_issues"*)
