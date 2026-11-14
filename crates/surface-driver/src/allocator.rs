@@ -41,6 +41,12 @@
 //! timings layer reads that count at each phase boundary. The count is one
 //! thread-local add for each allocation, and a build without the feature, as
 //! `gandr check` and every artifact a recipe builds, compiles none of it.
+//!
+//! With the `counts` feature, the allocator also adds one to the process's
+//! count, which `gandr check --counts` prints after the run: the allocations
+//! of every thread, the pool's workers among them. That count is one shared
+//! atomic add for each allocation. So only the small-device bench's count
+//! build takes it, and the hub's `instrument` build compiles none of it.
 
 /// The private malloc zone and the global allocator over it.
 #[cfg(all(feature = "malloc-zone", target_os = "macos"))]
@@ -483,12 +489,43 @@ pub mod counting
     use core::alloc::GlobalAlloc;
     use core::alloc::Layout;
 
+    /// The allocations that every thread of the process made.
+    #[cfg(feature = "counts")]
+    static ALLOCATIONS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+    /// How many allocations every thread of the process made so far: each
+    /// allocation, cleared allocation and resize that [`Counting`] served.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(feature = "counts")]
+    #[inline]
+    #[must_use]
+    pub fn allocations() -> u64
+    {
+        ALLOCATIONS.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Count one allocation on the calling thread, and under `counts` in the
+    /// process too.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn counted()
+    {
+        gandr_surface_dispatcher::allocated();
+        #[cfg(feature = "counts")]
+        let _counted = ALLOCATIONS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+
     /// `A`, with each allocation counted on its thread.
     ///
     /// # Specification
     /// - ensures: serves every request as `A` serves it, and adds one to the
     ///   calling thread's count for each allocation, cleared allocation and
-    ///   resize it serves.
+    ///   resize it serves. Under `counts`, it adds one to the process's count
+    ///   too.
     /// - provides: the allocator the `gandr` binary installs under
     ///   `instrument`.
     #[repr(transparent)]
@@ -546,7 +583,7 @@ pub mod counting
             layout: Layout,
         ) -> *mut u8
         {
-            gandr_surface_dispatcher::allocated();
+            counted();
             // SAFETY: the caller's layout has a nonzero size.
             unsafe { self.0.alloc(layout) }
         }
@@ -576,7 +613,7 @@ pub mod counting
             layout: Layout,
         ) -> *mut u8
         {
-            gandr_surface_dispatcher::allocated();
+            counted();
             // SAFETY: the caller's layout has a nonzero size.
             unsafe { self.0.alloc_zeroed(layout) }
         }
@@ -640,7 +677,7 @@ pub mod counting
             new_size: usize,
         ) -> *mut u8
         {
-            gandr_surface_dispatcher::allocated();
+            counted();
             // SAFETY: the caller upholds the contract on all three arguments.
             unsafe { self.0.realloc(ptr, layout, new_size) }
         }

@@ -1207,6 +1207,83 @@ fn check_prints_each_thread_s_occupancy_6298()
     );
 }
 
+/// `gandr check --counts` prints, to standard error, one `counts:` line after
+/// the run: the allocations of every thread and the frames that the kernel's
+/// checks popped. A recheck of declarations pushes frames, a second recheck
+/// pops as many, and the check's own output is the output of a check without
+/// the flag.
+#[cfg(feature = "counts")]
+#[test]
+fn check_counts_the_allocations_and_the_frames_of_its_run()
+{
+    let scratch = Scratch::new(Path::new("counts"));
+    let _source = scratch.file(
+        Path::new("counted.gandr"),
+        Text::from("def x = 1 ;\ndef y = x ;\n"),
+    );
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    let check = |flags: &[&Path]| {
+        let mut arguments = vec![Path::new("check"), Path::new("--recheck")];
+        arguments.extend_from_slice(flags);
+        arguments.push(&scratch.0);
+        let mut command = gandr(&arguments);
+        let _configured = command
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "a count settles nothing: {}",
+            stderr(&output)
+        );
+        output
+    };
+    let counts = |output: &Output| -> (u64, u64) {
+        let errors = stderr(output);
+        let lines: Vec<&str> = errors
+            .lines()
+            .filter_map(|line| line.strip_prefix("counts: "))
+            .collect();
+        let [line] = *lines.as_slice()
+        else {
+            panic!("one counts line after the run: {errors}");
+        };
+        let Some((allocations, frames)) = line
+            .strip_suffix(" frames")
+            .and_then(|counted| counted.split_once(" allocations, "))
+        else {
+            panic!("the line spells its allocations and its frames: {line}");
+        };
+        (
+            allocations.parse().expect("the allocations are a count"),
+            frames.parse().expect("the frames are a count"),
+        )
+    };
+    let plain = check(&[]);
+    let counted = check(&[Path::new("--counts")]);
+    assert_eq!(
+        stdout(&counted),
+        stdout(&plain),
+        "the counts change no line of the check's own output"
+    );
+    assert!(
+        !stderr(&plain).contains("counts: "),
+        "a check prints no count unasked"
+    );
+    let (allocations, frames) = counts(&counted);
+    assert!(
+        allocations > 0 && frames > 0,
+        "the run allocates, and the recheck of two declarations pops frames: {allocations} allocations, {frames} frames"
+    );
+    assert_eq!(
+        counts(&check(&[Path::new("--counts")])).1,
+        frames,
+        "the frames are the work of the checks, so a second recheck pops as many"
+    );
+}
+
 /// #4112: `gandr check --report cells` prints one line per law a model omits
 /// that the checker discharged, with its source. A law whose sides part is
 /// refused and lists no cell, and a check without the flag lists none.

@@ -1925,6 +1925,24 @@ impl Owing
 /// toward a condition it cannot bound.
 const MAX_CODE_OBLIGATIONS: TableEntryCount = gandr_kernel_term::MAX_TABLE_ENTRIES;
 
+/// The frames that the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+static POPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// How many frames the checks of the process popped so far, on both machines.
+/// A check that passes pops each frame that it pushes once, so for such checks
+/// the count is the frames that they push.
+///
+/// # Specification
+/// trivial.
+#[cfg(feature = "counts")]
+#[inline]
+#[must_use]
+pub fn popped() -> u64
+{
+    POPPED.load(Ordering::Relaxed)
+}
+
 /// A continuation of the type-formation walk.
 #[derive(Debug)]
 enum TypeLevelFrame
@@ -2419,6 +2437,8 @@ where
             else {
                 return Ok(produced);
             };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
             match frame {
                 TypeLevelFrame::Memoize(question, opened) => {
                     // When the stack does not hold the accrual, its keys are
@@ -5441,6 +5461,8 @@ where
                 };
                 return Ok(produced);
             };
+            #[cfg(feature = "counts")]
+            let _counted = POPPED.fetch_add(1, Ordering::Relaxed);
             match frame {
                 Frame::Pending(mut goals, result) => {
                     let siblings = Siblings {

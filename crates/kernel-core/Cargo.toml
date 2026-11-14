@@ -55,5 +55,12 @@ proptest.workspace = true
 [build-dependencies]
 blake3.workspace = true
 
+[features]
+default = []
+# The count of the frames that the checks of the process pop, which
+# `gandr check --counts` prints for the small-device bench (#7359). Off, no
+# count is compiled and a pop reads nothing.
+counts = []
+
 [lints]
 workspace = true

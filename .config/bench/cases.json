@@ -268,5 +268,69 @@
       "refusal": null
     },
     "fails": true
+  },
+  {
+    "name": "#7359: a check that ends gives its allocations and its frames, and ends",
+    "program": "small-device-counts.jq",
+    "input": {
+      "path": "check --recheck cost.gandr",
+      "cores": 1,
+      "status": 0,
+      "ended": 0,
+      "allocations": 2929223,
+      "frames": 29551
+    },
+    "output": "| check --recheck cost.gandr | 1 | 2929223 | 29551 | ends |"
+  },
+  {
+    "name": "#7359: a check that ends and prints no count says so",
+    "program": "small-device-counts.jq",
+    "input": {
+      "path": "cold check functions.gandr",
+      "cores": 2,
+      "status": 0,
+      "ended": 0,
+      "allocations": null,
+      "frames": null
+    },
+    "output": "| cold check functions.gandr | 2 | none | none | ends, and prints no count |"
+  },
+  {
+    "name": "#7359: a check past the wall-clock limit is past the limit, its counts unprinted",
+    "program": "small-device-counts.jq",
+    "input": {
+      "path": "check --recheck cost.gandr",
+      "cores": 2,
+      "status": 124,
+      "ended": 0,
+      "allocations": null,
+      "frames": null
+    },
+    "output": "| check --recheck cost.gandr | 2 | none | none | past the limit |"
+  },
+  {
+    "name": "#7359: a check that exits with another status gives the status beside the counts it printed",
+    "program": "small-device-counts.jq",
+    "input": {
+      "path": "cold check functions.gandr",
+      "cores": 1,
+      "status": 1,
+      "ended": 0,
+      "allocations": 51234,
+      "frames": 812
+    },
+    "output": "| cold check functions.gandr | 1 | 51234 | 812 | exits 1 |"
+  },
+  {
+    "name": "#7359: each frame enum gives its size and then each variant's, and another type's variants stay out",
+    "program": "small-device-frames.jq",
+    "input": "print-type-size type: `check::Goal`: 16 bytes, alignment: 4 bytes\nprint-type-size     variant `CheckValue`: 12 bytes\nprint-type-size type: `check::Frame`: 72 bytes, alignment: 8 bytes\nprint-type-size     variant `RecordField`: 72 bytes\nprint-type-size         field `.label`: 24 bytes\nprint-type-size     variant `ScopeExit`: 0 bytes\nprint-type-size type: `check::Siblings<'_>`: 40 bytes, alignment: 8 bytes\nprint-type-size     variant `Many`: 40 bytes\nprint-type-size type: `check::TypeLevelFrame`: 56 bytes, alignment: 8 bytes\nprint-type-size     variant `Memoize`: 56 bytes\nprint-type-size         field `.0`: 48 bytes\nprint-type-size     variant `ScopeExit`: 0 bytes\n",
+    "output": "| Frame | each frame | 72 |\n| Frame | RecordField | 72 |\n| Frame | ScopeExit | 0 |\n| TypeLevelFrame | each frame | 56 |\n| TypeLevelFrame | Memoize | 56 |\n| TypeLevelFrame | ScopeExit | 0 |"
+  },
+  {
+    "name": "#7359: a text that names no frame enum of the kernel's checks is refused",
+    "program": "small-device-frames.jq",
+    "input": "print-type-size type: `check::Goal`: 16 bytes, alignment: 4 bytes\nprint-type-size     variant `CheckValue`: 12 bytes\n",
+    "fails": true
   }
 ]

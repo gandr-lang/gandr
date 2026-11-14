@@ -3,13 +3,22 @@
 # cores and of memory, with its wall time, the time to its first line of
 # output, its peak resident set, the peak that its scope charged and why it
 # stopped. `bench:small-device` runs it, and `small-device.jq` writes each row.
+# Before those rows come the counts of each check (#7359): the allocations of
+# every thread and the frames that the kernel's checks pop, which the count
+# build prints (`small-device-counts.jq`), and then the bytes of each frame of
+# the kernel's checks, which rustc reads (`small-device-frames.jq`). A device
+# fails on the allocation and not on the average, so the counts come first.
 #
-#   small-device.bash <gandr> [<limit>]   measure the binary <gandr>
+#   small-device.bash <gandr> <counting> <sizes> [<limit>]
+#                                         measure the binary <gandr>
 #   small-device.bash --check-host        refuse a host that cannot bound
 #
 # <gandr> is a build of this checkout: a driver reads `library/std` of the tree
 # that it was built from, so over another tree the recheck refuses the
-# declarations that name a host interface of `std`.
+# declarations that name a host interface of `std`. <counting> is a build of
+# the same checkout with the `counts` feature, which gives `check --counts`.
+# <sizes> is the text that rustc prints for `gandr-kernel-core` under
+# `-Zprint-type-sizes`.
 #
 # The paths, from the root of the checkout:
 #   - a built program runs: `run corpus/model/effects/hello.gandr`;
@@ -26,9 +35,10 @@
 #     the run ends.
 #
 # Each path runs once at each bound: 1 and 2 cores, and 64 MiB, 256 MiB and
-# 1 GiB of memory. A user scope of systemd holds the memory bound, with no
-# swap. `taskset` holds the cores, since a user manager gives its scopes no
-# `cpuset` controller and so ignores `AllowedCPUs`. Each run reads scratch
+# 1 GiB of memory. Each check of the count build runs once at 1 and 2 cores,
+# under 1 GiB. A user scope of systemd holds the memory bound, with no swap.
+# `taskset` holds the cores, since a user manager gives its scopes no `cpuset`
+# controller and so ignores `AllowedCPUs`. Each run reads scratch
 # configuration, cache and data directories, so it reads no verdict and no
 # toolchain, and `<limit>` seconds bound its wall time, 300 unless given.
 #
@@ -111,8 +121,10 @@ if [[ ${1:-} == --inside ]]; then
   exit 0
 fi
 
-gandr=$(realpath "${1:?usage: small-device.bash <gandr> [<limit>]}")
-limit=${2:-300}
+gandr=$(realpath "${1:?usage: small-device.bash <gandr> <counting> <sizes> [<limit>]}")
+counting=$(realpath "${2:?usage: small-device.bash <gandr> <counting> <sizes> [<limit>]}")
+sizes=$(realpath "${3:?usage: small-device.bash <gandr> <counting> <sizes> [<limit>]}")
+limit=${4:-300}
 why=$(refusal)
 [[ -z $why ]] || { echo "small-device: this host cannot bound a run: $why (#7308)" >&2; exit 2; }
 scratch=$(mktemp -d)
@@ -171,6 +183,24 @@ measure() {
   row "$path" "$ended" "$cores" "$memory" "$out"
 }
 
+# One check of the count build at `$2` cores, under the largest bound: `$1` its
+# name, then the arguments of gandr. Its row gives the allocations and the
+# frames that the check prints after its run.
+counted() {
+  local path=$1 cores=$2 out status=137 allocations=null frames=null line
+  shift 2
+  runs=$((runs + 1))
+  out=$scratch/run.$runs
+  (cd "$root" && scoped "$cores" 1G "$out" "$counting" "$@")
+  [[ -e $out.status ]] && status=$(< "$out.status")
+  [[ -e $out.output ]] && line=$(awk '/^counts: [0-9]+ allocations, [0-9]+ frames$/ { print $2, $4; exit }' "$out.output")
+  [[ -n ${line:-} ]] && read -r allocations frames <<< "$line"
+  jq -n -c --arg path "$path" --argjson cores "$cores" --argjson status "$status" \
+    --argjson allocations "$allocations" --argjson frames "$frames" \
+    '{path: $path, cores: $cores, status: $status, ended: 0, allocations: $allocations, frames: $frames}' \
+    | jq -r -f "$here/small-device-counts.jq"
+}
+
 # The crossing at one bound: the bounded host of `far`, and the unbounded run
 # that ships the migration to it once the host prints its peer.
 crossing() {
@@ -200,6 +230,19 @@ crossing() {
 
 printf 'small-device: commit %s, %s, %s cores, gandr %s\n' \
   "$(git -C "$root" rev-parse HEAD)" "$(uname -m)" "$(nproc)" "$gandr"
+echo "| Path | Cores | Allocations | Frames | Stop |"
+echo "| --- | --- | --- | --- | --- |"
+for cores in 1 2; do
+  counted "check --recheck cost.gandr" "$cores" check --recheck --counts library/std/src/cost.gandr
+done
+for cores in 1 2; do
+  counted "cold check functions.gandr" "$cores" check --counts crates/surface-corpus/strict/functions.gandr
+done
+echo
+echo "| Frame | Variant | Bytes |"
+echo "| --- | --- | --- |"
+jq -R -s . "$sizes" | jq -r -f "$here/small-device-frames.jq"
+echo
 echo "| Path | Cores | Memory | Wall | First line | Peak | Charged | Stop |"
 echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
 bounds=("1 64M" "1 256M" "1 1G" "2 64M" "2 256M" "2 1G")

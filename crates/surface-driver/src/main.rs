@@ -29,6 +29,7 @@
 //! | `gandr check --lint explicit-runs <paths>` | as `check`, plus a warning for every run the checker inferred where a computation stands in a position that reads a value, each with the fix that writes `run`; `--lint explicit-runs=effects` reports only the runs that perform an effect; without a flag only the declarations and modules marked `@[ explicit_runs ]` or `@[ explicit_runs("effects") ]` are linted | as `check`: a finding settles nothing |
 //! | `gandr check --measure <paths>` | as `check`, plus one line per declaration a settled source writes, `measure: <path>: <name>: <bytes> bytes, <entries> shared, <work> unshared, <goals> expanded, <goals> recalled, <goals> kept, <n> ns`: the bytes its segment takes in its component's kernel artifact, the subterm-table entries the segment adds and its roots' expanded work, then the goals the kernel's check of it expanded, recalled from its memo and answered by an earlier admission's kept outcome, and the time the kernel took to admit it (`gandr-surface-dispatcher`'s `measure` module); a declaration a recorded verdict admitted spells `admitted on a recorded verdict` in place of the counts | as `check`: a measure settles nothing |
 //! | `gandr check --activity <paths>` | as `check`, its lowerings forked through the pool's recording fork, plus one line per thread, `activity: <thread>: busy <time>, <share> % of the wall, <n> dropped, <n> late`, and one line for the run, to standard error; only a build with the `instrument` feature has the flag | as `check`: the occupancy settles nothing |
+//! | `gandr check --counts <paths>` | as `check`, plus one line for the run after it, `counts: <n> allocations, <n> frames`, to standard error: the allocations that every thread of the process made, the pool's workers among them, and the frames that the kernel's checks popped, which for a check that passes are the frames that it pushed; only a build with the `counts` feature has the flag | as `check`: a count settles nothing |
 //! | `gandr check --report cells <paths>` | as `check`, plus one line per cell a source discharged, `cell: <path>: <module>.<law>: <source>`: each law a model omits that the checker discharged, and the source that discharged it, `Path.here` where the law's sides convert | as `check`: a cell settles nothing |
 //! | `gandr check --verbosity <level> <paths>` | as `check`, each report at `user` (the default), `detailed` (adding its class, the producer's wording and the offending source text), `debug` (adding byte spans and the producer's refusal) or `json` (each report, ledger line and the run's summary as one line of JSON); `test` takes the flag too | as `check` |
 //! | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
@@ -589,6 +590,11 @@ enum Command
         #[cfg(feature = "instrument")]
         #[arg(long)]
         activity: bool,
+        /// Print, after the run, the allocations that every thread made and
+        /// the frames that the kernel's checks popped.
+        #[cfg(feature = "counts")]
+        #[arg(long)]
+        counts: bool,
         /// Print the named report for each source, after its diagnostics:
         /// `cells` lists each law a model omits that a source discharged.
         #[arg(long, value_enum)]
@@ -1859,6 +1865,8 @@ fn main() -> ExitCode
     let mut listing = Listing::Unlisted;
     #[cfg(feature = "instrument")]
     let mut occupancy = Occupancy::Unprinted;
+    #[cfg(feature = "counts")]
+    let mut counted = false;
     let (invocation, verbosity) = match cli.command {
         None => (Invocation::Status, Verbosity::User),
         Some(Command::Check {
@@ -1871,6 +1879,8 @@ fn main() -> ExitCode
             measure,
             #[cfg(feature = "instrument")]
             activity,
+            #[cfg(feature = "counts")]
+            counts,
             report,
             verbosity,
             jobs,
@@ -1882,6 +1892,10 @@ fn main() -> ExitCode
             #[cfg(feature = "instrument")]
             if activity {
                 occupancy = Occupancy::Printed;
+            }
+            #[cfg(feature = "counts")]
+            {
+                counted = counts;
             }
             if report == Some(ReportName::Cells) {
                 listing = Listing::Listed;
@@ -2239,6 +2253,17 @@ fn main() -> ExitCode
     // costs a later run a check, so its fault is passed over as a warning.
     if let Err(fault) = registers.drain() {
         drop(writeln!(stderr, "gandr: {fault}"));
+    }
+    // The counts read every thread and every check of the run, so they print
+    // once the run and its registers are done.
+    #[cfg(feature = "counts")]
+    if counted {
+        drop(writeln!(
+            stderr,
+            "counts: {} allocations, {} frames",
+            allocator::counting::allocations(),
+            gandr_kernel_core::check::popped()
+        ));
     }
     let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
     match flushed {
