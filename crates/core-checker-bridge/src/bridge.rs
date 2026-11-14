@@ -2038,9 +2038,9 @@ quenchant_shape::reason_enum! {
             /// way: its environment holds the ranks of the edited source,
             /// which no leading run records.
             Kept,
-            /// A walk that keyed nothing crossed a formation, whose name
-            /// reads entry keys, so the readmission walked again with keys
-            /// and resumed nothing.
+            /// A walk that keyed nothing crossed a formation whose records
+            /// reach a definition that may rank otherwise under keys, so the
+            /// readmission walked again with keys and resumed nothing.
             Unkeyed,
         }
     }
@@ -3061,8 +3061,9 @@ enum Walked<'crossed, Retired>
         /// The content key of each declaration of the report.
         keys: &'crossed [DeclarationKey],
     },
-    /// A crossing of a walk that keyed nothing read a formation, whose name
-    /// reads entry keys. The readmission walks again with keys.
+    /// A crossing of a walk that keyed nothing read a formation whose records
+    /// reach a definition that may rank otherwise under keys. The readmission
+    /// walks again with keys.
     Unkeyed,
 }
 
@@ -4409,8 +4410,9 @@ where
         {
             self.misplaced = true;
         }
-        // A crossing that reads a formation in a walk that keys nothing ends
-        // the walk, and the readmission walks again with keys.
+        // A crossing whose formation reaches a definition that may rank
+        // otherwise under keys ends a walk that keys nothing, and the
+        // readmission walks again with keys.
         if self.positions.unkeyed {
             self.misplaced = true;
         }
@@ -6344,10 +6346,11 @@ fn model_name(
 /// - ensures: on success `positions.formed` holds `at` and
 ///   `positions.formations` holds its key with each witness's position. The
 ///   kernel admitted every witness of a key no earlier formation held, and
-///   nothing for a key one held. In a walk that keys nothing, a formation sets
-///   `positions.unkeyed` and admits nothing, since its name reads entry keys.
-///   In a walk that keeps, a formation whose name reads a kernel position, or a
-///   kept formation whose witnesses rank past the next rank, sets
+///   nothing for a key one held. In a walk that keys nothing, a formation whose
+///   records reach a definition that may rank otherwise under keys
+///   ([`Settled::Twinned`]) sets `positions.unkeyed` and admits nothing. In a
+///   walk that keeps, a formation whose name reads a kernel position, or a kept
+///   formation whose witnesses rank past the next rank, sets
 ///   `positions.misplaced` and admits nothing. Otherwise the outcome of the
 ///   first witness that did not cross.
 /// - fails: as above.
@@ -6377,10 +6380,6 @@ where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
-    if environment.keying() == gandr_kernel_core::verdict::Keying::Rechecks {
-        positions.unkeyed = true;
-        return Err(invariant());
-    }
     let Some(&gandr_core_term::ValueType::Patched {
         base,
         ref fixed,
@@ -6663,6 +6662,11 @@ where
             environment.arena(),
             staged.declaration.declaration(),
         );
+        if positions.content.settle(environment, &named) == Settled::Twinned {
+            environment.abandon(staged.declaration);
+            positions.unkeyed = true;
+            return Err(invariant());
+        }
         if matches!(
             positions.content.reads(environment.entries(), &named),
             NameReads::Position
@@ -6731,12 +6735,23 @@ fn formation_segment(
 /// then reads no kernel position. Two constants of one entry key take one
 /// name. A formation's witnesses then read the constant that its first reader
 /// reads, in each readmission alike.
+///
+/// Under a policy that rechecks, the kernel names each constant by its
+/// position, and a plain definition over the positions it reads. The table
+/// then keys on demand each constant that a record reaches, and names each
+/// definition it reaches again over those keys ([`Self::settle`]). So a
+/// record's name reads as under a policy that keys, and the walk keys nothing
+/// else.
 #[derive(Clone, Debug)]
-#[repr(transparent)]
 struct FormationTable
 {
     /// The table that places and names the records.
     table: gandr_kernel_core::ContentTable,
+    /// The content keys computed on demand under a policy that rechecks.
+    demanded: gandr_kernel_core::DemandedKeys,
+    /// The constants whose names the table settled under a policy that
+    /// rechecks, each with the constants it reaches.
+    settled: BTreeSet<ConstantIndex>,
 }
 
 impl Default for FormationTable
@@ -6750,6 +6765,8 @@ impl Default for FormationTable
     {
         Self {
             table: gandr_kernel_core::ContentTable::named(),
+            demanded: gandr_kernel_core::DemandedKeys::default(),
+            settled: BTreeSet::new(),
         }
     }
 }
@@ -6816,6 +6833,123 @@ impl FormationTable
         }
         NameReads::Content
     }
+
+    /// Name by content each constant that a record reading `roots` reaches
+    /// through plain definitions, as a table under a policy that keys names
+    /// it, when `environment` keys nothing.
+    ///
+    /// A constant that the table names by its position takes its content key
+    /// on demand ([`gandr_kernel_core::Environment::demanded_key`]). Then each
+    /// plain definition reached takes the digest of its declared type and body
+    /// over those names, at its rank among its twins
+    /// ([`gandr_kernel_core::encoding::name_definition_again`]). Each name
+    /// settled stays for the readmission, so each constant is keyed once.
+    ///
+    /// # Specification
+    /// - requires: the table names each constant of `environment`
+    ///   ([`Self::name`]), and each node it placed reads only constants that it
+    ///   settled.
+    /// - ensures: under a policy that keys, no name changes, and
+    ///   [`Settled::Named`]. Under one that rechecks, each constant that
+    ///   `roots` reach through plain definitions, and that the table named by
+    ///   its position, takes its content key when it has one; then each plain
+    ///   definition reached takes its name over those keys, and
+    ///   [`Settled::Named`]. [`Settled::Twinned`] when a plain definition
+    ///   reached reads a constant whose key another constant of its kind holds
+    ///   ([`gandr_kernel_core::Twin::Twinned`]).
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the names are digests, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a recheck of a module whose formation reads a
+    ///   definition that reads an abstract type admits each declaration once,
+    ///   and names the formation as a readmission under keys names it; a
+    ///   formation over two twins under an open atom is one formation, as under
+    ///   keys.
+    /// - witness: `bridge::tests::a_recheck_names_each_formation_in_one_walk_7456`
+    /// - witness: `bridge::tests::a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261`
+    fn settle(
+        &mut self,
+        environment: &Environment,
+        roots: &[ConstantIndex],
+    ) -> Settled
+    {
+        use gandr_kernel_core::encoding::ConstantName;
+        if environment.keying() != gandr_kernel_core::verdict::Keying::Rechecks {
+            return Settled::Named;
+        }
+        let entries = environment.entries();
+        let mut open = roots.to_vec();
+        let mut seen = BTreeSet::new();
+        let mut definitions = Vec::new();
+        let mut keyed = Vec::new();
+        // The constants that a reached definition reads, whose twins decide
+        // its rank.
+        let mut read = BTreeSet::new();
+        while let Some(constant) = open.pop() {
+            if self.settled.contains(&constant) || !seen.insert(constant) {
+                continue;
+            }
+            match self.table.constant_name(constant) {
+                Some(ConstantName::Definition { .. }) => {
+                    definitions.push(constant);
+                    if let Some(entry) = entries.get(usize::from(constant)) {
+                        read.extend(entry.references().iter().copied());
+                        open.extend_from_slice(entry.references());
+                    }
+                },
+                Some(ConstantName::Position) => keyed.push(constant),
+                Some(ConstantName::Admitted { .. } | ConstantName::Unadmitted) | None => {},
+            }
+        }
+        for &constant in &keyed {
+            if let Maybe::Present(key) = environment.demanded_key(constant, &mut self.demanded) {
+                self.table
+                    .name_ahead(constant, [ConstantName::Admitted { key }], None);
+            }
+            if read.contains(&constant)
+                && environment.demanded_twin(constant, &mut self.demanded)
+                    == gandr_kernel_core::Twin::Twinned
+            {
+                return Settled::Twinned;
+            }
+        }
+        // A plain definition reads only constants below it, so in the order
+        // of their positions each definition reads names already settled.
+        definitions.sort_unstable();
+        for &definition in &definitions {
+            if let Some(name) = self.table.constant_name(definition) {
+                let again = gandr_kernel_core::encoding::name_definition_again(
+                    &mut self.table,
+                    environment.arena(),
+                    name,
+                );
+                self.table.name_ahead(definition, [again], None);
+            }
+        }
+        self.settled.extend(keyed);
+        self.settled.extend(definitions);
+        Settled::Named
+    }
+}
+
+/// Whether a formation table named by content each constant that a record
+/// reaches, as a table under a policy that keys names it
+/// ([`FormationTable::settle`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Settled
+{
+    /// Each name reads as under a policy that keys.
+    Named,
+    /// A definition reached reads a constant that shares its key with
+    /// another, so its rank among its twins may differ under keys. The walk
+    /// then readmits again with keys.
+    Twinned,
 }
 
 /// Stage and admit the definition `body : declared`, with `crossing` naming
@@ -7021,8 +7155,9 @@ struct Positions
     /// Whether a crossing of a walk that keeps reads a formation that its
     /// place misplaces ([`formed`]). The walk then readmits whole.
     misplaced: bool,
-    /// Whether a crossing of a walk that keys nothing reads a formation
-    /// ([`formed`]). The walk then readmits again with keys.
+    /// Whether a crossing of a walk that keys nothing reads a formation whose
+    /// records reach a definition that may rank otherwise under keys
+    /// ([`Settled::Twinned`]). The walk then readmits again with keys.
     unkeyed: bool,
 }
 

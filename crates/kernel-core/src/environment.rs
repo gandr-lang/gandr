@@ -2758,6 +2758,460 @@ impl Environment
         })
     }
 
+    /// The content key of the constant at `constant`, computed on demand
+    /// from its stored content as an admission under a policy that keys
+    /// computes it, in an environment under any policy. `demanded` keeps each
+    /// key computed on the way, so a later demand reads it.
+    ///
+    /// A key reads the keys of the positions that its unit names, of the
+    /// atoms manifest at it, of the role holders it reads and of the types of
+    /// words it reaches, and each of them stands below it. A generative
+    /// unit's key counts the generative units ranked below it that hold its
+    /// content. So a demand keys what the unit reads first and, of the units
+    /// ranked below it, only those whose segments match its own.
+    ///
+    /// # Specification
+    /// - requires: the environment's ranks ascend with its positions, as in a
+    ///   readmission that walks whole or from a leading run, and `demanded`
+    ///   holds only keys computed in this environment.
+    /// - ensures: absent when `constant` is no live entry. Otherwise the
+    ///   content key that an admission at its position and rank under a policy
+    ///   that keys gives it, absent where that key is absent; then `demanded`
+    ///   holds it and each key computed on the way.
+    /// - provides: the names of a formation under a policy that rechecks, which
+    ///   read the keys of the constants that the formation reads and no other.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the key is a digest, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a program of twin axioms, a reader of one of them,
+    ///   twin sorts, words over a sort, an atom manifest at a unit and twin
+    ///   blocks, admitted under a policy that keys and under one that rechecks:
+    ///   each key on demand, from the last constant down, is the key of its
+    ///   admission.
+    /// - witness: `tests::verdicts::a_key_on_demand_is_the_key_of_its_admission_7456`
+    #[inline]
+    pub fn demanded_key(
+        &self,
+        constant: ConstantIndex,
+        demanded: &mut DemandedKeys,
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
+    {
+        let unkeyed = Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed);
+        let Some(entry) = self.entries.live(constant)
+        else {
+            return unkeyed;
+        };
+        self.demand(entry.unit().first, demanded);
+        demanded.keys.get(&constant).copied().unwrap_or(unkeyed)
+    }
+
+    /// Whether another constant shares the content key of the constant at
+    /// `constant`, when a table names it by that key and counts no twins: a
+    /// constant of a unit with no generative member, which its admission named
+    /// by its position, such as a definition under an open atom.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::demanded_key`].
+    /// - ensures: [`Twin::Twinned`] when the unit of `constant` has no
+    ///   generative member, its admission named `constant` by its position, and
+    ///   another live unit of that kind holds the unit's content key, each key
+    ///   as [`Self::demanded_key`] computes it. [`Twin::Alone`] otherwise.
+    /// - provides: the test that the twins of a definition that reads
+    ///   `constant` are the same under keys as under positions.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer reads digests, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two unit definitions under one open atom hold one
+    ///   key, so the first is twinned; with the atom's scope over the first
+    ///   alone, the second is a plain definition, and the first is alone.
+    /// - witness: `tests::verdicts::two_definitions_under_one_atom_are_twins_on_demand_7456`
+    #[must_use]
+    #[inline]
+    pub fn demanded_twin(
+        &self,
+        constant: ConstantIndex,
+        demanded: &mut DemandedKeys,
+    ) -> Twin
+    {
+        let Some(entry) = self.entries.live(constant)
+        else {
+            return Twin::Alone;
+        };
+        let unit = entry.unit();
+        if self.twinning(unit) != Twinning::Shared {
+            return Twin::Alone;
+        }
+        self.demand(unit.first, demanded);
+        let Some(&Maybe::Present(raw)) = demanded.raw.get(&unit.first)
+        else {
+            return Twin::Alone;
+        };
+        let mut missing = Vec::new();
+        loop {
+            missing.clear();
+            let twins = self.twins((unit, raw, SourceRank::ABOVE), demanded, &mut missing);
+            if missing.is_empty() {
+                return if twins == crate::verdict::KeyedCount::default() {
+                    Twin::Alone
+                }
+                else {
+                    Twin::Twinned
+                };
+            }
+            // Each demand keeps a key for its unit, so the next search finds
+            // each of these keyed.
+            for &first in &missing {
+                self.demand(first, demanded);
+            }
+        }
+    }
+
+    /// How a table that names by key counts the twins of `unit`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn twinning(
+        &self,
+        unit: Unit,
+    ) -> Twinning
+    {
+        let mut members = (usize::from(unit.first) .. usize::from(unit.end))
+            .filter_map(|member| self.entries.live(ConstantIndex::from(member)));
+        if members.clone().any(|member| {
+            !matches!(
+                *member.content(),
+                DeclarationContent::Def { .. } | DeclarationContent::LiteralIdentity { .. }
+            )
+        }) {
+            Twinning::Counted
+        }
+        else if members
+            .next()
+            .is_some_and(|member| member.key_name() == ConstantName::Position)
+        {
+            Twinning::Shared
+        }
+        else {
+            Twinning::Named
+        }
+    }
+
+    /// Key on demand the unit whose first member stands at `first`, and each
+    /// unit that its key reads first.
+    ///
+    /// The units wait on a stack: a unit whose key reads one that `demanded`
+    /// lacks waits under the units it reads. A unit tried and waiting stands
+    /// under all that it and its readers pushed, so a read of it is circular.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::demanded_key`].
+    /// - ensures: `demanded` holds a key, present or absent, for the unit at
+    ///   `first`, for each of its members and for each unit keyed on the way,
+    ///   each as [`Self::demanded_key`] states. A unit whose key reads, through
+    ///   other keys, a unit that waits for it takes no key.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the keys are digests, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::demanded_key`], whose program holds an
+    ///   axiom that reads a sort and the type of words over it, the type of
+    ///   words reading the sort too.
+    /// - witness: `tests::verdicts::a_key_on_demand_is_the_key_of_its_admission_7456`
+    fn demand(
+        &self,
+        first: ConstantIndex,
+        demanded: &mut DemandedKeys,
+    )
+    {
+        let mut waiting = Vec::from([first]);
+        let mut tried = BTreeSet::new();
+        let mut missing = Vec::new();
+        while let Some(&unit) = waiting.last() {
+            if demanded.keys.contains_key(&unit) {
+                let _keyed = waiting.pop();
+                let _done = tried.remove(&unit);
+                continue;
+            }
+            missing.clear();
+            self.demand_unit(unit, demanded, &mut missing);
+            if missing.is_empty() {
+                let _keyed = waiting.pop();
+                let _done = tried.remove(&unit);
+                continue;
+            }
+            let _waits = tried.insert(unit);
+            // What a key reads stands below it, so no unit reads one that
+            // waits for it. One that did would wait forever, as would one whose
+            // reads are all keyed, so either takes no key.
+            let wanted = waiting.len();
+            let mut circular = false;
+            for &read in &missing {
+                let read = self
+                    .entries
+                    .live(read)
+                    .map_or(read, |entry| entry.unit().first);
+                if demanded.keys.contains_key(&read) {
+                    continue;
+                }
+                if tried.contains(&read) {
+                    circular = true;
+                }
+                else {
+                    waiting.push(read);
+                }
+            }
+            if circular || waiting.len() == wanted {
+                waiting.truncate(wanted);
+                let end = self.entries.live(unit).map_or_else(
+                    || ConstantIndex::from(usize::from(unit).saturating_add(1)),
+                    |entry| entry.unit().end,
+                );
+                let unkeyed = Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed);
+                demanded.hold((unit, end, UnitShape::Lone), (unkeyed, unkeyed));
+                let _unkeyed = waiting.pop();
+                let _done = tried.remove(&unit);
+            }
+        }
+    }
+
+    /// Key the unit whose first member stands at `first` from the keys that
+    /// `demanded` holds, or put into `missing` each key it reads that
+    /// `demanded` lacks.
+    ///
+    /// One pass reads every key the unit's key reads: a key that `demanded`
+    /// lacks reads as a stand-in, so the pass names each one, and its digest
+    /// is dropped.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::demanded_key`], and `missing` is empty.
+    /// - ensures: when `missing` stays empty, `demanded` holds the unit's key
+    ///   before its count, its key and each member's, as [`Self::demanded_key`]
+    ///   states; otherwise `missing` holds positions that the key reads and
+    ///   `demanded` keys none of, and units ranked below whose keys the count
+    ///   needs.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the keys are digests, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::demanded_key`].
+    /// - witness: `tests::verdicts::a_key_on_demand_is_the_key_of_its_admission_7456`
+    fn demand_unit(
+        &self,
+        first: ConstantIndex,
+        demanded: &mut DemandedKeys,
+        missing: &mut Vec<ConstantIndex>,
+    )
+    {
+        let unkeyed = Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed);
+        let Some(entry) = self.entries.live(first)
+        else {
+            let end = ConstantIndex::from(usize::from(first).saturating_add(1));
+            demanded.hold((first, end, UnitShape::Lone), (unkeyed, unkeyed));
+            return;
+        };
+        let unit = entry.unit();
+        let span = (unit.first, unit.end, unit.shape);
+        let ranks = self.unit_ranks(unit);
+        let members = usize::from(unit.end).saturating_sub(usize::from(unit.first));
+        if ranks.len() != members {
+            demanded.hold(span, (unkeyed, unkeyed));
+            return;
+        }
+        let raw = if let Some(&raw) = demanded.raw.get(&unit.first) {
+            raw
+        }
+        else {
+            let stand_in =
+                crate::verdict::EntryContentKeyer::tagged(crate::verdict::EntryTag::Content)
+                    .finish();
+            let keys = &demanded.keys;
+            let mut read = |position: ConstantIndex| {
+                if let Some(&key) = keys.get(&position) {
+                    key
+                }
+                else {
+                    missing.push(position);
+                    Maybe::Present(stand_in)
+                }
+            };
+            let raw = match unit.shape {
+                UnitShape::Lone => self.content_key_from(
+                    core::slice::from_ref(entry.declaration()),
+                    (unit.first, &ranks),
+                    &mut read,
+                ),
+                UnitShape::Block => {
+                    let declarations: Vec<Declaration> = (usize::from(unit.first)
+                        .. usize::from(unit.end))
+                        .filter_map(|member| self.entries.live(ConstantIndex::from(member)))
+                        .map(|member| member.declaration().clone())
+                        .collect();
+                    if declarations.len() != members {
+                        demanded.hold(span, (unkeyed, unkeyed));
+                        return;
+                    }
+                    self.content_key_from(&declarations, (unit.first, &ranks), &mut read)
+                },
+            };
+            if !missing.is_empty() {
+                return;
+            }
+            raw
+        };
+        let key = match raw {
+            Maybe::Present(content) if self.twinning(unit) == Twinning::Counted => {
+                let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
+                let earlier = self.twins((unit, content, below), demanded, missing);
+                if !missing.is_empty() {
+                    // Kept, so the unit's key is not computed again.
+                    let _previous = demanded.raw.insert(unit.first, raw);
+                    return;
+                }
+                Maybe::Present(content.generative(earlier))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => raw,
+        };
+        demanded.hold(span, (raw, key));
+    }
+
+    /// How many units ranked below `below`, other than `unit`, hold the
+    /// content key `content` before their count and count twins as `unit`
+    /// does, each key as [`Self::demanded_key`] computes it. Each candidate
+    /// whose key `demanded` lacks goes into `missing`, and the count then
+    /// stands short.
+    ///
+    /// A twin has the shape of `unit`, members of its kinds that name as
+    /// many positions, and its segments. So only a unit that passes those
+    /// tests is keyed.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::demanded_key`], and `content` is the key of
+    ///   `unit` before its count.
+    /// - ensures: when `missing` takes no position, the count of the live units
+    ///   ranked below `below`, other than `unit`, that count twins as `unit`
+    ///   does and whose key before their count is `content`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the keys are digests, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::demanded_key`], whose program holds twin
+    ///   axioms, twin sorts and twin blocks.
+    /// - witness: `tests::verdicts::a_key_on_demand_is_the_key_of_its_admission_7456`
+    fn twins(
+        &self,
+        (unit, content, below): (Unit, crate::verdict::EntryContentKey, SourceRank),
+        demanded: &mut DemandedKeys,
+        missing: &mut Vec<ConstantIndex>,
+    ) -> crate::verdict::KeyedCount
+    {
+        let twinning = self.twinning(unit);
+        let Maybe::Present(own) = self.fingerprint(unit, demanded)
+        else {
+            return crate::verdict::KeyedCount::default();
+        };
+        let members = |unit: Unit| {
+            (usize::from(unit.first) .. usize::from(unit.end))
+                .map(|member| self.entries.live(ConstantIndex::from(member)))
+        };
+        let mut count = 0_usize;
+        for position in 0 .. usize::from(self.entries.len()) {
+            let first = ConstantIndex::from(position);
+            let Some(entry) = self.entries.live(first)
+            else {
+                continue;
+            };
+            let candidate = entry.unit();
+            if first == unit.first
+                || candidate.first != first
+                || candidate.shape != unit.shape
+                || self.entries.rank_of(first).is_none_or(|rank| rank >= below)
+                || self.twinning(candidate) != twinning
+                || members(candidate).len() != members(unit).len()
+                || !members(candidate)
+                    .zip(members(unit))
+                    .all(|pair| match pair {
+                        (Some(theirs), Some(ours)) => {
+                            core::mem::discriminant(theirs.content())
+                                == core::mem::discriminant(ours.content())
+                                && theirs.references().len() == ours.references().len()
+                        },
+                        (Some(_) | None, Some(_) | None) => false,
+                    })
+            {
+                continue;
+            }
+            if !matches!(self.fingerprint(candidate, demanded), Maybe::Present(theirs) if theirs == own)
+            {
+                continue;
+            }
+            match demanded.raw.get(&first) {
+                Some(&Maybe::Present(theirs)) if theirs == content => {
+                    count = count.saturating_add(1);
+                },
+                Some(&(Maybe::Present(_) | Maybe::Absent(_))) => {},
+                None => missing.push(first),
+            }
+        }
+        crate::verdict::KeyedCount::from(count)
+    }
+
+    /// The digest of the keyed segments of `unit`'s members, which two units
+    /// of one content key share, kept in `demanded`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fingerprint(
+        &self,
+        unit: Unit,
+        demanded: &mut DemandedKeys,
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
+    {
+        use crate::verdict::KeyedCount;
+        if let Some(&held) = demanded.images.get(&unit.first) {
+            return held;
+        }
+        let mut keyer =
+            crate::verdict::EntryContentKeyer::tagged(crate::verdict::EntryTag::Content);
+        let members = usize::from(unit.first) .. usize::from(unit.end);
+        keyer.count(KeyedCount::from(members.len()));
+        let mut held = Maybe::Present(());
+        for member in members {
+            let Some(entry) = self.entries.live(ConstantIndex::from(member))
+            else {
+                held = Maybe::Absent(crate::verdict::keyed::Absent::Unkeyed);
+                break;
+            };
+            let marked =
+                MarkedDeclaration::new(AdmissionMark::Checked, entry.declaration().clone());
+            let Maybe::Present(segment) =
+                gandr_kernel_term::keyed_segment(&self.arena, &marked, unit.first .. unit.end)
+            else {
+                held = Maybe::Absent(crate::verdict::keyed::Absent::OpenSeal);
+                break;
+            };
+            keyer.segment(segment.image());
+            keyer.count(KeyedCount::from(segment.named().len()));
+        }
+        let held = match held {
+            Maybe::Present(()) => Maybe::Present(keyer.finish()),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        };
+        let _previous = demanded.images.insert(unit.first, held);
+        held
+    }
+
     /// The entry key of an entry whose content key is `content`: the content
     /// key bound to the build identity this environment keys under.
     ///
@@ -3629,11 +4083,52 @@ impl Environment
         (first, ranks): (ConstantIndex, &[SourceRank]),
     ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
     {
+        if self.verdicts.keying() == crate::verdict::Keying::Rechecks {
+            return Maybe::Absent(crate::verdict::keyed::Absent::Rechecking);
+        }
+        self.content_key_from(members, (first, ranks), &mut |position| {
+            self.entries.content(position)
+        })
+    }
+
+    /// The content key of `members`, admitted as one unit from `first` on at
+    /// the ranks `ranks`, with the key of each position that their checks
+    /// read taken from `keys`: [`Self::content_key`] reads the entries' keys,
+    /// and [`Self::demanded_key`] the keys it computes on demand.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::content_key`], and `keys` answers for each
+    ///   admitted position the key that its admission under a policy that keys
+    ///   gives it.
+    /// - ensures: as [`Self::content_key`] under a policy that keys, under any
+    ///   policy, with each key read through `keys`.
+    /// - provides: one digest of a unit's content, whichever source holds the
+    ///   keys of what it reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the key is a digest, which a predicate would
+    ///   restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::content_key`], and a key computed on
+    ///   demand in an environment that keys nothing is the key of the
+    ///   admission.
+    /// - witness: `tests::verdicts::an_edit_re_keys_only_what_reads_it_6568`
+    /// - witness: `tests::verdicts::a_key_on_demand_is_the_key_of_its_admission_7456`
+    fn content_key_from<Keys>(
+        &self,
+        members: &[Declaration],
+        (first, ranks): (ConstantIndex, &[SourceRank]),
+        keys: &mut Keys,
+    ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
+    where
+        Keys: FnMut(
+            ConstantIndex,
+        )
+            -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    {
         use crate::verdict::KeyedCount;
         use crate::verdict::keyed::Absent;
-        if self.verdicts.keying() == crate::verdict::Keying::Rechecks {
-            return Maybe::Absent(Absent::Rechecking);
-        }
         let end = ConstantIndex::from(usize::from(first).saturating_add(members.len()));
         let below = ranks.first().copied().unwrap_or(SourceRank::ABOVE);
         let presentations = self.entries.presentations();
@@ -3654,7 +4149,7 @@ impl Environment
             keyer.segment(segment.image());
             keyer.count(KeyedCount::from(segment.named().len()));
             for &named in segment.named() {
-                let Maybe::Present(key) = self.entries.content(named)
+                let Maybe::Present(key) = keys(named)
                 else {
                     return Maybe::Absent(Absent::Unkeyed);
                 };
@@ -3662,7 +4157,7 @@ impl Environment
             }
             let own = ConstantIndex::from(usize::from(first).saturating_add(offset));
             if let Err(absent) = self.key_ranks(
-                &mut keyer,
+                (&mut keyer, &mut *keys),
                 (member, (own, rank)),
                 (segment.named(), (first, ranks)),
                 (&mut order, &mut operations),
@@ -3694,7 +4189,7 @@ impl Environment
             if reach < usize::from(first) {
                 continue;
             }
-            let Maybe::Present(key) = self.entries.content(atom)
+            let Maybe::Present(key) = keys(atom)
             else {
                 return Maybe::Absent(Absent::Unkeyed);
             };
@@ -3742,7 +4237,7 @@ impl Environment
         registry.dedup();
         keyer.count(KeyedCount::from(registry.len()));
         for (_, word) in registry {
-            let Maybe::Present(key) = self.entries.content(word)
+            let Maybe::Present(key) = keys(word)
             else {
                 return Maybe::Absent(Absent::Unkeyed);
             };
@@ -3753,8 +4248,9 @@ impl Environment
 
     /// Write into `keyer` what the check of `member`, admitted at `own` and
     /// ranked at `rank`, reads of source order beyond its content and the
-    /// keys of the positions it names, `named`; `first` and `ranks` place and
-    /// rank the members of its unit, and `order` is scratch.
+    /// keys of the positions it names, `named`; `keys` answers each key it
+    /// reads, `first` and `ranks` place and rank the members of its unit, and
+    /// `order` is scratch.
     ///
     /// # Specification
     /// - requires: each of `named` is an admitted position, and the unit's
@@ -3786,9 +4282,9 @@ impl Environment
     /// - hypothesis: L3 — as [`Self::content_key`].
     /// - witness: `tests::verdicts::a_key_reads_no_admission_order_6568`
     /// - witness: `ruled::tests::a_ruled_definition_is_keyed_by_the_rank_order_of_what_it_names_6621`
-    fn key_ranks(
+    fn key_ranks<Keys>(
         &self,
-        keyer: &mut crate::verdict::EntryContentKeyer,
+        (keyer, keys): (&mut crate::verdict::EntryContentKeyer, &mut Keys),
         (member, (own, rank)): (&Declaration, (ConstantIndex, SourceRank)),
         (named, (first, ranks)): (&[ConstantIndex], (ConstantIndex, &[SourceRank])),
         (order, operations): (
@@ -3796,6 +4292,11 @@ impl Environment
             &mut Vec<ConstantIndex>,
         ),
     ) -> Result<(), crate::verdict::keyed::Absent>
+    where
+        Keys: FnMut(
+            ConstantIndex,
+        )
+            -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
     {
         use crate::verdict::KeyedCount;
         use crate::verdict::keyed::Absent;
@@ -3847,7 +4348,7 @@ impl Environment
             for role in gandr_kernel_term::Builtin::ALL {
                 match self.entries.holder_below(role, rank) {
                     Some(holder) => {
-                        let Maybe::Present(key) = self.entries.content(holder)
+                        let Maybe::Present(key) = keys(holder)
                         else {
                             return Err(Absent::Unkeyed);
                         };
@@ -4162,6 +4663,95 @@ impl UnitKey
             UnitShape::Block => self.key.member(offset),
         }
     }
+}
+
+/// The content keys that an environment computes on demand
+/// ([`Environment::demanded_key`]), kept so that a later demand reads them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+pub struct DemandedKeys
+{
+    /// The content key of each constant computed so far.
+    keys: BTreeMap<
+        ConstantIndex,
+        Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    >,
+    /// The content key of each unit computed so far, before the count of its
+    /// generative twins, by the position of its first member.
+    raw: BTreeMap<
+        ConstantIndex,
+        Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    >,
+    /// The digest of the segments of each unit that a search for twins read,
+    /// by the position of its first member.
+    images: BTreeMap<
+        ConstantIndex,
+        Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+    >,
+}
+
+impl DemandedKeys
+{
+    /// Keep `raw` as the key of the unit from `first` to `end` before its
+    /// count, and `key` as its own, each member's key from it as `shape`
+    /// states.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold(
+        &mut self,
+        (first, end, shape): (ConstantIndex, ConstantIndex, UnitShape),
+        (raw, key): (
+            Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+            Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
+        ),
+    )
+    {
+        let _previous = self.raw.insert(first, raw);
+        for (offset, member) in (usize::from(first) .. usize::from(end)).enumerate() {
+            let held = match (key, shape) {
+                (Maybe::Present(key), UnitShape::Block) => {
+                    Maybe::Present(key.member(crate::verdict::KeyedCount::from(offset)))
+                },
+                (key, UnitShape::Lone | UnitShape::Block) => key,
+            };
+            let _previous = self.keys.insert(ConstantIndex::from(member), held);
+        }
+    }
+}
+
+/// Whether another constant shares the content key of a constant that a
+/// table names by that key ([`Environment::demanded_twin`]).
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Twin
+{
+    /// No other constant of its kind holds its key.
+    Alone,
+    /// Another constant of its kind holds its key, so a table that names by
+    /// key names the two alike.
+    Twinned,
+}
+
+/// How a table that names by key counts the twins of a unit.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Twinning
+{
+    /// A member is generative, so its key counts the generative twins ranked
+    /// below it, and two twins take two keys.
+    Counted,
+    /// No member is generative, and its admission named it by its position,
+    /// so twins take one key and one name.
+    Shared,
+    /// No member is generative, and its admission named it by its content.
+    Named,
 }
 
 /// How a keep in place answers for a unit's check.

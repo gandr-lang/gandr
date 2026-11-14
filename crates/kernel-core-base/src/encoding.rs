@@ -6618,6 +6618,71 @@ pub fn name_definition(
     }
 }
 
+/// The name `name` over the names that `table` now gives the constants it
+/// reads.
+///
+/// A plain definition keeps its declared type, body and rank, and takes the
+/// digest of the two as `table` places them. Any other name stays as it is.
+///
+/// Under a policy that rechecks, [`name_definition`] names a definition over
+/// the positions of the constants it reads. A table that then names those
+/// constants by their content keys names the definition here as a table under
+/// a policy that keys names it. The rank stays: positions and keys name the
+/// constants alike, one name each, so the twins of a definition are the same
+/// under both.
+///
+/// # Specification
+/// - requires: the roots of `name` live in `arena`, `table` is a table over
+///   `arena`, and no constant that two of `table`'s names name alike stands
+///   where the roots reach.
+/// - ensures: a definition name with the declared type, body and rank of
+///   `name`, and the digest of the two as `table` places them, when `name` is a
+///   definition name; `name` otherwise.
+/// - provides: the name of a definition under a policy that rechecks, as a
+///   policy that keys names it, once the constants it reads take their keys.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition named over a constant that its table names
+///   by position, named again once the constant takes its content key, takes
+///   the digest of a table that keys the constant from the start, and its rank
+///   stays.
+/// - witness: `encoding::tests::a_definition_named_again_reads_the_names_its_table_gives_now_7456`
+#[must_use]
+#[spec(ensures: |ret| match (ret, name) {
+    (ConstantName::Definition { declared, body, rank, .. },
+        ConstantName::Definition { declared: named_declared, body: named_body, rank: named_rank, .. }) =>
+        declared == named_declared && body == named_body && rank == named_rank,
+    (ret, name) => ret == name,
+})]
+#[inline]
+pub fn name_definition_again(
+    table: &mut ContentTable,
+    arena: &TermArena,
+    name: ConstantName,
+) -> ConstantName
+{
+    match name {
+        ConstantName::Definition {
+            declared,
+            body,
+            rank,
+            ..
+        } => {
+            let placed_declared = table.place(arena, AnyNode::ValueType(declared));
+            let placed_body = table.place(arena, AnyNode::Value(body));
+            ConstantName::Definition {
+                declared,
+                body,
+                rank,
+                digest: table.definition_digest(placed_declared, placed_body),
+            }
+        },
+        ConstantName::Position | ConstantName::Admitted { .. } | ConstantName::Unadmitted => name,
+    }
+}
+
 /// Whether two plain definitions carry one declared type and one body.
 ///
 /// # Specification
@@ -8544,6 +8609,63 @@ mod tests
                 other
             ),
             "a definition of another body takes another digest"
+        );
+    }
+
+    /// #7456: a definition named over a constant that its table names by
+    /// position, named again in a table that names that constant by its
+    /// content key, takes the digest that a table naming the constant by the
+    /// key from the start gives, and keeps its rank.
+    #[test]
+    fn a_definition_named_again_reads_the_names_its_table_gives_now_7456()
+    {
+        use crate::encoding::ConstantName;
+        use crate::verdict::EntryContentKeyer;
+        use crate::verdict::EntryTag;
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_unit();
+        let body = arena.value_constant(ConstantIndex::from(0_usize));
+        let keyed = ConstantName::Admitted {
+            key: EntryContentKeyer::tagged(EntryTag::Content).finish(),
+        };
+        let naming = |name: ConstantName| {
+            let mut table = ContentTable::named();
+            table.name_ahead(ConstantIndex::from(0_usize), [name], None);
+            table
+        };
+        let positional = definition_digest(
+            &mut naming(ConstantName::Position),
+            (&arena, &crate::env::NO_ENTRIES),
+            declared,
+            body,
+        );
+        let named = ConstantName::Definition {
+            declared,
+            body,
+            rank: crate::encoding::DefinitionRank(1),
+            digest: positional,
+        };
+        let mut table = naming(ConstantName::Position);
+        table.name_ahead(ConstantIndex::from(0_usize), [keyed], None);
+        let ConstantName::Definition { rank, digest, .. } =
+            crate::encoding::name_definition_again(&mut table, &arena, named)
+        else {
+            panic!("a definition named again stays a definition");
+        };
+        assert_eq!(rank, crate::encoding::DefinitionRank(1), "the rank stays");
+        assert_eq!(
+            digest,
+            definition_digest(
+                &mut naming(keyed),
+                (&arena, &crate::env::NO_ENTRIES),
+                declared,
+                body
+            ),
+            "the digest reads the constant by its key, as a table that keys it from the start reads it"
+        );
+        assert_ne!(
+            digest, positional,
+            "the digest over the position is another"
         );
     }
 
