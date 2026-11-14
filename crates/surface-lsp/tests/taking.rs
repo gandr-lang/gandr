@@ -47,6 +47,10 @@ const FORWARD: &str =
 const NATIVE: &str =
     include_str!("taking/fixtures/a-taken-native-path-reads-as-derived-7452.gandr");
 
+/// The funext fixture: the identity by cases and the identity, one path by
+/// their steps.
+const FUNEXT: &str = include_str!("taking/fixtures/a-taken-funext-keeps-its-steps-7463.gandr");
+
 /// The reopened fixture: a law whose right endpoint unfolds under a thunk.
 const REOPENED: &str =
     include_str!("taking/fixtures/a-reopened-take-replays-a-kept-dialogue-7399.gandr");
@@ -355,6 +359,46 @@ fn a_taken_native_path_reads_as_derived_7452()
     );
 }
 
+/// A taken function extensionality keeps the steps that its judgement
+/// decided (#7463). A session reopened over a store crosses the taken
+/// `agreement` again, and the take seats each step's normal forms at the
+/// places that an edit shifts. A seat that drops the funexts makes the
+/// reopened submission fault. The kept steps read back from bytes as written.
+#[test]
+fn a_taken_funext_keeps_its_steps_7463()
+{
+    assert_eq!(
+        taken_past_an_insertion(SourceText::from(FUNEXT)),
+        ItemCount::from(3_usize),
+        "each declaration is taken; the appended definition is decided"
+    );
+    assert_eq!(
+        taken_past_a_reopening(SourceText::from(FUNEXT)),
+        (ItemCount::from(3_usize), ItemCount::from(3_usize)),
+        "the checkpoints are restored and taken; the definition put first is decided"
+    );
+    let mut kept = session();
+    let _kept = submit(&mut kept, SourceText::from(FUNEXT));
+    let Maybe::Present(resume) = kept.last()
+    else {
+        panic!("the submission resumes");
+    };
+    let checkpoints = resume.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .any(|checkpoint| matches!(checkpoint.tables(), Maybe::Present(_))),
+        "a checkpoint keeps the steps of `agreement`"
+    );
+    let bytes = encode_checkpoints(checkpoints).expect("the checkpoints encode");
+    assert_eq!(
+        decode_checkpoints(&bytes).expect("the checkpoints decode"),
+        *checkpoints,
+        "the kept steps read back as written"
+    );
+}
+
 /// A declaration whose judgement adds an entry to a table that a checkpoint
 /// does not keep yet is judged again (#7399, #7428). The judgement of
 /// `raised` records a lift, so its checkpoint keeps no entries, and the take
@@ -402,6 +446,7 @@ fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
         (PAYLOAD, (1, 0)),
         (FORWARD, (1, 0)),
         (NATIVE, (1, 0)),
+        (FUNEXT, (1, 0)),
         (LIFT, (0, 1)),
     ] {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -434,6 +479,7 @@ fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
                 || !tabled.payloads().is_empty()
                 || !tabled.directed().is_empty()
                 || !tabled.natives().is_empty()
+                || !tabled.funexts().is_empty()
             {
                 kept = kept.saturating_add(1);
             }

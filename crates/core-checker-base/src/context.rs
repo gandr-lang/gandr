@@ -341,6 +341,8 @@ enum Tabling
     Directed(ValueId),
     /// The native path at this node.
     Native(ValueId),
+    /// The function extensionality decided at this node.
+    Funext(ValueId),
 }
 
 /// How many rows records the gained log held: where [`CheckingContext`]
@@ -4125,7 +4127,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         funext: crate::funext::Funext,
     )
     {
-        self.funexts.insert(at, funext);
+        let _replaced = self.funexts.insert(at, funext);
+        if let Some(ref mut log) = self.tabling {
+            log.push(Tabling::Funext(at));
+        }
     }
 
     /// The values the value bridge coerced in to a patched type, by node.
@@ -4568,9 +4573,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// How many entries the tables hold that no checkpoint keeps yet: the
-    /// lifts, the function extensionalities, the coercions, the
-    /// equivalences, the session statements and the motives by node, and the
-    /// relations and the restatements by position.
+    /// lifts, the coercions, the equivalences, the session statements and the
+    /// motives by node, and the relations and the restatements by position.
     ///
     /// # Specification
     /// trivial.
@@ -4579,7 +4583,6 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         TableCensus(
             [
                 self.lifts.len(),
-                self.funexts.len(),
                 self.coercions.len(),
                 self.equivalences.len(),
                 self.flows.len(),
@@ -4611,8 +4614,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
     /// Stop the log of [`Self::start_tables`], and give the entries that the
     /// declaration added to the rows, the handlers, the reflexivities, the
-    /// payloads, the directed flows and the native paths, each as it reads
-    /// now, beside whether it added an entry to another table since `before`.
+    /// payloads, the directed flows, the native paths and the function
+    /// extensionalities, each as it reads now, beside whether it added an
+    /// entry to another table since `before`.
     ///
     /// # Specification
     /// - requires: `before` is the census of the matching
@@ -4644,7 +4648,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
                 | Tabling::Directed(_)
-                | Tabling::Native(_) => None,
+                | Tabling::Native(_)
+                | Tabling::Funext(_) => None,
             })
             .collect();
         let handled = log
@@ -4655,7 +4660,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
                 | Tabling::Directed(_)
-                | Tabling::Native(_) => None,
+                | Tabling::Native(_)
+                | Tabling::Funext(_) => None,
             })
             .collect();
         let reflexivities = log
@@ -4669,7 +4675,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Handled(_)
                 | Tabling::Payload(_)
                 | Tabling::Directed(_)
-                | Tabling::Native(_) => None,
+                | Tabling::Native(_)
+                | Tabling::Funext(_) => None,
             })
             .collect();
         let payloads = log
@@ -4680,7 +4687,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
                 | Tabling::Directed(_)
-                | Tabling::Native(_) => None,
+                | Tabling::Native(_)
+                | Tabling::Funext(_) => None,
             })
             .collect();
         let directed = log
@@ -4694,7 +4702,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
-                | Tabling::Native(_) => None,
+                | Tabling::Native(_)
+                | Tabling::Funext(_) => None,
             })
             .collect();
         let natives = log
@@ -4705,7 +4714,20 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
-                | Tabling::Directed(_) => None,
+                | Tabling::Directed(_)
+                | Tabling::Funext(_) => None,
+            })
+            .collect();
+        let funexts = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Funext(at) => self.funexts.get(&at).map(|funext| (at, funext.clone())),
+                Tabling::Row(_)
+                | Tabling::Handled(_)
+                | Tabling::Reflexivity(_)
+                | Tabling::Payload(_)
+                | Tabling::Directed(_)
+                | Tabling::Native(_) => None,
             })
             .collect();
         let others = if self.table_census().0 > before.0 {
@@ -4722,22 +4744,24 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 payloads,
                 directed,
                 natives,
+                funexts,
             ),
             others,
         )
     }
 
     /// Enter the rows records, the handlers, the reflexivities, the payloads,
-    /// the directed flows and the native paths of an adopted declaration, as
-    /// its judgement added them.
+    /// the directed flows, the native paths and the function extensionalities
+    /// of an adopted declaration, as its judgement added them.
     ///
     /// # Specification
     /// - requires: each node and type is minted in this context's arena, at the
     ///   place that the declaration's judgement read it.
     /// - ensures: each record, each handler and each payload reads here, the
     ///   first one where a key already reads; each reflexivity, each directed
-    ///   flow and each native path reads here, as [`Self::record_reflexivity`],
-    ///   [`Self::record_directed`] and [`Self::record_native`] record it.
+    ///   flow, each native path and each function extensionality reads here, as
+    ///   [`Self::record_reflexivity`], [`Self::record_directed`],
+    ///   [`Self::record_native`] and [`Self::record_funext`] record it.
     /// - panics: none.
     /// - executable: none — the witness compares a taken item's report with a
     ///   fresh judgement's.
@@ -4750,16 +4774,18 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
     #[inline]
-    pub fn adopt_tabled<Entries, Reflexivities, Payloads, Flows, Natives>(
+    pub fn adopt_tabled<Entries, Reflexivities, Payloads, Flows, Natives, Funexts>(
         &mut self,
         rows: &crate::program::Rows,
-        (handled, reflexivities, payloads, directed, natives): (
+        (handled, reflexivities, payloads, directed, natives, funexts): (
             Entries,
             Reflexivities,
             Payloads,
             Flows,
             Natives,
+            Funexts,
         ),
     ) where
         Entries: IntoIterator<Item = (ComputationId, crate::handler::Handled)>,
@@ -4767,6 +4793,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         Payloads: IntoIterator<Item = (ComputationId, ValueTypeId)>,
         Flows: IntoIterator<Item = (ValueId, crate::forward::Directed)>,
         Natives: IntoIterator<Item = (ValueId, ValueId)>,
+        Funexts: IntoIterator<Item = (ValueId, crate::funext::Funext)>,
     {
         self.rows.absorb(rows);
         for (at, types) in handled {
@@ -4783,6 +4810,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
         for (at, path) in natives {
             let _replaced = self.natives.insert(at, path);
+        }
+        for (at, funext) in funexts {
+            let _replaced = self.funexts.insert(at, funext);
         }
     }
 
