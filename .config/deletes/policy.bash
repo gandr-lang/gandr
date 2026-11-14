@@ -5,7 +5,10 @@
 # read as the tree. The lint groups read their tables from it
 # (`answer_totality` its presenters and productions, `embedded_source` its
 # types), and a crate expects their refusals. A run with no tables leaves
-# each expectation unfulfilled, and the records do not build (#6838).
+# each expectation unfulfilled, and the records do not build (#6838). The
+# run reads no base: it drops `allocation_base_records`, so the lint holds no
+# function for a change, and a base tree needs no directory of base records
+# (#7419).
 #
 # With `--flags`, it prints that task's `DYLINT_RUSTFLAGS` in its place.
 #
@@ -28,6 +31,7 @@ awk -v records="$records" -v tree="$tree" -v quote="'''" '
   $0 == "env.DYLINT_TOML = " quote { on = 1; next }
   on && $0 == quote { found = 1; exit }
   on {
+    if ($0 ~ /^allocation_base_records = /) next
     if ($0 ~ /^evidence_directory = /) $0 = "evidence_directory = \"" records "\""
     while ((at = index($0, "{{ config_root }}")) > 0) $0 = substr($0, 1, at - 1) tree substr($0, at + 17)
     print
