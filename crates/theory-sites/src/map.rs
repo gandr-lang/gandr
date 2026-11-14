@@ -5,6 +5,13 @@
 //! maps between two shapes by candidate generation and that one validator.
 //! The clauses are stated on graphs; the crate's negatives run the same
 //! validator on graphs with stick components, which no shape has.
+//!
+//! # References
+//!
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 1 of the
+//!   performance picture, a worker's steady state allocates nothing from the
+//!   global allocator. So each try of [`homs`] writes into buffers that the run
+//!   owns: the odometer's reading, the images and the wire marks.
 
 use alloc::boxed::Box;
 use alloc::vec;
