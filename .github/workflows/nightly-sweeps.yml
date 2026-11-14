@@ -19,8 +19,10 @@ name: nightly-sweeps
 # queue. A dispatch always runs. Beside them, every day, each CI lane's
 # median job time against its budget, and the chain of a cold build of the
 # driver on x86-64 and on riscv64 against the last night's (#6893), and the
-# wasm driver against the native one (#7402). The sweeps, the recovery sweep
-# and the wasm driver run on a runner of our own while one is online
+# wasm driver against the native one (#7402). The crates that hold `unsafe`
+# run their tests under Miri and cargo-careful after a change to one of their
+# files (#7642). The sweeps, the recovery sweep, the wasm driver and those
+# checks run on a runner of our own while one is online
 # (#6868). The whole workflow is held to fifteen minutes summed over its
 # jobs on hosted runners.
 on:
@@ -200,6 +202,7 @@ jobs:
       stale: ${{ steps.compare.outputs.stale }}
       runner: ${{ steps.runner.outputs.runner || 'hosted' }}
       waiting: ${{ steps.waiting.outputs.waiting }}
+      unsafe: ${{ steps.unsafe.outputs.crates }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -220,12 +223,15 @@ jobs:
           "missing=\(["cargo-test-enforcing", "cargo-test-plain-only"]
           | map(select(. as $state | $entries | held($state) | not)) | join(" "))"'
           >> "$GITHUB_OUTPUT"
-      - name: check out the choice of the runner
+      - name: check out the choice of the runner and the list of the crates that hold unsafe
         if: &own-runners ${{ github.repository == 'gandr-lang/gandr' && github.ref == 'refs/heads/main' && env.LANDING_APP_ID != '' }}
         uses: *checkout
         with:
           persist-credentials: false
-          sparse-checkout: .config/integration/runner.jq
+          sparse-checkout: |
+            .config/integration/runner.jq
+            .config/unsafe
+            .config/gh/budget.bash
           sparse-checkout-cone-mode: false
       - name: mint the token that reads the runners
         id: runners
@@ -275,6 +281,7 @@ jobs:
           found=$(gh run list --workflow nightly-sweeps.yml --branch main --status success --limit 1 \
             --json databaseId,headSha --jq '.[0] // {} | "\(.databaseId // "") \(.headSha // "")"')
           read -r run last <<< "$found"
+          printf 'run=%s\n' "$run" >> "$GITHUB_OUTPUT"
           if [[ -n $run ]] && gh run download "$run" --name night-commit --dir "$RUNNER_TEMP/last"; then
             last=$(<"$RUNNER_TEMP/last/commit")
           fi
@@ -288,6 +295,25 @@ jobs:
         with:
           name: night-commit
           path: ${{ runner.temp }}/night/commit
+          retention-days: 30
+      # The crates that hold `unsafe` whose files moved since the commit that
+      # their checks last covered, and the commit that this night's checks
+      # cover (`.config/unsafe/night.bash`, #7642).
+      - id: unsafe
+        name: choose the crates that hold unsafe to check
+        if: *own-runners
+        env:
+          RUN: ${{ steps.compare.outputs.run }}
+          NIGHT: ${{ steps.states.outputs.enforcing || github.sha }}
+          RUNNER: ${{ steps.runner.outputs.runner || 'hosted' }}
+        run: .config/unsafe/night.bash "$RUN" "$NIGHT" "$RUNNER"
+      - name: record the commit that the checks of unsafe cover
+        if: *own-runners
+        uses: *upload-artifact
+        with:
+          name: unsafe-commit
+          path: ${{ runner.temp }}/unsafe/commit
+          if-no-files-found: ignore
           retention-days: 30
 
   # The sweeps restore main's enforcing test state, which Cargo's
@@ -472,7 +498,7 @@ jobs:
     name: build the wasm driver and compare it with the native one
     needs: freshness
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && needs.freshness.outputs.runner == 'integration' }}
-    runs-on: [self-hosted, integration] # zizmor: ignore[self-hosted-runner]
+    runs-on: &our-runner [self-hosted, integration] # zizmor: ignore[self-hosted-runner]
     timeout-minutes: 60
     env:
       CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
@@ -481,6 +507,42 @@ jobs:
       - *git-checkout
       - name: build the wasm driver and compare it with the native one
         run: .config/nightly/tree.bash mise run test:wasm
+
+  # The crates that hold `unsafe` (`.config/unsafe/crates.json`), their tests
+  # under Miri with each aliasing model and under cargo-careful (`mise run
+  # unsafe:*`, #7642). The job checks each crate with a file that moved since
+  # the commit that the checks last covered (`freshness`), and a dispatch
+  # checks every crate. No landing runs the checks. On the x86-64 host,
+  # `gandr-kernel-data` took 131 s under tree borrows, 180 s under stacked
+  # borrows and 7 s under cargo-careful, each standard library built before.
+  # A cold runner builds the two standard libraries too, so the checks do not
+  # fit beside the night's hosted jobs. The job runs only on a runner of our
+  # own, in the night's kept tree (`.config/nightly/tree.bash`), as the wasm
+  # driver does, and its time counts in no hosted sum. A night on the hosted
+  # runner checks no crate, and the next night on ours checks what moved since
+  # the last check. Each check runs whatever the check before it gives. The
+  # job's limit holds its wait for the night's lane, as the sweeps' does.
+  unsafe:
+    name: run the crates that hold unsafe under Miri and cargo-careful
+    needs: freshness
+    if: ${{ !cancelled() && !failure() && needs.freshness.outputs.runner == 'integration' && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.unsafe != '') }}
+    runs-on: *our-runner # zizmor: ignore[self-hosted-runner]
+    timeout-minutes: 60
+    env:
+      CI_COMMIT: ${{ needs.freshness.outputs.enforcing }}
+      CI_RUNNER: integration
+      # Each word is one package; none checks every crate of the list.
+      UNSAFE_CRATES: ${{ github.event_name != 'workflow_dispatch' && needs.freshness.outputs.unsafe || '' }}
+    steps:
+      - *git-checkout
+      - name: run the tests under Miri with tree borrows
+        run: .config/nightly/tree.bash mise run unsafe:miri-tree $UNSAFE_CRATES
+      - name: run the tests under Miri with stacked borrows
+        if: &each-check ${{ !cancelled() }}
+        run: .config/nightly/tree.bash mise run unsafe:miri-stacked $UNSAFE_CRATES
+      - name: run the tests under cargo-careful
+        if: *each-check
+        run: .config/nightly/tree.bash mise run unsafe:careful $UNSAFE_CRATES
 
   # The night's reports and filings run as one job, each its own step, so
   # one container start serves them (#3208): a start costs 20 to 25 s, and
