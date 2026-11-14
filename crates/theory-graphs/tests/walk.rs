@@ -3,8 +3,6 @@
 //! projection and the fingerprint, against the paper's figure-33 traces and
 //! section-4.1 examples and against fixtures that isolate one key each.
 
-use core::error::Error;
-
 use anodized::spec;
 use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::End;
@@ -22,6 +20,8 @@ use gandr_theory_graphs::WalkStep;
 use gandr_theory_graphs::WalkSym;
 use gandr_theory_graphs::WalkSymbolKey;
 use proptest::prelude::*;
+
+use crate::failure::Failure;
 
 /// The name of one canonical-order case, printed when it fails.
 #[repr(transparent)]
@@ -288,7 +288,7 @@ impl WalkSym for Sym
 }
 
 #[test]
-fn construction_guards_refuse_malformed_shapes() -> Result<(), Box<dyn Error>>
+fn construction_guards_refuse_malformed_shapes() -> Result<(), Failure>
 {
     let a = fixture_support::nt(1_u8, 0_u8, 1_u64);
     let b = fixture_support::nt(2_u8, 0_u8, 2_u64);
@@ -347,7 +347,7 @@ fn construction_guards_refuse_malformed_shapes() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn max_chain_len_reports_exact_accepted_cap() -> Result<(), Box<dyn Error>>
+fn max_chain_len_reports_exact_accepted_cap() -> Result<(), Failure>
 {
     let spec = WalkSpec::<Sym>::new(WalkChainLength::from(2))?;
 
@@ -360,7 +360,7 @@ fn max_chain_len_reports_exact_accepted_cap() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn canonical_unique_key_gate_retains_first_public_row() -> Result<(), Box<dyn Error>>
+fn canonical_unique_key_gate_retains_first_public_row() -> Result<(), Failure>
 {
     const UNIQUE_KEY_SRC: u8 = 240;
     const UNIQUE_KEY_DST: u8 = 241;
@@ -386,7 +386,7 @@ fn canonical_unique_key_gate_retains_first_public_row() -> Result<(), Box<dyn Er
     Ok(())
 }
 #[test]
-fn canonical_valid_minimal_gate_excludes_tiled_midpoint() -> Result<(), Box<dyn Error>>
+fn canonical_valid_minimal_gate_excludes_tiled_midpoint() -> Result<(), Failure>
 {
     const MINIMAL_GATE_SRC: u8 = 242;
     const MINIMAL_GATE_DST: u8 = 243;
@@ -433,7 +433,7 @@ fn canonical_valid_minimal_gate_excludes_tiled_midpoint() -> Result<(), Box<dyn 
     Ok(())
 }
 #[test]
-fn canonical_height_counts_nonzero_swings_only() -> Result<(), Box<dyn Error>>
+fn canonical_height_counts_nonzero_swings_only() -> Result<(), Failure>
 {
     const HEIGHT_SRC: u8 = 250;
     const HEIGHT_DST: u8 = 251;
@@ -483,7 +483,7 @@ fn canonical_height_counts_nonzero_swings_only() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 #[test]
-fn canonical_top_key_requires_zero_height_prefix() -> Result<(), Box<dyn Error>>
+fn canonical_top_key_requires_zero_height_prefix() -> Result<(), Failure>
 {
     const NO_TOP_LEFT: u8 = 80;
     const NO_TOP_RIGHT: u8 = 81;
@@ -530,7 +530,7 @@ fn canonical_top_key_requires_zero_height_prefix() -> Result<(), Box<dyn Error>>
     )
 }
 #[test]
-fn canonical_mid_key_requires_strict_interior_count() -> Result<(), Box<dyn Error>>
+fn canonical_mid_key_requires_strict_interior_count() -> Result<(), Failure>
 {
     const MID_PREFIX_LEFT: u8 = 80;
     const MID_PREFIX_RIGHT: u8 = 81;
@@ -583,7 +583,7 @@ fn canonical_mid_key_requires_strict_interior_count() -> Result<(), Box<dyn Erro
     )
 }
 #[test]
-fn transitive_queue_prunes_only_node_endpoints_not_already_seen() -> Result<(), Box<dyn Error>>
+fn transitive_queue_prunes_only_node_endpoints_not_already_seen() -> Result<(), Failure>
 {
     let a = End::Node(st(1_u8, 1_u64));
     let b = End::Node(st(2_u8, 2_u64));
@@ -629,7 +629,7 @@ fn transitive_queue_prunes_only_node_endpoints_not_already_seen() -> Result<(), 
     Ok(())
 }
 #[test]
-fn figure_33_fragments_are_literate_external_oracle() -> Result<(), Box<dyn Error>>
+fn figure_33_fragments_are_literate_external_oracle() -> Result<(), Failure>
 {
     const DELTA_E_KEY: u64 = 30;
     const DELTA_P_KEY: u64 = 40;
@@ -697,7 +697,7 @@ fn figure_33_fragments_are_literate_external_oracle() -> Result<(), Box<dyn Erro
     Ok(())
 }
 #[test]
-fn section_4_1_filters_and_canonical_order_are_observable() -> Result<(), Box<dyn Error>>
+fn section_4_1_filters_and_canonical_order_are_observable() -> Result<(), Failure>
 {
     const TOP_B_KEY: u64 = 20;
     const GROUT_MID_KEY: u64 = 30;
@@ -779,7 +779,7 @@ fn section_4_1_filters_and_canonical_order_are_observable() -> Result<(), Box<dy
     Ok(())
 }
 #[test]
-fn canonical_order_keys_are_isolated_pairwise_witnesses() -> Result<(), Box<dyn Error>>
+fn canonical_order_keys_are_isolated_pairwise_witnesses() -> Result<(), Failure>
 {
     const TOP_HIGH: u8 = 20;
     const MID_LOW: u8 = 30;
@@ -830,7 +830,7 @@ fn canonical_order_keys_are_isolated_pairwise_witnesses() -> Result<(), Box<dyn 
     Ok(())
 }
 #[test]
-fn query_orientation_filters_direct_rows() -> Result<(), Box<dyn Error>>
+fn query_orientation_filters_direct_rows() -> Result<(), Failure>
 {
     let l = End::Node(st(1_u8, 1_u64));
     let r = End::Node(st(2_u8, 2_u64));
@@ -863,7 +863,7 @@ fn query_orientation_filters_direct_rows() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 #[test]
-fn direct_rows_reject_nonzero_prefix_with_zero_height_final_swing() -> Result<(), Box<dyn Error>>
+fn direct_rows_reject_nonzero_prefix_with_zero_height_final_swing() -> Result<(), Failure>
 {
     let src = End::Node(st(1_u8, 1_u64));
     let dst = End::Node(st(2_u8, 2_u64));
@@ -981,7 +981,7 @@ mod fixture_support
     }
 }
 #[test]
-fn cyclic_outer_closure_terminates_and_cap_errors_are_typed() -> Result<(), Box<dyn Error>>
+fn cyclic_outer_closure_terminates_and_cap_errors_are_typed() -> Result<(), Failure>
 {
     let a = End::Node(st(1_u8, 1_u64));
     let b = End::Node(st(2_u8, 2_u64));
@@ -1070,7 +1070,7 @@ fn cyclic_outer_closure_terminates_and_cap_errors_are_typed() -> Result<(), Box<
     Ok(())
 }
 #[test]
-fn seen_key_verdicts_separate_safe_and_legacy_closure() -> Result<(), Box<dyn Error>>
+fn seen_key_verdicts_separate_safe_and_legacy_closure() -> Result<(), Failure>
 {
     const DIVERGENT_START_KEY: u64 = 71;
     const DIVERGENT_ALIAS_KEY: u64 = 72;
@@ -1124,7 +1124,7 @@ fn seen_key_verdicts_separate_safe_and_legacy_closure() -> Result<(), Box<dyn Er
     Ok(())
 }
 #[test]
-fn same_sort_bounds_different_identity_continuation_is_suppressed() -> Result<(), Box<dyn Error>>
+fn same_sort_bounds_different_identity_continuation_is_suppressed() -> Result<(), Failure>
 {
     const START_KEY: u64 = 401;
     const ALIAS_KEY: u64 = 402;
@@ -1165,7 +1165,7 @@ fn same_sort_bounds_different_identity_continuation_is_suppressed() -> Result<()
 }
 #[test]
 fn insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable()
--> Result<(), Box<dyn Error>>
+-> Result<(), Failure>
 {
     let a = End::Node(st(1_u8, 1_u64));
     let b = End::Node(st(2_u8, 2_u64));
@@ -1205,7 +1205,7 @@ fn insertion_permutation_duplicate_canonicalization_and_fingerprint_are_stable()
     Ok(())
 }
 #[test]
-fn converged_equality_prefixes_all_expand_through_shared_endpoint() -> Result<(), Box<dyn Error>>
+fn converged_equality_prefixes_all_expand_through_shared_endpoint() -> Result<(), Failure>
 {
     let a = End::Node(st(1_u8, 1_u64));
     let b = End::Node(st(2_u8, 2_u64));
@@ -1231,7 +1231,7 @@ fn converged_equality_prefixes_all_expand_through_shared_endpoint() -> Result<()
     Ok(())
 }
 #[test]
-fn molds_projection_is_reachable_canonical_and_label_indexed() -> Result<(), Box<dyn Error>>
+fn molds_projection_is_reachable_canonical_and_label_indexed() -> Result<(), Failure>
 {
     const MOLD_B_STANCE: u8 = 11;
     const OTHER_MOLD_STANCE: u8 = 12;
@@ -1351,7 +1351,7 @@ mod assertion_support
         case: C,
         expected_first: Walk<Nt, St>,
         expected_second: Walk<Nt, St>,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> Result<(), Failure>
     where
         C: Into<OrderCase<'case>>,
     {
@@ -1492,7 +1492,7 @@ proptest! {
 
 #[test]
 #[cfg(target_pointer_width = "64")]
-fn zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries() -> Result<(), Box<dyn Error>>
+fn zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries() -> Result<(), Failure>
 {
     let oversized_count = usize::try_from(u32::MAX)?
         .checked_add(1)
@@ -1535,7 +1535,7 @@ fn zero_sized_shapes_preserve_overflow_and_short_circuit_boundaries() -> Result<
 }
 
 #[test]
-fn empty_machine_preserves_root_and_empty_projections() -> Result<(), Box<dyn Error>>
+fn empty_machine_preserves_root_and_empty_projections() -> Result<(), Failure>
 {
     let spec = WalkSpec::<Sym>::new(WalkChainLength::from(1))?;
     let index = WalkIndex::build(&spec)?;
@@ -1558,7 +1558,7 @@ fn empty_machine_preserves_root_and_empty_projections() -> Result<(), Box<dyn Er
 }
 
 #[test]
-fn fingerprint_matches_independently_framed_directional_machines() -> Result<(), Box<dyn Error>>
+fn fingerprint_matches_independently_framed_directional_machines() -> Result<(), Failure>
 {
     // The digests frame the documented words directly, independently of the
     // accumulator helpers.
@@ -1607,7 +1607,7 @@ fn ordered_observer_refuses_reversed_evidence()
 }
 
 #[test]
-fn swings_order_by_their_nonterminals_lexicographically() -> Result<(), Box<dyn Error>>
+fn swings_order_by_their_nonterminals_lexicographically() -> Result<(), Failure>
 {
     let short = Swing::new(vec![1_u8, 2])?;
     let longer = Swing::new(vec![1_u8, 2, 0])?;

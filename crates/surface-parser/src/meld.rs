@@ -10730,12 +10730,11 @@ fn read_shape_op(reader: &mut Reader<'_>) -> Result<OpShape, CheckpointError>
 mod tests
 {
     use alloc::borrow::ToOwned as _;
-    use alloc::boxed::Box;
     use alloc::format;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::error::Error;
+    use core::error::Error as _;
 
     use anodized::spec;
     use gandr_surface_grammar::LabelId;
@@ -10777,6 +10776,7 @@ mod tests
     use super::UnitCleanness;
     use super::UnitEnding;
     use super::UnitSeam;
+    use crate::failure::Failure;
     use crate::label::Lexeme;
     use crate::oblig::Delta;
     use crate::oblig::Oblig;
@@ -10786,7 +10786,7 @@ mod tests
     use crate::testing::tile_texts;
 
     #[test]
-    fn public_errors_preserve_context_and_sink_failures() -> Result<(), Box<dyn Error>>
+    fn public_errors_preserve_context_and_sink_failures() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let mismatch = MeldState::new(&pbg)
@@ -10906,7 +10906,7 @@ mod tests
     }
 
     #[test]
-    fn checkpoint_compound_records_preserve_payloads() -> Result<(), Box<dyn Error>>
+    fn checkpoint_compound_records_preserve_payloads() -> Result<(), Failure>
     {
         let labels: &[(NodeLabel, &[u8])] = &[
             (NodeLabel::Wald, &[1]),
@@ -11285,7 +11285,7 @@ mod tests
     }
 
     #[test]
-    fn checkpoint_tags_cover_closed_vocabularies() -> Result<(), Box<dyn Error>>
+    fn checkpoint_tags_cover_closed_vocabularies() -> Result<(), Failure>
     {
         {
             let variants = [
@@ -11481,7 +11481,7 @@ mod tests
     }
 
     #[test]
-    fn wire_values_preserve_bytes_and_cursor_failure_boundaries() -> Result<(), Box<dyn Error>>
+    fn wire_values_preserve_bytes_and_cursor_failure_boundaries() -> Result<(), Failure>
     {
         let mut writer = super::Writer { bytes: vec![0xaa] };
         writer.u8(super::WireByte::from(0xab));
@@ -11593,7 +11593,7 @@ mod tests
     }
 
     #[test]
-    fn emission_preserves_byte_spans_child_order_and_errors() -> Result<(), Box<dyn Error>>
+    fn emission_preserves_byte_spans_child_order_and_errors() -> Result<(), Failure>
     {
         assert_eq!(
             MeldState::wire_len::<u32>(super::CheckpointCount::from(0)),
@@ -11670,7 +11670,7 @@ mod tests
     }
 
     #[test]
-    fn precedence_comparison_preserves_relation_priority() -> Result<(), Box<dyn Error>>
+    fn precedence_comparison_preserves_relation_priority() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let state = MeldState::new(&pbg);
@@ -11752,7 +11752,7 @@ mod tests
     }
 
     #[test]
-    fn missing_operator_operands_are_zero_width_repairs() -> Result<(), Box<dyn Error>>
+    fn missing_operator_operands_are_zero_width_repairs() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let atom = only(&pbg, TileLabel("x"));
@@ -11831,7 +11831,7 @@ mod tests
     }
 
     #[test]
-    fn operator_shapes_preserve_uncaptured_neighbors() -> Result<(), Box<dyn Error>>
+    fn operator_shapes_preserve_uncaptured_neighbors() -> Result<(), Failure>
     {
         for (operator, expression, source, expected) in [
             (
@@ -11885,7 +11885,7 @@ mod tests
     }
 
     #[test]
-    fn stack_splices_keep_shifted_cache_positions_exact() -> Result<(), Box<dyn Error>>
+    fn stack_splices_keep_shifted_cache_positions_exact() -> Result<(), Failure>
     {
         let mut spec = PrecSpec::new();
         let atom = spec.insert("atom", Assoc::Non)?;
@@ -12006,7 +12006,7 @@ mod tests
     }
 
     #[test]
-    fn frontier_flags_and_successor_labels_handle_boundary_positions() -> Result<(), Box<dyn Error>>
+    fn frontier_flags_and_successor_labels_handle_boundary_positions() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let open = only(&pbg, TileLabel("("));
@@ -12106,7 +12106,7 @@ mod tests
     }
 
     #[test]
-    fn push_preserves_unknown_and_multibyte_source() -> Result<(), Box<dyn Error>>
+    fn push_preserves_unknown_and_multibyte_source() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let mut state = MeldState::new(&pbg);
@@ -12139,7 +12139,7 @@ mod tests
     }
 
     #[test]
-    fn frontier_queries_follow_open_close_and_operand_transitions() -> Result<(), Box<dyn Error>>
+    fn frontier_queries_follow_open_close_and_operand_transitions() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let open = only(&pbg, TileLabel("("));
@@ -12190,7 +12190,7 @@ mod tests
     }
 
     #[test]
-    fn empty_state_commits_to_a_root() -> Result<(), Box<dyn Error>>
+    fn empty_state_commits_to_a_root() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let state = MeldState::new(&pbg);
@@ -12200,7 +12200,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn infix_reduces_after_precedence() -> Result<(), Box<dyn Error>>
+    fn infix_reduces_after_precedence() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let x = only(&pbg, TileLabel("x"));
@@ -12228,7 +12228,7 @@ mod tests
     }
 
     #[test]
-    fn checkpoint_bytes_round_trip() -> Result<(), Box<dyn Error>>
+    fn checkpoint_bytes_round_trip() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let open = only(&pbg, TileLabel("("));
@@ -12262,7 +12262,7 @@ mod tests
     /// a ghost against a closer that never answered it, which is the one error
     /// worse than not pairing at all.
     #[test]
-    fn minted_close_round_trips_and_refuses_unknown_class() -> Result<(), Box<dyn Error>>
+    fn minted_close_round_trips_and_refuses_unknown_class() -> Result<(), Failure>
     {
         for class in [
             ClosingClass::Paren,
@@ -12350,7 +12350,7 @@ mod tests
     }
 
     #[test]
-    fn degrout_flags_one_ambiguous_prec_at_the_smallest_span() -> Result<(), Box<dyn Error>>
+    fn degrout_flags_one_ambiguous_prec_at_the_smallest_span() -> Result<(), Failure>
     {
         // `x @a x @b x`: `@a` and `@b` are precedence-incomparable within one
         // sort, so the melder emits exactly one AmbiguousPrec at the smallest
@@ -12398,7 +12398,7 @@ mod tests
     }
 
     #[test]
-    fn single_atom_commits_to_one_token() -> Result<(), Box<dyn Error>>
+    fn single_atom_commits_to_one_token() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let x = only(&pbg, TileLabel("x"));
@@ -12410,7 +12410,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn brackets_close_on_the_matching_delimiter() -> Result<(), Box<dyn Error>>
+    fn brackets_close_on_the_matching_delimiter() -> Result<(), Failure>
     {
         let pbg = paren_pbg()?;
         let open = only(&pbg, TileLabel("("));
@@ -12456,7 +12456,7 @@ mod tests
     ///   shape.
     /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
-    fn paren_pbg() -> Result<Pbg, Box<dyn Error>>
+    fn paren_pbg() -> Result<Pbg, Failure>
     {
         let mut spec = PrecSpec::new();
         let atom = spec.insert("atom", Assoc::Non)?;
@@ -12482,7 +12482,7 @@ mod tests
         Ok(pbg)
     }
     #[test]
-    fn delta_reflects_the_buffered_obligations() -> Result<(), Box<dyn Error>>
+    fn delta_reflects_the_buffered_obligations() -> Result<(), Failure>
     {
         let pbg = ambiguous_pbg()?;
         let x = only(&pbg, TileLabel("x"));
@@ -12509,7 +12509,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn finalize_is_non_destructive() -> Result<(), Box<dyn Error>>
+    fn finalize_is_non_destructive() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let x = only(&pbg, TileLabel("x"));
@@ -12559,7 +12559,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn checkpoint_resume_is_equivalent() -> Result<(), Box<dyn Error>>
+    fn checkpoint_resume_is_equivalent() -> Result<(), Failure>
     {
         let pbg = infix_pbg()?;
         let x = only(&pbg, TileLabel("x"));
@@ -12600,7 +12600,7 @@ mod tests
     }
 
     #[test]
-    fn a_parked_unit_keeps_whether_it_reached_its_stand_in() -> Result<(), Box<dyn Error>>
+    fn a_parked_unit_keeps_whether_it_reached_its_stand_in() -> Result<(), Failure>
     {
         // A unit taken up again meets its seam as the parked unit would: one
         // whose fold touched its stand-in still breaks, one whose fold did
@@ -12642,7 +12642,7 @@ mod tests
     }
 
     #[test]
-    fn a_parked_unit_keeps_whether_it_ends_settled() -> Result<(), Box<dyn Error>>
+    fn a_parked_unit_keeps_whether_it_ends_settled() -> Result<(), Failure>
     {
         // A closed declaration's unit ends settled and is clean, so a laid join
         // may take its forms up as a block; a declaration left open ends open,
@@ -12676,7 +12676,7 @@ mod tests
     }
 
     #[test]
-    fn mark_rollback_restores_state_exactly() -> Result<(), Box<dyn Error>>
+    fn mark_rollback_restores_state_exactly() -> Result<(), Failure>
     {
         // The molder's per-candidate transaction: mark, dry-run a two-tile
         // push, roll back, and the state is bytewise identical to before —
@@ -12705,7 +12705,7 @@ mod tests
     }
 
     #[test]
-    fn a_foreign_source_is_refused_at_commit() -> Result<(), Box<dyn Error>>
+    fn a_foreign_source_is_refused_at_commit() -> Result<(), Failure>
     {
         // The tree borrows the caller's source, so commit checks that it is the
         // text the pushes assembled; any other text would mis-span every node.
@@ -12739,7 +12739,7 @@ mod tests
     ///   shape.
     /// - witness: `meld::tests::infix_reduces_after_precedence`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["+", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
-    fn infix_pbg() -> Result<Pbg, Box<dyn Error>>
+    fn infix_pbg() -> Result<Pbg, Failure>
     {
         let mut spec = PrecSpec::new();
         let atom = spec.insert("atom", Assoc::Non)?;
@@ -12767,7 +12767,7 @@ mod tests
         Ok(pbg)
     }
     #[test]
-    fn delta_since_reads_only_the_candidate_tail() -> Result<(), Box<dyn Error>>
+    fn delta_since_reads_only_the_candidate_tail() -> Result<(), Failure>
     {
         // A candidate that introduces an ambiguity has a non-empty delta; one
         // that appends a plain operand has an empty delta — the molder's
@@ -12827,7 +12827,7 @@ mod tests
     ///   shape.
     /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["@a", "@b", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
-    fn ambiguous_pbg() -> Result<Pbg, Box<dyn Error>>
+    fn ambiguous_pbg() -> Result<Pbg, Failure>
     {
         let mut spec = PrecSpec::new();
         let atom = spec.insert("atom", Assoc::Non)?;
@@ -12868,7 +12868,7 @@ mod tests
     }
 
     #[test]
-    fn admits_a_form_first_mid_at_a_fresh_slot() -> Result<(), Box<dyn Error>>
+    fn admits_a_form_first_mid_at_a_fresh_slot() -> Result<(), Failure>
     {
         // The candidate pre-filter (`admits`): a form whose first symbol is a
         // repetition gives its first tile a predecessor, the repeated prefix,
@@ -12906,7 +12906,7 @@ mod tests
     }
 
     #[test]
-    fn admits_rejects_a_stray_closer() -> Result<(), Box<dyn Error>>
+    fn admits_rejects_a_stray_closer() -> Result<(), Failure>
     {
         // A form-end closer (`)` / `;` / a closing `"`) is admissible only when
         // it `≐`-continues an open form frontier: at the base none is open, so
@@ -12928,7 +12928,7 @@ mod tests
     }
 
     #[test]
-    fn expected_sort_reads_the_open_slot() -> Result<(), Box<dyn Error>>
+    fn expected_sort_reads_the_open_slot() -> Result<(), Failure>
     {
         // `expected_operand_sort` reads the head's expected operand slot: at
         // the base it defaults to `Expression`, and after a `ret`
@@ -12951,7 +12951,7 @@ mod tests
     }
 
     #[test]
-    fn head_caches_match_a_fresh_scan_across_streams() -> Result<(), Box<dyn Error>>
+    fn head_caches_match_a_fresh_scan_across_streams() -> Result<(), Failure>
     {
         // The O(1) head caches (`frontiers` / `operators` / `barriers`) must
         // equal a fresh role scan after EVERY mutation: pushes (every Kind),
@@ -13004,7 +13004,7 @@ mod tests
     }
 
     #[test]
-    fn completable_hole_closes_without_obligation() -> Result<(), Box<dyn Error>>
+    fn completable_hole_closes_without_obligation() -> Result<(), Failure>
     {
         // A bare `?` whose optional `name` tail never arrives is a
         // *complete* form (its mold is in the grammar LAST set), so committing
@@ -13054,7 +13054,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn completable_hole_does_not_absorb_enclosing_closer() -> Result<(), Box<dyn Error>>
+    fn completable_hole_does_not_absorb_enclosing_closer() -> Result<(), Failure>
     {
         // An open completable `?` frontier does not shadow the
         // enclosing form — pushing the group's `)` closes the *hole* cleanly
@@ -13108,10 +13108,10 @@ mod tests
     /// declaration follows. A closing bracket that ends its form still ends it:
     /// the arrow after a universe's `]` takes the universe as its domain.
     #[test]
-    fn a_bracket_before_a_required_tail_keeps_its_form_open() -> Result<(), Box<dyn Error>>
+    fn a_bracket_before_a_required_tail_keeps_its_form_open() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Box<dyn Error>> {
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Failure> {
             let result = crate::parse::parse(&pbg, SourceText::from(source))?;
             assert!(bool::from(result.is_clean()), "{source} reads cleanly");
             let tree = result.into_tree();
@@ -13160,10 +13160,10 @@ mod tests
     /// tail, a prefix operator's operand completes it, and an operator its
     /// group takes from stands outside.
     #[test]
-    fn a_required_tail_runs_as_far_as_its_group_yields() -> Result<(), Box<dyn Error>>
+    fn a_required_tail_runs_as_far_as_its_group_yields() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Box<dyn Error>> {
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Failure> {
             let result = crate::parse::parse(&pbg, SourceText::from(source))?;
             assert!(bool::from(result.is_clean()), "{source} reads cleanly");
             let tree = result.into_tree();
@@ -13208,10 +13208,10 @@ mod tests
     /// tile: an access's block followed by `unwind` is one access, and one
     /// followed by `;` closes at its block.
     #[test]
-    fn a_filled_tail_keeps_its_form_open_for_the_next_tile() -> Result<(), Box<dyn Error>>
+    fn a_filled_tail_keeps_its_form_open_for_the_next_tile() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let accesses = |source: &'static str| -> Result<Vec<String>, Box<dyn Error>> {
+        let accesses = |source: &'static str| -> Result<Vec<String>, Failure> {
             let result = crate::parse::parse(&pbg, SourceText::from(source))?;
             assert!(bool::from(result.is_clean()), "{source} reads cleanly");
             let tree = result.into_tree();
@@ -13244,7 +13244,7 @@ mod tests
     /// bracket it stands in, the root when a blank line sets it apart, and
     /// the form of a leaf it is written against.
     #[test]
-    fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Box<dyn Error>>
+    fn each_comment_is_owned_by_the_node_it_describes() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let source =
@@ -13297,10 +13297,10 @@ mod tests
     /// attributes key one declaration, and only the remaining attributes move
     /// its digest.
     #[test]
-    fn documentation_reaches_no_digest() -> Result<(), Box<dyn Error>>
+    fn documentation_reaches_no_digest() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let digest = |source: &'static str| -> Result<_, Box<dyn Error>> {
+        let digest = |source: &'static str| -> Result<_, Failure> {
             let tree = crate::parse::parse(&pbg, SourceText::from(source))?.into_tree();
             assert_eq!(crate::testing::reconstruct(&tree), source);
             Ok(root_digest(&tree))
@@ -13350,7 +13350,7 @@ mod tests
     /// ends the run, and a run after a form on its own line still describes
     /// the next one.
     #[test]
-    fn a_doc_run_documents_the_form_below_it() -> Result<(), Box<dyn Error>>
+    fn a_doc_run_documents_the_form_below_it() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let source = include_str!("meld/fixtures/a-doc-run-documents-the-form-below-it.gandr");
@@ -13387,7 +13387,7 @@ mod tests
     /// one. A `///` line ends the run and starts its own, which documents the
     /// form below as before.
     #[test]
-    fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Box<dyn Error>>
+    fn an_inner_run_documents_what_it_stands_in_1365() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let source =
@@ -13427,10 +13427,10 @@ mod tests
     /// Only a `doc` entry with one string payload is documentation; any other
     /// `doc` stays an attribute for lowering to refuse, and keys its form.
     #[test]
-    fn a_malformed_doc_entry_stays_an_attribute() -> Result<(), Box<dyn Error>>
+    fn a_malformed_doc_entry_stays_an_attribute() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let parsed = |source: &'static str| -> Result<_, Box<dyn Error>> {
+        let parsed = |source: &'static str| -> Result<_, Failure> {
             Ok(crate::parse::parse(&pbg, SourceText::from(source))?.into_tree())
         };
         let bare = root_digest(&parsed("def x = 1;\n")?);
@@ -13456,10 +13456,10 @@ mod tests
     /// type owes one tile fewer, and one whose operand is an inner form already
     /// opened owes the same — the parenthesis's closer replaces the tail.
     #[test]
-    fn finalize_charges_a_required_tail_only_when_it_is_absent() -> Result<(), Box<dyn Error>>
+    fn finalize_charges_a_required_tail_only_when_it_is_absent() -> Result<(), Failure>
     {
         let pbg = built_in()?;
-        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Failure> {
             let label = match text {
                 "g" => "identifier",
                 other => other,
@@ -13470,7 +13470,7 @@ mod tests
                 .find(|&mold| pbg.named_kind(mold).is_ok_and(|named| named.0 == kind))
                 .ok_or_else(|| format!("no {kind} mold for {text}").into())
         };
-        let owed = |tiles: &[(&'static str, &'static str)]| -> Result<usize, Box<dyn Error>> {
+        let owed = |tiles: &[(&'static str, &'static str)]| -> Result<usize, Failure> {
             let mut state = MeldState::new(&pbg);
             for (position, &(text, kind)) in tiles.iter().enumerate() {
                 if position > 0 {
@@ -13518,7 +13518,7 @@ mod tests
     /// owing its required tail, and the tail filled by a written or an opened
     /// operand — the states the two walks could diverge on.
     #[test]
-    fn completion_delta_agrees_with_finalize() -> Result<(), Box<dyn Error>>
+    fn completion_delta_agrees_with_finalize() -> Result<(), Failure>
     {
         let folded = |state: &MeldState<'_>| {
             let mut delta = Delta::empty();
@@ -13543,7 +13543,7 @@ mod tests
             );
         }
         let pbg = built_in()?;
-        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Failure> {
             let label = match text {
                 "g" => "identifier",
                 other => other,
@@ -13595,7 +13595,7 @@ mod tests
     /// the hole of an operand whose form is under way, and marks where the
     /// innermost form's closing ends.
     #[test]
-    fn finalize_closes_each_frontier_at_its_innermost_material() -> Result<(), Box<dyn Error>>
+    fn finalize_closes_each_frontier_at_its_innermost_material() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let hole = Expected::Hole;
@@ -13628,7 +13628,7 @@ mod tests
     /// that operator, then the innermost open frontier with whether its slot
     /// is filled, and closes it cheapest first.
     #[test]
-    fn continuations_name_the_pending_hole_and_the_frontier() -> Result<(), Box<dyn Error>>
+    fn continuations_name_the_pending_hole_and_the_frontier() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let label = |mold: MoldId| pbg.mold(mold).map_or("?", |def| def.label);
@@ -13697,7 +13697,7 @@ mod tests
     ///   shape.
     /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["?", "name", "(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
-    fn completable_pbg() -> Result<Pbg, Box<dyn Error>>
+    fn completable_pbg() -> Result<Pbg, Failure>
     {
         let mut spec = PrecSpec::new();
         let atom = spec.insert("atom", Assoc::Non)?;

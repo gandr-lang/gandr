@@ -3,7 +3,7 @@
 //! evidence, the fingerprint and the linear extension.
 
 use alloc::collections::BTreeSet;
-use core::error::Error;
+use core::error::Error as _;
 
 use anodized::spec;
 use gandr_theory_graphs::Assoc;
@@ -19,6 +19,8 @@ use gandr_theory_graphs::PrecIndex;
 use gandr_theory_graphs::PrecSpec;
 use gandr_theory_graphs::PrecSpecError;
 use proptest::prelude::*;
+
+use crate::failure::Failure;
 
 /// Builds the diamond `tight > left-mid, right-mid > loose`, with the two
 /// middle groups left- and right-associative.
@@ -44,7 +46,7 @@ use proptest::prelude::*;
     && dag.assoc(loose) == Some(Assoc::Non) && dag.assoc(left_mid) == Some(Assoc::Left)
     && dag.assoc(right_mid) == Some(Assoc::Right) && dag.assoc(tight) == Some(Assoc::Non)
     && dag.edges().eq([(left_mid, loose), (right_mid, loose), (tight, left_mid), (tight, right_mid)])))]
-fn diamond() -> Result<(PrecDag, [Prec; 4]), Box<dyn Error>>
+fn diamond() -> Result<(PrecDag, [Prec; 4]), Failure>
 {
     let mut spec = PrecSpec::new();
     let loose = spec.insert("loose", Assoc::Non)?;
@@ -87,7 +89,7 @@ fn diamond() -> Result<(PrecDag, [Prec; 4]), Box<dyn Error>>
         && pair.0.edges().eq(pair.1.iter().copied().zip(pair.1.iter().copied().skip(1)).map(|(looser, tighter)| (tighter, looser)))
         && pair.0.linear_extension().iter().copied().eq(pair.1.iter().rev().copied())),
 )]
-fn integer_chain(assocs: &[Assoc]) -> Result<(PrecDag, Vec<Prec>), Box<dyn Error>>
+fn integer_chain(assocs: &[Assoc]) -> Result<(PrecDag, Vec<Prec>), Failure>
 {
     let mut spec = PrecSpec::new();
     let mut nodes = Vec::new();
@@ -166,7 +168,7 @@ fn assert_closed_adjacent_cycle(
 }
 
 #[test]
-fn prec_dag_size_and_boundary_contract() -> Result<(), Box<dyn Error>>
+fn prec_dag_size_and_boundary_contract() -> Result<(), Failure>
 {
     let first = Prec::new(PrecIndex::from(0));
     let empty_dag = PrecDag::build(&PrecSpec::new())?;
@@ -225,7 +227,7 @@ fn prec_dag_size_and_boundary_contract() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn prec_dag_contract() -> Result<(), Box<dyn Error>>
+fn prec_dag_contract() -> Result<(), Failure>
 {
     let (dag, [loose, left_mid, right_mid, tight]) = diamond()?;
     let unknown = Prec::new(PrecIndex::from(u16::MAX));
@@ -284,7 +286,7 @@ fn prec_dag_contract() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn prec_cycle_witness_contract() -> Result<(), Box<dyn Error>>
+fn prec_cycle_witness_contract() -> Result<(), Failure>
 {
     let mut self_spec = PrecSpec::new();
     let node = self_spec.insert("self", Assoc::Non)?;
@@ -308,7 +310,7 @@ fn prec_cycle_witness_contract() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn virtual_bound_comparisons() -> Result<(), Box<dyn Error>>
+fn virtual_bound_comparisons() -> Result<(), Failure>
 {
     let (dag, nodes) = integer_chain(&[Assoc::Non, Assoc::Non, Assoc::Non])?;
     let &[loose, _, tight] = nodes.as_slice()
@@ -418,7 +420,7 @@ fn virtual_bound_comparisons() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn prec_integer_chain_oracle() -> Result<(), Box<dyn Error>>
+fn prec_integer_chain_oracle() -> Result<(), Failure>
 {
     let (dag, nodes) = integer_chain(&[Assoc::Non, Assoc::Left, Assoc::Right])?;
     let &[loose, left_assoc, right_assoc] = nodes.as_slice()
@@ -446,7 +448,7 @@ fn prec_integer_chain_oracle() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn prec_spec_size_and_boundary_contract() -> Result<(), Box<dyn Error>>
+fn prec_spec_size_and_boundary_contract() -> Result<(), Failure>
 {
     let empty = PrecSpec::new();
     assert_eq!(PrecGroupCount::from(0), empty.len());
@@ -491,7 +493,7 @@ fn prec_spec_size_and_boundary_contract() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn duplicate_edge_canonicalization_and_invalid_edges() -> Result<(), Box<dyn Error>>
+fn duplicate_edge_canonicalization_and_invalid_edges() -> Result<(), Failure>
 {
     let mut spec = PrecSpec::new();
     let loose = spec.insert("loose", Assoc::Non)?;
@@ -523,7 +525,7 @@ fn duplicate_edge_canonicalization_and_invalid_edges() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn capacity_beyond_u16_is_typed() -> Result<(), Box<dyn Error>>
+fn capacity_beyond_u16_is_typed() -> Result<(), Failure>
 {
     let mut spec = PrecSpec::new();
     for index in 0_u32 ..= u32::from(u16::MAX) {
@@ -546,7 +548,7 @@ fn capacity_beyond_u16_is_typed() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn bound_value_reflexive_association_tracks_direction() -> Result<(), Box<dyn Error>>
+fn bound_value_reflexive_association_tracks_direction() -> Result<(), Failure>
 {
     let mut left_spec = PrecSpec::new();
     let left_p = left_spec.insert("p", Assoc::Left)?;
@@ -601,7 +603,7 @@ fn bound_value_reflexive_association_tracks_direction() -> Result<(), Box<dyn Er
 }
 
 #[test]
-fn stable_fingerprint_sensitivity() -> Result<(), Box<dyn Error>>
+fn stable_fingerprint_sensitivity() -> Result<(), Failure>
 {
     let mut left = PrecSpec::new();
     let a = left.insert("a", Assoc::Non)?;
@@ -648,7 +650,7 @@ fn stable_fingerprint_sensitivity() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn fingerprint_stream_is_pinned() -> Result<(), Box<dyn Error>>
+fn fingerprint_stream_is_pinned() -> Result<(), Failure>
 {
     let mut spec = PrecSpec::new();
     let a = spec.insert("a", Assoc::Non)?;
@@ -664,7 +666,7 @@ fn fingerprint_stream_is_pinned() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn deterministic_linear_extension_uses_smallest_ready_id() -> Result<(), Box<dyn Error>>
+fn deterministic_linear_extension_uses_smallest_ready_id() -> Result<(), Failure>
 {
     let mut spec = PrecSpec::new();
     let a = spec.insert("a", Assoc::Non)?;
@@ -760,7 +762,7 @@ fn cycle_observers_refuse_invalid_evidence()
 }
 
 #[test]
-fn every_precedence_refusal_renders_what_it_names() -> Result<(), Box<dyn Error>>
+fn every_precedence_refusal_renders_what_it_names() -> Result<(), Failure>
 {
     let mut spec = PrecSpec::new();
     let only = spec.insert("only", Assoc::Non)?;

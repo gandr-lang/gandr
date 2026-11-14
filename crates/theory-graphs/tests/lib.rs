@@ -8,6 +8,8 @@ extern crate alloc;
 #[cfg(test)]
 mod algorithms;
 #[cfg(test)]
+mod failure;
+#[cfg(test)]
 mod prec;
 #[cfg(test)]
 mod walk;

@@ -69,6 +69,25 @@
 //! use gandr_surface_parser::parse;
 //! use gandr_surface_syntax::SourceText;
 //! use quenchant_shape::shape::Maybe;
+//! # #[derive(Debug)]
+//! # enum Failure {
+//! #     Grammar(gandr_surface_grammar::PbgError),
+//! #     Meld(gandr_surface_parser::MeldError),
+//! #     Lowering(gandr_surface_lowering::LoweringRefusal<'static>),
+//! #     Settle(gandr_surface_corpus::SettleFault),
+//! # }
+//! # impl From<gandr_surface_grammar::PbgError> for Failure {
+//! #     fn from(error: gandr_surface_grammar::PbgError) -> Self { Self::Grammar(error) }
+//! # }
+//! # impl From<gandr_surface_parser::MeldError> for Failure {
+//! #     fn from(error: gandr_surface_parser::MeldError) -> Self { Self::Meld(error) }
+//! # }
+//! # impl From<gandr_surface_lowering::LoweringRefusal<'static>> for Failure {
+//! #     fn from(error: gandr_surface_lowering::LoweringRefusal<'static>) -> Self { Self::Lowering(error) }
+//! # }
+//! # impl From<gandr_surface_corpus::SettleFault> for Failure {
+//! #     fn from(error: gandr_surface_corpus::SettleFault) -> Self { Self::Settle(error) }
+//! # }
 //!
 //! let source = SourceText::from(
 //!     r#"@[ owes(1) ] def owed : Integer ;
@@ -187,7 +206,7 @@
 //!     Seal::Unsealed,
 //!     "an owed run is settled, not sealed"
 //! );
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), Failure>(())
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would

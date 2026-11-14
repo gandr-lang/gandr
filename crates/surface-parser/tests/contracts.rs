@@ -1,7 +1,6 @@
 //! Contracts: the melder's paper traces, totality over arbitrary streams,
 //! checkpoint resume, and the module and hole surfaces.
 
-use core::error::Error;
 use core::fmt::Write as _;
 
 use anodized::spec;
@@ -37,6 +36,7 @@ use crate::common::root_digest;
 use crate::common::significant_children;
 use crate::common::span;
 use crate::common::text;
+use crate::failure::Failure;
 
 /// Count of tree nodes reachable from a root.
 #[repr(transparent)]
@@ -98,7 +98,7 @@ impl From<MoldCount> for u32
 }
 
 #[test]
-fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
+fn module_declarations_mold_zero_obligation() -> Result<(), Failure>
 {
     let pbg = built();
     let cases = [
@@ -134,7 +134,7 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 /// value. The negative cases keep a missing operand loud, including inside a
 /// comma-separated list.
 #[test]
-fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
+fn prefix_type_formers_group_required_operands() -> Result<(), Failure>
 {
     let pbg = built();
     let cases: [(&str, bool); 9] = [
@@ -167,7 +167,7 @@ fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn nested_module_members_mold_zero_obligation() -> Result<(), Box<dyn Error>>
+fn nested_module_members_mold_zero_obligation() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let src =
@@ -206,7 +206,7 @@ fn nested_module_members_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 /// pattern hole as a stray expression. So the witness is the recorded sort of
 /// the `?` tile at each position, never the obligation count.
 #[test]
-fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Box<dyn Error>>
+fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Failure>
 {
     let pbg = built();
     // Each case pairs a source with the sorts its `?` tiles must carry, in
@@ -259,7 +259,7 @@ fn holes_mold_at_the_sort_of_the_slot_they_stand_in() -> Result<(), Box<dyn Erro
 fn hole_tile_sorts(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
-) -> Result<Vec<Sort>, Box<dyn Error>>
+) -> Result<Vec<Sort>, Failure>
 {
     let mut sorts = Vec::new();
     let mut pending = vec![tree.root()];
@@ -281,7 +281,7 @@ fn hole_tile_sorts(
 /// admitted by the grammar before anything elaborates it, so the syntax and its
 /// meaning arrive as separate, separately-reviewable changes.
 #[test]
-fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
+fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Failure>
 {
     let pbg = built();
     let src = "module Counter :> *{ type T, zero : T } where { type T = Integer; def zero = 0; }";
@@ -299,7 +299,7 @@ fn an_opaque_module_ascription_parses_cleanly() -> Result<(), Box<dyn Error>>
 /// The pair is what shows the discrimination is lookahead-free: one tile
 /// decides it, at a fixed position, with the same body either way.
 #[test]
-fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Error>>
+fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Failure>
 {
     let pbg = built();
     let src = "module Counter : *{ type T, zero : T } where { def zero = 0; }";
@@ -322,7 +322,7 @@ fn a_transparent_ascription_admits_the_same_signature() -> Result<(), Box<dyn Er
 /// follow. One text has one reading, and the bare one is a repair rather than
 /// a second parse.
 #[test]
-fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
+fn a_path_payload_parses_only_parenthesized() -> Result<(), Failure>
 {
     let pbg = built();
     let parenthesized = parse(pbg, SourceText::from("def s : !(Seat.Report). end ;"))?;
@@ -357,7 +357,7 @@ fn a_path_payload_parses_only_parenthesized() -> Result<(), Box<dyn Error>>
 fn dot_rules(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
-) -> Result<Vec<RuleName>, Box<dyn Error>>
+) -> Result<Vec<RuleName>, Failure>
 {
     let mut rules = Vec::new();
     let mut pending = vec![tree.root()];
@@ -384,7 +384,7 @@ fn dot_rules(
 /// under an unrolled grammar at least one of these depths reports an
 /// obligation.
 #[test]
-fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Box<dyn Error>>
+fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Failure>
 {
     let pbg = built();
     for depth in [1_usize, 2, 3, 4, 8, 16, 32] {
@@ -412,7 +412,7 @@ fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Box<dyn Erro
     Ok(())
 }
 #[test]
-fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Box<dyn Error>>
+fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Failure>
 {
     let pbg = built();
     let src = "module M where { def bad = 1 ′ 2; def good = 1; }";
@@ -448,7 +448,7 @@ fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Box<dyn Error>
     Ok(())
 }
 #[test]
-fn trace_left_associates_like_figure_24() -> Result<(), Box<dyn Error>>
+fn trace_left_associates_like_figure_24() -> Result<(), Failure>
 {
     // `n + n + n` left-associates to `((n + n) + n)`: the first `+` Reduces
     // when the second (equal, left-associative) `+` arrives.
@@ -478,7 +478,7 @@ fn trace_left_associates_like_figure_24() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 #[test]
-fn no_obligations_on_well_formed_fragments() -> Result<(), Box<dyn Error>>
+fn no_obligations_on_well_formed_fragments() -> Result<(), Failure>
 {
     let pbg = arith_pbg()?;
     for labels in [
@@ -552,7 +552,7 @@ fn count_nodes(
 }
 
 #[test]
-fn trace_brackets_reset_precedence_like_figure_33() -> Result<(), Box<dyn Error>>
+fn trace_brackets_reset_precedence_like_figure_33() -> Result<(), Failure>
 {
     // `( n + n ) * n` melds to `((n + n) * n)`: the bracket closes on its
     // matching delimiter (a `≐` step) and resets precedence, so `+` binds
@@ -594,7 +594,7 @@ fn trace_brackets_reset_precedence_like_figure_33() -> Result<(), Box<dyn Error>
     Ok(())
 }
 #[test]
-fn trace_precedence_climbs_like_figure_23() -> Result<(), Box<dyn Error>>
+fn trace_precedence_climbs_like_figure_23() -> Result<(), Failure>
 {
     // `n + n * n` melds to `(n + (n * n))`: Shift, then Reduce the tighter
     // `*` handle before the looser `+` — no stuck states, no grout. Atoms
@@ -656,7 +656,7 @@ fn trace_precedence_climbs_like_figure_23() -> Result<(), Box<dyn Error>>
 /// - witness: `tests::contracts::trace_left_associates_like_figure_24`
 /// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["n", "*", "+", "(", ")"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
-fn arith_pbg() -> Result<Pbg, Box<dyn Error>>
+fn arith_pbg() -> Result<Pbg, Failure>
 {
     let mut spec = PrecSpec::new();
     let atom = spec.insert("atom", Assoc::Non)?;
@@ -728,7 +728,7 @@ fn commit_stream<'source>(
     pbg: &Pbg,
     tiles: &[MoldedTile],
     source: SourceText<'source>,
-) -> Result<SyntaxTree<'source>, Box<dyn Error>>
+) -> Result<SyntaxTree<'source>, Failure>
 {
     let mut state = MeldState::new(pbg);
     for tile in tiles {

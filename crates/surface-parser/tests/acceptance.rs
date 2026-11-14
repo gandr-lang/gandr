@@ -4,7 +4,7 @@
 //! the language's corpus sources, the recovery fixtures, and curated malformed
 //! programs.
 
-use core::error::Error;
+use core::error::Error as _;
 use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -38,6 +38,8 @@ use crate::common::root_digest;
 use crate::common::significant_children;
 use crate::common::span;
 use crate::common::text;
+use crate::failure::Failure;
+use crate::failure::ReadSourceError;
 
 /// Number of labeled tokens to push from a source prefix.
 #[repr(transparent)]
@@ -76,51 +78,8 @@ impl From<TokenPrefixLen> for usize
     }
 }
 
-/// File-read failure with path context retained for corpus and fixture reads.
-#[derive(Debug)]
-struct ReadSourceError
-{
-    /// The file that failed to read.
-    path: PathBuf,
-    /// The underlying failure.
-    source: std::io::Error,
-}
-
-impl fmt::Display for ReadSourceError
-{
-    /// # Specification
-    /// - ensures: writes the failed path and underlying IO failure.
-    /// - fails: propagates a formatter refusal.
-    /// - executable: none — `Formatter` exposes neither its sink nor written
-    ///   bytes for a postcondition; both observations require an external sink.
-    ///
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a real directory-read error retains path and cause in
-    ///   its display; a refusing `fmt::Write` sink must return `fmt::Error`.
-    ///   Exact incidental wording is not pinned.
-    /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(f, "failed to read {}: {}", self.path.display(), self.source)
-    }
-}
-
-impl Error for ReadSourceError
-{
-    /// # Specification
-    /// trivial.
-    fn source(&self) -> Option<&(dyn Error + 'static)>
-    {
-        Some(&self.source)
-    }
-}
-
 #[test]
-fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Error>>
+fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Failure>
 {
     let pbg = built();
     let source = "def a = (x); def x = 0;";
@@ -217,7 +176,7 @@ fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
+fn source_inventory_and_reads_preserve_context() -> Result<(), Failure>
 {
     struct RefusingSink;
     impl fmt::Write for RefusingSink
@@ -280,7 +239,7 @@ fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
+fn core_forms_are_clean() -> Result<(), Failure>
 {
     // The molder molds the core self-contained gandr forms with ZERO
     // obligations — value/function definitions, control, data literals,
@@ -319,7 +278,7 @@ fn core_forms_are_clean() -> Result<(), Box<dyn Error>>
 /// the later explicit `xs` parameter. That dependency is intentionally left
 /// for lowering; the parse contract is the lossless ordered surface form.
 #[test]
-fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Box<dyn Error>>
+fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/fixtures/declaration-prefix-telescope-preserves-forward-reference-order.gandr"
@@ -361,7 +320,7 @@ fn declaration_prefix_telescope_preserves_forward_reference_order() -> Result<()
 
 /// Empty typed prefixes and ordinary declaration attributes remain distinct.
 #[test]
-fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<dyn Error>>
+fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/unformatted/empty-prefix-does-not-change-ordinary-attribute-spelling.gandr"
@@ -400,7 +359,7 @@ fn empty_prefix_does_not_change_ordinary_attribute_spelling() -> Result<(), Box<
 
 /// A malformed prefix reports recovery without absorbing the next definition.
 #[test]
-fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Error>>
+fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/unformatted/malformed-prefix-recovers-at-the-next-declaration.gandr"
@@ -421,7 +380,7 @@ fn malformed_prefix_recovers_at_the_next_declaration() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn command_substitution_molds_with_zero_obligations() -> Result<(), Box<dyn Error>>
+fn command_substitution_molds_with_zero_obligations() -> Result<(), Failure>
 {
     let source = "#!{ echo $!{ printf nested; }; }";
     let result = parse(built(), SourceText::from(source))?;
@@ -434,7 +393,7 @@ fn command_substitution_molds_with_zero_obligations() -> Result<(), Box<dyn Erro
 }
 
 #[test]
-fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
+fn value_statement_uses_let_keyword() -> Result<(), Failure>
 {
     let pbg = built();
     let written = [
@@ -458,7 +417,7 @@ fn value_statement_uses_let_keyword() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn retired_binding_spellings_require_repair() -> Result<(), Box<dyn Error>>
+fn retired_binding_spellings_require_repair() -> Result<(), Failure>
 {
     let pbg = built();
     for src in [
@@ -477,7 +436,7 @@ fn retired_binding_spellings_require_repair() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
+fn eliminator_answer_types_mold_clean() -> Result<(), Failure>
 {
     // The optional `-> T` slot sits after the scrutinee on both check-only
     // eliminators, on the nested `else if` tail as well as the head, and past
@@ -543,7 +502,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
 /// the reserved glyph — which **parses** here and is declined downstream, not
 /// at the parser.
 #[test]
-fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
+fn circuit_block_form_molds_zero_obligation() -> Result<(), Failure>
 {
     let pbg = built();
     let cases: &[&str] = &[
@@ -579,7 +538,7 @@ fn circuit_block_form_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 /// A data-spelled `oper` inside `codata` molds whole so the description reader
 /// can decline that one member without repair swallowing its siblings.
 #[test]
-fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
+fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Failure>
 {
     let source =
         "codata S : Type where { head : Nat; oper tail : (s : S) --> S; rule : head ==> head; }";
@@ -599,7 +558,7 @@ fn codata_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Erro
 /// A data-spelled `oper` inside `theory` molds as one member so its localized
 /// decline cannot consume the next ruled judgment.
 #[test]
-fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn Error>>
+fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Failure>
 {
     let source = r#"theory Theory where { sort Nat : Type; oper add(m : Nat, n : Nat) -> Nat; oper succ : (n : Nat) --> Nat; }"#;
     let result = parse(built(), SourceText::from(source))?;
@@ -621,7 +580,7 @@ fn theory_data_oper_decline_region_molds_zero_obligation() -> Result<(), Box<dyn
 /// labeler half is
 /// `label::tests::a_run_is_one_token_cut_only_at_whitespace_and_delimiters`.
 #[test]
-fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
+fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Failure>
 {
     let pbg = built();
     let unchanged: &[&str] = &[
@@ -669,7 +628,7 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
 /// pins both halves: the ruled shape keeps its arrow *inside* the declaration
 /// meld, and the bare-sort shape now flags a repair instead of regrouping.
 #[test]
-fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box<dyn Error>>
+fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Failure>
 {
     let pbg = built();
     // Clean parses are not enough: `is_clean()` was true for the shattered
@@ -737,7 +696,7 @@ fn a_top_level_circuit_declaration_keeps_its_whole_signature() -> Result<(), Box
 /// honest, because reserving a fourth, fifth, or sixth word would be a silent
 /// source break.
 #[test]
-fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error>>
+fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Failure>
 {
     let pbg = built();
     let binding: &[&str] = &[
@@ -791,7 +750,7 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
 /// admissible, which never competes with hole content, so the member can no
 /// longer collapse into one repaired region.
 #[test]
-fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
+fn a_repeated_port_name_application_molds_clean() -> Result<(), Failure>
 {
     let pbg = built();
     let cases: &[&str] = &[
@@ -839,7 +798,7 @@ fn a_repeated_port_name_application_molds_clean() -> Result<(), Box<dyn Error>>
 /// decisively, so trailing layout (a blank line, several, a comment, or the
 /// closing brace) can no longer break the parse.
 #[test]
-fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Error>>
+fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Failure>
 {
     let pbg = built();
     let cases: &[&str] = &[
@@ -877,7 +836,7 @@ fn a_blank_line_after_a_terminated_member_molds_clean() -> Result<(), Box<dyn Er
 /// declaration names: at a slot that admits only `type_identifier` the molder
 /// falls back to the word's generic labels.
 #[test]
-fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<dyn Error>>
+fn a_theory_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Failure>
 {
     let pbg = built();
     let cases: &[&str] = &[
@@ -984,7 +943,7 @@ const PARSE_ERRORS: &[(&str, &[(Oblig, &str)])] = &[
 /// owes exactly the obligations listed there. The corpus crate's runner
 /// reports how many sources each root holds; nothing here pins the number.
 #[test]
-fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
+fn corpus_molds_to_zero_obligations() -> Result<(), Failure>
 {
     let pbg = built();
     let sources = corpus_sources();
@@ -1033,7 +992,7 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn incomplete_input_flags_statement_local_obligations() -> Result<(), Box<dyn Error>>
+fn incomplete_input_flags_statement_local_obligations() -> Result<(), Failure>
 {
     let pbg = built();
     let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -1062,7 +1021,7 @@ fn incomplete_input_flags_statement_local_obligations() -> Result<(), Box<dyn Er
 /// #1391: a definition's missing `}` is a ghost brace past the last token its
 /// body writes, not at the `{` that opens the body.
 #[test]
-fn a_missing_brace_stands_past_the_body_it_closes_1391() -> Result<(), Box<dyn Error>>
+fn a_missing_brace_stands_past_the_body_it_closes_1391() -> Result<(), Failure>
 {
     let pbg = built();
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unclosed-body.gandr");
@@ -1087,7 +1046,7 @@ fn a_missing_brace_stands_past_the_body_it_closes_1391() -> Result<(), Box<dyn E
 }
 
 #[test]
-fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn Error>>
+fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Failure>
 {
     // The set surface is split into pairwise-incomparable union and
     // lazy-product groups. A mixed set chain such as `A & B | C` therefore
@@ -1113,7 +1072,7 @@ fn mixed_set_precedence_requires_obligation_and_commits() -> Result<(), Box<dyn 
 }
 
 #[test]
-fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
+fn malformed_programs_repair_predictably() -> Result<(), Failure>
 {
     let pbg = built();
     // (source, at-least-one obligation class expected in the repair).
@@ -1166,7 +1125,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
 /// classifier slot as an unmolded token: the member stays the member and the
 /// block stays whole, and the parse owes one obligation, at the keyword.
 #[test]
-fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn Error>>
+fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Failure>
 {
     let pbg = built();
     let written = include_str!(
@@ -1223,7 +1182,7 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
 /// `send`, `match`) or a declaration (`data`, `type`). A name that is no
 /// reserved word owes nothing.
 #[test]
-fn a_reserved_word_where_a_name_stands_owes_one_obligation_6266() -> Result<(), Box<dyn Error>>
+fn a_reserved_word_where_a_name_stands_owes_one_obligation_6266() -> Result<(), Failure>
 {
     const WORDS: &[&str] = &["mu", "drop", "dup", "send", "match", "data", "type"];
     let pbg = built();
@@ -1319,7 +1278,7 @@ fn a_reserved_word_where_a_name_stands_owes_one_obligation_6266() -> Result<(), 
 /// swallow the next statement and owe its `:` and `=` and the handler's
 /// `with` after it.
 #[test]
-fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Error>>
+fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/fixtures/a-statement-keyword-starts-the-next-statement-1090.gandr"
@@ -1358,7 +1317,7 @@ fn a_statement_keyword_starts_the_next_statement_1090() -> Result<(), Box<dyn Er
 /// carries every ghost and every obligation, and the second carries none and
 /// covers exactly the text it was written with.
 #[test]
-fn unclosed_definition_delimiter_does_not_absorb_following_definition() -> Result<(), Box<dyn Error>>
+fn unclosed_definition_delimiter_does_not_absorb_following_definition() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/unformatted/unclosed-definition-delimiter-does-not-absorb-following-definition.gandr"
@@ -1442,7 +1401,7 @@ fn unclosed_definition_delimiter_does_not_absorb_following_definition() -> Resul
 /// definition, so this is what distinguishes the declaration-head trigger from
 /// a `def`-only trigger.
 #[test]
-fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<dyn Error>>
+fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Failure>
 {
     for survivor in [
         "def good = 2;",
@@ -1507,7 +1466,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 /// the declaration that follows it: a bare `def`, a `def` with a
 /// documentation line and an attribute, and a `data` declaration.
 #[test]
-fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Box<dyn Error>>
+fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Failure>
 {
     let documented = include_str!("acceptance/unformatted/a-documented-follower-5747.gandr");
     for (first, second) in [("\"x\"", "\"n\""), ("x", "n"), ("8", "9")] {
@@ -1551,7 +1510,7 @@ fn a_declaration_recovers_as_at_the_end_whatever_follows_5747() -> Result<(), Bo
 /// form. The source then owed 6 obligations where the call form owes 1
 /// (#6101).
 #[test]
-fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Box<dyn Error>>
+fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Failure>
 {
     let documented = include_str!("acceptance/unformatted/a-documented-follower-5747.gandr");
     let damaged = |follower: &str| {
@@ -1595,7 +1554,7 @@ fn a_value_opener_ends_a_juxtaposed_type_6101() -> Result<(), Box<dyn Error>>
 /// form owes 5 (#6101). A `pub` at the margin before a head now closes every
 /// open form, as the head does.
 #[test]
-fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Box<dyn Error>>
+fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Failure>
 {
     let damaged = |follower: &str| {
         format!(
@@ -1605,7 +1564,7 @@ fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Box<dyn 
             follower = follower
         )
     };
-    let owed = |follower: &str| -> Result<Vec<Oblig>, Box<dyn Error>> {
+    let owed = |follower: &str| -> Result<Vec<Oblig>, Failure> {
         let source = damaged(follower);
         let result = parse(built(), SourceText::from(source.as_str()))?;
         Ok(result
@@ -1642,7 +1601,7 @@ fn a_pub_at_the_margin_closes_the_open_declaration_6101() -> Result<(), Box<dyn 
 /// `pathological/worlds/offers` (#6323). A `pub` at the margin now closes
 /// every open form before a declaration head.
 #[test]
-fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Box<dyn Error>>
+fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Failure>
 {
     for damaged in [
         include_str!(
@@ -1686,7 +1645,7 @@ fn a_pub_at_the_margin_closes_a_broken_container_6323() -> Result<(), Box<dyn Er
 /// it does not reach the `(` of `forget`, and the source owes its one minted
 /// closer. A reach there leaves the outer group open, at 5 obligations.
 #[test]
-fn a_closer_reaches_its_open_partner_6323() -> Result<(), Box<dyn Error>>
+fn a_closer_reaches_its_open_partner_6323() -> Result<(), Failure>
 {
     for (rel, dropped) in [
         ("model/tasks/forced.gandr", 74_usize),
@@ -1734,7 +1693,7 @@ fn a_closer_reaches_its_open_partner_6323() -> Result<(), Box<dyn Error>>
 /// recovers with 8 obligations and loses its name (#5795). The closer ends
 /// the group as well.
 #[test]
-fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error>>
+fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Failure>
 {
     let declaration = |entries: &str| {
         format!(
@@ -1791,7 +1750,7 @@ fn a_split_group_closes_at_its_written_closer_5795() -> Result<(), Box<dyn Error
 /// call form `Dyad(` owed no such meld. A `?` dropped from a result type tears
 /// the group of `Run` in the same way.
 #[test]
-fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Box<dyn Error>>
+fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Failure>
 {
     for (source, owed) in [
         (
@@ -1847,7 +1806,7 @@ fn a_torn_group_stays_the_operand_of_its_juxtaposition_6029() -> Result<(), Box<
 /// falls apart into loose tiles (#5911). The separator stays in the
 /// declaration, and the repair at its end mints the `)` where the rest parses.
 #[test]
-fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Box<dyn Error>>
+fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/unformatted/a-def-without-its-closer-keeps-its-reading-5911.gandr"
@@ -1898,7 +1857,7 @@ fn a_def_without_its_closer_keeps_its_reading_5911() -> Result<(), Box<dyn Error
 /// types each way: a codata field without its name, and a `def` without its
 /// `=` before a `pub` declaration.
 #[test]
-fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result<(), Box<dyn Error>>
+fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result<(), Failure>
 {
     let field = |stream: &str| {
         format!(
@@ -1914,7 +1873,7 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
             list = list
         )
     };
-    let owed = |source: &str| -> Result<Vec<Oblig>, Box<dyn Error>> {
+    let owed = |source: &str| -> Result<Vec<Oblig>, Failure> {
         Ok(parse(built(), SourceText::from(source))?
             .obligations()
             .iter()
@@ -1951,7 +1910,7 @@ fn a_torn_form_ends_before_a_juxtaposed_type_as_before_its_call_6027() -> Result
 /// token and writes both types each way.
 #[test]
 fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_6102()
--> Result<(), Box<dyn Error>>
+-> Result<(), Failure>
 {
     let declaration = |binder: &str, result: &str| {
         format!(
@@ -1962,7 +1921,7 @@ fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_610
             result = result
         )
     };
-    let owed = |source: &str| -> Result<Vec<(Oblig, usize)>, Box<dyn Error>> {
+    let owed = |source: &str| -> Result<Vec<(Oblig, usize)>, Failure> {
         Ok(parse(built(), SourceText::from(source))?
             .obligations()
             .iter()
@@ -1997,7 +1956,7 @@ fn a_token_left_out_before_a_juxtaposed_type_s_group_owes_what_its_call_owes_610
 }
 
 #[test]
-fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
+fn malformed_input_continues_into_a_later_definition() -> Result<(), Failure>
 {
     let source = include_str!(
         "acceptance/unformatted/malformed-input-continues-into-a-later-definition.gandr"
@@ -2054,7 +2013,7 @@ fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
+fn corpus_parses_totally() -> Result<(), Failure>
 {
     // Every corpus source parses totally — no panic, a well-formed tree
     // recording the grammar fingerprint under a Wald root. The stronger
@@ -2081,7 +2040,7 @@ fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
 /// or losing a byte: every source still reads back from its leaves in offset
 /// order, and blanking every comment leaves the root digest unchanged.
 #[test]
-fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
+fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Failure>
 {
     let pbg = built();
     let mut comments = 0_usize;
@@ -2155,7 +2114,7 @@ fn comments_reach_no_digest_and_lose_no_byte() -> Result<(), Box<dyn Error>>
 // parser.
 #[cfg(not(anodized_panic))]
 #[test]
-fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Error>>
+fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Failure>
 {
     // The p99 of a corpus source's cold parse is fast. Every `parse` is
     // stateless (no incremental reuse), so each call is a cold parse; per
@@ -2246,7 +2205,7 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
         reason = "bounded: `excess` holds one prefix's obligation classes, matched off one by one as a multiset"
     )
 )]
-fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
+fn expected_agrees_with_committed_finalize() -> Result<(), Failure>
 {
     // The completion `expected()` reports bounds the obligation material a
     // committed finalize inserts: at every token prefix of each source, every
@@ -2319,7 +2278,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
+fn minimization_prefers_clean_readings() -> Result<(), Failure>
 {
     // Every clean corpus source has a zero-obligation molding, and the molder
     // finds it — the minimization never introduces an obligation (least of all
@@ -2347,10 +2306,10 @@ fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
 /// spelling `#{` owes a repair. The sum and the lazy record open with `+{`
 /// and `&{`, one tile each (#4853).
 #[test]
-fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
+fn a_product_opens_with_its_own_sign() -> Result<(), Failure>
 {
     let pbg = built();
-    let labels = |source: &str| -> Result<Vec<String>, Box<dyn Error>> {
+    let labels = |source: &str| -> Result<Vec<String>, Failure> {
         let parsed = parse(pbg, SourceText::from(source))?;
         assert!(
             bool::from(parsed.is_clean()),
@@ -2389,7 +2348,7 @@ fn a_product_opens_with_its_own_sign() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error>>
+fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Failure>
 {
     // The same `-` token molds infix with a left operand and
     // prefix at expression start (paper Fig. 5) — the molder's context
@@ -2446,7 +2405,7 @@ fn remolding_makes_dash_prefix_or_infix_by_context() -> Result<(), Box<dyn Error
 /// properties are witnessed here: zero obligations, and the closer sitting
 /// outside the hole meld.
 #[test]
-fn hole_positions_mold_zero_obligation() -> Result<(), Box<dyn Error>>
+fn hole_positions_mold_zero_obligation() -> Result<(), Failure>
 {
     let pbg = built();
     // (source, the tile that must NOT be absorbed into the hole meld).
@@ -2507,7 +2466,7 @@ fn hole_positions_mold_zero_obligation() -> Result<(), Box<dyn Error>>
 /// obligations at every type position, while the Expression-sort hole and the
 /// receive-session prefix keep their own readings of the same tile.
 #[test]
-fn unknown_type_molds_zero_obligation() -> Result<(), Box<dyn Error>>
+fn unknown_type_molds_zero_obligation() -> Result<(), Failure>
 {
     use gandr_surface_grammar::Sort;
 
@@ -2586,7 +2545,7 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn melder_closes_multi_hole_forms() -> Result<(), Box<dyn Error>>
+fn melder_closes_multi_hole_forms() -> Result<(), Failure>
 {
     // The melder is correct: given a form's `≐`-connected molds, it closes a
     // multi-hole form (`def id = E ;`) with ZERO obligations — a focused unit
@@ -2955,7 +2914,7 @@ fn push_prefix<'pbg>(
 /// statement's expression, in a body, and in an argument list, where a
 /// declaration head would otherwise close the declaration around it.
 #[test]
-fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
+fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Failure>
 {
     let pbg = built();
     for (src, inline) in [
@@ -2994,7 +2953,7 @@ fn run_reads_as_an_inline_run_wherever_it_stands() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn each_literate_monoid_block_parses_or_matches_its_refusal_6305() -> Result<(), Box<dyn Error>>
+fn each_literate_monoid_block_parses_or_matches_its_refusal_6305() -> Result<(), Failure>
 {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/sketch/literate/monoid.gandr.md");

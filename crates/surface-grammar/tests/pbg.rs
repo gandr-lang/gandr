@@ -1,8 +1,6 @@
 //! Grammar construction: the header checks and the three gates, each refusing
 //! a minimal violation and accepting the nearest legal shape.
 
-use core::error::Error;
-
 use anodized::spec;
 use gandr_surface_grammar::Adaptation;
 use gandr_surface_grammar::AdaptationReason;
@@ -25,6 +23,8 @@ use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecIndex;
 use gandr_theory_graphs::PrecSpec;
 
+use crate::failure::Failure;
+
 /// A DAG of one non-associative group, `base`.
 ///
 /// # Specification
@@ -42,7 +42,7 @@ use gandr_theory_graphs::PrecSpec;
 /// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
 /// - witness: `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref dag, base)| dag.groups().count() == 1 && dag.name(base).is_some_and(|name| name == "base") && dag.assoc(base) == Some(Assoc::Non) && dag.edges().next().is_none()))]
-fn one_node_dag() -> Result<(PrecDag, Prec), Box<dyn Error>>
+fn one_node_dag() -> Result<(PrecDag, Prec), Failure>
 {
     let mut spec = PrecSpec::new();
     let base = spec.insert("base", Assoc::Non)?;
@@ -68,7 +68,7 @@ fn one_node_dag() -> Result<(PrecDag, Prec), Box<dyn Error>>
 /// - witness: `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`
 /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
 #[spec(requires: !rules.is_empty(), ensures: |ret| ret.as_ref().is_ok_and(|error| matches!(error, PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::MoldOverflow | PbgError::Assumption3Conflict { .. })))]
-fn exact_error(rules: Vec<Rule>) -> Result<PbgError, Box<dyn Error>>
+fn exact_error(rules: Vec<Rule>) -> Result<PbgError, Failure>
 {
     let (dag, _base) = one_node_dag()?;
     match Pbg::build(dag, rules) {
@@ -78,7 +78,7 @@ fn exact_error(rules: Vec<Rule>) -> Result<PbgError, Box<dyn Error>>
 }
 
 #[test]
-fn pbg_rejects_direct_adjacent_sorts_in_sequence() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_direct_adjacent_sorts_in_sequence() -> Result<(), Failure>
 {
     let (_dag, base) = one_node_dag()?;
     let error = exact_error(vec![Rule::new(
@@ -100,7 +100,7 @@ fn pbg_rejects_direct_adjacent_sorts_in_sequence() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn pbg_rejects_adjacency_exposed_by_nullable_sequence_paths() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_adjacency_exposed_by_nullable_sequence_paths() -> Result<(), Failure>
 {
     let (_dag, base) = one_node_dag()?;
     let cases = [
@@ -161,7 +161,7 @@ fn pbg_rejects_adjacency_exposed_by_nullable_sequence_paths() -> Result<(), Box<
 }
 
 #[test]
-fn pbg_accepts_terminal_separators_between_sort_uses() -> Result<(), Box<dyn Error>>
+fn pbg_accepts_terminal_separators_between_sort_uses() -> Result<(), Failure>
 {
     let (dag, base) = one_node_dag()?;
     let pbg = Pbg::build(dag, vec![
@@ -197,7 +197,7 @@ fn pbg_accepts_terminal_separators_between_sort_uses() -> Result<(), Box<dyn Err
 }
 
 #[test]
-fn pbg_rejects_invalid_operator_form_even_with_adaptation() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_invalid_operator_form_even_with_adaptation() -> Result<(), Failure>
 {
     let (_dag, base) = one_node_dag()?;
     let error = exact_error(vec![Rule::with_adaptation(
@@ -267,7 +267,7 @@ fn unique_tiles_contract()
 }
 
 #[test]
-fn pbg_rejects_duplicate_rctx_tile() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_duplicate_rctx_tile() -> Result<(), Failure>
 {
     let (_dag, base) = one_node_dag()?;
     let error = exact_error(vec![Rule::new(
@@ -294,7 +294,7 @@ fn pbg_rejects_duplicate_rctx_tile() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn pbg_accepts_same_label_at_distinct_contexts() -> Result<(), Box<dyn Error>>
+fn pbg_accepts_same_label_at_distinct_contexts() -> Result<(), Failure>
 {
     let (dag, base) = one_node_dag()?;
     let pbg = Pbg::build(dag, vec![
@@ -370,7 +370,7 @@ fn assumption_3_contract()
 }
 
 #[test]
-fn pbg_rejects_duplicate_rule_names_deterministically() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_duplicate_rule_names_deterministically() -> Result<(), Failure>
 {
     let (_dag, base) = one_node_dag()?;
     let error = exact_error(vec![
@@ -398,7 +398,7 @@ fn pbg_rejects_duplicate_rule_names_deterministically() -> Result<(), Box<dyn Er
 }
 
 #[test]
-fn pbg_rejects_invalid_prec_before_later_header_errors() -> Result<(), Box<dyn Error>>
+fn pbg_rejects_invalid_prec_before_later_header_errors() -> Result<(), Failure>
 {
     let invalid = Prec::new(PrecIndex::from(1));
     let error = exact_error(vec![
@@ -427,7 +427,7 @@ fn pbg_rejects_invalid_prec_before_later_header_errors() -> Result<(), Box<dyn E
 }
 
 #[test]
-fn grouped_forms_preserve_branch_and_rule_order() -> Result<(), Box<dyn Error>>
+fn grouped_forms_preserve_branch_and_rule_order() -> Result<(), Failure>
 {
     let (dag, base) = one_node_dag()?;
     let first = Regex::tile(TileLabel("a"));

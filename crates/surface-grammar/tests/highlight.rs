@@ -3,7 +3,6 @@
 //! highlighter's refusals.
 
 use alloc::collections::BTreeSet;
-use core::error::Error;
 use core::fmt::Display;
 use core::fmt::Error as FmtError;
 use core::fmt::Formatter;
@@ -42,6 +41,8 @@ use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecSpec;
+
+use crate::failure::Failure;
 
 /// The language's source corpus, which the corpus crate owns: the strict
 /// root, the fixture root and its pending set.
@@ -151,7 +152,7 @@ fn corpus_sources() -> Vec<PathBuf>
 ///   failures are outside the witness.
 /// - witness: `tests::highlight::a_tree_under_another_grammar_is_refused`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item) && pbg.iter_molds().map(|(_, def)| def.label).eq(["x"])))]
-fn one_tile_grammar() -> Result<Pbg, Box<dyn Error>>
+fn one_tile_grammar() -> Result<Pbg, Failure>
 {
     let mut spec = PrecSpec::new();
     let atom = spec.insert("atom", Assoc::Non)?;
@@ -323,12 +324,12 @@ fn side_of(steps: &[RCtxStep]) -> String
 ///   all-covered empty case; arbitrary metadata containing line breaks is not
 ///   exhausted.
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<HighlightError>().is_some() || error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some() || error.downcast_ref::<FmtError>().is_some(), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Highlight(_) | Failure::Grammar(_) | Failure::Format(_)), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
 fn unexercised_lines(
     pbg: &Pbg,
     table: &RoleTable,
     exercised: &BTreeSet<MoldId>,
-) -> Result<String, Box<dyn Error>>
+) -> Result<String, Failure>
 {
     let mut out = String::new();
     for (id, def) in pbg.iter_molds() {
@@ -356,7 +357,7 @@ fn unexercised_lines(
 /// of the inventory, so no mold falls outside the classification, and two
 /// tables built from one grammar agree mold for mold.
 #[test]
-fn every_mold_has_a_role() -> Result<(), Box<dyn Error>>
+fn every_mold_has_a_role() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
@@ -381,7 +382,7 @@ fn every_mold_has_a_role() -> Result<(), Box<dyn Error>>
 /// rewrites the goldens and deletes those whose source is gone, so a source
 /// added, moved between roots or removed is one rerun.
 #[test]
-fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
+fn corpus_roles_match_the_golden() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
@@ -452,7 +453,7 @@ fn corpus_roles_match_the_golden() -> Result<(), Box<dyn Error>>
 /// every byte outside every span whitespace, or grout over a token the parser
 /// molded nowhere — which a pathological source may carry as its parse error.
 #[test]
-fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
+fn spans_partition_the_tile_bytes() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
@@ -571,7 +572,7 @@ fn spans_partition_the_tile_bytes() -> Result<(), Box<dyn Error>>
 /// comments, and whitespace — between them and between tiles — takes no
 /// span; the first tile after the layout keeps its own role.
 #[test]
-fn layout_takes_a_role_only_as_a_comment_or_a_shebang() -> Result<(), Box<dyn Error>>
+fn layout_takes_a_role_only_as_a_comment_or_a_shebang() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let table = RoleTable::build(&pbg)?;
@@ -604,7 +605,7 @@ fn layout_takes_a_role_only_as_a_comment_or_a_shebang() -> Result<(), Box<dyn Er
 /// A tree molded under another grammar is refused with both fingerprints,
 /// never read through a table whose mold ids mean other tiles.
 #[test]
-fn a_tree_under_another_grammar_is_refused() -> Result<(), Box<dyn Error>>
+fn a_tree_under_another_grammar_is_refused() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let other = one_tile_grammar()?;
@@ -625,7 +626,7 @@ fn a_tree_under_another_grammar_is_refused() -> Result<(), Box<dyn Error>>
 /// answers with its role, and a tile naming the first id past the table is
 /// refused with that id.
 #[test]
-fn a_tile_past_the_table_is_refused() -> Result<(), Box<dyn Error>>
+fn a_tile_past_the_table_is_refused() -> Result<(), Failure>
 {
     let grammar = one_tile_grammar()?;
     let table = RoleTable::build(&grammar)?;
@@ -634,7 +635,7 @@ fn a_tile_past_the_table_is_refused() -> Result<(), Box<dyn Error>>
     let past = MoldId::from(count);
     let source = SourceText::from("x");
     let span = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(1_usize))?;
-    let tree_of = |mold: MoldId| -> Result<SyntaxTree<'_>, Box<dyn Error>> {
+    let tree_of = |mold: MoldId| -> Result<SyntaxTree<'_>, Failure> {
         let mut builder = TreeBuilder::new(source, grammar.fingerprint())?;
         let tile = builder.node(NodeLabel::Tile(mold), span, &[])?;
         let root = builder.node(NodeLabel::Wald, span, &[tile])?;
@@ -662,7 +663,7 @@ fn a_tile_past_the_table_is_refused() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn highlight_preserves_overlapping_tile_spans() -> Result<(), Box<dyn Error>>
+fn highlight_preserves_overlapping_tile_spans() -> Result<(), Failure>
 {
     let grammar = built_in()?;
     let table = RoleTable::build(&grammar)?;

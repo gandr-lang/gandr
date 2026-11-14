@@ -8,13 +8,12 @@
 //! points from the parser to the grammar; the grammar's own suite keeps the
 //! contracts it can state without parsing.
 
-use core::error::Error;
-
 use anodized::spec;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 
 use crate::common::built;
+use crate::failure::Failure;
 
 /// The name a contract case is reported under.
 #[repr(transparent)]
@@ -22,7 +21,7 @@ use crate::common::built;
 struct CaseName(&'static str);
 
 #[test]
-fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn Error>>
+fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Failure>
 {
     let cases = [
         ("three-member product", "def f : A * B * C;"),
@@ -49,7 +48,7 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn 
 }
 
 #[test]
-fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Box<dyn Error>>
+fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Failure>
 {
     let cases = [
         ("descending recursion marker", "def rec f() { f[<] () }"),
@@ -74,7 +73,7 @@ fn recursion_marker_instantiations_parse_cleanly() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn mixed_set_type_operators_require_parentheses() -> Result<(), Box<dyn Error>>
+fn mixed_set_type_operators_require_parentheses() -> Result<(), Failure>
 {
     let cases = [
         ("union before lazy product", "def f : A | B & C;"),
@@ -99,7 +98,7 @@ fn mixed_set_type_operators_require_parentheses() -> Result<(), Box<dyn Error>>
 /// binder's type and under an arrow. Which of them the lowering admits is the
 /// lowering's to say.
 #[test]
-fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
+fn every_universe_spelling_reads_cleanly() -> Result<(), Failure>
 {
     let cases = [
         ("bare", "def f : Type;"),
@@ -122,7 +121,7 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 /// the n-ary alias with its binders as a call's argument too, and a case arm's
 /// `=>` still molds beside them.
 #[test]
-fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
+fn every_type_operator_spelling_reads_cleanly() -> Result<(), Failure>
 {
     let cases = [
         (
@@ -169,7 +168,7 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 /// before anything else as the parenthesized expression it was: an
 /// ascription, a tuple and the unit keep their reading.
 #[test]
-fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result<(), Box<dyn Error>>
+fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result<(), Failure>
 {
     let cases = [
         (
@@ -212,7 +211,7 @@ fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result
 /// it, `f x`, through one zero-width tile per argument. A shell block's words
 /// stay flat, and a block-like statement ends at its brace.
 #[test]
-fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error>>
+fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Failure>
 {
     let cases = [
         ("def f = g x y;", 2_usize),
@@ -260,7 +259,7 @@ fn juxtaposition_applies_outside_a_shell_form_4853() -> Result<(), Box<dyn Error
 /// spaced group is an argument as a type name is, `Vec a (Succ n)`, and a
 /// lowercase word that heads its type keeps the moded type, `m (T)`.
 #[test]
-fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error>>
+fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Failure>
 {
     let cases = [
         ("def x : Maybe A;", 1_usize),
@@ -317,7 +316,7 @@ fn a_type_applies_its_family_by_juxtaposition_5326() -> Result<(), Box<dyn Error
 /// brackets ends the former's own form, and the juxtaposition applies it,
 /// `Path[.A = Integer] a a`.
 #[test]
-fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Box<dyn Error>>
+fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Failure>
 {
     let cases = [
         ("def x : Path a b;", 0_usize, 2_usize),
@@ -374,7 +373,7 @@ fn a_called_former_keeps_its_own_opener_6121() -> Result<(), Box<dyn Error>>
 /// after it applies that type, `pack M at Model T`, as a value call applies
 /// its function. The call form `Model(T)` keeps its reading.
 #[test]
-fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Box<dyn Error>>
+fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Failure>
 {
     let cases = [
         (
@@ -460,7 +459,7 @@ fn a_packed_model_s_type_applies_by_juxtaposition_6093() -> Result<(), Box<dyn E
 /// and a data block's next member after a constructor's type continues the
 /// block.
 #[test]
-fn an_observation_s_type_applies_a_parenthesized_argument_6093() -> Result<(), Box<dyn Error>>
+fn an_observation_s_type_applies_a_parenthesized_argument_6093() -> Result<(), Failure>
 {
     let cases = [
         (
@@ -522,7 +521,7 @@ fn an_observation_s_type_applies_a_parenthesized_argument_6093() -> Result<(), B
 /// a spine the call is the whole spine, and a looser operator keeps its own
 /// operands.
 #[test]
-fn a_postfix_form_after_a_call_in_call_form_takes_the_call_5665() -> Result<(), Box<dyn Error>>
+fn a_postfix_form_after_a_call_in_call_form_takes_the_call_5665() -> Result<(), Failure>
 {
     let cases = [
         ("def f = mk(x).l;", "projection_expression", "mk(x)"),
@@ -572,7 +571,7 @@ fn a_postfix_form_after_a_call_in_call_form_takes_the_call_5665() -> Result<(), 
 /// Each ASCII token of the spelling table molds as its glyph's tile: a source
 /// written with it is the tree the glyph's source is, mold for mold (#782).
 #[test]
-fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
+fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Failure>
 {
     let cases = [
         ("def e : A ≃ B;", "def e : A <~> B;"),
@@ -590,7 +589,7 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
     for (glyph, ascii) in cases {
         assert_parses_clean(CaseName(ascii), SourceText::from(ascii))?;
         let molds =
-            |source: &'static str| -> Result<Vec<gandr_surface_syntax::NodeLabel>, Box<dyn Error>> {
+            |source: &'static str| -> Result<Vec<gandr_surface_syntax::NodeLabel>, Failure> {
                 let tree = parse(built(), SourceText::from(source))?.into_tree();
                 Ok(tree
                     .positions()
@@ -624,11 +623,11 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Box<dyn Error>>
 /// - witness: `tests::grammar::recursion_marker_instantiations_parse_cleanly`
 /// - witness: `tests::grammar::mixed_set_type_operators_require_parentheses`
 /// - witness: `tests::grammar::every_universe_spelling_reads_cleanly`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_parser::MeldError>().is_some(), |&()| true))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Meld(_)), |&()| true))]
 fn assert_parses_clean(
     case: CaseName,
     source: SourceText<'_>,
-) -> Result<(), Box<dyn Error>>
+) -> Result<(), Failure>
 {
     let result = parse(built(), source)?;
     assert!(
@@ -652,7 +651,7 @@ fn assert_parses_clean(
 /// Integer` show. The application band is tighter than the band of `+U`, so
 /// `Vec +U A B` applies `Vec` to the thunk of `A B`.
 #[test]
-fn a_type_form_s_last_hole_takes_a_juxtaposed_application_6130() -> Result<(), Box<dyn Error>>
+fn a_type_form_s_last_hole_takes_a_juxtaposed_application_6130() -> Result<(), Failure>
 {
     let cases = [
         ("def x : +U T Integer;", "u_type", "+U T Integer"),

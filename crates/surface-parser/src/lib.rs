@@ -112,6 +112,8 @@ extern crate alloc;
 extern crate std;
 
 mod closing;
+#[cfg(test)]
+mod failure;
 mod label;
 mod meld;
 mod mold;

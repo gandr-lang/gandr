@@ -82,6 +82,17 @@
 //! use gandr_surface_lsp::Workspace;
 //! use gandr_surface_lsp::serve;
 //! use gandr_surface_lsp::write_frame;
+//! # #[derive(Debug)]
+//! # enum Failure {
+//! #     Transport(gandr_surface_lsp::TransportFault),
+//! #     Utf8(std::string::FromUtf8Error),
+//! # }
+//! # impl From<gandr_surface_lsp::TransportFault> for Failure {
+//! #     fn from(error: gandr_surface_lsp::TransportFault) -> Self { Self::Transport(error) }
+//! # }
+//! # impl From<std::string::FromUtf8Error> for Failure {
+//! #     fn from(error: std::string::FromUtf8Error) -> Self { Self::Utf8(error) }
+//! # }
 //!
 //! let mut input = Vec::new();
 //! for message in [
@@ -108,7 +119,7 @@
 //!     written.ends_with(r#"{"jsonrpc":"2.0","id":2,"result":null}"#),
 //!     "{written}"
 //! );
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), Failure>(())
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would

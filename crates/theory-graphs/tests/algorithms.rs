@@ -3,7 +3,6 @@
 //! against a closure-matrix oracle computed here, independently of the crate.
 
 use alloc::collections::BTreeSet;
-use core::error::Error;
 
 use anodized::spec;
 use gandr_theory_graphs::ComponentEdge;
@@ -16,6 +15,8 @@ use gandr_theory_graphs::condensation;
 use gandr_theory_graphs::cycle_witness;
 use gandr_theory_graphs::reachability;
 use proptest::prelude::*;
+
+use crate::failure::Failure;
 
 /// A fixture graph: a node bound and one successor list per node, kept as
 /// given, so duplicates and disorder reach the algorithms.
@@ -264,7 +265,7 @@ fn out_of_bounds_edges_are_refused_by_name()
 }
 
 #[test]
-fn reachability_rows_on_a_named_graph() -> Result<(), Box<dyn Error>>
+fn reachability_rows_on_a_named_graph() -> Result<(), Failure>
 {
     let graph = TestGraph::new(6_u32, &[(0, 2), (0, 1), (1, 3), (2, 3), (3, 4)]);
     let rows = reachability(&graph)?
@@ -299,7 +300,7 @@ fn reachability_rows_on_a_named_graph() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn condensation_on_a_named_graph() -> Result<(), Box<dyn Error>>
+fn condensation_on_a_named_graph() -> Result<(), Failure>
 {
     let graph = TestGraph::new(6_u32, &[
         (3, 4),
@@ -332,7 +333,7 @@ fn condensation_on_a_named_graph() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn cycle_witness_names_the_back_edge() -> Result<(), Box<dyn Error>>
+fn cycle_witness_names_the_back_edge() -> Result<(), Failure>
 {
     let graph = TestGraph::new(4_u32, &[(0, 1), (1, 2), (2, 1), (2, 3)]);
     let witness = cycle_witness(&graph)?.expect("the graph has a cycle");
@@ -363,7 +364,7 @@ fn cycle_witness_names_the_back_edge() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn deep_chain_runs_without_recursion() -> Result<(), Box<dyn Error>>
+fn deep_chain_runs_without_recursion() -> Result<(), Failure>
 {
     let length = 20_000_u32;
     let edges = (1 .. length)

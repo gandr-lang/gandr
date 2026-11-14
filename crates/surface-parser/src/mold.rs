@@ -5398,11 +5398,9 @@ impl<'pbg> Molder<'pbg>
 #[cfg(test)]
 mod tests
 {
-    use alloc::boxed::Box;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::error::Error;
 
     use anodized::spec;
     use gandr_surface_grammar::CandidateCount;
@@ -5431,6 +5429,7 @@ mod tests
     use super::candidate_labels;
     use crate::MeldState;
     use crate::SpaceText;
+    use crate::failure::Failure;
     use crate::label::Bracket;
     use crate::label::Lexeme;
     use crate::label::SourceBytes;
@@ -5653,7 +5652,7 @@ mod tests
     }
 
     #[test]
-    fn candidate_gathering_is_a_canonical_union() -> Result<(), Box<dyn Error>>
+    fn candidate_gathering_is_a_canonical_union() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -5731,7 +5730,7 @@ mod tests
     }
 
     #[test]
-    fn dry_runs_restore_exact_state() -> Result<(), Box<dyn Error>>
+    fn dry_runs_restore_exact_state() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -5761,7 +5760,7 @@ mod tests
     }
 
     #[test]
-    fn space_and_empty_stream_are_exact_noops() -> Result<(), Box<dyn Error>>
+    fn space_and_empty_stream_are_exact_noops() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -5780,7 +5779,7 @@ mod tests
     }
 
     #[test]
-    fn runs_mold_as_the_whole_stream() -> Result<(), Box<dyn Error>>
+    fn runs_mold_as_the_whole_stream() -> Result<(), Failure>
     {
         // Shared-prefix openers (`List` a type or an application, `Inl` an
         // atom or a constructor) need lookahead past the token, so a split
@@ -5814,7 +5813,7 @@ mod tests
     }
 
     #[test]
-    fn lookahead_window_stops_after_eight_significant_tokens() -> Result<(), Box<dyn Error>>
+    fn lookahead_window_stops_after_eight_significant_tokens() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -5871,7 +5870,7 @@ mod tests
     }
 
     #[test]
-    fn a_dominated_window_stops_before_its_next_token() -> Result<(), Box<dyn Error>>
+    fn a_dominated_window_stops_before_its_next_token() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -5926,7 +5925,7 @@ mod tests
     }
 
     #[test]
-    fn identifier_menu_is_wide() -> Result<(), Box<dyn Error>>
+    fn identifier_menu_is_wide() -> Result<(), Failure>
     {
         // `identifier` has the widest declared candidate menu in the grammar;
         // a bare identifier's molder candidate set is correspondingly wide,
@@ -5951,7 +5950,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn picks_the_obligation_minimum_mold() -> Result<(), Box<dyn Error>>
+    fn picks_the_obligation_minimum_mold() -> Result<(), Failure>
     {
         // A bare identifier at the start of input molds to an atom (zero
         // obligations), never to a form-continuing keyword mold that would
@@ -5969,7 +5968,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn unmoldable_token_takes_the_unmolded_path() -> Result<(), Box<dyn Error>>
+    fn unmoldable_token_takes_the_unmolded_path() -> Result<(), Failure>
     {
         // A stray byte the grammar has no tile for flows the UnmoldedTok path,
         // never a panic or a lexer error.
@@ -5990,7 +5989,7 @@ mod tests
         Ok(())
     }
     #[test]
-    fn molding_is_deterministic_across_runs() -> Result<(), Box<dyn Error>>
+    fn molding_is_deterministic_across_runs() -> Result<(), Failure>
     {
         // Determinism is HARD: the molded + committed tree is
         // byte-identical across 100 runs. Nothing process-varying (hash order,
@@ -6009,7 +6008,7 @@ mod tests
     /// it one mold, and counts it once in a differential molding too.
     #[cfg(feature = "census")]
     #[test]
-    fn the_census_counts_each_decision_at_the_stage_that_settles_it() -> Result<(), Box<dyn Error>>
+    fn the_census_counts_each_decision_at_the_stage_that_settles_it() -> Result<(), Failure>
     {
         let pbg = built()?;
         let census = |src: &str, verdicts: MoldVerdicts| {
@@ -6072,7 +6071,7 @@ mod tests
     ///   result.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "pure", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
-    fn built() -> Result<Pbg, Box<dyn Error>>
+    fn built() -> Result<Pbg, Failure>
     {
         let pbg = built_in()?;
         Ok(pbg)
@@ -6125,7 +6124,7 @@ mod tests
         label: TileLabel,
         side: RightSide,
         after: &[TileLabel],
-    ) -> Result<MoldId, Box<dyn Error>>
+    ) -> Result<MoldId, Failure>
     {
         pbg.candidates(label)
             .iter()
@@ -6144,7 +6143,7 @@ mod tests
     }
 
     #[test]
-    fn a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it() -> Result<(), Box<dyn Error>>
+    fn a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it() -> Result<(), Failure>
     {
         let pbg = built()?;
         let molder = Molder::new(&pbg);
@@ -6214,7 +6213,7 @@ mod tests
     }
 
     #[test]
-    fn the_next_token_keeps_only_the_molds_it_can_follow() -> Result<(), Box<dyn Error>>
+    fn the_next_token_keeps_only_the_molds_it_can_follow() -> Result<(), Failure>
     {
         let pbg = built()?;
         let molder = Molder::new(&pbg);
@@ -6275,7 +6274,7 @@ mod tests
     }
 
     #[test]
-    fn interchangeable_openers_keep_only_the_least() -> Result<(), Box<dyn Error>>
+    fn interchangeable_openers_keep_only_the_least() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -6307,7 +6306,7 @@ mod tests
     }
 
     #[test]
-    fn a_continued_opener_beats_a_one_tile_form() -> Result<(), Box<dyn Error>>
+    fn a_continued_opener_beats_a_one_tile_form() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -6381,7 +6380,7 @@ mod tests
     ///   wrong rule changes which rule they exercise.
     /// - witness: `mold::tests::readings_that_end_alike_keep_the_least`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&opener| pbg.rule_of(opener).is_ok_and(|rule| rule.name() == RuleName("constructor_pattern"))))]
-    fn constructor_pattern(pbg: &Pbg) -> Result<MoldId, Box<dyn Error>>
+    fn constructor_pattern(pbg: &Pbg) -> Result<MoldId, Failure>
     {
         mold_in(
             pbg,
@@ -6393,7 +6392,7 @@ mod tests
     }
 
     #[test]
-    fn readings_that_end_alike_keep_the_least() -> Result<(), Box<dyn Error>>
+    fn readings_that_end_alike_keep_the_least() -> Result<(), Failure>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
@@ -6469,7 +6468,7 @@ mod tests
     }
 
     #[test]
-    fn a_long_type_application_is_read_whole() -> Result<(), Box<dyn Error>>
+    fn a_long_type_application_is_read_whole() -> Result<(), Failure>
     {
         // Nine tokens follow the name, so a window ends inside the argument
         // list, where the complete type `Pair` before a parenthesized type
@@ -6513,7 +6512,7 @@ mod tests
     }
 
     #[test]
-    fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Box<dyn Error>>
+    fn a_window_reads_the_token_after_a_tied_separator() -> Result<(), Failure>
     {
         // A type application's separator ties the comma that opens another
         // argument with the trailing one its closer follows. Read alone, the
@@ -6562,7 +6561,7 @@ mod tests
     }
 
     #[test]
-    fn an_attribute_block_is_a_form_of_its_own() -> Result<(), Box<dyn Error>>
+    fn an_attribute_block_is_a_form_of_its_own() -> Result<(), Failure>
     {
         // Every block before a declaration is an `attribute_block` form of its
         // own, whatever its length and whatever declaration follows it, so a
@@ -6748,7 +6747,7 @@ mod tests
     fn mold_and_hash(
         pbg: &Pbg,
         src: SourceText<'_>,
-    ) -> Result<MoldHash, Box<dyn Error>>
+    ) -> Result<MoldHash, Failure>
     {
         let mut molder = Molder::new(pbg);
         let mut state = MeldState::new(pbg);

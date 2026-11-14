@@ -5,7 +5,6 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
-use core::error::Error;
 
 use anodized::spec;
 use gandr_surface_grammar::NamedKind;
@@ -31,6 +30,8 @@ use gandr_surface_syntax::SourceText;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecDag;
+
+use crate::failure::Failure;
 
 /// The built-in groups with their associativity, in dense id order.
 const EXPECTED_PRECEDENCE_GROUPS: &[(&str, Assoc)] = &[
@@ -282,7 +283,7 @@ fn type_openers(
 }
 
 #[test]
-fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
+fn built_in_precedence_bands_are_exact() -> Result<(), Failure>
 {
     let precs = built_in_prec_table()?;
     let dag = precs.dag();
@@ -367,7 +368,7 @@ fn built_in_precedence_bands_are_exact() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
+fn named_kind_coverage_is_semantic() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let committed: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS.iter().copied().collect();
@@ -464,7 +465,7 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn every_mold_resolves_to_its_rule_and_named_kind() -> Result<(), Box<dyn Error>>
+fn every_mold_resolves_to_its_rule_and_named_kind() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let recognised: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS
@@ -549,7 +550,7 @@ fn sort_decode_contract()
 }
 
 #[test]
-fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
+fn built_in_adaptations_name_their_rules() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     assert_ne!(pbg.adaptations(), []);
@@ -570,7 +571,7 @@ fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
 /// `-F [Fs] A` and `-F [a : I] A`, close their bracket, and the operand
 /// follows the bracket.
 #[test]
-fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Error>>
+fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     for (label, shapes) in [
@@ -610,7 +611,7 @@ fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Erro
 /// The type arrow completes cleanly: its required right operand is matched
 /// by its required left operand.
 #[test]
-fn infix_type_operator_keeps_clean_completion() -> Result<(), Box<dyn Error>>
+fn infix_type_operator_keeps_clean_completion() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let arrows: Vec<MoldId> = pbg
@@ -681,7 +682,7 @@ fn circuit_arrows_stay_inside_complete_declarations()
 }
 
 #[test]
-fn module_member_repetition_preserves_siblings_and_nesting() -> Result<(), Box<dyn Error>>
+fn module_member_repetition_preserves_siblings_and_nesting() -> Result<(), Failure>
 {
     let grammar = built_in()?;
     let source = "module M where { def one = 1; module N where { def two = 2; } def three = 3; }";

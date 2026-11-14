@@ -26,6 +26,15 @@ if [[ -n ${usage_arena:-} ]]; then flags+=(--arena "$usage_arena"); fi
 exec .config/mise/codemod-region.bash "${flags[@]}" "$usage_crate" "${names[@]}"
 '''
 
+# The codemod of the errors' wave (`.config/mise/codemod-errors.bash`,
+# #7385): each boxed `dyn Error` of a test takes the test's own `Failure`,
+# and the compiler's errors that stay are the wave's second phase. The rules
+# live in `.config/ast-grep/errors`.
+["codemod:errors"]
+description = "Give each boxed dyn Error of a test the test's own Failure"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+run = ".config/mise/codemod-errors.bash"
+
 # The codemod's dry run as a report (#7390). The wave of #7390 runs the
 # codemod over the holders of the term arena's ids. Until the wave lands, the
 # dry run holds the rules current: a holder that a landing adds and that the

@@ -67,10 +67,11 @@
 //! use gandr_theory_circuit_algebras::Wire;
 //! use gandr_theory_circuit_algebras::WireCount;
 //! use gandr_theory_circuit_algebras::Wiring;
+//! use gandr_theory_circuit_algebras::WiringObstruction;
 //! use gandr_theory_circuit_algebras::canonicalize;
 //! use gandr_theory_circuit_algebras::same_diagram;
 //!
-//! fn example() -> Result<(), Box<dyn core::error::Error>>
+//! fn example() -> Result<(), WiringObstruction>
 //! {
 //!     let value = |name: &str| GeneratorLabel::new(name, GeneratorSort::Value);
 //!     let wires =
@@ -95,7 +96,7 @@
 //!     )?;
 //!     let DiagramEquality::Same(shared) = same_diagram(&left, &right)
 //!     else {
-//!         return Err("two presentations of one diagram".into());
+//!         unreachable!("two presentations of one diagram");
 //!     };
 //!     assert_eq!(Ok(()), shared.left().verify(&left, shared.form()));
 //!     assert_eq!(Ok(()), shared.right().verify(&right, shared.form()));
