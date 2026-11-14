@@ -405,7 +405,7 @@ fn a_registered_buffer_carries_a_fixed_write_and_read()
 {
     scoped(
         Budget::from(1_usize << 20_u32),
-        |region: &Region<'_, u8>, _mint| {
+        |region: &Region<'_, u8, Global>, _mint| {
             let depth = Count::from(8_u32);
             let forms = [
                 Io::open(depth).expect("an io opens"),
@@ -548,7 +548,7 @@ fn a_register_past_the_budget_is_refused()
     // One block and a half: room for the first block, never the second.
     scoped(
         Budget::from(6_144_usize),
-        |region: &Region<'_, u8>, _mint| {
+        |region: &Region<'_, u8, Global>, _mint| {
             let depth = Count::from(8_u32);
             let forms = [
                 Io::open(depth).expect("an io opens"),
