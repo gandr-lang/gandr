@@ -5745,6 +5745,14 @@ mod tests
             environment.add_decl(good).map(CheckedId::position),
             "the next declaration takes the position after the vacancy"
         );
+        assert_eq!(
+            environment
+                .entries()
+                .vacancies()
+                .collect::<alloc::vec::Vec<_>>(),
+            [ConstantIndex::from(0_usize)],
+            "and the vacancies name the refused declaration's position alone"
+        );
     }
 
     #[test]
