@@ -1,6 +1,8 @@
 //! The ring: linked submissions complete in the order of their links, and a
 //! failed write cancels the sync linked to it.
 
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::Ordering;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::os::fd::AsFd as _;
@@ -17,7 +19,11 @@ use gandr_storage_io::Ring;
 /// The bytes of one block that the witnesses write and read.
 const BLOCK: usize = 4_096;
 
+/// The scratch files named so far in this process, so each name is fresh.
+static NAMED: AtomicU64 = AtomicU64::new(0);
+
 /// A fresh file for one witness, removed when the witness ends.
+#[repr(transparent)]
 struct Scratch
 {
     /// The file's path.
@@ -26,15 +32,22 @@ struct Scratch
 
 impl Scratch
 {
-    /// A fresh scratch file named for `witness`.
-    fn new(witness: &str) -> Self
+    /// A fresh scratch file, named by the process and a counter.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new() -> Self
     {
+        let serial = NAMED.fetch_add(1, Ordering::Relaxed);
         let path =
-            std::env::temp_dir().join(format!("gandr-storage-io-{witness}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("gandr-storage-io-{}-{serial}", std::process::id()));
         Self { path }
     }
 
     /// The file, open to read and to write.
+    ///
+    /// # Specification
+    /// trivial.
     fn open(&self) -> File
     {
         OpenOptions::new()
@@ -49,6 +62,8 @@ impl Scratch
 
 impl Drop for Scratch
 {
+    /// # Specification
+    /// trivial.
     fn drop(&mut self)
     {
         let _removed = std::fs::remove_file(&self.path);
@@ -56,6 +71,9 @@ impl Drop for Scratch
 }
 
 /// Each completion that stands, in the order the ring posts them.
+///
+/// # Specification
+/// trivial.
 fn completions(ring: &mut Ring) -> Vec<Completion>
 {
     core::iter::from_fn(|| ring.complete()).collect()
@@ -66,7 +84,7 @@ fn completions(ring: &mut Ring) -> Vec<Completion>
 #[test]
 fn a_linked_write_sync_and_read_complete_in_order()
 {
-    let scratch = Scratch::new("linked");
+    let scratch = Scratch::new();
     let file = scratch.open();
     let mut ring = Ring::new(Count::from(8_u32)).expect("the ring sets up");
     let written = Buffer::from(vec![0xa5_u8; BLOCK]);
@@ -127,7 +145,7 @@ fn a_linked_write_sync_and_read_complete_in_order()
 #[test]
 fn a_failed_write_cancels_its_linked_sync()
 {
-    let scratch = Scratch::new("cancel");
+    let scratch = Scratch::new();
     drop(scratch.open());
     let readonly = File::open(&scratch.path).expect("the scratch file opens to read");
     let mut ring = Ring::new(Count::from(8_u32)).expect("the ring sets up");
