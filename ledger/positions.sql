@@ -164,7 +164,6 @@ INSERT INTO position VALUES('crates/kernel-term/src/term.rs','Component','kernel
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-core-base::encoding','owed','#7341','The content encoding writes the position of a constant with no content key, and of the constant at four sites that read no name.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-term::encode::Positions::Raw','owed','#7340','An artifact writes each constant and each abstract type that a node reads by its admission index.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-term::encode::keyed_segment','kept',NULL,'A keyed segment writes each constant at its place in the segment''s named list or in its block.');
-INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','storage-artifact::record','owed','#7340','An artifact keys each declaration record under its big-endian admission index.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstructorTag','kernel-core-base::encoding','kept',NULL,'A constructor''s place among the constructors of one datatype.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstructorTag','kernel-term::encode','kept',NULL,'A constructor''s place among the constructors of one datatype.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','DeBruijnIndex','kernel-core-base::encoding','kept',NULL,'A variable''s distance to its binder inside one term.');
@@ -205,7 +204,8 @@ INSERT INTO position VALUES('crates/kernel-term/src/wire.rs','WireUsize','','non
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactIdentity','','none',NULL,'A digest of an artifact.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactManifestVersion','','none',NULL,'A version of the manifest.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','FieldBytes','','none',NULL,'A carrier of the bytes of a field.');
-INSERT INTO position VALUES('crates/storage-artifact/src/record.rs','AdmissionKey','storage-artifact::record','owed','#7340','A declaration record''s key, its admission index in eight big-endian bytes.');
+INSERT INTO position VALUES('crates/storage-artifact/src/record.rs','ContentName','','none',NULL,'A digest of an entry''s content, which an artifact''s order carries beside a place.');
+INSERT INTO position VALUES('crates/storage-artifact/src/record.rs','RecordKey','','none',NULL,'A digest of a declaration segment, which names its record.');
 INSERT INTO position VALUES('crates/storage-artifact/src/transport.rs','CanonicalU64','','none',NULL,'A carrier of a word of the transport.');
 INSERT INTO position VALUES('crates/storage-artifact/src/transport.rs','TransportStepId','','none',NULL,'A digest of a transport step.');
 INSERT INTO position VALUES('crates/storage-chunker/src/error.rs','RawDiscriminator','','none',NULL,'A tag that a refusal reports.');

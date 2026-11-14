@@ -1,6 +1,7 @@
 //! Kernel artifacts on the authenticated record plane and the content-addressed
-//! value plane: one record per declaration segment, under a BLAKE3 manifest
-//! identity or a content pointer. In the storage
+//! value plane: one record per distinct declaration segment, keyed by the
+//! digest of its bytes, under a BLAKE3 manifest identity or a content pointer.
+//! In the storage
 //! picture this crate is where the kernel's export enters the CAM, the
 //! content-addressable memory of
 //! `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory`.
@@ -9,7 +10,8 @@
 //!
 //! [`ArtifactRecordSet::from_artifact`] cuts a kernel artifact where the
 //! kernel's decoder finds its segments end: the header under the empty key,
-//! each declaration under its big-endian admission index. [`build`] writes the
+//! the order of the declarations under [`ORDER_KEY`], and each distinct
+//! segment under the digest of its bytes. [`build`] writes the
 //! set's record tree into a [`BlockStore`] and returns the
 //! [`ArtifactManifest`] naming it; [`ArtifactManifest::identity`] is the one
 //! identity an artifact has. [`ArtifactManifest::read_under`] reads the tree
@@ -143,13 +145,21 @@ pub use crate::manifest::ArtifactManifestVersion;
 pub use crate::manifest::MANIFEST_DOMAIN;
 pub use crate::manifest::ManifestImage;
 pub use crate::manifest::ManifestImageBuf;
-pub use crate::record::ADMISSION_KEY_LEN;
-pub use crate::record::AdmissionKey;
 pub use crate::record::ArtifactRecord;
 pub use crate::record::ArtifactRecordSet;
+pub use crate::record::CONTENT_NAME_LEN;
+pub use crate::record::ContentName;
 pub use crate::record::HEADER_KEY;
+pub use crate::record::ORDER_KEY;
+pub use crate::record::OrderImage;
+pub use crate::record::PLACE_LEN;
+pub use crate::record::Place;
+pub use crate::record::RECORD_DOMAIN;
+pub use crate::record::RECORD_KEY_LEN;
 pub use crate::record::ReassembledArtifact;
+pub use crate::record::RecordKey;
 pub use crate::record::SegmentBytes;
+pub use crate::record::unnamed;
 
 /// Writes a record set's tree into `store` and names it.
 ///
@@ -159,10 +169,10 @@ pub use crate::record::SegmentBytes;
 /// - ensures: on success every node of the tree built from
 ///   [`ArtifactRecordSet::record_refs`] under `params` is loadable from
 ///   `store`, and the manifest carries this build's kernel format version,
-///   `params`' boundary commitment, the set's record count — the header and one
-///   per declaration — and the tree's root node identity. The tree is a
-///   function of the records alone, so equal sets, in whatever order their
-///   records were gathered, mint equal identities.
+///   `params`' boundary commitment, the set's record count — the header, the
+///   order and one per distinct segment — and the tree's root node identity.
+///   The tree is a function of the records alone, and the records sort by key,
+///   so equal sets mint equal identities.
 /// - provides: the commit path, and the one place an artifact identity is
 ///   minted.
 /// - fails: [`ArtifactError::Records`] carrying the record plane's refusal of
@@ -190,7 +200,7 @@ pub use crate::record::SegmentBytes;
     Ok(ref manifest) => *manifest.commitment() == params.boundary_commitment()
         && manifest.kernel_format() == FORMAT_VERSION
         && usize::try_from(u64::from(manifest.record_count()))
-            .is_ok_and(|count| count == records.records().len().saturating_add(1_usize)),
+            .is_ok_and(|count| count == records.records().len().saturating_add(2_usize)),
     Err(ArtifactError::Records { .. }) => true,
     Err(_) => false,
 })]
@@ -202,7 +212,8 @@ pub fn build<S>(
 where
     S: BlockStore + ?Sized,
 {
-    let refs = records.record_refs();
+    let order = records.order_image();
+    let refs = records.record_refs(&order);
     let tree = RecordTree::build(&refs, params)?;
     tree.write_to(store)?;
 

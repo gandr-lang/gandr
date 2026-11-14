@@ -569,11 +569,8 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     let mut header = genuine.header().as_ref().to_vec();
     let magic = header.first_mut().expect("the header opens with its magic");
     *magic ^= 0xFF;
-    let forged = ArtifactRecordSet::from_records(
-        SegmentBytes::from(header.as_slice()),
-        genuine.records().to_vec(),
-    )
-    .expect("the keys are the genuine ones");
+    let forged =
+        ArtifactRecordSet::from_segments(SegmentBytes::from(header.as_slice()), genuine.segments());
     let mut blocks = writer.blocks().clone();
     let minted =
         build(&forged, TreeParams::current(), &mut blocks).expect("a writer commits any set");

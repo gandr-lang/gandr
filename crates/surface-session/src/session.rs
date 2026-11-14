@@ -355,7 +355,9 @@ use gandr_kernel_term::EncodedArtifact;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::ContentName;
 use gandr_storage_artifact::build;
+use gandr_storage_artifact::unnamed;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
@@ -3881,7 +3883,12 @@ impl<Store, Blocks> Session<Store, Blocks>
         });
         self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
-            Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),
+            Keeping::Kept => checkpoint_kernel(
+                &kernel,
+                &resumption.names,
+                &mut self.blocks,
+                held.as_deref(),
+            ),
             Keeping::Discarded => KernelCheckpoint::Discarded,
         };
         Ok(Maybe::Present(Admitted {
@@ -4534,15 +4541,17 @@ impl<Store, Blocks> Session<Store, Blocks>
 }
 
 /// Commits `kernel` into `blocks` as artifact records under the current tree
-/// parameters, resuming the decode that cuts them after the closure's kernel
-/// declarations `held` keeps, or keeping it there.
+/// parameters, each place named by the kernel's content key `names` gives it,
+/// resuming the decode that cuts them after the closure's kernel declarations
+/// `held` keeps, or keeping it there.
 ///
 /// # Specification
 /// - requires: `held`, when given, holds the readmission of the declarations
-///   `kernel` leads with.
+///   `kernel` leads with; `names` holds one entry per declaration of `kernel`,
+///   in its order.
 /// - ensures: [`KernelCheckpoint::Stored`] with the manifest [`build`] mints
 ///   over the records [`ArtifactRecordSet::from_artifact`] cuts from `kernel`,
-///   every node of their tree then in `blocks`; otherwise
+///   named by `names`, every node of their tree then in `blocks`; otherwise
 ///   [`KernelCheckpoint::Failed`] with the first refusal. The records are cut
 ///   after the decode `held` keeps when it keeps one; otherwise `held`, when
 ///   given, keeps the decode of the declarations its readmission admitted.
@@ -4571,6 +4580,7 @@ impl<Store, Blocks> Session<Store, Blocks>
 )]
 fn checkpoint_kernel<Blocks>(
     kernel: &EncodedArtifact,
+    names: &[Maybe<ContentName, unnamed::Absent>],
     blocks: &mut Blocks,
     held: Option<&ClosureAdmission>,
 ) -> KernelCheckpoint
@@ -4595,7 +4605,9 @@ where
             )
         },
     );
-    let committed = records.and_then(|records| build(&records, TreeParams::current(), blocks));
+    let committed = records
+        .and_then(|records| records.named(names))
+        .and_then(|records| build(&records, TreeParams::current(), blocks));
     match committed {
         Ok(manifest) => KernelCheckpoint::Stored(manifest),
         Err(refusal) => KernelCheckpoint::Failed(refusal),

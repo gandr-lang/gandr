@@ -3,7 +3,6 @@
 use core::error::Error;
 use core::fmt;
 
-use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::FormatVersion;
 use gandr_storage_records::RecordIndex;
@@ -90,15 +89,34 @@ pub enum ArtifactError
         refusal: RecordTreeError,
     },
 
-    /// Two records of one set carry one admission key.
-    DuplicateAdmissionKey
+    /// The order record holds a place this build does not read: bytes past
+    /// the last whole place, or a tag that no place carries.
+    MalformedOrder
     {
-        /// The repeated admission index.
-        key: ConstantIndex,
-        /// The input position of the first record carrying it.
-        first: RecordIndex,
-        /// The input position of the second.
-        second: RecordIndex,
+        /// The first place refused, in artifact order.
+        place: RecordIndex,
+    },
+
+    /// A place of the order names a record that the set does not hold.
+    UnheldRecord
+    {
+        /// The place, in artifact order.
+        place: RecordIndex,
+    },
+
+    /// A stored record that no place of the order names.
+    UnplacedRecord
+    {
+        /// The record's position in key order.
+        position: RecordIndex,
+    },
+
+    /// The names a caller gives differ in number from the places of the set.
+    Misnamed
+    {
+        /// The first place without a name, or the first name past the last
+        /// place.
+        place: RecordIndex,
     },
 
     /// A manifest image's field holds a value this build does not read: a
@@ -135,9 +153,10 @@ pub enum ArtifactError
     /// names.
     TreeMismatch,
 
-    /// A stored record sits under a key other than the one its position
-    /// requires: the header first, under the empty key, then the declarations
-    /// at their admission indices, contiguous from zero.
+    /// A stored record sits under a key other than the one its position or
+    /// its bytes require: the header first, under the empty key, then the
+    /// order under [`ORDER_KEY`](crate::ORDER_KEY), then each declaration
+    /// record under the digest of its own bytes.
     MisplacedRecord
     {
         /// The record's position in key order.
@@ -198,7 +217,7 @@ impl fmt::Display for ArtifactError
     /// Propagates the formatter's write failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 on one representative of all eleven variants observes
+    /// - hypothesis: L3 on one representative of all fourteen variants observes
     ///   complete payload renderings, distinct messages and first-write sink
     ///   refusal. Indices reach the usize ceiling; the matrix distinguishes
     ///   lost or narrowed payloads, collapsed variants and swallowed errors. It
@@ -213,11 +232,28 @@ impl fmt::Display for ArtifactError
         match *self {
             Self::Kernel { refusal } => write!(f, "the kernel refuses the artifact: {refusal}"),
             Self::Records { ref refusal } => write!(f, "the record plane refuses: {refusal}"),
-            Self::DuplicateAdmissionKey { key, first, second } => {
+            Self::MalformedOrder { place } => {
                 write!(
                     f,
-                    "records {first} and {second} both carry admission index {}",
-                    usize::from(key)
+                    "place {place} of the stored order is not a place this build reads"
+                )
+            },
+            Self::UnheldRecord { place } => {
+                write!(
+                    f,
+                    "place {place} of the order names a record the set does not hold"
+                )
+            },
+            Self::UnplacedRecord { position } => {
+                write!(
+                    f,
+                    "stored record {position} is named by no place of the order"
+                )
+            },
+            Self::Misnamed { place } => {
+                write!(
+                    f,
+                    "the names and the places of the set differ in number at place {place}"
                 )
             },
             Self::MalformedManifest { field } => {
@@ -267,7 +303,6 @@ mod tests
     use alloc::string::ToString as _;
 
     use anodized::spec;
-    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DecodeError;
     use gandr_kernel_term::FormatVersion;
     use gandr_storage_records::NodeHash;
@@ -320,27 +355,39 @@ mod tests
         let records = RecordTreeError::UnknownNode {
             hash: NodeHash::from([0xa7; 32]),
         };
-        let key = ConstantIndex::from(usize::MAX);
         let first = RecordIndex::from(usize::MAX - 1);
         let second = RecordIndex::from(usize::MAX - 2);
+        let third = RecordIndex::from(usize::MAX - 3);
+        let fourth = RecordIndex::from(usize::MAX - 4);
+        let fifth = RecordIndex::from(usize::MAX - 5);
+        let sixth = RecordIndex::from(usize::MAX - 6);
         let found = FormatVersion(0x1234);
         let kernel_text = kernel.to_string();
         let records_text = records.to_string();
-        let key_text = usize::from(key).to_string();
         let first_text = first.to_string();
         let second_text = second.to_string();
+        let third_text = third.to_string();
+        let fourth_text = fourth.to_string();
+        let fifth_text = fifth.to_string();
+        let sixth_text = sixth.to_string();
         let format_text = found.to_string();
         let malformed_field = ManifestField::Commitment.to_string();
         let truncated_field = ManifestField::RootNode.to_string();
-        let cases: [(ArtifactError, &[&str]); 11] = [
+        let cases: [(ArtifactError, &[&str]); 14] = [
             (ArtifactError::Kernel { refusal: kernel }, &[&kernel_text]),
             (ArtifactError::Records { refusal: records }, &[
                 &records_text,
             ]),
-            (
-                ArtifactError::DuplicateAdmissionKey { key, first, second },
-                &[&key_text, &first_text, &second_text],
-            ),
+            (ArtifactError::MalformedOrder { place: third }, &[
+                &third_text,
+            ]),
+            (ArtifactError::UnheldRecord { place: fourth }, &[
+                &fourth_text,
+            ]),
+            (ArtifactError::UnplacedRecord { position: fifth }, &[
+                &fifth_text,
+            ]),
+            (ArtifactError::Misnamed { place: sixth }, &[&sixth_text]),
             (
                 ArtifactError::MalformedManifest {
                     field: ManifestField::Commitment,
