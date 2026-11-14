@@ -2316,6 +2316,9 @@ where
         if let Some(lane) = self.lanes.get(part.0) {
             self.work(lane);
         }
+        // The worker's token goes back before the count falls, so the calling
+        // thread finds it back once it wakes.
+        workers::release(self);
         let waiter = self.waiter.clone();
         if self.tasks.fetch_sub(1, Ordering::AcqRel) == 1 {
             waiter.unpark();
@@ -2786,23 +2789,15 @@ mod tests
             elsewhere.load(Ordering::Relaxed),
             "a worker ran a leaf on the FIFO's token"
         );
-        // A worker gives its token back just after its part wakes the party,
-        // so the token may reach the FIFO a moment after the fork returns.
+        // A worker gives its token back before its part wakes the party, so
+        // the FIFO holds the token once the fork returns, as a process that
+        // ends then needs.
         let mut held = [0_u8; 4];
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let read = loop {
-            match parent.read(&mut held) {
-                Ok(read) => break read,
-                Err(error)
-                    if error.kind() == std::io::ErrorKind::WouldBlock
-                        && Instant::now() < deadline =>
-                {
-                    std::thread::sleep(Duration::from_millis(1));
-                },
-                Err(error) => panic!("the FIFO holds no token: {error}"),
-            }
-        };
-        assert_eq!(read, 1, "the FIFO holds its one token again, and no more");
+        assert_eq!(
+            parent.read(&mut held).unwrap(),
+            1,
+            "the FIFO holds its one token again once the fork returns, and no more"
+        );
         drop(pool);
         drop(std::fs::remove_dir_all(&directory));
     }

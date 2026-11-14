@@ -296,6 +296,8 @@ impl<Job, Output> Drop for Ending<'_, '_, '_, Job, Output>
             *state = State::Unwound;
         }
         drop(state);
+        // A worker's token for this slot goes back before the waiter wakes.
+        super::workers::release(self.0);
         self.0.ended.store(true, Ordering::Release);
         self.0.waiter.unpark();
     }
@@ -364,6 +366,9 @@ where
         if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| self.run_once(&spawner))) {
             spawner.scope.panic.keep(panic);
         }
+        // A worker's token for this slot goes back before the scope's count
+        // falls, unless the slot's end gave it back already.
+        super::workers::release(&*self);
         drop(self);
         let waiter = spawner.scope.waiter.clone();
         if spawner.scope.outstanding.fetch_sub(1, Ordering::AcqRel) == 1 {

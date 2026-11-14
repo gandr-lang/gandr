@@ -40,6 +40,7 @@ use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::any::Any;
 use core::cell::Cell;
+use core::cell::OnceCell;
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
 use core::num::NonZeroUsize;
@@ -305,6 +306,32 @@ impl JobRef
     }
 }
 
+/// Run `job` on the current worker, which holds `held` for the job's part.
+/// The job's frame gives the token back as the part ends ([`release`]), and a
+/// token that the frame did not give back goes back once the job returns.
+///
+/// # Specification
+/// - ensures: the job ran, and the worker holds no token after.
+/// - panics: none; the job's panic is caught here.
+///
+/// # Safety
+/// - unsafe invariants: the job's frame lives until its part ends.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`release`].
+/// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+unsafe fn run_holding(
+    job: JobRef,
+    held: Option<Token>,
+)
+{
+    HELD.with(|cell| cell.set(held.map(|token| (job.frame.addr(), token))));
+    // SAFETY: the caller keeps the frame alive until its part ends.
+    let unwound = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
+    drop(unwound);
+    give_held();
+}
+
 /// Run the part `part` of the frame of type `Frame` at `frame`.
 ///
 /// # Specification
@@ -345,6 +372,20 @@ pub struct Posted
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SeatState(u64);
+
+/// Whether a post takes a token of the grant.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Taking
+{
+    /// The part runs on a token, under a grant.
+    Token,
+    /// The part runs on no token: a trip of the park's measure, which only
+    /// sets a flag, so the measure does not wait on the grant.
+    Free,
+}
 
 /// What a seat or a queue holds.
 ///
@@ -442,13 +483,14 @@ unsafe impl Sync for Seat
 
 impl Seat
 {
-    /// Take the posted part and run it, if the seat holds one, then give its
-    /// token back to `tokens`.
+    /// Take the posted part and run it, if the seat holds one, on the token
+    /// that came with the post.
     ///
     /// # Specification
     /// - ensures: [`Helped::Ran`] exactly when the call moved a post to
     ///   running, ran the part and left the seat holding nothing. The token
-    ///   that came with the post goes back once the part ends.
+    ///   that came with the post goes back as the part ends, before the part
+    ///   wakes the party that waits for it.
     /// - panics: none; a part that unwinds still leaves the seat holding
     ///   nothing and gives its token back.
     /// - executable: none — a party may post again as soon as the seat holds
@@ -458,10 +500,7 @@ impl Seat
     /// - hypothesis: L3 — as [`Workers`].
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-    fn run_posted(
-        &self,
-        tokens: Option<&Tokens>,
-    ) -> Helped
+    fn run_posted(&self) -> Helped
     {
         let state = SeatState(self.state.load(Ordering::Acquire));
         if state.holding() != Holding::Posted
@@ -486,13 +525,11 @@ impl Seat
         let job = unsafe { slot.assume_init() };
         // SAFETY: the poster keeps the frame alive until the part ends, since
         // its wait sees the part running and cannot take it back.
-        let unwound = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
-        drop(unwound);
+        unsafe {
+            run_holding(job, token);
+        }
         self.state
             .store(state.holds(Holding::Nothing).0, Ordering::Release);
-        if let (Some(token), Some(tokens)) = (token, tokens) {
-            tokens.give(token);
-        }
         Helped::Ran
     }
 
@@ -933,6 +970,71 @@ thread_local! {
     /// The address of the pool and the place of the worker that the current
     /// thread is.
     static CURRENT: Cell<Option<(usize, WorkerIndex)>> = const { Cell::new(None) };
+    /// The token that the current worker runs its part on, beside the address
+    /// of the part's frame, which gives the token back as the part ends.
+    static HELD: Cell<Option<(usize, Token)>> = const { Cell::new(None) };
+    /// The tokens of the grant of the pool that the current thread works for.
+    static GRANT: OnceCell<Arc<Tokens>> = const { OnceCell::new() };
+}
+
+/// Give back the token that the current worker holds for the part of
+/// `frame`.
+///
+/// A frame calls this just before it signals that its part has ended. So the
+/// token is back before the party that waits can return, and a process that
+/// ends once its fork returns loses no token of the host's grant. A thread
+/// that holds no token for `frame`, as a party that runs its own part does,
+/// gives nothing back.
+///
+/// # Specification
+/// - ensures: the token that the worker holds for `frame` goes back to the
+///   grant, and the worker holds none after; any other thread, or a token held
+///   for another frame, stays as it was.
+/// - panics: none.
+/// - executable: none — the token is the jobserver's.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the jobserver holds each token again once a granted fork
+///   returns.
+/// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+pub fn release<Frame>(frame: &Frame)
+{
+    let at = core::ptr::from_ref(frame).addr();
+    HELD.with(|held| {
+        if let Some((of, token)) = held.get()
+            && of == at
+        {
+            held.set(None);
+            give(token);
+        }
+    });
+}
+
+/// Give back the token that the current worker holds, for whatever frame.
+///
+/// # Specification
+/// trivial.
+fn give_held()
+{
+    HELD.with(|held| {
+        if let Some((_, token)) = held.take() {
+            give(token);
+        }
+    });
+}
+
+/// Give `token` back to the grant of the pool that the current thread works
+/// for.
+///
+/// # Specification
+/// trivial.
+fn give(token: Token)
+{
+    GRANT.with(|grant| {
+        if let Some(tokens) = grant.get() {
+            tokens.give(token);
+        }
+    });
 }
 
 /// The place of the current thread among the workers of the pool that runs
@@ -1136,7 +1238,8 @@ impl Workers
             let started = Instant::now();
             // SAFETY: the loop below waits until the worker ran the part, so
             // the frame outlives the post.
-            if let Maybe::Absent(_) = unsafe { self.post(JobRef::of(&frame, Part(0))) } {
+            let posted = unsafe { self.post_taking(JobRef::of(&frame, Part(0)), Taking::Free) };
+            if let Maybe::Absent(_) = posted {
                 continue;
             }
             while !frame.done.load(Ordering::Acquire) {
@@ -1204,6 +1307,31 @@ impl Workers
         job: JobRef,
     ) -> Maybe<Posted, unseated::Absent>
     {
+        // SAFETY: the caller keeps the frame until the part ends or comes
+        // back.
+        unsafe { self.post_taking(job, Taking::Token) }
+    }
+
+    /// Hand `job` to an idle worker as [`Workers::post`] does, on a token of
+    /// the grant or on none, as `taking` states.
+    ///
+    /// # Specification
+    /// - ensures: as [`Workers::post`]; [`Taking::Free`] reads no token.
+    /// - panics: none.
+    /// - executable: none — the worker may start the part at once.
+    ///
+    /// # Safety
+    /// - unsafe invariants: as [`Workers::post`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Workers::post`].
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    unsafe fn post_taking(
+        &self,
+        job: JobRef,
+        taking: Taking,
+    ) -> Maybe<Posted, unseated::Absent>
+    {
         let worker = match self.shared.idle.claim_any(&self.shared.spinning) {
             Maybe::Present(worker) => worker,
             Maybe::Absent(absent) => return Maybe::Absent(absent),
@@ -1214,10 +1342,16 @@ impl Workers
         };
         // The worker is claimed before the token is read, so a fork that finds
         // no idle worker costs no read of the grant.
-        let Maybe::Present(held) = self.shared.hold()
-        else {
-            self.shared.idle.release(worker);
-            return Maybe::Absent(unseated::Absent::Ungranted);
+        let held = match taking {
+            Taking::Free => None,
+            Taking::Token => {
+                let Maybe::Present(held) = self.shared.hold()
+                else {
+                    self.shared.idle.release(worker);
+                    return Maybe::Absent(unseated::Absent::Ungranted);
+                };
+                held
+            },
         };
         let state = SeatState(seat.state.load(Ordering::Relaxed)).next_post();
         seat.token
@@ -1635,6 +1769,9 @@ where
     )
     {
         self.run_here(part);
+        // The token goes back before the count falls, so the party finds it
+        // back once it wakes.
+        release(self);
         let waiter = self.waiter.clone();
         if self.left.fetch_sub(1, Ordering::AcqRel) == 1 {
             waiter.unpark();
@@ -1663,12 +1800,16 @@ fn serve(
 )
 {
     CURRENT.with(|current| current.set(Some((Arc::as_ptr(shared).addr(), worker))));
+    if let Some(ref tokens) = shared.tokens {
+        // A worker serves one pool for its life, so no grant is set before.
+        GRANT.with(|grant| drop(grant.set(Arc::clone(tokens))));
+    }
     let Some(seat) = shared.seats.get(worker.0)
     else {
         return;
     };
     loop {
-        if seat.run_posted(shared.tokens.as_deref()) == Helped::Ran {
+        if seat.run_posted() == Helped::Ran {
             shared.idle.release(worker);
             continue;
         }
@@ -1700,15 +1841,17 @@ fn serve(
                 }
                 if let Some(job) = spawn {
                     // SAFETY: a spawn's frame lives until its part ends.
-                    let unwound =
-                        std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
-                    drop(unwound);
+                    unsafe {
+                        run_holding(job, held);
+                    }
                 }
-                else if let Some(job) = standing {
-                    drop(std::panic::catch_unwind(AssertUnwindSafe(job)));
+                else {
+                    if let Some(job) = standing {
+                        drop(std::panic::catch_unwind(AssertUnwindSafe(job)));
+                    }
+                    shared.give(held);
                 }
                 shared.idle.release(worker);
-                shared.give(held);
             }
             continue;
         }
