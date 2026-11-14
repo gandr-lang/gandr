@@ -16,7 +16,7 @@ Sheaves of lattices wait on #5726, and cohomology over the integers on #5895.
 
 ## Synopsis
 
-**What.** A `Sheaf` holds a `GradedPoset`, a stalk width for each cell, and an entry map for each pair of a cell and a cell above it: for each entry of the upper stalk, the entry of the lower stalk that it reads. `Sheaf::glue` takes the sections of a cover and gives the glued section, or each pair of members whose restrictions differ, with the cell and the first entry where they differ. `Sheaf::cochains` gives the coboundaries over the rationals from an orientation, and `Tower` gives the cohomology of each level of a tower and the rank of the map each bonding map induces on it. `Sheaf::oriented` reads the poset as a complex over the integers for a Morse matching, and `Sheaf::reduce` reduces the cochains along a matching whose signed maps are invertible, onto the critical cells alone.
+**What.** A `Sheaf` holds a `GradedPoset`, a stalk width for each cell, and a map for each pair of a cell and a cell above it. `Sheaf::new` takes entry maps: for each entry of the upper stalk, the entry of the lower stalk that it reads. `Sheaf::linear` takes, for each pair, an entry map or a matrix over the rationals, a homomorphism of modules from the lower stalk to the upper stalk. `Sheaf::glue` takes the sections of a cover and gives the glued section, or each pair of members whose restrictions differ, with the cell and the first entry where they differ. `Sheaf::cochains` gives the coboundaries over the rationals from an orientation, and `Tower` gives the cohomology of each level of a tower and the rank of the map each bonding map induces on it. `Sheaf::oriented` reads the poset as a complex over the integers for a Morse matching, and `Sheaf::reduce` reduces the cochains along a matching whose signed maps are invertible, onto the critical cells alone.
 
 **Why.** A face cover splits a term over the faces of a shape, and two arms must agree where their faces overlap. That condition is the gluing condition of a sheaf over the faces and their meets. The cohomology of a space comes through the finite levels of its tower, each level a sheaf on a graded poset. One crate states both, so the shapes crate's face cover and the towers read one sheaf.
 
@@ -33,7 +33,7 @@ Sheaves of lattices wait on #5726, and cohomology over the integers on #5895.
 
 ## Provided features
 
-- `Sheaf`: the stalks and the entry maps over a graded poset, checked to compose.
+- `Sheaf`, `EntryMaps`, `LinearMaps`, `Restriction`: the stalks and the maps over a graded poset, checked to compose. A sheaf of entry maps holds sections of any values. A sheaf of linear maps holds sections of rationals, and an entry map in it costs a read where a matrix sums a row.
 - `Gluing`, `Section`, `Obstruction`: the verdict on the sections of a cover.
 - `CochainComplex`, `Matrix`, `Cohomology`: the coboundaries over the rationals, their ranks and the cohomology by degree.
 - `Rational`, `Integer`: an exact rational in lowest terms over 128-bit integers, and its parts. The sum uses the least common denominator, and the product cancels common factors before it multiplies. `theory-probability` takes it as a weight.
