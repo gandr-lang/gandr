@@ -1663,11 +1663,13 @@ exec .config/mise/gated .config/mise/scope cargo nextest run --locked --profile 
 '''
 
 # Merge residue never lands: a conflict marker, or what a merge driver writes
-# as a comment, its resolution trailer or the `// refused_by:` line it puts
-# atop each side of a block it could not resolve (#1560), read at a line's
-# start and, whole as `// refused_by: <name> · collision:`, anywhere on a
-# line, where a formatter that reflows the block joins it (#3217); nor a file
-# named as residue, a driver's `.orig` backup or a `.rej` hunk, or the
+# as a comment, its resolution trailer or the `refused_by:` line it puts atop
+# each side of a block it could not resolve (#1560). The driver writes that
+# line under the file's comment leader: `//`, SQL's `--` (#7588) or `#`. The
+# scan reads it at a line's start and, whole as `refused_by: <name> ·
+# collision:` after a leader, anywhere on a line, where a formatter that
+# reflows the block joins it (#3217). Nor does a file named as residue land:
+# a driver's `.orig` backup or a `.rej` hunk, or the
 # `_BACKUP_`, `_BASE_`, `_LOCAL_` and `_REMOTE_` copies `git mergetool`
 # writes, which hold clean text no marker scan sees (#1642), or `wt:warm`'s
 # clone probe, `.wt-warm-probe`, a tool's leftover (#3222). The line
