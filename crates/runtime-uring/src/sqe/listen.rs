@@ -93,6 +93,7 @@ pub mod test
                 .get_sqe()
                 .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
                 .unwrap();
+            // SAFETY: `socket` stays open for the test.
             unsafe {
                 sqe.prep_listen(socket, backlog);
             }
@@ -107,6 +108,8 @@ pub mod test
             if socket.is_slot() {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
+            // SAFETY: each flag is the kernel's, and the fixed-file flag goes
+            // with a slot alone.
             unsafe {
                 sqe.set_flags(flags);
             }

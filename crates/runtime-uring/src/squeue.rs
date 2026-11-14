@@ -323,6 +323,7 @@ pub mod test
             let mut sq = ring.squeue();
 
             let mut sqe = sq.get_sqe().unwrap();
+            // SAFETY: a no-op reads no pointer and names no descriptor.
             unsafe {
                 sqe.prep_nop();
             }

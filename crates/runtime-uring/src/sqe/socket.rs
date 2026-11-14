@@ -165,6 +165,8 @@ pub mod test
                 .get_sqe()
                 .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
                 .unwrap();
+            // SAFETY: the entry reads no pointer, and the slot, if any, is in
+            // the table that the test registers.
             unsafe {
                 sqe.prep_socket(domain, r#type, protocol, flags, socket_slot);
             }
@@ -177,6 +179,8 @@ pub mod test
             if cqe_skip {
                 flags |= ::liburing_rs::IOSQE_CQE_SKIP_SUCCESS;
             }
+            // SAFETY: each flag is the kernel's, and the fixed-file flag goes
+            // with a slot alone.
             unsafe {
                 sqe.set_flags(flags);
             }
@@ -216,6 +220,8 @@ pub mod test
             }
             else {
                 let fd = desc.cast_signed();
+                // SAFETY: the completion gives a new descriptor, which this
+                // socket owns alone from here.
                 unsafe { ::socket2::Socket::from_raw_fd(fd) }.into()
             }
         }

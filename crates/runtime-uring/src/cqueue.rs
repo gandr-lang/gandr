@@ -127,6 +127,7 @@ pub mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }
@@ -144,11 +145,13 @@ pub mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }
@@ -181,6 +184,7 @@ pub mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }
@@ -198,11 +202,13 @@ pub mod test
                 let (mut sq, mut cq) = ring.queues();
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }
 
                 let mut sqe = sq.get_sqe().unwrap();
+                // SAFETY: a no-op reads no pointer and names no descriptor.
                 unsafe {
                     sqe.prep_nop();
                 }

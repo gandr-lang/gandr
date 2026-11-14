@@ -214,9 +214,13 @@ pub mod test
                 .unwrap();
 
             match mode {
+                // SAFETY: the fixture owns `addr` and `addrlen` until it reads the
+                // completion, and `socket` stays open for the test.
                 FixtureOpMode::Singleshot => unsafe {
                     sqe.prep_accept(socket, addr, addrlen, flags, client_slot);
                 },
+                // SAFETY: the fixture owns `addr` and `addrlen` until it reads the last
+                // completion, and `socket` stays open for the test.
                 FixtureOpMode::Multishot { direct, .. } => unsafe {
                     sqe.prep_multishot_accept(socket, addr, addrlen, flags, direct);
                 },
@@ -232,6 +236,8 @@ pub mod test
             if socket.is_slot() {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
+            // SAFETY: each flag is the kernel's, and the fixed-file flag goes
+            // with a slot alone.
             unsafe {
                 sqe.set_flags(flags);
             }
@@ -282,6 +288,8 @@ pub mod test
                 }
                 else {
                     let fd = desc.cast_signed();
+                    // SAFETY: the completion gives a new descriptor, which this
+                    // socket owns alone from here.
                     unsafe { ::socket2::Socket::from_raw_fd(fd) }.into()
                 };
 
@@ -343,6 +351,10 @@ pub mod test
     /// # Specification
     ///
     /// trivial.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the owner's fixture takes each field of the accept as its own argument; #7645 owes a mend in place"
+    )]
     pub fn accept_with<'op, S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,

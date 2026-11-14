@@ -33,20 +33,7 @@
         reason = "the owner's text, kept as it stands; #7645 owes each mend in place"
     )
 )]
-#![cfg_attr(
-    test,
-    allow(
-        clippy::as_conversions,
-        clippy::indexing_slicing,
-        clippy::items_after_statements,
-        clippy::let_unit_value,
-        clippy::panic_in_result_fn,
-        clippy::too_many_arguments,
-        clippy::unwrap_used,
-        clippy::undocumented_unsafe_blocks,
-        reason = "cfg(test)"
-    )
-)]
+
 pub mod cqe;
 mod cqueue;
 mod fd;
