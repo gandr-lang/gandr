@@ -1,8 +1,12 @@
 //! A region: values in buckets under a budget, whose ids carry the region's
 //! brand. A scope brands the region, so no id leaves the scope. Three
 //! crossings move an id between regions, and nothing else does: [`Adopt`] at a
-//! fork, the fold's translation at a join, and the export of a durable [`Key`]
-//! with its checked import, [`Region::seat`].
+//! fork, the fold's [`Translation`] at a join, and the export of a durable
+//! [`Key`] with its checked import, [`Region::seat`].
+//!
+//! A region holds the values of one or more families in one id space. An id
+//! names its family by a phantom kind, so an id of one family is not an id of
+//! another, and each family crosses by the same three crossings.
 //!
 //! The scope hands its body the region and one [`Mint`]. Each id takes the
 //! mint, and [`Region::fork`] borrows it for the fork's whole life. So the
@@ -36,7 +40,10 @@ use core::alloc::Layout;
 use core::cell::Cell;
 use core::cell::OnceCell;
 use core::cell::RefCell;
+use core::cmp::Ordering;
 use core::fmt;
+use core::hash::Hash;
+use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::num::NonZero;
@@ -228,20 +235,134 @@ impl From<Key> for u32
     }
 }
 
-/// The id of a value in the region of brand `'region`.
+/// The id of a value of the family `Kind` in the region of brand `'region`.
+///
+/// The kind is a phantom. A region of one family takes the kind `()`. In a
+/// region of more families, an id of one family does not stand for an id of
+/// another:
+///
+/// ```compile_fail,E0308
+/// use gandr_kernel_data::Budget;
+/// use gandr_kernel_data::Id;
+/// use gandr_kernel_data::scoped;
+///
+/// #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// enum Term {}
+/// #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// enum Type {}
+///
+/// scoped(Budget::from(4096_usize), |region, mut mint| {
+///     let term: Id<'_, Term> = region.mint(&mut mint, 7_u64).ok()?;
+///     let as_type: Id<'_, Type> = term;
+///     region.get(as_type).copied()
+/// });
+/// ```
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Id<'region>
+pub struct Id<'region, Kind = ()>
 {
     /// The value's offset in the region's id space.
     offset: Offset,
     /// The region's brand.
     brand: Brand<'region>,
+    /// The value's family: a phantom that asks nothing of `Kind`.
+    kind: PhantomData<fn() -> Kind>,
 }
 
-impl Id<'_>
+// The kind is a phantom, so each trait below reads the offset alone and asks
+// nothing of `Kind`, as `PhantomData` asks nothing of its parameter.
+impl<Kind> Clone for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Kind> Copy for Id<'_, Kind>
+{
+}
+
+impl<Kind> PartialEq for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.offset == other.offset
+    }
+}
+
+impl<Kind> Eq for Id<'_, Kind>
+{
+}
+
+impl<Kind> PartialOrd for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Kind> Ord for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        self.offset.cmp(&other.offset)
+    }
+}
+
+impl<Kind> Hash for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<State>(
+        &self,
+        state: &mut State,
+    ) where
+        State: Hasher,
+    {
+        self.offset.hash(state);
+    }
+}
+
+impl<Kind> fmt::Debug for Id<'_, Kind>
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_struct("Id").field("offset", &self.offset).finish()
+    }
+}
+
+impl<Kind> Id<'_, Kind>
 {
     /// The durable key of the value: the export, which is always safe.
     ///
@@ -308,14 +429,59 @@ impl<'parent, 'child> Adopt<'parent, 'child>
     #[spec(ensures: |ret| ret.offset == id.offset)]
     #[inline]
     #[must_use]
-    pub fn adopt(
+    pub fn adopt<Kind>(
         self,
-        id: Id<'parent>,
-    ) -> Id<'child>
+        id: Id<'parent, Kind>,
+    ) -> Id<'child, Kind>
     {
         Id {
             offset: id.offset,
             brand: PhantomData,
+            kind: PhantomData,
+        }
+    }
+}
+
+/// The crossing at a join: an id of the child, read as the parent's.
+///
+/// The join hands one to [`Branded::rebrand`]. The parent makes no id while
+/// the child lives, so each id of the child keeps its offset in the parent.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Translation<'child, 'parent>
+{
+    /// The two brands.
+    brands: PhantomData<(Brand<'child>, Brand<'parent>)>,
+}
+
+impl<'child, 'parent> Translation<'child, 'parent>
+{
+    /// The child's id under the parent's brand: the id at the same offset.
+    ///
+    /// # Specification
+    /// - ensures: the result keeps the offset of `id`, so the parent reads at
+    ///   it the value that the child minted at `id`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an id that a child answers reads in the parent the
+    ///   value the child minted at it.
+    /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
+    #[spec(ensures: |ret| ret.offset == id.offset)]
+    #[inline]
+    #[must_use]
+    pub fn translate<Kind>(
+        self,
+        id: Id<'child, Kind>,
+    ) -> Id<'parent, Kind>
+    {
+        Id {
+            offset: id.offset,
+            brand: PhantomData,
+            kind: PhantomData,
         }
     }
 }
@@ -325,18 +491,18 @@ impl<'parent, 'child> Adopt<'parent, 'child>
 /// brand.
 ///
 /// # Specification
-/// - requires: `rebrand` reads each id of the value through `translate` and
+/// - requires: `rebrand` reads each id of the value through `translation` and
 ///   changes nothing else.
 pub trait Branded
 {
     /// The value under the brand `'region`.
     type Of<'region>;
 
-    /// The value under the brand `'to`, each id read through `translate`.
+    /// The value under the brand `'to`, each id read through `translation`.
     ///
     /// # Specification
-    /// - ensures: the value with each of its ids read through `translate`, and
-    ///   nothing else changed.
+    /// - ensures: the value with each of its ids read through `translation`,
+    ///   and nothing else changed.
     /// - panics: none.
     /// - executable: none — the body is each implementor's, and no predicate
     ///   compares a value across two brands.
@@ -345,12 +511,10 @@ pub trait Branded
     /// - hypothesis: L3 — an id that a child answers reads in the parent the
     ///   value the child minted at it.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
-    fn rebrand<'from, 'to, Translate>(
+    fn rebrand<'from, 'to>(
         value: Self::Of<'from>,
-        translate: &Translate,
-    ) -> Self::Of<'to>
-    where
-        Translate: Fn(Id<'from>) -> Id<'to>;
+        translation: Translation<'from, 'to>,
+    ) -> Self::Of<'to>;
 }
 
 impl Branded for ()
@@ -360,31 +524,27 @@ impl Branded for ()
     /// # Specification
     /// trivial.
     #[inline]
-    fn rebrand<'from, 'to, Translate>(
+    fn rebrand<'from, 'to>(
         (): Self::Of<'from>,
-        _translate: &Translate,
+        _translation: Translation<'from, 'to>,
     ) -> Self::Of<'to>
-    where
-        Translate: Fn(Id<'from>) -> Id<'to>,
     {
     }
 }
 
-impl Branded for Id<'static>
+impl<Kind> Branded for Id<'static, Kind>
 {
-    type Of<'region> = Id<'region>;
+    type Of<'region> = Id<'region, Kind>;
 
     /// # Specification
     /// trivial.
     #[inline]
-    fn rebrand<'from, 'to, Translate>(
-        value: Id<'from>,
-        translate: &Translate,
-    ) -> Id<'to>
-    where
-        Translate: Fn(Id<'from>) -> Id<'to>,
+    fn rebrand<'from, 'to>(
+        value: Id<'from, Kind>,
+        translation: Translation<'from, 'to>,
+    ) -> Id<'to, Kind>
     {
-        translate(value)
+        translation.translate(value)
     }
 }
 
@@ -397,14 +557,12 @@ where
     /// # Specification
     /// trivial.
     #[inline]
-    fn rebrand<'from, 'to, Translate>(
+    fn rebrand<'from, 'to>(
         value: Self::Of<'from>,
-        translate: &Translate,
+        translation: Translation<'from, 'to>,
     ) -> Self::Of<'to>
-    where
-        Translate: Fn(Id<'from>) -> Id<'to>,
     {
-        value.map(|inner| Family::rebrand(inner, translate))
+        value.map(|inner| Family::rebrand(inner, translation))
     }
 }
 
@@ -906,7 +1064,7 @@ where
 /// use gandr_kernel_data::scoped;
 ///
 /// let leaked = scoped(Budget::from(4096_usize), |region, mut mint| {
-///     region.mint(&mut mint, 7_u64)
+///     region.mint::<()>(&mut mint, 7_u64)
 /// });
 /// ```
 ///
@@ -968,7 +1126,7 @@ impl<'region, Value, Below> Region<'region, Value, Below>
 where
     Below: Allocator + Clone,
 {
-    /// Append `value` and answer its id.
+    /// Append `value` and answer its id, of the family `Kind`.
     ///
     /// # Specification
     /// - ensures: on `Ok(id)`, [`Region::get`] of the id gives `value`.
@@ -986,16 +1144,17 @@ where
     ///   the value past the budget is refused.
     /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     #[inline]
-    pub fn mint(
+    pub fn mint<Kind>(
         &self,
         _mint: &mut Mint<'region>,
         value: Value,
-    ) -> Result<Id<'region>, Exhausted>
+    ) -> Result<Id<'region, Kind>, Exhausted>
     {
         let offset = self.layer.push(value)?;
         Ok(Id {
             offset,
             brand: PhantomData,
+            kind: PhantomData,
         })
     }
 
@@ -1014,15 +1173,18 @@ where
     /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     #[inline]
     #[must_use]
-    pub fn get(
+    pub fn get<Kind>(
         &self,
-        id: Id<'region>,
+        id: Id<'region, Kind>,
     ) -> Option<&Value>
     {
         self.layer.get(id.offset)
     }
 
     /// The checked import: the id of `key` when this region holds it.
+    ///
+    /// The import checks the offset and not the family. A region of more
+    /// families checks the family where it reads the value.
     ///
     /// # Specification
     /// - ensures: `Some` of the id whose key is `key` when its offset is below
@@ -1036,15 +1198,16 @@ where
     #[spec(ensures: |ret| ret.is_none_or(|id| id.key() == key))]
     #[inline]
     #[must_use]
-    pub fn seat(
+    pub fn seat<Kind>(
         &self,
         key: Key,
-    ) -> Option<Id<'region>>
+    ) -> Option<Id<'region, Kind>>
     {
         let extent = self.layer.extent().ok()?;
         (key.0 < extent.0).then_some(Id {
             offset: Offset(key.0),
             brand: PhantomData,
+            kind: PhantomData,
         })
     }
 
@@ -1067,7 +1230,7 @@ where
     /// scoped(Budget::from(4096_usize), |region, mut mint| {
     ///     let mut leaked = None;
     ///     let _ = region.fork::<(), _>(&mut mint, |child, mut own, _adopt| {
-    ///         leaked = child.mint(&mut own, 7_u64).ok();
+    ///         leaked = child.mint::<()>(&mut own, 7_u64).ok();
     ///         Some(())
     ///     });
     /// });
@@ -1124,24 +1287,11 @@ where
         else {
             return Ok(None);
         };
-        let joined = Family::rebrand(answer, &Self::join());
+        let joined = Family::rebrand(answer, Translation {
+            brands: PhantomData,
+        });
         self.fold(layer)?;
         Ok(Some(joined))
-    }
-
-    /// The fold's translation at a join: an id of the child, read as this
-    /// region's. This region made no id while the child lived, so its next
-    /// offset at the join is the child's mark, and each value of the child
-    /// keeps its offset.
-    ///
-    /// # Specification
-    /// trivial.
-    fn join<'child>() -> impl Fn(Id<'child>) -> Id<'region>
-    {
-        |id| Id {
-            offset: id.offset,
-            brand: PhantomData,
-        }
     }
 
     /// Append the child's own values, whole or not at all.
