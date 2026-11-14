@@ -242,10 +242,9 @@ impl Stored for Kept
 /// The values that the contexts of one process build of the site, each under
 /// its key, frozen once shared.
 ///
-/// economy: one lock over one ordered map. A context asks the shelf only for
-/// a value that its own strata miss, a few times in each program, and it
-/// holds the lock across no build. Reversal: tables of slots set once, as the
-/// pending strata are, when a profile shows the lock.
+/// One lock guards one ordered map. A context asks the shelf only for a value
+/// that its own strata miss, a few times in each program, and no context
+/// holds the lock across a build. The corpus shares at most 40 keys.
 ///
 /// # Specification
 /// trivial.
