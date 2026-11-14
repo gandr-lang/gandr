@@ -64,9 +64,11 @@
 //!   alone; a program declaring a module of one of those names is refused there
 //!   as a clash, not as an offer the site lacks.
 //! - **The check alone judges.** `gandr check` of a manifold judges its
-//!   deployment; `gandr run --manifold` reads the bindings without it, and the
-//!   offer is not yet the far world's authority (#3546). The translated
-//!   endpoint, the role read through its offer's flow at run, is #6271's.
+//!   deployment; `gandr run --manifold` reads the bindings without it. The host
+//!   serving a world grants the host interfaces of the world's row from its own
+//!   authority (#3546). A label's handler from the offer's model is #6546's.
+//!   The translated endpoint, the role read through its offer's flow at run, is
+//!   #6271's.
 //! - **A flow's row is empty.** The checker refuses a flow member that performs
 //!   an effect, so a flow adds no entry to the world's row, and `Flow` joins
 //!   nothing to it. A flow's grade joins the check with #3524.

@@ -2015,6 +2015,14 @@ fn main() -> ExitCode
             if site.is_some() && net.secret.is_some() {
                 return doubled(Doubled::Secret);
             }
+            hosting.reals = match configuration.reals() {
+                Ok(profile) => profile,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
             hosting.network = Some(match site {
                 Some(file) => {
                     let secrets = secrets

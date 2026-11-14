@@ -10,7 +10,8 @@
 //! from the entropy source of the operating system, and every other operation
 //! is declined, so the run is stuck at it and reported as any stuck run is. A
 //! migration goes where the host's world bindings bind its world, or runs in
-//! this process when the host has none.
+//! this process when the host has none. A host that runs a migration another
+//! host shipped answers its body with the same host (#3546).
 
 use alloc::string::String;
 
@@ -55,13 +56,13 @@ use super::worlds;
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
 
-/// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
-/// its console, a `Net` operation goes to its network when it has one, a
-/// `Reals` operation goes to the plans and the machines it holds, a `Rand`
-/// operation draws from the entropy source of the operating system, a
-/// migration goes where its bindings bind the world when it has them, and
-/// nothing else is served.
-struct EntryHost<'host>
+/// The host of an entry run, and of each migration a host runs for another:
+/// `Proc.exit` ends it, `Console.print` writes to its console, a `Net`
+/// operation goes to its network when it has one, a `Reals` operation goes to
+/// the plans and the machines it holds, a `Rand` operation draws from the
+/// entropy source of the operating system, a migration goes where its
+/// bindings bind the world when it has them, and nothing else is served.
+pub(super) struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
     console: &'host mut dyn Console,
@@ -71,6 +72,30 @@ struct EntryHost<'host>
     reals: Reals,
     /// The run's world bindings and the program's names, when it has them.
     worlds: Option<(Worlds<'host>, &'host [String])>,
+}
+
+impl<'host> EntryHost<'host>
+{
+    /// The host that prints on `console`, serves `Net` on `net`, holds its
+    /// reals under `profile`, and sends a migration where `worlds` binds its
+    /// world.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn new(
+        console: &'host mut dyn Console,
+        net: Option<&'host mut Net>,
+        profile: RealsProfile,
+        worlds: Option<(Worlds<'host>, &'host [String])>,
+    ) -> Self
+    {
+        Self {
+            console,
+            net,
+            reals: Reals::new(profile),
+            worlds,
+        }
+    }
 }
 
 impl HostHandler for EntryHost<'_>
@@ -220,12 +245,12 @@ impl<'source> Machine<'_, 'source>
             Err(evaluation) => return Entered::Ended(evaluation),
         };
         let mut store = Store::new();
-        let mut host = EntryHost {
+        let mut host = EntryHost::new(
             console,
             net,
-            reals: Reals::new(profile),
-            worlds: worlds.map(|worlds| (worlds, self.names.as_slice())),
-        };
+            profile,
+            worlds.map(|worlds| (worlds, self.names.as_slice())),
+        );
         match self.hosted(command, &mut store, &mut host) {
             Err(status) => Entered::Exited(status),
             Ok(Err(evaluation)) => Entered::Ended(evaluation),

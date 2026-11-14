@@ -1,7 +1,8 @@
 //! A migration run: in one process, its body at its world over a store of
 //! its own, its operations offered to the caller's host, what it takes and
 //! answers crossing by content; a host deciding where it runs; and one
-//! shipped here run as the migration it names.
+//! shipped here run as the migration it names, its operations offered to the
+//! host that runs it as its world's row attenuates it.
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
@@ -21,6 +22,8 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::world::Unmigrated;
 use gandr_core_term::world::World;
@@ -50,6 +53,7 @@ use gandr_runtime_emitter::RunInputs;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
 use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::world::Attenuated;
 use gandr_runtime_emitter::world::arrive;
 
 /// The jumps a run may take: no test program comes near.
@@ -533,24 +537,28 @@ fn a_shipped_migration_runs_here_only_as_the_migration_it_names()
         })
         .expect("room");
     let elsewhere = World::Declared(ConstantIndex::from(3_usize));
+    let mut host = Answering::default();
     let refusals = [
         arrive(
             (&arena, &definitions),
             (at, elsewhere),
             budget(),
             (&mut store, &[capture]),
+            &mut host,
         ),
         arrive(
             (&arena, &definitions),
             (root, World::Host),
             budget(),
             (&mut store, &[capture]),
+            &mut host,
         ),
         arrive(
             (&arena, &definitions),
             (at, World::Host),
             budget(),
             (&mut store, &[]),
+            &mut host,
         ),
     ];
     assert_eq!(
@@ -567,6 +575,7 @@ fn a_shipped_migration_runs_here_only_as_the_migration_it_names()
         (at, World::Host),
         budget(),
         (&mut store, &[capture]),
+        &mut host,
     )
     .expect("the migration runs here");
     let read = read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
@@ -574,6 +583,138 @@ fn a_shipped_migration_runs_here_only_as_the_migration_it_names()
         CertificateEquality::Equal,
         equal_certificate_syntax(&core, read, twice),
         "the shipped migration answers its body's pair"
+    );
+    assert!(
+        host.offered.is_empty(),
+        "a body that performs nothing offers nothing: {:?}",
+        host.offered
+    );
+}
+
+/// `migrate [host] { draw 2 }` focused, the migration's command, and the host
+/// signatures its draw performs through.
+///
+/// # Specification
+/// trivial.
+fn shipped_draw(core: &mut CoreArena) -> (CommandArena, CommandId, HostSignatures)
+{
+    let signatures = HostSignatures::new(core).expect("the host signatures are consistent");
+    let width = integer(core, Digits("2"));
+    let body = core.computation_perform(signatures.rand.clone(), "draw".into(), width);
+    let program = core.computation_world(WorldForm::Migrate {
+        world: World::Host,
+        body,
+    });
+    let (arena, _) = focused(core, program);
+    let at = migration_in(&arena);
+    (arena, at, signatures)
+}
+
+/// A draw inside a shipped `migrate [host] { … }` reaches the host that runs
+/// it: the host is offered the draw once, and the migration answers the
+/// host's five. A host that declines the draw leaves the migration
+/// unanswered (#3546).
+#[test]
+fn a_shipped_body_s_operation_reaches_the_host_that_runs_it_3546()
+{
+    let mut core = CoreArena::new();
+    let (arena, at, _) = shipped_draw(&mut core);
+    let five = integer(&mut core, Digits("5"));
+    let definitions = Definitions::new();
+    let mut answering = Answering::default();
+    let mut store = Store::new();
+    let answer = arrive(
+        (&arena, &definitions),
+        (at, World::Host),
+        budget(),
+        (&mut store, &[]),
+        &mut answering,
+    )
+    .expect("the host answers the draw");
+    let read = read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+    assert_eq!(
+        CertificateEquality::Equal,
+        equal_certificate_syntax(&core, read, five),
+        "the migration answers the host's reply"
+    );
+    assert_eq!(
+        answering.offered,
+        ["draw"],
+        "the host is offered the draw once"
+    );
+    let mut declining = Deciding {
+        decision: Decision::Default,
+        offered: Vec::new(),
+    };
+    assert_eq!(
+        arrive(
+            (&arena, &definitions),
+            (at, World::Host),
+            budget(),
+            (&mut Store::new(), &[]),
+            &mut declining,
+        ),
+        Err(Unmigrated::Unanswered),
+        "a host that declines the draw answers nothing"
+    );
+}
+
+/// A shipped draw under a host attenuated to its world's row: a row that
+/// names the entropy source hands the draw to the host, which answers five;
+/// a row that names only the console never offers the host the draw, and the
+/// migration answers nothing (#3546).
+#[test]
+fn an_operation_outside_its_world_s_row_reaches_no_handler_3546()
+{
+    let mut core = CoreArena::new();
+    let (arena, at, signatures) = shipped_draw(&mut core);
+    let five = integer(&mut core, Digits("5"));
+    let definitions = Definitions::new();
+    let drawing = EffectRow::singleton(signatures.rand);
+    let printing = EffectRow::singleton(signatures.console);
+    let mut answering = Answering::default();
+    let mut store = Store::new();
+    let answer = arrive(
+        (&arena, &definitions),
+        (at, World::Host),
+        budget(),
+        (&mut store, &[]),
+        &mut Attenuated {
+            host: &mut answering,
+            row: &drawing,
+        },
+    )
+    .expect("a row naming the entropy source answers the draw");
+    let read = read_back_value(&arena, &store, answer, &mut core).expect("the answer reads back");
+    assert_eq!(
+        CertificateEquality::Equal,
+        equal_certificate_syntax(&core, read, five),
+        "the migration answers the host's reply"
+    );
+    assert_eq!(
+        answering.offered,
+        ["draw"],
+        "the host is offered the draw once"
+    );
+    let mut unoffered = Answering::default();
+    assert_eq!(
+        arrive(
+            (&arena, &definitions),
+            (at, World::Host),
+            budget(),
+            (&mut Store::new(), &[]),
+            &mut Attenuated {
+                host: &mut unoffered,
+                row: &printing,
+            },
+        ),
+        Err(Unmigrated::Unanswered),
+        "a row naming only the console answers no draw"
+    );
+    assert!(
+        unoffered.offered.is_empty(),
+        "the host is never offered a draw outside the row: {:?}",
+        unoffered.offered
     );
 }
 

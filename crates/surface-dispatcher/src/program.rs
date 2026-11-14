@@ -41,6 +41,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::effect::EffectRow;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::world::World;
 use gandr_kernel_term::ConstantIndex;
@@ -157,6 +158,10 @@ pub struct Program<'source>
     /// The worlds the entry holds a capability for, in its `entry`
     /// attribute's order: the worlds a run of it may migrate to.
     reaches: Vec<ConstantIndex>,
+    /// The row each world declared with a requirement requires, by the world's
+    /// admission position: the host interfaces a host serving the world grants
+    /// a migration's body, and no other.
+    rows: BTreeMap<ConstantIndex, EffectRow>,
     /// Where the program's sources write each hole an entry run can reach.
     holes: BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
     /// The admission positions of the declarations the source run writes,
@@ -549,6 +554,7 @@ impl<'source> Program<'source>
             families,
             spelling: Spelling::Unicode,
             reaches: reaches(module, entry),
+            rows: world_rows(module),
             entry,
             holes: hole_sites(core, module),
             own: ConstantIndex::from(0_usize) .. ConstantIndex::from(usize::MAX),
@@ -880,6 +886,7 @@ impl<'source> Program<'source>
             families: &self.families,
             spelling: self.spelling,
             reaches: &self.reaches,
+            rows: &self.rows,
             holes: &self.holes,
             reads: &self.reads,
         }
@@ -989,6 +996,9 @@ pub struct Parts<'run, 'source>
     pub spelling: Spelling,
     /// The worlds the entry holds a capability for.
     pub reaches: &'run Vec<ConstantIndex>,
+    /// The row each world declared with a requirement requires, by the world's
+    /// admission position; a world with none requires the empty row.
+    pub rows: &'run BTreeMap<ConstantIndex, EffectRow>,
     /// Where the program's sources write each hole an entry run can reach.
     pub holes: &'run BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
     /// What each declaration stating a `reads` mentions.
@@ -1682,6 +1692,35 @@ fn reaches(
         .and_then(|lowered| module.worlds(lowered).get(1 ..))
         .map(<[ConstantIndex]>::to_vec)
         .unwrap_or_default()
+}
+
+/// The row each world of `module` declared with a requirement requires, by
+/// the world's admission position.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one entry per declaration of `module` that
+///   [`LoweredModule::world_row`] answers, holding that row; a world written
+///   with no requirement has no entry.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the answer is the module's table of rows read at its
+///   declarations' keys.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the far world of the offers model requires the console,
+///   and a host serving it prints the line its migration prints.
+/// - witness: `tests::run::a_host_prints_the_line_its_migration_prints_3546`
+fn world_rows(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, EffectRow>
+{
+    module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match module.world_row(declaration) {
+            Maybe::Present(row) => Some((declaration.constant(), row.clone())),
+            Maybe::Absent(_) => None,
+        })
+        .collect()
 }
 
 /// Where `module` writes each hole a run can reach, by its name: the span of

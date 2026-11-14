@@ -21,9 +21,9 @@
 #     world `far` under the bound, and an unbounded `run` of the same source
 #     under its manifold ships the migration to it. The host replays nothing of
 #     the entry that crosses, so its row times the hosting whole, from its
-#     start to its exit. The host answers no interface of the row of `far`
-#     yet, so it refuses the migration, and its row names #3546, which owes
-#     that answer.
+#     start to its exit. The host answers the console that the row of `far`
+#     names from its own authority, so the migration prints at the host, and
+#     the run ends.
 #
 # Each path runs once at each bound: 1 and 2 cores, and 64 MiB, 256 MiB and
 # 1 GiB of memory. A user scope of systemd holds the memory bound, with no
@@ -195,7 +195,7 @@ crossing() {
   fi
   wait "$hosting" || true
   awk '/^refused a migration at / { sub(/^refused a migration at /, ""); print; exit }' "$out.output" > "$out.refusal" 2> /dev/null || true
-  row "host far for offers.gandr" 0 "$cores" "$memory" "$out" "#3546"
+  row "host far for offers.gandr" 0 "$cores" "$memory" "$out"
 }
 
 printf 'small-device: commit %s, %s, %s cores, gandr %s\n' \

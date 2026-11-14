@@ -333,11 +333,6 @@ corpus/ledger/features/deployment-file.gandr STE-3.5 feca6e279e0b3fc8
 corpus/ledger/features/deployment-file.gandr STE-9.3 449a81e54899c7d4
 corpus/ledger/features/deployment-file.gandr STE-6.3 449a81e54899c7d4
 corpus/ledger/features/deployment-file.gandr STE-8.1 449a81e54899c7d4
-corpus/ledger/features/deployment-offers.gandr STE-3.2 45e0c55fbcf0738c
-corpus/ledger/features/deployment-offers.gandr STE-3.5 1283f9bf867ace86
-corpus/ledger/features/deployment-offers.gandr STE-6.3 1283f9bf867ace86
-corpus/ledger/features/deployment-offers.gandr STE-6.3 4bef3f04c4aeac0b
-corpus/ledger/features/deployment-offers.gandr STE-8.1 1283f9bf867ace86
 corpus/ledger/features/derive-over-codes.gandr STE-3.6 c1f322d87badc117
 corpus/ledger/features/derive-over-codes.gandr STE-3.2 06e026aeb7a782c7
 corpus/ledger/features/derive-over-codes.gandr STE-3.2 68d8367130b258d7
