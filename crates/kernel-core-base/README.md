@@ -22,7 +22,7 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 ## Provided features
 
 - **The record.** `Entries`, `AdmittedDeclaration`, `Staging`, `StagedDeclaration` and the counts of outstanding content.
-- **Recorded verdicts.** `Environment::recalling` admits a key that a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself ([`verdict`](src/verdict.rs)).
+- **Recorded verdicts.** `Environment::recalling` admits a declaration whose entry key a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself ([`verdict`](src/verdict.rs)).
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
 - **The forked drain.** `Environment::forking`: a check's long last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
