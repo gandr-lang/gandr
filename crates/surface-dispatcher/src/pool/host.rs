@@ -28,10 +28,14 @@
 //! whose lender died.
 //!
 //! **The hub owns the segment.** A hub holds a shared lock on the owner's file
-//! for its life, and it reaps on its idle tick. A process joins the counter
-//! only while a hub holds that lock. With no hub, the process takes its grant
-//! from a jobserver, or runs with none. A take that waits a second reaps the
-//! segment itself, so a dead holder's tokens come back after a hub dies too.
+//! for its life, and it reaps on its idle tick. Each hub of the host holds the
+//! same shared lock, so the hubs of two builds or two workspaces share the
+//! counter. The first hub sets the counter under an exclusive lock on the
+//! setter's file, which a hub holds only while it sets the counter. A process
+//! joins the counter only while a hub holds the owner's lock. With no hub, the
+//! process takes its grant from a jobserver, or runs with none. A take that
+//! waits a second reaps the segment itself, so a dead holder's tokens come
+//! back after a hub dies too.
 //!
 //! **Alternatives.** The jobserver's FIFO costs two system calls for each
 //! token, and it keeps no record of the holder of a byte. A pid alone names a
@@ -118,6 +122,10 @@ const SEGMENT: &str = "tokens";
 
 /// The owner's file, which each hub holds a shared lock on.
 const OWNER: &str = "tokens.lock";
+
+/// The setter's file: a hub holds an exclusive lock on it only while it sets
+/// the counter.
+const SETTER: &str = "tokens.set";
 
 /// The directory of the slots' files.
 const SLOT_FILES: &str = "tokens.d";
@@ -450,11 +458,18 @@ impl HostCounter
             .create(true)
             .truncate(false)
             .open(directory.join(OWNER))?;
+        let setter = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(directory.join(SETTER))?;
         // The exclusive lock sets the counter once, whichever hub starts
-        // first; the shared lock then tells each process that a hub owns it.
-        owner.lock()?;
+        // first. It is a file apart from the owner's, whose shared lock each
+        // running hub holds, so a later hub does not wait on them.
+        setter.lock()?;
         let mapping = Mapping::opened(&directory.join(SEGMENT), Opening::Set(width));
-        owner.unlock()?;
+        setter.unlock()?;
         let mapping = mapping?;
         owner.lock_shared()?;
         let counter = Self {
