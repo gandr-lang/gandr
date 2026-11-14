@@ -44,16 +44,24 @@ include "account";
 # the head keeps: by its own segment, in backquotes or as the words of its
 # name. The owner's segment names it too when the owner leaves in the same
 # change (#7006); a line that names a type that stays names none of its
-# methods. `$held` is the head's ids as an object, each mapped to true.
+# methods. A name that a thing of the head in the same crate carries as a
+# segment names that thing, not the item that leaves: a module is never an
+# item of the records, so its name stands through the items under it, and a
+# variant `Releasing::Fold` that leaves is not the `activity::Fold` that
+# stays (#7285). `$held` is the head's ids as an object, each mapped to true.
 def featured($in; $held):
-  [$in.left[] | select(.kind == "item" and ((.file // "") | test("^crates/[^/]+/")))
+  (reduce ($in.held // [])[] as $id ({};
+     ($id | split("::")) as $path
+     | if ($path | length) > 1 then reduce ($path[1:][] | gsub("<.*$"; "")) as $segment (.; .[$path[0]][$segment] = true) else . end)) as $carried
+  | [$in.left[] | select(.kind == "item" and ((.file // "") | test("^crates/[^/]+/")))
      | . as $it
      | ($in.features[$it.file | split("/")[1]] // {base: [], head: []}) as $lines
      | ($it.id | split("::")) as $path
+     | ($carried[$path[0]] // {}) as $stands
      | ($path | map(gsub("<.*$"; ""))) as $segments
      | [$segments[-1]]
        + (if ($path | length) > 1 and ($held[$path[:-1] | join("::")] | not) then [$segments[-2]] else [] end)
-     | select(any(.[] | select(test("^[A-Za-z_][A-Za-z0-9_]*$"));
+     | select(any(.[] | select(test("^[A-Za-z_][A-Za-z0-9_]*$") and ($stands[.] | not));
          . as $name
          | ($name | gsub("(?<a>[a-z0-9])(?<b>[A-Z])"; "\(.a) \(.b)") | ascii_downcase) as $words
          | any($lines.base[];
