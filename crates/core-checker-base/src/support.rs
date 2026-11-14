@@ -412,9 +412,9 @@ pub enum OtherTables
 /// The entries one declaration's judgement added to the tables that the
 /// bridge reads.
 ///
-/// It holds the rows records, the handlers, the reflexivities and the
-/// payloads, each with its value, and whether the judgement added an entry
-/// to another table.
+/// It holds the rows records, the handlers, the reflexivities, the payloads
+/// and the directed flows, each with its value, and whether the judgement
+/// added an entry to another table.
 ///
 /// # Specification
 /// - executable: none — data declaration; the judgement writes it and a
@@ -436,28 +436,31 @@ pub struct Tabled
     /// The payload type of each send and receive, by node.
     payloads:
         alloc::collections::BTreeMap<gandr_core_term::ComputationId, gandr_core_term::ValueTypeId>,
+    /// The forward and function flows, by node.
+    directed: alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>,
     /// Whether the judgement added an entry to another table.
     others: OtherTables,
 }
 
-/// The rows records, the handlers, the reflexivities and the payloads of a
-/// [`Tabled`], each with its value.
+/// The rows records, the handlers, the reflexivities, the payloads and the
+/// directed flows of a [`Tabled`], each with its value.
 pub type TabledEntries = (
     crate::program::Rows,
     alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>,
     alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::code::Reflexivity>,
     alloc::collections::BTreeMap<gandr_core_term::ComputationId, gandr_core_term::ValueTypeId>,
+    alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>,
 );
 
 impl Tabled
 {
-    /// The entries `rows`, `handled`, `reflexivities` and `payloads`, beside
-    /// `others`.
+    /// The entries `rows`, `handled`, `reflexivities`, `payloads` and
+    /// `directed`, beside `others`.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn new(
-        (rows, handled, reflexivities, payloads): TabledEntries,
+        (rows, handled, reflexivities, payloads, directed): TabledEntries,
         others: OtherTables,
     ) -> Self
     {
@@ -466,6 +469,7 @@ impl Tabled
             handled,
             reflexivities,
             payloads,
+            directed,
             others,
         }
     }
@@ -518,6 +522,19 @@ impl Tabled
     ) -> &alloc::collections::BTreeMap<gandr_core_term::ComputationId, gandr_core_term::ValueTypeId>
     {
         &self.payloads
+    }
+
+    /// The forward and function flows, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn directed(
+        &self
+    ) -> &alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>
+    {
+        &self.directed
     }
 
     /// Whether the judgement added an entry to another table.

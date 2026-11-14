@@ -39,6 +39,10 @@ const PAYLOAD: &str = include_str!("taking/fixtures/a-taken-payload-keeps-its-ty
 /// The lift fixture: a type at the universe above its own.
 const LIFT: &str = include_str!("taking/fixtures/a-lifted-type-is-judged-again-7428.gandr");
 
+/// The forward fixture: a record-schema flow from a translator.
+const FORWARD: &str =
+    include_str!("taking/fixtures/a-taken-forward-flow-keeps-its-images-7433.gandr");
+
 /// The reopened fixture: a law whose right endpoint unfolds under a thunk.
 const REOPENED: &str =
     include_str!("taking/fixtures/a-reopened-take-replays-a-kept-dialogue-7399.gandr");
@@ -265,6 +269,46 @@ fn a_taken_payload_keeps_its_type_7428()
     );
 }
 
+/// A taken forward flow keeps the images and the dialogues that its
+/// judgement recorded (#7433). A session reopened over a store crosses the
+/// taken `upgrade` again, and the bridge reads its classifier, its images
+/// and its dialogues at the flow's node. The take seats them at the places
+/// that an edit shifts. The kept flow reads back from bytes as written.
+#[test]
+fn a_taken_forward_flow_keeps_its_images_7433()
+{
+    assert_eq!(
+        taken_past_an_insertion(SourceText::from(FORWARD)),
+        ItemCount::from(2_usize),
+        "`toNew` and `upgrade` are taken; the appended definition is decided"
+    );
+    assert_eq!(
+        taken_past_a_reopening(SourceText::from(FORWARD)),
+        (ItemCount::from(2_usize), ItemCount::from(2_usize)),
+        "the checkpoints are restored and taken; the definition put first is decided"
+    );
+    let mut kept = session();
+    let _kept = submit(&mut kept, SourceText::from(FORWARD));
+    let Maybe::Present(resume) = kept.last()
+    else {
+        panic!("the submission resumes");
+    };
+    let checkpoints = resume.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .any(|checkpoint| matches!(checkpoint.tables(), Maybe::Present(_))),
+        "a checkpoint keeps the forward flow of `upgrade`"
+    );
+    let bytes = encode_checkpoints(checkpoints).expect("the checkpoints encode");
+    assert_eq!(
+        decode_checkpoints(&bytes).expect("the checkpoints decode"),
+        *checkpoints,
+        "the kept flow reads back as written"
+    );
+}
+
 /// A declaration whose judgement adds an entry to a table that a checkpoint
 /// does not keep yet is judged again (#7399, #7428). The judgement of
 /// `raised` records a lift, so its checkpoint keeps no entries, and the take
@@ -300,8 +344,8 @@ fn a_reopened_take_replays_a_kept_dialogue_7399()
 /// tables (#7373, #7399, #7428). `tallyHandled` adds a handler and its rows
 /// records, and it touches no other table. `tallied` stands at a row that
 /// names an instance, which the rows do not record. `unreadCall` adds a
-/// reflexivity, and `deliver` adds payload types. `raised` adds a lift, a
-/// table that a checkpoint does not keep yet.
+/// reflexivity, `deliver` adds payload types, and `upgrade` adds a forward
+/// flow. `raised` adds a lift, a table that a checkpoint does not keep yet.
 #[test]
 fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
 {
@@ -309,6 +353,7 @@ fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
         (HANDLER, (1_usize, 0_usize)),
         (REFLEXIVITY, (1, 0)),
         (PAYLOAD, (1, 0)),
+        (FORWARD, (1, 0)),
         (LIFT, (0, 1)),
     ] {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -339,6 +384,7 @@ fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
                 || !tabled.handled().is_empty()
                 || !tabled.reflexivities().is_empty()
                 || !tabled.payloads().is_empty()
+                || !tabled.directed().is_empty()
             {
                 kept = kept.saturating_add(1);
             }

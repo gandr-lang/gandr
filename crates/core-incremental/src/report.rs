@@ -37,6 +37,8 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_checker::Directed;
+use gandr_core_checker::Forward;
 use gandr_core_checker::Handled;
 use gandr_core_checker::MetPair;
 use gandr_core_checker::NestedElaboration;
@@ -258,6 +260,29 @@ pub struct ReflexivityContent
     pub met: [Option<MetContent>; 2],
 }
 
+/// What a checkpoint keeps of one directed flow, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum DirectedContent
+{
+    /// A forward flow: its classifier, an image at each pattern, and a
+    /// dialogue at each pattern, in the kernel's order. A dialogue names no
+    /// node.
+    Forward
+    {
+        /// The flow type that the statement inhabits.
+        classifier: Place,
+        /// The image at each pattern.
+        images: Vec<Place>,
+        /// The dialogue at each pattern.
+        dialogues: Vec<Vec<ConversionDecision<()>>>,
+    },
+    /// A function flow, at the flow type between its two function codes.
+    Function(Place),
+}
+
 /// A kept dialogue, each constant at the item that holds it.
 ///
 /// # Specification
@@ -362,6 +387,7 @@ fn constant_placeholder() -> ConstantIndex
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -374,6 +400,8 @@ pub struct TableContent
     /// The payload type of each send and receive, in the order of its node's
     /// place.
     payloads: Vec<(Place, Place)>,
+    /// The forward and function flows, in the order of their nodes' places.
+    directed: Vec<(Place, DirectedContent)>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
@@ -381,13 +409,14 @@ pub struct TableContent
     roots: Vec<TablePlace>,
 }
 
-/// The rows records, the handlers, the reflexivities and the payloads of a
-/// [`TableContent`], each in the order of its key.
+/// The rows records, the handlers, the reflexivities, the payloads and the
+/// directed flows of a [`TableContent`], each in the order of its key.
 pub type TableEntries = (
     Vec<RowContent>,
     Vec<(Place, HandledContent)>,
     Vec<(Place, ReflexivityContent)>,
     Vec<(Place, Place)>,
+    Vec<(Place, DirectedContent)>,
 );
 
 impl TableContent
@@ -397,7 +426,7 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled, reflexivities, payloads): TableEntries,
+        (rows, handled, reflexivities, payloads, directed): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
@@ -406,6 +435,7 @@ impl TableContent
             handled,
             reflexivities,
             payloads,
+            directed,
             outside,
             roots,
         }
@@ -448,6 +478,15 @@ impl TableContent
         &self.payloads
     }
 
+    /// The forward and function flows, in the order of their nodes' places.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn directed(&self) -> &[(Place, DirectedContent)]
+    {
+        &self.directed
+    }
+
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds, beside the place of each such node in it.
     ///
@@ -481,6 +520,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -498,6 +538,7 @@ impl TableContent
             && tabled.handled().is_empty()
             && tabled.reflexivities().is_empty()
             && tabled.payloads().is_empty()
+            && tabled.directed().is_empty()
         {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
@@ -572,6 +613,27 @@ impl TableContent
             };
             payloads.push((at, placing.place(ArenaNode::ValueType(moved))));
         }
+        let mut directed = Vec::with_capacity(tabled.directed().len());
+        for (&at, statement) in tabled.directed() {
+            let Some(at) = placing.key(ArenaNode::Value(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            directed.push((at, match *statement {
+                Directed::Forward(ref decided) => DirectedContent::Forward {
+                    classifier: placing.place(ArenaNode::ValueType(decided.classifier())),
+                    images: decided
+                        .images()
+                        .iter()
+                        .map(|&image| placing.place(ArenaNode::Value(image)))
+                        .collect(),
+                    dialogues: decided.dialogues().to_vec(),
+                },
+                Directed::Function(classifier) => {
+                    DirectedContent::Function(placing.place(ArenaNode::ValueType(classifier)))
+                },
+            }));
+        }
         let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
@@ -579,6 +641,7 @@ impl TableContent
             handled,
             reflexivities,
             payloads,
+            directed,
             outside,
             roots,
         };
@@ -603,6 +666,8 @@ impl TableContent
         content.reflexivities.dedup();
         content.payloads.sort_by(|left, right| left.0.cmp(&right.0));
         content.payloads.dedup();
+        content.directed.sort_by(|left, right| left.0.cmp(&right.0));
+        content.directed.dedup();
         Maybe::Present(content)
     }
 
@@ -641,6 +706,22 @@ impl TableContent
             visit(at);
             visit(moved);
         }
+        for &mut (ref mut at, ref mut statement) in &mut self.directed {
+            visit(at);
+            match *statement {
+                DirectedContent::Forward {
+                    ref mut classifier,
+                    ref mut images,
+                    ..
+                } => {
+                    visit(classifier);
+                    for image in images {
+                        visit(image);
+                    }
+                },
+                DirectedContent::Function(ref mut classifier) => visit(classifier),
+            }
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -650,9 +731,9 @@ impl TableContent
     /// # Specification
     /// - requires: `walk` is the item's walk in `arena`, and the item is
     ///   entered as written, so no key is a node of a judged body.
-    /// - ensures: on success, the rows records, the handlers, the reflexivities
-    ///   and the payloads whose projection through the same places is this
-    ///   content.
+    /// - ensures: on success, the rows records, the handlers, the
+    ///   reflexivities, the payloads and the directed flows whose projection
+    ///   through the same places is this content.
     /// - fails: [`seating::Absent::Unwalked`] for a place past the walk;
     ///   [`seating::Absent::Unplaceable`] for a judged place or a table place
     ///   that no mint reached; [`seating::Absent::IllSorted`] for a node of the
@@ -667,6 +748,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -736,22 +818,47 @@ impl TableContent
                 value_type_of(seat.node(moved)?)?,
             ));
         }
+        let mut directed = Vec::with_capacity(self.directed.len());
+        for &(ref at, ref content) in &self.directed {
+            directed.push((value_of(seat.node(at)?)?, match *content {
+                DirectedContent::Forward {
+                    ref classifier,
+                    ref images,
+                    ref dialogues,
+                } => {
+                    let mut seated = Vec::with_capacity(images.len());
+                    for image in images {
+                        seated.push(value_of(seat.node(image)?)?);
+                    }
+                    Directed::Forward(Forward::new(
+                        value_type_of(seat.node(classifier)?)?,
+                        (seated, dialogues.clone()),
+                    ))
+                },
+                DirectedContent::Function(ref classifier) => {
+                    Directed::Function(value_type_of(seat.node(classifier)?)?)
+                },
+            }));
+        }
         Ok((
             Rows::from_records(records),
             handled,
             reflexivities,
             payloads,
+            directed,
         ))
     }
 }
 
-/// The rows records, the handlers, the reflexivities and the payloads that a
-/// seat of a [`TableContent`] builds in an edited arena.
+/// The rows records, the handlers, the reflexivities, the payloads and the
+/// directed flows that a seat of a [`TableContent`] builds in an edited
+/// arena.
 pub type SeatedTables = (
     Rows,
     Vec<(ComputationId, Handled)>,
     Vec<(ValueId, Reflexivity)>,
     Vec<(ComputationId, ValueTypeId)>,
+    Vec<(ValueId, Directed)>,
 );
 
 /// Where a node of a report stands.
