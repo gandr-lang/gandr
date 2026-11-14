@@ -5489,6 +5489,7 @@ mod tests
         static COPIES: AtomicUsize = AtomicUsize::new(0);
 
         /// A node that counts its copies.
+        #[repr(transparent)]
         #[derive(Debug)]
         struct Counted(usize);
 
