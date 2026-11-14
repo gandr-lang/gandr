@@ -1926,6 +1926,60 @@ fn an_in_place_definition_equals_lowering_the_extended_chain()
     );
 }
 
+/// #7282: a cut takes back each definition at its position and after it, and
+/// each body that only those named. An append of a taken-back body index after
+/// the cut reads its own lowering, not the old one.
+#[test]
+fn a_cut_chain_lowers_an_append_after_it_afresh_7282()
+{
+    let mut core = CoreArena::new();
+    let shared = GlobalIndex::from(5_u32);
+    let own = GlobalIndex::from(6_u32);
+    let first = core.value_unit();
+    let second = core.value_unit();
+    let third = core.value_unit();
+    let grown = |rows: &[(ConstantIndex, GlobalIndex, ValueId)]| {
+        let mut chain = LoweredChain::new();
+        for &(constant, body, lowered) in rows {
+            assert!(
+                chain
+                    .define(constant, body, Transparency::Manifest, &[], lowered)
+                    .is_ok(),
+                "{constant:?} defines in order"
+            );
+        }
+        chain
+    };
+    let kept = (ConstantIndex::from(0_usize), shared, first);
+    let mut cut = grown(&[
+        kept,
+        (ConstantIndex::from(1_usize), own, second),
+        (ConstantIndex::from(3_usize), shared, third),
+    ]);
+    cut.truncate_from(ConstantIndex::from(1_usize));
+    assert_eq!(
+        cut,
+        grown(&[kept]),
+        "the cut keeps the entry before it and the body that entry shares"
+    );
+    assert!(
+        cut.define(
+            ConstantIndex::from(1_usize),
+            own,
+            Transparency::Manifest,
+            &[],
+            third
+        )
+        .is_ok(),
+        "the position past the cut defines again"
+    );
+    assert_eq!(
+        cut,
+        grown(&[kept, (ConstantIndex::from(1_usize), own, third)]),
+        "the body index that the cut took back reads its new lowering"
+    );
+}
+
 #[test]
 fn a_sliced_evaluation_agrees_with_an_unsliced_one()
 {

@@ -644,6 +644,55 @@ impl LoweredChain
         Ok(height)
     }
 
+    /// Take back each definition at `constant` or after it, with each body
+    /// that no definition before `constant` names, as if none of them was
+    /// appended.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the chain is [`DefinitionChain::truncate_from`] of the chain
+    ///   before, and the bodies hold each body that a kept entry names and no
+    ///   other that a taken-back entry named.
+    /// - provides: the rollback of a run of appends, at the cost of one pass
+    ///   over the kept entries when an entry goes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cut that keeps a taken-back body answers it to the
+    ///   next append of the same body index, which then reads the old body.
+    /// - witness: `eval::tests::a_cut_chain_lowers_an_append_after_it_afresh_7282`
+    #[inline]
+    #[spec(ensures: self.chain.entries().last().is_none_or(|last| last.constant() < constant))]
+    pub fn truncate_from(
+        &mut self,
+        constant: ConstantIndex,
+    )
+    {
+        let cut = self
+            .chain
+            .entries()
+            .partition_point(|entry| entry.constant() < constant);
+        let mut freed = self
+            .chain
+            .entries()
+            .get(cut ..)
+            .unwrap_or_default()
+            .iter()
+            .map(DefinitionEntry::body)
+            .collect::<alloc::collections::BTreeSet<_>>();
+        self.chain.truncate_from(constant);
+        if freed.is_empty() {
+            return;
+        }
+        for entry in self.chain.entries() {
+            let _kept = freed.remove(&entry.body());
+        }
+        for body in freed {
+            let _freed = self.bodies.remove(&body);
+        }
+    }
+
     /// Record the data declaration at `constant` as presented by
     /// `presented`: conversion reads its terms by their normal forms.
     ///

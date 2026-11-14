@@ -86,6 +86,10 @@ pub struct Speculation
     pub rank: Setting,
     /// The three reads of order.
     pub order: OrderReads,
+    /// The entry of a running plain definition: a release that names it
+    /// reads the entry that its commit makes when its check admits it, and
+    /// that commit compares the two.
+    pub signature: Setting,
 }
 
 impl Speculation
@@ -98,6 +102,7 @@ impl Speculation
             twin: Setting::Off,
             manifest: Setting::Off,
         },
+        signature: Setting::Off,
     };
     /// Every setting on.
     pub const ON: Self = Self {
@@ -107,13 +112,14 @@ impl Speculation
             twin: Setting::On,
             manifest: Setting::On,
         },
+        signature: Setting::On,
     };
 }
 
 impl fmt::Display for Speculation
 {
-    /// Each setting, by its name in the group:
-    /// `rank on, order.generative on, order.twin on, order.manifest on`.
+    /// Each setting, by its name in the group: `rank on, order.generative on,
+    /// order.twin on, order.manifest on, signature on`.
     ///
     /// # Specification
     /// trivial.
@@ -125,8 +131,8 @@ impl fmt::Display for Speculation
     {
         write!(
             f,
-            "rank {}, order.generative {}, order.twin {}, order.manifest {}",
-            self.rank, self.order.generative, self.order.twin, self.order.manifest
+            "rank {}, order.generative {}, order.twin {}, order.manifest {}, signature {}",
+            self.rank, self.order.generative, self.order.twin, self.order.manifest, self.signature
         )
     }
 }
