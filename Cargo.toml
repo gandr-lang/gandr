@@ -101,8 +101,9 @@ members = [
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-# The floor declared by the pinned quenchant facade and support libraries.
-rust-version = "1.97"
+# The floor is Rust 1.100.0, for its custom allocators and its never type
+# (#7382).
+rust-version = "1.100"
 repository = "https://github.com/gandr-lang/gandr"
 license = "Apache-2.0 WITH LLVM-exception"
 publish = false
@@ -2276,7 +2277,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "938c0571b0269da292cad96132cbeeb115ff1bac"
+rev = "258616df9a8ecdb0ad2e0926350cf2165531f0b9"
 pattern = "crates/quenchant-dylints"
 
 # The everyday unoptimized build keeps full debuginfo, which lldb reads. It
