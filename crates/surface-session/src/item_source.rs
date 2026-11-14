@@ -281,9 +281,11 @@ impl ItemSource for SurfaceItems
     ///   distinguish stale revision input, invented names and misplaced
     ///   diagnostics. The predicate checks source membership and span validity
     ///   without replaying parse or lowering; [`item_program`] specifies exact
-    ///   lowered-item correspondence. A sweep of the corpus finds no other name
-    ///   that the lowering declares and the text does not spell (#7395).
+    ///   lowered-item correspondence. A sweep of the corpus and `library/std`
+    ///   finds no other name that the lowering declares and the text does not
+    ///   spell.
     /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
+    /// - witness: `tests::items::a_module_with_a_theory_offers_its_theory_code_7395`
     #[spec(
         ensures: |ret| match ret {
     Ok(ref result) => {

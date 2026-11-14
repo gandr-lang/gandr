@@ -55,6 +55,11 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
         .items(&Revision::from("def fresh = 9 ;"))
         .expect("the next revision lowers");
     assert_eq!(next.items()[0].key().as_ref(), b"fresh");
+}
+#[test]
+fn a_module_with_a_theory_offers_its_theory_code_7395()
+{
+    let items = SurfaceItems::new(grammar());
     let theory = items
         .items(&Revision::from(include_str!(
             "../../../corpus/model/control/module-effect.gandr"
@@ -68,7 +73,7 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
     assert_eq!(
         keys,
         [&b"Theory"[..], b"Eff", b"tallied", b"tallyHandled"],
-        "a theory block adds the code that the lowering declares for it, a name the text does not spell (#7395)"
+        "a theory block adds the code that the lowering declares for it, a name the text does not spell"
     );
 }
 #[test]
