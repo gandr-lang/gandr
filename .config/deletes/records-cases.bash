@@ -52,13 +52,14 @@ if [[ ${1:-} == --build ]]; then
   exit 0
 fi
 
-# Stand-ins for the tools, so the fast cases build nothing.
+# Stand-ins for the tools, so the fast cases build nothing. `rustc -vV` also
+# names the toolchain that it runs under, as the toolchain's own lines do.
 tool_rustc="rustc 1.0.0-nightly (1 2026-01-01)"
 tool_dylint="cargo-dylint 1.0.0"
 unset DYLINT_LIBRARY_PATH
 rustc() {
   case $1 in
-    -vV) printf '%s\nhost: x\n' "$tool_rustc" ;;
+    -vV) printf '%s\nhost: x\ntoolchain: %s\n' "$tool_rustc" "${RUSTUP_TOOLCHAIN:-none}" ;;
     --print) echo "$work/sysroot" ;;
   esac
 }
@@ -363,6 +364,24 @@ required() { records_run cargo metadata --no-deps --locked --format-version 1 | 
 [[ $(required -p a --package r) == "--features r/extra,r/report" ]] || fail "a and r read: $(required -p a --package r)"
 ! required --workspace --all 2> /dev/null || fail "a scope with an argument that no scope takes reads"
 ! "$here/../policy/required.bash" --workspace < /dev/null 2> /dev/null || fail "a run with no metadata reads"
+cases=$((cases + 1))
+
+# The record run takes the toolchain that the tree pins, whatever toolchain
+# the caller carries (#7486). The manifest's toolchain line names the tree's
+# channel, so the key of a package is the same from callers on two pins.
+seat=$(export RUSTUP_TOOLCHAIN=nightly-seat && key crates/a)
+other=$(export RUSTUP_TOOLCHAIN=nightly-other && key crates/a)
+[[ $seat == "$other" ]] || fail "#7486: the key of crates/a moves with the caller's toolchain"
+line=$(export RUSTUP_TOOLCHAIN=nightly-seat && records_fixed | awk '/^rustc /')
+[[ $line == *"toolchain: nightly" ]] || fail "#7486: the toolchain line names a channel that the tree does not pin: $line"
+cases=$((cases + 1))
+
+# A tree that pins no toolchain is refused by name, and no command runs in it
+# under the caller's toolchain.
+mv "$tree/rust-toolchain.toml" "$work/rust-toolchain.toml"
+! records_run touch "$work/ran" 2> "$work/unpinned" || fail "#7486: a command runs in a tree that pins no toolchain"
+[[ ! -e $work/ran && $(< "$work/unpinned") == *"pins no toolchain"* ]] || fail "#7486: the refusal does not name the missing pin: $(< "$work/unpinned")"
+mv "$work/rust-toolchain.toml" "$tree/rust-toolchain.toml"
 cases=$((cases + 1))
 
 echo "records-cases OK: $cases cases"

@@ -33,6 +33,10 @@
 # At the head, a temporary index takes `git add -A`. So each tree comes from
 # the working state, with each edit that no commit holds yet.
 #
+# Each command runs in the environment of the tree, under the channel that
+# the tree pins (`toolchain/tree.bash`, #7486). So the toolchain's lines and
+# each record come from the tree's toolchain, and the key of a base is the
+# same from callers on two pins. A tree that pins no channel is refused.
 # The inputs outside the key come from the run that writes the entry. The
 # dep-info of each workspace unit names each file that rustc reads: an
 # `include_str!` file, a `#[path]` module and each `env!` variable. The
@@ -73,6 +77,7 @@
 # The cases (`records-cases.bash`) source this file for its functions.
 set -euo pipefail
 records_here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$records_here/../toolchain/tree.bash"
 records_floor_kib=$((2 * 1024 * 1024))
 records_bound_kib=
 records_rustflags=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no'
@@ -102,14 +107,17 @@ records_objects() {
   done < <(printf "$records_root:%s\n" "${paths[@]}" | git -C "$records_tree" cat-file --batch-check='%(objectname)')
 }
 
-# Runs `$@` in the tree with the environment of the record run.
-records_run() {
-  (cd "$records_tree" \
-    && CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$records_target" \
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=dylint-link CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=dylint-link \
-      CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=dylint-link CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=dylint-link \
-      CARGO_ENCODED_RUSTFLAGS=$records_rustflags DYLINT_TOML=$records_config DYLINT_RUSTFLAGS=$records_flags \
-      "$@")
+# Runs `$@` in the tree, in the environment of the tree, with the variables
+# of the record run.
+records_run() { tree_exec "$records_tree" records_env "$@"; }
+
+# Runs `$@` with the variables of the record run.
+records_env() {
+  CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$records_target" \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=dylint-link CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=dylint-link \
+    CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=dylint-link CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER=dylint-link \
+    CARGO_ENCODED_RUSTFLAGS=$records_rustflags DYLINT_TOML=$records_config DYLINT_RUSTFLAGS=$records_flags \
+    "$@"
 }
 
 # Sets the root tree of the working state of the tree: a temporary index
@@ -150,10 +158,10 @@ records_fixed() {
   done < <(awk '{ while (match($0, /"[^"]*"/)) { print substr($0, RSTART + 1, RLENGTH - 2); $0 = substr($0, RSTART + RLENGTH) } }' <<< "$records_config" | sort -u) \
     | records_objects named | awk '$NF != "missing"'
   echo "rustflags ${records_rustflags//$'\x1f'/ }"
-  value=$(cd "$records_tree" && rustc -vV)
+  value=$(tree_exec "$records_tree" rustc -vV)
   echo "rustc ${value//$'\n'/ }"
-  echo "cargo $(cd "$records_tree" && cargo -V)"
-  echo "cargo-dylint $(cd "$records_tree" && cargo dylint --version)"
+  echo "cargo $(tree_exec "$records_tree" cargo -V)"
+  echo "cargo-dylint $(tree_exec "$records_tree" cargo dylint --version)"
   # Cargo reads the configuration of each directory above the tree.
   dir=${records_tree%/*}
   while :; do
@@ -255,7 +263,7 @@ records_resolve() {
 records_extras() {
   local messages=$1 closure=$2 file stdout package base
   local sysroot cargo_home
-  sysroot=$(cd "$records_tree" && rustc --print sysroot)
+  sysroot=$(tree_exec "$records_tree" rustc --print sysroot)
   cargo_home=${CARGO_HOME:-$HOME/.cargo}
   {
     # The dep-info of each workspace unit that the package reaches.
@@ -428,6 +436,10 @@ records_main() {
   mkdir -p "$out" "$records_cache"
   records_open "$tree" "$target"
   trap 'rm -rf "$records_work"' EXIT
+  if [[ -z $(tree_channel "$records_tree") ]]; then
+    echo "check:deletes: $records_tree pins no toolchain in rust-toolchain.toml, so its records do not build under the caller's" >&2
+    return 2
+  fi
   local names=() dirs=() features=() pair i fixed key root prefix files missed=() hits=0
   for pair in "$@"; do names+=("${pair%%=*}"); dirs+=("${pair#*=}"); done
   fixed=$(records_fixed)

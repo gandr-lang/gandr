@@ -13,6 +13,14 @@
 # `crates/surface-driver/src/main.rs`). A relay that sends nothing stays on
 # its build until it sends.
 #
+# Each build, each warm build and each push runs in the environment of the
+# commit that the checkout holds, under the channel that it pins
+# (`toolchain/tree.bash`, #7486). The service starts once, and mise sets its
+# `RUSTUP_TOOLCHAIN` from the pin of the checkout at that start. So without
+# it, a main that moves the pin builds under the pin before it. The loop of
+# `toolchain:follow` sources this file once, so a change of this file
+# reaches a running service only when the service starts again.
+#
 # The configuration and the follower's memory live outside the tree, under
 # the XDG directories:
 #   $XDG_CONFIG_HOME/gandr/follow.json   `{checkout, interval, page}`: the
@@ -37,6 +45,7 @@
 # the first `--install`, fast-forward it once to `origin/main`.
 
 follow_dir="$(git rev-parse --show-toplevel)/.config/follow"
+source "$follow_dir/../toolchain/tree.bash"
 follow_config="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/follow.json"
 follow_state="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow.json"
 follow_build_log="${XDG_STATE_HOME:-$HOME/.local/state}/gandr/follow-build.log"
@@ -185,7 +194,7 @@ follow_warm() {
     export GANDR_GATE_SLOT=follow
     echo "toolchain:follow: warming the gates' builds at ${head:0:9}"
     for task in build:tests build:tests-enforcing check:clippy check:clippy-enforcing check:dylint evidence:rustdoc workflow:install; do
-      nice -n 19 mise run --quiet "$task" > /dev/null 2>&1 || echo "toolchain:follow: warming $task at ${head:0:9} failed"
+      tree_exec "$PWD" nice -n 19 mise run --quiet "$task" > /dev/null 2>&1 || echo "toolchain:follow: warming $task at ${head:0:9} failed"
     done
     follow_remember "$(jq -c --arg head "$head" '.warmed = $head' <<< "$(follow_memory)")"
     echo "toolchain:follow: warmed the gates' builds at ${head:0:9}"
@@ -217,7 +226,7 @@ follow_tools() {
     echo "$BASHPID" > "$lock/pid"
     export GANDR_GATE_SLOT=follow
     echo "toolchain:follow: pushing the host tools at ${head:0:9}"
-    if nice -n 19 mise run --quiet tools:push > "$follow_tools_log" 2>&1; then
+    if tree_exec "$PWD" nice -n 19 mise run --quiet tools:push > "$follow_tools_log" 2>&1; then
       follow_remember "$(jq -c --arg head "$head" '.pushed = $head' <<< "$(follow_memory)")"
       echo "toolchain:follow: pushed the host tools at ${head:0:9}"
     else
@@ -285,7 +294,7 @@ follow_once() {
     # The build writes to its log, so an output pipe that closes cannot end it.
     mkdir -p "$(dirname "$follow_build_log")"
     status=0
-    cargo build --release --locked -p gandr-lang --bin gandr > "$follow_build_log" 2>&1 || status=$?
+    tree_exec "$PWD" cargo build --release --locked -p gandr-lang --bin gandr > "$follow_build_log" 2>&1 || status=$?
     if (( status == 0 )); then
       follow_deploy "$head"
     elif (( status > 128 )); then

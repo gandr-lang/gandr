@@ -35,6 +35,7 @@
 # `artifacts.json`, as the restack cases give their own.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
+source "$here/../toolchain/tree.bash"
 due_only=false
 if [[ ${1:-} == --due ]]; then
   due_only=true
@@ -63,18 +64,12 @@ if [[ $(git rev-parse 'HEAD^{tree}') != "$(git rev-parse "$head^{tree}")" ]]; th
   echo "replay: the checks of ${head::12} run on its tree, and this worktree holds another" >&2
   exit 2
 fi
-trusted=$(git rev-parse --show-toplevel)${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}
+top=$(git rev-parse --show-toplevel)
 # Each check runs in the environment of the head's tree, never in the caller's
-# (#7485). mise sets `RUSTUP_TOOLCHAIN` and the paths of the tools from the
-# tree where it starts, and the variable overrides `rust-toolchain.toml`. So
-# the seat's environment can carry the pin of another tree. `mise exec` in the
-# head's tree gives each check the tools, the variables and the pin of that
-# tree. The script also gives the pin directly, for a tree whose mise
-# configuration does not read it. A tree that pins no toolchain is refused by
-# name. The replay installs nothing: a tool that the tree pins and the host
-# lacks fails its check.
-toolchain=$({ git show "$head:rust-toolchain.toml" 2> /dev/null || :; } | sed -n 's/^channel = "\([^"]*\)".*/\1/p')
-if [[ -z $toolchain ]]; then
+# (#7485): `tree_exec` (`toolchain/tree.bash`) gives it the tools, the
+# variables and the pin of that tree, and installs nothing. A tree that pins
+# no toolchain is refused by name before any check runs.
+if [[ -z $(tree_channel "$top") ]]; then
   echo "replay: the tree of ${head::12} pins no toolchain in rust-toolchain.toml, so its checks do not run under the caller's" >&2
   exit 2
 fi
@@ -82,8 +77,7 @@ status=0
 while IFS=$'\t' read -r name check record stale; do
   echo "replay: the base moved what $name read under ${head::12}; \`$check\` reads them again" >&2
   ran=0
-  REPLAY_BASE=$new MISE_TRUSTED_CONFIG_PATHS=$trusted MISE_EXEC_AUTO_INSTALL=false RUSTUP_TOOLCHAIN=$toolchain \
-    mise exec -- bash -c "$check" >&2 || ran=$?
+  tree_exec "$top" env REPLAY_BASE="$new" bash -c "$check" >&2 || ran=$?
   (( ran != 0 )) || continue
   if [[ -z $stale || " $stale " == *" $ran "* ]]; then
     echo "replay: $name are stale on ${head::12}; record them again with \`$record\` on the branch, and land again" >&2
