@@ -975,6 +975,10 @@ pub struct Family<Node>
         reason = "a freeze extends the newest segment in place while no clone shares it"
     )]
     tail: Vec<alloc::sync::Arc<Vec<Node>>>,
+    /// Where each segment of the tail ends, past the whole chunks, oldest
+    /// first, and `usize::MAX` past the last segment. A read finds its
+    /// segment by four comparisons, with no walk of the tail.
+    ends: [usize; SEGMENTS],
     /// How many nodes the chunks and the tail hold, so a read finds its side
     /// at once.
     frozen_len: usize,
@@ -1008,6 +1012,10 @@ const CHUNK: usize = 1 << CHUNK_SHIFT;
 /// The mask of a frozen node's place in its chunk.
 const WITHIN: usize = CHUNK.wrapping_sub(1);
 
+/// The most segments that a family's tail holds: each holds more than twice
+/// the nodes of the next, and the tail holds fewer than [`CHUNK`].
+const SEGMENTS: usize = 5;
+
 impl<Node> Default for Family<Node>
 {
     /// The empty family.
@@ -1020,6 +1028,7 @@ impl<Node> Default for Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
+            ends: [usize::MAX; SEGMENTS],
             frozen_len: 0,
             own: Vec::new(),
         }
@@ -1038,6 +1047,7 @@ impl<Node> From<Vec<Node>> for Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
+            ends: [usize::MAX; SEGMENTS],
             frozen_len: 0,
             own: nodes,
         }
@@ -1086,6 +1096,7 @@ impl<Node> Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
+            ends: [usize::MAX; SEGMENTS],
             frozen_len: 0,
             own: Vec::new(),
         }
@@ -1152,7 +1163,8 @@ impl<Node> Family<Node>
     }
 
     /// Where the tail holds the frozen node `within` places past the whole
-    /// chunks; `None` past the tail.
+    /// chunks; `None` past the tail. The segment is the count of the ends at
+    /// or below the place, so the read compares four ends and walks nothing.
     ///
     /// # Specification
     /// trivial.
@@ -1162,17 +1174,35 @@ impl<Node> Family<Node>
         within: ArenaLength,
     ) -> Option<TailPlace>
     {
-        let mut rest = within.0;
-        for (segment, nodes) in self.tail.iter().enumerate() {
-            if rest < nodes.len() {
-                return Some(TailPlace {
-                    segment,
-                    place: rest,
-                });
-            }
-            rest = rest.saturating_sub(nodes.len());
+        let [first, second, third, fourth, _] = self.ends;
+        let segment = usize::from(first <= within.0)
+            .saturating_add(usize::from(second <= within.0))
+            .saturating_add(usize::from(third <= within.0))
+            .saturating_add(usize::from(fourth <= within.0));
+        let start = segment
+            .checked_sub(1)
+            .and_then(|before| self.ends.get(before))
+            .copied()
+            .unwrap_or(0);
+        let place = within.0.checked_sub(start)?;
+        (place < self.tail.get(segment)?.len()).then_some(TailPlace { segment, place })
+    }
+
+    /// Write where each segment of the tail ends, as [`Self::segment_of`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mark_ends(&mut self)
+    {
+        let mut ends = [usize::MAX; SEGMENTS];
+        let mut end = 0_usize;
+        for (slot, segment) in ends.iter_mut().zip(&self.tail) {
+            end = end.saturating_add(segment.len());
+            *slot = end;
         }
-        None
+        self.ends = ends;
     }
 
     /// The frozen node at `offset`, or `None` at or past the frozen length:
@@ -1351,6 +1381,7 @@ impl<Node: Clone> Family<Node>
         if self.tail.last().is_some_and(|segment| segment.is_empty()) {
             let _empty = self.tail.pop();
         }
+        self.mark_ends();
         self.frozen_len = length.0;
     }
 
@@ -1411,6 +1442,8 @@ impl<Node: Clone> Family<Node>
             }
         }
         if nodes.as_slice().is_empty() {
+            drop(nodes);
+            self.mark_ends();
             return;
         }
         if let Some(newest) = self.tail.last_mut().and_then(alloc::sync::Arc::get_mut) {
@@ -1420,6 +1453,7 @@ impl<Node: Clone> Family<Node>
             self.tail.push(alloc::sync::Arc::new(nodes.collect()));
         }
         self.merge_tail();
+        self.mark_ends();
     }
 
     /// Merge the newest two segments of the tail while the older holds at
@@ -5473,6 +5507,11 @@ mod tests
         for node in 0 .. count {
             family.push(Counted(node));
             family.freeze();
+            assert!(
+                (node.saturating_sub(super::CHUNK) ..= node)
+                    .all(|offset| family.get(offset).is_some_and(|held| held.0 == offset)),
+                "each node of the tail reads where it was minted after freeze {node}"
+            );
             clones.push_back(family.clone());
             if clones.len() > 8 {
                 let _oldest = clones.pop_front();
@@ -5484,10 +5523,7 @@ mod tests
             "{copies} copies of {count} nodes"
         );
         assert!(
-            family
-                .iter()
-                .enumerate()
-                .all(|(offset, node)| node.0 == offset),
+            (0 .. count).all(|offset| family.get(offset).is_some_and(|held| held.0 == offset)),
             "each node reads where it was minted"
         );
     }
