@@ -2117,35 +2117,32 @@ fn read_tables(
         for _ in 0 .. length {
             steps.push(match reader.tag()?.0 {
                 0 => {
-                    let mut sides = Vec::with_capacity(2);
-                    for _ in 0 .. 2 {
-                        let normal = places.read(reader)?;
-                        let returned = places.read(reader)?;
-                        let decisions = read_dialogue(reader, read_trace)?;
-                        sides.push(EvaluationContent {
-                            normal,
-                            returned,
-                            decisions,
-                        });
-                    }
-                    let (Some(right), Some(left)) = (sides.pop(), sides.pop())
-                    else {
-                        return Err(CodecError::Corrupt);
+                    let normal = places.read(reader)?;
+                    let returned = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let left = EvaluationContent {
+                        normal,
+                        returned,
+                        decisions,
+                    };
+                    let normal = places.read(reader)?;
+                    let returned = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let right = EvaluationContent {
+                        normal,
+                        returned,
+                        decisions,
                     };
                     StepContent::Return { left, right }
                 },
                 1 => {
                     let fibre = read_narrow::<DeBruijnIndex>(reader)?;
-                    let mut sides = Vec::with_capacity(2);
-                    for _ in 0 .. 2 {
-                        let normal = places.read(reader)?;
-                        let decisions = read_dialogue(reader, read_trace)?;
-                        sides.push(StalledContent { normal, decisions });
-                    }
-                    let (Some(right), Some(left)) = (sides.pop(), sides.pop())
-                    else {
-                        return Err(CodecError::Corrupt);
-                    };
+                    let normal = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let left = StalledContent { normal, decisions };
+                    let normal = places.read(reader)?;
+                    let decisions = read_dialogue(reader, read_trace)?;
+                    let right = StalledContent { normal, decisions };
                     StepContent::Apply { fibre, left, right }
                 },
                 _ => return Err(CodecError::Corrupt),
