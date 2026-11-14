@@ -11,8 +11,6 @@ mod common;
 mod generate;
 #[cfg(test)]
 mod large;
-#[cfg(test)]
-mod renamed;
 
 #[cfg(test)]
 mod account;

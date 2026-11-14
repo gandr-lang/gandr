@@ -2961,7 +2961,7 @@ impl<'judged> Judgement<'judged>
                 Maybe::Present(_) | Maybe::Absent(_),
             ) => Maybe::Absent(seating::Absent::Unseatable),
         };
-        let Maybe::Present(Seated { answer, .. }) = seat(context, &Seating {
+        let Maybe::Present(answer) = seat(context, &Seating {
             typing: &typing,
             item: taking.item,
             declaration,
@@ -3541,7 +3541,7 @@ where
             },
         };
         let (outcome, answer) = match adopted {
-            Maybe::Present((support, typing, Seated { answer, .. })) => {
+            Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
                 let (entered, failure, entry, report) = match candidates.get(index) {
                     Some(&Maybe::Present(ref candidate)) => (
@@ -4134,7 +4134,7 @@ enum Seat
 fn adopt(
     context: &mut CheckingContext<'_>,
     input: &AdoptionInput<'_, '_>,
-) -> Maybe<(Vec<Answered>, Typing, Seated), recall::Absent>
+) -> Maybe<(Vec<Answered>, Typing, Answer), recall::Absent>
 {
     let checkpoint = input.candidate.checkpoint;
     if input.item.content.opacity() == Opacity::Opaque {
@@ -4175,11 +4175,11 @@ fn adopt(
     if let Maybe::Present(_) = answer {
         settle_home(context, input, checkpoint.support());
     }
-    answer.map(|seated| {
+    answer.map(|answer| {
         (
             checkpoint.support().to_vec(),
             checkpoint.typing().clone(),
-            seated,
+            answer,
         )
     })
 }
@@ -4263,16 +4263,6 @@ struct Seating<'input>
     entry: Maybe<&'input EntryContent, elaborated::Absent>,
 }
 
-/// What a seat leaves: the answer that the item supplies and the body it
-/// stands at.
-struct Seated
-{
-    /// The answer to the items after it.
-    answer: Answer,
-    /// The body the item unfolds to, or why it unfolds to none.
-    body: Maybe<gandr_core_term::ValueId, unfolding::Absent>,
-}
-
 /// Admit the item with the type its typing seats, as its judgement admitted
 /// it, and answer what it supplies to the items after it.
 ///
@@ -4302,7 +4292,7 @@ struct Seated
 fn seat(
     context: &mut CheckingContext<'_>,
     seating: &Seating<'_>,
-) -> Maybe<Seated, recall::Absent>
+) -> Maybe<Answer, recall::Absent>
 {
     let (signature, body) = match *(seating.declaration.content()) {
         gandr_core_checker::DeclarationContent::Value {
@@ -4347,10 +4337,7 @@ fn seat(
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             };
-            return Maybe::Present(Seated {
-                answer,
-                body: Maybe::Absent(unfolding::Absent::Rigid),
-            });
+            return Maybe::Present(answer);
         },
         gandr_core_checker::DeclarationContent::Abstract(sealed) => {
             match *seating.typing {
@@ -4381,10 +4368,7 @@ fn seat(
                     return Maybe::Absent(recall::Absent::Unseated);
                 },
             }
-            return Maybe::Present(Seated {
-                answer: Answer::Untyped,
-                body: Maybe::Absent(unfolding::Absent::Rigid),
-            });
+            return Maybe::Present(Answer::Untyped);
         },
         gandr_core_checker::DeclarationContent::World(ref requirement) => {
             if !matches!(*seating.typing, Typing::Data)
@@ -4394,10 +4378,7 @@ fn seat(
             {
                 return Maybe::Absent(recall::Absent::Unseated);
             }
-            return Maybe::Present(Seated {
-                answer: Answer::Untyped,
-                body: Maybe::Absent(unfolding::Absent::Rigid),
-            });
+            return Maybe::Present(Answer::Untyped);
         },
         // A codata declaration has no content form: its item is opaque and
         // returned before this.
@@ -4534,10 +4515,7 @@ fn seat(
             ),
         );
     }
-    Maybe::Present(Seated {
-        answer,
-        body: unfolds,
-    })
+    Maybe::Present(answer)
 }
 
 /// How a stand test counts a recorded answer that content cannot compare: a

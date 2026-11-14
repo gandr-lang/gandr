@@ -1951,6 +1951,9 @@ pub struct Session<Store, Blocks>
     /// Whether the incremental pass takes each changed item's verdict from
     /// the revision's judgement.
     verdicts: Verdicts,
+    /// Whether an untabled judgement takes each declaration whose checkpoint
+    /// stands from the last pass.
+    reusing: Reusing,
     /// How many declarations the last judgement took from the last pass.
     taken: ItemCount,
     /// The latest untabled judgement, which a revision moving no lowered node
@@ -1993,6 +1996,24 @@ pub enum Verdicts
     /// does not adopt: the decision a taken verdict stands for, which the
     /// corpus witness compares against.
     Decided,
+}
+
+/// Whether a session's untabled judgement takes each declaration whose
+/// checkpoint stands from the last pass, or decides each declaration.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Reusing
+{
+    /// The judgement decides each declaration. The held admission reads the
+    /// node tables of each declaration that it crosses, which only a decision
+    /// leaves in the context.
+    #[default]
+    Decided,
+    /// The judgement takes each declaration whose checkpoint stands from the
+    /// last pass ([`gandr_core_incremental::Reuse`]), and decides the rest.
+    Standing,
 }
 
 /// A kernel admission a judgement left to run, beside the import closure its
@@ -2298,6 +2319,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             revision: Revision::default(),
             tables: Tables::Unkept,
             verdicts: Verdicts::Taken,
+            reusing: Reusing::Decided,
             taken: ItemCount::default(),
             recorded: Recorded::default(),
             account: Account::default(),
@@ -2472,6 +2494,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 revision: Revision::default(),
                 tables: Tables::Unkept,
                 verdicts: Verdicts::Taken,
+                reusing: Reusing::Decided,
                 taken: ItemCount::default(),
                 recorded: Recorded::default(),
                 account: Account::default(),
@@ -2664,8 +2687,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — as [`submit`](Self::submit).
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
-    #[inline]
-    pub fn admit_into<'text>(
+    fn admit_into<'text>(
         &mut self,
         mut submission: Submission<'text>,
     ) -> Result<Submission<'text>, SessionFault<'text>>
@@ -3314,16 +3336,18 @@ impl<Store, Blocks> Session<Store, Blocks>
                     Polled::Retired(retired, ()) => Polled::Retired(retired, ()),
                 },
                 Tables::Unkept => {
-                    // An untabled judgement takes each declaration whose
-                    // checkpoint stands from the last pass. At the trace layer
-                    // it decides each item, so the machine writes the steps of
-                    // each one.
+                    // At the trace layer the judgement decides each item, so
+                    // the machine writes the steps of each one.
                     #[cfg(feature = "instrument")]
                     let tracing = matches!(sink.trace(), Maybe::Present(_));
                     #[cfg(not(feature = "instrument"))]
                     let tracing = false;
-                    let mut reuse =
-                        (!tracing).then(|| self.incremental.reuse(&items, led.map(Led::leading)));
+                    let mut reuse = match self.reusing {
+                        Reusing::Standing if !tracing => {
+                            Some(self.incremental.reuse(&items, led.map(Led::leading)))
+                        },
+                        Reusing::Standing | Reusing::Decided => None,
+                    };
                     let taking: &mut dyn Taking = match reuse {
                         Some(ref mut reuse) => reuse,
                         None => &mut Deciding,
@@ -4008,6 +4032,20 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.verdicts = verdicts;
     }
 
+    /// Have every untabled judgement from here on take each declaration whose
+    /// checkpoint stands, or decide each declaration, as `reusing` says.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn reuse(
+        &mut self,
+        reusing: Reusing,
+    )
+    {
+        self.reusing = reusing;
+    }
+
     /// How many declarations the last judgement took from the last pass.
     ///
     /// # Specification
@@ -4017,20 +4055,6 @@ impl<Store, Blocks> Session<Store, Blocks>
     pub const fn taken(&self) -> ItemCount
     {
         self.taken
-    }
-
-    /// The arena whose nodes the latest submission's report names: the held
-    /// admission's, until the admission runs.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn judged(&self) -> Maybe<&CoreArena, admission::Absent>
-    {
-        match self.admission {
-            Maybe::Present(ref pending) => Maybe::Present(pending.admission.arena()),
-            Maybe::Absent(absent) => Maybe::Absent(absent),
-        }
     }
 
     /// The grammar every revision is parsed under.

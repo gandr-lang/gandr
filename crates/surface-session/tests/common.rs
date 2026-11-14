@@ -24,22 +24,16 @@ use gandr_core_incremental::project;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
-use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Width;
-use gandr_surface_dispatcher::compose;
-use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_session::Session;
 use gandr_surface_session::Submission;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
-
-use crate::renamed::Reading;
-use crate::renamed::renamed;
 
 /// The built-in grammar, assembled once per test process for borrowed fixtures.
 pub static GRAMMAR: LazyLock<Pbg> =
@@ -355,94 +349,6 @@ pub fn names(composed: &Composed<'_>) -> Vec<String>
         Composed::Refused(ref refusal) => panic!("refused as a whole: {refusal}"),
     }
 }
-
-/// Submit `text` to `session` as [`Session::submit`] does, beside its
-/// composition read up to a renaming of the nodes of its judgement's arena
-/// (#6620), or none for a revision the lowering refuses as a whole.
-///
-/// The admission takes the arena, so the reading comes between the
-/// judgement and the admission.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: the submission [`Session::submit`] gives `text`, and the reading
-///   of its judgement's composition.
-/// - panics: when the judgement or the admission faults.
-/// - executable: none — the submission is [`Session::submit`]'s, which states
-///   the clauses.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`reports_as_batch`].
-/// - witness: `tests::incremental::deletion_matches_from_scratch`
-pub fn submit_read<'text>(
-    session: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
-    text: impl Into<Text<'text>>,
-) -> (Submission<'text>, Option<Reading>)
-{
-    let Text(text) = text.into();
-    let judged = session
-        .judge(SourceText::from(text))
-        .unwrap_or_else(|fault| panic!("{text:?} faulted: {fault}"));
-    let reading = match session.judged() {
-        Maybe::Present(arena) => Some(renamed(judged.composed(), arena)),
-        Maybe::Absent(_) => None,
-    };
-    let submission = session
-        .admit_into(judged)
-        .unwrap_or_else(|fault| panic!("{text:?} faulted on admission: {fault}"));
-    (submission, reading)
-}
-
-/// Assert that `text`, which an incremental session judged as `reading`
-/// reads, reports what the batch pipeline reports for it under `root`, up to
-/// a renaming of the nodes of its arena (#6620).
-///
-/// A fresh session decides each declaration, so its composition is the batch
-/// pipeline's at each id. A judgement that takes a standing declaration mints
-/// none of that declaration's nodes, so the rest stand at other ids.
-///
-/// # Specification
-/// - requires: `text` composes under `root`.
-/// - ensures: nothing past the assertions.
-/// - panics: when a fresh session's composition is not the batch pipeline's, or
-///   `reading` is not the fresh judgement's, naming `context`.
-/// - executable: none — the assertions are the observation.
-///
-/// # Adequacy
-/// - hypothesis: L3 — the edits of the named fixtures and the generated chains
-///   take their standing declarations, and each report reads as the batch
-///   pipeline's; a taken verdict of other content reads apart.
-/// - witness: `tests::incremental::deletion_matches_from_scratch`
-/// - witness: `tests::incremental::incremental_equals_from_scratch`
-pub fn reports_as_batch(
-    reading: Option<&Reading>,
-    text: Text<'_>,
-    root: SourceRoot,
-    context: &dyn fmt::Display,
-)
-{
-    let composed = compose::<Evaluator>(
-        &GRAMMAR,
-        root.corpus_root(),
-        SourceText::from(text.0),
-        &mut LoweringCount::default(),
-    )
-    .expect("the revision composes");
-    let mut whole = session(root);
-    let (fresh, decided) = submit_read(&mut whole, text);
-    assert_eq!(
-        *fresh.composed(),
-        composed,
-        "{context}: a fresh submission reports what the batch pipeline reports"
-    );
-    assert_eq!(
-        reading,
-        decided.as_ref(),
-        "{context}: the judgement reports what the batch pipeline reports, up to a renaming of \
-         its nodes"
-    );
-}
-
 /// A sink that refuses the first attempted write.
 #[derive(Debug)]
 pub struct RefusingWriter;
