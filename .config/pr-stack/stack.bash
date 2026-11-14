@@ -1304,10 +1304,15 @@ remove_landed_worktree() {
   fi
 }
 
-# The trunk's required status contexts, from its rules, as a JSON array.
+# The trunk's required status contexts, from its rules and from the tree, as
+# a JSON array. The tree names a context that a lane of ours reports before
+# the owner adds it to the rules (#7365): `pr:land`, `pr:watch` and the
+# queue's step then refuse on it as on a context the rules name. Once the
+# rules name it, its entry here goes.
 required_contexts() {
   gh api "repos/$repo/rules/branches/$trunk" \
-    --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique'
+    --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context]
+      + ["sweep the session at the landing head (linux)"] | unique'
 }
 
 # The most members one landing queues of a stack (#2046): the trunk's
