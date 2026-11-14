@@ -72,6 +72,13 @@ fn pair(tokens: &Tokens)
 ///
 /// # Specification
 /// trivial.
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        pool_only_threads,
+        reason = "benchmark: the row measures a take under a fixed count of contending threads, so it starts the threads it counts"
+    )
+)]
 fn pairs(
     tokens: &Tokens,
     width: Measured,
