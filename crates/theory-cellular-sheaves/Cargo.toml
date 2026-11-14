@@ -37,9 +37,12 @@ gandr-theory-discrete-morse.workspace = true
 gandr-theory-graded-posets.workspace = true
 gandr-theory-stone-duality.workspace = true
 
-# The measurement counts each operation's allocations.
+# The measurement counts each operation's allocations. The projective line's
+# regression validates its two charts as a cover of the lattice of opens that
+# they generate.
 [dev-dependencies]
 allocation-counter.workspace = true
+gandr-theory-ordered-algebras.workspace = true
 
 [lints]
 workspace = true

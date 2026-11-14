@@ -73,7 +73,7 @@ fn element_bit(element: Element) -> Result<ElementSet, DualityError>
     Ok(set) => usize::try_from(set.0.count_ones()).ok() == Some(usize::from(count)),
     Err(error) => error == DualityError::TooManyElements(count),
 })]
-fn first(count: ElementCount) -> Result<ElementSet, DualityError>
+pub fn first(count: ElementCount) -> Result<ElementSet, DualityError>
 {
     let too_many = DualityError::TooManyElements(count);
     let unused = WIDEST.checked_sub(usize::from(count)).ok_or(too_many)?;
@@ -158,6 +158,20 @@ impl ElementSet
         Self(self.0 & other.0)
     }
 
+    /// The elements of this set that `other` lacks.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn without(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0 & !other.0)
+    }
+
     /// Whether this set is included in `other`.
     ///
     /// # Specification
@@ -185,6 +199,17 @@ impl ElementSet
     pub fn elements(self) -> impl Iterator<Item = Element>
     {
         ones!(self.0, Element::from)
+    }
+
+    /// The number of elements of the set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn count(self) -> ElementCount
+    {
+        ElementCount::from(self.elements().count())
     }
 }
 
@@ -681,6 +706,47 @@ impl SetRing
     pub fn members(&self) -> &[ElementSet]
     {
         &self.members
+    }
+
+    /// Whether `set` is a member of the lattice.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn holds(
+        &self,
+        set: ElementSet,
+    ) -> Membership
+    {
+        match self.members.binary_search(&set) {
+            Ok(_) => Membership::Inside,
+            Err(_) => Membership::Outside,
+        }
+    }
+
+    /// The lattice over `carrier` points with `members`, which are sorted,
+    /// closed under union and intersection, and hold the empty set and the
+    /// whole carrier.
+    ///
+    /// # Specification
+    /// - requires: `members` keeps the invariant of [`SetRing`]; the caller
+    ///   builds it so.
+    /// - ensures: the lattice holds `carrier` and `members` as given.
+    /// - panics: none.
+    /// - executable: none — unwitnessable provenance: the closure of the
+    ///   members is the caller's construction, which the call cannot see.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a glued lattice that drops a member, or holds one
+    ///   twice, reads back otherwise from its spectrum.
+    /// - witness: `tests::pushout::each_glued_algebra_is_the_pullback_and_its_spectrum_the_pushout`
+    pub(crate) const fn from_members(
+        carrier: ElementCount,
+        members: Vec<ElementSet>,
+    ) -> Self
+    {
+        Self { carrier, members }
     }
 
     /// The least member that holds a point: the intersection of every member

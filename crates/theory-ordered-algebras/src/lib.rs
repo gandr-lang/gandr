@@ -22,6 +22,10 @@
 //! are such a ring, `ℤ[1/√2, i]`, and the gates `H`, `S`, `T` and `CNOT` are
 //! unitary matrices over it.
 //!
+//! A cover is a unimodular sequence of charts, and its coefficients are the
+//! certificate that [`Cover::replayed`] checks. Its partition of unity glues
+//! local sections and splits a Čech cocycle.
+//!
 //! # Items
 //!
 //! | Item | What it holds |
@@ -35,6 +39,8 @@
 //! | [`Amplitude`], [`RealAmplitude`], [`Coefficient`], [`Scale`] | the exact amplitudes `ℤ[1/√2, i]` and their real subring `ℤ[1/√2]`, each at its least scale |
 //! | [`Amplitudes`], [`RealAmplitudes`] | the two rings under the discrete order, on the elements a check generates |
 //! | [`Gate`], [`State`], [`QubitCount`], [`QubitIndex`], [`CircuitRefusal`] | the gates `H`, `S`, `T` and `CNOT` as unitary matrices, and the state vector of a register that a circuit acts on |
+//! | [`Cover`], [`Cocycle`], [`Chart`], [`CoverRefusal`] | a cover by a unimodular sequence with its coefficients, the gluing of local sections, the splitting of a Čech cocycle, and every refusal by the charts it names |
+//! | the instance on [`gandr_theory_stone_duality::SetRing`] | a finite distributive lattice of sets, the join its sum and the meet its product |
 //!
 //! # References
 //!
@@ -68,8 +74,10 @@
 extern crate alloc;
 
 mod amplitude;
+mod cover;
 mod gate;
 mod instance;
+mod lattice;
 mod law;
 mod signature;
 mod usage;
@@ -80,6 +88,10 @@ pub use amplitude::Coefficient;
 pub use amplitude::RealAmplitude;
 pub use amplitude::RealAmplitudes;
 pub use amplitude::Scale;
+pub use cover::Chart;
+pub use cover::Cocycle;
+pub use cover::Cover;
+pub use cover::CoverRefusal;
 pub use gate::CircuitRefusal;
 pub use gate::Gate;
 pub use gate::QubitCount;

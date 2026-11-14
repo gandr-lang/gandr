@@ -1,6 +1,6 @@
 # gandr-theory-ordered-algebras
 
-One law checker for the ordered semirings and commutative rings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, the usage semiring of the core language's grades, and the exact amplitudes of Clifford+T circuits with their gates.
+One law checker for the ordered semirings and commutative rings of gandr, with the max-plus semiring and the Lawvere quantale over exact dyadics, the usage semiring of the core language's grades, the exact amplitudes of Clifford+T circuits with their gates, and the cover of an algebra by a unimodular sequence.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
@@ -14,9 +14,9 @@ One law checker for the ordered semirings and commutative rings of gandr, with t
 
 ## Synopsis
 
-**What.** An `OrderedSemiring` states a carrier, an order, a zero, a one, an addition and a multiplication. `check` decides sixteen laws on it: the semiring laws, the laws of the order, and the monotonicity of both operations. A law that fails returns a `LawFailure` that names the instance, the law and the elements that break it. A `CommutativeRing` adds a negation, and `check_ring` adds the commutativity of the product and the inverse of the sum under the discrete order. `Amplitude` is an element of `ℤ[1/√2, i]` at its least scale, so equal amplitudes have equal forms, and the gates `H`, `S`, `T` and `CNOT` are unitary matrices over it.
+**What.** An `OrderedSemiring` states a carrier, an order, a zero, a one, an addition and a multiplication. `check` decides sixteen laws on it: the semiring laws, the laws of the order, and the monotonicity of both operations. A law that fails returns a `LawFailure` that names the instance, the law and the elements that break it. A `CommutativeRing` adds a negation, and `check_ring` adds the commutativity of the product and the inverse of the sum under the discrete order. `Amplitude` is an element of `ℤ[1/√2, i]` at its least scale, so equal amplitudes have equal forms, and the gates `H`, `S`, `T` and `CNOT` are unitary matrices over it. A `Cover` is a sequence of charts with coefficients whose combination is one. `Cover::replayed` checks the coefficients, `Cover::glue` glues the local sections that agree on each overlap, and `Cover::split` splits a Čech cocycle over a commutative ring. A lattice of sets is an ordered semiring, so `Cover::of_lattice` reads a family whose join is the top as a cover.
 
-**Why.** A grade, a weight, a distance and a cost are each a value of an ordered semiring, and gandr takes its grade algebra as a parameter. One checker states the laws once, so each algebra gandr uses is checked against the same statement. The core checker's access rules read the usage semiring here, so the checker runs the operations whose laws the suite decides.
+**Why.** A grade, a weight, a distance and a cost are each a value of an ordered semiring, and gandr takes its grade algebra as a parameter. One checker states the laws once, so each algebra gandr uses is checked against the same statement. The core checker's access rules read the usage semiring here, so the checker runs the operations whose laws the suite decides. A cover of the presented-spaces frame is a unimodular sequence with its coefficients, on the lattice stratum and on a ring alike, so its validator reads the one signature of this crate.
 
 **How.** A law of arity `k` reads every `k`-tuple of the elements a carrier gives: the whole carrier when it is finite, and the elements an instance generates when it is not. The checker allocates nothing but a counterexample. An operation whose exact result lies past the represented elements refuses with `Outside`, and the checker reports that law as undecided at those elements. An amplitude holds four 128-bit coefficients and a scale; a `State` holds a register's vector and a scratch vector of the same size, so a gate allocates nothing, and a refused step leaves the state as it was.
 
@@ -39,6 +39,8 @@ One law checker for the ordered semirings and commutative rings of gandr, with t
 - `Amplitude`, `RealAmplitude`, `Coefficient`, `Scale`: the exact amplitudes `ℤ[1/√2, i]` and the real subring `ℤ[1/√2]` of their squared moduli, each at its least scale, with exact sums, products, negations and conjugates.
 - `Amplitudes`, `RealAmplitudes`: the two rings under the discrete order, on the elements a check generates.
 - `Gate`, `State`, `QubitCount`, `QubitIndex`, `CircuitRefusal`: the gates `H`, `S`, `T` and `CNOT` as unitary matrices, and the state vector of a register of at most 20 qubits that a circuit acts on.
+- `Cover`, `Cocycle`, `Chart`, `CoverRefusal`: a cover by a unimodular sequence and its coefficients, the gluing of local sections by the partition of unity, the splitting of a Čech cocycle over a commutative ring, and each refusal by the charts or the element it names.
+- The instance on `gandr_theory_stone_duality::SetRing`: a finite distributive lattice of sets, the join its sum and the meet its product, on its members as the whole carrier.
 
 ## Expected features
 
@@ -68,7 +70,7 @@ mise exec -- cargo bench -p gandr-theory-ordered-algebras
 
 ## Where the detail lives
 
-The signatures are in `src/signature.rs`, the laws and the checkers are in `src/law.rs`, the max-plus and Lawvere instances are in `src/instance.rs`, the usage semiring is in `src/usage.rs`, the amplitudes are in `src/amplitude.rs`, and the gates and the state vector are in `src/gate.rs`. The bound of each grade of the core language is checked in `gandr-core-term`'s suite `tests::grades`. The library `std.quantum` holds the same amplitudes in gandr, and `corpus/model/quantum/amplitudes.gandr` runs `H T H` on `|0⟩` to them.
+The signatures are in `src/signature.rs`, the laws and the checkers are in `src/law.rs`, the max-plus and Lawvere instances are in `src/instance.rs`, the usage semiring is in `src/usage.rs`, the amplitudes are in `src/amplitude.rs`, and the gates and the state vector are in `src/gate.rs`. The cover is in `src/cover.rs`, and the lattice of sets as an instance is in `src/lattice.rs`. The bound of each grade of the core language is checked in `gandr-core-term`'s suite `tests::grades`. The library `std.quantum` holds the same amplitudes in gandr, and `corpus/model/quantum/amplitudes.gandr` runs `H T H` on `|0⟩` to them. `gandr-theory-cellular-sheaves`'s suite `tests::linear` validates the two charts of the projective line as a cover before it reads the twist's cohomology.
 
 ## License
 
