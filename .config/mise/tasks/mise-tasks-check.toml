@@ -2038,7 +2038,13 @@ echo "census check OK: $(jq length .config/census/cases.json) cases give their r
 # not reach. A change of the ledgers, of this check's programs or of the
 # ledger tasks documents every rowed crate, and so does a run with no
 # `GATE_BASE`. A rowed crate with no package stays in, since its rows are a
-# finding in any scope. Each case in `.config/purposes/cases.json` holds the
+# finding in any scope. A row whose entry only some systems compile has a
+# `held_by` row for each system that holds it, and a host reads such a row
+# against its own listing only when a `held_by` row names the host's system,
+# since rustdoc lists no entry that a `cfg` of the host leaves out (#7674).
+# `.config/purposes/findings.sql` gives every finding, and
+# `.config/purposes/held-cases.bash` holds it to its cases on each system.
+# Each case in `.config/purposes/cases.json` holds the
 # entry program's arguments, an input, and the output it must give or that it
 # fails; each in `.config/purposes/coverage.json` the tags and sites the
 # coverage program reads and the findings it gives. Every finding is printed
@@ -2054,6 +2060,7 @@ trap 'rm -rf "$fresh"' EXIT
 failed=0
 .config/cases/run.bash 'purposes entry' .config/purposes/cases.json --program .config/purposes/items.jq || failed=1
 .config/cases/run.bash 'purposes coverage' .config/purposes/coverage.json --program .config/purposes/coverage.jq || failed=1
+.config/purposes/held-cases.bash || failed=1
 db="$fresh/purposes.db"
 sqlite3 -bail "$db" < ledger/purposes.sql
 sqlite3 "$db" .dump > "$fresh/purposes.sql"
@@ -2079,53 +2086,15 @@ fi
 touch "$fresh/entries.tsv"
 if (( ${#checked[@]} )); then mise run --quiet purposes:items "${checked[@]}" > "$fresh/entries.tsv"; fi
 printf '%s\n' "${checked[@]}" > "$fresh/checked.txt"
+system=$(uname -s | tr '[:upper:]' '[:lower:]')
 sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry" \
-  'CREATE TABLE checked(crate TEXT);' ".import $fresh/checked.txt checked"
-findings=$(sqlite3 -bail "$db" <<'SQL'
-WITH named(crate, path, kind, shown) AS (
-  SELECT crate, path, kind, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM purpose
-),
-listed(crate, path, kind, location, shown) AS (
-  SELECT crate, path, kind, location, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM entry
-),
-tags(crate, path, kind, shown, tag) AS (
-  SELECT n.crate, n.path, n.kind, n.shown, t.value
-  FROM purpose p JOIN named n USING (crate, path, kind), json_each('["' || replace(p.concerns, ' ', '","') || '"]') t
-  WHERE p.concerns IS NOT NULL
-)
-SELECT crate || ': rows for no crate with a library under crates/; correct the crate or delete its rows'
-FROM (SELECT DISTINCT crate FROM purpose WHERE crate IN (SELECT crate FROM checked) AND crate NOT IN (SELECT crate FROM entry))
-UNION ALL
-SELECT l.shown || ' (' || l.kind || ', ' || l.location || '): a public item with no row; add'
-  || ' INSERT INTO purpose VALUES(' || quote(l.crate) || ',' || quote(l.path) || ',' || quote(l.kind)
-  || ',''<purpose>'',<concerns>,''<naming>'',''<doc>'',<finding>);'
-  || ' to ledger/purposes.sql, each column as its schema there states, then run `mise run ledger:purposes`'
-FROM listed l
-WHERE l.kind NOT IN ('crate', 'module')
-  AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
-UNION ALL
-SELECT n.shown || ' (' || n.kind || '): a row naming no entry of `mise run purposes:list ' || n.crate || '`; correct its path or kind, or delete it'
-FROM named n
-WHERE n.crate IN (SELECT crate FROM entry)
-  AND NOT EXISTS (SELECT 1 FROM entry e WHERE (e.crate, e.path, e.kind) = (n.crate, n.path, n.kind))
-UNION ALL
-SELECT l.shown || ' (module, ' || l.location || '): no row, and its crate has the crate row; the crate row lands with a row for every module'
-FROM listed l
-WHERE l.kind = 'module'
-  AND EXISTS (SELECT 1 FROM purpose c WHERE c.crate = l.crate AND c.kind = 'crate')
-  AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
-UNION ALL
-SELECT n.shown || ' (module): a module row, and its crate has no crate row; module rows land with the crate row'
-FROM named n
-WHERE n.kind = 'module' AND NOT EXISTS (SELECT 1 FROM purpose c WHERE c.crate = n.crate AND c.kind = 'crate')
-UNION ALL
-SELECT shown || ' (' || kind || '): concern ' || tag || ' is no key of ledger/concerns.sql'
-FROM tags WHERE tag NOT IN (SELECT id FROM concern)
-UNION ALL
-SELECT shown || ' (' || kind || '): concern ' || tag || ' is tagged more than once'
-FROM tags GROUP BY crate, path, kind, tag HAVING count(*) > 1;
-SQL
-)
+  'CREATE TABLE checked(crate TEXT);' ".import $fresh/checked.txt checked" \
+  'CREATE TABLE host(system TEXT);' "INSERT INTO host VALUES('$system');"
+findings=$(sqlite3 -bail "$db" < .config/purposes/findings.sql)
+elsewhere=$(sqlite3 -bail "$db" "SELECT count(DISTINCT crate || path || kind) FROM held_by WHERE crate IN (SELECT crate FROM entry) AND (crate, path, kind) NOT IN (SELECT crate, path, kind FROM held_by WHERE system = '$system');")
+if (( elsewhere )); then
+  echo "purposes: $elsewhere row(s) name entries that $system does not compile; a gate on a system that their held_by rows name reads them"
+fi
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1

@@ -6245,4 +6245,18 @@ INSERT INTO purpose VALUES('workflow-test-timing','report::Stability','enum','Na
 INSERT INTO purpose VALUES('workflow-test-timing','report::TestName','struct','Names a test''s path inside its binary, so the path''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-test-timing','report::Timing','struct','Holds a test''s summary in the lane where it takes longest, so the summary''s median and spread are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-test-timing','report::samples','function','Reads every `<testcase>` of one JUnit report, so the report''s samples are read.',NULL,'fits','sound',NULL);
+CREATE TABLE held_by(
+  -- An entry of a purpose row that only some systems compile, as a `cfg` of
+  -- `target_os` holds it. A host reads such a row against its listing only
+  -- when a row here names the host's system. Each system holds an entry with
+  -- no row here.
+  crate    TEXT NOT NULL,
+  path     TEXT NOT NULL,
+  kind     TEXT NOT NULL,
+  -- The system whose build holds the entry, as `uname -s` names it in lower
+  -- case.
+  system   TEXT NOT NULL CONSTRAINT "system is linux or darwin" CHECK(system IN ('linux', 'darwin')),
+  PRIMARY KEY(crate, path, kind, system)
+) WITHOUT ROWID;
+INSERT INTO held_by VALUES('surface-dispatcher','pool::ring::with_ring','function','linux');
 COMMIT;
