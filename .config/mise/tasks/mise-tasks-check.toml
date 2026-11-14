@@ -360,13 +360,16 @@ run = ".config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | de
 # a `GATE_SCOPE` that keeps no member using `anodized` otherwise builds
 # `quenchant-anodized` without its feature under the cfg, and its build stops.
 # `--units FILE` also writes the pass's units to FILE as Cargo's JSON
-# messages: `ci:prune-clippy` keeps exactly those units (#5930).
+# messages: `ci:prune-clippy` keeps exactly those units (#5930). The parser's
+# report builds only under its `census` feature, so the pass turns that
+# feature on whenever the scope keeps `gandr-workflow-parser-report`. The
+# report is then linted, and Cargo counts the dependencies that it uses.
 ["check:clippy-enforcing"]
 description = "The clippy wall with specification enforcement"
 usage = 'flag "--units <file>" help="write the units of the pass to this file as Cargo JSON messages"'
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy {{ env.GATE_SCOPE | default(value='--workspace') }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
+run = "{% set scope = env.GATE_SCOPE | default(value='--workspace') %}{% set padded = scope ~ ' ' %}.config/mise/enforcing .config/mise/gated .config/mise/scope cargo clippy {{ scope }} --all-targets --locked --profile test --config 'resolver.feature-unification=\"workspace\"' {% if '--exclude gandr-workflow-parser-report ' in padded %}{% else %}--features gandr-workflow-parser-report/census {% endif %}{% if usage.units %}--message-format json {% endif %}-- --deny warnings{% if usage.units %} > \"{{ usage.units }}\"{% endif %}"
 
 # CI's plain Clippy pass lints only the targets that carry plain-only code,
 # `cfg(not(anodized_panic))`, as the plain test lane runs only their tests

@@ -14,10 +14,10 @@
 //! | parallel | the units the form split molds apart, the seams that break, the bytes in units that join as molded, and the split's scan against the cold parse | [`FormSplit`] over each corpus source, its runs molded and joined as [`parse_by_form`](gandr_surface_parser::parse_by_form) does, the scan's fastest of [`RUNS`] |
 //!
 //! The corpus is the sweeps' corpus, its strict and fixture roots, listed by
-//! `gandr-workflow-sweep`. The latency workload's client is the benchmark
-//! report's (`benches/shared/lsp.rs`).
+//! `gandr-workflow-sweep`. The latency workload's client is the driver's
+//! benchmark client (`crates/surface-driver/benches/shared/lsp.rs`).
 
-#[path = "../benches/shared/lsp.rs"]
+#[path = "../../surface-driver/benches/shared/lsp.rs"]
 mod lsp;
 
 use core::fmt;

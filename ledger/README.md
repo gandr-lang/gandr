@@ -52,8 +52,8 @@ flowchart BT
   surface -->|11| storage
   surface -->|6| runtime
   workflow -->|1| theory
-  workflow -->|1| core
-  workflow -->|13| surface
+  workflow -->|2| core
+  workflow -->|18| surface
 ```
 <!-- crate-map:end -->
 

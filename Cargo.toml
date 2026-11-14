@@ -92,6 +92,7 @@ members = [
   "crates/workflow-hotpath-guard",
   "crates/workflow-lane-budget",
   "crates/workflow-ledger-tasks",
+  "crates/workflow-parser-report",
   "crates/workflow-prose",
   "crates/workflow-spec-cost",
   "crates/workflow-sweep",
@@ -431,6 +432,7 @@ path = "crates/core-checker-bridge"
 # - surface-dispatcher
 # - surface-driver (dev)
 # - surface-session
+# - workflow-parser-report
 [workspace.dependencies.gandr-core-fork]
 path = "crates/core-fork"
 
@@ -834,6 +836,7 @@ path = "crates/surface-format"
 # - surface-session
 # - surface-tui
 # - workflow-ledger-tasks
+# - workflow-parser-report
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
@@ -932,6 +935,7 @@ path = "crates/surface-lowering-native"
 # consumers:
 # - surface-agentic
 # - surface-driver
+# - workflow-parser-report
 [workspace.dependencies.gandr-surface-lsp]
 path = "crates/surface-lsp"
 
@@ -984,6 +988,7 @@ path = "crates/surface-lsp-navigation"
 # - surface-repl
 # - surface-session
 # - workflow-ledger-tasks
+# - workflow-parser-report
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
@@ -1036,9 +1041,9 @@ path = "crates/surface-repl"
 # The interactive session: each revision lowered, judged, resumed through the
 # incremental checker and checkpointed.
 # consumers:
-# - surface-driver (dev)
 # - surface-lsp
 # - surface-repl
+# - workflow-parser-report
 [workspace.dependencies.gandr-surface-session]
 path = "crates/surface-session"
 
@@ -1065,6 +1070,7 @@ path = "crates/surface-session"
 # - surface-session
 # - surface-tui
 # - workflow-ledger-tasks
+# - workflow-parser-report
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
@@ -1414,7 +1420,7 @@ path = "crates/workflow-github"
 # gate, the recovery sweep, and the features ledger's list and show, run by
 # the `ledger` binary.
 # consumers:
-# - surface-driver (dev)
+# - workflow-parser-report
 [workspace.dependencies.gandr-workflow-ledger-tasks]
 path = "crates/workflow-ledger-tasks"
 
@@ -1428,6 +1434,7 @@ path = "crates/workflow-ledger-tasks"
 # - surface-lsp-base (dev)
 # - surface-parser (dev)
 # - surface-session (dev)
+# - workflow-parser-report
 [workspace.dependencies.gandr-workflow-sweep]
 path = "crates/workflow-sweep"
 
@@ -1818,6 +1825,7 @@ default-features = false
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks
+# - workflow-parser-report
 # - workflow-prose
 # - workflow-spec-cost
 # - workflow-test-timing
@@ -1983,6 +1991,7 @@ features = ["alloc", "derive"]
 # - workflow-hotpath-guard
 # - workflow-lane-budget
 # - workflow-ledger-tasks
+# - workflow-parser-report
 # - workflow-prose
 # - workflow-spec-cost
 [workspace.dependencies.serde_json]
