@@ -1736,7 +1736,7 @@ pub struct Entries
     /// The supports that closed checks gave back beside the one above, which
     /// the next views take. A view beside an open one then reuses a support
     /// under a fresh stamp, and allocates and clears no stamp for each
-    /// position (#7335). They number at most the checks open at once.
+    /// position. They number at most the checks open at once.
     spares: alloc::vec::Vec<alloc::sync::Arc<crate::weakening::Support>>,
     /// The rank the check that runs reads below: none until a check opens
     /// one, and never shared with a clone.
@@ -2424,7 +2424,7 @@ impl Entries
     /// support taken from the entries, or a spare that a closed check gave
     /// back, so the check opens a horizon and a support of its own. The slots
     /// of the log freeze first, so a change of the log beside the view copies
-    /// the chunk that it writes and no other slot (#7335).
+    /// the chunk that it writes and no other slot.
     ///
     /// # Specification
     /// trivial.

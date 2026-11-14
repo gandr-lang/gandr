@@ -938,8 +938,8 @@ pub struct TermArena
 /// offset in one step, with one load past the list. The tail is a run of at
 /// most five segments. A freeze adds to the newest segment in place while no
 /// clone shares it, and starts a new segment when one does. So a clone held
-/// beside each freeze costs a few copies of each node, not a copy of the tail
-/// (#7335). A write to one frozen node copies the list of chunks and the
+/// beside each freeze costs a few copies of each node, not a copy of the tail.
+/// A write to one frozen node copies the list of chunks and the
 /// chunk or the segment that holds the node, and no other node. [`TermArena`]
 /// keeps its four families so, and an arena outside the kernel may keep its
 /// own.
@@ -985,6 +985,17 @@ pub struct Family<Node>
 /// A whole chunk of a family's frozen nodes: [`CHUNK`] nodes inline after the
 /// reference counts, shared by reference with each clone of the family.
 type Chunk<Node> = alloc::sync::Arc<[Node]>;
+
+/// Where the tail of a family holds one frozen node: its segment, from the
+/// oldest, and the node's place in that segment.
+#[derive(Clone, Copy, Debug)]
+struct TailPlace
+{
+    /// The segment, from the oldest.
+    segment: usize,
+    /// The node's place in the segment.
+    place: usize,
+}
 
 /// The binary logarithm of [`CHUNK`]: a frozen node's chunk is its offset
 /// shifted right by it.
@@ -1050,7 +1061,7 @@ impl<Node: PartialEq> PartialEq for Family<Node>
         // their frozen nodes alike, so only the nodes minted since are read.
         if self.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
             == other.frozen.as_ref().map(alloc::sync::Arc::as_ptr)
-            && self.same_tail(other)
+            && self.shared_tail(other).is_some()
         {
             return self.own == other.own;
         }
@@ -1100,8 +1111,8 @@ impl<Node> Family<Node>
             .zip(theirs)
             .take_while(|&(left, right)| alloc::sync::Arc::ptr_eq(left, right))
             .count();
-        let tail = if whole == mine.len() && whole == theirs.len() && self.same_tail(other) {
-            self.tail.iter().map(|segment| segment.len()).sum()
+        let tail = if whole == mine.len() && whole == theirs.len() {
+            self.shared_tail(other).map_or(0, |length| length.0)
         }
         else {
             0
@@ -1109,23 +1120,25 @@ impl<Node> Family<Node>
         ArenaLength(whole.saturating_mul(CHUNK).saturating_add(tail))
     }
 
-    /// Whether `other` holds each segment of this family's tail by the same
-    /// reference, and no other segment.
+    /// How many nodes this family's tail holds, when `other` holds each of
+    /// its segments by the same reference and no other segment; `None`
+    /// otherwise.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn same_tail(
+    fn shared_tail(
         &self,
         other: &Self,
-    ) -> bool
+    ) -> Option<ArenaLength>
     {
-        self.tail.len() == other.tail.len()
+        (self.tail.len() == other.tail.len()
             && self
                 .tail
                 .iter()
                 .zip(&other.tail)
-                .all(|(mine, theirs)| alloc::sync::Arc::ptr_eq(mine, theirs))
+                .all(|(mine, theirs)| alloc::sync::Arc::ptr_eq(mine, theirs)))
+        .then(|| ArenaLength(self.tail.iter().map(|segment| segment.len()).sum()))
     }
 
     /// The whole chunks of the frozen nodes, oldest first.
@@ -1138,23 +1151,26 @@ impl<Node> Family<Node>
         self.frozen.as_deref().map_or(&[], Vec::as_slice)
     }
 
-    /// The segment of the tail that holds the frozen node `within` places past
-    /// the whole chunks, and the node's place in it; `None` past the tail.
+    /// Where the tail holds the frozen node `within` places past the whole
+    /// chunks; `None` past the tail.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn segment_of(
         &self,
-        within: usize,
-    ) -> Option<(usize, usize)>
+        within: ArenaLength,
+    ) -> Option<TailPlace>
     {
-        let mut rest = within;
-        for (index, segment) in self.tail.iter().enumerate() {
-            if rest < segment.len() {
-                return Some((index, rest));
+        let mut rest = within.0;
+        for (segment, nodes) in self.tail.iter().enumerate() {
+            if rest < nodes.len() {
+                return Some(TailPlace {
+                    segment,
+                    place: rest,
+                });
             }
-            rest = rest.saturating_sub(segment.len());
+            rest = rest.saturating_sub(nodes.len());
         }
         None
     }
@@ -1176,8 +1192,8 @@ impl<Node> Family<Node>
         match chunks.get(at) {
             Some(chunk) => chunk.get(within),
             None if at == chunks.len() => {
-                let (index, place) = self.segment_of(within)?;
-                self.tail.get(index)?.get(place)
+                let found = self.segment_of(ArenaLength(within))?;
+                self.tail.get(found.segment)?.get(found.place)
             },
             None => None,
         }
@@ -1318,15 +1334,14 @@ impl<Node: Clone> Family<Node>
             chunks.truncate(whole);
             self.tail = kept.map(alloc::sync::Arc::new).into_iter().collect();
         }
-        else if let Some((index, place)) = self.segment_of(cut) {
-            self.tail.truncate(index.saturating_add(1));
-            if let Some(segment) = self.tail.last_mut() {
-                if let Some(nodes) = alloc::sync::Arc::get_mut(segment) {
+        else if let Some(TailPlace { segment, place }) = self.segment_of(ArenaLength(cut)) {
+            self.tail.truncate(segment.saturating_add(1));
+            if let Some(last) = self.tail.last_mut() {
+                if let Some(nodes) = alloc::sync::Arc::get_mut(last) {
                     nodes.truncate(place);
                 }
                 else {
-                    *segment =
-                        alloc::sync::Arc::new(segment.get(.. place).unwrap_or_default().to_vec());
+                    *last = alloc::sync::Arc::new(last.get(.. place).unwrap_or_default().to_vec());
                 }
             }
         }
@@ -1355,8 +1370,8 @@ impl<Node: Clone> Family<Node>
     ///   nodes of the newer. The older is copied first when a clone shares it,
     ///   and each such copy makes a node's segment half as long again. So a
     ///   freeze copies a node at most eleven times before its chunk is whole,
-    ///   where a copy of the whole tail at each freeze copied it up to 63 times
-    ///   (#7335). The list of chunks is copied first when a clone shares it.
+    ///   where a copy of the whole tail at each freeze copied it up to 63
+    ///   times. The list of chunks is copied first when a clone shares it.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1469,8 +1484,8 @@ impl<Node: Clone> Family<Node>
             let chunk = alloc::sync::Arc::make_mut(list).get_mut(at)?;
             return alloc::sync::Arc::make_mut(chunk).get_mut(within);
         }
-        let (index, place) = self.segment_of(within)?;
-        alloc::sync::Arc::make_mut(self.tail.get_mut(index)?).get_mut(place)
+        let TailPlace { segment, place } = self.segment_of(ArenaLength(within))?;
+        alloc::sync::Arc::make_mut(self.tail.get_mut(segment)?).get_mut(place)
     }
 }
 
