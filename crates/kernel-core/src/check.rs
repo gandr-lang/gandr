@@ -2081,6 +2081,9 @@ enum TypeLevelFrame
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the stacks and the context, growth within the type's depth.
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the composite level is pinned by the join over one
 ///   type of every former; the L3 residues are the universe successor at both
@@ -4205,6 +4208,9 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 ///
 /// # Errors
 /// Any [`KernelError`].
+///
+/// # Cost
+/// - allocation: the stacks and the context, growth within the term's depth.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the finite corpus separates selected checking and
