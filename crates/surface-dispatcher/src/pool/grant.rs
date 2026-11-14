@@ -669,6 +669,9 @@ enum Opening
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+///
+/// # Cost
+/// - allocation: the path as a C string past the stack's 384 bytes, setup
 #[cfg(unix)]
 fn end(
     path: &Path,
