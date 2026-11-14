@@ -146,6 +146,105 @@ fn files(directory: &Path) -> Vec<PathBuf>
     files
 }
 
+/// The length of a segment record's header.
+const HEADER: u64 = 64_u64;
+
+/// One record a plane's segment holds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Found
+{
+    /// The object's identity, in lowercase hexadecimal.
+    digest: String,
+    /// The segment that holds it.
+    file: PathBuf,
+    /// Where its bytes start in the segment, past its header.
+    offset: u64,
+    /// How many bytes it holds.
+    length: u64,
+}
+
+/// Every record the segments of the plane at `directory` hold, in order, up
+/// to each segment's first bytes that open no record.
+///
+/// # Specification
+/// trivial.
+pub fn records(directory: &Path) -> Vec<Found>
+{
+    let mut found = Vec::new();
+    for file in files(directory) {
+        let bytes = std::fs::read(&file).expect("a segment reads");
+        let mut rest = bytes.as_slice();
+        let mut at = 0_u64;
+        while let Some((magic, after)) = rest.split_first_chunk::<4>()
+            && magic == b"gsg1"
+            && let Some((length, after)) = after.split_first_chunk::<4>()
+            && let Some((digest, after)) = after.split_first_chunk::<32>()
+            && let Some((_place, after)) = after.split_first_chunk::<24>()
+            && let Ok(length) = usize::try_from(u32::from_le_bytes(*length))
+            && let Some(next) = after.get(length ..)
+        {
+            let body = u64::try_from(length).expect("a record's length fits 64 bits");
+            let offset = at.saturating_add(HEADER);
+            found.push(Found {
+                digest: digest.iter().fold(String::new(), |mut text, byte| {
+                    core::fmt::Write::write_fmt(&mut text, format_args!("{byte:02x}"))
+                        .expect("a string takes text");
+                    text
+                }),
+                file: file.clone(),
+                offset,
+                length: body,
+            });
+            at = offset.saturating_add(body);
+            rest = next;
+        }
+    }
+    found
+}
+
+/// The record of the value plane at `root` that holds the root chunk of
+/// `pointer`.
+///
+/// # Specification
+/// trivial.
+fn held(
+    root: &Path,
+    pointer: ContentPtr,
+) -> Found
+{
+    let digest = pointer.digest().to_string();
+    records(&root.join("chunks"))
+        .into_iter()
+        .find(|found| found.digest == digest)
+        .expect("a segment holds the root chunk")
+}
+
+/// Change the last byte of the record `found`, in place in its segment.
+///
+/// # Specification
+/// trivial.
+fn corrupt(found: &Found)
+{
+    use std::os::unix::fs::FileExt as _;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&found.file)
+        .expect("the segment opens");
+    let last = found
+        .offset
+        .saturating_add(found.length)
+        .checked_sub(1_u64)
+        .expect("a record has bytes");
+    let mut byte = [0_u8; 1];
+    file.read_exact_at(&mut byte, last)
+        .expect("the last byte reads");
+    let [ref mut changed] = byte;
+    *changed ^= 0xFF_u8;
+    file.write_all_at(&byte, last)
+        .expect("the last byte is changed");
+}
+
 /// A missing root and its two plane directories are made on opening.
 #[test]
 fn a_missing_root_directory_is_made_on_opening()
@@ -166,9 +265,9 @@ fn a_missing_root_directory_is_made_on_opening()
     );
 }
 
-/// A value cut into several chunks is written as one file per chunk, derefs
+/// A value cut into several chunks is written as one record per chunk, derefs
 /// back equal from a store opened later, and commits again to the same
-/// pointer without writing another file.
+/// pointer without writing another record.
 #[test]
 fn a_committed_value_derefs_back_after_reopening()
 {
@@ -183,14 +282,15 @@ fn a_committed_value_derefs_back_after_reopening()
         assert_eq!(back, value);
         pointer
     };
-    let written = files(&root.join("chunks"));
+    let written = records(&root.join("chunks"));
     assert!(
         written.len() > 1,
-        "a long list is cut into several chunks, each its own file: {written:?}"
+        "a long list is cut into several chunks, each its own record: {written:?}"
     );
+    let digest = pointer.digest().to_string();
     assert!(
-        written.contains(&root.join("chunks").join(pointer.digest().to_string())),
-        "the root chunk is the file its digest names"
+        written.iter().any(|found| found.digest == digest),
+        "a record holds the root chunk under its digest"
     );
     let (reopened, _register) = Store::open(&root).expect("the store opens again");
     let back: Labels = reopened
@@ -203,13 +303,13 @@ fn a_committed_value_derefs_back_after_reopening()
         "committing again returns the same pointer"
     );
     assert_eq!(
-        files(&root.join("chunks")),
+        records(&root.join("chunks")),
         written,
-        "and writes no other chunk"
+        "and writes no other record"
     );
 }
 
-/// A chunk whose file is changed on disk is refused by its digest when the
+/// A chunk whose record is changed on disk is refused by its digest when the
 /// value is read back, and a pointer the store never committed is unknown.
 #[test]
 fn a_chunk_changed_on_disk_is_refused_by_its_digest()
@@ -220,11 +320,7 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
         .0
         .commit(&labels(Count(3)))
         .expect("the value commits");
-    let file = root.join("chunks").join(pointer.digest().to_string());
-    let mut bytes = std::fs::read(&file).expect("the chunk's file reads");
-    let last = bytes.last_mut().expect("a chunk has bytes");
-    *last ^= 0xFF_u8;
-    std::fs::write(&file, &bytes).expect("the chunk's file is changed");
+    corrupt(&held(&root, pointer));
     let (reopened, _register) = Store::open(&root).expect("the store opens again");
     assert!(
         matches!(
@@ -248,7 +344,7 @@ fn a_chunk_changed_on_disk_is_refused_by_its_digest()
 }
 
 /// A value read with no codec resides in exactly the chunks its commit
-/// wrote, and its bytes are the sum of their files' lengths. A chunk changed
+/// wrote, and its bytes are the sum of their records' lengths. A chunk changed
 /// on disk is refused by its digest, as a dereference refuses it (#6296).
 #[test]
 fn a_committed_value_resides_in_the_chunks_its_commit_wrote_6296()
@@ -259,41 +355,41 @@ fn a_committed_value_resides_in_the_chunks_its_commit_wrote_6296()
         .0
         .commit(&labels(Count(120)))
         .expect("the value commits");
-    let written = files(&root.join("chunks"));
+    let written = records(&root.join("chunks"));
     let residence = Store::open(&root)
         .expect("the store opens again")
         .0
         .closure(pointer)
         .expect("the closure reads");
-    let named: BTreeSet<PathBuf> = residence
+    let named: BTreeSet<String> = residence
         .closure()
         .digests()
         .iter()
-        .map(|digest| root.join("chunks").join(digest.to_string()))
+        .map(ToString::to_string)
         .collect();
     assert_eq!(
         named,
-        written.iter().cloned().collect::<BTreeSet<PathBuf>>(),
+        written
+            .iter()
+            .map(|found| found.digest.clone())
+            .collect::<BTreeSet<String>>(),
         "the closure is each chunk the commit wrote"
     );
     assert!(written.len() > 1, "a long list resides in several chunks");
-    let lengths = written.iter().fold(0_u64, |sum, file| {
-        sum.saturating_add(
-            std::fs::metadata(file)
-                .expect("a chunk's file is read")
-                .len(),
-        )
-    });
+    let lengths = written
+        .iter()
+        .fold(0_u64, |sum, found| sum.saturating_add(found.length));
     assert_eq!(
         u64::from(residence.bytes()),
         lengths,
-        "the bytes are the lengths of the chunks' files"
+        "the bytes are the lengths of the chunks' records"
     );
-    let file = root.join("chunks").join(pointer.digest().to_string());
-    let mut bytes = std::fs::read(&file).expect("the chunk's file reads");
-    let last = bytes.last_mut().expect("a chunk has bytes");
-    *last ^= 0xFF_u8;
-    std::fs::write(&file, &bytes).expect("the chunk's file is changed");
+    let digest = pointer.digest().to_string();
+    let changed = written
+        .iter()
+        .find(|found| found.digest == digest)
+        .expect("a segment holds the root chunk");
+    corrupt(changed);
     assert!(
         matches!(
             Store::open(&root).expect("the store opens a third time").0.closure(pointer),
@@ -315,11 +411,7 @@ fn a_refused_chunk_is_written_afresh_by_the_next_commit_4074()
         .0
         .commit(&value)
         .expect("the value commits");
-    let file = root.join("chunks").join(pointer.digest().to_string());
-    let mut bytes = std::fs::read(&file).expect("the chunk's file reads");
-    let last = bytes.last_mut().expect("a chunk has bytes");
-    *last ^= 0xFF_u8;
-    std::fs::write(&file, &bytes).expect("the chunk's file is changed");
+    corrupt(&held(&root, pointer));
     let (reopened, _register) = Store::open(&root).expect("the store opens again");
     assert!(
         matches!(
@@ -461,7 +553,7 @@ fn naming_roots_one_at_a_time_writes_no_tree_per_naming_4081()
             .name(name.clone(), pointer)
             .expect("each root is set");
     }
-    let nodes = files(&root.join("nodes")).len();
+    let nodes = records(&root.join("nodes")).len();
     assert!(
         nodes.saturating_mul(4) < names.len(),
         "256 namings leave {nodes} nodes on the record plane"
@@ -555,7 +647,7 @@ fn a_torn_journal_entry_is_cut_by_the_next_naming_4081()
             .expect("the second root is set");
         pointer
     };
-    let journal = root.join("roots.journal");
+    let journal = root.join("roots.log.journal");
     let mut bytes = std::fs::read(&journal).expect("the journal reads");
     bytes.extend_from_slice(&[16_u8, 0_u8, 0_u8, 0_u8, b'v', b'e']);
     std::fs::write(&journal, &bytes).expect("a torn entry is appended");
@@ -582,7 +674,7 @@ fn a_roots_file_naming_no_node_is_refused_on_opening()
 {
     let root = scratch(Path::new("unrooted"));
     drop(Store::open(&root).expect("the store opens"));
-    std::fs::write(root.join("roots"), "not a node\n").expect("the roots file is written");
+    std::fs::write(root.join("roots.log"), "not a node\n").expect("the roots log is written");
     assert!(
         matches!(
             Store::open(&root),
@@ -595,9 +687,9 @@ fn a_roots_file_naming_no_node_is_refused_on_opening()
     );
 }
 
-/// A roots file whose tree reaches a node the store does not hold is refused
-/// by that file and the node, and removing the file, as the refusal says,
-/// opens the store again.
+/// A roots log whose tree reaches a node the store does not hold is refused
+/// by that log and the node, and removing the log, as the refusal says, opens
+/// the store again.
 #[test]
 fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
 {
@@ -608,10 +700,12 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
         let pointer = store.commit(&labels(Count(1))).expect("a value commits");
         register.name(name, pointer).expect("the root is set");
     }
-    let roots = root.join("roots");
-    let named = std::fs::read_to_string(&roots).expect("the roots file names a tree");
+    let roots = root.join("roots.log");
+    let named = std::fs::read_to_string(&roots).expect("the roots log names a tree");
     let node = named.trim();
-    std::fs::remove_file(root.join("nodes").join(node)).expect("the tree's node is removed");
+    for segment in files(&root.join("nodes")) {
+        std::fs::remove_file(segment).expect("the record plane's segment is removed");
+    }
     let refused = Store::open(&root).expect_err("a tree the store does not hold is refused");
     assert!(
         matches!(
@@ -642,8 +736,8 @@ fn a_roots_tree_the_store_does_not_hold_is_refused_by_its_file_4397()
 const WRITERS: usize = 16_usize;
 
 /// Sixteen threads that share one store and commit one value at once each
-/// return its pointer, leave one file for each chunk, as one writer does,
-/// and the value derefs back from a store opened later (#6899).
+/// return its pointer, leave the chunks one writer leaves, and the value
+/// derefs back from a store opened later (#6899).
 #[test]
 fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
 {
@@ -675,16 +769,16 @@ fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
         pointers.iter().all(|pointer| *pointer == Ok(expected)),
         "every writer returns the pointer one writer returns: {pointers:?}"
     );
-    let names = |directory: &Path| -> Vec<std::ffi::OsString> {
-        files(directory)
-            .iter()
-            .filter_map(|file| file.file_name().map(std::ffi::OsStr::to_os_string))
+    let digests = |directory: &Path| -> BTreeSet<String> {
+        records(directory)
+            .into_iter()
+            .map(|found| found.digest)
             .collect()
     };
     assert_eq!(
-        names(&root.join("chunks")),
-        names(&alone.join("chunks")),
-        "sixteen writers leave the chunk files one writer leaves, and no temporary"
+        digests(&root.join("chunks")),
+        digests(&alone.join("chunks")),
+        "sixteen writers leave the chunks one writer leaves"
     );
     let back: Labels = Store::open(&root)
         .expect("the store opens again")
@@ -695,13 +789,13 @@ fn sixteen_writers_of_one_value_leave_one_object_per_digest_6899()
 }
 
 /// Sixteen threads that share one store and commit sixteen distinct values at
-/// once stage each object in a shard of their own and rename it into the
-/// plane. Every value derefs back from a store opened later, and each shard
-/// stands empty, with no temporary left (#7204).
+/// once append each to a segment of its shard's own. The plane holds one
+/// segment for each shard at most, and every value derefs back from a store
+/// opened later (#7462).
 #[test]
-fn sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204()
+fn sixteen_writers_append_to_their_own_segments_7462()
 {
-    let root = scratch(Path::new("sixteen-shards"));
+    let root = scratch(Path::new("sixteen-segments"));
     let (store, _register) = Store::open(&root).expect("the store opens");
     let values: Vec<Labels> = (40_u8 ..)
         .take(WRITERS)
@@ -725,18 +819,23 @@ fn sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204()
             .map(|writer| writer.join().expect("a writer runs to its end"))
             .collect()
     });
-    let shards = files(&root.join("shards"));
+    let segments = files(&root.join("chunks"));
     assert!(
-        !shards.is_empty() && shards.len() <= WRITERS,
-        "the writers stage in one shard each at most: {shards:?}"
+        !segments.is_empty() && segments.len() <= WRITERS,
+        "the writers append to one segment each at most: {segments:?}"
     );
-    for shard in &shards {
-        assert_eq!(
-            files(shard),
-            Vec::<PathBuf>::new(),
-            "a shard holds no temporary after its writer returns"
-        );
-    }
+    let held: BTreeSet<String> = records(&root.join("chunks"))
+        .into_iter()
+        .map(|found| found.digest)
+        .collect();
+    let wanted: BTreeSet<String> = pointers
+        .iter()
+        .map(|pointer| pointer.digest().to_string())
+        .collect();
+    assert!(
+        wanted.is_subset(&held),
+        "a segment holds each value's root chunk"
+    );
     let reopened = Store::open(&root).expect("the store opens again").0;
     for (pointer, value) in pointers.iter().zip(&values) {
         let back: Labels = reopened
@@ -746,13 +845,194 @@ fn sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204()
     }
 }
 
-/// How many leaves the tree of the same-store test spans at least: more than
-/// the first two tables of reads by name hold, 12 and 24 objects.
+/// A segment whose tail a writer tore is cut at its first header that does
+/// not check: each record before it derefs after reopening, and a commit
+/// after it stands (#7462).
+#[test]
+fn a_torn_segment_tail_is_cut_on_opening_7462()
+{
+    let root = scratch(Path::new("torn-segment"));
+    let first = labels(Count(3));
+    let second = labels(Count(4));
+    let pointer = Store::open(&root)
+        .expect("the store opens")
+        .0
+        .commit(&first)
+        .expect("the first value commits");
+    let segments = files(&root.join("chunks"));
+    let [ref segment] = *segments
+    else {
+        panic!("one commit appends to one segment: {segments:?}");
+    };
+    let bytes = std::fs::read(segment).expect("the segment reads");
+    let torn = bytes
+        .get(.. 40_usize)
+        .expect("a record is longer than 40 bytes");
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(segment)
+        .expect("the segment opens to append");
+    std::io::Write::write_all(&mut file, torn).expect("a torn record is appended");
+    drop(file);
+    let (reopened, _register) = Store::open(&root).expect("a store opens over the torn tail");
+    assert_eq!(
+        reopened.deref::<Labels>(pointer),
+        Ok(first.clone()),
+        "the record before the torn one derefs"
+    );
+    let later = reopened
+        .commit(&second)
+        .expect("a value commits after the torn tail");
+    let (again, _register) = Store::open(&root).expect("the store opens again");
+    assert_eq!(again.deref::<Labels>(pointer), Ok(first));
+    assert_eq!(
+        again.deref::<Labels>(later),
+        Ok(second),
+        "the commit after the torn tail stands"
+    );
+}
+
+/// A store finds a value that a second store over its directory committed
+/// after it opened: a load that misses reads the other writers' new records
+/// (#7462).
+#[test]
+fn a_store_finds_what_another_put_after_it_opened_7462()
+{
+    let root = scratch(Path::new("other-writer"));
+    let value = labels(Count(30));
+    let (reader, _reader_register) = Store::open(&root).expect("the first store opens");
+    let (writer, _writer_register) = Store::open(&root).expect("the second store opens");
+    let pointer = writer.commit(&value).expect("the second store commits");
+    assert_eq!(
+        reader.deref::<Labels>(pointer),
+        Ok(value),
+        "the first store derefs what the second committed after it opened"
+    );
+}
+
+/// The variable that names where a crash test's child stops.
+const CRASH_AT: &str = "GANDR_STORE_CRASH_AT";
+
+/// The variable that names the store a crash test's child writes.
+const CRASH_CHILD: &str = "GANDR_STORE_CRASH_CHILD";
+
+/// How many roots a crash test's child names: past the first fold of a tree
+/// of one root, which the 65th naming makes.
+const CRASH_NAMINGS: u16 = 70_u16;
+
+/// The work of a crash test's child over the store at `root`: commit a value,
+/// then name it once for each root, and print each name once its naming
+/// returns.
+///
+/// # Specification
+/// trivial.
+fn crash_child(root: &Path)
+{
+    let (store, mut register) = Store::open(root).expect("the child's store opens");
+    let pointer = store
+        .commit(&labels(Count(50)))
+        .expect("the child's value commits");
+    for index in 0_u16 .. CRASH_NAMINGS {
+        let name = format!("crash/{index:03}");
+        register
+            .name(RootName::new(name.clone()), pointer)
+            .expect("the child names a root");
+        println!("named {name}");
+    }
+}
+
+/// A writer stopped at each point before and after each durable step of a
+/// commit and a fold leaves a store that opens, whose every root derefs, and
+/// that holds every naming that returned before the stop (#7462).
+#[test]
+fn a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459()
+{
+    if let Some(root) = std::env::var_os(CRASH_CHILD) {
+        crash_child(Path::new(&root));
+        return;
+    }
+    let points = [
+        "objects-before",
+        "objects-after",
+        "tree-before",
+        "tree-after",
+        "log-before",
+        "log-after",
+        "journal-before",
+        "journal-after",
+        "",
+    ];
+    let base = RootName::new(String::from("crash/base"));
+    let before = labels(Count(5));
+    let program = std::env::current_exe().expect("the test binary is known");
+    for point in points {
+        let root = scratch(&Path::new("crash").join(if point.is_empty() { "none" } else { point }));
+        let pointer = {
+            let (store, mut register) = Store::open(&root).expect("the store opens");
+            let pointer = store.commit(&before).expect("the first value commits");
+            register
+                .name(base.clone(), pointer)
+                .expect("the first root is set");
+            pointer
+        };
+        let output = std::process::Command::new(&program)
+            .args([
+                "a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CRASH_CHILD, &root)
+            .env(CRASH_AT, point)
+            .output()
+            .expect("the child runs");
+        assert_eq!(
+            output.status.success(),
+            point.is_empty(),
+            "the child stops at `{point}` and only there: {output:?}"
+        );
+        let stdout = String::from_utf8(output.stdout).expect("the child prints text");
+        let returned: Vec<RootName> = stdout
+            .lines()
+            .filter_map(|line| line.split_once("named ").map(|(_, name)| name))
+            .map(|name| RootName::new(String::from(name)))
+            .collect();
+        let (store, _register) = Store::open(&root).expect("the store opens after the stop");
+        assert_eq!(
+            store.deref::<Labels>(pointer),
+            Ok(before.clone()),
+            "the root named before the child derefs after `{point}`"
+        );
+        assert!(
+            returned
+                .iter()
+                .all(|name| matches!(store.roots().root(name), Maybe::Present(_))),
+            "each naming that returned stands after `{point}`"
+        );
+        for name in store.roots().names() {
+            let Maybe::Present(named) = store.roots().root(name)
+            else {
+                panic!("a listed root names a pointer");
+            };
+            assert!(
+                store.deref::<Labels>(named).is_ok(),
+                "the root `{name:?}` derefs after `{point}`"
+            );
+        }
+        if point.is_empty() {
+            assert_eq!(
+                returned.len(),
+                usize::from(CRASH_NAMINGS),
+                "the child that does not stop names every root"
+            );
+        }
+    }
+}
+
+/// How many leaves the tree of the same-store test spans at least.
 const LEAVES: usize = 37_usize;
 
 /// A record tree that a store writes opens from the same store's record plane,
-/// which did not list its nodes at open and reads them by name, through more
-/// tables of reads than one (#6899).
+/// which indexes each node as its batch appends it (#6899).
 #[test]
 fn a_written_tree_opens_from_the_store_that_wrote_it_6899()
 {
@@ -786,7 +1066,7 @@ fn a_written_tree_opens_from_the_store_that_wrote_it_6899()
         assert_eq!(
             nodes.load(*leaf).map(|node| node.identity()),
             Ok(*leaf),
-            "a second load finds each name in its table"
+            "a second load finds each name in the index"
         );
     }
 }

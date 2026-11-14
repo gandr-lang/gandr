@@ -18,20 +18,22 @@
 
 **Why.** The package lock, the build layer and the kernel's verdict cache each need a store on disk, and each opening the storage crates on its own would split one key space into three. The planes keep a persistent backend out of themselves, so the backend lives here, beside them.
 
-**How.** Each plane is a directory of files, one per object, named by its identity in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. A plane lists its directory once, when the store opens, and holds each listed object's bytes under a `OnceLock`, so threads share one store with no lock. Each call holds a batch over a plane, the section of the plane that the call owns: an insertion goes into the batch, and the batch publishes each object through `gandr-core-publish` when the call ends. Each thread stages its temporaries in a shard of its own under `shards/`, and one rename puts each object into the plane, so the union of the shards is that rename and the producers contend on no directory to create a temporary. Two batches that take one object write the same bytes, so the rename publishes one. A load reads a listed file once in the process, reads an object published after the store opened by its name once in the call, and the plane verifies it every time. The roots are a small record tree on the record plane, named by the file `roots`, and a journal of the namings since, `roots.journal`, both changed under `roots.lock`. One register writes them: a naming appends one entry, and the journal folds into the tree once it holds as many entries as the tree holds roots, so a naming costs amortised constant time. Other threads hand their namings to the register's owner through a channel, and readers load the snapshot that the register publishes through `arc-swap`.
+**How.** Each plane is a log of records in segment files, `segment-<identity>` in hexadecimal: `chunks/` for the value plane, `nodes/` for the record plane. A record is a header of 64 bytes, which names the object's identity, its length and its place and ends in a checksum, and then the object's bytes. A plane scans its segments once, when the store opens, into an index from identity to record, and holds each record at a fixed slot of an append-only arena, so threads share one store with no lock. Each call holds a batch over a plane, the section of the plane that the call owns: an insertion goes into the batch, and when the call ends the batch appends its records to its shard's segment in one positioned write and marks the segment. Each shard appends to a segment of its own, and each process creates its segments exclusively, so no two writers share a segment. A load reads a record once in the process, and the plane verifies it every time. A load that misses scans the segments that other processes appended to since. The roots are a small record tree on the record plane, logged by the file `roots.log`, one line for each fold, and a journal of the namings since, `roots.log.journal`, both changed under `roots.lock`. One register writes them. A naming first syncs each marked segment with one `fdatasync`, so one sync covers every put since the last naming and a root never names an object a crash can lose. It then appends one synced entry, and the journal folds into the tree once it holds as many entries as the tree holds roots, so a naming costs amortised constant time. Each step of a fold is durable before the next starts, so a crash leaves roots whose objects load. Other threads hand their namings to the register's owner through a channel, and readers load the snapshot that the register publishes through `arc-swap`.
 
 ## References
 
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — background: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — the CAM the value plane is, which this store keeps on disk.
 - `vault:01a17cb3-d471-72b2-9bd2-70a46f74c3de` — background: the build layer's design (§ build-owner-store) — the storage tier is the build layer's store, and its persistence is a backend beside the planes, not in them.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ the two layers) — integrity never stands for validity, the wall this store keeps.
-- `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: the rollback audit (§ The real leak was in the filesystem) — the planes and the roots publish through `core-publish`, whose guard owns each temporary.
+- `vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160` — anchor: the IO layer's design (§ io-layer-extents) — a shard is a log of its own, and a put appends with no directory entry.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — background: the storage programme's chunk DAG, whose closure of a pointer `Store::closure` reads with no codec.
-- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan (§ the idempotent part, § the register, § Refinements) — the planes' puts take `&self`, since two puts of one object write the same bytes; one register owns the roots; and the shard is per producer, unioned by one rename an object.
+- `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single writer plan (§ the idempotent part, § the register, § Refinements) — the planes' puts take `&self`, since two puts of one object write the same bytes; one register owns the roots; and the shard is per producer, each with a segment of its own.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance programme (§ performance-picture) — a put is durable before the root that names it, by one sync for each written segment and never one for each put.
+- `vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f` — background: the IO layer's probe (§ the grid) — one segment per shard, whose sync covers many puts, against a file per object and against the ring.
 
 ## Provided features
 
-- `Store::open` makes the directory and its planes where they are missing, lists what they hold, and gives the store's `Register`.
+- `Store::open` makes the directory and its planes where they are missing, scans what they hold, and gives the store's `Register`.
 - `Store::commit` commits a `Stored` value under the store's chunking profile and the value's own codec identity through `&self`, on any thread, and returns its `ContentPtr`; `Store::deref` reads it back.
 - `Store::closure` reads where a value resides with no codec: its `Residence`, the chunks a dereference of its pointer loads, each verified, and the `ImageBytes` of their images. The store writes nothing for it.
 - `Store::write_tree` admits a record tree to the record plane through `&self`; `Store::records` is a `NodeBatch` over the plane, a `BlockStore`, for opening a stored root and proving against it.
@@ -51,10 +53,10 @@ Run the crate's tests from the repository root:
 mise exec -- cargo test -p gandr-storage-store
 ```
 
-Measure the load of many files into one store at once. The bench prints one row for each width, with the rate of its puts beside the rate of the fold of one writer:
+Measure the load of many files into one store at once. The bench prints one row for each width: the rate of its puts, the 50th and 99th percentile of a call, and the wall of the open that scans the store after. `--files <n>` sets the count of files, and `--directory <path>` the device the stores stand on:
 
 ```sh
-mise exec -- cargo bench -p gandr-storage-store --bench load
+mise exec -- cargo bench -p gandr-storage-store --bench load -- --files 20000 --directory /path/on/the/device
 ```
 
 ## Where the detail lives
@@ -64,7 +66,8 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | Topic | Module |
 | ----- | ------ |
 | The facade's layer, its wall, references | [`src/lib.rs`](src/lib.rs) |
-| The two planes on disk, their listing at open and each call's batch | [`plane`](src/plane.rs) |
+| The two planes on disk, their segments, their scan at open and each call's batch | [`plane`](src/plane.rs) |
+| The named points where a crash test stops a writer | [`crash`](src/crash.rs) |
 | A built output as a tree of entries, and its blobs | [`entries`](src/entries.rs) |
 | Named roots as a record tree and a journal of the namings since | [`roots`](src/roots.rs) |
 | The one writer of the roots, its namers and the readers' snapshot | [`register`](src/register.rs) |
