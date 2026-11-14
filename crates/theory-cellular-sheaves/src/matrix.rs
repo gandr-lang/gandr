@@ -562,6 +562,59 @@ impl Matrix
         })
     }
 
+    /// The matrix with `rows` rows and `columns` columns whose entries, row by
+    /// row, are `entries`.
+    ///
+    /// # Specification
+    /// - ensures: the entry at each row and column is the one `entries` gives
+    ///   at that place, row by row.
+    /// - fails: another number of entries than the rows times the columns is
+    ///   refused by the shape.
+    /// - panics: none.
+    /// - intension: `entries` is read once, up to one entry past the shape.
+    ///
+    /// # Errors
+    /// - [`SheafError::MatrixEntries`]: `entries` holds another number of
+    ///   entries than the rows times the columns.
+    /// - [`SheafError::Overflow`]: the number of entries passes the machine
+    ///   word.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the restriction of the projective line's chart into
+    ///   the overlap is admitted with its entries in place, and a matrix one
+    ///   entry short and one entry long are each refused by its shape.
+    /// - witness: `tests::linear::the_projective_line_s_twist_by_minus_two_has_one_class_in_degree_one`
+    /// - witness: `tests::linear::a_matrix_of_another_number_of_entries_is_refused`
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |matrix| matrix.rows == rows && matrix.columns == columns))]
+    #[inline]
+    pub fn new<Entries>(
+        rows: Dimension,
+        columns: Dimension,
+        entries: Entries,
+    ) -> Result<Self, SheafError>
+    where
+        Entries: IntoIterator<Item = Rational>,
+    {
+        let size = usize::from(rows)
+            .checked_mul(usize::from(columns))
+            .ok_or(SheafError::Overflow)?;
+        let mut held = Vec::with_capacity(size);
+        for entry in entries {
+            if held.len() == size {
+                return Err(SheafError::MatrixEntries { rows, columns });
+            }
+            held.push(entry);
+        }
+        if held.len() != size {
+            return Err(SheafError::MatrixEntries { rows, columns });
+        }
+        Ok(Self {
+            rows,
+            columns,
+            entries: held,
+        })
+    }
+
     /// The identity matrix on `dimension` rows and columns.
     ///
     /// # Specification
@@ -662,7 +715,7 @@ impl Matrix
     /// - hypothesis: L2 — every product of both towers reads through it.
     /// - witness: `tests::towers::each_bonding_map_induces_an_isomorphism_on_cohomology`
     #[spec(ensures: |ref ret| ret.is_ok() || matches!(*ret, Err(SheafError::ShapeMismatch | SheafError::Overflow)))]
-    fn at(
+    pub(crate) fn at(
         &self,
         row: Slot,
         column: Slot,

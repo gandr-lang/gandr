@@ -52,16 +52,19 @@ pub struct CochainComplex
     coboundaries: Vec<Matrix>,
 }
 
-impl<Cell> Sheaf<Cell>
+impl<Cell, Kind> Sheaf<Cell, Kind>
+where
+    Kind: Maps,
 {
     /// The cochain complex of this sheaf over the rationals, each face's sign
     /// the incidence that `orientation` gives it.
     ///
     /// # Specification
     /// - ensures: the coboundary from degree `d` holds, at the row of each
-    ///   entry of a cell of rank `d + 1` and the column of the entry its map
-    ///   reads from each face of rank `d`, the sign of that face's incidence,
-    ///   and zero elsewhere; each two coboundaries in turn compose to zero.
+    ///   entry of a cell of rank `d + 1` and the column of each entry of a face
+    ///   of rank `d`, the map's coefficient there times the sign of that face's
+    ///   incidence, and zero elsewhere; each two coboundaries in turn compose
+    ///   to zero.
     /// - fails: incidences whose coboundaries do not compose to zero are
     ///   refused by the lower degree.
     /// - panics: none.
@@ -74,15 +77,18 @@ impl<Cell> Sheaf<Cell>
     ///   next compose to a map that is not zero.
     /// - [`SheafError::Overflow`]: a product passes the integers.
     /// - [`SheafError::CellOutside`], [`SheafError::EntryOutside`]: unreachable
-    ///   for a sheaf `Sheaf::new` makes.
+    ///   for a sheaf a constructor makes.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — every level of both towers, whose cohomology reads
     ///   from the coboundaries; L3 — a square with every incidence positive is
-    ///   refused, and with the incidences of its boundary it is admitted.
+    ///   refused, and with the incidences of its boundary it is admitted; L3 —
+    ///   the projective line's coboundary holds each chart's matrix with the
+    ///   sign of its incidence.
     /// - witness: `tests::towers::every_level_of_both_towers_has_the_cohomology_of_its_space`
     /// - witness: `tests::cochains::a_square_oriented_as_a_complex_is_contractible`
     /// - witness: `tests::cochains::a_square_with_every_incidence_positive_is_refused`
+    /// - witness: `tests::linear::the_projective_line_s_twist_by_minus_two_has_one_class_in_degree_one`
     #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |complex| complex.slots.len() == self.poset().cells().len()
         && complex.coboundaries.len() == complex.dimensions.len().saturating_sub(1)))]
     #[inline]
@@ -129,7 +135,6 @@ impl<Cell> Sheaf<Cell>
                 continue;
             };
             let boundary = self.poset().boundary(cell).map_err(SheafError::Poset)?;
-            let width = self.width(cell)?;
             let row_start = slots
                 .get(usize::from(cell))
                 .copied()
@@ -153,12 +158,12 @@ impl<Cell> Sheaf<Cell>
                 let coboundary = coboundaries
                     .get_mut(degree)
                     .ok_or(SheafError::CellOutside(cell))?;
-                for entry in (0 .. usize::from(width)).map(Entry::from) {
-                    let read = self.read(face, cell, entry)?;
+                let map = self.map(face, cell)?;
+                Kind::terms(map, sign, |entry, read, term| {
                     let row = usize::from(row_start).saturating_add(usize::from(entry));
                     let column = usize::from(column_start).saturating_add(usize::from(read));
-                    coboundary.add(Slot::from(row), Slot::from(column), sign)?;
-                }
+                    coboundary.add(Slot::from(row), Slot::from(column), term)
+                })?;
             }
         }
         CochainComplex::assembled(slots, dimensions, coboundaries)
