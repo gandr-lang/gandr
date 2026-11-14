@@ -137,6 +137,11 @@
 //!   its key up to an identification, with the identification as a parameter (§
 //!   storage-conjecture-chunk-descent). `RecordName` takes `Exact`, the
 //!   identity on content.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance
+//!   picture (§ performance-picture). Line 1: the steady state of a worker
+//!   allocates nothing from the global allocator. `RewriteKey` holds its words
+//!   inline for that reason. Line 4: the host or the form derives each bound.
+//!   `REWRITE_KEY_WORDS` states its derivation from the form of the key.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -832,27 +837,7 @@ impl ContentEncoding
     })]
     pub fn digest(&self) -> ContentDigest
     {
-        // FNV-1a's recurrence over words: order-sensitive by construction, so
-        // a transposition moves it, and wrapping arithmetic because a hash is
-        // the one place bare modular arithmetic is the intended semantics.
-        const BASIS: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128;
-        const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b_u128;
-        let mut state = BASIS;
-        for &word in &self.0 {
-            state ^= u128::from(word);
-            // reason: FNV-1a multiplies modulo 2^128.
-            state = u128::from(arith::wrapping_mul(
-                arith::Int::from(state),
-                arith::Int::from(PRIME),
-            ));
-        }
-        let high = u128::from(arith::div(
-            arith::Int::from(state),
-            arith::Int::from(0x0000_0000_0000_0001_0000_0000_0000_0000_u128),
-        ));
-        let high = u64::try_from(high).unwrap_or(u64::MAX);
-        let low = u64::try_from(state & u128::from(u64::MAX)).unwrap_or(u64::MAX);
-        ContentDigest::new(DigestWord::from(high), DigestWord::from(low))
+        digest_words(EncodedWords(&self.0))
     }
 
     /// How many words this encoding holds.
@@ -865,6 +850,43 @@ impl ContentEncoding
     {
         EncodingLength(self.0.len())
     }
+}
+
+/// A borrowed run of encoded words: what [`digest_words`] folds.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct EncodedWords<'words>(&'words [u32]);
+
+/// FNV-1a's recurrence over `words`, the fold that [`ContentEncoding::digest`]
+/// states: order-sensitive by construction, so a transposition moves it.
+///
+/// # Specification
+/// trivial.
+fn digest_words(words: EncodedWords<'_>) -> ContentDigest
+{
+    // Wrapping arithmetic because a hash is the one place bare modular
+    // arithmetic is the intended semantics.
+    const BASIS: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128;
+    const PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b_u128;
+    let mut state = BASIS;
+    for &word in words.0 {
+        state ^= u128::from(word);
+        // reason: FNV-1a multiplies modulo 2^128.
+        state = u128::from(arith::wrapping_mul(
+            arith::Int::from(state),
+            arith::Int::from(PRIME),
+        ));
+    }
+    let high = u128::from(arith::div(
+        arith::Int::from(state),
+        arith::Int::from(0x0000_0000_0000_0001_0000_0000_0000_0000_u128),
+    ));
+    let high = u64::try_from(high).unwrap_or(u64::MAX);
+    let low = u64::try_from(state & u128::from(u64::MAX)).unwrap_or(u64::MAX);
+    ContentDigest::new(DigestWord::from(high), DigestWord::from(low))
 }
 
 /// What a name identifies records up to, and the context its key derives
@@ -2398,6 +2420,39 @@ quenchant_shape::reason_enum! {
             Off,
             /// The table holds no record at the id.
             Unrecorded,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rewrite goal has no key.
+    pub(crate) mod rewrite_key {
+        /// The goal has no key.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The table names no record.
+            Off,
+            /// The table holds no record at the id.
+            Unrecorded,
+            /// The key's words pass the bound that its form gives,
+            /// [`super::REWRITE_KEY_WORDS`].
+            Overlong,
+        }
+    }
+}
+
+impl From<record_name::Absent> for rewrite_key::Absent
+{
+    /// The same reason: the table names no record, or holds none at the id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(absent: record_name::Absent) -> Self
+    {
+        match absent {
+            record_name::Absent::Off => Self::Off,
+            record_name::Absent::Unrecorded => Self::Unrecorded,
         }
     }
 }
@@ -6380,8 +6435,100 @@ impl RewriteGoal
     }
 }
 
+/// The words that a rewrite key holds at most, from the form of the key: one
+/// tag word, the eight words of the subject's name, and the widest parameter.
+/// The widest is an abstraction's. Its binder depth is below 2^32, so it takes
+/// at most two words of 31 bits. Its constant takes at most 14 words: two tags
+/// and a content key of four 64-bit words, each at most three words. Its index
+/// is below 2^32, so it takes at most two words. That gives 1 + 8 + 2 + 14 + 2.
+/// A shift takes at most 15 words and a substitution at most 19.
+const REWRITE_KEY_WORDS: usize = 27;
+
+/// One rewrite obligation's key, held inline: its words, at most
+/// [`REWRITE_KEY_WORDS`], and how many it holds.
+///
+/// Two keys compare equal exactly when their words do, as two encodings do.
+/// The words past the count stay zero, so the derived comparison reads the
+/// held words and the count.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RewriteKey
+{
+    /// The key's words, zero past the count.
+    words: [u32; REWRITE_KEY_WORDS],
+    /// How many words the key holds.
+    length: EncodingLength,
+}
+
+impl AsRef<[u32]> for RewriteKey
+{
+    /// The key's words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u32]
+    {
+        self.words.get(.. self.length.0).unwrap_or_default()
+    }
+}
+
+impl RewriteKey
+{
+    /// The key that holds the words of `encoding`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the key holds exactly the words of `encoding` when they
+    ///   number at most [`REWRITE_KEY_WORDS`]. Past that bound, absent
+    ///   `Overlong`.
+    /// - provides: the refusal past the bound that the key's form gives.
+    /// - fails: `Overlong` past the bound.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the widest key of the form fills the bound exactly,
+    ///   and one word more is refused.
+    /// - witness: `encoding::tests::the_widest_rewrite_key_fills_its_bound_7414`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(ref key) => key.as_ref() == encoding.as_ref(),
+        Maybe::Absent(rewrite_key::Absent::Overlong) => encoding.0.len() > REWRITE_KEY_WORDS,
+        Maybe::Absent(rewrite_key::Absent::Off | rewrite_key::Absent::Unrecorded) => false,
+    })]
+    fn from_encoding(encoding: &ContentEncoding) -> Maybe<Self, rewrite_key::Absent>
+    {
+        let mut words = [0_u32; REWRITE_KEY_WORDS];
+        let Some(held) = words.get_mut(.. encoding.0.len())
+        else {
+            return Maybe::Absent(rewrite_key::Absent::Overlong);
+        };
+        held.copy_from_slice(&encoding.0);
+        Maybe::Present(Self {
+            words,
+            length: EncodingLength(encoding.0.len()),
+        })
+    }
+
+    /// The digest of the key's words: the digest that
+    /// [`ContentEncoding::digest`] gives for the same words.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn digest(&self) -> ContentDigest
+    {
+        digest_words(EncodedWords(self.as_ref()))
+    }
+}
+
 /// Encode one rewrite obligation's whole key: the direction, the name of the
 /// subject's content, the binder depth, and the rewrite's own parameter.
+///
+/// The words go into the table's buffer and then into a [`RewriteKey`] held
+/// inline, so a key allocates nothing (#7414).
 ///
 /// # Specification
 /// - requires: `table` is this session's, and `arena` is the one it has been
@@ -6390,7 +6537,8 @@ impl RewriteGoal
 ///   alone, and reads no content id. Two rewrite goals encode alike exactly
 ///   when they rewrite the same content the same way, so an entry can only
 ///   answer for a goal that would have produced it. Absent when the table names
-///   nothing: such a table keys no rewrite.
+///   nothing: such a table keys no rewrite. Absent `Overlong` past
+///   [`REWRITE_KEY_WORDS`], which the key's form makes unreachable.
 /// - provides: the rewrite memo's key. Direction and required placements are
 ///   executable; session provenance and equality across rewrite content and
 ///   binder parameters are exercised by the bounded witness below.
@@ -6405,8 +6553,8 @@ impl RewriteGoal
 /// - witness: `encoding::tests::a_rewrite_key_separates_on_each_component`
 #[inline]
 #[spec(ensures: |ret| match ret {
-        Maybe::Present(ref encoding) => encoding.0.first() == Some(&u32::from(u8::from(goal.direction()))),
-        Maybe::Absent(record_name::Absent::Off | record_name::Absent::Unrecorded) => true,
+        Maybe::Present(ref key) => key.as_ref().first() == Some(&u32::from(u8::from(goal.direction()))),
+        Maybe::Absent(rewrite_key::Absent::Off | rewrite_key::Absent::Unrecorded | rewrite_key::Absent::Overlong) => true,
     }
     && matches!(table.placed.get(goal.subject()), Maybe::Present(_))
     && match goal {
@@ -6417,7 +6565,7 @@ pub fn encode_rewrite(
     table: &mut ContentTable,
     arena: &TermArena,
     goal: RewriteGoal,
-) -> Maybe<ContentEncoding, record_name::Absent>
+) -> Maybe<RewriteKey, rewrite_key::Absent>
 {
     let subject = table.place(arena, goal.subject());
     let replacement = match goal {
@@ -6428,11 +6576,18 @@ pub fn encode_rewrite(
     };
     let subject = match table.name(subject) {
         Maybe::Present(name) => name,
-        Maybe::Absent(absent) => return Maybe::Absent(absent),
+        Maybe::Absent(absent) => return Maybe::Absent(rewrite_key::Absent::from(absent)),
     };
-    let mut encoding = ContentEncoding::new();
-    encoding.put_tag(goal.direction());
-    encoding.put_name(subject);
+    let replacement = match replacement.map(|id| table.name(id)) {
+        None => None,
+        Some(Maybe::Present(name)) => Some(name),
+        Some(Maybe::Absent(absent)) => return Maybe::Absent(rewrite_key::Absent::from(absent)),
+    };
+    // Each placement is done, so the table's buffer is free to take the words.
+    let mut words = core::mem::take(&mut table.scratch);
+    words.0.clear();
+    words.put_tag(goal.direction());
+    words.put_name(subject);
     match goal {
         RewriteGoal::Shift {
             depth,
@@ -6440,17 +6595,14 @@ pub fn encode_rewrite(
             amount,
             ..
         } => {
-            encoding.put_count(ComponentCount(usize::from(depth)));
-            encoding.put_count(ComponentCount(usize::from(cutoff)));
-            encoding.put_count(ComponentCount(usize::from(amount)));
+            words.put_count(ComponentCount(usize::from(depth)));
+            words.put_count(ComponentCount(usize::from(cutoff)));
+            words.put_count(ComponentCount(usize::from(amount)));
         },
         RewriteGoal::Substitute { depth, .. } => {
-            encoding.put_count(ComponentCount(usize::from(depth)));
-            if let Some(replacement) = replacement {
-                match table.name(replacement) {
-                    Maybe::Present(name) => encoding.put_name(name),
-                    Maybe::Absent(absent) => return Maybe::Absent(absent),
-                }
+            words.put_count(ComponentCount(usize::from(depth)));
+            if let Some(name) = replacement {
+                words.put_name(name);
             }
         },
         RewriteGoal::Abstract {
@@ -6459,16 +6611,18 @@ pub fn encode_rewrite(
             index,
             ..
         } => {
-            encoding.put_count(ComponentCount(usize::from(depth)));
+            words.put_count(ComponentCount(usize::from(depth)));
             put_constant(
-                &mut encoding,
+                &mut words,
                 &table.constants,
                 (gandr_kernel_term::NODE_V_CONSTANT, constant),
             );
-            encoding.put_word(EncodedWord(u64::from(u32::from(index))));
+            words.put_word(EncodedWord(u64::from(u32::from(index))));
         },
     }
-    Maybe::Present(encoding)
+    let key = RewriteKey::from_encoding(&words);
+    table.scratch = words;
+    key
 }
 
 /// The absolute content digest of one node: the digest of the canonical record
@@ -8533,6 +8687,76 @@ mod tests
         assert_ne!(
             rewrite, rewrite_moved,
             "an abstraction with no content key reads its position"
+        );
+    }
+
+    /// #7414: the widest rewrite key of the form fills its bound exactly: an
+    /// abstraction at the deepest binder and the highest index, over a
+    /// constant named by a content key whose four words each take three words.
+    /// One word more is refused. The key's digest is the digest that an
+    /// encoding of the same words gives.
+    #[test]
+    fn the_widest_rewrite_key_fills_its_bound_7414()
+    {
+        use super::ConstantName;
+        use super::REWRITE_KEY_WORDS;
+        use super::RewriteKey;
+        use super::rewrite_key;
+        use crate::verdict::EntryContentKeyer;
+        use crate::verdict::EntryTag;
+        use crate::verdict::KeyedCount;
+
+        // Each 64-bit word of the key is at least 2^62, so it takes three
+        // words of 31 bits. The search reads fixed inputs, so each run finds
+        // the same key.
+        let full = (0_usize .. 1_usize << 16_u32)
+            .map(|input| {
+                let mut keyer = EntryContentKeyer::tagged(EntryTag::Content);
+                keyer.count(KeyedCount::from(input));
+                keyer.finish()
+            })
+            .find(|key| {
+                let bytes: [u8; 32] = (*key).into();
+                bytes
+                    .as_chunks::<8>()
+                    .0
+                    .iter()
+                    .all(|&chunk| u64::from_le_bytes(chunk) >= 1_u64 << 62_u32)
+            });
+        let Some(key) = full
+        else {
+            panic!("a content key of full width");
+        };
+        let mut arena = TermArena::new();
+        let subject = arena.value_unit();
+        let mut table = ContentTable::named();
+        table.constants.push(ConstantName::Admitted { key });
+        let widest = encode_rewrite(&mut table, &arena, RewriteGoal::Abstract {
+            subject: AnyNode::Value(subject),
+            depth: BinderDepth::from(u32::MAX),
+            constant: ConstantIndex::from(0_usize),
+            index: DeBruijnIndex::from(u32::MAX),
+        });
+        let Maybe::Present(widest) = widest
+        else {
+            panic!("a named table keys the widest rewrite");
+        };
+        assert_eq!(
+            widest.as_ref().len(),
+            REWRITE_KEY_WORDS,
+            "the widest key fills the bound"
+        );
+        assert_eq!(
+            widest.digest(),
+            ContentEncoding(widest.as_ref().to_vec()).digest(),
+            "a key's digest is the digest of its words as an encoding"
+        );
+        let mut longer = widest.as_ref().to_vec();
+        longer.push(0_u32);
+        assert_eq!(
+            RewriteKey::from_encoding(&ContentEncoding(longer)),
+            Maybe::Absent(rewrite_key::Absent::Overlong),
+            "one word more is refused"
         );
     }
 

@@ -66,6 +66,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178ab-081c-74a0-bd58-f8db4f9573c8` — lineage: the incremental programme's kernel support reuse — a declaration checks under the entries its content reaches, and the kernel refuses a read outside them rather than trust the support.
 - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: the storage metatheory programme (§ storage-programme-gluing) — an admission recalls its verdict by its entry key alone, and no key names a place in the admission order.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a stratum receipt.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance programme (§ performance-picture) — a worker's steady state allocates nothing from the global allocator, and the form or the host derives each bound; `RewriteKey` holds its words inline at the bound that its form gives.
 
 ## License
 

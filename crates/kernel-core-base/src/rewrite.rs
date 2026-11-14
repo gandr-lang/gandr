@@ -87,11 +87,11 @@ use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
 
-use crate::encoding::ContentEncoding;
 use crate::encoding::ContentTable;
 use crate::encoding::RewriteGoal;
+use crate::encoding::RewriteKey;
 use crate::encoding::encode_rewrite;
-use crate::encoding::record_name;
+use crate::encoding::rewrite_key;
 use crate::hashed::HashedMap;
 use crate::hashed::hashed_entry;
 
@@ -401,19 +401,19 @@ impl RewriteOutcome
 
 /// The complete support of one rewrite step, as content.
 ///
-/// It holds no arena id and no content id: the canonical encoding of the
+/// It holds no arena id and no content id: the canonical words of the
 /// direction, the subject's name, the binder depth, and the rewrite's
-/// parameter, plus that encoding's digest. Equality is word equality of the
-/// encoding — the deciding comparison — and the digest narrows a bucket without
+/// parameter, held inline, plus their digest. Equality is word equality of the
+/// key — the deciding comparison — and the digest narrows a bucket without
 /// ever deciding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RewriteSupport
 {
     /// Which machine asked.
     plane: RewritePlane,
-    /// The canonical content encoding.
-    encoding: ContentEncoding,
-    /// The digest of that encoding.
+    /// The canonical words, held inline.
+    key: RewriteKey,
+    /// The digest of those words.
     digest: ContentDigest,
 }
 
@@ -452,20 +452,16 @@ impl RewriteSupport
         table: &mut ContentTable,
         arena: &TermArena,
         goal: RewriteGoal,
-    ) -> Maybe<Self, record_name::Absent>
+    ) -> Maybe<Self, rewrite_key::Absent>
     {
         let plane = match goal {
             RewriteGoal::Shift { .. } => RewritePlane::Shift,
             RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
             RewriteGoal::Abstract { .. } => RewritePlane::Abstract,
         };
-        encode_rewrite(table, arena, goal).map(|encoding| {
-            let digest = encoding.digest();
-            Self {
-                plane,
-                encoding,
-                digest,
-            }
+        encode_rewrite(table, arena, goal).map(|key| {
+            let digest = key.digest();
+            Self { plane, key, digest }
         })
     }
 }
@@ -516,22 +512,15 @@ impl MemoKey for RewriteSupport
     ///   content equality from bucket equality.
     /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
     /// - witness: `rewrite::tests::rewrite_agreement_ignores_colliding_digest_buckets`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body compares the two encodings byte for byte, as the check does"
-        )
-    )]
     #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
-        == (self.plane == other.plane && self.encoding == other.encoding))]
+        == (self.plane == other.plane && self.key == other.key))]
     #[inline]
     fn agreement(
         &self,
         other: &Self,
     ) -> ContentAgreement
     {
-        if self.plane == other.plane && self.encoding == other.encoding {
+        if self.plane == other.plane && self.key == other.key {
             ContentAgreement::Agree
         }
         else {
