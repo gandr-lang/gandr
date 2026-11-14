@@ -2759,7 +2759,7 @@ mod sweeps
             &mut self,
             _constant: ConstantIndex,
             _quota: gandr_surface_corpus::Bits,
-            _path: &mut dyn FnMut(RunSpelling, gandr_surface_corpus::Bits),
+            _path: &mut impl FnMut(RunSpelling, gandr_surface_corpus::Bits),
         ) -> Result<(), gandr_surface_corpus::Undistributed>
         {
             Ok(())

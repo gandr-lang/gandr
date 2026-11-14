@@ -60,7 +60,7 @@ enum TableState
 /// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
 /// - witness: `environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
 fn reference_environment(
-    referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
+    referent: &impl Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
 ) -> (crate::Environment, ValueId, ValueTypeId)
 {
@@ -113,7 +113,7 @@ fn reference_environment(
 /// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
 /// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
 fn reference_stream(
-    referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
+    referent: &impl Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
 ) -> ContentEncoding<Global>
 {
@@ -149,7 +149,7 @@ fn reference_stream(
 /// - witness: `environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
 /// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
 fn goal_name(
-    referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
+    referent: &impl Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
     state: TableState,
 ) -> (ContentId, RecordName)

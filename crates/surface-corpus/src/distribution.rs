@@ -477,7 +477,7 @@ mod tests
             &mut self,
             _constant: ConstantIndex,
             _quota: Bits,
-            path: &mut dyn FnMut(RunSpelling, Bits),
+            path: &mut impl FnMut(RunSpelling, Bits),
         ) -> Result<(), Undistributed>
         {
             let paths = self.0.clone()?;

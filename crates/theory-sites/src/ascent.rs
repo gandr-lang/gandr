@@ -246,14 +246,14 @@ pub trait Certificate: Clone + fmt::Debug
     /// trivial.
     fn write_glue(
         glue: Self::Glue,
-        word: &mut dyn FnMut(usize),
+        word: &mut impl FnMut(usize),
     );
 
     /// The glue the next words `word` yields spell; none when it runs out.
     ///
     /// # Specification
     /// trivial.
-    fn read_glue(word: &mut dyn FnMut() -> Option<usize>) -> Option<Self::Glue>;
+    fn read_glue(word: &mut impl FnMut() -> Option<usize>) -> Option<Self::Glue>;
 }
 
 impl Certificate for SegalStratum
@@ -353,7 +353,7 @@ impl Certificate for SegalStratum
     #[inline]
     fn write_glue(
         glue: Graft,
-        word: &mut dyn FnMut(usize),
+        word: &mut impl FnMut(usize),
     )
     {
         for each in graft_words(glue) {
@@ -367,7 +367,7 @@ impl Certificate for SegalStratum
     /// # Specification
     /// trivial.
     #[inline]
-    fn read_glue(word: &mut dyn FnMut() -> Option<usize>) -> Option<Graft>
+    fn read_glue(word: &mut impl FnMut() -> Option<usize>) -> Option<Graft>
     {
         let mut words = [Word::from(0_usize); GRAFT_WORDS];
         for slot in &mut words {
@@ -536,7 +536,7 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
     #[inline]
     fn write_glue(
         glue: ShapeIndex,
-        word: &mut dyn FnMut(usize),
+        word: &mut impl FnMut(usize),
     )
     {
         word(usize::from(glue));
@@ -547,7 +547,7 @@ impl<Below: Certificate> Certificate for WreathStratum<Below>
     /// # Specification
     /// trivial.
     #[inline]
-    fn read_glue(word: &mut dyn FnMut() -> Option<usize>) -> Option<ShapeIndex>
+    fn read_glue(word: &mut impl FnMut() -> Option<usize>) -> Option<ShapeIndex>
     {
         word().map(ShapeIndex::from)
     }

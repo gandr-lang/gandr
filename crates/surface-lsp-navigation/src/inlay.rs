@@ -326,7 +326,7 @@ mod tests
         path: &std::path::Path,
         text: SourceText<'_>,
         window: ByteSpan,
-        keep: &dyn Fn(&InlayHint) -> bool,
+        keep: &impl Fn(&InlayHint) -> bool,
     ) -> Vec<String>
     {
         let written: &str = text.into();

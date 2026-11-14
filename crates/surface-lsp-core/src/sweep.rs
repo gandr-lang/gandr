@@ -296,7 +296,7 @@ impl Sweep
     #[inline]
     pub fn next(
         &mut self,
-        list: &dyn Fn() -> Vec<PathBuf>,
+        list: &impl Fn() -> Vec<PathBuf>,
         rendering: (Verbosity, Spelling),
         shadows: &dyn Shadows,
     ) -> Option<PathBuf>

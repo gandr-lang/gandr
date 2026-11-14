@@ -1183,7 +1183,7 @@ impl Engine
     fn emit(
         &self,
         roots: &[Item],
-        admit: &dyn Fn(Item) -> Admission,
+        admit: &impl Fn(Item) -> Admission,
         order: &mut Vec<Item>,
         placed: &mut BTreeSet<Item>,
     )

@@ -123,7 +123,7 @@ fn item(
     read: Read<'_>,
     own: &LineIndex<'_>,
     site: Referent,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &impl Fn(&Path) -> Option<DocumentUri>,
 ) -> Option<CallHierarchyItem>
 {
     let table = read.hovering.table();
@@ -168,7 +168,7 @@ fn item(
 pub fn items(
     read: Read<'_>,
     position: Position,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &impl Fn(&Path) -> Option<DocumentUri>,
 ) -> Vec<CallHierarchyItem>
 {
     let table = read.hovering.table();
@@ -208,7 +208,7 @@ pub fn callers(
     path: &Path,
     named: ByteSpan,
     skipped: Option<Range>,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &impl Fn(&Path) -> Option<DocumentUri>,
 ) -> Vec<IncomingCall>
 {
     let table = read.hovering.table();
@@ -281,7 +281,7 @@ pub fn callers(
 pub fn callees(
     read: Read<'_>,
     position: Position,
-    locate: &dyn Fn(&Path) -> Option<DocumentUri>,
+    locate: &impl Fn(&Path) -> Option<DocumentUri>,
 ) -> Vec<OutgoingCall>
 {
     let table = read.hovering.table();

@@ -8466,7 +8466,7 @@ impl Workspace
         uri: &DocumentUri,
         peer: Peer,
         shadows: &Shadowing<'_>,
-        read: &mut dyn FnMut(Read<'_>) -> Out,
+        read: &mut impl FnMut(Read<'_>) -> Out,
     ) -> Option<Out>
     {
         let path = named_path(&uri.path());
@@ -8743,7 +8743,7 @@ impl Workspace
         written: &Written,
         peer: Peer,
         shadows: &Shadowing<'_>,
-        visit: &mut dyn FnMut(Writer<'_>) -> Result<(), Failure>,
+        visit: &mut impl FnMut(Writer<'_>) -> Result<(), Failure>,
     ) -> Result<(), Failure>
     {
         for held in self.documents.keys() {

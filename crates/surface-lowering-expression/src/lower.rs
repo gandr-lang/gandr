@@ -19289,7 +19289,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
         documentation: &mut Documentation<'source>,
         (before, names): (LinkCount, &OnceCell<LinkNames<'source>>),
         container: Container,
-        refuse: &mut dyn FnMut(LoweringRefusal<'source>),
+        refuse: &mut impl FnMut(LoweringRefusal<'source>),
     )
     {
         let fresh = documentation.links_from(before).len();
