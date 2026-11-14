@@ -2367,6 +2367,9 @@ issued=$(jq -c '{number, title, labels, body}' <<< "$mine")
 body=$(jq -r .body <<< "$issued")
 cutoff=$(jq -R -s -f "$config_dir/bodies/cutoff.jq" "$root/.config/references/window.toml")
 findings=$(jq -R -s -r -L "$config_dir/bodies" --argjson concerns "$concerns" --argjson labels "$(jq -c .labels <<< "$issued")" --argjson cutoff "$cutoff" --argjson number "$issue" -f "$config_dir/bodies/unit.jq" <<< "$body")
+# A row a signed unit owes no refusal for prints as a note (#7350).
+noted=$(awk '/^note: /' <<< "$findings")
+findings=$(awk '!/^note: /' <<< "$findings")
 if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > /dev/null; then
   terms=$(jq -n --slurpfile issued <(printf '%s\n' "$issued") --slurpfile terms <(yq -o json '.term' "$root/.config/references/terms.toml") \
     '{title: $issued[0].title, body: $issued[0].body, terms: $terms[0]}' | jq -r -L "$config_dir/bodies" -f "$config_dir/bodies/terms.jq")
@@ -2382,7 +2385,7 @@ if ! jq -e '.labels | index("kind:epic") or index("collector")' <<< "$issued" > 
     && jq -e '.labels | index("shape:signed")' <<< "$issued" > /dev/null; then
     identified=$(identifiers_check "$body" "$issue" "$above" "$(claim_before "$issue" identifiers.jq)")
   fi
-  noted=$(printf '%s\n%s\n' "$claimed" "$identified" | awk '/^note: /')
+  noted=$(printf '%s\n%s\n%s\n' "$noted" "$claimed" "$identified" | awk '/^note: /')
   findings=$(printf '%s\n%s\n%s\n' "$findings" "$(awk '!/^note: /' <<< "$claimed")" "$(awk '!/^note: /' <<< "$identified")" | awk 'NF')
 fi
 subs='[]'
@@ -2488,7 +2491,7 @@ fi
 {% endraw %}'''
 
 # The version of the unit frame (#7018): `unit:frame` prints one digest of
-# the rows that `units.md` asks of a unit, the nine axes with their questions
+# the rows that `units.md` asks of a unit, the axes with their questions
 # and the concerns (`.config/bodies/frame.bash`). A change of a row gives a
 # new digest.
 ["unit:frame"]

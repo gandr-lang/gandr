@@ -41,7 +41,7 @@ findings=$(jq -r '.body // ""' <<< "$issued" \
   | jq -R -s -r -L "$root/.config/bodies" --argjson concerns "$concerns" --argjson labels "$(jq -c '[.labels[].name]' <<< "$issued")" \
     --argjson number "$(jq .number <<< "$issued")" --argjson cutoff "$(jq -R -s -f "$root/.config/bodies/cutoff.jq" "$root/.config/references/window.toml")" \
     -f "$root/.config/bodies/unit.jq" \
-  | jq -R -s -c 'split("\n") | map(select(length > 0))')
+  | jq -R -s -c 'split("\n") | map(select(length > 0 and (startswith("note: ") | not)))')
 # A body that passes, on an open issue no flag or exemption marks, has no
 # comment to write: a pass that took the flag off rewrote the comment then.
 # So its comments are not read (#5078).

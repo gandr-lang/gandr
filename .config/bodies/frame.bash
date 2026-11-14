@@ -2,15 +2,19 @@
 # The version of the unit frame (#7018), sourced by `unit:frame`,
 # `unit:sign`, `issue:file` and `claim:take`. `unit_frame <root>` prints one
 # digest of the rows that
-# `units.md` asks of a unit: the nine axes and their questions
-# (`sections.jq`) and the concerns of `ledger/concerns.sql`. A change of a
-# row gives a new digest. The digest is the first 12 hex digits of the git
-# object name of their canonical JSON, the same on each host.
+# `units.md` asks of a unit: the axes and their questions (`sections.jq`) and
+# the concerns of `ledger/concerns.sql`. A change of a row gives a new
+# digest. The digest is the first 12 hex digits of the git object name of
+# their canonical JSON, the same on each host. `unit_frame <root> kept`
+# prints the digest of the frame without the axes of `noted_axes` (#7350):
+# the frame that a unit signed before those axes answers, byte for byte.
 unit_frame() {
   local root=$1 concerns
   concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;')
-  jq -n -S -c -L "$root/.config/bodies" --argjson concerns "$concerns" \
-    'include "sections"; {axes: axes, questions: questions, concerns: [$concerns[].id]}' \
+  jq -n -S -c -L "$root/.config/bodies" --argjson concerns "$concerns" --arg form "${2:-now}" \
+    'include "sections";
+     (if $form == "kept" then noted_axes else [] end) as $gone
+     | {axes: [axes[] | select(IN($gone[]) | not)], questions: (questions | delpaths([$gone[] | [.]])), concerns: [$concerns[].id]}' \
     | git hash-object --stdin | awk '{ print substr($1, 1, 12) }'
 }
 
@@ -33,17 +37,20 @@ $signer signs the sections at the unit frame \`$frame\`." > /dev/null
   printf '%s\n' "$frame"
 }
 
-# `{marker, frame}` for issue `$3` of repository `$2`: the digest of its
-# newest frame marker, or null for none, and the frame's digest now at the
-# tree `$1`. One REST read of the issue's comments, in pages of 100. Fails
-# when the read or the digest fails, so the claim refuses (`taken.jq`).
+# `{marker, frame, kept}` for issue `$3` of repository `$2`: the digest of
+# its newest frame marker, or null for none, the frame's digest now at the
+# tree `$1`, and the digest of the frame without the noted axes, which a
+# unit signed before them still answers (#7350). One REST read of the
+# issue's comments, in pages of 100. Fails when the read or a digest fails,
+# so the claim refuses (`taken.jq`).
 unit_frame_signed() {
-  local root=$1 repo=$2 number=$3 frame markers
+  local root=$1 repo=$2 number=$3 frame kept markers
   frame=$(unit_frame "$root")
+  kept=$(unit_frame "$root" kept)
   markers=$(gh api "repos/$repo/issues/$number/comments?per_page=100" --paginate \
     --jq '.[].body | capture("<!-- signed frame=(?<digest>[0-9a-f]+) -->").digest')
-  jq -nc --arg frame "$frame" --arg markers "$markers" \
-    '{marker: ($markers | split("\n") | map(select(. != "")) | last), frame: $frame}'
+  jq -nc --arg frame "$frame" --arg kept "$kept" --arg markers "$markers" \
+    '{marker: ($markers | split("\n") | map(select(. != "")) | last), frame: $frame, kept: $kept}'
 }
 
 # Page the architect once for issue `$1` refused at the frame `$2`, with the

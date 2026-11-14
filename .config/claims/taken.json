@@ -315,6 +315,21 @@
     "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=flex-a -->\n" }
   },
   {
+    "name": "#7350: claim:take claims a signed unit whose newest marker names the frame without the noted axes, as each signature before them does",
+    "input": {
+      "step": "take",
+      "lane": "flex-a",
+      "issue": {
+        "number": 6891,
+        "state": "open",
+        "labels": ["kind:feature", "shape:signed"],
+        "body": "Text.\n"
+      },
+      "signed": { "marker": "305433645eae", "frame": "e6cf0ae95cd3", "kept": "305433645eae" }
+    },
+    "output": { "verdict": "write", "body": "Text.\n\n<!-- claim: lane=flex-a -->\n" }
+  },
+  {
     "name": "#7018: claim:take refuses a signed unit with no frame marker, and names the frame now",
     "input": {
       "step": "take",

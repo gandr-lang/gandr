@@ -17,7 +17,7 @@
 # - `## Embedding owes`, on a unit with an `oracle` row (#3964): one
 #   `- #n — <the operation>` per operation the oracle has and gandr lacks,
 #   each its own issue, or `none — <why nothing is owed>`;
-# - `## Readings`: a table answering each of the nine axes `yes — <what it
+# - `## Readings`: a table answering each of the ten axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question. The `general` row
 #   (#5951) names the level of the unit's result, `yes — general: <level>`,
@@ -25,7 +25,8 @@
 #   by #<n>`, or says `no — <reason>`. A `yes` in another form, or a shadow
 #   with no backquoted source key or no issue, is refused. A signed issue is
 #   read so too, at the frame now (#7018): a unit signed before the axis
-#   meets the refusal at its next `pr:open`;
+#   meets the refusal at its next `pr:open`. A signed issue with no row for
+#   an axis of `noted_axes` gets a `note:` line instead (#7350);
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
 #   `yes` or `no` (#2795). A concern that the ledger gains after the issue
 #   asks no row of it (#5308): the issue's number is at or below the
@@ -207,7 +208,9 @@ def findings($labels; $number):
      else [marks] as $marks
      | (axes[] | . as $axis
          | [$marks[] | select(.axis == $axis)] as $rows
-         | if ($rows | length) == 0 then "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
+         | if ($rows | length) == 0 then
+             "`## Readings` has no row for `\($axis)`; the axis asks \(questions[$axis])"
+             | if IN($axis; noted_axes[]) and ($labels | index("shape:signed")) != null then "note: \(.); the issue was signed before the axis landed, so it is not refused" else . end
            elif ([$rows[] | select(.mark != null)] | length) == 0 then "`## Readings` marks `\($axis)` neither `yes` nor `no`; the axis asks \(questions[$axis])"
            elif ([$rows[] | select(.mark != null and .reason != null)] | length) == 0 then
              "`## Readings` marks `\($axis)` `\(first($rows[] | select(.mark != null)).mark)` without a reason: write `yes — <what it gives this unit>` or `no — <why it does not reach it>`; the axis asks \(questions[$axis])"

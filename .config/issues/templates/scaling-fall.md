@@ -28,6 +28,7 @@ Measure the curve again at `{{head}}` and at `{{previous}}` on the wide host, wi
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — the fix adds nothing at run time |
+| Cost | `bounded` | no — a width is a host's measure, under no device's bound |
 | Names | `nominal` | no — the fix binds, allocates and releases no name |
 | Level | `general` | no — a width states no result of the language |
 
