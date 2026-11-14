@@ -19,7 +19,9 @@ use std::path::PathBuf;
 /// - ensures: the digest reads each file under every `crates/kernel-*`
 ///   directory and `Cargo.lock`, in path order, each as its path relative to
 ///   the workspace, its length and its bytes, so two builds agree on it exactly
-///   when those files agree.
+///   when those files agree; the script prints each `rerun-if-changed` line in
+///   path order, so Cargo's fingerprint of the run agrees on every host whose
+///   files agree.
 /// - executable: none — the digest's agreement is a property of the files it
 ///   reads, observable only by building twice.
 ///
@@ -43,7 +45,7 @@ fn main() -> std::io::Result<()>
     let workspace = crates
         .parent()
         .ok_or_else(|| std::io::Error::other("the crates directory sits in the workspace"))?;
-    let mut files = Vec::new();
+    let mut kernels = Vec::new();
     for entry in std::fs::read_dir(crates)? {
         let path = entry?.path();
         let kernel = path
@@ -51,9 +53,14 @@ fn main() -> std::io::Result<()>
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with("kernel-"));
         if kernel && path.is_dir() {
-            println!("cargo:rerun-if-changed={}", path.display());
-            gather(&path, &mut files)?;
+            kernels.push(path);
         }
+    }
+    kernels.sort();
+    let mut files = Vec::new();
+    for path in &kernels {
+        println!("cargo:rerun-if-changed={}", path.display());
+        gather(path, &mut files)?;
     }
     let lock = workspace.join("Cargo.lock");
     println!("cargo:rerun-if-changed={}", lock.display());

@@ -394,16 +394,27 @@ jobs:
           CI_STATE_PREFIX: gandr-v3-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_STATE }}-
         run: mise run ci:delete-superseded "$CI_STATE_PREFIX" "$CI_STATE_KEY"
       # Hand on only the units this run's builds used: Cargo never deletes
-      # the ones a manifest change superseded (ci:prune-enforcing). A failed
-      # prune hands on the whole directory, which is correct, only larger. A
-      # shard's build is part of the state, which the join hands on.
+      # the ones a manifest change superseded (ci:prune-enforcing). A lane's
+      # failed prune hands on the whole directory, which is correct, only
+      # larger. A shard's build is part of the state, which the join hands on.
+      # The join's prune builds each unit the join dropped, so its failure is
+      # a state that does not build: it stops the join by name, and no state
+      # goes on (#7508).
       - &prune-build-state
         name: prune build state to this run's units
+        id: prune-build-state
         if: &hand-on-state ${{ !cancelled() && env.CI_PLAIN_BASELINE != 'true' && env.CI_SHARD == '' && steps.build-workspace.outcome == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'merge_group' && steps.test-state-restore.outputs.cache-hit != 'true') || ((github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'schedule') && env.CI_ON_MAIN == 'true')) }}
-        continue-on-error: true
+        continue-on-error: ${{ env.CI_SHARDS == '' }}
+        shell: bash
         env:
           CI_PRUNE_TASK: ${{ env.CI_ENFORCING == 'true' && 'ci:prune-enforcing' || env.CI_DOCS == 'true' && 'ci:prune-docs' || env.CI_DOCTESTS == 'true' && 'ci:prune-doctests' || 'ci:prune-plain' }}
-        run: mise run "$CI_PRUNE_TASK"
+        run: |
+          mise run "$CI_PRUNE_TASK" && exit 0
+          status=$?
+          if [[ -n ${CI_SHARDS:-} ]]; then
+            echo "::error title=join::$CI_PRUNE_TASK fails over the joined state, so the join hands on no state (#7508)"
+          fi
+          exit "$status"
       # Keep modes and mtimes in a zstd tar; upload without zip recompression.
       # Each flavor keeps only its own test-profile target directory, with
       # the sources it was built from recorded inside (#3206). The documentation
@@ -411,7 +422,8 @@ jobs:
       # Dispatches also upload, so warm measurements cover the promotion path;
       # a lane on main caches its state itself and uploads none.
       # The plain baseline only reads state: its full plain build would evict
-      # the queue's from the cache.
+      # the queue's from the cache. A join archives only a state its prune
+      # built (#7508).
       - &archive-build-state
         name: archive build state
         id: build-state-archive
@@ -419,7 +431,12 @@ jobs:
         shell: bash
         env:
           CI_BUILD_TARGET: ${{ env.CI_ENFORCING == 'true' && 'target/enforcing/debug' || env.CI_DOCS == 'true' && 'target/gate-doc/debug' || 'target/debug' }}
+          CI_PRUNE_OUTCOME: ${{ steps.prune-build-state.outcome }}
         run: |
+          if [[ -n ${CI_SHARDS:-} && $CI_PRUNE_OUTCOME != success ]]; then
+            echo "the join's prune did not succeed, so no state goes on (#7508)" >&2
+            exit 1
+          fi
           mise run --quiet ci:sources-record "$CI_BUILD_TARGET"
           tar -cf - "$CI_BUILD_TARGET" | zstd -T0 -3 -f -o "build-state-$GITHUB_JOB.tar.zst"
           echo CI_BUILD_STATE_FOUND=true >> "$GITHUB_ENV"
@@ -1050,7 +1067,7 @@ jobs:
       - *upload-build-state
       - *save-test-state
       # A shard hands the join what it built over the restored state; the
-      # join overlays every shard's on that state and hands the whole on.
+      # join takes each unit whole from one build and hands the state on.
       - name: archive the shard's build
         id: shard-archive
         if: ${{ !cancelled() && env.CI_SHARD != '' && steps.build-workspace.outcome == 'success' }}
@@ -1181,10 +1198,10 @@ jobs:
   # building, 39 s testing) against its 145 s surface budget while the checker
   # took 72 s of its 190 s, so the language server, the faces' largest package
   # (106 s of test time), is tested beside the checker. Every shard restores
-  # the lane's one state; its join overlays what each built on that state and
-  # hands the whole on. The run stage is tested in the dispatcher's shard: the
-  # witnesses of each crate name tests of the other, and a shard resolves its
-  # own members' witnesses alone.
+  # the lane's one state; its join takes each unit whole from one shard's
+  # build and hands the state on. The run stage is tested in the
+  # dispatcher's shard: the witnesses of each crate name tests of the other,
+  # and a shard resolves its own members' witnesses alone.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *rust-needs
@@ -1284,7 +1301,13 @@ jobs:
         with:
           pattern: build-shard-${{ env.CI_SHARDS }}-*
           merge-multiple: true
-      - name: overlay the shards' builds
+      # Each shard's build unpacks into a directory of its own, and the join
+      # moves each unit into the state whole from one build (`build-state
+      # join`). A unit two shards built differently, or a dependent compiled
+      # against another build, never crosses (#7508); the prune builds each
+      # unit the join drops. The shard that owns the tool builds it again when
+      # its sources change; otherwise the restored state holds it current.
+      - name: join the shards' builds
         id: build-workspace
         shell: bash
         run: |
@@ -1293,11 +1316,27 @@ jobs:
             mise run build:tests-enforcing
             exit 0
           fi
+          shards=()
           for build in build-shard-*.tar.zst; do
             [[ -e $build ]] || continue
-            zstd -dc "$build" | tar -xf -
+            shard=shards/${build%.tar.zst}
+            mkdir -p "$shard"
+            zstd -dc "$build" | tar -xf - -C "$shard"
             rm "$build"
+            shards+=("$shard/target/enforcing/debug")
           done
+          if (( ${#shards[@]} > 0 )); then
+            tool=target/enforcing/debug/build-state
+            for shard in "${shards[@]}"; do
+              if [[ -x $shard/build-state ]]; then tool=$shard/build-state; break; fi
+            done
+            if [[ ! -x $tool ]]; then
+              echo "::error title=join::no shard built build-state, and the restored state holds none (#7508)"
+              exit 1
+            fi
+            "$tool" join --profile-dir target/enforcing/debug "${shards[@]}"
+            rm -rf shards
+          fi
           stamp=$(date +%Y%m%d%H%M.%S)
           find target/enforcing/debug -exec touch -h -t "$stamp" {} +
       - name: fetch locked dependencies

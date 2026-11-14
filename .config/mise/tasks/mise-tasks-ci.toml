@@ -539,12 +539,16 @@ run = ".config/mise/enforcing .config/mise/scope cargo nextest list {{ env.CI_SH
 # change superseded, so a state restored and saved on every landing grows
 # with every manifest change (crates/workflow-build-state/README.md). Each
 # task asks Cargo again for the lane's builds, fresh by now, as JSON messages
-# and prunes every other unit. The enforcing build compiled the binary.
+# and prunes every other unit. The enforcing build compiled the binary. The
+# enforcing task resolves features over the workspace, as the shards' builds
+# do: another resolution names other units, and the join's prune then builds
+# them over the joined state (#7508).
 ["ci:prune-enforcing"]
 description = "Prune the enforcing test state to the units this run's builds used"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
+env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
 run = [
-  ".config/mise/enforcing .config/mise/scope cargo nextest run --workspace --locked --no-run --cargo-message-format json > target/enforcing/units.jsonl",
+  ".config/mise/enforcing .config/mise/scope cargo nextest run --workspace --locked --no-run --config 'resolver.feature-unification=\"workspace\"' --cargo-message-format json > target/enforcing/units.jsonl",
   "target/enforcing/debug/build-state prune --profile-dir target/enforcing/debug target/enforcing/units.jsonl",
 ]
 
