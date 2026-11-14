@@ -2556,6 +2556,9 @@ jobs:
       - name: check the positions ledger
         if: *keep-going
         run: mise run check:positions
+      - name: check the sharing ledger
+        if: *keep-going
+        run: mise run check:shared
       # No library or vault is configured here, so keys are read for their
       # shape; a seat's local run resolves them.
       - name: check the references ledger

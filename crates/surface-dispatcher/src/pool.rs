@@ -1798,7 +1798,7 @@ where
             // that no ring takes. So the released jobs that are not committed
             // stay within the rings' capacity and the calling thread's slot,
             // and what they hold stays a bound of the width. The bound has no
-            // number of its own. DEPTH is the one number left, and #7339 owes a
+            // number of its own. DEPTH is the one number left, and #7410 owes a
             // depth that the host measures.
             while !holding && ledger.kept.is_none() && waiting.free(next) == Released::Free {
                 // A chain releases beside a running job only once in
