@@ -7,6 +7,7 @@
 //! [`HashIndex`] over them, and the key's own equality deciding. The index
 //! narrows; it never answers for a key that is not equal.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 use core::hash::Hash;
 
@@ -51,7 +52,7 @@ pub struct HashedMap<Key, Value>
     /// The entries, in first-insertion order.
     entries: Vec<(Key, Value)>,
     /// Each entry's position, filed under its key's hash.
-    index: HashIndex,
+    index: HashIndex<Global>,
 }
 
 impl<Key, Value> Default for HashedMap<Key, Value>
@@ -60,12 +61,15 @@ impl<Key, Value> Default for HashedMap<Key, Value>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: entries and index, growth within the inserted keys
     #[inline]
     fn default() -> Self
     {
         Self {
             entries: Vec::new(),
-            index: HashIndex::new(),
+            index: HashIndex::new_in(Global),
         }
     }
 }

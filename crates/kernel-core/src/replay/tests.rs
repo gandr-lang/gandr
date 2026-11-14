@@ -1,6 +1,7 @@
 //! Witnesses for certificate replay: the engine claims, the refusals and
 //! declines, and the bounded walks over presented terms.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use gandr_kernel_check_memo::ContentDigest;
@@ -391,7 +392,7 @@ fn an_unread_pair_of_returned_calls_walks_their_computations_3920()
             position: 0,
             spent: 0,
             budget: u64::from(ReplayBudget::DEFAULT),
-            table: crate::ContentTable::new(),
+            table: crate::ContentTable::new_in(Global),
             memo: gandr_kernel_check_memo::NullMemo,
             owed: Vec::new(),
         };
@@ -1913,7 +1914,7 @@ fn budget_exhaustion_survives_the_counter_ceiling()
             position: 0,
             spent,
             budget: u64::from(ReplayBudget::from(budget)),
-            table: crate::ContentTable::new(),
+            table: crate::ContentTable::new_in(Global),
             memo: gandr_kernel_check_memo::NullMemo,
             owed: Vec::new(),
         };
@@ -1939,7 +1940,7 @@ fn trace_consumption_preserves_the_end_and_position_ceiling()
             position,
             spent: 0,
             budget: 1,
-            table: crate::ContentTable::new(),
+            table: crate::ContentTable::new_in(Global),
             memo: gandr_kernel_check_memo::NullMemo,
             owed: Vec::new(),
         };
@@ -1977,7 +1978,7 @@ fn frozen_heads_are_side_local_and_opacity_takes_precedence()
         position: 0,
         spent: 0,
         budget: 1,
-        table: crate::ContentTable::new(),
+        table: crate::ContentTable::new_in(Global),
         memo: gandr_kernel_check_memo::NullMemo,
         owed: Vec::new(),
     };
@@ -6232,7 +6233,7 @@ fn reduced(
         position: 0,
         spent: 0,
         budget: 384,
-        table: crate::ContentTable::new(),
+        table: crate::ContentTable::new_in(Global),
         memo: gandr_kernel_check_memo::NullMemo,
         owed: Vec::new(),
     };

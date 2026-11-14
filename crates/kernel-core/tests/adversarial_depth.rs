@@ -15,6 +15,8 @@
 //! The adversarial-depth cases, in a `cfg(test)` module so the crate's lint
 //! wall reads them as test code rather than as shipping code.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo as _;
 use gandr_kernel_check_memo::MemoEntryCount;
@@ -261,7 +263,7 @@ fn shift_a_deep_code_carrying_chain() -> MemoEntryCount
         let returner = arena.comp_type_returner(node);
         node = arena.value_type_thunk(returner);
     }
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = shift_value_type(
         &mut arena,

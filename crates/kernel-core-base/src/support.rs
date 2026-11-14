@@ -79,6 +79,7 @@
 //!   synthesizes the context it consulted as its output, and the memo records
 //!   its entry by it (§ successor-synthesized-context); here for the binders.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -112,6 +113,16 @@ use crate::rewrite::BinderDepth;
 use crate::rewrite::RewriteMemo;
 use crate::rewrite::RewritePlane;
 
+/// The allocator of a session's content table.
+///
+/// The session names its allocator here and in [`SupportContext::default`],
+/// and nowhere else. It is the global allocator until a region holds the
+/// session. Then these two name the session's region.
+pub type SessionAllocator = Global;
+
+/// The content table of a session, in [`SessionAllocator`].
+pub type SessionTable = ContentTable<SessionAllocator>;
+
 /// The state one checking session derives its memo keys against.
 ///
 /// It holds the canonical content numbering, the buffer one goal's read
@@ -141,7 +152,7 @@ pub struct SupportContext
 {
     /// The canonical content numbering, the key's records among it. It names
     /// each record it admits fresh, so a definition's naming reads two names.
-    table: ContentTable,
+    table: SessionTable,
     /// The read binders of the goal being keyed, reused across goals.
     read: Vec<(DeBruijnIndex, ValueTypeId)>,
     /// The session's shifting and substitution memo.
@@ -164,11 +175,14 @@ impl Default for SupportContext
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the session's table on the global allocator, setup
     #[inline]
     fn default() -> Self
     {
         Self {
-            table: ContentTable::named(),
+            table: ContentTable::named_in(Global),
             read: Vec::new(),
             rewrites: RewriteMemo::default(),
             open: Vec::new(),
@@ -535,7 +549,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn table_mut(&mut self) -> &mut ContentTable
+    pub const fn table_mut(&mut self) -> &mut SessionTable
     {
         &mut self.table
     }
@@ -841,7 +855,7 @@ impl SupportContext
         child: &mut Self,
     )
     {
-        self.table.join(arena, core::mem::take(&mut child.table));
+        self.table.join(arena, child.table.take());
     }
 
     /// Add what the drain of a forked child checked to what this check's
@@ -1068,7 +1082,7 @@ impl SupportContext
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn rewrite_parts(&mut self) -> (&mut ContentTable, &mut RewriteMemo)
+    pub const fn rewrite_parts(&mut self) -> (&mut SessionTable, &mut RewriteMemo)
     {
         (&mut self.table, &mut self.rewrites)
     }

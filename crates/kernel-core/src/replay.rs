@@ -371,6 +371,7 @@
 //!   a stuck link. A run that parts from the evaluator declines, and the
 //!   endpoint check still stands.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -1315,6 +1316,9 @@ where
     /// - executable: none — [`replay()`]'s attribute checks the verdict against
     ///   the claim and the restored arena.
     ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — every witness of [`replay()`] replays through this
     ///   gluing, so a gluing that departs from the rule table refuses there.
@@ -1351,7 +1355,7 @@ where
                 position: 0,
                 spent: 0,
                 budget: u64::from(self.budget),
-                table: ContentTable::new(),
+                table: ContentTable::new_in(Global),
                 memo: NullMemo,
                 owed: Vec::new(),
             };
@@ -1419,6 +1423,9 @@ where
 /// - fails: never — a decline is a verdict.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — an η-expanded pair, a reassociated pair and a pair apart
 ///   in one continuation separate a conversion that fires the forced rules from
@@ -1451,7 +1458,7 @@ pub fn convert(
             position: 0,
             spent: 0,
             budget: u64::from(budget),
-            table: ContentTable::new(),
+            table: ContentTable::new_in(Global),
             memo: NullMemo,
             owed: Vec::new(),
         };
@@ -1573,6 +1580,9 @@ struct Unfolded
 /// - fails: never — a decline is a verdict.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a call returning a record code over another call owes
 ///   that code against the record its run reaches.
@@ -1596,7 +1606,7 @@ fn unfold_owing(
         position: 0,
         spent: 0,
         budget: u64::from(budget),
-        table: ContentTable::new(),
+        table: ContentTable::new_in(Global),
         memo: NullMemo,
         owed: Vec::new(),
     };
@@ -1765,6 +1775,9 @@ pub(crate) enum StuckEndpoints
 ///   pairs. The conversion reads none of what it owes, so it never calls back
 ///   here.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — an endpoint returning its value through a definition
 ///   converts, a stuck endpoint converts only with an equal one, and an
@@ -1815,7 +1828,7 @@ pub(crate) fn read_endpoints(
             position: 0,
             spent: 0,
             budget: u64::from(budget),
-            table: ContentTable::new(),
+            table: ContentTable::new_in(Global),
             memo: NullMemo,
             owed: Vec::new(),
         };
@@ -2106,6 +2119,9 @@ pub(crate) fn read_comp_decode(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a reflexivity with no dialogue checks at a decode whose
 ///   code returns an identity's quote over an endpoint that calls a definition,
@@ -2143,7 +2159,7 @@ pub(crate) fn read_identity_endpoints(
             position: 0,
             spent: 0,
             budget: u64::from(budget),
-            table: ContentTable::new(),
+            table: ContentTable::new_in(Global),
             memo: NullMemo,
             owed: Vec::new(),
         };
@@ -2177,6 +2193,9 @@ pub(crate) fn read_identity_endpoints(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`read_decode`] and [`read_comp_decode`].
 /// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
@@ -2201,7 +2220,7 @@ fn read_quoted<Quoted>(
             position: 0,
             spent: 0,
             budget: u64::from(budget),
-            table: ContentTable::new(),
+            table: ContentTable::new_in(Global),
             memo: NullMemo,
             owed: Vec::new(),
         };
@@ -3262,8 +3281,9 @@ where
     spent: u64,
     /// The steps allowed.
     budget: u64,
-    /// The content table the rewrite machines run against.
-    table: ContentTable,
+    /// The content table the rewrite machines run against, on the global
+    /// allocator: no region stands at a replay yet.
+    table: ContentTable<Global>,
     /// The rewrite memo: off, since nothing here reuses a rewrite.
     memo: NullMemo,
     /// The pairs of quotes a reading with definitions unfolding closed on
@@ -3382,6 +3402,9 @@ where
     /// - measure: the budget left: every goal's settling charges at least one
     ///   step, and the loop stops at the first charge past the budget.
     ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — two returned binds over one stuck transport, one
     ///   continuation a lambda's call through its ascription's fold and the
@@ -3413,7 +3436,7 @@ where
                 position: 0,
                 spent: self.spent,
                 budget: self.budget,
-                table: ContentTable::new(),
+                table: ContentTable::new_in(Global),
                 memo: NullMemo,
                 owed: Vec::new(),
             };

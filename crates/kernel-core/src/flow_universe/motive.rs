@@ -1,6 +1,8 @@
 //! The covariance gate a directed motive passes before `ride` admits it.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
@@ -141,6 +143,9 @@ pub fn check_motive(
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`check_motive`].
 /// - witness: `flow_universe::tests::symmetry_motive_is_refused_at_ride`
@@ -156,7 +161,7 @@ fn walk(
 ) -> Result<(), FlowError>
 {
     let mut allowance = Allowance(u64::from(budget));
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut pending = Vec::from([Visit::Type(
         motive,
         Sign::Varies(Variance::Covariant),
@@ -321,13 +326,15 @@ fn walk(
     Err(FlowError::NonCovariantMotive(named)) => named == site,
     Err(_) => false,
 })]
-fn occurrence(
+fn occurrence<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     value: ValueId,
     (sign, at): (Sign, DeBruijnIndex),
     site: AnyNode,
 ) -> Result<(), FlowError>
+where
+    A: Allocator + Clone,
 {
     let admitted = match arena.value(value) {
         Some(&Value::Variable(index)) if index == at => sign == Sign::Varies(Variance::Covariant),
@@ -355,12 +362,14 @@ fn occurrence(
 /// - witness: `flow_universe::tests::symmetry_motive_is_refused_at_ride`
 /// - witness: `flow_universe::motive::tests::a_value_reaches_the_binder_it_names_beneath_a_former`
 #[spec(ensures: |ret| ret == Reach::Reaches || ret == Reach::Clear)]
-fn reach_value(
+fn reach_value<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     value: ValueId,
     at: DeBruijnIndex,
 ) -> Reach
+where
+    A: Allocator + Clone,
 {
     let index = u32::from(at);
     if u32::from(arena.value_support(value).depth()) <= index {
@@ -408,12 +417,14 @@ fn reach_value(
 /// - hypothesis: L3 — a flow whose carrier names the binder refuses.
 /// - witness: `flow_universe::tests::symmetry_motive_is_refused_at_ride`
 #[spec(ensures: |ret| ret == Reach::Reaches || ret == Reach::Clear)]
-fn reach_type(
+fn reach_type<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     ty: ValueTypeId,
     at: DeBruijnIndex,
 ) -> Reach
+where
+    A: Allocator + Clone,
 {
     let index = u32::from(at);
     if u32::from(arena.value_type_support(ty).depth()) <= index {
@@ -451,6 +462,8 @@ fn reach_type(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
+
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::TermArena;
 
@@ -462,7 +475,7 @@ mod tests
     fn a_value_reaches_the_binder_it_names_beneath_a_former()
     {
         let mut arena = TermArena::new();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let at = DeBruijnIndex::from(0_u32);
         let binder = arena.value_variable(at);
         let outer = arena.value_variable(DeBruijnIndex::from(1_u32));

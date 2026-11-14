@@ -40,8 +40,10 @@
 //! is searched, and the definition rests on the laws it names: where the model
 //! owes them, its audit names them as axioms.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
@@ -430,6 +432,9 @@ enum Related
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`respected`].
 /// - witness: `tests::native_formers::a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357`
@@ -450,7 +455,7 @@ fn obligation(
         Reading::Case { .. } => 0_u32,
     };
     let amount = BinderDepth::from(bound.checked_add(leading).ok_or(KernelError::ArenaFault)?);
-    let mut table = ContentTable::default();
+    let mut table = ContentTable::new_in(Global);
     let datatype = shift_value_type(
         arena,
         &mut table,
@@ -569,6 +574,9 @@ fn pattern_binder(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as the checker's reading: a fold over the integers into a
 ///   path between two sums, its arms composing the recursive call with a lemma,
@@ -585,7 +593,7 @@ fn parallel_in_a_set(
     (left, right): (ValueId, ValueId),
 ) -> Related
 {
-    let mut table = ContentTable::default();
+    let mut table = ContentTable::new_in(Global);
     let arrow = shift_comp_type(
         arena,
         &mut table,
@@ -764,6 +772,9 @@ pub(super) fn sethood(
 ///   parameters, not recursion; each conversion runs under its budget.
 /// - measure: the variables left, then the parameters left.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — the winding number is admitted on the circle's two
 ///   cancellation laws and refused when the laws are crossed.
@@ -790,7 +801,7 @@ fn lawful(
         return Ok(Related::Apart);
     };
     let bound = u32::from(rule.variables());
-    let mut table = ContentTable::default();
+    let mut table = ContentTable::new_in(Global);
     let codomain = shift_value_type(
         arena,
         &mut table,
@@ -870,7 +881,7 @@ fn lawful(
         {
             continue;
         }
-        let mut table = ContentTable::default();
+        let mut table = ContentTable::new_in(Global);
         let stated = sequenced(arena, &mut table, endpoint);
         let sides = ReplaySides::Computations(side, stated);
         if crate::replay::convert(arena, unfoldings, sides, ReplayBudget::DEFAULT)
@@ -971,11 +982,13 @@ fn spine_of(
 ///   side, and a crossed law does not.
 /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ret| arena.computation(ret).is_some())]
-fn sequenced(
+fn sequenced<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     endpoint: ValueId,
 ) -> ComputationId
+where
+    A: Allocator + Clone,
 {
     let Some(&Value::Returned(top)) = arena.value(endpoint)
     else {
@@ -1062,13 +1075,15 @@ fn sequenced(
 ///   variable at another type is read at its classifier.
 /// - witness: `tests::native_formers::a_fold_rests_on_the_law_of_each_rule_it_computes_apart`
 #[spec(ensures: |ret| !signature.parameters.is_empty() || ret.as_ref() == Ok(&field))]
-fn instantiate_field(
+fn instantiate_field<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     field: ValueTypeId,
     datatype: ValueTypeId,
     signature: super::former::Signature<'_>,
 ) -> Result<ValueTypeId, KernelError>
+where
+    A: Allocator + Clone,
 {
     let mut result = field;
     for index in (0 .. signature.parameters.len()).rev() {

@@ -1,7 +1,9 @@
 //! Related-input products and replayed higher and quantified evaluation at
 //! pure thunk codes.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
@@ -274,6 +276,9 @@ impl Relation
     /// # Errors
     /// As `fails`.
     ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::related_patterns`], and the Bool result of
     ///   an applied function splits into its two constructors.
@@ -303,7 +308,7 @@ impl Relation
     {
         let mut pending = Vec::from([(relation, false)]);
         let mut values = Vec::<Vec<RelatedPattern>>::new();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut allowance = Allowance(u64::from(budget));
         while let Some((relation, expanded)) = pending.pop() {
             allowance.charge()?;
@@ -847,6 +852,9 @@ impl Relation
     /// - measure: the untrusted steps not yet read: each iteration reads one,
     ///   and a branch is pushed only by an application step.
     ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L1/L3 — `λf. f(true)` relates to itself and to its bind
     ///   form through both output branches, a body applying its argument twice
@@ -867,7 +875,7 @@ impl Relation
         let (argument, result) = self.function()?;
         let result_type = self.node(result)?.source;
         let patterns = self.related_patterns(arena, budget)?;
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut allowance = Allowance(u64::from(budget));
         let mut steps = steps.iter();
         let mut owed = Vec::new();
@@ -1318,13 +1326,15 @@ struct Crossing
 /// - witness: `identity_recursion::function::tests::a_data_domain_covers_as_its_constructors`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |patterns| !patterns.is_empty()
     && patterns.iter().all(|pattern| matches!(arena.value(pattern.left), Some(&Value::Constructor { datatype, tag: held, .. }) if datatype == shape.0 && held == shape.1))))]
-fn constructor_patterns(
+fn constructor_patterns<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     allowance: &mut Allowance,
     shape: (ValueTypeId, ConstructorTag),
     fields: Vec<Vec<RelatedPattern>>,
 ) -> Result<Vec<RelatedPattern>, RelationError>
+where
+    A: Allocator + Clone,
 {
     let (datatype, tag) = shape;
     let Some(&ValueType::Data { declaration, .. }) = arena.value_type(datatype)
@@ -1793,12 +1803,14 @@ fn stuck(
     Continuation::Tail => arena.computation(ret) == Some(&Computation::Return(output.0)),
     Continuation::Bind(_) => arena.computation(ret).is_some(),
 })]
-fn resume(
+fn resume<A>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     continuation: Continuation,
     output: (ValueId, BinderDepth),
 ) -> ComputationId
+where
+    A: Allocator + Clone,
 {
     let (value, extension) = output;
     match continuation {

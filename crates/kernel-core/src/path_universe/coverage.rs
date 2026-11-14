@@ -1,5 +1,6 @@
 //! Closed-code coverage and the iterative shadow of transport's beta rules.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -222,6 +223,9 @@ enum Cover
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — both Bool branches are required; a literal sample cannot
 ///   establish a Base round trip, while a generic product identity is admitted.
@@ -257,7 +261,7 @@ fn patterns(
 {
     let mut pending = Vec::from([Cover::Visit(root)]);
     let mut results = Vec::<Vec<Pattern>>::new();
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     // The data declarations whose constructors are being covered.
     let mut open = BTreeSet::new();
     while let Some(task) = pending.pop() {

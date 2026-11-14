@@ -835,7 +835,7 @@ pub struct Staging<'env>
     claim: StagingClaim<'env>,
     /// The session's table, which a fold that mints the content borrows to
     /// name each image at mint ([`Self::minting`]).
-    table: &'env mut crate::encoding::ContentTable,
+    table: &'env mut crate::support::SessionTable,
 }
 
 impl<'env> Staging<'env>
@@ -964,7 +964,7 @@ impl<'env> Staging<'env>
     pub fn new(
         arena: &'env mut TermArena,
         outstanding: &'env mut StagedMarks,
-        table: &'env mut crate::encoding::ContentTable,
+        table: &'env mut crate::support::SessionTable,
     ) -> Self
     {
         let builder = DeclarationBuilder::new(arena);
@@ -1014,7 +1014,12 @@ impl<'env> Staging<'env>
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn minting(&mut self) -> (&mut TermArena, crate::encoding::MintNames<'_>)
+    pub fn minting(
+        &mut self
+    ) -> (
+        &mut TermArena,
+        crate::encoding::MintNames<'_, crate::support::SessionAllocator>,
+    )
     {
         (
             self.builder.arena(),

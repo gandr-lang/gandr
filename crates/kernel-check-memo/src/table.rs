@@ -17,6 +17,7 @@
 //! linear time, though it cannot merge two keys.
 
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::hash::Hash;
 use core::hash::Hasher;
 
@@ -293,13 +294,33 @@ pub enum Probe
 /// - witness: `table::tests::growth_keeps_every_position`
 /// - witness: `table::tests::colliding_hashes_compare_keys`
 /// - witness: `table::tests::the_last_position_is_refused`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct HashIndex
+#[derive(Clone, Debug)]
+pub struct HashIndex<A: Allocator>
 {
     /// The slots, vacant where the position is [`VACANT`].
-    slots: Vec<Slot>,
+    slots: Vec<Slot, A>,
     /// The number of occupied slots.
     len: usize,
+}
+
+impl<A: Allocator> PartialEq for HashIndex<A>
+{
+    /// The two indexes file the same positions in the same slots.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.len == other.len && self.slots == other.slots
+    }
+}
+
+impl<A: Allocator> Eq for HashIndex<A>
+{
 }
 
 /// How many bits a [`HashFilter`] holds for each hash that it files.
@@ -421,18 +442,18 @@ impl HashFilter
     }
 }
 
-impl HashIndex
+impl<A: Allocator + Clone> HashIndex<A>
 {
-    /// An empty index; it allocates on its first insertion.
+    /// An empty index in `allocator`; it allocates on its first insertion.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self
+    pub fn new_in(allocator: A) -> Self
     {
         Self {
-            slots: Vec::new(),
+            slots: Vec::new_in(allocator),
             len: 0,
         }
     }
@@ -668,7 +689,9 @@ impl HashIndex
     fn grow(&mut self)
     {
         let capacity = self.slots.len().saturating_mul(2).max(MINIMUM);
-        let old = core::mem::replace(&mut self.slots, alloc::vec![Slot::EMPTY; capacity]);
+        let mut grown = Vec::with_capacity_in(capacity, self.slots.allocator().clone());
+        grown.resize(capacity, Slot::EMPTY);
+        let old = core::mem::replace(&mut self.slots, grown);
         for entry in old {
             if entry.position != VACANT {
                 self.place(entry);
@@ -805,6 +828,7 @@ impl HashIndex
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::vec::Vec;
 
     use super::Admission;
@@ -826,7 +850,7 @@ mod tests
     /// # Specification
     /// trivial.
     fn intern(
-        index: &mut HashIndex,
+        index: &mut HashIndex<Global>,
         entries: &mut Vec<Key>,
         hash: TableHash,
         key: Key,
@@ -850,7 +874,7 @@ mod tests
     /// # Specification
     /// trivial.
     fn find(
-        index: &HashIndex,
+        index: &HashIndex<Global>,
         entries: &[Key],
         hash: TableHash,
         key: Key,
@@ -875,7 +899,7 @@ mod tests
     #[test]
     fn growth_keeps_every_position()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         for key in (0 .. 5_000).map(Key) {
             let expected = at(entries.len());
@@ -914,9 +938,9 @@ mod tests
     #[test]
     fn an_index_filed_through_its_entries_finds_each_key()
     {
-        let mut lower = HashIndex::new();
+        let mut lower = HashIndex::new_in(Global);
         let mut lower_entries = Vec::new();
-        let mut upper = HashIndex::new();
+        let mut upper = HashIndex::new_in(Global);
         let mut upper_entries = Vec::new();
         for key in (0 .. 300).map(Key) {
             let _held = intern(&mut lower, &mut lower_entries, TableHash::from(7_u32), key);
@@ -954,7 +978,7 @@ mod tests
     #[test]
     fn colliding_hashes_compare_keys()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         let shared = TableHash::from(7_u32);
         let found: Vec<Probe> = (0 .. 40)
@@ -973,7 +997,7 @@ mod tests
     #[test]
     fn filed_walks_every_position_under_one_hash()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         let shared = TableHash::from(7_u32);
         let neighbour = TableHash::from(8_u32);
@@ -1001,7 +1025,7 @@ mod tests
             "a hash nothing was filed under walks nothing"
         );
         assert_eq!(
-            HashIndex::new().filed(shared).count(),
+            HashIndex::new_in(Global).filed(shared).count(),
             0,
             "nor does the empty table"
         );
@@ -1015,7 +1039,7 @@ mod tests
         assert_eq!(TablePosition::try_from(usize::MAX), Err(TableFull));
         let below = TablePosition::try_from(last.checked_sub(1).unwrap()).unwrap();
         assert_eq!(usize::from(below), last.checked_sub(1).unwrap());
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let hash = TableHash::from(3_u32);
         let Probe::Vacant(slot) = index.probe(hash, |_position| false)
         else {
@@ -1032,7 +1056,7 @@ mod tests
     #[test]
     fn removal_keeps_every_other_position()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         // One run of colliding entries homed in the table's last slot, so the
         // run wraps past slot zero, then a few entries of their own.
@@ -1073,7 +1097,7 @@ mod tests
     #[test]
     fn insertion_grows_only_past_half_load()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         let half = MINIMUM.checked_div(2).unwrap();
         for key in (0 .. u64::try_from(half).unwrap()).map(Key) {
@@ -1097,7 +1121,7 @@ mod tests
     #[test]
     fn removal_leaves_a_key_at_its_own_home()
     {
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         // Slot 0 holds the key to remove, slot 1 a key at its own home, and
         // slot 2 a key whose home is slot 0.
@@ -1130,11 +1154,11 @@ mod tests
     {
         let hash = |key: u64| TableHash::of(&Key(key));
         assert_eq!(
-            HashIndex::new().filter().admits(hash(0)),
+            HashIndex::new_in(Global).filter().admits(hash(0)),
             Admission::Refused,
             "the filter of an empty index refuses each hash"
         );
-        let mut index = HashIndex::new();
+        let mut index = HashIndex::new_in(Global);
         let mut entries = Vec::new();
         for key in 0 .. 1_000 {
             let _filed = intern(&mut index, &mut entries, hash(key), Key(key));

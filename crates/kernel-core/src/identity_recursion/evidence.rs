@@ -1,5 +1,6 @@
 //! Derived diagonal evidence and transport for the first-order identity family.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -273,6 +274,9 @@ impl Relation
     /// # Errors
     /// `NonFibrant`, `Boundary`, `Typing`, `NeutralFiber`, `Arena`, `Evidence`.
     ///
+    /// # Cost
+    /// - allocation: a content table on the global allocator until #7390, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — base and product reflexivity transport open values
     ///   unchanged; ill-typed arguments refuse; neutral Unit indices do not
@@ -308,7 +312,7 @@ impl Relation
         let quote = arena.value_quote(motive);
         let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
         check_value(arena, &extended, quote, universe)?;
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let family = arena.comp_type_returner(motive);
         let source = substitute_comp_type(arena, &mut table, &mut NullMemo, family, identity.left);
         let target = substitute_comp_type(arena, &mut table, &mut NullMemo, family, identity.right);

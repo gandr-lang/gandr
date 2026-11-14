@@ -1,5 +1,7 @@
 //! The directed eliminator's computation table, read by the replay.
 
+use core::alloc::Allocator;
+
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_strata::Level;
@@ -103,13 +105,14 @@ enum Head
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub fn ride_beta<M>(
+pub fn ride_beta<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: RideStep,
 ) -> Result<Reduction, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let RideStep {
@@ -325,15 +328,16 @@ fn composed(
 ///   identity function to negation by conversion replay.
 /// - witness: `flow_universe::tests::function::directed_funext_forms_and_rides_in_variance_order`
 #[spec(ensures: |reduct| arena.computation(reduct).is_some())]
-fn wrapped<M>(
+fn wrapped<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     motive: ValueTypeId,
     (domain, codomain): (ValueId, ValueId),
     function: ValueId,
 ) -> gandr_kernel_term::ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let innermost = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -409,13 +413,14 @@ pub struct TelescopeRideStep
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub fn telescope_ride_beta<M>(
+pub fn telescope_ride_beta<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: TelescopeRideStep,
 ) -> Result<Reduction, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let TelescopeRideStep {

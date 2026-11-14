@@ -1,6 +1,7 @@
 //! Witnesses for the rewrite machines: shifts and substitutions, their
 //! memo keys, and the rebuild each former makes only where a child changed.
 
+use alloc::alloc::Global;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -66,7 +67,7 @@ fn a_zero_shift_reuses_its_code_carrying_subject()
     let before = arena.watermark();
     let shifted = shift_value_type(
         &mut arena,
-        &mut ContentTable::named(),
+        &mut ContentTable::named_in(Global),
         &mut RewriteMemo::new(),
         subject,
         BinderDepth::NONE,
@@ -84,7 +85,7 @@ fn a_saturated_variable_shift_reuses_the_unchanged_occurrence()
     let before = arena.watermark();
     let shifted = shift_value(
         &mut arena,
-        &mut ContentTable::named(),
+        &mut ContentTable::named_in(Global),
         &mut RewriteMemo::new(),
         subject,
         BinderDepth::NONE,
@@ -99,7 +100,7 @@ fn shifting_raises_free_indices_and_spares_bound_ones()
 {
     let mut arena = TermArena::new();
     let free = arena.value_variable(index(BinderDepth::from(0_u32)));
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let raised = shift_value(
         &mut arena,
@@ -149,7 +150,7 @@ fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
     let returner = arena.comp_type_returner(codomain);
     let pi = arena.comp_type_pi(domain, returner);
     let subject = arena.value_type_thunk(pi);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let read = super::abstract_constant_value_type(
         &mut arena,
@@ -200,7 +201,7 @@ fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
     assert_eq!(
         super::abstract_constant_value_type(
             &mut arena,
-            &mut ContentTable::named(),
+            &mut ContentTable::named_in(Global),
             &mut RewriteMemo::new(),
             unrelated,
             (decoder, DeBruijnIndex::from(5_u32)),
@@ -232,7 +233,7 @@ fn sharing_an_endpoint_binds_its_node_and_raises_the_rest()
     let subject = arena.computation_bind(projected, returned);
     let shared = super::share_endpoint(
         &mut arena,
-        &mut ContentTable::named(),
+        &mut ContentTable::named_in(Global),
         &mut RewriteMemo::new(),
         subject,
         endpoint,
@@ -277,7 +278,7 @@ fn sharing_an_endpoint_binds_its_node_and_raises_the_rest()
     let subject = arena.computation_bind(projected, kept);
     let shared = super::share_endpoint(
         &mut arena,
-        &mut ContentTable::named(),
+        &mut ContentTable::named_in(Global),
         &mut RewriteMemo::new(),
         subject,
         open,
@@ -307,7 +308,7 @@ fn a_binder_spares_what_it_binds()
     let pair = arena.value_tuple(&[inner, outer]);
     let body = arena.computation_return(pair);
     let lambda = arena.computation_lambda(body);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = shift_computation(
         &mut arena,
@@ -354,7 +355,7 @@ fn substitution_replaces_lowers_and_spares()
     let body = arena.computation_return(pair);
     let lambda = arena.computation_lambda(body);
     let thunk = arena.value_thunk(lambda);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
 
@@ -408,7 +409,7 @@ fn a_replacement_is_carried_under_the_binders_it_crosses()
     let body = arena.computation_return(occurrence);
     let lambda = arena.computation_lambda(body);
     let thunk = arena.value_thunk(lambda);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
     let Some(&Value::Thunk(result_lambda)) = arena.value(result)
@@ -471,7 +472,7 @@ fn a_substitution_opens_no_node_its_binder_cannot_reach_3464()
         let body = arena.computation_return(pair);
         let lambda = arena.computation_lambda(body);
         let thunk = arena.value_thunk(lambda);
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         let mut memo = RewriteMemo::new();
         let result = substitute_value(&mut arena, &mut table, &mut memo, thunk, replacement);
         let Some(&Value::Thunk(result_lambda)) = arena.value(result)
@@ -526,7 +527,7 @@ fn a_closed_type_shifts_to_itself()
     let dependent = arena.comp_type_pi(unit, returner);
     let thunk = arena.value_type_thunk(dependent);
     let before = arena.watermark();
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = shift_value_type(
         &mut arena,
@@ -553,7 +554,7 @@ fn a_closed_type_instantiates_to_itself()
     let dependent = arena.comp_type_pi(unit, returner);
     let replacement = arena.value_unit();
     let before = arena.watermark();
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let instantiated =
         substitute_comp_type(&mut arena, &mut table, &mut memo, dependent, replacement);
@@ -581,7 +582,7 @@ fn a_code_carrying_type_rewrites_through_its_code()
     let code = arena.value_variable(index(BinderDepth::from(0_u32)));
     let element = arena.value_type_element(code, zero);
     let returner = arena.comp_type_returner(element);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
 
     let shifted = shift_value_type(
@@ -683,7 +684,7 @@ fn an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it()
     let ends = endpoint(&mut arena, 1, x);
     let product = arena.value_type_product(&[reads, spares, bare, under, ends]);
     let codomain = arena.comp_type_returner(product);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let instantiated = super::substitute_comp_type_at_call(
         &mut arena,
@@ -791,7 +792,7 @@ fn the_memoized_rewrite_agrees_with_the_memoless_one()
     let mut arena = TermArena::new();
     let root = shared_composite(&mut arena, ChainLength(12));
 
-    let mut memoless_table = ContentTable::named();
+    let mut memoless_table = ContentTable::named_in(Global);
     let mut memoless = NullMemo;
     let memoless_result = shift_value(
         &mut arena,
@@ -802,7 +803,7 @@ fn the_memoized_rewrite_agrees_with_the_memoless_one()
         BinderDepth::from(1_u32),
     );
 
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let memoized_result = shift_value(
         &mut arena,
@@ -857,7 +858,7 @@ fn the_memoized_rewrite_agrees_with_the_memoless_one()
 /// # Specification
 /// trivial.
 fn keyed(
-    table: &mut ContentTable,
+    table: &mut ContentTable<Global>,
     arena: &TermArena,
     goal: RewriteGoal,
 ) -> RewriteSupport
@@ -875,7 +876,7 @@ fn two_rewrites_of_one_subject_are_two_supports()
     let mut arena = TermArena::new();
     let subject = arena.value_variable(index(BinderDepth::from(0_u32)));
     let replacement = arena.value_unit();
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let shift = keyed(&mut table, &arena, RewriteGoal::Shift {
         subject: AnyNode::Value(subject),
         depth: BinderDepth::NONE,
@@ -1017,7 +1018,7 @@ fn rewrite_agreement_ignores_colliding_digest_buckets()
 {
     let mut arena = TermArena::new();
     let subject = AnyNode::Value(arena.value_variable(DeBruijnIndex::from(0_u32)));
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let left = keyed(&mut table, &arena, RewriteGoal::Shift {
         subject,
         depth: BinderDepth::NONE,
@@ -1070,7 +1071,7 @@ fn unreadable_subjects_rewrite_to_their_original_ids()
         super::close_comp_type(&mut arena, comp_type, &mut results),
         comp_type
     );
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     for root in [
         AnyNode::Value(first),
@@ -1113,7 +1114,7 @@ fn bind_and_case_rewrites_distinguish_binding_positions()
     let right = arena.computation_return(outer);
     let sequence = arena.computation_bind(bound, left);
     let case = arena.computation_case(inner, &[left, right]);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = shift_computation(
         &mut arena,
@@ -1190,7 +1191,7 @@ fn a_dependent_pair_and_its_split_bind_where_they_scope()
     let motive = arena.comp_type_returner(second);
     let body = arena.computation_return(two);
     let split = arena.computation_sigma_split(zero, motive, body);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let three = BinderDepth::from(3_u32);
     let variable = |at: u32| Value::Variable(DeBruijnIndex::from(at));
@@ -1992,7 +1993,7 @@ fn shifted(
     node: AnyNode,
 ) -> AnyNode
 {
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let memo = &mut NullMemo;
     let (cutoff, amount) = (BinderDepth::NONE, BinderDepth::from(1_u32));
     match node {
@@ -2069,7 +2070,7 @@ proptest::proptest! {
         kept in 0_u32 .. 3,
     ) {
         let mut arena = TermArena::new();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let subject = generated(&mut arena, &subject);
         let mut built = Vec::new();
         for component in &components {

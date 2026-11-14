@@ -1,6 +1,7 @@
 //! Independent engine evidence for the lifted Bool negation map, and native
 //! element transport in a List motive.
 
+use alloc::alloc::Global;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -303,7 +304,7 @@ fn negation_moves_a_list_one_cell_at_a_time()
     // transport of the tail as it stands, so an open tail is never read.
     let tail = arena.value_variable(DeBruijnIndex::from(0_u32));
     let open = arena.value_list_cons(truth, tail);
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let step = transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
         motive,

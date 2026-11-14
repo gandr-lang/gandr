@@ -322,6 +322,7 @@
 //! refused at it by shape, and a bridge never converts with a path or a flow.
 
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
@@ -1055,14 +1056,15 @@ pub(crate) fn bridge_fibre(
 ///   with itself.
 /// - witness: `element_identity::tests::a_pair_of_paths_inhabits_the_identity_of_a_dependent_pair`
 #[spec(ensures: |ret| arena.value_type(ret).is_some())]
-pub(crate) fn sigma_fibre<M>(
+pub(crate) fn sigma_fibre<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     entries: &Entries,
     (first, second): (ValueTypeId, ValueTypeId),
     (left, right): (ValueId, ValueId),
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let [left_first, left_second] = pair_components(arena, entries, left);
@@ -2064,13 +2066,14 @@ pub(crate) struct ElementTransport
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub(crate) fn transport_beta<M>(
+pub(crate) fn transport_beta<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: ElementTransport,
 ) -> Result<Reduction, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let ElementTransport {
@@ -2535,14 +2538,15 @@ pub(crate) fn composite_legs(
 /// - witness: `element_identity::tests::transport_back_along_univalence_applies_the_left_inverse`
 /// - witness: `element_identity::tests::transport_along_then_moves_along_both_paths`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
-fn along_held<M>(
+fn along_held<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     motive: ValueTypeId,
     (path, value): (ValueId, ValueId),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let (shape, along, moved) = held(arena, path)?;
@@ -2576,14 +2580,15 @@ where
 /// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
 /// - witness: `element_identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
-fn back_along<M>(
+fn back_along<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     motive: ValueTypeId,
     (along, value): (ValueId, ValueId),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     match arena.value(along) {
@@ -2647,14 +2652,15 @@ where
 /// - witness: `element_identity::tests::a_function_moves_along_univalence_by_its_maps`
 /// - witness: `element_identity::tests::a_function_moves_along_an_equivalence_by_its_maps`
 #[spec(ensures: |ret| ret.is_none_or(|reduct| arena.computation(reduct).is_some()))]
-fn transported_function<M>(
+fn transported_function<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     function_type: CompTypeId,
     (path, function): (ValueId, ValueId),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let (argument, codomain) =
@@ -2829,14 +2835,15 @@ pub(crate) fn telescope(
 ///   own endpoint.
 /// - witness: `element_identity::tests::a_dependent_motive_replays_its_substitution_law`
 #[spec(ensures: |ret| arena.value_type(body).is_none() || arena.value_type(ret).is_some())]
-pub(crate) fn telescope_instance<M>(
+pub(crate) fn telescope_instance<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     body: ValueTypeId,
     (point, element): (ValueId, ValueId),
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let fibre = substitute_outer_value_type(arena, table, memo, body, point);
@@ -2892,13 +2899,14 @@ pub(crate) struct TelescopeStep
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub(crate) fn telescope_beta<M>(
+pub(crate) fn telescope_beta<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: TelescopeStep,
 ) -> Result<Reduction, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let TelescopeStep {
@@ -3205,9 +3213,9 @@ pub(crate) enum Former<'labels>
 /// - witness: `element_identity::tests::transport_computes_through_the_fold_clauses`
 /// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&reduct| arena.computation(reduct).is_some()))]
-pub(crate) fn componentwise<M>(
+pub(crate) fn componentwise<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     mover: Mover,
     (parts, components): (&[ValueTypeId], &[ValueId]),
@@ -3215,6 +3223,7 @@ pub(crate) fn componentwise<M>(
     former: Former<'_>,
 ) -> Result<ComputationId, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let count = u32::try_from(components.len()).map_err(|_overflow| KernelError::ArenaFault)?;
@@ -3256,9 +3265,9 @@ where
 /// - witness: `path_universe::tests::recursive_transport_tests::negation_moves_a_list_one_cell_at_a_time`
 /// - witness: `flow_universe::tests::ride_computes_through_the_motive_rows`
 #[spec(ensures: |reduct| arena.computation(reduct).is_some())]
-pub(crate) fn cell<M>(
+pub(crate) fn cell<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     mover: Mover,
     (element, motive): (ValueTypeId, ValueTypeId),
@@ -3266,6 +3275,7 @@ pub(crate) fn cell<M>(
     (head, tail): (ValueId, ValueId),
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let first = mover.step(arena, element, path, head);
@@ -3361,13 +3371,14 @@ pub(crate) struct RelatedStep
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub(crate) fn related_beta<M>(
+pub(crate) fn related_beta<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: RelatedStep,
 ) -> Result<Reduction, KernelError>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let function = match arena.value(term.path) {

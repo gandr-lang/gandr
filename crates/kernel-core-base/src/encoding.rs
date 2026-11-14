@@ -66,19 +66,19 @@
 //! # A record's name crosses sessions, and the records decide
 //!
 //! An id is canonical in its session only, because the table gives ids in
-//! first-completion order. A table made by [`ContentTable::named`] also gives
-//! each record a [`RecordName`]: BLAKE3 over the record's tag, its payload and
-//! its members' names, each field framed by its length. The payload holds no
-//! id and no arena position, so two sessions give one record one name. The
-//! table names a record once, when it admits the record fresh, and keeps the
-//! name in a column at the record's id. A goal's name is the name of its goal
-//! record.
+//! first-completion order. A table made by [`ContentTable::named_in`] also
+//! gives each record a [`RecordName`]: BLAKE3 over the record's tag, its
+//! payload and its members' names, each field framed by its length. The payload
+//! holds no id and no arena position, so two sessions give one record one name.
+//! The table names a record once, when it admits the record fresh, and keeps
+//! the name in a column at the record's id. A goal's name is the name of its
+//! goal record.
 //!
 //! A name locates a record and never decides that two records agree. The
 //! table interns by the exact record, as above, so two records under one name
 //! keep their own ids. A constant that the table names by its position gives
 //! a goal one name only under one admitted prefix. A table made by
-//! [`ContentTable::new`] names nothing and pays one branch for each fresh
+//! [`ContentTable::new_in`] names nothing and pays one branch for each fresh
 //! record.
 //!
 //! The environment's session table names its records. The bridge's fold
@@ -143,8 +143,10 @@
 //!   inline for that reason. Line 4: the host or the form derives each bound.
 //!   `REWRITE_KEY_WORDS` states its derivation from the form of the key.
 
+use alloc::alloc::Global;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::marker::PhantomData;
 
 use anodized::spec;
@@ -545,17 +547,37 @@ impl DanglingFamily
     }
 }
 
-/// An owned canonical content encoding: one record's `u32` words.
+/// An owned canonical content encoding: one record's `u32` words, in the
+/// allocator `A`.
 ///
 /// Records compare equal exactly when their content does, so this type is the
-/// interning's whole vocabulary. It is ordered so a table can be keyed on it.
-/// A tag takes one word, and so does each name and each number below 2^31. A
-/// record compares and hashes a word at a time.
+/// interning's whole vocabulary. A tag takes one word, and so does each name
+/// and each number below 2^31. A record compares and hashes a word at a time.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ContentEncoding(Vec<u32>);
+#[derive(Clone, Debug)]
+pub struct ContentEncoding<A: Allocator>(Vec<u32, A>);
 
-impl AsRef<[u32]> for ContentEncoding
+impl<A: Allocator> PartialEq for ContentEncoding<A>
+{
+    /// The two encodings hold the same words in the same order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.0 == other.0
+    }
+}
+
+impl<A: Allocator> Eq for ContentEncoding<A>
+{
+}
+
+impl<A: Allocator> AsRef<[u32]> for ContentEncoding<A>
 {
     /// The encoding's words.
     ///
@@ -568,16 +590,16 @@ impl AsRef<[u32]> for ContentEncoding
     }
 }
 
-impl ContentEncoding
+impl<A: Allocator> ContentEncoding<A>
 {
-    /// An empty encoding.
+    /// An empty encoding in `allocator`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    const fn new() -> Self
+    fn new_in(allocator: A) -> Self
     {
-        Self(Vec::new())
+        Self(Vec::new_in(allocator))
     }
 
     /// Append one tag word.
@@ -987,11 +1009,13 @@ impl<I: Identification> RecordName<I>
     /// # Adequacy
     /// - hypothesis: L3 — as [`RecordName`].
     /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
-    fn of(
+    fn of<A>(
         key: &NameKey,
-        payload: &ContentEncoding,
+        payload: &ContentEncoding<A>,
         members: &[Self],
     ) -> Self
+    where
+        A: Allocator,
     {
         let length = |count: usize| u64::try_from(count).unwrap_or(u64::MAX).to_le_bytes();
         let mut hasher = blake3::Hasher::new_keyed(&key.0);
@@ -1025,33 +1049,50 @@ struct NameKey([u8; 32]);
 /// writers take `NAMED` as a constant, so a table that names nothing runs the
 /// writers it ran before, with no branch for the names.
 #[derive(Debug)]
-struct RecordSink<'record, const NAMED: bool>
+struct RecordSink<'record, A: Allocator, const NAMED: bool>
 {
     /// The words written: the whole record, or with `NAMED` every word but
     /// the members.
-    words: &'record mut ContentEncoding,
+    words: &'record mut ContentEncoding<A>,
     /// With `NAMED`, each member's name in the record's order.
-    members: Option<&'record mut Vec<RecordName>>,
+    members: Option<&'record mut Vec<RecordName, A>>,
     /// With `NAMED`, how many words precede each member, in the record's
     /// order.
-    at: Option<&'record mut Vec<WordOffset>>,
+    at: Option<&'record mut Vec<WordOffset, A>>,
     /// With `NAMED`, the table's names by content id.
-    column: NameColumn<'record>,
+    column: NameColumn<'record, A>,
 }
 
 /// The names a table gives its records, read through its frozen layers.
-#[derive(Clone, Copy, Debug)]
-struct NameColumn<'names>
+#[derive(Debug)]
+struct NameColumn<'names, A: Allocator>
 {
     /// The table's own names, from its first own id on.
     own: &'names [RecordName],
     /// The id of the table's first own record.
     base: u64,
     /// The frozen layers, which name each id under `base`.
-    layers: &'names [LayerView],
+    layers: &'names [LayerView<A>],
 }
 
-impl NameColumn<'_>
+impl<A: Allocator> Clone for NameColumn<'_, A>
+{
+    /// The same column: the two slices and the base.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<A: Allocator> Copy for NameColumn<'_, A>
+{
+}
+
+impl<A: Allocator + Clone> NameColumn<'_, A>
 {
     /// The column of a table that writes whole records and names none.
     const NONE: Self = Self {
@@ -1088,14 +1129,14 @@ impl NameColumn<'_>
     }
 }
 
-impl<'record> RecordSink<'record, false>
+impl<'record, A: Allocator + Clone> RecordSink<'record, A, false>
 {
     /// A sink that writes the whole record into `words`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    const fn whole(words: &'record mut ContentEncoding) -> Self
+    const fn whole(words: &'record mut ContentEncoding<A>) -> Self
     {
         Self {
             words,
@@ -1106,7 +1147,7 @@ impl<'record> RecordSink<'record, false>
     }
 }
 
-impl<'record> RecordSink<'record, true>
+impl<'record, A: Allocator + Clone> RecordSink<'record, A, true>
 {
     /// A sink that writes every word of a record but its members into
     /// `payload`, the members' names, read from `column`, into `members`, and
@@ -1116,9 +1157,12 @@ impl<'record> RecordSink<'record, true>
     /// trivial.
     #[inline]
     const fn named(
-        payload: &'record mut ContentEncoding,
-        (members, at): (&'record mut Vec<RecordName>, &'record mut Vec<WordOffset>),
-        column: NameColumn<'record>,
+        payload: &'record mut ContentEncoding<A>,
+        (members, at): (
+            &'record mut Vec<RecordName, A>,
+            &'record mut Vec<WordOffset, A>,
+        ),
+        column: NameColumn<'record, A>,
     ) -> Self
     {
         Self {
@@ -1130,7 +1174,7 @@ impl<'record> RecordSink<'record, true>
     }
 }
 
-impl<const NAMED: bool> RecordSink<'_, NAMED>
+impl<A: Allocator + Clone, const NAMED: bool> RecordSink<'_, A, NAMED>
 {
     /// Forget every word and member written.
     ///
@@ -1230,42 +1274,46 @@ impl<const NAMED: bool> RecordSink<'_, NAMED>
 /// What a table that names its records keeps: one name for each record, and
 /// the buffers that naming one fresh record reuses.
 #[derive(Clone, Debug)]
-struct Names
+struct Names<A: Allocator>
 {
     /// Each own record's name, by content id from the table's first own id.
-    column: Vec<RecordName>,
+    column: Vec<RecordName, A>,
     /// The fresh record's payload.
-    payload: ContentEncoding,
+    payload: ContentEncoding<A>,
     /// The fresh record's members' names.
-    members: Vec<RecordName>,
+    members: Vec<RecordName, A>,
     /// How many payload words precede each member of the fresh record.
-    at: Vec<WordOffset>,
+    at: Vec<WordOffset, A>,
     /// Over a frozen layer, the payload words before each member of each own
     /// record, record after record: what a fold reads to write the members'
     /// ids again.
-    positions: Vec<WordOffset>,
+    positions: Vec<WordOffset, A>,
     /// Over a frozen layer, where each own record's run of `positions` ends.
-    ends: Vec<RunEnd>,
+    ends: Vec<RunEnd, A>,
     /// The key every name hashes under, derived from [`Exact::CONTEXT`].
     key: NameKey,
 }
 
-impl Names
+impl<A: Allocator + Clone> Names<A>
 {
-    /// The names of a table that holds no record of its own, under `key`.
+    /// The names of a table that holds no record of its own, under `key`, in
+    /// `allocator`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    const fn under(key: NameKey) -> Self
+    fn under(
+        key: NameKey,
+        allocator: &A,
+    ) -> Self
     {
         Self {
-            column: Vec::new(),
-            payload: ContentEncoding::new(),
-            members: Vec::new(),
-            at: Vec::new(),
-            positions: Vec::new(),
-            ends: Vec::new(),
+            column: Vec::new_in(allocator.clone()),
+            payload: ContentEncoding::new_in(allocator.clone()),
+            members: Vec::new_in(allocator.clone()),
+            at: Vec::new_in(allocator.clone()),
+            positions: Vec::new_in(allocator.clone()),
+            ends: Vec::new_in(allocator.clone()),
             key,
         }
     }
@@ -1290,8 +1338,8 @@ impl Names
         ensures: named_before.checked_add(1) == Some(self.column.len()))]
     fn name(
         &mut self,
-        (base, layers): (ContentId, &[LayerView]),
-        write: impl FnOnce(&mut RecordSink<'_, true>),
+        (base, layers): (ContentId, &[LayerView<A>]),
+        write: impl FnOnce(&mut RecordSink<'_, A, true>),
     )
     {
         let mut record = RecordSink::named(
@@ -1354,12 +1402,13 @@ impl Names
     /// # Specification
     /// trivial.
     #[inline]
-    fn take_records(&mut self) -> RecordNames
+    fn take_records(&mut self) -> RecordNames<A>
     {
+        let allocator = self.column.allocator().clone();
         RecordNames {
-            column: core::mem::take(&mut self.column),
-            positions: core::mem::take(&mut self.positions),
-            ends: core::mem::take(&mut self.ends),
+            column: core::mem::replace(&mut self.column, Vec::new_in(allocator.clone())),
+            positions: core::mem::replace(&mut self.positions, Vec::new_in(allocator.clone())),
+            ends: core::mem::replace(&mut self.ends, Vec::new_in(allocator)),
         }
     }
 
@@ -1370,7 +1419,7 @@ impl Names
     #[inline]
     fn put_records(
         &mut self,
-        records: RecordNames,
+        records: RecordNames<A>,
     )
     {
         let RecordNames {
@@ -1385,28 +1434,44 @@ impl Names
 }
 
 /// Whether a table names its records.
-#[derive(Clone, Debug, Default)]
-enum Naming
+#[derive(Clone, Debug)]
+enum Naming<A: Allocator>
 {
     /// The table names no record: a fresh record costs one branch.
-    #[default]
     Off,
     /// The table names each record it admits fresh.
-    On(Names),
+    On(Names<A>),
 }
 
 /// The names of a run of records, in id order, and the member positions of
 /// each when a table over a frozen layer wrote them.
-#[derive(Clone, Debug, Default)]
-struct RecordNames
+#[derive(Clone, Debug)]
+struct RecordNames<A: Allocator>
 {
     /// Each record's name.
-    column: Vec<RecordName>,
+    column: Vec<RecordName, A>,
     /// The payload words before each member of each record, record after
     /// record; empty when the run keeps none.
-    positions: Vec<WordOffset>,
+    positions: Vec<WordOffset, A>,
     /// Where each record's run of `positions` ends.
-    ends: Vec<RunEnd>,
+    ends: Vec<RunEnd, A>,
+}
+
+impl<A: Allocator + Clone> RecordNames<A>
+{
+    /// The names of no record, in `allocator`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn new_in(allocator: &A) -> Self
+    {
+        Self {
+            column: Vec::new_in(allocator.clone()),
+            positions: Vec::new_in(allocator.clone()),
+            ends: Vec::new_in(allocator.clone()),
+        }
+    }
 }
 
 /// How many payload words precede a member in a named record.
@@ -1510,23 +1575,30 @@ enum EncodeTask
 /// of the ids depends on the order of the folds. No key reads an id: a key
 /// reads a record's [`RecordName`]. The layers are a flat stack, oldest first,
 /// and no layer points at another.
-#[derive(Clone, Debug, Default)]
-pub struct ContentTable
+///
+/// **The table's words live in its allocator `A`.** Its record stream, its
+/// spans, its index slots, its placement pages, its layers and its buffers all
+/// take `A`, and so does each overlay that a fork opens. A table in a region's
+/// child ends with the child, so its scratch never outlives the declaration
+/// that wrote it. Only the names of the admitted constants stay on the global
+/// allocator, frozen and shared with the table below.
+#[derive(Clone, Debug)]
+pub struct ContentTable<A: Allocator>
 {
     /// How many records the frozen layers hold: the id of this table's first
     /// own record.
     base: u64,
     /// The framed record stream of the own records, in id order: each
     /// record's words, once.
-    stream: ContentEncoding,
+    stream: ContentEncoding<A>,
     /// Where each own record's words sit in the stream, in id order.
-    spans: Vec<RecordSpan>,
+    spans: Vec<RecordSpan, A>,
     /// Each own record's offset from [`Self::base`], filed under its digest's
     /// hash.
-    interned: HashIndex,
+    interned: HashIndex<A>,
     /// The id already assigned to each arena node, read through the frozen
     /// layers, which this table reads its records through too.
-    placed: Placements,
+    placed: Placements<A>,
     /// The arena's truncation stamp the placements were last synced to: a
     /// placement at or above the floor of a later truncation is forgotten
     /// before any placement is read, so a name never outlives its node.
@@ -1545,12 +1617,12 @@ pub struct ContentTable
     /// below it with a layer this table froze itself.
     floor: u64,
     /// The record being built.
-    scratch: ContentEncoding,
+    scratch: ContentEncoding<A>,
     /// The binder names of the goal, or the members of the parameters, being
     /// written.
-    members: Vec<ContentId>,
+    members: Vec<ContentId, A>,
     /// The placement walk's task stack.
-    tasks: Vec<EncodeTask>,
+    tasks: Vec<EncodeTask, A>,
     /// How each admitted constant is named, by admission position; a position
     /// past the end is named by itself. The names stay frozen, so an overlay
     /// shares them with the table below, and a naming copies at most the 63
@@ -1558,7 +1630,7 @@ pub struct ContentTable
     /// ([`Family::freeze`](gandr_kernel_term::Family::freeze)).
     constants: gandr_kernel_term::Family<ConstantName>,
     /// Whether the table names its records, and the names when it does.
-    naming: Naming,
+    naming: Naming<A>,
 }
 
 /// Where one record's words sit in a [`ContentTable`]'s stream.
@@ -1593,60 +1665,61 @@ struct RecordSpan
 ///   repeated placement separate a family-blind column, a page-blind slot and a
 ///   double count.
 /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
-#[derive(Clone, Debug, Default)]
-struct Placements
+#[derive(Clone, Debug)]
+struct Placements<A: Allocator>
 {
     /// Ids placed for value nodes.
-    values: PlacementColumn,
+    values: PlacementColumn<A>,
     /// Ids placed for computation nodes.
-    computations: PlacementColumn,
+    computations: PlacementColumn<A>,
     /// Ids placed for value-type nodes.
-    value_types: PlacementColumn,
+    value_types: PlacementColumn<A>,
     /// Ids placed for computation-type nodes.
-    comp_types: PlacementColumn,
+    comp_types: PlacementColumn<A>,
     /// How many nodes hold an id of their own here.
     count: PlacementCount,
     /// The frozen layers below the table these placements belong to, oldest
     /// first: their records, and their placements, each read under its reach.
-    layers: Vec<LayerView>,
+    layers: Vec<LayerView<A>, A>,
 }
 
 /// One frozen layer of a [`ContentTable`]: the records and the placements
 /// that the table held at a fork point. Each overlay above it reads it by
 /// reference.
-#[derive(Clone, Debug, Default)]
-struct TableLayer
+#[derive(Clone, Debug)]
+struct TableLayer<A: Allocator>
 {
     /// The id of the layer's first record.
     base: u64,
     /// The layer's records, framed, in id order.
-    stream: ContentEncoding,
+    stream: ContentEncoding<A>,
     /// Where each record's words sit in the stream, in id order.
-    spans: Vec<RecordSpan>,
+    spans: Vec<RecordSpan, A>,
     /// Each record's offset from `base`, filed under its digest's hash.
-    interned: HashIndex,
+    interned: HashIndex<A>,
     /// The records' names; empty for a table that names nothing.
-    names: RecordNames,
+    names: RecordNames<A>,
     /// The layer's placements, one column for each family, in the order of
     /// [`Family::ALL`].
-    columns: [PlacementColumn; 4],
+    columns: [PlacementColumn<A>; 4],
     /// How many nodes the columns place.
     count: PlacementCount,
 }
 
 /// A frozen layer as one table reads it.
 #[derive(Clone, Debug)]
-struct LayerView
+struct LayerView<A: Allocator>
 {
-    /// The layer, shared by reference.
-    layer: Arc<TableLayer>,
+    /// The layer, shared by reference. The count of its holders stays on the
+    /// global allocator, and the layer's words are in `A`.
+    layer: Arc<TableLayer<A>>,
     /// The length, family by family, under which the layer's placements hold
     /// for this table: the arena at the freeze, lowered by each truncation
     /// since.
     reach: ArenaWatermark,
 }
 
-impl TableLayer
+impl<A: Allocator + Clone> TableLayer<A>
 {
     /// The layer's column of placements for `family`.
     ///
@@ -1656,7 +1729,7 @@ impl TableLayer
     const fn column(
         &self,
         family: Family,
-    ) -> &PlacementColumn
+    ) -> &PlacementColumn<A>
     {
         let [
             ref values,
@@ -1680,7 +1753,7 @@ impl TableLayer
     #[inline]
     fn find(
         &self,
-        record: &ContentEncoding,
+        record: &ContentEncoding<A>,
         hash: TableHash,
     ) -> Option<ContentId>
     {
@@ -1739,7 +1812,7 @@ impl TableLayer
                 self.interned.file(hash, shifted);
             }
         }
-        let keeps = |names: &RecordNames| names.ends.len() == names.column.len();
+        let keeps = |names: &RecordNames<A>| names.ends.len() == names.column.len();
         let positioned = keeps(&self.names) && keeps(&newer.names);
         let offset = u32::try_from(self.names.positions.len()).unwrap_or(u32::MAX);
         self.names.column.extend_from_slice(&newer.names.column);
@@ -1801,10 +1874,12 @@ impl TableLayer
 /// # Specification
 /// trivial.
 #[inline]
-fn layer_holding(
-    layers: &[LayerView],
+fn layer_holding<A>(
+    layers: &[LayerView<A>],
     id: ContentId,
-) -> Option<&TableLayer>
+) -> Option<&TableLayer<A>>
+where
+    A: Allocator,
 {
     layers
         .partition_point(|view| view.layer.base <= id.0)
@@ -1873,11 +1948,11 @@ impl Family
 
 /// One family's column of placements, in pages allocated on first write.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default)]
-struct PlacementColumn
+#[derive(Clone, Debug)]
+struct PlacementColumn<A: Allocator>
 {
     /// The pages, by page number; an empty page has never been written.
-    pages: Vec<Vec<PlacementSlot>>,
+    pages: Vec<Vec<PlacementSlot, A>, A>,
 }
 
 /// One node's slot in its column.
@@ -1955,8 +2030,20 @@ quenchant_shape::reason_enum! {
     }
 }
 
-impl PlacementColumn
+impl<A: Allocator + Clone> PlacementColumn<A>
 {
+    /// A column that places nothing, its pages in `allocator`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn new_in(allocator: &A) -> Self
+    {
+        Self {
+            pages: Vec::new_in(allocator.clone()),
+        }
+    }
+
     /// The slot at `offset`.
     ///
     /// # Specification
@@ -2016,7 +2103,9 @@ impl PlacementColumn
         let offset = usize::from(offset);
         let number = offset.checked_shr(PLACEMENT_PAGE_SHIFT).unwrap_or(0);
         if self.pages.len() <= number {
-            self.pages.resize_with(number.saturating_add(1), Vec::new);
+            let allocator = self.pages.allocator().clone();
+            self.pages
+                .resize_with(number.saturating_add(1), || Vec::new_in(allocator.clone()));
         }
         let Some(page) = self.pages.get_mut(number)
         else {
@@ -2092,8 +2181,25 @@ impl PlacementColumn
     }
 }
 
-impl Placements
+impl<A: Allocator + Clone> Placements<A>
 {
+    /// Placements of no node over no layer, in `allocator`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn new_in(allocator: &A) -> Self
+    {
+        Self {
+            values: PlacementColumn::new_in(allocator),
+            computations: PlacementColumn::new_in(allocator),
+            value_types: PlacementColumn::new_in(allocator),
+            comp_types: PlacementColumn::new_in(allocator),
+            count: PlacementCount(0),
+            layers: Vec::new_in(allocator.clone()),
+        }
+    }
+
     /// The column `node`'s family is placed in.
     ///
     /// # Specification
@@ -2102,7 +2208,7 @@ impl Placements
     const fn column(
         &self,
         node: AnyNode,
-    ) -> &PlacementColumn
+    ) -> &PlacementColumn<A>
     {
         self.column_of(Family::of(node))
     }
@@ -2115,7 +2221,7 @@ impl Placements
     const fn column_of(
         &self,
         family: Family,
-    ) -> &PlacementColumn
+    ) -> &PlacementColumn<A>
     {
         match family {
             Family::Value => &self.values,
@@ -2133,7 +2239,7 @@ impl Placements
     const fn column_of_mut(
         &mut self,
         family: Family,
-    ) -> &mut PlacementColumn
+    ) -> &mut PlacementColumn<A>
     {
         match family {
             Family::Value => &mut self.values,
@@ -2359,13 +2465,14 @@ impl Placements
     /// # Specification
     /// trivial.
     #[inline]
-    fn take_columns(&mut self) -> ([PlacementColumn; 4], PlacementCount)
+    fn take_columns(&mut self) -> ([PlacementColumn<A>; 4], PlacementCount)
     {
+        let allocator = self.layers.allocator().clone();
         let columns = [
-            core::mem::take(&mut self.values),
-            core::mem::take(&mut self.computations),
-            core::mem::take(&mut self.value_types),
-            core::mem::take(&mut self.comp_types),
+            core::mem::replace(&mut self.values, PlacementColumn::new_in(&allocator)),
+            core::mem::replace(&mut self.computations, PlacementColumn::new_in(&allocator)),
+            core::mem::replace(&mut self.value_types, PlacementColumn::new_in(&allocator)),
+            core::mem::replace(&mut self.comp_types, PlacementColumn::new_in(&allocator)),
         ];
         (
             columns,
@@ -2391,7 +2498,7 @@ impl Placements
     /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
     fn lay_under(
         &mut self,
-        (columns, count, reach): ([PlacementColumn; 4], PlacementCount, ArenaWatermark),
+        (columns, count, reach): ([PlacementColumn<A>; 4], PlacementCount, ArenaWatermark),
     )
     {
         let (own, _own_count) = self.take_columns();
@@ -2469,46 +2576,110 @@ quenchant_shape::reason_enum! {
     }
 }
 
-impl ContentTable
+impl<A: Allocator + Clone> ContentTable<A>
 {
-    /// A fresh table, holding no records.
+    /// A fresh table in `allocator`, holding no records.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn new() -> Self
+    pub fn new_in(allocator: A) -> Self
     {
-        Self::default()
+        Self {
+            base: 0,
+            stream: ContentEncoding::new_in(allocator.clone()),
+            spans: Vec::new_in(allocator.clone()),
+            interned: HashIndex::new_in(allocator.clone()),
+            placed: Placements::new_in(&allocator),
+            seen: TruncationStamp::default(),
+            forked: TruncationStamp::default(),
+            forked_at: ArenaWatermark::default(),
+            records: 0,
+            floor: 0,
+            scratch: ContentEncoding::new_in(allocator.clone()),
+            members: Vec::new_in(allocator.clone()),
+            tasks: Vec::new_in(allocator),
+            constants: gandr_kernel_term::Family::default(),
+            naming: Naming::Off,
+        }
     }
 
-    /// A fresh table that names each record it admits fresh: BLAKE3 over the
-    /// record's tag, its payload and its members' names ([`RecordName`]).
+    /// A fresh table in `allocator` that names each record it admits fresh:
+    /// BLAKE3 over the record's tag, its payload and its members' names
+    /// ([`RecordName`]).
     ///
     /// # Specification
-    /// - ensures: a table that numbers records as [`Self::new`] does, and holds
-    ///   one name for each record it admits.
+    /// - ensures: a table that numbers records as [`Self::new_in`] does, and
+    ///   holds one name for each record it admits.
     /// - provides: the names a key carries when it leaves its session.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`RecordName`]; a table made by [`Self::new`]
+    /// - hypothesis: L3 — as [`RecordName`]; a table made by [`Self::new_in`]
     ///   gives no name.
     /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
     /// - witness: `encoding::tests::a_table_that_names_nothing_gives_no_name_864`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| matches!(ret.naming, Naming::On(ref names) if names.column.is_empty()))]
-    pub fn named() -> Self
+    pub fn named_in(allocator: A) -> Self
     {
+        let names = Names::under(NameKey(blake3::derive_key(Exact::CONTEXT, &[])), &allocator);
         Self {
-            naming: Naming::On(Names::under(NameKey(blake3::derive_key(
-                Exact::CONTEXT,
-                &[],
-            )))),
-            ..Self::default()
+            naming: Naming::On(names),
+            ..Self::new_in(allocator)
         }
+    }
+
+    /// The buffer of the record being built, taken out of the table, with an
+    /// empty one in the table's allocator left in its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_scratch(&mut self) -> ContentEncoding<A>
+    {
+        let empty = ContentEncoding::new_in(self.spans.allocator().clone());
+        core::mem::replace(&mut self.scratch, empty)
+    }
+
+    /// The buffer of the members being written, taken out as
+    /// [`Self::take_scratch`] takes the record's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_members(&mut self) -> Vec<ContentId, A>
+    {
+        let empty = Vec::new_in(self.spans.allocator().clone());
+        core::mem::replace(&mut self.members, empty)
+    }
+
+    /// The placement walk's stack, taken out as [`Self::take_scratch`]
+    /// takes the record's buffer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn take_tasks(&mut self) -> Vec<EncodeTask, A>
+    {
+        let empty = Vec::new_in(self.spans.allocator().clone());
+        core::mem::replace(&mut self.tasks, empty)
+    }
+
+    /// This table, taken out, with a fresh table in its allocator left in
+    /// its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn take(&mut self) -> Self
+    {
+        let fresh = Self::new_in(self.spans.allocator().clone());
+        core::mem::replace(self, fresh)
     }
 
     /// The name of the record at `id`.
@@ -2657,7 +2828,7 @@ impl ContentTable
     })]
     fn name_fresh(
         &mut self,
-        write: impl FnOnce(&Self, &mut RecordSink<'_, true>),
+        write: impl FnOnce(&Self, &mut RecordSink<'_, A, true>),
     )
     {
         let Naming::On(ref names) = self.naming
@@ -2671,7 +2842,7 @@ impl ContentTable
         {
             return;
         }
-        if let Naming::On(mut names) = core::mem::take(&mut self.naming) {
+        if let Naming::On(mut names) = core::mem::replace(&mut self.naming, Naming::Off) {
             names.name((ContentId(self.base), &self.placed.layers), |record| {
                 write(self, record);
             });
@@ -2685,7 +2856,7 @@ impl ContentTable
     /// # Specification
     /// trivial.
     #[inline]
-    const fn stream(&self) -> &ContentEncoding
+    const fn stream(&self) -> &ContentEncoding<A>
     {
         &self.stream
     }
@@ -2955,7 +3126,7 @@ impl ContentTable
         if let Maybe::Present(held) = self.placed.get(node) {
             return held;
         }
-        let mut tasks = core::mem::take(&mut self.tasks);
+        let mut tasks = self.take_tasks();
         tasks.clear();
         tasks.push(EncodeTask::Open(node));
         while let Some(task) = tasks.pop() {
@@ -2971,7 +3142,7 @@ impl ContentTable
                     if let Maybe::Present(_) = self.placed.get(close) {
                         continue;
                     }
-                    let mut record = core::mem::take(&mut self.scratch);
+                    let mut record = self.take_scratch();
                     self.write_record(&mut RecordSink::whole(&mut record), arena, close);
                     self.scratch = record;
                     let id = self.intern_scratch();
@@ -3052,7 +3223,7 @@ impl ContentTable
     })]
     fn held(
         &self,
-        record: &ContentEncoding,
+        record: &ContentEncoding<A>,
         digest: ContentDigest,
     ) -> Maybe<ContentId, record_held::Absent>
     {
@@ -3087,7 +3258,7 @@ impl ContentTable
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |id| id.0 < self.records))]
     fn find(
         &self,
-        record: &ContentEncoding,
+        record: &ContentEncoding<A>,
         hash: TableHash,
     ) -> Result<ContentId, TableSlot>
     {
@@ -3142,7 +3313,7 @@ impl ContentTable
     })]
     fn probe_record(
         &self,
-        record: &ContentEncoding,
+        record: &ContentEncoding<A>,
         hash: TableHash,
     ) -> Probe
     {
@@ -3288,7 +3459,7 @@ impl ContentTable
         parameters: &Parameters<'_>,
     ) -> ContentId
     {
-        let mut members = core::mem::take(&mut self.members);
+        let mut members = self.take_members();
         members.clear();
         match parameters.block {
             ParametersBlock::Outside => {},
@@ -3381,7 +3552,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     })]
     fn write_record<const NAMED: bool>(
         &self,
-        record: &mut RecordSink<'_, NAMED>,
+        record: &mut RecordSink<'_, A, NAMED>,
         arena: &TermArena,
         node: AnyNode,
     )
@@ -3503,7 +3674,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )]
     fn put_value<const NAMED: bool>(
         &self,
-        record: &mut RecordSink<'_, NAMED>,
+        record: &mut RecordSink<'_, A, NAMED>,
         value: &Value,
     )
     {
@@ -3840,7 +4011,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )]
     fn put_computation<const NAMED: bool>(
         &self,
-        record: &mut RecordSink<'_, NAMED>,
+        record: &mut RecordSink<'_, A, NAMED>,
         computation: &Computation,
     )
     {
@@ -4167,7 +4338,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )]
     fn put_value_type<const NAMED: bool>(
         &self,
-        record: &mut RecordSink<'_, NAMED>,
+        record: &mut RecordSink<'_, A, NAMED>,
         value_type: &ValueType,
     )
     {
@@ -4386,7 +4557,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     )]
     fn put_comp_type<const NAMED: bool>(
         &self,
-        record: &mut RecordSink<'_, NAMED>,
+        record: &mut RecordSink<'_, A, NAMED>,
         comp_type: &CompType,
     )
     {
@@ -4447,7 +4618,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     }
 }
 
-impl ContentTable
+impl<A: Allocator + Clone> ContentTable<A>
 {
     /// Freeze this table's own records and placements into a new layer, so
     /// an overlay reads them by reference; the table then holds none of its
@@ -4462,14 +4633,18 @@ impl ContentTable
     {
         let names = match self.naming {
             Naming::On(ref mut names) => names.take_records(),
-            Naming::Off => RecordNames::default(),
+            Naming::Off => RecordNames::new_in(self.spans.allocator()),
         };
         let (columns, count) = self.placed.take_columns();
+        let allocator = self.spans.allocator().clone();
         let layer = TableLayer {
             base: self.base,
-            stream: core::mem::take(&mut self.stream),
-            spans: core::mem::take(&mut self.spans),
-            interned: core::mem::take(&mut self.interned),
+            stream: core::mem::replace(
+                &mut self.stream,
+                ContentEncoding::new_in(allocator.clone()),
+            ),
+            spans: core::mem::replace(&mut self.spans, Vec::new_in(allocator.clone())),
+            interned: core::mem::replace(&mut self.interned, HashIndex::new_in(allocator)),
             names,
             columns,
             count,
@@ -4518,26 +4693,31 @@ impl ContentTable
         {
             self.freeze(arena);
         }
+        let allocator = self.spans.allocator().clone();
+        let naming = match self.naming {
+            Naming::On(ref names) => Naming::On(Names::under(names.key.clone(), &allocator)),
+            Naming::Off => Naming::Off,
+        };
+        let scratch = self.take_scratch();
+        let members = self.take_members();
+        let tasks = self.take_tasks();
         Self {
             base: self.records,
             records: self.records,
             floor: self.records,
             placed: Placements {
                 layers: self.placed.layers.clone(),
-                ..Placements::default()
+                ..Placements::new_in(&allocator)
             },
             seen: self.seen,
             forked: self.seen,
             forked_at: arena.watermark(),
             constants: self.constants.clone(),
-            naming: match self.naming {
-                Naming::On(ref names) => Naming::On(Names::under(names.key.clone())),
-                Naming::Off => Naming::Off,
-            },
-            scratch: core::mem::take(&mut self.scratch),
-            members: core::mem::take(&mut self.members),
-            tasks: core::mem::take(&mut self.tasks),
-            ..Self::default()
+            naming,
+            scratch,
+            members,
+            tasks,
+            ..Self::new_in(allocator)
         }
     }
 
@@ -4635,7 +4815,7 @@ impl ContentTable
             return;
         };
         let base = ContentId(base);
-        let mut map: Vec<ContentId> = Vec::with_capacity(spans.len());
+        let mut map = Vec::with_capacity_in(spans.len(), self.spans.allocator().clone());
         let mut start = 0_usize;
         for (index, &span) in spans.iter().enumerate() {
             let end = names.ends.get(index).map_or(start, |&RunEnd(end)| {
@@ -4643,7 +4823,7 @@ impl ContentTable
             });
             let positions = names.positions.get(start .. end).unwrap_or(&[]);
             start = end;
-            let mut record = core::mem::take(&mut self.scratch);
+            let mut record = self.take_scratch();
             let written = rewrite_members(&mut record, (&stream, span, positions), |id| {
                 mapped(id, base, &map)
             });
@@ -4830,7 +5010,7 @@ impl ContentTable
     /// trivial.
     fn merge(
         &mut self,
-        (layer, reach): (TableLayer, ArenaWatermark),
+        (layer, reach): (TableLayer<A>, ArenaWatermark),
     )
     {
         let TableLayer {
@@ -4874,8 +5054,8 @@ impl ContentTable
     /// trivial.
     fn append(
         &mut self,
-        (stream, spans, interned): (ContentEncoding, Vec<RecordSpan>, HashIndex),
-        names: Option<RecordNames>,
+        (stream, spans, interned): (ContentEncoding<A>, Vec<RecordSpan, A>, HashIndex<A>),
+        names: Option<RecordNames<A>>,
     )
     {
         if self.spans.is_empty() {
@@ -4985,11 +5165,13 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — as [`ContentTable::join`], whose second fold maps members
 ///   of records the first fold interned.
 /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
-fn rewrite_members(
-    record: &mut ContentEncoding,
-    (source, span, positions): (&ContentEncoding, RecordSpan, &[WordOffset]),
+fn rewrite_members<A>(
+    record: &mut ContentEncoding<A>,
+    (source, span, positions): (&ContentEncoding<A>, RecordSpan, &[WordOffset]),
     map: impl Fn(ContentId) -> Option<ContentId>,
 ) -> Maybe<(), rewritten::Absent>
+where
+    A: Allocator,
 {
     let unmapped = Maybe::Absent(rewritten::Absent::Unmapped);
     let Some(words) = source.0.get(span.start .. span.end)
@@ -5032,10 +5214,12 @@ fn rewrite_members(
 ///
 /// # Specification
 /// trivial.
-fn read_id(
-    source: &ContentEncoding,
+fn read_id<A>(
+    source: &ContentEncoding<A>,
     EncodingLength(at): EncodingLength,
 ) -> Option<(ContentId, EncodingLength)>
+where
+    A: Allocator,
 {
     let mut value = 0_u64;
     for (group, &word) in source.0.get(at ..)?.iter().enumerate() {
@@ -5093,11 +5277,12 @@ fn lead_tag(
 ///
 /// # Specification
 /// trivial.
-fn put_constant(
-    words: &mut ContentEncoding,
+fn put_constant<A>(
+    words: &mut ContentEncoding<A>,
     constants: &gandr_kernel_term::Family<ConstantName>,
     (tag, index): (WireTag, ConstantIndex),
-)
+) where
+    A: Allocator,
 {
     match constant_name(constants, index) {
         ConstantName::Admitted { key } => {
@@ -5218,12 +5403,13 @@ None => opened.eq((core::iter::empty()).map(Some)),
         },
     }
 }))]
-fn push_children(
+fn push_children<A>(
     arena: &TermArena,
     constants: &gandr_kernel_term::Family<ConstantName>,
     node: AnyNode,
-    tasks: &mut Vec<EncodeTask>,
-)
+    tasks: &mut Vec<EncodeTask, A>,
+) where
+    A: Allocator,
 {
     match node {
         AnyNode::Value(id) => match arena.value(id) {
@@ -5655,10 +5841,11 @@ fn push_children(
 /// # Specification
 /// trivial.
 #[inline]
-fn put_dangling<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn put_dangling<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     family: DanglingFamily,
-)
+) where
+    A: Allocator + Clone,
 {
     record.put_tag(record_dangling());
     record.put_tag(family.tag());
@@ -5765,10 +5952,11 @@ const fn sign_tag(sign: Sign) -> WireTag
         }
     }
 )]
-fn put_literal<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn put_literal<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     literal: &Literal,
-)
+) where
+    A: Allocator + Clone,
 {
     match *literal {
         Literal::Integer(ref integer) => {
@@ -5840,10 +6028,11 @@ fn put_literal<const NAMED: bool>(
         record.words.0.get(entry_len..).is_some_and(|image| image.iter().copied().eq(expected))
     }
 )]
-fn put_level<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn put_level<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     level: &Level,
-)
+) where
+    A: Allocator + Clone,
 {
     record.put_word(EncodedWord(u64::from(level.constant_part())));
     let atoms: Vec<(LevelVar, LevelOffset)> = level.atoms().collect();
@@ -5873,11 +6062,12 @@ fn put_level<const NAMED: bool>(
 /// # Adequacy
 /// - hypothesis: L3 — as [`ContentTable::parameters`].
 /// - witness: `encoding::tests::parameters_name_their_block_by_content`
-fn put_placed<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn put_placed<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     placed: &mut impl Iterator<Item = ContentId>,
     count: ComponentCount,
-)
+) where
+    A: Allocator + Clone,
 {
     record.put_count(count);
     for id in placed.take(count.0) {
@@ -5905,11 +6095,12 @@ fn put_placed<const NAMED: bool>(
 /// - hypothesis: L3 — as [`ContentTable::parameters`].
 /// - witness: `encoding::tests::parameters_name_their_block_by_content`
 #[spec(ensures: record.words.0.first() == Some(&u32::from(u8::from(KeyRecord::Parameters.tag()))))]
-fn write_parameters<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn write_parameters<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     (parameters, constants): (&Parameters<'_>, &gandr_kernel_term::Family<ConstantName>),
     members: &[ContentId],
-)
+) where
+    A: Allocator + Clone,
 {
     let mut placed = members.iter().copied();
     record.clear();
@@ -6270,16 +6461,18 @@ impl<'context> Telescope<'context>
         Maybe::Absent(_) => true,
     }
     && telescope.types().iter().all(|&entry| matches!(table.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
-pub fn support_key(
-    table: &mut ContentTable,
+pub fn support_key<A>(
+    table: &mut ContentTable<A>,
     arena: &TermArena,
     goal: SupportGoal,
     telescope: Telescope<'_>,
 ) -> ContentId
+where
+    A: Allocator + Clone,
 {
     let subject = table.place(arena, goal.subject());
     let expected = goal.expected().map(|node| table.place(arena, node));
-    let mut binders = core::mem::take(&mut table.members);
+    let mut binders = table.take_members();
     binders.clear();
     for entry in telescope.entries() {
         binders.push(table.place(arena, AnyNode::ValueType(entry)));
@@ -6334,10 +6527,11 @@ struct PlacedGoal<'goal>
 /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
 #[spec(ensures: record.words.0.first() == Some(&u32::from(u8::from(KeyRecord::Goal.tag())))
     && record.words.0.get(1) == Some(&u32::from(u8::from(placed.goal.direction()))))]
-fn write_goal<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn write_goal<A, const NAMED: bool>(
+    record: &mut RecordSink<'_, A, NAMED>,
     placed: PlacedGoal<'_>,
-)
+) where
+    A: Allocator + Clone,
 {
     record.clear();
     record.put_tag(KeyRecord::Goal.tag());
@@ -6523,7 +6717,9 @@ impl RewriteKey
         Maybe::Absent(rewrite_key::Absent::Overlong) => encoding.0.len() > REWRITE_KEY_WORDS,
         Maybe::Absent(rewrite_key::Absent::Off | rewrite_key::Absent::Unrecorded) => false,
     })]
-    fn from_encoding(encoding: &ContentEncoding) -> Maybe<Self, rewrite_key::Absent>
+    fn from_encoding<A>(encoding: &ContentEncoding<A>) -> Maybe<Self, rewrite_key::Absent>
+    where
+        A: Allocator,
     {
         let mut words = [0_u32; REWRITE_KEY_WORDS];
         let Some(held) = words.get_mut(.. encoding.0.len())
@@ -6587,11 +6783,13 @@ impl RewriteKey
         RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => true,
         RewriteGoal::Substitute { replacement, .. } => matches!(table.placed.get(AnyNode::Value(replacement)), Maybe::Present(_)),
     })]
-pub fn encode_rewrite(
-    table: &mut ContentTable,
+pub fn encode_rewrite<A>(
+    table: &mut ContentTable<A>,
     arena: &TermArena,
     goal: RewriteGoal,
 ) -> Maybe<RewriteKey, rewrite_key::Absent>
+where
+    A: Allocator + Clone,
 {
     let subject = table.place(arena, goal.subject());
     let replacement = match goal {
@@ -6610,7 +6808,7 @@ pub fn encode_rewrite(
         Some(Maybe::Absent(absent)) => return Maybe::Absent(rewrite_key::Absent::from(absent)),
     };
     // Each placement is done, so the table's buffer is free to take the words.
-    let mut words = core::mem::take(&mut table.scratch);
+    let mut words = table.take_scratch();
     words.0.clear();
     words.put_tag(goal.direction());
     words.put_name(subject);
@@ -6670,6 +6868,9 @@ pub fn encode_rewrite(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a table of its own on the global allocator, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L1/L3 — any root, including an unreadable one, is admitted.
 ///   The exact dangling-stream digest is executable for all four families;
@@ -6700,7 +6901,7 @@ pub fn content_digest(
     node: AnyNode,
 ) -> ContentDigest
 {
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let _placed = table.place(arena, node);
     table.stream().digest()
 }
@@ -6751,8 +6952,8 @@ pub fn content_digest(
 #[spec(ensures: |ret| matches!(ret, ConstantName::Definition { declared: kept_declared, body: kept_body, .. }
     if kept_declared == declared && kept_body == body))]
 #[inline]
-pub fn name_definition(
-    table: &mut ContentTable,
+pub fn name_definition<A>(
+    table: &mut ContentTable<A>,
     arena: &TermArena,
     (entries, position, below): (
         &crate::env::Entries,
@@ -6762,6 +6963,8 @@ pub fn name_definition(
     declared: ValueTypeId,
     body: ValueId,
 ) -> ConstantName
+where
+    A: Allocator + Clone,
 {
     table.name_constants_before(entries, position);
     let placed_declared = table.place(arena, AnyNode::ValueType(declared));
@@ -6839,11 +7042,13 @@ pub fn name_definition(
     (ret, name) => ret == name,
 })]
 #[inline]
-pub fn name_definition_again(
-    table: &mut ContentTable,
+pub fn name_definition_again<A>(
+    table: &mut ContentTable<A>,
     arena: &TermArena,
     name: ConstantName,
 ) -> ConstantName
+where
+    A: Allocator + Clone,
 {
     match name {
         ConstantName::Definition {
@@ -6899,13 +7104,14 @@ pub enum Likeness
 ///   counts the earlier one as the serial run's does.
 /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
 #[inline]
-pub fn likeness<Others>(
-    table: &mut ContentTable,
+pub fn likeness<A, Others>(
+    table: &mut ContentTable<A>,
     arena: &TermArena,
     name: ConstantName,
     others: Others,
 ) -> Likeness
 where
+    A: Allocator + Clone,
     Others: IntoIterator<Item = ConstantName>,
 {
     let ConstantName::Definition {
@@ -6944,16 +7150,16 @@ where
 /// the naming of a definition, reads the name and walks nothing.
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct MintNames<'table>(&'table mut ContentTable);
+pub struct MintNames<'table, A: Allocator>(&'table mut ContentTable<A>);
 
-impl<'table> MintNames<'table>
+impl<'table, A: Allocator + Clone> MintNames<'table, A>
 {
     /// Lend `table` to a fold.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn new(table: &'table mut ContentTable) -> Self
+    pub(crate) const fn new(table: &'table mut ContentTable<A>) -> Self
     {
         Self(table)
     }
@@ -7003,6 +7209,8 @@ pub enum Partiality
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture
 {
+    use core::alloc::Allocator;
+
     use gandr_kernel_term::AnyNode;
     use gandr_kernel_term::TermArena;
 
@@ -7017,11 +7225,13 @@ pub mod fixture
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn place(
-        table: &mut ContentTable,
+    pub fn place<A>(
+        table: &mut ContentTable<A>,
         arena: &TermArena,
         node: AnyNode,
     ) -> ContentId
+    where
+        A: Allocator + Clone,
     {
         table.place(arena, node)
     }
@@ -7032,7 +7242,9 @@ pub mod fixture
     /// trivial.
     #[must_use]
     #[inline]
-    pub const fn stream(table: &ContentTable) -> &ContentEncoding
+    pub const fn stream<A>(table: &ContentTable<A>) -> &ContentEncoding<A>
+    where
+        A: Allocator + Clone,
     {
         table.stream()
     }
@@ -7054,6 +7266,7 @@ pub mod fixture
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -7149,7 +7362,7 @@ mod tests
     fn word_images_are_minimal_at_the_boundaries()
     {
         let image_of = |value: u64| {
-            let mut out = ContentEncoding::new();
+            let mut out = ContentEncoding::new_in(Global);
             out.put_word(EncodedWord(value));
             out.0
         };
@@ -7175,10 +7388,10 @@ mod tests
             expected.extend_from_slice(&image);
             assert_eq!(encoded.0, expected);
         }
-        let mut split_one = ContentEncoding::new();
+        let mut split_one = ContentEncoding::new_in(Global);
         split_one.put_text(super::EncodedText("a"));
         split_one.put_text(super::EncodedText("bc"));
-        let mut split_two = ContentEncoding::new();
+        let mut split_two = ContentEncoding::new_in(Global);
         split_two.put_text(super::EncodedText("ab"));
         split_two.put_text(super::EncodedText("c"));
         assert_ne!(split_one, split_two);
@@ -7202,9 +7415,9 @@ mod tests
     #[test]
     fn the_digest_separates_a_one_word_difference()
     {
-        let mut first = ContentEncoding::new();
+        let mut first = ContentEncoding::new_in(Global);
         first.put_word(EncodedWord(1));
-        let mut second = ContentEncoding::new();
+        let mut second = ContentEncoding::new_in(Global);
         second.put_word(EncodedWord(2));
         assert_ne!(
             first.digest(),
@@ -7212,7 +7425,7 @@ mod tests
             "a one-word difference moves the digest, so the fast path prunes"
         );
         assert_eq!(
-            ContentEncoding::new().digest(),
+            ContentEncoding::new_in(Global).digest(),
             gandr_kernel_check_memo::ContentDigest::new(
                 gandr_kernel_check_memo::DigestWord::from(0x6c62_272e_07bb_0142_u64),
                 gandr_kernel_check_memo::DigestWord::from(0x62b8_2175_6295_c58d_u64)
@@ -7238,10 +7451,10 @@ mod tests
     #[test]
     fn the_digest_separates_a_transposition()
     {
-        let mut forward = ContentEncoding::new();
+        let mut forward = ContentEncoding::new_in(Global);
         forward.put_word(EncodedWord(1));
         forward.put_word(EncodedWord(2));
-        let mut backward = ContentEncoding::new();
+        let mut backward = ContentEncoding::new_in(Global);
         backward.put_word(EncodedWord(2));
         backward.put_word(EncodedWord(1));
         assert_ne!(
@@ -7261,7 +7474,7 @@ mod tests
         let base = arena.value_type_base(BaseType::Integer);
         let forward = arena.value_type_product(&[unit, base]);
         let backward = arena.value_type_product(&[base, unit]);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -7306,7 +7519,7 @@ mod tests
             }),
         ];
         let again = arena.value_type_staged(base, at);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let keys: alloc::vec::Vec<_> = types
             .iter()
             .map(|&id| {
@@ -7344,7 +7557,7 @@ mod tests
         let mut arena = TermArena::new();
         let unit_value = arena.value_unit();
         let unit_type = arena.value_type_unit();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -7390,7 +7603,7 @@ mod tests
             Sign::Negative,
             magnitude(String::from("1")),
         )));
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_eq!(
             support_key(
                 &mut table,
@@ -7436,7 +7649,7 @@ mod tests
         let again = arena.value_literal(character('é'));
         let string = arena.value_literal(text(String::from("é")));
         let other = arena.value_literal(character('e'));
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut key = |value| {
             support_key(
                 &mut table,
@@ -7480,7 +7693,7 @@ mod tests
             arena.value_literal(fixed(FixedInteger::U32(u32::MAX))),
         ];
         let again = arena.value_literal(fixed(FixedInteger::U32(1)));
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut key = |value| {
             support_key(
                 &mut table,
@@ -7524,7 +7737,7 @@ mod tests
             magnitude(String::from("12")),
             fraction(String::from("3")),
         )));
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -7573,7 +7786,7 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
         let unit_type = arena.value_type_unit();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -7601,7 +7814,7 @@ mod tests
         let subject = arena.value_variable(DeBruijnIndex::from(0_u32));
         let other_spelling = arena.value_variable(DeBruijnIndex::from(0_u32));
         let replacement = arena.value_unit();
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         let base = |depth, cutoff, amount| RewriteGoal::Shift {
             subject: AnyNode::Value(subject),
             depth,
@@ -7658,7 +7871,7 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -7699,7 +7912,7 @@ mod tests
         let unit = arena.value_type_unit();
         let base = arena.value_type_base(BaseType::Integer);
         let at = DeBruijnIndex::from;
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut key = |telescope: Telescope<'_>| {
             support_key(
                 &mut table,
@@ -7748,12 +7961,12 @@ mod tests
             gandr_kernel_check_memo::DigestWord::from(7_u64),
             gandr_kernel_check_memo::DigestWord::from(7_u64),
         );
-        let admit = |table: &mut ContentTable, tag: u8| {
-            table.scratch = ContentEncoding::new();
+        let admit = |table: &mut ContentTable<Global>, tag: u8| {
+            table.scratch = ContentEncoding::new_in(Global);
             table.scratch.put_tag(super::WireTag::from(tag));
             table.admit(forced)
         };
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let first = admit(&mut table, 0x01);
         let second = admit(&mut table, 0x02);
         let third = admit(&mut table, 0x03);
@@ -7781,7 +7994,7 @@ mod tests
         else {
             panic!("six hundred values were minted");
         };
-        let mut placements = Placements::default();
+        let mut placements = Placements::new_in(&Global);
         let near = AnyNode::Value(first_value);
         let far = AnyNode::Value(far_value);
         let other_family = AnyNode::ValueType(first_type);
@@ -7820,7 +8033,7 @@ mod tests
         let pair = arena.value_tuple(&[variable, variable]);
         let unit = arena.value_type_unit();
         let read = [(DeBruijnIndex::from(0_u32), unit)];
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let first = support_key(
             &mut table,
             &arena,
@@ -7873,7 +8086,7 @@ mod tests
         let first = arena.value_unit();
         let second = arena.value_unit();
         assert_ne!(first, second, "the fixture mints two distinct arena nodes");
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_eq!(
             support_key(
                 &mut table,
@@ -7920,10 +8133,10 @@ mod tests
                 3_u8,
             ),
         ];
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let keys = cases.map(|(node, goal, family)| {
             let key = support_key(&mut table, &arena, goal, Telescope::Whole(&[]));
-            let mut record = ContentEncoding::new();
+            let mut record = ContentEncoding::new_in(Global);
             table.write_record(&mut RecordSink::whole(&mut record), &arena, node);
             assert_eq!(record.as_ref(), &[0xff_u32, u32::from(family)]);
             assert_eq!(
@@ -7955,7 +8168,7 @@ mod tests
             arena.computation_case(left, &[returns_variable, returns_unit]),
             arena.computation_case(left, &[returns_unit, returns_variable]),
         ];
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let keys = roots.map(|root| {
             support_key(
                 &mut table,
@@ -7984,7 +8197,7 @@ mod tests
         let dependent = arena.comp_type_pi(unit, returner);
         let code = arena.value_variable(DeBruijnIndex::from(0_u32));
         let element = arena.comp_type_element(code, super::Level::zero());
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let keys = [returner, arrow, dependent, element].map(|root| {
             support_key(
                 &mut table,
@@ -8013,7 +8226,7 @@ mod tests
         let integer_type = arena.value_type_base(BaseType::Integer);
         let unit_returner = arena.comp_type_returner(unit_type);
         let integer_returner = arena.comp_type_returner(integer_type);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         assert_ne!(
             support_key(
                 &mut table,
@@ -8113,7 +8326,7 @@ mod tests
         for _step in 0 .. 16_u32 {
             body = arena.value_tuple(&[body, body]);
         }
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let key = support_key(
             &mut table,
             &arena,
@@ -8175,13 +8388,13 @@ mod tests
         let late_content = arena.value_type_product(&[integer, integer]);
         let nodes =
             [unit, integer, shared, left[1], right[0], late_content].map(AnyNode::ValueType);
-        let mut serial = ContentTable::named();
+        let mut serial = ContentTable::named_in(Global);
         let names = nodes.map(|node| {
             let id = serial.place(&arena, node);
             serial.name(id)
         });
         for swapped in [false, true] {
-            let mut table = ContentTable::named();
+            let mut table = ContentTable::named_in(Global);
             let _base = table.place(&arena, AnyNode::ValueType(unit));
             let forked = arena.watermark();
             let mut overlays = [table.fork(&arena), table.fork(&arena)];
@@ -8244,7 +8457,7 @@ mod tests
         let open_at_once = 3_usize;
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         let _base = table.place(&arena, AnyNode::ValueType(unit));
         let mut nodes = Vec::with_capacity(steps);
         let mut open = alloc::collections::VecDeque::new();
@@ -8275,7 +8488,7 @@ mod tests
             deepest <= bound,
             "the layers stay within a logarithm of the steps, {bound}, not {deepest}"
         );
-        let mut serial = ContentTable::named();
+        let mut serial = ContentTable::named_in(Global);
         let _base = serial.place(&arena, AnyNode::ValueType(unit));
         let expected: Vec<_> = nodes
             .iter()
@@ -8305,7 +8518,7 @@ mod tests
         let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let unit = arena.value_unit();
         let subject = arena.value_tuple(&[variable, unit]);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let shifted = crate::rewrite::shift_value(
             &mut arena,
             &mut table,
@@ -8341,7 +8554,7 @@ mod tests
         let mut arena = TermArena::new();
         let unit = arena.value_type_unit();
         let pair = arena.value_type_product(&[unit, unit]);
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         let first = table.place(&arena, AnyNode::ValueType(unit));
         let second = table.place(&arena, AnyNode::ValueType(pair));
         let Naming::On(ref mut names) = table.naming
@@ -8371,7 +8584,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let unit = arena.value_unit();
-        let mut plain = ContentTable::new();
+        let mut plain = ContentTable::new_in(Global);
         let id = support_key(
             &mut plain,
             &arena,
@@ -8382,7 +8595,7 @@ mod tests
             Maybe::Absent(super::record_name::Absent::Off),
             plain.name(id)
         );
-        let mut named = ContentTable::named();
+        let mut named = ContentTable::named_in(Global);
         let id = support_key(
             &mut named,
             &arena,
@@ -8455,12 +8668,12 @@ mod tests
     /// - hypothesis: L3 — as the case it serves.
     /// - witness: `encoding::tests::a_kept_table_names_every_node_as_a_fresh_walk_does`
     fn named_afresh(
-        table: &mut ContentTable,
+        table: &mut ContentTable<Global>,
         arena: &TermArena,
         node: AnyNode,
     ) -> ContentId
     {
-        let kept = core::mem::take(&mut table.placed);
+        let kept = core::mem::replace(&mut table.placed, Placements::new_in(&Global));
         let named = table.place_synced(arena, node);
         table.placed = kept;
         named
@@ -8477,7 +8690,7 @@ mod tests
             steps in proptest::collection::vec(history(), 0 .. 64),
         ) {
             let mut arena = TermArena::new();
-            let mut table = ContentTable::new();
+            let mut table = ContentTable::new_in(Global);
             let mut values: Vec<ValueId> = Vec::new();
             let mut types: Vec<ValueTypeId> = Vec::new();
             let mut marks: Vec<ArenaWatermark> = Vec::new();
@@ -8542,7 +8755,7 @@ mod tests
         use crate::encoding::Partiality;
 
         let mut arena = TermArena::new();
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let bottom = arena.value_type_universe(GroundSort::Value, Level::zero());
         let bottom_again = arena.value_type_universe(GroundSort::Value, Level::zero());
         let top = arena.value_type_universe(
@@ -8654,7 +8867,7 @@ mod tests
             let constant = ConstantIndex::from(position);
             let codata = arena.comp_type_codata(constant, Vec::new());
             let subject = arena.value_unit();
-            let mut table = ContentTable::named();
+            let mut table = ContentTable::named_in(Global);
             for _ in 0 .. position {
                 table.constants.push(ConstantName::Position);
             }
@@ -8755,7 +8968,7 @@ mod tests
         };
         let mut arena = TermArena::new();
         let subject = arena.value_unit();
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         table.constants.push(ConstantName::Admitted { key });
         let widest = encode_rewrite(&mut table, &arena, RewriteGoal::Abstract {
             subject: AnyNode::Value(subject),
@@ -8802,7 +9015,7 @@ mod tests
     /// - hypothesis: L3 — the cases compare digests across tables and bodies.
     /// - witness: `encoding::tests::a_definition_takes_one_digest_in_either_admission_order`
     fn definition_digest(
-        table: &mut ContentTable,
+        table: &mut ContentTable<Global>,
         (arena, entries): (&TermArena, &crate::env::Entries),
         declared: ValueTypeId,
         body: ValueId,
@@ -8832,8 +9045,8 @@ mod tests
         let first = arena.value_unit();
         let body = arena.value_tuple(&[first, first]);
         let other = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let mut cold = ContentTable::named();
-        let mut warmed = ContentTable::named();
+        let mut cold = ContentTable::named_in(Global);
+        let mut warmed = ContentTable::named_in(Global);
         let _other = warmed.place(&arena, AnyNode::Value(other));
         let _body = warmed.place(&arena, AnyNode::Value(body));
         assert_ne!(
@@ -8881,7 +9094,7 @@ mod tests
             key: EntryContentKeyer::tagged(EntryTag::Content).finish(),
         };
         let naming = |name: ConstantName| {
-            let mut table = ContentTable::named();
+            let mut table = ContentTable::named_in(Global);
             table.name_ahead(ConstantIndex::from(0_usize), [name], None);
             table
         };
@@ -8925,7 +9138,7 @@ mod tests
     fn a_definition_named_at_mint_is_named_with_no_walk()
     {
         let mut arena = TermArena::new();
-        let mut table = ContentTable::named();
+        let mut table = ContentTable::named_in(Global);
         let unit = arena.value_type_unit();
         let declared = arena.value_type_product(&[unit, unit]);
         let mut body = arena.value_unit();
@@ -8960,7 +9173,7 @@ mod tests
             placed,
             "the naming of a definition named at mint places no node"
         );
-        let mut walked = ContentTable::named();
+        let mut walked = ContentTable::named_in(Global);
         assert_eq!(
             definition_digest(
                 &mut walked,

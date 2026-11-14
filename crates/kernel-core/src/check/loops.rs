@@ -51,6 +51,7 @@
 //! order; a case's loop arms follow its constructors' branches in the same
 //! order.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -241,6 +242,9 @@ struct Sides
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — the sides of the circle's loop decide reflexivity at
 ///   `Path[.A = Circle](Base, x)` refused and at `Path[.A = Circle](x, x)`
@@ -278,7 +282,7 @@ fn sides(
     let empty = arena.value_constructor(owed.words, words, FreeCells::nil(), Vec::new());
     let transported = arena.computation_path_transport(family, word, carried);
     let stayed = arena.computation_path_transport(family, empty, carried);
-    let mut table = ContentTable::default();
+    let mut table = ContentTable::new_in(Global);
     let fibre = substitute_value_type(arena, &mut table, &mut NullMemo, family, at);
     Ok(Sides {
         transported,
@@ -311,6 +315,9 @@ fn sides(
 /// - reason: one `for` over the wrappings, not recursion.
 /// - measure: the wrappings left.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — the sphere's 2-cell arm checks at the paths of paths at
 ///   its answer's reflexivity, and the circle's loop reads its triple as it
@@ -323,7 +330,7 @@ fn lifted(
     (reflexivities, binder): (Reflexivities, BinderUse),
 ) -> (ValueTypeId, ValueId, ValueId)
 {
-    let mut table = ContentTable::default();
+    let mut table = ContentTable::new_in(Global);
     let one = BinderDepth::from(1_u32);
     let (mut family, mut at, mut answered) = (family, at, answered);
     for _ in 0 .. usize::from(reflexivities) {
@@ -483,6 +490,9 @@ pub(super) fn arm_type(
 ///   conversion runs under its budget.
 /// - measure: the loops left, then the combinations left.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — over the circle, `Base => here(Base)` at `Path[.A =
 ///   Circle]( Base, x)` is refused at its loop while the same arm at `Path[.A =
@@ -530,7 +540,7 @@ pub(super) fn respected(
         // The outermost variable first: substituting one lowers every index
         // past it, never one inside it.
         held.sort_unstable_by_key(|variable| core::cmp::Reverse(variable.index));
-        let mut table = ContentTable::default();
+        let mut table = ContentTable::new_in(Global);
         // The odometer over the held variables' constructors, reset per loop:
         // one obligation per combination.
         let mut tags = alloc::vec![0_usize; held.len()];

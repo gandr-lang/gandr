@@ -2,6 +2,8 @@
 //! one admits through `Environment` or reads through conversion, which stand
 //! above the record, so it runs in this crate.
 
+use alloc::alloc::Global;
+
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::LevelSignature;
@@ -113,10 +115,10 @@ fn reference_environment(
 fn reference_stream(
     referent: &dyn Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
-) -> ContentEncoding
+) -> ContentEncoding<Global>
 {
     let (environment, reference, _declared) = reference_environment(referent, order);
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     table.name_constants(environment.entries());
     let _id = gandr_kernel_core_base::fixture::place(
         &mut table,
@@ -153,7 +155,7 @@ fn goal_name(
 ) -> (ContentId, RecordName)
 {
     let (environment, reference, declared) = reference_environment(referent, order);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     table.name_constants(environment.entries());
     if state == TableState::Warm {
         let _warmed = support_key(
@@ -256,7 +258,7 @@ fn an_axiom_reference_keeps_its_position()
 fn a_reference_to_a_vacancy_reads_apart_from_the_constant_at_its_position_7426()
 {
     let stream = |environment: &mut crate::Environment| {
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         table.name_constants(environment.entries());
         let mut staging = environment.stage();
         let reference = staging.arena().value_constant(ConstantIndex::from(0_usize));
@@ -366,7 +368,7 @@ fn each_twin_of_one_content_ranks_past_the_latest_3686()
     let _pair = environment
         .add_decl(staged)
         .expect("the pair of references admits");
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     table.name_constants(environment.entries());
     assert_ne!(
         gandr_kernel_core_base::fixture::place(

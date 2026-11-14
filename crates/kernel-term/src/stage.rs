@@ -50,6 +50,7 @@
 //! a source started when it fails, rather than cloning the arena per source;
 //! `gandr-core-checker`'s staged program entry is that worker.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
@@ -276,17 +277,38 @@ impl core::error::Error for StageError
 /// - hypothesis: L3 — valid and forward references, repeated classifiers and
 ///   shared children distinguish cyclic allocation and lost canonical identity.
 /// - witness: `stage::tests::syntax_boundaries`
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Arena
 {
     /// Canonical classifier descriptors in dependency order.
     types: Vec<Type>,
     /// Descriptor lookup; equality here concerns syntax, not conversion.
-    type_ids: HashIndex,
+    type_ids: HashIndex<Global>,
     /// Terms in dependency order.
     terms: Vec<Term>,
     /// Exact constructor, payload and child lookup within this arena.
-    term_ids: HashIndex,
+    term_ids: HashIndex<Global>,
+}
+
+impl Default for Arena
+{
+    /// An arena that holds no classifier and no term.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: rows and indexes, growth within the staged syntax
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            types: Vec::new(),
+            type_ids: HashIndex::new_in(Global),
+            terms: Vec::new(),
+            term_ids: HashIndex::new_in(Global),
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {

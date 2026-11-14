@@ -257,7 +257,7 @@ impl GoalMemo
     /// # Specification
     /// trivial.
     #[inline]
-    pub(super) const fn new(activity: MemoActivity) -> Self
+    pub(super) fn new(activity: MemoActivity) -> Self
     {
         Self {
             activity,

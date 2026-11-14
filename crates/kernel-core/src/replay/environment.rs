@@ -31,6 +31,7 @@
 //!   substitution of a variable for a variable. The substitution steps then
 //!   stay linear in the β-steps, not quadratic.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -52,9 +53,10 @@ use crate::rewrite::unload_computation;
 use crate::rewrite::unload_value;
 
 /// The arena, content table and memo the rewrites an unload runs mint into.
+/// The table is the replay's, on the global allocator.
 pub(super) type Machine<'run> = (
     &'run mut TermArena,
-    &'run mut ContentTable,
+    &'run mut ContentTable<Global>,
     &'run mut NullMemo,
 );
 

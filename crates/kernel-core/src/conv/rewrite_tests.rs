@@ -5,6 +5,8 @@
 //! Witnesses for the rewrite machines: shifts and substitutions, their
 //! memo keys, and the rebuild each former makes only where a child changed.
 
+use alloc::alloc::Global;
+
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
@@ -36,7 +38,7 @@ fn session_rewrites_preserve_graph_evidence_and_native_children()
     let code = arena.value_quote(session);
     let classifier = arena.value_type_path_universe(code, code);
     let path = arena.value_session_path(classifier, alloc::sync::Arc::clone(&evidence), variable);
-    let mut table = ContentTable::named();
+    let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = crate::rewrite::shift_value(
         &mut arena,
