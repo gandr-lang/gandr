@@ -33,8 +33,8 @@ fn a_region_reads_each_value_at_its_id_and_refuses_past_its_budget()
         "each id reads the value minted at it"
     );
     let refused = scoped(Budget::from(ONE_BUCKET), |region, mut mint| {
-        (0_u64 .. 64_u64).try_for_each(|value| region.mint(&mut mint, value).map(drop))?;
-        region.mint(&mut mint, 64_u64).map(drop)
+        (0_u64 .. 64_u64).try_for_each(|value| region.mint::<()>(&mut mint, value).map(drop))?;
+        region.mint::<()>(&mut mint, 64_u64).map(drop)
     });
     assert!(
         refused.is_err(),
@@ -48,7 +48,7 @@ fn a_region_reads_each_value_at_its_id_and_refuses_past_its_budget()
 fn a_child_reads_a_value_of_its_parent_through_adopt()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let parent = region.mint(&mut mint, 7_u64).expect("the budget holds it");
+        let parent: Id<'_> = region.mint(&mut mint, 7_u64).expect("the budget holds it");
         region
             .fork::<(), _>(&mut mint, |child, mut own, adopt| {
                 let adopted = adopt.adopt(parent);
@@ -74,16 +74,16 @@ fn a_child_reads_a_value_of_its_parent_through_adopt()
 fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let before = region.mint(&mut mint, 1_u64).expect("the budget holds it");
+        let before: Id<'_> = region.mint(&mut mint, 1_u64).expect("the budget holds it");
         let joined = region
             .fork::<Option<Id<'static>>, _>(&mut mint, |child, mut own, _adopt| {
-                let _second = child.mint(&mut own, 2_u64).ok()?;
+                let _second = child.mint::<()>(&mut own, 2_u64).ok()?;
                 Some(Some(child.mint(&mut own, 3_u64).ok()?))
             })
             .expect("the budget holds the suffix")
             .flatten()
             .expect("the child agrees");
-        let after = region.mint(&mut mint, 4_u64).expect("the budget holds it");
+        let after: Id<'_> = region.mint(&mut mint, 4_u64).expect("the budget holds it");
         (
             u32::from(before.key()),
             u32::from(joined.key()),
@@ -104,14 +104,16 @@ fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
 fn a_fork_that_disagrees_drops_its_suffix_whole()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let _before = region.mint(&mut mint, 1_u64).expect("the budget holds it");
+        let _before = region
+            .mint::<()>(&mut mint, 1_u64)
+            .expect("the budget holds it");
         let joined = region
             .fork::<(), _>(&mut mint, |child, mut own, _adopt| {
-                let _dropped = child.mint(&mut own, 2_u64).ok()?;
+                let _dropped = child.mint::<()>(&mut own, 2_u64).ok()?;
                 None
             })
             .expect("a dropped suffix draws nothing");
-        let after = region.mint(&mut mint, 5_u64).expect("the budget holds it");
+        let after: Id<'_> = region.mint(&mut mint, 5_u64).expect("the budget holds it");
         (joined, u32::from(after.key()), region.get(after).copied())
     });
     assert_eq!(
@@ -127,12 +129,12 @@ fn a_fork_that_disagrees_drops_its_suffix_whole()
 fn a_key_seats_back_in_its_region_and_a_key_past_it_is_refused()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let first = region.mint(&mut mint, 10_u64).expect("the budget holds it");
-        let second = region.mint(&mut mint, 20_u64).expect("the budget holds it");
+        let first: Id<'_> = region.mint(&mut mint, 10_u64).expect("the budget holds it");
+        let second: Id<'_> = region.mint(&mut mint, 20_u64).expect("the budget holds it");
         (
             region.seat(first.key()) == Some(first),
             region.seat(second.key()) == Some(second),
-            region.seat(Key::from(2_u32)).is_none(),
+            region.seat::<()>(Key::from(2_u32)).is_none(),
         )
     });
     assert_eq!(
@@ -169,14 +171,14 @@ fn a_region_over_a_region_draws_its_buckets_from_the_region_below()
 {
     let read = scoped::<u64, _, _>(Budget::from(LARGE), |outer, _outer_mint| {
         scoped_in::<u64, _, _, _>(Budget::from(LARGE), outer, |inner, mut mint| {
-            let id = inner.mint(&mut mint, 7_u64).ok()?;
+            let id: Id<'_> = inner.mint(&mut mint, 7_u64).ok()?;
             inner.get(id).copied()
         })
     });
     assert_eq!(read, Some(7_u64), "the region below holds the bucket");
     let refused = scoped::<u64, _, _>(Budget::from(ONE_BUCKET), |outer, _outer_mint| {
         scoped_in::<u64, _, _, _>(Budget::from(LARGE), outer, |inner, mut mint| {
-            inner.mint(&mut mint, 7_u64).is_err()
+            inner.mint::<()>(&mut mint, 7_u64).is_err()
         })
     });
     assert!(refused, "the budget below refuses the bucket's chunk");
