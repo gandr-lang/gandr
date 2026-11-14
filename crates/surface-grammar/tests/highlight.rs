@@ -324,7 +324,7 @@ fn side_of(steps: &[RCtxStep]) -> String
 ///   all-covered empty case; arbitrary metadata containing line breaks is not
 ///   exhausted.
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<HighlightError>().is_some() || error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some() || error.downcast_ref::<FmtError>().is_some(), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Highlight(_) | Failure::Grammar(_) | Failure::Format(_)), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
 fn unexercised_lines(
     pbg: &Pbg,
     table: &RoleTable,

@@ -272,6 +272,21 @@
 //! use gandr_surface_lowering::namespace::Recognition;
 //! use gandr_surface_parser::parse;
 //! use gandr_surface_syntax::SourceText;
+//! # #[derive(Debug)]
+//! # enum Failure {
+//! #     Grammar(gandr_surface_grammar::PbgError),
+//! #     Meld(gandr_surface_parser::MeldError),
+//! #     Lowering(gandr_surface_lowering::LoweringRefusal<'static>),
+//! # }
+//! # impl From<gandr_surface_grammar::PbgError> for Failure {
+//! #     fn from(error: gandr_surface_grammar::PbgError) -> Self { Self::Grammar(error) }
+//! # }
+//! # impl From<gandr_surface_parser::MeldError> for Failure {
+//! #     fn from(error: gandr_surface_parser::MeldError) -> Self { Self::Meld(error) }
+//! # }
+//! # impl From<gandr_surface_lowering::LoweringRefusal<'static>> for Failure {
+//! #     fn from(error: gandr_surface_lowering::LoweringRefusal<'static>) -> Self { Self::Lowering(error) }
+//! # }
 //!
 //! let pbg = built_in()?;
 //! let tree = parse(&pbg, SourceText::from("def x : Integer ; def x = 3 ;"))?.into_tree();
@@ -292,7 +307,7 @@
 //!     matches!(declaration.outcome(), DeclarationOutcome::Completed { .. }),
 //!     "the signature and the definition pair into one completed declaration"
 //! );
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), Failure>(())
 //! ```
 //!
 //! Each of the ten decisions, with the alternative it was chosen over and

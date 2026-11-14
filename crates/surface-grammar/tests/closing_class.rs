@@ -32,7 +32,7 @@ use crate::failure::Failure;
 ///   regexes and resource exhaustion are not exhausted.
 /// - witness: `tests::closing_class::closing_class_is_form_level`
 /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some(), |pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item && pbg.dag().name(rule.prec()).is_some_and(|name| name == "atom"))))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Grammar(_)), |pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item && pbg.dag().name(rule.prec()).is_some_and(|name| name == "atom"))))]
 fn one_rule(regex: Regex) -> Result<Pbg, Failure>
 {
     let mut spec = PrecSpec::new();

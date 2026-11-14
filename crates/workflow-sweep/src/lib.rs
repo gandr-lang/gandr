@@ -34,7 +34,7 @@
 //! for source in sweep.visit(SAMPLE, &corpus::sources()?) {
 //!     let _text = std::fs::read_to_string(&source.path);
 //! }
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), gandr_workflow_sweep::SweepError>(())
 //! ```
 //!
 //! # Decisions

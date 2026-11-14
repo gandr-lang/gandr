@@ -70,6 +70,17 @@
 //! use gandr_surface_render_remote::ReportView;
 //! use gandr_surface_render_remote::SourceText;
 //! use gandr_surface_render_remote::pos_of_byte;
+//! # #[derive(Debug)]
+//! # enum Failure {
+//! #     Range(gandr_surface_render_remote::InvertedRange),
+//! #     Position(gandr_surface_render_remote::PosOfByteError),
+//! # }
+//! # impl From<gandr_surface_render_remote::InvertedRange> for Failure {
+//! #     fn from(error: gandr_surface_render_remote::InvertedRange) -> Self { Self::Range(error) }
+//! # }
+//! # impl From<gandr_surface_render_remote::PosOfByteError> for Failure {
+//! #     fn from(error: gandr_surface_render_remote::PosOfByteError) -> Self { Self::Position(error) }
+//! # }
 //!
 //! let source = "def x = 1 ;\ndef y = x ;";
 //! let keyword = HlSpan {
@@ -98,7 +109,7 @@
 //!     &FrameScope::Document(document),
 //!     "a report frame is routed to its document"
 //! );
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), Failure>(())
 //! ```
 //!
 //! Each decision, with the alternative it was chosen over and what would

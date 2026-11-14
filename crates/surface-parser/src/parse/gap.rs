@@ -1685,7 +1685,6 @@ fn undocumented<'source>(
 #[cfg(test)]
 mod tests
 {
-    use alloc::boxed::Box;
     use alloc::string::String;
 
     use gandr_surface_grammar::built_in;

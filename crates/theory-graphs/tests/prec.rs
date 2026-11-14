@@ -3,6 +3,7 @@
 //! evidence, the fingerprint and the linear extension.
 
 use alloc::collections::BTreeSet;
+use core::error::Error as _;
 
 use anodized::spec;
 use gandr_theory_graphs::Assoc;

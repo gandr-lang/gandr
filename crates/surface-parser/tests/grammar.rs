@@ -623,7 +623,7 @@ fn each_ascii_spelling_molds_as_its_glyph_782() -> Result<(), Failure>
 /// - witness: `tests::grammar::recursion_marker_instantiations_parse_cleanly`
 /// - witness: `tests::grammar::mixed_set_type_operators_require_parentheses`
 /// - witness: `tests::grammar::every_universe_spelling_reads_cleanly`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_parser::MeldError>().is_some(), |&()| true))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, Failure::Meld(_)), |&()| true))]
 fn assert_parses_clean(
     case: CaseName,
     source: SourceText<'_>,

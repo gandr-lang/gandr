@@ -1128,7 +1128,6 @@ fn reads_alike(
 mod tests
 {
     use alloc::borrow::ToOwned as _;
-    use alloc::boxed::Box;
     use alloc::collections::BTreeSet;
     use alloc::string::String;
     use alloc::vec;

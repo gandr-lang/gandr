@@ -573,6 +573,17 @@ impl core::error::Error for Unlayable
 /// use gandr_surface_parser::Oblig;
 /// use gandr_surface_parser::parse;
 /// use gandr_surface_syntax::SourceText;
+/// # #[derive(Debug)]
+/// # enum Failure {
+/// #     Grammar(gandr_surface_grammar::PbgError),
+/// #     Meld(gandr_surface_parser::MeldError),
+/// # }
+/// # impl From<gandr_surface_grammar::PbgError> for Failure {
+/// #     fn from(error: gandr_surface_grammar::PbgError) -> Self { Self::Grammar(error) }
+/// # }
+/// # impl From<gandr_surface_parser::MeldError> for Failure {
+/// #     fn from(error: gandr_surface_parser::MeldError) -> Self { Self::Meld(error) }
+/// # }
 ///
 /// let pbg = built_in()?;
 ///
@@ -587,7 +598,7 @@ impl core::error::Error for Unlayable
 ///         .iter()
 ///         .any(|obligation| obligation.class == Oblig::MissingTile)
 /// );
-/// # Ok::<(), Box<dyn core::error::Error>>(())
+/// # Ok::<(), Failure>(())
 /// ```
 ///
 /// # Specification
@@ -1190,13 +1201,11 @@ pub fn parse_by_form<'source>(
 mod tests
 {
     use alloc::borrow::ToOwned as _;
-    use alloc::boxed::Box;
     use alloc::collections::BTreeMap;
     use alloc::format;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::fmt;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -1220,51 +1229,10 @@ mod tests
     use crate::SeamBreak;
     use crate::UnitSeam;
     use crate::failure::Failure;
+    use crate::failure::ReadSourceError;
     use crate::label::label;
     use crate::testing::reconstruct;
     use crate::testing::root_digest;
-
-    /// File-read failure with the example path preserved.
-    #[derive(Debug)]
-    struct ReadSourceError
-    {
-        /// The file that failed to read.
-        path: PathBuf,
-        /// The underlying failure.
-        source: std::io::Error,
-    }
-
-    impl fmt::Display for ReadSourceError
-    {
-        /// # Specification
-        /// - ensures: the message names the requested path and original cause.
-        /// - fails: propagates the formatter's write failure.
-        /// - panics: none.
-        /// - executable: none — the formatter's sink is write-only; observing
-        ///   the emitted bytes would require replaying its side effects.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — a directory read failure retains its path and
-        ///   cause in the message; a rejecting sink detects swallowed errors.
-        /// - witness: `parse::tests::source_reads_preserve_text_and_failure_context`
-        fn fmt(
-            &self,
-            f: &mut fmt::Formatter<'_>,
-        ) -> fmt::Result
-        {
-            write!(f, "failed to read {}: {}", self.path.display(), self.source)
-        }
-    }
-
-    impl Error for ReadSourceError
-    {
-        /// # Specification
-        /// trivial.
-        fn source(&self) -> Option<&(dyn Error + 'static)>
-        {
-            Some(&self.source)
-        }
-    }
 
     #[test]
     fn obligations_are_reported_in_severity_then_source_order()

@@ -87,7 +87,7 @@
 //! assert_eq!(diagnostic.severity, Severity::Error);
 //! assert_eq!(diagnostic.span, Maybe::Present(span));
 //! assert_eq!(diagnostic.annotations[0].locus.line, 1_usize);
-//! # Ok::<(), Box<dyn core::error::Error>>(())
+//! # Ok::<(), gandr_surface_syntax::SyntaxError>(())
 //! ```
 //!
 //! # Specification discipline

@@ -10730,11 +10730,11 @@ fn read_shape_op(reader: &mut Reader<'_>) -> Result<OpShape, CheckpointError>
 mod tests
 {
     use alloc::borrow::ToOwned as _;
-    use alloc::boxed::Box;
     use alloc::format;
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
+    use core::error::Error as _;
 
     use anodized::spec;
     use gandr_surface_grammar::LabelId;

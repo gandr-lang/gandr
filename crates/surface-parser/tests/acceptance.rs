@@ -4,6 +4,7 @@
 //! the language's corpus sources, the recovery fixtures, and curated malformed
 //! programs.
 
+use core::error::Error as _;
 use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -38,6 +39,7 @@ use crate::common::significant_children;
 use crate::common::span;
 use crate::common::text;
 use crate::failure::Failure;
+use crate::failure::ReadSourceError;
 
 /// Number of labeled tokens to push from a source prefix.
 #[repr(transparent)]
@@ -73,49 +75,6 @@ impl From<TokenPrefixLen> for usize
     fn from(count: TokenPrefixLen) -> Self
     {
         count.0
-    }
-}
-
-/// File-read failure with path context retained for corpus and fixture reads.
-#[derive(Debug)]
-struct ReadSourceError
-{
-    /// The file that failed to read.
-    path: PathBuf,
-    /// The underlying failure.
-    source: std::io::Error,
-}
-
-impl fmt::Display for ReadSourceError
-{
-    /// # Specification
-    /// - ensures: writes the failed path and underlying IO failure.
-    /// - fails: propagates a formatter refusal.
-    /// - executable: none — `Formatter` exposes neither its sink nor written
-    ///   bytes for a postcondition; both observations require an external sink.
-    ///
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a real directory-read error retains path and cause in
-    ///   its display; a refusing `fmt::Write` sink must return `fmt::Error`.
-    ///   Exact incidental wording is not pinned.
-    /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        write!(f, "failed to read {}: {}", self.path.display(), self.source)
-    }
-}
-
-impl Error for ReadSourceError
-{
-    /// # Specification
-    /// trivial.
-    fn source(&self) -> Option<&(dyn Error + 'static)>
-    {
-        Some(&self.source)
     }
 }
 
