@@ -397,6 +397,15 @@ where
     }
 }
 
+/// A block that the allocator face hands out: an address range inside one
+/// chunk of a layer.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Block(NonNull<[u8]>);
+
 /// The free bytes of the newest chunk of an allocator face: its next byte,
 /// and the address past its last byte.
 #[derive(Clone, Copy, Debug)]
@@ -456,7 +465,7 @@ where
     fn carve(
         &self,
         layout: Layout,
-    ) -> Option<NonNull<[u8]>>
+    ) -> Option<Block>
     {
         let cursor = self.cursor.get()?;
         let start = cursor
@@ -472,10 +481,10 @@ where
             next: cursor.next.with_addr(NonZero::new(end)?),
             end: cursor.end,
         }));
-        Some(NonNull::slice_from_raw_parts(
+        Some(Block(NonNull::slice_from_raw_parts(
             cursor.next.with_addr(NonZero::new(start)?),
             layout.size(),
-        ))
+        )))
     }
 
     /// Draw a chunk of `layout` from the allocator below, and set the cursor
@@ -614,7 +623,7 @@ where
     fn block(
         &self,
         layout: Layout,
-    ) -> Result<NonNull<[u8]>, AllocError>
+    ) -> Result<Block, AllocError>
     {
         if let Some(block) = self.bytes.carve(layout) {
             return Ok(block);
@@ -1162,11 +1171,17 @@ where
     }
 }
 
-// SAFETY: each block lies in a chunk of the region's layer, and the layer
-// outlives each borrow `&Region` of it, so a block stays valid while any copy
-// of this allocator lives. The cursor only moves forward, so no two live
-// blocks overlap. A copy of `&Region` is the same region, so a block from one
-// copy may return through another.
+/// The allocator face of a region: a borrow of the region hands out blocks
+/// from its chunks.
+///
+/// # Safety
+/// - unsafe invariants: each block lies in a chunk of the region's layer, and
+///   the layer outlives each borrow `&Region` of it, so a block stays valid
+///   while any copy of this allocator lives. The cursor only moves forward, so
+///   no two live blocks overlap. A copy of `&Region` is the same region, so a
+///   block from one copy may return through another.
+// SAFETY: the invariants above hold: `Bytes::carve` hands out each block
+// past the last, and `Bytes` frees its chunks only when the layer drops.
 unsafe impl<Value, Below> Allocator for &Region<'_, Value, Below>
 where
     Below: Allocator + Clone,
@@ -1192,13 +1207,17 @@ where
         layout: Layout,
     ) -> Result<NonNull<[u8]>, AllocError>
     {
-        self.layer.block(layout)
+        self.layer.block(layout).map(|block| block.0)
     }
 
     /// Keep the block: the region frees each of its chunks when it ends.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Safety
+    /// - unsafe invariants: the caller's, as `Allocator::deallocate` states;
+    ///   this body reads neither argument, so no argument can break it.
     #[inline]
     unsafe fn deallocate(
         &self,
