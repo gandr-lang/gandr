@@ -110,6 +110,25 @@ pub struct Forward
 
 impl Forward
 {
+    /// The forward flow at `classifier`, with `images` and `dialogues`, one of
+    /// each at every pattern in the kernel's order, as a checkpoint seats it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        classifier: ValueTypeId,
+        (images, dialogues): (Vec<ValueId>, Vec<Vec<ConversionDecision<()>>>),
+    ) -> Self
+    {
+        Self {
+            classifier,
+            images: Arc::from(images),
+            dialogues: Arc::from(dialogues),
+        }
+    }
+
     /// The flow type the statement inhabits, `Flow[.A = Type](⌜A⌝, ⌜B⌝)`.
     ///
     /// # Specification

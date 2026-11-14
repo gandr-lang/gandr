@@ -165,6 +165,7 @@ use crate::footprint::HoleMark;
 use crate::region::ItemKey;
 use crate::region::Reference;
 use crate::report::CrossingContent;
+use crate::report::DirectedContent;
 use crate::report::ElaborationContent;
 use crate::report::EquationContent;
 use crate::report::HandledContent;
@@ -195,16 +196,17 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x1c` keeps the payloads that the judgement added, beside the
-/// reflexivities that `0x1b` keeps, the entries of the rows and the handlers
-/// that `0x1a` keeps, what the judgement reported of an item that `0x19`
-/// keeps, the table parts that `0x18` keeps of an item that its judgement
-/// entered elaborated, the failure content that `0x17` keeps and the located
-/// program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1c";
+/// `0x1d` keeps the directed flows that the judgement added, beside the
+/// payloads that `0x1c` keeps, the reflexivities that `0x1b` keeps, the
+/// entries of the rows and the handlers that `0x1a` keeps, what the
+/// judgement reported of an item that `0x19` keeps, the table parts that
+/// `0x18` keeps of an item that its judgement entered elaborated, the
+/// failure content that `0x17` keeps and the located program that `0x16`
+/// persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1d";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1c`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1d`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1546,6 +1548,7 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 fn write_tables<Out>(
     writer: &mut Writer<'_, Out>,
     tables: Maybe<&TableContent, tabled::Absent>,
@@ -1598,8 +1601,8 @@ where
     writer.count(Count(tables.reflexivities().len()))?;
     for &(ref at, ref reflexivity) in tables.reflexivities() {
         write_report_place(writer, at)?;
-        write_dialogue(writer, &reflexivity.left)?;
-        write_dialogue(writer, &reflexivity.right)?;
+        write_dialogue(writer, &reflexivity.left, write_trace)?;
+        write_dialogue(writer, &reflexivity.right, write_trace)?;
         for met in &reflexivity.met {
             match *met {
                 None => writer.tag(Tag(0)),
@@ -1620,15 +1623,42 @@ where
         write_report_place(writer, at)?;
         write_report_place(writer, moved)?;
     }
+    writer.count(Count(tables.directed().len()))?;
+    for &(ref at, ref statement) in tables.directed() {
+        write_report_place(writer, at)?;
+        match *statement {
+            DirectedContent::Forward {
+                ref classifier,
+                ref images,
+                ref dialogues,
+            } => {
+                writer.tag(Tag(0));
+                write_report_place(writer, classifier)?;
+                writer.count(Count(images.len()))?;
+                for image in images {
+                    write_report_place(writer, image)?;
+                }
+                writer.count(Count(dialogues.len()))?;
+                for dialogue in dialogues {
+                    write_dialogue(writer, dialogue, |_writer, &()| Ok(()))?;
+                }
+            },
+            DirectedContent::Function(ref classifier) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, classifier)?;
+            },
+        }
+    }
     Ok(())
 }
 
 /// Write a kept dialogue: a count, then each decision as its tag and its
-/// fields in declaration order.
+/// fields in declaration order, each node through `write_node`.
 ///
 /// # Specification
-/// - ensures: [`read_dialogue`] reads back `dialogue` from what was written.
-/// - fails: as [`write_reference`] fails for a constant.
+/// - ensures: [`read_dialogue`] reads back `dialogue` from what was written,
+///   given the reader of `write_node`.
+/// - fails: as `write_node` fails.
 /// - panics: none.
 /// - executable: none — the witness reads the bytes back.
 ///
@@ -1638,12 +1668,15 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
-fn write_dialogue<Out>(
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+fn write_dialogue<Out, Node, WriteNode>(
     writer: &mut Writer<'_, Out>,
-    dialogue: &[ConversionDecision<TraceContent>],
+    dialogue: &[ConversionDecision<Node>],
+    write_node: WriteNode,
 ) -> Result<(), CodecError>
 where
     Out: Sink,
+    WriteNode: Fn(&mut Writer<'_, Out>, &Node) -> Result<(), CodecError>,
 {
     let side = |writer: &mut Writer<'_, Out>, side: ConversionSide| {
         writer.tag(Tag(match side {
@@ -1656,30 +1689,30 @@ where
         match *decision {
             ConversionDecision::ReduceLeft { ref redex } => {
                 writer.tag(Tag(0));
-                write_trace(writer, redex)?;
+                write_node(writer, redex)?;
             },
             ConversionDecision::ReduceRight { ref redex } => {
                 writer.tag(Tag(1));
-                write_trace(writer, redex)?;
+                write_node(writer, redex)?;
             },
             ConversionDecision::ConstShortcut { ref constant } => {
                 writer.tag(Tag(2));
-                write_trace(writer, constant)?;
+                write_node(writer, constant)?;
             },
             ConversionDecision::Unfold { ref constant } => {
                 writer.tag(Tag(3));
-                write_trace(writer, constant)?;
+                write_node(writer, constant)?;
             },
             ConversionDecision::Postpone { ref constant } => {
                 writer.tag(Tag(4));
-                write_trace(writer, constant)?;
+                write_node(writer, constant)?;
             },
             ConversionDecision::Freeze {
                 ref constant,
                 side: frozen,
             } => {
                 writer.tag(Tag(5));
-                write_trace(writer, constant)?;
+                write_node(writer, constant)?;
                 side(writer, frozen);
             },
             ConversionDecision::EtaExpand {
@@ -1688,7 +1721,7 @@ where
             } => {
                 writer.tag(Tag(6));
                 side(writer, applied);
-                write_trace(writer, variable)?;
+                write_node(writer, variable)?;
             },
             ConversionDecision::ReturnEta { side: at } => {
                 writer.tag(Tag(7));
@@ -1708,15 +1741,15 @@ where
             },
             ConversionDecision::Force { ref thunk } => {
                 writer.tag(Tag(11));
-                write_trace(writer, thunk)?;
+                write_node(writer, thunk)?;
             },
             ConversionDecision::ComparedShared {
                 ref left,
                 ref right,
             } => {
                 writer.tag(Tag(12));
-                write_trace(writer, left)?;
-                write_trace(writer, right)?;
+                write_node(writer, left)?;
+                write_node(writer, right)?;
             },
             ConversionDecision::Decompose => writer.tag(Tag(13)),
             ConversionDecision::NegativeSubgoal { position } => {
@@ -1770,11 +1803,12 @@ where
     }
 }
 
-/// Read a kept dialogue as [`write_dialogue`] writes it.
+/// Read a kept dialogue as [`write_dialogue`] writes it, each node through
+/// `read_node`.
 ///
 /// # Specification
 /// - fails: [`CodecError::Corrupt`] for a tag that no decision or side takes;
-///   as [`read_trace`] fails.
+///   as `read_node` fails.
 /// - panics: none.
 /// - executable: none — the witness reads the bytes back.
 ///
@@ -1784,9 +1818,13 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
-fn read_dialogue(
-    reader: &mut Reader<'_>
-) -> Result<Vec<ConversionDecision<TraceContent>>, CodecError>
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+fn read_dialogue<Node, ReadNode>(
+    reader: &mut Reader<'_>,
+    read_node: ReadNode,
+) -> Result<Vec<ConversionDecision<Node>>, CodecError>
+where
+    ReadNode: Fn(&mut Reader<'_>) -> Result<Node, CodecError>,
 {
     let side = |reader: &mut Reader<'_>| match reader.tag()?.0 {
         0 => Ok(ConversionSide::Left),
@@ -1798,27 +1836,27 @@ fn read_dialogue(
     for _ in 0 .. count {
         dialogue.push(match reader.tag()?.0 {
             0 => ConversionDecision::ReduceLeft {
-                redex: read_trace(reader)?,
+                redex: read_node(reader)?,
             },
             1 => ConversionDecision::ReduceRight {
-                redex: read_trace(reader)?,
+                redex: read_node(reader)?,
             },
             2 => ConversionDecision::ConstShortcut {
-                constant: read_trace(reader)?,
+                constant: read_node(reader)?,
             },
             3 => ConversionDecision::Unfold {
-                constant: read_trace(reader)?,
+                constant: read_node(reader)?,
             },
             4 => ConversionDecision::Postpone {
-                constant: read_trace(reader)?,
+                constant: read_node(reader)?,
             },
             5 => ConversionDecision::Freeze {
-                constant: read_trace(reader)?,
+                constant: read_node(reader)?,
                 side: side(reader)?,
             },
             6 => ConversionDecision::EtaExpand {
                 side: side(reader)?,
-                variable: read_trace(reader)?,
+                variable: read_node(reader)?,
             },
             7 => ConversionDecision::ReturnEta {
                 side: side(reader)?,
@@ -1833,11 +1871,11 @@ fn read_dialogue(
                 side: side(reader)?,
             },
             11 => ConversionDecision::Force {
-                thunk: read_trace(reader)?,
+                thunk: read_node(reader)?,
             },
             12 => ConversionDecision::ComparedShared {
-                left: read_trace(reader)?,
-                right: read_trace(reader)?,
+                left: read_node(reader)?,
+                right: read_node(reader)?,
             },
             13 => ConversionDecision::Decompose,
             14 => ConversionDecision::NegativeSubgoal {
@@ -1897,6 +1935,7 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 fn read_tables(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -1948,8 +1987,8 @@ fn read_tables(
     let mut reflexivities = Vec::new();
     for _ in 0 .. count {
         let at = places.read(reader)?;
-        let left = read_dialogue(reader)?;
-        let right = read_dialogue(reader)?;
+        let left = read_dialogue(reader, read_trace)?;
+        let right = read_dialogue(reader, read_trace)?;
         let mut met = [None, None];
         for slot in &mut met {
             *slot = match reader.tag()?.0 {
@@ -1985,8 +2024,39 @@ fn read_tables(
     if !payloads.is_sorted_by(|left, right| left.0 < right.0) {
         return Err(CodecError::NonCanonical);
     }
+    let count = reader.count()?.0;
+    let mut directed = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let statement = match reader.tag()?.0 {
+            0 => {
+                let classifier = places.read(reader)?;
+                let patterns = reader.count()?.0;
+                let mut images = Vec::new();
+                for _ in 0 .. patterns {
+                    images.push(places.read(reader)?);
+                }
+                let patterns = reader.count()?.0;
+                let mut dialogues = Vec::new();
+                for _ in 0 .. patterns {
+                    dialogues.push(read_dialogue(reader, |_reader| Ok(()))?);
+                }
+                DirectedContent::Forward {
+                    classifier,
+                    images,
+                    dialogues,
+                }
+            },
+            1 => DirectedContent::Function(places.read(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        };
+        directed.push((at, statement));
+    }
+    if !directed.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
     Ok(Maybe::Present(TableContent::from_parts(
-        (rows, handled, reflexivities, payloads),
+        (rows, handled, reflexivities, payloads, directed),
         (outside, roots),
     )))
 }
