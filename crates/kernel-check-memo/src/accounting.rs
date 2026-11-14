@@ -189,6 +189,32 @@ impl MemoBucketCount
     {
         Self(self.0.saturating_add(1))
     }
+
+    /// One bucket fewer, saturating at zero.
+    ///
+    /// A memo closes a bucket only when it removes the last entry that
+    /// carries a digest, so a bucket closes only after it opened.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `self - 1`, or `self` at zero.
+    /// - provides: the bucket count that the removal of a digest's last entry
+    ///   moves.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a memo that removes one of two colliding entries
+    ///   keeps its bucket, and one that removes the last entry of a digest
+    ///   closes it.
+    /// - witness: `memo::tests::a_removal_keeps_every_other_entry_and_counts_exactly`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(1))]
+    pub(crate) const fn closed(self) -> Self
+    {
+        Self(self.0.saturating_sub(1))
+    }
 }
 
 impl From<usize> for MemoBucketCount
@@ -353,6 +379,50 @@ where
         let _prior = self.planes.insert(plane, bumped);
         self.total = total;
         Ok(())
+    }
+
+    /// Accounts the removal of one entry of `plane`.
+    ///
+    /// # Specification
+    /// - requires: the census counts an entry of `plane`.
+    /// - ensures: the plane's count and the total are one fewer; a plane whose
+    ///   count reaches zero leaves the census, so each retained count stays
+    ///   positive. A plane that counts no entry leaves the census as it was.
+    /// - provides: the accounting of a removed entry.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a memo that removes the one entry of a plane and some
+    ///   of another reads zero on the first and the rest on the second, and its
+    ///   total counts the entries that stay.
+    /// - witness: `memo::tests::a_removal_keeps_every_other_entry_and_counts_exactly`
+    #[spec(
+        captures: [entry_plane = self.plane(plane), entry_total = self.total()],
+        ensures: if usize::from(entry_plane) == 0 {
+            self.total() == entry_total && self.plane(plane) == entry_plane
+        }
+        else {
+            usize::from(self.total()) == usize::from(entry_total).saturating_sub(1)
+                && usize::from(self.plane(plane)) == usize::from(entry_plane).saturating_sub(1)
+                && (usize::from(self.plane(plane)) != 0 || !self.planes.contains_key(&plane))
+        }
+    )]
+    pub(crate) fn forget(
+        &mut self,
+        plane: Plane,
+    )
+    {
+        match usize::from(self.plane(plane)).checked_sub(1) {
+            None => return,
+            Some(0) => {
+                let _gone = self.planes.remove(&plane);
+            },
+            Some(left) => {
+                let _prior = self.planes.insert(plane, MemoEntryCount::from(left));
+            },
+        }
+        self.total = MemoEntryCount::from(usize::from(self.total).saturating_sub(1));
     }
 
     /// A valid one-plane census at the representable ceiling, for fault
