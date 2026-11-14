@@ -92,6 +92,10 @@ impl LevelContext
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the poset's clauses and certificate, or the loop's
+    ///   witness, growth within the constraints
+    ///
     /// # Adequacy
     /// - hypothesis: L1 validates returned consistency and looping evidence; L3
     ///   at the parameter boundary and on an out-of-scope constraint after a

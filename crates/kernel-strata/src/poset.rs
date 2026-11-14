@@ -611,6 +611,9 @@ impl Derivation
     ///   recomputes what it would otherwise have to trust.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the derivation's steps, growth within the log
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — oracle-produced derivations replay against
     ///   independent validators. The empty derivation and multi-step paper loop
@@ -1049,6 +1052,10 @@ impl LandmarkPoset
     /// [`PosetError::Overflow`] and [`PosetError::EvidenceIncomplete`], the
     /// latter excluded by the theory.
     ///
+    /// # Cost
+    /// - allocation: the poset's variables, clauses, model and evidence, growth
+    ///   within the constraints
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the worked example of the loop-checking paper pins
     ///   both dichotomy arms end to end, with an exact certificate on admission
@@ -1157,6 +1164,10 @@ impl LandmarkPoset
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the constraints' variables and compiled clauses, growth
+    ///   within the constraints
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a model that satisfies the constraints admits with
@@ -1345,6 +1356,10 @@ fn consistency_certificate(
 /// # Errors
 /// [`PosetError::Overflow`] or [`PosetError::EvidenceIncomplete`].
 ///
+/// # Cost
+/// - allocation: the loop's seed, derivation and members, growth within the
+///   members and the system's clauses
+///
 /// # Adequacy
 /// - hypothesis: L2 — total and partial loops replay their pumping derivations
 ///   in the full compiled system; exact member sets and shifts distinguish bad
@@ -1468,6 +1483,10 @@ fn extract_loop_witness(
 /// [`PosetEvidenceError::EmptyLoop`], the replay errors, and
 /// [`PosetEvidenceError::TargetUncovered`].
 ///
+/// # Cost
+/// - allocation: the compiled clauses and the replay's seed and maxima, growth
+///   within the constraints and the derivation
+///
 /// # Adequacy
 /// - hypothesis: L3 — rejection arms pinned by hand-perturbed witnesses
 ///   asserting the exact variant, acceptance pinned by the loop goldens.
@@ -1574,6 +1593,9 @@ fn compile(constraints: &[LandmarkConstraint]) -> SmallVec<HornClause, 0, Global
 /// - provides: the atom-level half of the documented compilation.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the Horn atoms, growth within the level's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — multiple variables with unequal offsets occur in an
 ///   inequality and an equality; the exact compiled bodies and heads expose
@@ -1601,6 +1623,9 @@ fn level_atoms(level: &Level) -> SmallVec<HornAtom, 0, Global>
 /// - fails: never; an empty body contributes nothing, which the caller-side
 ///   invariant excludes.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: each new clause and its body, growth within the head atoms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — compilation appends families to an existing prefix and

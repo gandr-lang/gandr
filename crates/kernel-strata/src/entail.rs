@@ -801,6 +801,10 @@ pub fn validate_entailment_witness(
 /// [`PosetEvidenceError::NotRefuting`], and
 /// [`PosetEvidenceError::Overflow`].
 ///
+/// # Cost
+/// - allocation: the query's encoding and the countermodel's model, growth
+///   within the query's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — each rejection arm pinned by a hand-perturbed
 ///   countermodel asserting the exact variant, acceptance pinned by the
@@ -925,6 +929,10 @@ pub fn validate_entailment_countermodel(
 /// # Errors
 /// [`PosetError::Overflow`] — a seed or goal offset passed the `u128` range.
 ///
+/// # Cost
+/// - allocation: the query's scope, clauses, seed and goals, growth within the
+///   poset's clauses and the query's atoms
+///
 /// # Adequacy
 /// - hypothesis: L2 — the encoding is exercised by every property in the
 ///   entailment differential, whose empty-poset arm pins it against the free
@@ -1040,6 +1048,10 @@ pub fn encode_query(
 /// - panics: none.
 /// - intension: the scan is a single forward pass over the log, never
 ///   recursive, and stops at the first step that clears the outstanding goals.
+///
+/// # Cost
+/// - allocation: a copy of the seed and the goals that stay open, growth within
+///   the seed and the goals
 ///
 /// # Adequacy
 /// - hypothesis: L2 — generated witnesses replay independently, exposing an

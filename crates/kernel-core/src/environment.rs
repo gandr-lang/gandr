@@ -1202,6 +1202,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the declaration's entry, name and commit records, and the
+    ///   frames of its check, growth within the declaration
     fn release_as(
         &mut self,
         staged: StagedDeclaration,
@@ -2561,6 +2565,10 @@ impl Environment
     ///
     /// # Errors
     /// Any [`KernelError`].
+    ///
+    /// # Cost
+    /// - allocation: one entry and one checked id for each member, and the
+    ///   frames of their checks, growth within the block's members
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_block`].

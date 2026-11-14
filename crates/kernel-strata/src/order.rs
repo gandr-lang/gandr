@@ -668,6 +668,10 @@ impl Level
 /// - fails: never; the `Err` branch carries the counter-valuation.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the matched atoms and the refutation's valuation, growth
+///   within the left level's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — the pointwise domination test is the decision surface,
 ///   and it is carried by the public faces' witnesses, since this is their

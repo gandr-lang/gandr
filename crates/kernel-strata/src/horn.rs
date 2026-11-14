@@ -845,6 +845,10 @@ impl HornClause
     ///   constructor guard rather than a reachable state.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the merged body and the clause's body, growth within the
+    ///   raw body
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the canonicalization is pinned by the duplicate-body
     ///   case asserting the exact resulting atom list, and the rejection by the
@@ -1145,6 +1149,11 @@ pub struct Saturation
 /// # Errors
 /// [`LevelError::Overflow`] — a firing's conclusion passed the `u128` range.
 ///
+/// # Cost
+/// - allocation: the values and the log of the saturation, and the variables
+///   that the precondition counts, growth within the system's clauses and
+///   variables
+///
 /// # Adequacy
 /// - hypothesis: L1 — the paper example fixes the finite model and its loop
 ///   variant fixes the divergent components. L2 — unconstrained queries agree
@@ -1284,6 +1293,10 @@ pub fn saturate(
 ///
 /// # Errors
 /// [`LevelError::Overflow`] — a derived value passed the `u128` range.
+///
+/// # Cost
+/// - allocation: the values and the log of the derivation, growth within the
+///   round limit and the system's clauses
 ///
 /// # Adequacy
 /// - hypothesis: L2 — paper loop fixtures replay through the independent

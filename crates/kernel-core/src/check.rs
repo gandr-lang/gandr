@@ -9750,6 +9750,10 @@ where
 /// # Errors
 /// Any `KernelError` from formation, checking, or code-obligation replay.
 ///
+/// # Cost
+/// - allocation: the empty level context and the memo, the session and the
+///   frames of the check, growth within the value's term
+///
 /// # Adequacy
 /// - hypothesis: L3 — malformed translator types must refuse before their
 ///   round-trip dialogues can certify an equivalence.
@@ -9819,6 +9823,10 @@ pub(crate) fn check_closed_value(
 ///
 /// # Errors
 /// Any `KernelError`.
+///
+/// # Cost
+/// - allocation: the empty level context and the memo, the session and the
+///   frames of the check, growth within the value's term
 ///
 /// # Adequacy
 /// - hypothesis: L3 — replay admits a certified path and refuses forged
