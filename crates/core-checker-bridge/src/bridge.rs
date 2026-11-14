@@ -1781,6 +1781,8 @@ impl Readmission
     ///   reader finds a declaration by the kernel's name of it.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the count rests on the environment's places, which
+    ///   a clause could read only by walking the environment.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — across one insertion in an environment in admission

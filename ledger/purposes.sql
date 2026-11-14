@@ -2151,7 +2151,7 @@ INSERT INTO purpose VALUES('storage-artifact','record::ContentName','struct','Ho
 INSERT INTO purpose VALUES('storage-artifact','record::HEADER_KEY','constant','Names the key the header record is stored under: the empty key, which sorts first.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-artifact','record::ORDER_KEY','constant','Names the key the order is stored under: one zero byte, which sorts after the header''s key and before every record key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-artifact','record::OrderImage','struct','Holds the order of a record set as the bytes of the one record it is stored as.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('storage-artifact','record::PLACE_LEN','constant','Names the byte width of one place of the order: a tag, a record key and a content name.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-artifact','record::PLACE_LEN','constant','Names the byte width of one place of the order without a name: a tag and a record key.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-artifact','record::Place','struct','Holds one place of the order: the key of the record that stands there, and the kernel''s name of the entry or why it has none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-artifact','record::RECORD_DOMAIN','constant','Names the domain a record''s digest opens with, inside the hashed preimage.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-artifact','record::RECORD_KEY_LEN','constant','Names the byte width of a declaration record''s key, one BLAKE3 output.',NULL,'fits','sound',NULL);

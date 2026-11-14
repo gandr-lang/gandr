@@ -70,6 +70,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_storage_values::CanonicalValue;
 use gandr_storage_values::CanonicalWord;
 use gandr_storage_values::ConstructorTag;
@@ -189,6 +190,9 @@ impl CanonicalValue for ArtifactRecordSet
     ///   decoder trusting its stream would not.
     /// - witness: `tests::artifact_contract::a_stream_that_is_no_artifact_is_refused_off_the_value_plane`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|set| set.records.iter()
+        .zip(set.records.iter().skip(1))
+        .all(|(previous, next)| previous.key < next.key)))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
     {
         let position = reader.position();
