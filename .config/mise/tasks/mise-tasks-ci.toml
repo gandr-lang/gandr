@@ -3297,7 +3297,7 @@ if [[ $unit == true ]]; then
   source "$config_dir/bodies/frame.bash"
   unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
   gh issue edit "$number" --add-label shape:signed > /dev/null \
-    || { echo "issue:file: #$number passes unit:check and carries its frame marker, and the label shape:signed is not added: run \`gh issue edit $number --add-label shape:signed\`" >&2; exit 1; }
+    || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
 fi
 echo "$url"
 {% endraw %}'''
