@@ -526,6 +526,13 @@ impl core::error::Error for OverlapRefusal
     /// - hypothesis: L3 — a seam refusal and a kind refusal answer apart.
     /// - witness: `overlap::tests::overlap_reducts_preserve_refusal_precedence`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {

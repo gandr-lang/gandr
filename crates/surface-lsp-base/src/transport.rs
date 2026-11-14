@@ -163,6 +163,13 @@ impl core::error::Error for TransportFault
     ///   the stream error's kind; a framing fault observes none.
     /// - witness: `transport::tests::a_stream_fault_names_the_stream_error_as_its_source`
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {

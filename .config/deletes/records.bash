@@ -405,6 +405,23 @@ records_evict() {
   done < <(ls -1tr "$records_cache")
 }
 
+# A run of the base and a run of the head share the records target, and a
+# change can move the pin of the policy library between them. Cargo can count
+# a library of another revision as fresh, and its units with it, so the head
+# then loads a library without the lints that its crates expect (#7384). So
+# `dylint` of the records target holds a stamp of the revision that it
+# builds, as `check:dylint` does, and a run under another revision starts
+# from an empty `dylint`.
+records_stamp() {
+  local revision stamp=$records_target/dylint/quenchant-revision
+  revision=$(records_run cargo metadata --no-deps --locked --format-version 1 \
+    | jq -r '[.metadata.dylint.libraries[]? | select(.pattern == "crates/quenchant-dylints") | .rev] | first // empty') || return
+  [[ $(cat "$stamp" 2> /dev/null) != "$revision" ]] || return 0
+  rm -rf "$records_target/dylint"
+  mkdir -p "$records_target/dylint"
+  printf '%s\n' "$revision" > "$stamp"
+}
+
 # Builds the records of package `$1` into `$records_work/records`, with the
 # run's messages in `$records_work/messages.json`. A second argument names
 # the features to turn on, as for `records_units`. The run first takes the
@@ -454,6 +471,9 @@ records_main() {
     if records_take "$key" "$out" "$records_work/manifest-$i"; then hits=$((hits + 1)); else missed+=("$i"); fi
   done
   root=$records_root
+  if (( ${#missed[@]} )); then
+    records_stamp || { echo "check:deletes: no Dylint metadata of $records_tree" >&2; return 2; }
+  fi
   for i in "${missed[@]}"; do
     records_build "${names[i]}" "${features[i]}" \
       || { echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }

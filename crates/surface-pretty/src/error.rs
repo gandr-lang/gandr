@@ -109,6 +109,13 @@ impl core::error::Error for PresentationError
         | Self::Unbalanced => ret.is_none(),
     })]
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
         match *self {
