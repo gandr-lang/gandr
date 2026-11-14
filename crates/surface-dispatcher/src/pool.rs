@@ -125,7 +125,6 @@ use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
-use gandr_core_fork::unpriced;
 use gandr_kernel_core::fork::ForkWidth;
 use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
@@ -793,62 +792,6 @@ impl Fork for Pool
         }
     }
 
-    /// What a hand-off costs the pool's workers, of the class that a post
-    /// makes now, as they measure their hand-offs over the process, once they
-    /// have started. A pool that has not started, or that runs on one thread,
-    /// measures none, so a plan over it folds nothing. The call starts no
-    /// thread.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn hand_off(&self) -> Duration
-    {
-        match self.started.get() {
-            Some(&Ok(Started {
-                pool: Maybe::Present(ref workers),
-                ..
-            })) => workers.hand(workers.applies()),
-            Some(
-                &Ok(Started {
-                    pool: Maybe::Absent(_),
-                    ..
-                })
-                | &Err(_),
-            )
-            | None => Duration::ZERO,
-        }
-    }
-
-    /// What a job of `size` is expected to cost on the calling thread, as the
-    /// pool's workers price a node of the jobs that ran there, once they have
-    /// started. A pool that has not started, or that runs on one thread, prices
-    /// no job. The call starts no thread.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn price(
-        &self,
-        size: ItemSize,
-    ) -> Maybe<Duration, unpriced::Absent>
-    {
-        match self.started.get() {
-            Some(&Ok(Started {
-                pool: Maybe::Present(ref workers),
-                ..
-            })) => priced(workers, size),
-            Some(
-                &Ok(Started {
-                    pool: Maybe::Absent(_),
-                    ..
-                })
-                | &Err(_),
-            )
-            | None => Maybe::Absent(unpriced::Absent::Unmeasured),
-        }
-    }
-
     /// Release each item on the calling thread in slice order, run each job
     /// on the pool's workers, and commit each item on the calling thread as
     /// its job returns.
@@ -1103,31 +1046,6 @@ impl Fork for Pooled<'_>
         Scope::open(self.workers, self.spin, body)
     }
 
-    /// What a hand-off costs the pool's workers, of the class that a post
-    /// makes now, as they measure their hand-offs over the process.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn hand_off(&self) -> Duration
-    {
-        self.workers.hand(self.workers.applies())
-    }
-
-    /// What a job of `size` is expected to cost on the calling thread, as the
-    /// pool's workers price a node of the jobs that ran there.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn price(
-        &self,
-        size: ItemSize,
-    ) -> Maybe<Duration, unpriced::Absent>
-    {
-        priced(self.workers, size)
-    }
-
     /// Release each item on the calling thread in slice order, run each job
     /// on the pool's workers, and commit each item on the calling thread as
     /// its job returns.
@@ -1145,10 +1063,8 @@ impl Fork for Pooled<'_>
     ///   each job that it keeps or that a lane holds is committed. While the
     ///   calling thread can neither release nor commit, it runs the oldest job
     ///   that it keeps, or else a job of a lane whose task does not run, and it
-    ///   parks only when neither is left. A release that answers
-    ///   [`Releasing::Fold`] runs its job on the calling thread at once and
-    ///   commits it, with no hand-off. A schedule of one item, or a pool of one
-    ///   worker, runs on the calling thread.
+    ///   parks only when neither is left. A schedule of one item, or a pool of
+    ///   one worker, runs on the calling thread.
     /// - panics: a panic of `release`, `run` or `commit`, resumed on the
     ///   calling thread once it has returned; no queued job starts after it.
     /// - executable: none — the schedule is the pool's.
@@ -1164,7 +1080,6 @@ impl Fork for Pooled<'_>
     /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    /// - witness: `pool::tests::a_folded_job_runs_and_commits_on_the_calling_thread_at_its_release_7285`
     #[inline]
     fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
@@ -1446,7 +1361,7 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
         for (index, item) in items.iter_mut().enumerate() {
             let position = gandr_core_fork::ItemIndex::from(index);
             let out = match release(position, item) {
-                Releasing::Run(job) | Releasing::Fold(job) => run(ItemIndex(index), job),
+                Releasing::Run(job) => run(ItemIndex(index), job),
                 // No job runs at a release here, so a held release commits
                 // the result that it holds.
                 Releasing::Settled(out) | Releasing::Held(out, ..) => out,
@@ -1510,21 +1425,6 @@ enum Place
     Calling,
     /// On a lane's task, reached by a hand-off of the class it names.
     Lane(Wake),
-}
-
-/// What a job of `size` is expected to cost on the calling thread, as
-/// `workers` price a node of the jobs that ran there.
-///
-/// # Specification
-/// trivial.
-fn priced(
-    workers: &Workers,
-    size: ItemSize,
-) -> Maybe<Duration, unpriced::Absent>
-{
-    workers
-        .expected(size, &Tally::default())
-        .map_or(Maybe::Absent(unpriced::Absent::Unmeasured), Maybe::Present)
 }
 
 /// Add what the job of `size` nodes that `took` names took: the latency of
@@ -2135,25 +2035,6 @@ where
                         if !chained && (outstanding > 1 || waiting.free(next) == Released::Free) {
                             self.hand(ledger);
                         }
-                    },
-                    // The plan folds a job cheaper than a hand-off: it runs
-                    // here at its release and commits at once, so it takes no
-                    // slot and no lane. Its run prices a node, as the run of a
-                    // kept job on the calling thread does.
-                    Releasing::Fold(job) => {
-                        let (position, out, took) = self
-                            .run_job(next, job, Place::Calling, None)
-                            .0
-                            .unwrap_or_else(|panic| self.stop(panic));
-                        measured(
-                            ledger.tasks.workers,
-                            &mut ledger.tally,
-                            sizes.get(position.0).copied().unwrap_or_default(),
-                            took,
-                        );
-                        commit_one(position, item, out, &mut waiting);
-                        committed = committed.saturating_add(1);
-                        next = ItemIndex(next.0.saturating_add(1));
                     },
                     Releasing::Held(_, _, waited) if outstanding > 0 => {
                         chained = true;
@@ -3141,79 +3022,6 @@ mod tests
         );
         drop(pool);
         drop(std::fs::remove_dir_all(&directory));
-    }
-
-    /// A release that answers a fold runs its job on the calling thread and
-    /// commits it before the next release, beside jobs handed to the workers;
-    /// each item commits once at every width.
-    #[test]
-    fn a_folded_job_runs_and_commits_on_the_calling_thread_at_its_release_7285()
-    {
-        let caller = std::thread::current().id();
-        let count = 64_usize;
-        let folds = |position: usize| position % 3 == 1;
-        for threads in [2_usize, 4, 16] {
-            let pool = Pool::new(Width::Threads(Threads::from(
-                NonZeroUsize::new(threads).unwrap(),
-            )));
-            // Each release and each commit, in the order the calling thread
-            // made them.
-            let events = core::cell::RefCell::new(Vec::new());
-            let mut ran: Vec<Option<ThreadId>> = vec![None; count];
-            pool.schedule(
-                &mut ran,
-                &Dependences::default(),
-                |position, _ran| {
-                    let position = usize::from(position);
-                    events.borrow_mut().push(("release", position));
-                    if folds(position) {
-                        Releasing::<(), ThreadId>::Fold(())
-                    }
-                    else {
-                        Releasing::Run(())
-                    }
-                },
-                |()| std::thread::current().id(),
-                |position, ran, thread| {
-                    *ran = Some(thread);
-                    events.borrow_mut().push(("commit", usize::from(position)));
-                },
-            );
-            let events = events.into_inner();
-            // One pass over the events: the commits of each item, and the event
-            // that follows the release of each item.
-            let mut commits = vec![0_usize; count];
-            let mut after_release: Vec<Option<(&str, usize)>> = vec![None; count];
-            for (at, &(kind, position)) in events.iter().enumerate() {
-                if kind == "commit" {
-                    if let Some(commit) = commits.get_mut(position) {
-                        *commit = commit.saturating_add(1);
-                    }
-                }
-                else if let Some(after) = after_release.get_mut(position) {
-                    *after = events.get(at.saturating_add(1)).copied();
-                }
-            }
-            for position in 0 .. count {
-                assert_eq!(
-                    commits.get(position).copied(),
-                    Some(1),
-                    "item {position} commits once at {threads} threads"
-                );
-                if folds(position) {
-                    assert_eq!(
-                        ran.get(position).copied().flatten(),
-                        Some(caller),
-                        "the folded job of item {position} runs on the calling thread at {threads} threads"
-                    );
-                    assert_eq!(
-                        after_release.get(position).copied().flatten(),
-                        Some(("commit", position)),
-                        "the folded item {position} commits right after its release at {threads} threads"
-                    );
-                }
-            }
-        }
     }
 
     /// A pool of sixteen threads under a hub's counter of one token, and the

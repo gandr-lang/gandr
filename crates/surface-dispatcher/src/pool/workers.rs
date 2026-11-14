@@ -899,7 +899,7 @@ pub enum Wake
 
 /// The bits of a latency below its top bit that pick its bucket: each octave
 /// splits into eight buckets, so the middle of a latency's bucket lies within
-/// a sixteenth of it, well inside the fold's margin of 2.
+/// a sixteenth of it.
 const STEP_BITS: u32 = 3;
 
 /// The buckets of an octave.

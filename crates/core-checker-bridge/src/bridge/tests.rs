@@ -122,11 +122,8 @@ use quenchant_shape::shape::Maybe;
 
 use super::AllocationCount;
 use super::Erasure;
-use super::First;
-use super::Folds;
 use super::Frame;
 use super::LeadingCount;
-use super::Mark;
 use super::Meter;
 use super::Metered;
 use super::Mode as Reading;
@@ -143,7 +140,6 @@ use super::Timed;
 use super::Untimed;
 use super::crossed;
 use super::fault;
-use super::fold_plan;
 use super::metered;
 use super::plan;
 use super::readmit;
@@ -151,7 +147,6 @@ use super::readmit_resuming;
 use super::readmit_retiring;
 use super::readmit_with;
 use super::timed;
-use super::unfolded;
 use crate::code::Lift;
 use crate::code::Unfolded;
 use crate::context::CheckBudget;
@@ -1416,11 +1411,6 @@ impl gandr_core_fork::Fork for Reversed
                 .is_none_or(|item| match release(at, item) {
                     gandr_core_fork::Releasing::Run(job) => {
                         running.push((at, job));
-                        next = next.saturating_add(1);
-                        false
-                    },
-                    gandr_core_fork::Releasing::Fold(job) => {
-                        commit(at, item, run(job));
                         next = next.saturating_add(1);
                         false
                     },
@@ -3863,8 +3853,6 @@ struct Counted(Arc<core::sync::atomic::AtomicUsize>);
 impl super::Stopwatch for Counted
 {
     type Started = ();
-
-    const CLOCKED: bool = false;
 
     /// Count one admission.
     ///
@@ -12298,192 +12286,5 @@ fn each_name_stands_beside_the_declaration_the_export_writes_7340()
         before.get(10 ..),
         after.get(11 ..),
         "each name past the insertion moves one place on"
-    );
-}
-
-/// A count of declarations.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct Declarations(usize);
-
-/// The module position of a declaration.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct Place(usize);
-
-/// A time in microseconds.
-#[repr(transparent)]
-#[derive(Clone, Copy)]
-struct Micros(u64);
-
-/// The first `count` declarations, each judged a data declaration.
-///
-/// # Specification
-/// trivial.
-fn judged(count: Declarations) -> Vec<Judged>
-{
-    (0 .. count.0)
-        .map(|at| {
-            Judged::new(
-                ConstantIndex::from(at),
-                OriginToken::from(at),
-                Verdict::Data,
-            )
-        })
-        .collect()
-}
-
-/// The record entry of the declaration at `place`, whose check took `took`.
-///
-/// # Specification
-/// trivial.
-fn timed_at(
-    place: Place,
-    took: Micros,
-) -> Readmitted
-{
-    Readmitted {
-        took: Maybe::Present(Spent::new(
-            Duration::from_micros(took.0),
-            Maybe::Absent(metered::Absent::Unmetered),
-        )),
-        ..untimed_at(place)
-    }
-}
-
-/// The record entry of the declaration at `place`, which no clock timed.
-///
-/// # Specification
-/// trivial.
-fn untimed_at(place: Place) -> Readmitted
-{
-    Readmitted {
-        constant: ConstantIndex::from(place.0),
-        origin: OriginToken::from(place.0),
-        outcome: Outcome::Static,
-        certificates: Vec::new(),
-        took: Maybe::Absent(timed::Absent::Untimed),
-    }
-}
-
-/// A fork's price of no job.
-///
-/// # Specification
-/// trivial.
-fn unpriced(_size: ItemSize) -> Maybe<Duration, gandr_core_fork::unpriced::Absent>
-{
-    Maybe::Absent(gandr_core_fork::unpriced::Absent::Unmeasured)
-}
-
-/// A record that no clock timed, no record, a record of other constants and
-/// a fork that hands nothing off each fold nothing when no size is priced, so
-/// the readmission releases through the closure that reads no mark.
-#[test]
-fn a_plan_folds_nothing_from_a_record_with_no_measure_7285()
-{
-    let judged = judged(Declarations(3));
-    let hand_off = Duration::from_micros(10);
-    let untimed: Vec<Readmitted> = (0 .. 3).map(|at| untimed_at(Place(at))).collect();
-    assert_eq!(
-        fold_plan(&untimed, (First(0), &judged), &[], (hand_off, unpriced)),
-        Maybe::Absent(unfolded::Absent::Dear),
-        "a record that no clock timed folds nothing"
-    );
-    assert_eq!(
-        fold_plan(&[], (First(0), &judged), &[], (hand_off, unpriced)),
-        Maybe::Absent(unfolded::Absent::Dear),
-        "a fresh readmission with no price folds nothing"
-    );
-    let shifted: Vec<Readmitted> = (1 .. 4).map(|at| timed_at(Place(at), Micros(1))).collect();
-    assert_eq!(
-        fold_plan(&shifted, (First(0), &judged), &[], (hand_off, unpriced)),
-        Maybe::Absent(unfolded::Absent::Dear),
-        "an entry of another constant at a position folds nothing"
-    );
-    let timed: Vec<Readmitted> = (0 .. 3).map(|at| timed_at(Place(at), Micros(1))).collect();
-    assert_eq!(
-        fold_plan(&timed, (First(0), &judged), &[], (Duration::ZERO, unpriced)),
-        Maybe::Absent(unfolded::Absent::Unmeasured),
-        "a fork that hands nothing off folds nothing"
-    );
-}
-
-/// A check that its record measured at no more than half the hand-off folds,
-/// and a dearer one is handed off. The marks start past the resumed run.
-#[test]
-fn a_plan_folds_a_check_its_record_measured_below_the_hand_off_7285()
-{
-    let judged = judged(Declarations(4));
-    let record = [
-        timed_at(Place(0), Micros(1)),
-        timed_at(Place(1), Micros(2)),
-        timed_at(Place(2), Micros(6)),
-        timed_at(Place(3), Micros(5)),
-    ];
-    assert_eq!(
-        fold_plan(
-            &record,
-            (First(1), judged.get(1 ..).unwrap_or_default()),
-            &[],
-            (Duration::from_micros(10), unpriced),
-        ),
-        Maybe::Present(Folds(alloc::vec![Mark::Fold, Mark::Hand, Mark::Fold])),
-        "the checks of 2 and 5 microseconds fold under a hand-off of 10, and the one of 6 does not"
-    );
-}
-
-/// A run of checks that each fold alone hands off the one that carries the
-/// run past one hand-off, and the run starts again after it.
-#[test]
-fn a_plan_folds_within_one_hand_off_between_two_hand_offs_7285()
-{
-    let judged = judged(Declarations(5));
-    let record: Vec<Readmitted> = (0 .. 5).map(|at| timed_at(Place(at), Micros(4))).collect();
-    assert_eq!(
-        fold_plan(
-            &record,
-            (First(0), &judged),
-            &[],
-            (Duration::from_micros(10), unpriced)
-        ),
-        Maybe::Present(Folds(alloc::vec![
-            Mark::Fold,
-            Mark::Fold,
-            Mark::Hand,
-            Mark::Fold,
-            Mark::Fold
-        ])),
-        "the third check of 4 microseconds carries the run past a hand-off of 10"
-    );
-}
-
-/// A check with no record folds by the fork's price of its size, below half
-/// the hand-off; a check of no size takes no price, and a dear size hands off.
-#[test]
-fn a_plan_folds_a_check_with_no_record_by_the_price_of_its_size_7285()
-{
-    let judged = judged(Declarations(3));
-    let sizes = [
-        ItemSize::from(4_usize),
-        ItemSize::from(0_usize),
-        ItemSize::from(40_usize),
-    ];
-    // A node costs a quarter of a microsecond.
-    let price = |size: ItemSize| {
-        Maybe::Present(Duration::from_nanos(
-            u64::try_from(usize::from(size))
-                .unwrap_or(u64::MAX)
-                .saturating_mul(250),
-        ))
-    };
-    assert_eq!(
-        fold_plan(
-            &[],
-            (First(0), &judged),
-            &sizes,
-            (Duration::from_micros(10), price)
-        ),
-        Maybe::Present(Folds(alloc::vec![Mark::Fold, Mark::Hand, Mark::Hand])),
-        "a check of 4 nodes, priced at 1 microsecond, folds under a hand-off of 10; an unsized one and one of 40 nodes do not"
     );
 }

@@ -383,30 +383,6 @@ where
         })
     }
 
-    /// What one hand-off costs the pool's workers, as they measure it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn hand_off(&self) -> core::time::Duration
-    {
-        self.pool.hand_off()
-    }
-
-    /// What a job of `size` is expected to cost on the calling thread, as the
-    /// pool's workers price it.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn price(
-        &self,
-        size: gandr_core_fork::ItemSize,
-    ) -> Maybe<core::time::Duration, gandr_core_fork::unpriced::Absent>
-    {
-        self.pool.price(size)
-    }
-
     /// Release and commit every item as the pool's schedule does, and run
     /// each job between a start mark and an end mark that name the item's
     /// declaration.

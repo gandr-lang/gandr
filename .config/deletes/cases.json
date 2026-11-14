@@ -193,6 +193,72 @@
     "output": ""
   },
   {
+    "name": "#7285: a name that a thing of the head carries names that thing, so an item under a module that stays and a variant beside an item of its name pass, and a module that leaves whole is refused",
+    "input": {
+      "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::bridge::FOLD_MARGIN`|#700|deleted|a margin|none found|no consumer takes it|none|none|signed|\n|`v::Releasing::Fold`|#700|deleted|a release|none found|no consumer takes it|none|none|signed|\n|`v::gone::Thing`|#700|deleted|a thing|none found|no consumer takes it|none|none|signed|\n",
+      "title": "",
+      "mode": "full",
+      "left": [
+        {
+          "id": "v::bridge::FOLD_MARGIN",
+          "kind": "item",
+          "names": ["v::bridge::FOLD_MARGIN"],
+          "file": "crates/vd/src/bridge.rs",
+          "origin": 700
+        },
+        {
+          "id": "v::Releasing::Fold",
+          "kind": "item",
+          "names": ["v::Releasing::Fold"],
+          "file": "crates/vd/src/lib.rs",
+          "origin": 700
+        },
+        {
+          "id": "v::gone::Thing",
+          "kind": "item",
+          "names": ["v::gone::Thing"],
+          "file": "crates/vd/src/gone.rs",
+          "origin": 700
+        }
+      ],
+      "held": ["v::bridge::readmit", "v::Releasing", "v::activity::Fold"],
+      "tests": [],
+      "features": {
+        "vd": {
+          "base": [
+            "- `bridge`: readmission.",
+            "- `activity`: the hub's `Fold` drains the rings.",
+            "- `gone`: a thing.",
+            ""
+          ],
+          "head": [
+            "- `bridge`: readmission.",
+            "- `activity`: the hub's `Fold` drains the rings.",
+            "- `gone`: a thing.",
+            ""
+          ]
+        }
+      },
+      "lonely": [],
+      "files": {
+        "v::bridge::FOLD_MARGIN": ["crates/vd/src/bridge.rs"],
+        "v::Releasing::Fold": ["crates/vd/src/lib.rs"],
+        "v::gone::Thing": ["crates/vd/src/gone.rs"]
+      },
+      "signoffs": [
+        {
+          "author": "agent-shade",
+          "body": "## Deletion sign-off (architect, 2026-11-14)\n\n`v::bridge::FOLD_MARGIN`, `v::Releasing::Fold` and `v::gone::Thing` at 3c64291f5: signed.",
+          "sha": "3c64291f5aaaa",
+          "fork": "1111111aaaa",
+          "changed": {}
+        }
+      ],
+      "architects": { "agent-shade": "(architect" }
+    },
+    "output": "the crate's `## Provided features` names `v::gone::Thing`: no sign-off admits its deletion until the README line leaves in the same change, with its own row"
+  },
+  {
     "name": "#6834: the owner's own comment signs a deleted row with no architect heading",
     "input": {
       "body": "## Deletes\n\n|Item|Origin|Act|Why|Future use|In place of deletion|After|Witness|Sign-off|\n|---|---|---|---|---|---|---|---|---|\n|`v::hom::DirectedHom::new`|#700|deleted|builds a hom|none found|no consumer takes it|none|none|the owner's comment|\n",

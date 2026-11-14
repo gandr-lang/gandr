@@ -50,7 +50,6 @@ use gandr_core_checker::Retirement;
 use gandr_core_checker::bridge;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::fork::SharedFork;
-use gandr_kernel_core::speculation::Setting;
 use gandr_kernel_core::speculation::Speculation;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
@@ -66,7 +65,6 @@ use crate::held::Held;
 use crate::held::HeldVerdicts;
 use crate::pool::Pool;
 use crate::receipts::StoredVerdicts;
-use crate::stage::Monotonic;
 use crate::walk::Walk;
 use crate::width::Threads;
 use crate::width::Width;
@@ -443,11 +441,11 @@ fn speculation() -> Speculation
 /// readmission this process makes after.
 ///
 /// Wider than one thread, the checks of each readmission run on `pool` under
-/// the speculation group on, the rank among it, with the fold off. The last
-/// drain of each kernel check forks its obligations on `pool` when `walk`
-/// holds fewer sources than threads: in a wider run the other sources keep
-/// each worker busy. A serial run installs nothing and predicts nothing, as
-/// the release in serial order does. What a process installed first stays.
+/// the speculation group on, the rank among it. The last drain of each kernel
+/// check forks its obligations on `pool` when `walk` holds fewer sources than
+/// threads: in a wider run the other sources keep each worker busy. A serial
+/// run installs nothing and predicts nothing, as the release in serial order
+/// does. What a process installed first stays.
 ///
 /// The driver's `check` and the benchmark series both install through this
 /// call, so a series measures the policy that a run of the driver takes. A
@@ -469,10 +467,9 @@ pub fn install_width(
 ///
 /// A session readmits the one source that each revision edits. So wider than
 /// one thread, the checks of each readmission run on `pool` under the
-/// speculation group on, with the fold off, and the last drain of each kernel
-/// check forks its obligations on `pool`. A pool of one thread installs
-/// nothing, which is the serial session. What a process installed first
-/// stays.
+/// speculation group on, and the last drain of each kernel check forks its
+/// obligations on `pool`. A pool of one thread installs nothing, which is the
+/// serial session. What a process installed first stays.
 ///
 /// # Specification
 /// trivial.
@@ -499,13 +496,7 @@ fn install<Sources>(
         return;
     }
     let _pool = SCHEDULING.set(Arc::clone(pool));
-    // The fold stays off on each host until #7576 turns it on where the host's
-    // runs with the fold read a gain against the runs without it. The band
-    // alone then decides which checks go beside the calling thread's check.
-    let _speculation = SPECULATION.set(Speculation {
-        fold: Setting::Off,
-        ..Speculation::ON
-    });
+    let _speculation = SPECULATION.set(Speculation::ON);
     let spare = SourceCount::from(NonZeroUsize::from(threads).get());
     if sources(spare) < spare {
         let _fork = FORKING.set(SharedFork::through(Arc::<Pool>::clone(pool)));
@@ -524,47 +515,11 @@ fn scheduling() -> &'static Pool
 
 /// [`bridge::readmit_retiring`] for [`Reuse::Leading`], or
 /// [`bridge::readmit_keeping`] for [`Reuse::Keeping`], under `recall`, on
-/// the installed readmission pool, timed by `stopwatch`, or by the monotonic
-/// clock under the fold policy when `stopwatch` reads no clock.
+/// the installed readmission pool.
 ///
 /// # Specification
 /// trivial.
 fn readmit_as<Poll, Watch>(
-    arena: &mut CoreArena,
-    report: &gandr_core_checker::ModuleReport,
-    reuse: Reuse<'_>,
-    recall: &bridge::Recall,
-    (retirement, stopwatch): (&Poll, &mut Watch),
-) -> bridge::Readmitting<Poll::Retired>
-where
-    Poll: Retirement,
-    Watch: bridge::Stopwatch,
-{
-    // The fold reads each check's measured cost off the record. So under the
-    // fold policy a readmission times each check that its caller leaves
-    // untimed, with two reads of the monotonic clock. With the policy off it
-    // reads no clock, and its record stays untimed.
-    if speculation().fold == Setting::On && !Watch::CLOCKED {
-        readmit_on(
-            arena,
-            report,
-            reuse,
-            recall,
-            (retirement, &mut bridge::Timed::by(Monotonic::started())),
-        )
-    }
-    else {
-        readmit_on(arena, report, reuse, recall, (retirement, stopwatch))
-    }
-}
-
-/// [`bridge::readmit_retiring`] for [`Reuse::Leading`], or
-/// [`bridge::readmit_keeping`] for [`Reuse::Keeping`], under `recall`, on
-/// the installed readmission pool, timed by `stopwatch`.
-///
-/// # Specification
-/// trivial.
-fn readmit_on<Poll, Watch>(
     arena: &mut CoreArena,
     report: &gandr_core_checker::ModuleReport,
     reuse: Reuse<'_>,
