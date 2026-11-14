@@ -30,12 +30,11 @@ The level-two unit is a fat object. The site does not drop it, which is the stic
 
 One site serves two uses. The wiring site indexes the ambient model, where a type is a diagram over the arities and a higher cell is an identity type. The same site, under the wreath, indexes the cells. There the Segal condition at a level certifies the composite over a pasting shape. The two uses coincide at level one, because a 1-pasting is a wiring of 1-cells and the chains are Δ. The univalence warrant is Shulman's inverse EI theorem over the level-one site. A wreath level inherits it only through directness with automorphisms, which the level's certificate re-derives from the level below. This site drops Eilenberg-Zilber. So Berger and Moerdijk's wreath theorem is not the warrant.
 
-The level-two evidence stands in [`ascent`](src/ascent.rs). The carrier refuses two cells each the other's source as a directed cycle (Leclerc and Mimram's Lemma 3), so no level holds the pinwheel.
-
 ## References
 
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: the programme's design for the iterated site (§ The design), one site under the wreath product. No level holds a stick, and an outer vertex may carry the empty shape, which the wreath builds.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: a stored image replays, never trusted.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 1 of the performance picture, a worker's steady state allocates nothing; so each run of `homs` owns its buffers.
 - `Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces` — lineage: Clemens Berger, "Iterated Wreath Product of the Simplex Category and Iterated Loop Spaces", _Advances in Mathematics_ 213, 2007, `doi:10.1016/j.aim.2006.12.006` — Definitions 3.1 and 3.3, the wreath and Θₙ as the iterated wreath of Δ.
 - `Henry-2018-nonunital_polygraphs_form_presheaf_category` — background: Simon Henry, "Non-Unital Polygraphs Form a Presheaf Category", preprint, 2018, `arXiv:1711.00744` — Corollary 2.4.9, the dropped stick's parallel one level up.
 - `Ruit-2024-pasting_theorem_iterated_segal_spaces` — exemplar: Jaco Ruit, "A Pasting Theorem for Iterated Segal Spaces", _Journal of Pure and Applied Algebra_ 228, 2024, `arXiv:2210.04549` — Theorem 3.49 and Corollaries 3.52 and 3.55, the pasting theorem level two's certificate instances; § 3.2, the pinwheel.

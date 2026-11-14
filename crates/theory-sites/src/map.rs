@@ -5,6 +5,13 @@
 //! maps between two shapes by candidate generation and that one validator.
 //! The clauses are stated on graphs; the crate's negatives run the same
 //! validator on graphs with stick components, which no shape has.
+//!
+//! # References
+//!
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 1 of the
+//!   performance picture, a worker's steady state allocates nothing from the
+//!   global allocator. So each try of [`homs`] writes into buffers that the run
+//!   owns: the odometer's reading, the images and the wire marks.
 
 use alloc::boxed::Box;
 use alloc::vec;
@@ -538,16 +545,19 @@ impl SiteMap
             })
     }
 
-    /// The target wires some source wire reaches, one mark per target wire.
+    /// The target wires some source wire reaches, one mark per target wire,
+    /// written into `marks`, whose earlier contents are gone.
     ///
     /// # Specification
     /// trivial.
-    fn wire_marks(
+    fn wire_marks<'buffer>(
         &self,
         target: Graph<'_>,
-    ) -> Vec<Membership>
+        marks: &'buffer mut Vec<Membership>,
+    ) -> &'buffer [Membership]
     {
-        let mut marks = vec![Membership::Outside; usize::from(target.wire_count())];
+        marks.clear();
+        marks.resize(usize::from(target.wire_count()), Membership::Outside);
         for wire in self.wires.iter().copied() {
             if let Some(mark) = marks.get_mut(usize::from(wire)) {
                 *mark = Membership::Inside;
@@ -607,8 +617,35 @@ impl SiteMap
         self.check(source.graph(), target.graph())
     }
 
+    /// The class's validator on two graphs, sticks admitted, with a buffer of
+    /// its own for the wire marks.
+    ///
+    /// # Specification
+    /// - ensures: as [`SiteMap::check_with`].
+    /// - fails: as [`SiteMap::check_with`].
+    /// - panics: none.
+    /// - executable: none — the body is [`SiteMap::check_with`], whose
+    ///   predicate checks the result.
+    ///
+    /// # Errors
+    /// The [`MapObstruction`] naming the first clause broken.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`SiteMap::check_with`].
+    /// - witness: `map::tests::each_clause_refuses_by_variant`
+    pub(crate) fn check(
+        &self,
+        source: Graph<'_>,
+        target: Graph<'_>,
+    ) -> Result<(), MapObstruction>
+    {
+        self.check_with(source, target, &mut Vec::new())
+    }
+
     /// The class's validator on two graphs, sticks admitted: the clauses the
-    /// crate root states, decided in their order.
+    /// crate root states, decided in their order. The wire marks go into
+    /// `marks`, which the caller lends, so a caller that checks many
+    /// candidates allocates them once.
     ///
     /// # Specification
     /// - ensures: `Ok` exactly when the images have the source's shape, lie in
@@ -659,18 +696,19 @@ impl SiteMap
         Err(MapObstruction::Boundary { vertex, .. }) => usize::from(vertex) < usize::from(source.vertex_count()),
         Err(MapObstruction::Fusion { wire }) => self.wires.iter().filter(|image| **image == wire).count() >= 2,
     })]
-    pub(crate) fn check(
+    pub(crate) fn check_with(
         &self,
         source: Graph<'_>,
         target: Graph<'_>,
+        marks: &mut Vec<Membership>,
     ) -> Result<(), MapObstruction>
     {
         self.check_ranges(source, target)?;
         self.check_disjointness()?;
-        let marks = self.wire_marks(target);
+        let marks = self.wire_marks(target, marks);
         for vertex in source.vertices() {
-            self.check_side(source, target, &marks, (vertex, Leg::Input))?;
-            self.check_side(source, target, &marks, (vertex, Leg::Output))?;
+            self.check_side(source, target, marks, (vertex, Leg::Input))?;
+            self.check_side(source, target, marks, (vertex, Leg::Output))?;
         }
         self.check_fusion(source, target)
     }
@@ -1187,10 +1225,12 @@ impl SiteMap
         sorted.sort_unstable();
         sorted.dedup();
         let injective = sorted.len() == self.wires.len();
-        let surjective = self
-            .wire_marks(target.graph())
+        let count = usize::from(target.wire_count());
+        let surjective = sorted
             .iter()
-            .all(|mark| *mark == Membership::Inside);
+            .filter(|wire| usize::from(**wire) < count)
+            .count()
+            == count;
         let wires = match (injective, surjective) {
             (true, true) => WireForm::Bijective,
             (true, false) => WireForm::Injective,
@@ -1361,17 +1401,13 @@ impl Odometer
         }
         Progress::Done
     }
-}
 
-impl Iterator for Odometer
-{
-    type Item = Vec<Choice>;
-
-    /// The next reading.
+    /// Moves to the next reading: the first reading at the first call.
     ///
     /// # Specification
-    /// - ensures: each reading has one choice per position, each below its
-    ///   base; the first reading is every choice zero.
+    /// - ensures: [`Progress::Running`] while a reading stands, with one choice
+    ///   per position, each below its base; the first reading is every choice
+    ///   zero. [`Progress::Done`] once every reading is taken.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1382,23 +1418,31 @@ impl Iterator for Odometer
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body copies every digit into the reading the check walks"
+            reason = "parity: the body's `advance` walks every digit the check walks"
         )
     )]
-    #[spec(ensures: |ref reading| reading.as_ref().is_none_or(|choices| {
-        choices.len() == self.bases.len() && choices.iter().zip(self.bases.iter()).all(|pair| pair.0.0 < pair.1.0)
-    }))]
-    fn next(&mut self) -> Option<Self::Item>
+    #[spec(ensures: |progress| progress == Progress::Done || (
+        self.digits.len() == self.bases.len()
+            && self.digits.iter().zip(self.bases.iter()).all(|pair| pair.0.0 < pair.1.0)
+    ))]
+    fn turn(&mut self) -> Progress
     {
         self.progress = match self.progress {
-            Progress::Done => return None,
+            Progress::Done => Progress::Done,
             Progress::Fresh => Progress::Running,
             Progress::Running => self.advance(),
         };
-        match self.progress {
-            Progress::Done => None,
-            Progress::Fresh | Progress::Running => Some(self.digits.clone()),
-        }
+        self.progress
+    }
+
+    /// The reading [`Odometer::turn`] stands at.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reading(&self) -> &[Choice]
+    {
+        &self.digits
     }
 }
 
@@ -1433,21 +1477,29 @@ pub fn homs(
     let owners = usize::from(source.vertex_count()).saturating_add(1);
     let bases = vec![Choices(owners); usize::from(target.vertex_count())];
     let mut maps: Vec<SiteMap> = Vec::new();
-    for assignment in Odometer::new(bases) {
-        let images = images_from(&assignment, source.vertex_count());
-        if plausible(source, target, &images) == Verdict::Fails {
+    let mut buffer: Vec<VertexSet> = Vec::with_capacity(usize::from(source.vertex_count()));
+    let mut marks: Vec<Membership> = Vec::new();
+    let mut assignments = Odometer::new(bases);
+    while assignments.turn() == Progress::Running {
+        let images = images_from(assignments.reading(), source.vertex_count(), &mut buffer);
+        if plausible(source, target, images) == Verdict::Fails {
             continue;
         }
-        let candidates = wire_candidates(source, target, &images);
+        let candidates = wire_candidates(source, target, images);
         let choices: Vec<Choices> = candidates.iter().map(|list| Choices(list.len())).collect();
-        for picks in Odometer::new(choices) {
-            let wires: Vec<Wire> = picks
+        let mut picking = Odometer::new(choices);
+        while picking.turn() == Progress::Running {
+            let wires: Vec<Wire> = picking
+                .reading()
                 .iter()
                 .zip(candidates.iter())
                 .filter_map(|pair| pair.1.get(pair.0.0).copied())
                 .collect();
-            let map = SiteMap::new(images.clone(), wires);
-            if map.validate(source, target).is_ok() {
+            let map = SiteMap::new(images.to_vec(), wires);
+            if map
+                .check_with(source.graph(), target.graph(), &mut marks)
+                .is_ok()
+            {
                 maps.push(map);
             }
         }
@@ -1456,30 +1508,35 @@ pub fn homs(
     maps
 }
 
-/// The vertex images an owner assignment gives: target vertex `u` joins
-/// the image of the source vertex it names, or no image when it names the
-/// source's vertex count.
+/// The vertex images an owner assignment gives, written into `images`:
+/// target vertex `u` joins the image of the source vertex it names, or no
+/// image when it names the source's vertex count.
 ///
 /// # Specification
-/// - ensures: one image per source vertex, pairwise disjoint, whose union is
-///   the target vertices assigned an owner below `sources`.
+/// - ensures: `images` holds one image per source vertex, pairwise disjoint,
+///   whose union is the target vertices assigned an owner below `sources`, and
+///   the result is `images` whole. What `images` held before is gone, and its
+///   block is kept when it is large enough.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the enumerator's agreement with the brute force, which
-///   tries every image list, observes a lost or misplaced owner.
+///   tries every image list, observes a lost or misplaced owner, and an image
+///   left over from an earlier assignment.
 /// - witness: `tests::maps::the_enumerator_agrees_with_brute_force`
-#[spec(ensures: |ref images| [
-    images.len() == usize::from(sources),
-    usize::from(images.iter().fold(VertexSet::EMPTY, |union, image| union.union(*image)).count())
+#[spec(ensures: |filled| [
+    filled.len() == usize::from(sources),
+    usize::from(filled.iter().fold(VertexSet::EMPTY, |union, image| union.union(*image)).count())
         == assignment.iter().filter(|owner| owner.0 < usize::from(sources)).count(),
 ])]
-fn images_from(
+fn images_from<'buffer>(
     assignment: &[Choice],
     sources: EdgeCount,
-) -> Vec<VertexSet>
+    images: &'buffer mut Vec<VertexSet>,
+) -> &'buffer [VertexSet]
 {
-    let mut images = vec![VertexSet::EMPTY; usize::from(sources)];
+    images.clear();
+    images.resize(usize::from(sources), VertexSet::EMPTY);
     for (vertex, owner) in assignment.iter().enumerate() {
         if let Some(image) = images.get_mut(owner.0) {
             *image = image.union(VertexSet::single(Edge::from(vertex)));

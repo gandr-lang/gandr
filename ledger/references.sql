@@ -753,6 +753,7 @@ INSERT INTO reference VALUES('vault:01a1cf3f-b730-7152-9d64-050e5c00b32a','surfa
 INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surface-dispatcher','pool::workers','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','surface-driver','allocator','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-sites','map','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the
   -- library's citation key, or its locator, `doi:<doi>` in lower case or
