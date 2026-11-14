@@ -250,7 +250,21 @@
         }
       ]
     },
-    "output": "the body's `## Readings` answers `bounded` with no peak memory or no time: report the path's peak memory and its time at the device's bound, on the riscv64 host at one core (`units.md` § units-readings), then run `pr:open` again"
+    "output": "the body's `## Readings` answers `bounded` with no peak memory or no time: report the path's peak memory and its time at the device's bound, on the riscv64 host at one core (`units.md` § units-readings), or write `owed by <seat>` for the seat that measures them, which the stall report names until a comment gives them (#7572); then run `pr:open` again"
+  },
+  {
+    "name": "#7572: a `bounded` row that names the seat owing its figures opens",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n| Cost | `zero-cost` | not applicable: nothing is added at run time |\n| Cost | `bounded` | answered: the path runs under the device's bound; its peak memory and time on the riscv64 host are owed by flex-e |\n| Names | `nominal` | not applicable: no name is bound, allocated or released |\n| Level | `general` | not applicable: no result is stated |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes — a layout's two codes are one path |\n| Locality | `oracle` | no — nothing is replayed |\n| Place | `resident` | yes — the layout is a representation |\n"
+        }
+      ]
+    },
+    "output": ""
   },
   {
     "name": "#7350: a `bounded` row answered with a peak memory and a time opens",

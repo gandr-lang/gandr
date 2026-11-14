@@ -28,6 +28,9 @@
 #             gate stopped, which a comment marks `landing:pr-depth:<head>` as
 #             `landing.bash` reads it, a cancelled check is pending, not
 #             failed: it waits for the head's promotion (#5074);
+#   owed      the measures its body owes and no comment gives yet (#7572):
+#             `sections.jq`'s `owed_rows`, each `{row, seat}`, less each row
+#             a comment opening `measured: <row>` gives; absent when none;
 # `merged` one entry per merged pull request read, `{number, head, merged,
 # verdict, rows}`: when it merged, in epoch seconds, its `## Refactoring`
 # verdict (`yes`, `maybe`, `no` or null) and how many rows its table names;
@@ -54,7 +57,10 @@ def verdict($gated):
 def gated($head):
   any((.comments.nodes // [])[]; (.body // "") | contains("<!-- landing:pr-depth:\($head) -->"));
 
-{prs: [.pullRequests.nodes[] | gated(.headRefOid) as $gated | {
+{prs: [.pullRequests.nodes[] | gated(.headRefOid) as $gated
+  | (([(.comments.nodes // [])[] | .body // ""] | measured_rows) as $measured
+    | [.body // "" | owed_rows[] | select(.row | IN($measured[]) | not)]) as $owed
+  | {
   number,
   draft: .isDraft,
   bot: (.author.__typename == "Bot"),
@@ -74,7 +80,7 @@ def gated($head):
     started: ((.startedAt // .createdAt) | epoch),
     completed: ((.completedAt // (if .__typename == "StatusContext" then .createdAt else null end)) | epoch)
   }]
-}],
+} + (if $owed == [] then {} else {owed: $owed} end)],
  merged: [(.merged.nodes // [])[] | (.body // "" | refactoring) as $r | {
    number,
    head: .headRefName,

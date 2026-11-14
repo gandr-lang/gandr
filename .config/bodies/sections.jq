@@ -244,6 +244,32 @@ def engineering:
   | {row: $row,
      answer: (if (.cells | length) > 1 then .cells[-1] | gsub("(?s)<!--.*?-->"; "") | gsub("^\\s+|\\s+$"; "") else "" end)};
 
+# A measure is a debt, not a wait (#7572). A row whose figures come from a
+# scarce host names the seat that owes them, as `owed by <seat>`, and the
+# landing goes on. Two rows take this form: the `bounded` reading, its peak
+# memory and time on the riscv64 host, and the `parallelism` row of
+# `## Engineering`, its thread curve on the widest host. The seat's name is
+# a word of letters, digits and `-`.
+def owed_seat: (capture("\\bowed by (?<seat>[A-Za-z0-9][A-Za-z0-9-]*)") // null) | if . == null then null else .seat end;
+
+# The owed measures of a body, each {row, seat}: the `bounded` row of its
+# `## Readings` and the `parallelism` row of its `## Engineering` that name
+# an owing seat.
+def owed_rows:
+  [((section("Readings") // [] | lead) | rows
+      | select(.cells[1] == "bounded")
+      | (.cells[2] // "" | owed_seat) as $seat
+      | select($seat != null) | {row: "bounded", seat: $seat}),
+   ((section("Engineering") // []) | engineering
+      | select(.row == "parallelism")
+      | (.answer | owed_seat) as $seat
+      | select($seat != null) | {row: "parallelism", seat: $seat})];
+
+# The rows whose owed figures a comment gives (#7572): a comment with a line
+# `measured: <row>`, the row's name bare or in backquotes, and the figures
+# below it.
+def measured_rows: [.[] | capture("(?m)^measured: `?(?<row>bounded|parallelism)\\b") | .row] | unique;
+
 # Whether a section has content once its HTML comments are dropped.
 def filled: join("\n") | gsub("(?s)<!--.*?-->"; "") | test("\\S");
 
