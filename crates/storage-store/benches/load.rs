@@ -36,6 +36,9 @@
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the store's single
 //!   writer plan (§ The topology of one host) — the fold of the writer beside
 //!   the sum of the rates of the producers is the measure of the shards.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance
+//!   programme (§ performance-figures) — a row names what it measures: the
+//!   filesystem, the device, the CPU and the voluntary switches.
 
 #![expect(
     clippy::expect_used,
