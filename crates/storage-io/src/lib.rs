@@ -20,6 +20,23 @@
 //! On any other target the crate holds the module `absent` alone, which
 //! states the absence. So this lead names each item in code and links none:
 //! a link resolves on one set of targets alone.
+//!
+//! # Items
+//!
+//! | Module | What it holds |
+//! | ------ | ------------- |
+//! | `uapi` | The `io_uring` layouts and the table of system-call numbers for x86-64, riscv64, aarch64, loongarch64, powerpc64 and s390x. `mise run uapi:generate` writes it from the pinned kernel, and the gate's `check:uapi` refuses a file that differs. |
+//! | `sys` | `io_uring_setup`, `io_uring_enter`, `io_uring_register`, `mmap` and `munmap` on x86-64, aarch64 and riscv64. Each argument goes in a register of its own type, so a pointer keeps its provenance (`sys::registers`, `sys/arch/`). |
+//! | `ring` | The mapped submission and completion queues. It stages entries, submits them and reads each completion once. It registers the ring's tables of fixed buffers and fixed files. |
+//! | `io` | The completion contract. A buffer moves into each submission and comes back with its completion, keyed by the submission. `append` owns a segment's end. A full queue parks the caller until a submission completes. |
+//! | `blocking` | The blocking form. The kernel can refuse the ring with `EPERM` or `ENOSYS`, or give a ring without stable submissions. Then the worker's own thread runs positioned calls behind the same interface. |
+//! | `buffer` | The buffer in the allocator that the caller names, such as a worker's region. `Io::register` fixes buffers within the process's limit of locked memory, which the first registration reads, and says how many it fixes. The rest run unregistered. An allocator that refuses the bytes refuses the registration by the budget. |
+//! | `faults` | The simulator of faults: torn, lost, misdirected and corrupt IO, drawn from a seed, the same under each form. An `Io` without it draws nothing. |
+//!
+//! A submission carries a key, and its completion carries the key back. An
+//! entry linked to the next one starts the next only when it succeeds. The
+//! kernel cancels the next one when it fails. A sync is `fdatasync`, as the
+//! store's segment syncs.
 
 /// The target holds no ring of the IO layer.
 ///
