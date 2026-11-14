@@ -17,6 +17,7 @@ members = [
   "crates/kernel-conversion-trace",
   "crates/kernel-core",
   "crates/kernel-core-base",
+  "crates/kernel-data",
   "crates/kernel-strata",
   "crates/kernel-term",
   "crates/runtime-emitter",
@@ -583,6 +584,12 @@ default-features = false
 # - kernel-core
 [workspace.dependencies.gandr-kernel-core-base]
 path = "crates/kernel-core-base"
+
+# The kernel's own data types: a budgeted region whose ids carry its brand,
+# with its three crossings.
+# consumers: none
+[workspace.dependencies.gandr-kernel-data]
+path = "crates/kernel-data"
 
 # The certified kernel's universe-level oracle.
 # consumers:

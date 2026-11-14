@@ -46,6 +46,7 @@ crates/
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
 ├── kernel-core-base/              the record, its staging, content names, support, rewriting, refusals, verdict keys
 ├── kernel-core/                   checking, conversion, admission; native universes and recursors; stage formation; certificate and stage replay
+├── kernel-data/                   the kernel's own data types: a budgeted region whose ids carry its brand, with adopt, the fold's join and the durable key as its crossings
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
