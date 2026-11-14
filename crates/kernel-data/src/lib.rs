@@ -7,7 +7,9 @@
 //! [`Id`] leaves the scope, and three crossings move an id between regions:
 //! [`Adopt`] at a fork, the fold's [`Translation`] at a join, and a durable
 //! [`Key`] with its checked import, [`Region::seat`]. An id names its family
-//! by a phantom kind. A fork of [`Width`] children shares one frozen prefix.
+//! by a phantom kind. A fork of [`Width`] children shares one frozen prefix,
+//! and each child keeps its suffix or drops it with a reason, its answer
+//! among the [`Siblings`].
 //! A region draws from the allocator below it, and a borrow of a region is
 //! itself an allocator.
 //!
@@ -46,6 +48,7 @@ pub use crate::region::Rebase;
 pub use crate::region::Region;
 pub use crate::region::Shift;
 pub use crate::region::Sibling;
+pub use crate::region::Siblings;
 pub use crate::region::Translation;
 pub use crate::region::Width;
 pub use crate::region::scoped;

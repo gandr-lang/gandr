@@ -1339,27 +1339,30 @@ where
             },
         };
         let (left, right) = terms(sides);
-        let watermark = self.arena.watermark();
-        let mut run = Replay {
-            arena: self.arena,
-            unfoldings: self.unfoldings,
-            evaluator: self.unfoldings,
-            trace: trace.into_iter().peekable(),
-            reading: Reading::Recorded,
-            position: 0,
-            spent: 0,
-            budget: u64::from(self.budget),
-            table: ContentTable::new(),
-            memo: NullMemo,
-            owed: Vec::new(),
+        let arena = &mut *self.arena;
+        let watermark = arena.watermark();
+        let outcome = {
+            let mut run = Replay {
+                arena: &mut *arena,
+                unfoldings: self.unfoldings,
+                evaluator: self.unfoldings,
+                trace: trace.into_iter().peekable(),
+                reading: Reading::Recorded,
+                position: 0,
+                spent: 0,
+                budget: u64::from(self.budget),
+                table: ContentTable::new(),
+                memo: NullMemo,
+                owed: Vec::new(),
+            };
+            let premise = Premise {
+                left,
+                right,
+                defined: DefinedHead::Hold,
+            };
+            run.drive(Goal::premise(premise, expect, Reduction::Plain))
         };
-        let premise = Premise {
-            left,
-            right,
-            defined: DefinedHead::Hold,
-        };
-        let outcome = run.drive(Goal::premise(premise, expect, Reduction::Plain));
-        run.arena.truncate_to(watermark);
+        arena.truncate_to(watermark);
         Ok(concluded(outcome, expect))
     }
 
@@ -1436,32 +1439,34 @@ pub fn convert(
 ) -> KernelVerdict
 {
     let (left, right) = terms(sides);
-    let watermark = arena.watermark();
     let rules = unfoldings.forced();
-    let mut run = Replay {
-        arena,
-        unfoldings: &rules,
-        evaluator: unfoldings,
-        trace: core::iter::empty().peekable(),
-        reading: Reading::Forced,
-        position: 0,
-        spent: 0,
-        budget: u64::from(budget),
-        table: ContentTable::new(),
-        memo: NullMemo,
-        owed: Vec::new(),
+    let watermark = arena.watermark();
+    let outcome = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings: &rules,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let premise = Premise {
+            left,
+            right,
+            defined: DefinedHead::Hold,
+        };
+        run.drive(Goal::premise(
+            premise,
+            Expect::Convertible,
+            Reduction::Plain,
+        ))
     };
-    let premise = Premise {
-        left,
-        right,
-        defined: DefinedHead::Hold,
-    };
-    let outcome = run.drive(Goal::premise(
-        premise,
-        Expect::Convertible,
-        Reduction::Plain,
-    ));
-    run.arena.truncate_to(watermark);
+    arena.truncate_to(watermark);
     concluded(outcome, Expect::Convertible)
 }
 
@@ -1516,20 +1521,22 @@ pub fn convert_unfolding(
 ) -> KernelVerdict
 {
     let watermark = arena.watermark();
-    let Unfolded {
-        verdict,
-        owed,
-        left,
-    } = unfold_owing(arena, unfoldings, sides, budget);
-    let verdict = if owed.is_empty() {
-        verdict
-    }
-    else {
-        match read_endpoints(arena, unfoldings, &owed, left, StuckEndpoints::Unfolding) {
-            EndpointReading::Converts => KernelVerdict::Convertible,
-            EndpointReading::Apart => {
-                KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Unreadable))
-            },
+    let verdict = {
+        let Unfolded {
+            verdict,
+            owed,
+            left,
+        } = unfold_owing(arena, unfoldings, sides, budget);
+        if owed.is_empty() {
+            verdict
+        }
+        else {
+            match read_endpoints(arena, unfoldings, &owed, left, StuckEndpoints::Unfolding) {
+                EndpointReading::Converts => KernelVerdict::Convertible,
+                EndpointReading::Apart => {
+                    KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Unreadable))
+                },
+            }
         }
     };
     arena.truncate_to(watermark);
@@ -1798,182 +1805,194 @@ pub(crate) fn read_endpoints(
 ) -> EndpointReading
 {
     let watermark = arena.watermark();
-    let mut run = Replay {
-        arena,
-        unfoldings,
-        evaluator: unfoldings,
-        trace: core::iter::empty().peekable(),
-        reading: Reading::Forced,
-        position: 0,
-        spent: 0,
-        budget: u64::from(budget),
-        table: ContentTable::new(),
-        memo: NullMemo,
-        owed: Vec::new(),
-    };
-    let mut reading = EndpointReading::Converts;
-    let mut worklist = pending.to_vec();
-    while let Some(set_aside) = worklist.pop() {
-        let goal = match set_aside {
-            SetAside::Values(left, right) => {
-                let (Ok(left_normal), Ok(right_normal)) = (
-                    run.normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold),
-                    run.normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold),
-                )
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                if convert_values(
-                    run.arena,
-                    run.unfoldings.presentations(),
-                    left_normal,
-                    right_normal,
-                ) == Convertibility::Convertible
-                {
-                    continue;
-                }
-                // A step's own reading runs its code to the quote it returns,
-                // so two stuck endpoints that differ by a
-                // definition a stuck arm calls, held on one
-                // side and run on the other, convert by the
-                // kernel's δ-steps (#2831). A quote pair the δ-steps reach and
-                // owe is read on this worklist in turn (#3045). Two thunks the
-                // walk set aside for a forced thunk convert by the same
-                // reduction.
-                if stuck == StuckEndpoints::Unfolding
-                    && matches!(
-                        (run.arena.value(left_normal), run.arena.value(right_normal)),
-                        (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
-                            | (Some(&Value::Thunk(_)), Some(&Value::Thunk(_)))
+    let reading = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let mut reading = EndpointReading::Converts;
+        let mut worklist = pending.to_vec();
+        while let Some(set_aside) = worklist.pop() {
+            let goal = match set_aside {
+                SetAside::Values(left, right) => {
+                    let (Ok(left_normal), Ok(right_normal)) = (
+                        run.normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold),
+                        run.normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold),
                     )
-                {
-                    let mark = run.arena.watermark();
-                    let Unfolded { verdict, owed, .. } = unfold_owing(
-                        run.arena,
-                        run.unfoldings,
-                        ReplaySides::Values(left_normal, right_normal),
-                        budget,
-                    );
-                    if verdict == KernelVerdict::Convertible {
-                        if owed.is_empty() {
-                            run.arena.truncate_to(mark);
-                        }
-                        else {
-                            let Ok(()) = run.charge()
-                            else {
-                                reading = EndpointReading::Apart;
-                                break;
-                            };
-                            worklist.extend(owed);
-                        }
-                        continue;
-                    }
-                    run.arena.truncate_to(mark);
-                }
-                match (run.arena.value(left_normal), run.arena.value(right_normal)) {
-                    (Some(&Value::Quote(one)), Some(&Value::Quote(other))) => {
-                        ConversionGoal::ValueType(one, other)
-                    },
-                    // The evaluator stops at a stuck head and leaves the
-                    // endpoints its arguments carry unrun: compare the heads by
-                    // structure and read those endpoints in turn.
-                    (Some(&Value::Returned(one)), Some(&Value::Returned(other)))
-                    | (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) => {
-                        ConversionGoal::Computation(one, other)
-                    },
-                    // A stuck endpoint reads apart from any former.
-                    (Some(&Value::Returned(_)) | None, _)
-                    | (_, Some(&Value::Returned(_)) | None) => {
+                    else {
                         reading = EndpointReading::Apart;
                         break;
-                    },
-                    // A former each side reads to, a reflexivity or a
-                    // constructor, leaves the endpoints it carries unrun too:
-                    // compare the formers by structure and read those
-                    // endpoints in turn. A walk that sets the pair aside
-                    // whole meets a presented type's constructor, which
-                    // `convert_values` has read by the type's rules already.
-                    (Some(_), Some(_)) => {
-                        let added = worklist.len();
-                        if pending_endpoints(
-                            run.arena,
-                            run.unfoldings.presentations(),
-                            ConversionGoal::Value(left_normal, right_normal),
-                            &mut worklist,
-                        ) != Convertibility::Convertible
-                            || worklist.get(added ..).is_some_and(|set_aside| {
-                                set_aside.contains(&SetAside::Values(left_normal, right_normal))
-                            })
-                        {
+                    };
+                    if convert_values(
+                        run.arena,
+                        run.unfoldings.presentations(),
+                        left_normal,
+                        right_normal,
+                    ) == Convertibility::Convertible
+                    {
+                        continue;
+                    }
+                    // A step's own reading runs its code to the quote it
+                    // returns, so two stuck endpoints that differ by a
+                    // definition a stuck arm calls, held on one side and run
+                    // on the other, convert by the kernel's δ-steps (#2831).
+                    // A quote pair the δ-steps reach and owe is read on this
+                    // worklist in turn (#3045). Two thunks the walk set aside
+                    // for a forced thunk convert by the same reduction.
+                    if stuck == StuckEndpoints::Unfolding
+                        && matches!(
+                            (run.arena.value(left_normal), run.arena.value(right_normal)),
+                            (Some(&Value::Returned(_)), Some(&Value::Returned(_)))
+                                | (Some(&Value::Thunk(_)), Some(&Value::Thunk(_)))
+                        )
+                    {
+                        let unfoldings = run.unfoldings;
+                        let arena = &mut *run.arena;
+                        let mark = arena.watermark();
+                        let owing = match unfold_owing(
+                            arena,
+                            unfoldings,
+                            ReplaySides::Values(left_normal, right_normal),
+                            budget,
+                        ) {
+                            Unfolded { verdict, owed, .. }
+                                if verdict == KernelVerdict::Convertible && !owed.is_empty() =>
+                            {
+                                Ok(owed)
+                            },
+                            Unfolded { verdict, .. } => Err(verdict),
+                        };
+                        if owing.is_err() {
+                            arena.truncate_to(mark);
+                        }
+                        match owing {
+                            Ok(owed) => {
+                                let Ok(()) = run.charge()
+                                else {
+                                    reading = EndpointReading::Apart;
+                                    break;
+                                };
+                                worklist.extend(owed);
+                                continue;
+                            },
+                            Err(KernelVerdict::Convertible) => continue,
+                            Err(_) => {},
+                        }
+                    }
+                    match (run.arena.value(left_normal), run.arena.value(right_normal)) {
+                        (Some(&Value::Quote(one)), Some(&Value::Quote(other))) => {
+                            ConversionGoal::ValueType(one, other)
+                        },
+                        // The evaluator stops at a stuck head and leaves the
+                        // endpoints its arguments carry unrun: compare the heads by
+                        // structure and read those endpoints in turn.
+                        (Some(&Value::Returned(one)), Some(&Value::Returned(other)))
+                        | (Some(&Value::Thunk(one)), Some(&Value::Thunk(other))) => {
+                            ConversionGoal::Computation(one, other)
+                        },
+                        // A stuck endpoint reads apart from any former.
+                        (Some(&Value::Returned(_)) | None, _)
+                        | (_, Some(&Value::Returned(_)) | None) => {
                             reading = EndpointReading::Apart;
                             break;
-                        }
-                        continue;
-                    },
-                }
-            },
-            SetAside::Decoded { code, other } => {
-                let Ok(normal) =
-                    run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                let Some(&Value::Quote(quoted)) = run.arena.value(normal)
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                ConversionGoal::ValueType(quoted, other)
-            },
-            SetAside::Codomains(Codomains { dependent, plain }) => {
-                let Ok(()) = run.charge()
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                let weakened = shift_comp_type(
-                    run.arena,
-                    &mut run.table,
-                    &mut run.memo,
-                    plain,
-                    BinderDepth::NONE,
-                    BinderDepth::from(1_u32),
-                );
-                ConversionGoal::CompType(dependent, weakened)
-            },
-            // A path whose endpoints do not spell its words' point reads as the
-            // words when each endpoint reads as the point (#485, #5099).
-            SetAside::AtPoint { words, from, to } => {
-                let Some(point) =
-                    crate::words::point(run.arena, run.unfoldings.presentations(), words)
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                let Ok(()) = run.charge()
-                else {
-                    reading = EndpointReading::Apart;
-                    break;
-                };
-                worklist.push(SetAside::Values(from, point));
-                worklist.push(SetAside::Values(to, point));
-                continue;
-            },
-        };
-        if pending_endpoints(
-            run.arena,
-            run.unfoldings.presentations(),
-            goal,
-            &mut worklist,
-        ) != Convertibility::Convertible
-        {
-            reading = EndpointReading::Apart;
-            break;
+                        },
+                        // A former each side reads to, a reflexivity or a
+                        // constructor, leaves the endpoints it carries unrun too:
+                        // compare the formers by structure and read those
+                        // endpoints in turn. A walk that sets the pair aside
+                        // whole meets a presented type's constructor, which
+                        // `convert_values` has read by the type's rules already.
+                        (Some(_), Some(_)) => {
+                            let added = worklist.len();
+                            if pending_endpoints(
+                                run.arena,
+                                run.unfoldings.presentations(),
+                                ConversionGoal::Value(left_normal, right_normal),
+                                &mut worklist,
+                            ) != Convertibility::Convertible
+                                || worklist.get(added ..).is_some_and(|set_aside| {
+                                    set_aside.contains(&SetAside::Values(left_normal, right_normal))
+                                })
+                            {
+                                reading = EndpointReading::Apart;
+                                break;
+                            }
+                            continue;
+                        },
+                    }
+                },
+                SetAside::Decoded { code, other } => {
+                    let Ok(normal) =
+                        run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let Some(&Value::Quote(quoted)) = run.arena.value(normal)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    ConversionGoal::ValueType(quoted, other)
+                },
+                SetAside::Codomains(Codomains { dependent, plain }) => {
+                    let Ok(()) = run.charge()
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let weakened = shift_comp_type(
+                        run.arena,
+                        &mut run.table,
+                        &mut run.memo,
+                        plain,
+                        BinderDepth::NONE,
+                        BinderDepth::from(1_u32),
+                    );
+                    ConversionGoal::CompType(dependent, weakened)
+                },
+                // A path whose endpoints do not spell its words' point reads as the
+                // words when each endpoint reads as the point (#485, #5099).
+                SetAside::AtPoint { words, from, to } => {
+                    let Some(point) =
+                        crate::words::point(run.arena, run.unfoldings.presentations(), words)
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    let Ok(()) = run.charge()
+                    else {
+                        reading = EndpointReading::Apart;
+                        break;
+                    };
+                    worklist.push(SetAside::Values(from, point));
+                    worklist.push(SetAside::Values(to, point));
+                    continue;
+                },
+            };
+            if pending_endpoints(
+                run.arena,
+                run.unfoldings.presentations(),
+                goal,
+                &mut worklist,
+            ) != Convertibility::Convertible
+            {
+                reading = EndpointReading::Apart;
+                break;
+            }
         }
-    }
-    run.arena.truncate_to(watermark);
+        reading
+    };
+    arena.truncate_to(watermark);
     reading
 }
 
@@ -2114,30 +2133,37 @@ pub(crate) fn read_identity_endpoints(
         return quoted;
     };
     let watermark = arena.watermark();
-    let mut run = Replay {
-        arena,
-        unfoldings,
-        evaluator: unfoldings,
-        trace: core::iter::empty().peekable(),
-        reading: Reading::Forced,
-        position: 0,
-        spent: 0,
-        budget: u64::from(budget),
-        table: ContentTable::new(),
-        memo: NullMemo,
-        owed: Vec::new(),
+    let path = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        let left_normal = run
+            .normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold)
+            .unwrap_or(left);
+        let right_normal = run
+            .normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold)
+            .unwrap_or(right);
+        if (left_normal, right_normal) == (left, right) {
+            Err(())
+        }
+        else {
+            Ok(run.arena.value_type_path(domain, left_normal, right_normal))
+        }
     };
-    let left_normal = run
-        .normalize_returned(left, Reduction::Endpoint, DefinedHead::Unfold)
-        .unwrap_or(left);
-    let right_normal = run
-        .normalize_returned(right, Reduction::Endpoint, DefinedHead::Unfold)
-        .unwrap_or(right);
-    if (left_normal, right_normal) == (left, right) {
-        run.arena.truncate_to(watermark);
-        return quoted;
+    if path.is_err() {
+        arena.truncate_to(watermark);
     }
-    run.arena.value_type_path(domain, left_normal, right_normal)
+    path.unwrap_or(quoted)
 }
 
 /// What `quoted` reads from the normal form of `code`, normalized as
@@ -2165,26 +2191,29 @@ fn read_quoted<Quoted>(
 ) -> Option<Quoted>
 {
     let watermark = arena.watermark();
-    let mut run = Replay {
-        arena,
-        unfoldings,
-        evaluator: unfoldings,
-        trace: core::iter::empty().peekable(),
-        reading: Reading::Forced,
-        position: 0,
-        spent: 0,
-        budget: u64::from(budget),
-        table: ContentTable::new(),
-        memo: NullMemo,
-        owed: Vec::new(),
+    let read = {
+        let mut run = Replay {
+            arena: &mut *arena,
+            unfoldings,
+            evaluator: unfoldings,
+            trace: core::iter::empty().peekable(),
+            reading: Reading::Forced,
+            position: 0,
+            spent: 0,
+            budget: u64::from(budget),
+            table: ContentTable::new(),
+            memo: NullMemo,
+            owed: Vec::new(),
+        };
+        run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
+            .ok()
+            .and_then(|normal| run.arena.value(normal).and_then(&quoted))
+            .ok_or(())
     };
-    if let Ok(normal) = run.normalize_returned(code, Reduction::Endpoint, DefinedHead::Unfold)
-        && let Some(read) = run.arena.value(normal).and_then(&quoted)
-    {
-        return Some(read);
+    if read.is_err() {
+        arena.truncate_to(watermark);
     }
-    run.arena.truncate_to(watermark);
-    None
+    read.ok()
 }
 
 /// The two sides as goal terms.
@@ -3371,49 +3400,54 @@ where
         parted: Vec<(ComputationId, ComputationId)>,
     ) -> Result<Convertibility, Stop>
     {
-        let watermark = self.arena.watermark();
         let rules = self.unfoldings.forced();
-        let mut run = Replay {
-            arena: &mut *self.arena,
-            unfoldings: &rules,
-            evaluator: self.evaluator,
-            trace: core::iter::empty().peekable(),
-            reading: Reading::Forced,
-            position: 0,
-            spent: self.spent,
-            budget: self.budget,
-            table: ContentTable::new(),
-            memo: NullMemo,
-            owed: Vec::new(),
-        };
-        let mut goals: Vec<Goal> = parted
-            .into_iter()
-            .map(|(left, right)| {
-                Goal::premise(
-                    Premise::computations(left, right),
-                    Expect::Convertible,
-                    Reduction::Plain,
-                )
-            })
-            .collect();
-        let mut outcome = Ok(Convertibility::Convertible);
-        while let Some(goal) = goals.pop() {
-            match run.settle(goal, &mut goals, Apart::Part) {
-                Ok(Settled::Turned) => {},
-                // Parting hands no goal back: one that came back would be a
-                // pair this reading did not derive.
-                Ok(Settled::Deferred { .. }) | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
-                    outcome = Ok(Convertibility::Distinct);
-                    break;
-                },
-                Err(Stop::Budget) => {
-                    outcome = Err(Stop::Budget);
-                    break;
-                },
+        let arena = &mut *self.arena;
+        let watermark = arena.watermark();
+        let (outcome, spent) = {
+            let mut run = Replay {
+                arena: &mut *arena,
+                unfoldings: &rules,
+                evaluator: self.evaluator,
+                trace: core::iter::empty().peekable(),
+                reading: Reading::Forced,
+                position: 0,
+                spent: self.spent,
+                budget: self.budget,
+                table: ContentTable::new(),
+                memo: NullMemo,
+                owed: Vec::new(),
+            };
+            let mut goals: Vec<Goal> = parted
+                .into_iter()
+                .map(|(left, right)| {
+                    Goal::premise(
+                        Premise::computations(left, right),
+                        Expect::Convertible,
+                        Reduction::Plain,
+                    )
+                })
+                .collect();
+            let mut outcome = Ok(Convertibility::Convertible);
+            while let Some(goal) = goals.pop() {
+                match run.settle(goal, &mut goals, Apart::Part) {
+                    Ok(Settled::Turned) => {},
+                    // Parting hands no goal back: one that came back would be a
+                    // pair this reading did not derive.
+                    Ok(Settled::Deferred { .. })
+                    | Err(Stop::Refused(_) | Stop::PartialFixpoint) => {
+                        outcome = Ok(Convertibility::Distinct);
+                        break;
+                    },
+                    Err(Stop::Budget) => {
+                        outcome = Err(Stop::Budget);
+                        break;
+                    },
+                }
             }
-        }
-        self.spent = run.spent;
-        self.arena.truncate_to(watermark);
+            (outcome, run.spent)
+        };
+        arena.truncate_to(watermark);
+        self.spent = spent;
         outcome
     }
 

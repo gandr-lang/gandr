@@ -1430,16 +1430,18 @@ fn check_value(
 ) -> Result<(), RelationError>
 {
     let mark = arena.watermark();
-    let mut body = arena.computation_return(value);
-    let mut ty = arena.comp_type_returner(expected);
-    for &domain in context.iter().rev() {
-        body = arena.computation_lambda(body);
-        ty = arena.comp_type_pi(domain, ty);
-    }
-    let value = arena.value_thunk(body);
-    let expected = arena.value_type_thunk(ty);
-    let result = check_closed_value(arena, value, expected)
-        .map_err(|error| RelationError::Typing(Box::new(error)));
+    let result = {
+        let mut body = arena.computation_return(value);
+        let mut ty = arena.comp_type_returner(expected);
+        for &domain in context.iter().rev() {
+            body = arena.computation_lambda(body);
+            ty = arena.comp_type_pi(domain, ty);
+        }
+        let value = arena.value_thunk(body);
+        let expected = arena.value_type_thunk(ty);
+        check_closed_value(arena, value, expected)
+            .map_err(|error| RelationError::Typing(Box::new(error)))
+    };
     arena.truncate_to(mark);
     result
 }
