@@ -153,6 +153,7 @@ digraph crates {
   "core-checker-bridge" -> "kernel-strata";
   "core-checker-bridge" -> "kernel-term";
   "core-checker-bridge" -> "theory-deep-inference";
+  "core-fork" -> "kernel-core";
   "core-incremental" -> "core-checker";
   "core-incremental" -> "core-nbe";
   "core-incremental" -> "core-publish";

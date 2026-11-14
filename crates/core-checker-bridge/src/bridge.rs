@@ -529,6 +529,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
@@ -536,9 +537,11 @@ use core::fmt;
 use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
 use gandr_core_fork::ItemIndex;
+use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Serial;
 use gandr_core_nbe::TraceNode;
@@ -564,6 +567,7 @@ use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::EndpointSide;
 use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::Hold;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
 use gandr_kernel_core::ParameterCount;
@@ -579,6 +583,7 @@ use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
 use gandr_kernel_core::fork::SharedFork;
+use gandr_kernel_core::held_on;
 use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
@@ -3304,6 +3309,10 @@ where
             .into_iter()
             .any(|side| reflexivity.met(side).is_some())
     });
+    let after = match judged_all.split_at_checked(from) {
+        Some((earlier, released)) => plan(report, earlier, released),
+        None => plan(report, judged_all, &[]),
+    };
     let underway = RefCell::new(Underway {
         arena,
         report,
@@ -3324,6 +3333,7 @@ where
         }),
         retired: None,
         slots: core::iter::repeat_with(|| Slot::Open).take(count).collect(),
+        running: VecDeque::new(),
         cursor: from,
         answerable,
         serially: false,
@@ -3335,7 +3345,7 @@ where
     let mut items = alloc::vec![(); count];
     fork.schedule(
         &mut items,
-        &Dependences::default(),
+        &after,
         |item, &mut ()| underway.borrow_mut().release(item),
         |(check, mut stopwatch): (Check, Watch)| {
             let (ran, took) = run_check(check, &mut stopwatch);
@@ -3344,6 +3354,98 @@ where
         |item, &mut (), answer| underway.borrow_mut().commit(item, answer),
     );
     underway.into_inner().finish()
+}
+
+/// The plan of the declarations that a walk releases, from the report: the
+/// wait edges among them, and the size of each.
+///
+/// An edge runs from each declaration to each earlier one that its judgement
+/// consulted. A release that reads a declaration whose check is outstanding
+/// holds on that check. So the edge keeps the release back until that commit,
+/// and the release stages once. A report that kept no support gives no edge.
+///
+/// The size of a declaration counts the nodes that the lowering minted for its
+/// body and its declared type: the distance of each root's offset from the
+/// root of the same family before it. The arena mints children before
+/// parents, so the plan reads two offsets and walks no term.
+///
+/// # Specification
+/// - requires: `earlier` and then `released` are the module's declarations in
+///   release order, and the walk releases `released`.
+/// - ensures: each edge runs from an earlier released declaration to a later
+///   one, and each released declaration has one size.
+/// - panics: none.
+/// - intension: one pass over the declarations, then one pass over the reads of
+///   the released ones, with one sorted table from constant to position.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration waits on an earlier declaration that it
+///   reads and on nothing else, and its size counts the nodes of its own body
+///   and type.
+/// - witness: `bridge::tests::a_walk_plans_a_wait_on_each_read_and_a_size_for_each_declaration_7336`
+#[spec(ensures: |ret| ret.edges().iter().all(|edge| edge.after < released.len())
+    && ret.sizes().len() == released.len())]
+fn plan(
+    report: &ModuleReport,
+    earlier: &[crate::report::Judged],
+    released: &[crate::report::Judged],
+) -> Dependences
+{
+    let mut edges = Vec::new();
+    let mut sizes = Vec::with_capacity(released.len());
+    // The constant and the position of each released declaration, which a
+    // later read finds by a binary search.
+    let mut released_at: Vec<(ConstantIndex, usize)> = Vec::with_capacity(released.len());
+    // One past the last root of each family that an earlier declaration names.
+    let (mut values, mut types) = (0_usize, 0_usize);
+    for (position, entry) in earlier.iter().chain(released).enumerate() {
+        let (body, declared) = match entry.verdict() {
+            Verdict::Checked { declared, body, .. } => (Some(body), Some(declared.id())),
+            Verdict::Synthesised { body, .. } => (Some(body), None),
+            Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_) => {
+                (None, None)
+            },
+        };
+        let mut size = 0_usize;
+        if let Some(body) = body {
+            let end = usize::from(body.offset()).saturating_add(1);
+            size = end.saturating_sub(values);
+            values = values.max(end);
+        }
+        if let Some(declared) = declared {
+            let end = usize::from(declared.offset()).saturating_add(1);
+            size = size.saturating_add(end.saturating_sub(types));
+            types = types.max(end);
+        }
+        if let Some(after) = position.checked_sub(earlier.len()) {
+            sizes.push(ItemSize::from(size));
+            released_at.push((entry.constant(), after));
+        }
+    }
+    if !released_at.is_sorted() {
+        released_at.sort_unstable();
+    }
+    for (after, entry) in released.iter().enumerate() {
+        let Some(supported) = report.supported().get(&entry.constant())
+        else {
+            continue;
+        };
+        edges.extend(
+            supported
+                .support()
+                .consulted()
+                .iter()
+                .filter_map(|consulted| {
+                    let read = consulted.constant();
+                    // The last release of the read before this declaration.
+                    let at = released_at.partition_point(|&release| release < (read, after));
+                    let &(constant, before) = released_at.get(at.checked_sub(1)?)?;
+                    (constant == read).then_some(Dependence { before, after })
+                }),
+        );
+    }
+    // Each edge runs forward, so no edge is refused.
+    Dependences::new(edges).unwrap_or_default().sized(sizes)
 }
 
 /// Run a released check on the calling thread, timed by `stopwatch`.
@@ -3557,6 +3659,9 @@ where
     retired: Option<Poll::Retired>,
     /// Where each declaration from `from` on stands.
     slots: Vec<Slot<'report>>,
+    /// The kernel position that each running release reserves, with its
+    /// item, in release order. The cursor prunes the front as it passes.
+    running: VecDeque<(ConstantIndex, ItemIndex)>,
     /// The index of the first declaration that is not recorded.
     cursor: usize,
     /// Whether the kernel may report a pair undecided whose answer offers
@@ -3584,6 +3689,90 @@ where
     Poll: Retirement,
     Watch: Stopwatch,
 {
+    /// The answer of a release that waits for `hold`, which names the kernel
+    /// position `on` of an outstanding release when one commit frees it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold(
+        &mut self,
+        hold: Hold,
+        on: Maybe<ConstantIndex, held_on::Absent>,
+    ) -> Releasing<(Check, Watch), Answer>
+    {
+        let waited = self.waited(hold, on);
+        Releasing::Held(Answer::Waits, hold, waited)
+    }
+
+    /// The item whose commit frees a release that waits for `hold`. A content
+    /// hold waits on the running release at the kernel position `on`, or on
+    /// the item at the cursor once that release has run. A hold of the cursor
+    /// or of the staging waits on the item at the cursor. Each other hold
+    /// reads every outstanding release, so it names none.
+    ///
+    /// # Specification
+    /// - ensures: a named item's job runs, so its commit is still to come.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an item that names a committed item waits on a commit
+    ///   that never comes, and the schedule stops.
+    /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(item) => matches!(self.slots.get(usize::from(item)), Some(&Slot::Running(..))),
+        Maybe::Absent(_) => true,
+    })]
+    fn waited(
+        &mut self,
+        hold: Hold,
+        on: Maybe<ConstantIndex, held_on::Absent>,
+    ) -> Maybe<ItemIndex, held_on::Absent>
+    {
+        let cursor = ItemIndex::from(self.cursor.saturating_sub(self.from));
+        // The cursor passed each release before it, so no hold names one.
+        while self.running.front().is_some_and(|&(_, item)| item < cursor) {
+            let _passed = self.running.pop_front();
+        }
+        match hold {
+            Hold::Content => {
+                if let Maybe::Present(position) = on {
+                    let at = self
+                        .running
+                        .partition_point(|&(reserved, _)| reserved < position);
+                    if let Some(&(reserved, item)) = self.running.get(at)
+                        && reserved == position
+                        && let Maybe::Present(item) = self.running_item(item)
+                    {
+                        return Maybe::Present(item);
+                    }
+                }
+                self.running_item(cursor)
+            },
+            Hold::Cursor | Hold::Staging => self.running_item(cursor),
+            Hold::Manifest | Hold::Ordering | Hold::Rank | Hold::Read => {
+                Maybe::Absent(held_on::Absent::Unnamed)
+            },
+        }
+    }
+
+    /// `item` when its job runs, so that a hold names only a commit that is
+    /// still to come.
+    ///
+    /// # Specification
+    /// trivial.
+    fn running_item(
+        &self,
+        item: ItemIndex,
+    ) -> Maybe<ItemIndex, held_on::Absent>
+    {
+        if matches!(self.slots.get(usize::from(item)), Some(&Slot::Running(..))) {
+            Maybe::Present(item)
+        }
+        else {
+            Maybe::Absent(held_on::Absent::Unnamed)
+        }
+    }
+
     /// Release the declaration at `item`: hand on the crossing that its
     /// block's leader found, record the leading declarations at the boundary,
     /// poll the retirement, close the seals that end before the declaration,
@@ -3595,9 +3784,10 @@ where
     /// - requires: each declaration before `item` was released.
     /// - ensures: [`Releasing::Run`] with the check of a declaration that the
     ///   kernel released, its slot running; [`Releasing::Held`] when the
-    ///   release reads what a running check has not settled, with nothing else
-    ///   changed; [`Releasing::Settled`] with the crossing found at the release
-    ///   otherwise, or with nothing after a retirement or a misplaced entry.
+    ///   release reads what a running check has not settled, with the reason of
+    ///   the wait and nothing else changed; [`Releasing::Settled`] with the
+    ///   crossing found at the release otherwise, or with nothing after a
+    ///   retirement or a misplaced entry.
     /// - panics: none.
     /// - executable: none — what the release reads of the environment is the
     ///   kernel's, which no predicate over one call restates.
@@ -3627,7 +3817,7 @@ where
         let caught_up = self.cursor == index;
         if self.boundary == Some(index) {
             if !caught_up {
-                return Releasing::Held(Answer::Waits);
+                return self.hold(Hold::Cursor, Maybe::Absent(held_on::Absent::Unnamed));
             }
             self.record_leading();
         }
@@ -3648,7 +3838,7 @@ where
             let reached = ConstantIndex::from(skipped);
             if self.positions.open.iter().any(|seal| seal.end <= reached) {
                 if !caught_up {
-                    return Releasing::Held(Answer::Waits);
+                    return self.hold(Hold::Cursor, Maybe::Absent(held_on::Absent::Unnamed));
                 }
                 close_seals(
                     &mut self.environment,
@@ -3667,7 +3857,7 @@ where
         let held = match self.keeping {
             Some(ref keeping) => {
                 if self.answerable && !caught_up {
-                    return Releasing::Held(Answer::Waits);
+                    return self.hold(Hold::Cursor, Maybe::Absent(held_on::Absent::Unnamed));
                 }
                 self.environment.ranking_from(SourceRank::from(
                     index
@@ -3684,7 +3874,7 @@ where
         let block = block_offers(self.arena, report, self.source, run);
         if !block.is_empty() {
             if !caught_up {
-                return Releasing::Held(Answer::Waits);
+                return self.hold(Hold::Cursor, Maybe::Absent(held_on::Absent::Unnamed));
             }
             if let Some(ref keeping) = self.keeping {
                 let held = keeping
@@ -3721,7 +3911,7 @@ where
                 }
                 for entry in held.iter().copied().flatten() {
                     if keep::retire_unit(&mut self.environment, entry).is_err() {
-                        return Releasing::Held(Answer::Waits);
+                        return self.hold(Hold::Read, Maybe::Absent(held_on::Absent::Unnamed));
                     }
                 }
             }
@@ -3754,7 +3944,8 @@ where
                             // A running check reads into the key: the place
                             // waits for its commit.
                             Err(KernelError::UnsettledReleases { .. }) => {
-                                return Releasing::Held(Answer::Waits);
+                                return self
+                                    .hold(Hold::Read, Maybe::Absent(held_on::Absent::Unnamed));
                             },
                             Err(_) => false,
                         };
@@ -3767,7 +3958,7 @@ where
                             return Releasing::Settled(Answer::Skipped);
                         }
                         if keep::retire_unit(&mut self.environment, entry).is_err() {
-                            return Releasing::Held(Answer::Waits);
+                            return self.hold(Hold::Read, Maybe::Absent(held_on::Absent::Unnamed));
                         }
                         None
                     }
@@ -3887,9 +4078,11 @@ where
     ///   kernel releases it, outside a walk that keeps in a module whose pair
     ///   the kernel may leave undecided, and outside the cursor's release of a
     ///   dropped declaration. [`Releasing::Held`] while a declaration before it
-    ///   is not recorded, when its staging stops, or when the kernel holds it.
-    ///   [`Releasing::Settled`] with the kernel's refusal of its release, or
-    ///   with [`cross`]'s crossing once each declaration before it is recorded.
+    ///   is not recorded, with [`Hold::Cursor`]; when its staging stops, with
+    ///   [`Hold::Staging`]; or when the kernel holds it, with the kernel's
+    ///   reason. [`Releasing::Settled`] with the kernel's refusal of its
+    ///   release, or with [`cross`]'s crossing once each declaration before it
+    ///   is recorded.
     /// - panics: none.
     /// - executable: none — as [`Self::release`].
     ///
@@ -3926,7 +4119,7 @@ where
             // keeps in a module whose pair may stay undecided crosses each
             // declaration at the cursor, at the ranks of its place.
             if !caught_up {
-                return Releasing::Held(Answer::Waits);
+                return self.hold(Hold::Cursor, Maybe::Absent(held_on::Absent::Unnamed));
             }
         }
         else {
@@ -3949,8 +4142,20 @@ where
                     self.positions.reads(constant, &staged.formations);
                     let staged_as = staged.declaration.declaration().clone();
                     let started = self.stopwatch.start();
+                    // The kernel reserves the position past every entry.
+                    let reserved = ConstantIndex::from(self.environment.entries().len());
                     return match self.environment.release(staged.declaration) {
                         Ok(Released::Running(pending, check)) => {
+                            // A drop gives its positions back, so a release
+                            // after it reserves one of them again.
+                            while self
+                                .running
+                                .back()
+                                .is_some_and(|&(position, _)| position >= reserved)
+                            {
+                                let _dropped = self.running.pop_back();
+                            }
+                            self.running.push_back((reserved, item));
                             if let Some(slot) = self.slots.get_mut(at) {
                                 *slot = Slot::Running(
                                     Offered {
@@ -3968,9 +4173,9 @@ where
                         },
                         // The release reads a commit that has not come: the
                         // staging goes back, and the declaration waits.
-                        Ok(Released::Held(declaration, _)) => {
+                        Ok(Released::Held(declaration, hold, on)) => {
                             self.environment.abandon(declaration);
-                            Releasing::Held(Answer::Waits)
+                            self.hold(hold, on)
                         },
                         Err(error) => crossed(
                             Outcome::Rejected(error),
@@ -3981,7 +4186,9 @@ where
                 },
                 // A seed, an assumption and a refusal each read the record of
                 // each declaration before this one.
-                Err(_) if !caught_up => return Releasing::Held(Answer::Waits),
+                Err(_) if !caught_up => {
+                    return self.hold(Hold::Staging, Maybe::Absent(held_on::Absent::Unnamed));
+                },
                 Err(_) => {},
             }
         }
@@ -4351,7 +4558,7 @@ where
         let released = self.release(item);
         self.serially = false;
         let answer = match released {
-            Releasing::Settled(answer) | Releasing::Held(answer) => answer,
+            Releasing::Settled(answer) | Releasing::Held(answer, ..) => answer,
             Releasing::Run((check, mut stopwatch)) => {
                 let (ran, took) = run_check(check, &mut stopwatch);
                 Answer::Ran(ran, took)
@@ -5277,7 +5484,7 @@ where
         },
         // No check is outstanding, so no release holds; a hold answers as the
         // kernel's own admission answers it.
-        Ok(Released::Held(staged, _)) => {
+        Ok(Released::Held(staged, ..)) => {
             environment.abandon(staged);
             (
                 Err(KernelError::UnsettledReleases {

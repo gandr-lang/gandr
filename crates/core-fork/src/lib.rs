@@ -47,6 +47,7 @@ use core::fmt;
 use core::time::Duration;
 
 use anodized::spec;
+use quenchant_shape::shape::Maybe;
 
 #[cfg(feature = "instrument")]
 pub mod activity;
@@ -160,7 +161,8 @@ pub trait Fork: Sync
     /// - ensures: on return `release` ran on every item, on the calling thread,
     ///   in slice order. An item's first release came after `commit` ran on
     ///   every item that `after` names before it. A release that answered
-    ///   [`Releasing::Held`] while a job ran ran again once each job then
+    ///   [`Releasing::Held`] while a job ran ran again once the item that it
+    ///   names was committed, or, when it names none, once each job then
     ///   running was committed. `run` ran exactly once on each job that a
     ///   release gave. `commit` ran exactly once on every item, on the calling
     ///   thread: with its job's result once the job returned, or with the
@@ -204,7 +206,7 @@ pub trait Fork: Sync
             let position = ItemIndex(position);
             let out = match release(position, item) {
                 Releasing::Run(job) => run(job),
-                Releasing::Settled(out) | Releasing::Held(out) => out,
+                Releasing::Settled(out) | Releasing::Held(out, ..) => out,
             };
             commit(position, item, out);
         }
@@ -215,7 +217,8 @@ pub trait Fork: Sync
 ///
 /// # Specification
 /// - provides: a job to run, a result found at the release, or a release that
-///   waits on a running job, with the result to commit when no job runs.
+///   waits on a running job, with the result to commit when no job runs, the
+///   kernel's reason for the wait and the item whose commit frees it.
 /// - panics: none.
 /// - executable: none — a type-level block: a plain record that the caller's
 ///   release makes.
@@ -226,19 +229,28 @@ pub enum Releasing<Job, Out>
     Run(Job),
     /// The result, found at the release with no job to run.
     Settled(Out),
-    /// The release reads the commit of a job that runs. The schedule commits
-    /// each running job, then releases the item again. When no job runs, the
-    /// schedule commits the result held here.
-    Held(Out),
+    /// The release reads the commit of a job that runs, for the reason that
+    /// the [`gandr_kernel_core::Hold`] names. When the hold names the item
+    /// whose commit frees it, the schedule releases the item again after
+    /// that commit. Otherwise it commits each running job first, then
+    /// releases the item again. When no job runs, the schedule commits the
+    /// result held here.
+    Held(
+        Out,
+        gandr_kernel_core::Hold,
+        Maybe<ItemIndex, gandr_kernel_core::held_on::Absent>,
+    ),
 }
 
 /// The items that the release of each item of a [`Fork::schedule`] waits on,
-/// by slice position.
+/// by slice position, and the size of each item.
 ///
 /// # Specification
 /// - provides: edges `(before, after)`, each from an earlier item to a later
 ///   one, sorted and without repeats. The release of the item at `after` waits
-///   on the commit of the item at `before`. The default has no edge.
+///   on the commit of the item at `before`. And the size of each item by slice
+///   position, which a schedule prices to tell what the item's job is expected
+///   to cost. The default has no edge and sizes no item.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Dependences::new`] states the
 ///   order that it keeps.
@@ -248,11 +260,13 @@ pub enum Releasing<Job, Out>
 ///   refused, and repeated edges are kept once in order.
 /// - witness: `tests::dependences_keep_forward_edges_once_in_order`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
 pub struct Dependences
 {
     /// Every edge, sorted and without repeats.
     edges: Vec<Dependence>,
+    /// The size of each item by slice position: the count of nodes that its
+    /// job reads. Empty when no item is sized.
+    sizes: Vec<ItemSize>,
 }
 
 impl Dependences
@@ -291,7 +305,36 @@ impl Dependences
         }
         kept.sort_unstable();
         kept.dedup();
-        Ok(Self { edges: kept })
+        Ok(Self {
+            edges: kept,
+            sizes: Vec::new(),
+        })
+    }
+
+    /// These dependences, with the item at each slice position of `sizes`
+    /// sized as it gives.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sized(
+        self,
+        sizes: Vec<ItemSize>,
+    ) -> Self
+    {
+        Self { sizes, ..self }
+    }
+
+    /// The size of each item by slice position; empty when no item is sized.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn sizes(&self) -> &[ItemSize]
+    {
+        &self.sizes
     }
 
     /// Every edge, sorted by its earlier item and then by its later one.
@@ -500,6 +543,43 @@ impl From<usize> for ItemIndex
     fn from(position: usize) -> Self
     {
         Self(position)
+    }
+}
+
+/// The size of an item of a schedule: the count of nodes that its job reads.
+///
+/// # Specification
+/// - provides: the count as given; the order is the order of the counts.
+/// - panics: none.
+/// - executable: none — a type-level block: a plain record that
+///   [`Dependences::sized`] holds.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct ItemSize(usize);
+
+impl From<ItemSize> for usize
+{
+    /// The count of nodes of `size`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(size: ItemSize) -> Self
+    {
+        size.0
+    }
+}
+
+impl From<usize> for ItemSize
+{
+    /// The size of `nodes` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(nodes: usize) -> Self
+    {
+        Self(nodes)
     }
 }
 

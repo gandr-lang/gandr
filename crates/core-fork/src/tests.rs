@@ -217,7 +217,11 @@ fn serial_releases_runs_and_commits_each_item_in_order()
                 item.releases.push(tick());
                 match usize::from(position) {
                     1 => Releasing::Settled(100),
-                    3 => Releasing::Held(300),
+                    3 => Releasing::Held(
+                        300,
+                        gandr_kernel_core::Hold::Content,
+                        quenchant_shape::shape::Maybe::Present(crate::ItemIndex::from(2_usize)),
+                    ),
                     other => Releasing::Run(other),
                 }
             },

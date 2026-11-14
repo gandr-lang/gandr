@@ -218,6 +218,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a held release names no outstanding release that it waits on.
+    pub mod held_on {
+        /// The reason no release is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The hold reads every outstanding release, or the order of
+            /// their commits, so no one commit frees it.
+            Unnamed,
+        }
+    }
+}
+
 /// What a release answers: the check, released at its reserved position, or
 /// the declaration handed back with the reason it holds.
 ///
@@ -243,8 +256,13 @@ pub enum Released
     /// beside it.
     Running(Pending, Check),
     /// The declaration, handed back: its release reads a commit that has not
-    /// come.
-    Held(StagedDeclaration, Hold),
+    /// come. The hold names the position of the outstanding release whose
+    /// commit frees it, when one commit does.
+    Held(
+        StagedDeclaration,
+        Hold,
+        Maybe<ConstantIndex, held_on::Absent>,
+    ),
 }
 
 /// Why a release hands its declaration back: what it reads of an earlier
@@ -270,6 +288,16 @@ pub enum Hold
     /// content or the same plain definition, which the declaration's key or
     /// name counts.
     Content,
+    /// The release reads a record that only the cursor writes. The commit of
+    /// the outstanding release before it brings the cursor there.
+    Cursor,
+    /// A seed, an assumption or a refusal of the declaration reads the record
+    /// of each declaration before it. The commit of the outstanding release
+    /// before it brings the cursor there.
+    Staging,
+    /// An outstanding release reads the place that a keep or a retirement of
+    /// the declaration changes. The commit of that release frees the place.
+    Read,
 }
 
 impl Check
@@ -1165,7 +1193,7 @@ impl Environment
                 Maybe::Present(hold) => {
                     return Ok(self.hand_back(
                         StagedDeclaration::new(content_start, staged_rank, declaration),
-                        hold,
+                        (hold, Maybe::Absent(held_on::Absent::Unnamed)),
                     ));
                 },
                 Maybe::Absent(crate::releases::free::Absent::Unread) => {
@@ -1231,12 +1259,12 @@ impl Environment
         let key_name = self.definition_name(&declaration, rank);
         let sway = sway(&declaration);
         if !alone
-            && let Maybe::Present(hold) =
+            && let Maybe::Present(held) =
                 self.reads_order((sway, rank), generative_content, key_name)
         {
             return Ok(self.hand_back(
                 StagedDeclaration::new(content_start, staged_rank, declaration),
-                hold,
+                held,
             ));
         }
         // The entry key alone, which an edit that the declaration does not read
@@ -1304,19 +1332,20 @@ impl Environment
         ))
     }
 
-    /// Hand `staged` back for `hold`: its staged mark stays outstanding, so
-    /// the release that follows the settles resolves it.
+    /// Hand `staged` back for `held`, the hold and the outstanding release
+    /// that it waits on: its staged mark stays outstanding, so the release
+    /// that follows the settles resolves it.
     ///
     /// # Specification
     /// trivial.
     fn hand_back(
         &mut self,
         staged: StagedDeclaration,
-        hold: Hold,
+        (hold, on): (Hold, Maybe<ConstantIndex, held_on::Absent>),
     ) -> Released
     {
         self.outstanding.register(staged.content_start());
-        Released::Held(staged, hold)
+        Released::Held(staged, hold, on)
     }
 
     /// Why a release behind the cursor reads an earlier commit that has not
@@ -1329,9 +1358,10 @@ impl Environment
     /// - requires: an earlier release is outstanding, and `key_name` names the
     ///   declaration's content in this environment's arena.
     /// - ensures: absent only when no read of order that the release makes
-    ///   reads an outstanding release.
+    ///   reads an outstanding release. A [`Hold::Content`] names the position
+    ///   of an outstanding release of that content; each other hold names none.
     /// - provides: the first hold that applies, in the order of the variants of
-    ///   [`Hold`].
+    ///   [`Hold`], with the outstanding release that it waits on.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clauses state what the outstanding releases
@@ -1345,29 +1375,38 @@ impl Environment
         (sway, rank): (crate::releases::Sway, SourceRank),
         generative: Maybe<crate::verdict::EntryContentKey, crate::releases::generative::Absent>,
         key_name: ConstantName,
-    ) -> Maybe<Hold, crate::releases::free::Absent>
+    ) -> Maybe<(Hold, Maybe<ConstantIndex, held_on::Absent>), crate::releases::free::Absent>
     {
+        let unnamed = Maybe::Absent(held_on::Absent::Unnamed);
         if !self.manifest.is_empty() {
-            return Maybe::Present(Hold::Manifest);
+            return Maybe::Present((Hold::Manifest, unnamed));
         }
         if let Maybe::Present(hold) = self.releases.ordering(sway) {
-            return Maybe::Present(hold);
+            return Maybe::Present((hold, unnamed));
         }
         if let Maybe::Present(content) = generative
-            && let Maybe::Present(hold) = self.releases.generative(content, rank)
+            && let Maybe::Present(held) = self.releases.generative(content, rank)
         {
-            return Maybe::Present(hold);
+            return Maybe::Present(held);
         }
-        if let ConstantName::Definition { digest, .. } = key_name
-            && crate::encoding::likeness(
+        if let ConstantName::Definition { digest, .. } = key_name {
+            // The likeness stops at the first twin, so the last position that
+            // the walk passes is the twin's.
+            let twin = core::cell::Cell::new(unnamed);
+            if crate::encoding::likeness(
                 self.names.session_mut().table_mut(),
                 &self.arena,
                 key_name,
-                self.releases.definitions(digest, rank),
+                self.releases.definitions(digest, rank).map(|(on, name)| {
+                    twin.set(on);
+                    name
+                }),
             ) == crate::encoding::Likeness::Alike
-        {
-            return Maybe::Present(Hold::Content);
+            {
+                return Maybe::Present((Hold::Content, twin.get()));
+            }
         }
+
         Maybe::Absent(crate::releases::free::Absent::Unread)
     }
 
@@ -2188,7 +2227,9 @@ impl Environment
                 self.names.session_mut().table_mut(),
                 &self.arena,
                 name,
-                self.releases.definitions(digest, below),
+                self.releases
+                    .definitions(digest, below)
+                    .map(|(_on, name)| name),
             ) == crate::encoding::Likeness::Alike
         {
             return Err(held);
@@ -8654,7 +8695,7 @@ mod tests
         )
         {
             let released = match self.environment.release(staged) {
-                Ok(super::Released::Held(staged, _)) => {
+                Ok(super::Released::Held(staged, ..)) => {
                     self.settle_until_none_gives(Kind::Every);
                     self.environment.release(staged)
                 },
@@ -8667,7 +8708,7 @@ mod tests
                     pending,
                     check,
                 }),
-                Ok(super::Released::Held(_, hold)) => {
+                Ok(super::Released::Held(_, hold, _)) => {
                     panic!("a release with no release outstanding never holds, yet {hold:?}")
                 },
                 Err(error) => self.outcomes[index] = Some(Err(error)),

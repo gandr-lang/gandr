@@ -67,6 +67,8 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 use anodized::spec;
+use gandr_core_fork::Dependence;
+use gandr_core_fork::ItemSize;
 use gandr_core_fork::Serial;
 use gandr_core_nbe::TraceNode;
 use gandr_core_term::CoreArena;
@@ -139,6 +141,7 @@ use super::Untimed;
 use super::crossed;
 use super::fault;
 use super::metered;
+use super::plan;
 use super::readmit;
 use super::readmit_resuming;
 use super::readmit_retiring;
@@ -657,6 +660,73 @@ fn a_constant_reference_across_declarations_admits()
     assert!(
         audit.axioms().is_empty(),
         "resting on a definition rests on no axiom"
+    );
+}
+
+/// #7336: `def first : Unit = ()`, `def second : Unit = first` and `def
+/// third : Unit = ()`, with two nodes minted between the second's body and the
+/// third's. The plan waits `second` on `first`, which its judgement consults,
+/// and on nothing else. Each size counts the nodes minted since the root of
+/// the same family before it, so the third counts the two nodes between. A
+/// walk that starts at `second` counts from the roots of `first`, and plans no
+/// wait on a declaration that it does not release. A report that kept no
+/// support plans no wait.
+#[test]
+fn a_walk_plans_a_wait_on_each_read_and_a_size_for_each_declaration_7336()
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let unit = arena.value_unit();
+    let first = arena.value_constant(ConstantIndex::from(0_usize));
+    let _between = (arena.value_unit(), arena.value_unit());
+    let third_type = arena.value_type_unit();
+    let third = arena.value_unit();
+    let module = [
+        declaration(At(0), Maybe::Present(unit_type), Maybe::Present(unit)),
+        declaration(At(1), Maybe::Present(unit_type), Maybe::Present(first)),
+        declaration(At(2), Maybe::Present(third_type), Maybe::Present(third)),
+    ];
+    let mut run = crate::module::ModuleRun::new();
+    run.keep_supports();
+    let supported = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        run.judge(&mut context, &module, |_, _, _| {});
+        run.finish(&mut context)
+    };
+    let planned = plan(&supported, &[], supported.judged());
+    assert_eq!(
+        planned.edges(),
+        [Dependence {
+            before: 0,
+            after: 1
+        }],
+        "a read"
+    );
+    assert_eq!(
+        planned.sizes(),
+        [2, 1, 4].map(ItemSize::from),
+        "the nodes of each body and type"
+    );
+    let (first, rest) = supported.judged().split_at(1);
+    let resumed = plan(&supported, first, rest);
+    assert!(
+        resumed.edges().is_empty(),
+        "no wait on a declaration that the walk does not release"
+    );
+    assert_eq!(
+        resumed.sizes(),
+        [1, 4].map(ItemSize::from),
+        "sizes counted from the first roots"
+    );
+    let unsupported = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    assert!(
+        plan(&unsupported, &[], unsupported.judged())
+            .edges()
+            .is_empty(),
+        "no read kept"
     );
 }
 
@@ -1344,11 +1414,11 @@ impl gandr_core_fork::Fork for Reversed
                         next = next.saturating_add(1);
                         false
                     },
-                    gandr_core_fork::Releasing::Held(_) if !running.is_empty() => true,
+                    gandr_core_fork::Releasing::Held(..) if !running.is_empty() => true,
                     // A settled item commits before the running jobs: its commit
                     // comes out of release order too.
                     gandr_core_fork::Releasing::Settled(out)
-                    | gandr_core_fork::Releasing::Held(out) => {
+                    | gandr_core_fork::Releasing::Held(out, ..) => {
                         commit(at, item, out);
                         next = next.saturating_add(1);
                         false

@@ -1289,9 +1289,10 @@ fn check_prints_each_thread_s_occupancy_6298()
 
 /// `gandr check --counts` prints, to standard error, one `counts:` line after
 /// the run: the allocations of every thread and the frames that the kernel's
-/// checks popped. A recheck of declarations pushes frames, a second recheck
-/// pops as many, and the check's own output is the output of a check without
-/// the flag.
+/// checks popped. A recheck of declarations pushes frames. At one job, a second
+/// recheck pops as many. On more threads, the count also depends on where each
+/// check runs. A check on another thread does not read the memo of the check
+/// before it. The check's own output is the output of a check without the flag.
 #[cfg(feature = "counts")]
 #[test]
 fn check_counts_the_allocations_and_the_frames_of_its_run()
@@ -1304,7 +1305,12 @@ fn check_counts_the_allocations_and_the_frames_of_its_run()
     let home = scratch.0.join("configuration");
     let cache = scratch.0.join("cache");
     let check = |flags: &[&Path]| {
-        let mut arguments = vec![Path::new("check"), Path::new("--recheck")];
+        let mut arguments = vec![
+            Path::new("check"),
+            Path::new("--recheck"),
+            Path::new("--jobs"),
+            Path::new("1"),
+        ];
         arguments.extend_from_slice(flags);
         arguments.push(&scratch.0);
         let mut command = gandr(&arguments);
@@ -1360,7 +1366,7 @@ fn check_counts_the_allocations_and_the_frames_of_its_run()
     assert_eq!(
         counts(&check(&[Path::new("--counts")])).1,
         frames,
-        "the frames are the work of the checks, so a second recheck pops as many"
+        "at one job, the frames are the work of the checks, so a second recheck pops as many"
     );
 }
 

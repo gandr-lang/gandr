@@ -1222,6 +1222,7 @@ dependencies = [
  "allocation-counter",
  "crossbeam-queue",
  "gandr-core-fork",
+ "gandr-kernel-core",
  "quenchant-anodized",
  "quenchant-shape",
 ]

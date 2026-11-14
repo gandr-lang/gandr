@@ -4259,7 +4259,9 @@ where
                     Recording::Unrecorded,
                     Scheduling::Sequential,
                     MemoActivity::Active,
-                    (Supporting::Unkept, &mut Deciding),
+                    // The walk plans the wait of each release from the reads
+                    // that each support records, so the run keeps them.
+                    (Supporting::Kept, &mut Deciding),
                 ),
                 &Unretired,
             )

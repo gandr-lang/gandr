@@ -59,6 +59,7 @@ use std::thread::Thread;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_core_fork::ItemSize;
 use quenchant_shape::shape::Maybe;
 
 use super::Spin;
@@ -876,6 +877,64 @@ impl<Queued> Queue<Queued>
 /// A standing job: work that outlives the fork that started it.
 type Standing = Box<dyn FnOnce() + Send>;
 
+/// What the pool measures of its hand-offs over the process: the price of a
+/// node of a job that runs on its calling thread, what a hand-off adds to the
+/// run of a job, and what the wakes and the spins of the posts cost.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Measured
+{
+    /// The nanoseconds of the jobs that ran on their calling thread.
+    home_nanos: AtomicU64,
+    /// The nodes of those jobs.
+    home_nodes: AtomicU64,
+    /// The nanoseconds that the run of each handed job took past its price.
+    added_nanos: AtomicU64,
+    /// The count of handed jobs.
+    handed: AtomicU64,
+    /// The nanoseconds of the wakes that the posts made, and of the spins of
+    /// the workers and the lanes that came after them.
+    overhead_nanos: AtomicU64,
+    /// The count of posts.
+    posts: AtomicU64,
+}
+
+/// What one schedule measures of its jobs, before it adds the measures to the
+/// pool's.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Tally
+{
+    /// The nanoseconds of the jobs that ran on the calling thread.
+    pub home_nanos: u64,
+    /// The nodes of those jobs.
+    pub home_nodes: u64,
+    /// The nanoseconds that the run of each handed job took past its price.
+    pub added_nanos: u64,
+    /// The count of handed jobs.
+    pub handed: u64,
+    /// The nanoseconds that the lanes' tasks spun on their empty rings.
+    pub spun_nanos: u64,
+}
+
+/// Where the band sends a job that may go beside the calling thread's job.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Band
+{
+    /// The job is expected to cost more than a hand-off: it goes beside.
+    Beside,
+    /// The job is expected to cost no more than a hand-off, or no price is
+    /// known: it stays on the calling thread.
+    Home,
+}
+
 /// What the workers and their parties share.
 ///
 /// # Specification
@@ -900,6 +959,8 @@ struct Shared
     park: AtomicU64,
     /// The tokens of the host's grant, when a jobserver bounds the process.
     tokens: Maybe<Arc<Tokens>, ungranted::Absent>,
+    /// What the pool measures of its hand-offs.
+    measured: Measured,
 }
 
 /// How long a worker waits before it reads the grant again for a queued job,
@@ -1178,6 +1239,7 @@ impl Workers
             ended: AtomicBool::new(false),
             park: AtomicU64::new(0),
             tokens,
+            measured: Measured::default(),
         });
         for sender in senders {
             // A worker that cannot receive has ended, and no party posts to a
@@ -1281,6 +1343,113 @@ impl Workers
         self.shared.park()
     }
 
+    /// What a job of `size` is expected to cost on its calling thread: the
+    /// price of a node of the jobs that ran there, those of `tally` among
+    /// them. None before any such job.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn expected(
+        &self,
+        size: ItemSize,
+        tally: &Tally,
+    ) -> Option<Duration>
+    {
+        let measured = &self.shared.measured;
+        let nodes = measured
+            .home_nodes
+            .load(Ordering::Relaxed)
+            .saturating_add(tally.home_nodes);
+        let nanos = measured
+            .home_nanos
+            .load(Ordering::Relaxed)
+            .saturating_add(tally.home_nanos);
+        let priced = u128::try_from(usize::from(size))
+            .unwrap_or(u128::MAX)
+            .saturating_mul(u128::from(nanos))
+            .checked_div(u128::from(nodes))?;
+        Some(Duration::from_nanos(
+            u64::try_from(priced).unwrap_or(u64::MAX),
+        ))
+    }
+
+    /// The whole cost of a hand-off: what the run of a handed job took past
+    /// its price, on average, and what the wakes and the spins cost for each
+    /// post, with `tally`'s measures. Before the first handed job, the
+    /// park-to-wake cost.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn hand(
+        &self,
+        tally: &Tally,
+    ) -> Duration
+    {
+        let measured = &self.shared.measured;
+        let handed = measured
+            .handed
+            .load(Ordering::Relaxed)
+            .saturating_add(tally.handed);
+        let Some(added) = measured
+            .added_nanos
+            .load(Ordering::Relaxed)
+            .saturating_add(tally.added_nanos)
+            .checked_div(handed)
+        else {
+            return self.shared.park();
+        };
+        let overhead = measured
+            .overhead_nanos
+            .load(Ordering::Relaxed)
+            .saturating_add(tally.spun_nanos)
+            .checked_div(measured.posts.load(Ordering::Relaxed))
+            .unwrap_or_default();
+        Duration::from_nanos(added.saturating_add(overhead))
+    }
+
+    /// Where the band sends a job of `size`, with `tally`'s measures: beside
+    /// the calling thread's job when the job is expected to cost more than a
+    /// hand-off.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn band(
+        &self,
+        size: ItemSize,
+        tally: &Tally,
+    ) -> Band
+    {
+        match self.expected(size, tally) {
+            Some(expected) if expected > self.hand(tally) => Band::Beside,
+            _ => Band::Home,
+        }
+    }
+
+    /// Add the measures of one schedule to the pool's.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn add(
+        &self,
+        tally: &Tally,
+    )
+    {
+        let measured = &self.shared.measured;
+        measured
+            .home_nanos
+            .fetch_add(tally.home_nanos, Ordering::Relaxed);
+        measured
+            .home_nodes
+            .fetch_add(tally.home_nodes, Ordering::Relaxed);
+        measured
+            .added_nanos
+            .fetch_add(tally.added_nanos, Ordering::Relaxed);
+        measured.handed.fetch_add(tally.handed, Ordering::Relaxed);
+        measured
+            .overhead_nanos
+            .fetch_add(tally.spun_nanos, Ordering::Relaxed);
+    }
+
     /// The place of the current thread among these workers.
     ///
     /// # Specification
@@ -1377,7 +1546,12 @@ impl Workers
             seat.job.get().write(MaybeUninit::new(job));
         }
         seat.state.store(state.0, Ordering::Release);
+        let waking = Instant::now();
         seat.sleeper.wake();
+        let woke = u64::try_from(waking.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        let measured = &self.shared.measured;
+        measured.overhead_nanos.fetch_add(woke, Ordering::Relaxed);
+        measured.posts.fetch_add(1, Ordering::Relaxed);
         Maybe::Present(Posted { worker, state })
     }
 
@@ -1888,6 +2062,10 @@ fn serve(
         while !arrived() && idle.elapsed() < park {
             std::thread::yield_now();
         }
+        shared.measured.overhead_nanos.fetch_add(
+            u64::try_from(idle.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
         shared.spinning.clear(worker);
         if !arrived() {
             seat.sleeper.sleep(arrived);

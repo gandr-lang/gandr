@@ -469,6 +469,7 @@ INSERT INTO purpose VALUES('core-fork','Dependence','struct','One edge of a sche
 INSERT INTO purpose VALUES('core-fork','Dependences','struct','The items that the release of each item of a schedule waits on, by slice position.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Fork','trait','Runs independent jobs on the workers the driver provides.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','ItemIndex','struct','An item of a schedule, by its slice position.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-fork','ItemSize','struct','The size of an item of a schedule: the count of nodes that its job reads.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Releasing','enum','What the release of one item of a schedule answers: a job to run, a result found at the release, or a hold on a running job with the result to commit when no job runs.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Scoped','trait','A computation run inside a fork''s scope, handed the scope''s spawner.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('core-fork','Serial','struct','Every job on the calling thread, in order: the serial reference.','fork','fits','sound',NULL);
