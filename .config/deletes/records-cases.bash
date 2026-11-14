@@ -419,4 +419,17 @@ echo '{"reason":"build-finished","success":false}' > "$work/silent.json"
   || fail "#7648: messages with no error read: $(records_errors "$work/silent.json")"
 cases=$((cases + 1))
 
+# In the policy mode, a package's run selects each package that owns a feature
+# of the scope beside it, and names its own features under its name, so cargo
+# takes each feature of the policy run of `check:dylint` (#7654).
+records_policy_features=b/x,c/y
+[[ $(records_policy_features a f,g) == "a/f,a/g,b/x,c/y" ]] \
+  || fail "#7654: the features of a read: $(records_policy_features a f,g)"
+[[ $(records_policy_features a "") == "b/x,c/y" ]] || fail "#7654: the features of a with none of its own read: $(records_policy_features a "")"
+[[ $(records_selection a a/f,b/x,c/y,b/z | tr '\n' ' ') == "-p a -p b -p c --features a/f,b/x,c/y,b/z " ]] \
+  || fail "#7654: the selection of a reads: $(records_selection a a/f,b/x,c/y,b/z | tr '\n' ' ')"
+[[ $(records_selection a "" | tr '\n' ' ') == "-p a " ]] || fail "#7654: the selection of a with no feature reads: $(records_selection a "" | tr '\n' ' ')"
+records_policy_features=
+cases=$((cases + 1))
+
 echo "records-cases OK: $cases cases"
