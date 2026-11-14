@@ -662,6 +662,9 @@ where
     ///   item that stood last stands at `index` when `index` is not the last.
     /// - panics: when `index` is not below the length.
     ///
+    /// # Panics
+    /// When `index` is not below the length, as `Vec::swap_remove` panics.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the model test removes an item at each index in range
     ///   after each kind of operation, against `Vec::swap_remove`.
@@ -694,6 +697,9 @@ where
     ///   other items keep their order.
     /// - panics: when `index` is not below the length.
     /// - intension: one move of each item past `index`.
+    ///
+    /// # Panics
+    /// When `index` is not below the length, as `Vec::remove` panics.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the model test removes an item at each index in range
