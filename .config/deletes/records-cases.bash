@@ -402,4 +402,21 @@ mv "$tree/rust-toolchain.toml" "$work/rust-toolchain.toml"
 mv "$work/rust-toolchain.toml" "$tree/rust-toolchain.toml"
 cases=$((cases + 1))
 
+# A refusal shows the first error of the compiler and the count of errors,
+# from the messages that the log of the run does not hold; rustc's closing
+# line counts as no error, and an artifact line is no message.
+{
+  echo '{"reason":"compiler-artifact","package_id":"a"}'
+  echo '{"reason":"compiler-message","message":{"level":"warning","message":"w","rendered":"warning: w\n"}}'
+  echo '{"reason":"compiler-message","message":{"level":"error","message":"unused extern crate","rendered":"error: unused extern crate\n --> tests/lib.rs:6:1\n"}}'
+  echo '{"reason":"compiler-message","message":{"level":"error","message":"unresolved import","rendered":"error[E0432]: unresolved import\n"}}'
+  echo '{"reason":"compiler-message","message":{"level":"error","message":"aborting due to 2 previous errors","rendered":"error: aborting due to 2 previous errors\n"}}'
+} > "$work/refused.json"
+wanted=$'error: unused extern crate\n --> tests/lib.rs:6:1\n\n2 errors of the compiler in all'
+[[ $(records_errors "$work/refused.json") == "$wanted" ]] || fail "#7648: the refusal reads: $(records_errors "$work/refused.json")"
+echo '{"reason":"build-finished","success":false}' > "$work/silent.json"
+[[ $(records_errors "$work/silent.json") == "the messages hold no error of the compiler" ]] \
+  || fail "#7648: messages with no error read: $(records_errors "$work/silent.json")"
+cases=$((cases + 1))
+
 echo "records-cases OK: $cases cases"

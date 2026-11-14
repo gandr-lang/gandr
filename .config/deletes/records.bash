@@ -443,6 +443,19 @@ records_build() {
     > "$records_work/messages.json" 2>> "$records_work/dylint.log"
 }
 
+# The first error of the run's messages `$1`, as the compiler renders it, and
+# the count of errors. `cargo dylint` writes each message of the compiler to
+# the messages as JSON, so the log of the run holds none of them, and the
+# work directory with the messages leaves at the end of the run (#7648).
+# rustc's closing line, "aborting due to …", counts as no error.
+records_errors() {
+  jq -rn '[inputs
+      | select(.reason? == "compiler-message" and .message.level == "error")
+      | select(.message.message | startswith("aborting due to") | not)]
+    | if length == 0 then "the messages hold no error of the compiler"
+      else .[0].message.rendered, "\(length) errors of the compiler in all" end' "$1"
+}
+
 records_main() {
   local tree=${1:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
   local target=${2:?usage: records.bash <tree> <target> <out> <package>=<directory>...}
@@ -476,7 +489,12 @@ records_main() {
   fi
   for i in "${missed[@]}"; do
     records_build "${names[i]}" "${features[i]}" \
-      || { echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }
+      || {
+        echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2
+        records_errors "$records_work/messages.json" >&2
+        tail -n 20 "$records_work/dylint.log" >&2
+        return 2
+      }
     prefix=$(tr '/' '_' <<< "${dirs[i]}")_
     shopt -s nullglob
     files=("$records_work/records/$prefix"*)
