@@ -10,6 +10,7 @@ mod recursive_transport_tests;
 #[path = "../identity_recursion/universe_tests.rs"]
 mod universe_fold_tests;
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -1476,7 +1477,7 @@ fn certificate_identity_stays_out_of_conversion()
         crate::conv::equal_values(staging.arena(), first, different_evidence),
         crate::conv::Convertibility::Convertible
     );
-    let mut table = crate::encoding::ContentTable::new();
+    let mut table = crate::encoding::ContentTable::new_in(Global);
     assert_ne!(
         crate::encoding::support_key(
             &mut table,

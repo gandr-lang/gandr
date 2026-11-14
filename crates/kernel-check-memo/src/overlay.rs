@@ -367,7 +367,7 @@ where
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new() -> Self
+    pub fn new() -> Self
     {
         Self {
             layers: Vec::new(),

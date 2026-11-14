@@ -1,5 +1,6 @@
 //! Symbolic container patterns and their leaf-natural forward obligations.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -461,6 +462,9 @@ enum Cover
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — repeated Base positions and both sum branches matter; a
 ///   product of three keeps its leaf order with distinct variables; a list of
@@ -493,7 +497,7 @@ fn patterns(
 {
     let mut pending = Vec::from([Cover::Visit(root)]);
     let mut results = Vec::<Vec<Pattern>>::new();
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     // The data declarations whose constructors are being covered.
     let mut open = BTreeSet::new();
     while let Some(task) = pending.pop() {

@@ -1553,6 +1553,8 @@ INSERT INTO purpose VALUES('kernel-core-base','support::NodeSupport','struct','T
 INSERT INTO purpose VALUES('kernel-core-base','support::Opened','struct','Where an open accrual sits on its session''s stack.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Owed','struct','The keys of the obligations that a formation owes the checker, each one time.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Question','struct','A goal''s question: what it asks of which content against which expected type, before its judgement has read a binder.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','support::SessionAllocator','type_alias','The allocator the session''s content table keeps its words in: the global allocator until the session holds a region.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','support::SessionTable','type_alias','The session''s content table, over the session''s allocator.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, the buffer one goal''s read binders are gathered in, and the open goals'' accruals of the binders their judgements read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::innermost','function','Whether `reads` reads the innermost binder, index zero.',NULL,'fits','sound',NULL);

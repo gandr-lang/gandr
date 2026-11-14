@@ -1,6 +1,7 @@
 //! Directed computation, naturality, variance and family-boundary witnesses,
 //! over native flow nodes admitted by the ordinary checker.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec;
@@ -475,7 +476,7 @@ fn stay_and_forward_admit_and_ride()
         let motive = element(&mut arena);
         let reduced = ride_beta(
             &mut arena,
-            &mut ContentTable::new(),
+            &mut ContentTable::new_in(Global),
             &mut NullMemo,
             RideStep {
                 motive,
@@ -1628,11 +1629,16 @@ fn a_ride_reads_its_family_s_shape_before_it_reduces()
     let universe_moving_source = arena.value_type_flow_universe(binder, binder);
     let singleton = arena.value_type_flow_universe(point, binder);
     let ride = |arena: &mut TermArena, motive, flow, value| {
-        ride_beta(arena, &mut ContentTable::new(), &mut NullMemo, RideStep {
-            motive,
-            flow,
-            value,
-        })
+        ride_beta(
+            arena,
+            &mut ContentTable::new_in(Global),
+            &mut NullMemo,
+            RideStep {
+                motive,
+                flow,
+                value,
+            },
+        )
     };
     for (motive, along, value, what) in [
         (

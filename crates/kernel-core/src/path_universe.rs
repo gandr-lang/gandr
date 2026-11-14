@@ -124,6 +124,7 @@
 //! `ua` over lists of booleans, a code the decided stratum refuses, by
 //! checking a record literal and by synthesis from an admitted record under a
 //! transport, and refuses a record whose section does not hold.
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -348,6 +349,9 @@ pub fn endpoints(
 /// # Errors
 /// `PathError::Arena`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — the native transport witnesses distinguish map direction,
 ///   component order and reflexivity's one-step result.
@@ -388,7 +392,7 @@ pub fn beta(
             let force = arena.computation_force(map);
             let value = crate::rewrite::shift_value(
                 arena,
-                &mut crate::encoding::ContentTable::new(),
+                &mut crate::encoding::ContentTable::new_in(Global),
                 &mut gandr_kernel_check_memo::NullMemo,
                 term.value,
                 crate::rewrite::BinderDepth::default(),
@@ -411,7 +415,7 @@ pub fn beta(
             let second = arena.computation_transport(second, right);
             let second = crate::rewrite::shift_computation(
                 arena,
-                &mut crate::encoding::ContentTable::new(),
+                &mut crate::encoding::ContentTable::new_in(Global),
                 &mut gandr_kernel_check_memo::NullMemo,
                 second,
                 crate::rewrite::BinderDepth::default(),
@@ -509,6 +513,9 @@ pub(crate) fn identity_codes(
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a record over two bound codes checks against the record a
 ///   source states for `A ≃ B`, and an identity at a type other than the
@@ -531,7 +538,7 @@ pub(crate) fn univalence_record(
     let past = |arena: &mut TermArena, subject, amount| {
         crate::rewrite::shift_value_type(
             arena,
-            &mut crate::encoding::ContentTable::new(),
+            &mut crate::encoding::ContentTable::new_in(Global),
             &mut gandr_kernel_check_memo::NullMemo,
             subject,
             crate::rewrite::BinderDepth::default(),
@@ -821,6 +828,9 @@ fn homotopy_carrier(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
 fn self_homotopy(
     arena: &mut TermArena,
     carrier: ValueTypeId,
@@ -828,7 +838,7 @@ fn self_homotopy(
 {
     let over = crate::rewrite::shift_value_type(
         arena,
-        &mut crate::encoding::ContentTable::new(),
+        &mut crate::encoding::ContentTable::new_in(Global),
         &mut gandr_kernel_check_memo::NullMemo,
         carrier,
         crate::rewrite::BinderDepth::default(),
@@ -947,6 +957,9 @@ enum Trip
 ///   binder the point is `#0`, the inverse `#1` and the forward map `#2`.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`univalence_record`].
 /// - witness: `path_universe::tests::univalence_is_admitted_on_its_record`
@@ -963,7 +976,7 @@ fn round_trip(
     };
     let over = crate::rewrite::shift_value_type(
         arena,
-        &mut crate::encoding::ContentTable::new(),
+        &mut crate::encoding::ContentTable::new_in(Global),
         &mut gandr_kernel_check_memo::NullMemo,
         carrier,
         crate::rewrite::BinderDepth::default(),

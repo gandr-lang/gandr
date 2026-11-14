@@ -7074,8 +7074,8 @@ fn formation_segment(
 #[derive(Clone, Debug)]
 struct FormationTable
 {
-    /// The table that places and names the records.
-    table: gandr_kernel_core::ContentTable,
+    /// The table that places and names the records, on the global allocator.
+    table: gandr_kernel_core::ContentTable<alloc::alloc::Global>,
     /// The content keys computed on demand under a policy that rechecks.
     demanded: gandr_kernel_core::DemandedKeys,
     /// The constants whose names the table settled under a policy that
@@ -7089,11 +7089,14 @@ impl Default for FormationTable
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the table, durable by each formation's content key
     #[inline]
     fn default() -> Self
     {
         Self {
-            table: gandr_kernel_core::ContentTable::named(),
+            table: gandr_kernel_core::ContentTable::named_in(alloc::alloc::Global),
             demanded: gandr_kernel_core::DemandedKeys::default(),
             settled: BTreeSet::new(),
         }
@@ -8963,7 +8966,8 @@ struct Erasure<'source, 'positions>
     formations: Vec<ValueTypeId>,
     /// The session's table, which names each image when the fold mints it,
     /// so the kernel's keys and the naming of a definition read the names.
-    names: Option<gandr_kernel_core::MintNames<'source>>,
+    names:
+        Option<gandr_kernel_core::MintNames<'source, gandr_kernel_core::support::SessionAllocator>>,
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -9088,7 +9092,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// trivial.
     const fn naming(
         mut self,
-        names: gandr_kernel_core::MintNames<'source>,
+        names: gandr_kernel_core::MintNames<'source, gandr_kernel_core::support::SessionAllocator>,
     ) -> Self
     {
         self.names = Some(names);

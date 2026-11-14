@@ -13,6 +13,7 @@
 //!   by the context its judgement synthesized is found by its question and
 //!   matched against the context that asks (§ successor-synthesized-context).
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 use core::cell::Cell;
 
@@ -570,7 +571,7 @@ where
     /// The recorded answers, in recording order.
     entries: Vec<MemoEntry<Support, Outcome>>,
     /// Each entry's position, filed under its support's digest.
-    index: HashIndex,
+    index: HashIndex<Global>,
     /// How many distinct digests the entries carry.
     buckets: MemoBucketCount,
     /// The entry counts, maintained as entries are recorded.
@@ -595,13 +596,16 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: entries and index, growth within the recorded entries
     #[inline]
     #[must_use]
-    pub const fn new() -> Self
+    pub fn new() -> Self
     {
         Self {
             entries: Vec::new(),
-            index: HashIndex::new(),
+            index: HashIndex::new_in(Global),
             buckets: MemoBucketCount::zero(),
             census: EntryCensus::empty(),
         }

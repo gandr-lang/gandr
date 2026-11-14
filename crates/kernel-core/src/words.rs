@@ -89,6 +89,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
@@ -1437,14 +1438,15 @@ fn lambdas(
 /// - witness: `tests::native_formers::a_loop_arm_checks_at_the_path_over_its_loop`
 /// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 #[spec(ensures: |ret| ret.is_none_or(|arm| match arm { Arm::Written(written) => arena.computation(written).is_some(), Arm::Unwritten => true }))]
-fn loop_arm<M>(
+fn loop_arm<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     presentations: &Presentations,
     (case, moving, fixed): (ComputationId, Argument, &[ValueId]),
     (words, cell): (ConstantIndex, CellIndex),
 ) -> Option<Arm>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let Some(&Computation::DataCase { ref branches, .. }) = arena.computation(case)
@@ -1566,14 +1568,15 @@ fn answered(
 ///   argument is itself, the second route of `rotInv1`'s diagonal.
 /// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
-fn select<M>(
+fn select<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     (function, case): (ConstantIndex, ComputationId),
     (over, moving, fixed): (Argument, Argument, &[ValueId]),
     (letter, rest, (carrier, standing)): (ValueId, ValueId, (ValueTypeId, ValueId)),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let selector = *fixed.get(over.0)?;
@@ -1672,14 +1675,15 @@ where
 ///
 /// # Specification
 /// trivial.
-fn path_family<M>(
+fn path_family<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     (carrier, fixed): (ValueTypeId, ValueId),
     moving: gandr_kernel_term::Side,
     depth: BinderDepth,
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let amount = depth.deeper();
@@ -1716,14 +1720,15 @@ where
 ///   `back(loop)`, which the obligation over `b` reads as the empty word.
 /// - witness: `tests::native_formers::a_loop_obligation_reads_both_arguments_of_a_diagonal_464`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()) && (ret.is_none() || !routes.leaves.is_empty()))]
-fn image<M>(
+fn image<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     unfoldings: &Unfoldings,
     (routes, at): (&Routes, ValueId),
     (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let mut built = None;
@@ -1792,15 +1797,16 @@ where
 ///   which the claim refuses.
 /// - witness: `tests::native_formers::a_closed_word_moves_whole_to_its_letters_images`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
-fn word_image<M>(
+fn word_image<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     unfoldings: &Unfoldings,
     (routes, at): (&Routes, ValueId),
     (letters, path): (&[ValueId], ValueId),
     (carrier, fixed): (ValueTypeId, ValueId),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let presentations = unfoldings.presentations();
@@ -1855,7 +1861,7 @@ where
         let along = arena.value_variable(DeBruijnIndex::from(kinds.checked_sub(position)?));
         steps.push(arena.computation_path_transport(family, along, gathered));
     }
-    let here_at = |arena: &mut TermArena, table: &mut ContentTable, memo: &mut M, depth| {
+    let here_at = |arena: &mut TermArena, table: &mut ContentTable<A>, memo: &mut M, depth| {
         let lifted = shift_value(arena, table, memo, fixed, BinderDepth::NONE, depth);
         arena.value_here(lifted)
     };
@@ -1913,14 +1919,15 @@ where
 /// - witness: `tests::native_formers::a_loop_obligation_reads_a_map_of_two_arguments`
 /// - witness: `tests::native_formers::a_map_s_image_of_a_2_cell_in_place_is_its_arm`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
-fn route_image<M>(
+fn route_image<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     unfoldings: &Unfoldings,
     (mut walk, at): (Walk<'_>, ValueId),
     (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let (innermost, moving) = walk.next()?;
@@ -2073,14 +2080,15 @@ where
 ///   refuses the obligation.
 /// - witness: `tests::native_formers::a_carried_endpoint_maps_a_cell_6458`
 #[spec(ensures: |ret| ret.is_none_or(|built| arena.computation(built).is_some()))]
-fn carried_image<M>(
+fn carried_image<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     unfoldings: &Unfoldings,
     (carrying, at): (&Carrying, ValueId),
     (letter, (carrier, fixed)): (ValueId, (ValueTypeId, ValueId)),
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let Head::Letter { rest, .. } = head(arena, unfoldings.presentations(), letter)
@@ -2161,14 +2169,15 @@ where
 ///   the other sort's cell does not, and the loop would whisker its image.
 /// - witness: `tests::native_formers::a_carried_loop_moves_past_two_empty_images_6741`
 #[spec(ensures: |ret| matches!(*shape, Shape::Fixed | Shape::Call(_)) || matches!(ret, Flatness::Lettered))]
-fn flatness<M>(
+fn flatness<A, M>(
     arena: &mut TermArena,
-    (table, memo): (&mut ContentTable, &mut M),
+    (table, memo): (&mut ContentTable<A>, &mut M),
     unfoldings: &Unfoldings,
     (shape, at): (&Shape, ValueId),
     letter: ValueId,
 ) -> Flatness
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let read = match *shape {
@@ -2271,14 +2280,15 @@ where
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 })]
-pub fn transport_word<M>(
+pub fn transport_word<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     unfoldings: &Unfoldings,
     term: ElementTransport,
 ) -> Reduction
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let ElementTransport {
@@ -2535,13 +2545,14 @@ where
 /// - witness: `tests::native_formers::a_composite_along_a_returned_path_cancels_to_the_empty_word`
 #[spec(ensures: |ret| ret.is_some() == matches!(arena.value(term.path), Some(&Value::Returned(_)))
     && ret.is_none_or(|reduct| matches!(arena.computation(reduct), Some(&gandr_kernel_term::Computation::Bind(..)))))]
-pub fn run_path<M>(
+pub fn run_path<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     term: ElementTransport,
 ) -> Option<ComputationId>
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let ElementTransport {

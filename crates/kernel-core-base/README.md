@@ -26,7 +26,7 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
 - **The forked drain.** `Environment::forking`: a check's long last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
-- **The content key.** `ContentTable`, `MintNames`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, mint names, memo keys and content digests ([`encoding`](src/encoding.rs)).
+- **The content key.** `ContentTable`, `MintNames`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, mint names, memo keys and content digests ([`encoding`](src/encoding.rs)). A table takes its allocator, and every word, span, index slot and placement page of the table lives there. The session names the allocator of its table once, as `SessionAllocator`.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: each goal expanded, recalled or answered by a kept outcome, per plane, kept on its entry ([`census`](src/census.rs)).
 - **Errors.** `KernelError`, whose payloads are content; [`error`](src/error.rs) states why.

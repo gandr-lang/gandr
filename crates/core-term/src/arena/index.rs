@@ -19,6 +19,7 @@
 //!   kernel-reassessment-design item 10): the index files the canonical node of
 //!   each content, and no verdict reads which node it is.
 
+use alloc::alloc::Global;
 use alloc::sync::Arc;
 
 use anodized::spec;
@@ -47,14 +48,33 @@ pub(super) enum Interned
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(super) struct Index
 {
     /// The segments frozen before [`Self::own`], oldest first. Each clone
     /// shares the list and each segment.
-    frozen: Option<Arc<[Arc<HashIndex>]>>,
+    frozen: Option<Arc<[Arc<HashIndex<Global>>]>>,
     /// The entries filed after the last freeze.
-    own: HashIndex,
+    own: HashIndex<Global>,
+}
+
+impl Default for Index
+{
+    /// An index that files nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the interned nodes' index, growth within the minted nodes
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            frozen: None,
+            own: HashIndex::new_in(Global),
+        }
+    }
 }
 
 impl PartialEq for Index
@@ -203,7 +223,7 @@ impl Index
         if self.own.entries().next().is_none() {
             return;
         }
-        let own = Arc::new(core::mem::take(&mut self.own));
+        let own = Arc::new(core::mem::replace(&mut self.own, HashIndex::new_in(Global)));
         self.frozen = Some(
             self.frozen
                 .iter()

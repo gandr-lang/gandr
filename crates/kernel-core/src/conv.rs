@@ -102,6 +102,7 @@
 //! derived structural equality would recurse on depth and overflow the stack on
 //! an adversarial-depth input, which decode can build from bytes.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -610,6 +611,9 @@ pub(crate) fn related_pairs(
 ///   codomains strictly inside the dependent side it compares, and a pair read
 ///   once is not read again.
 ///
+/// # Cost
+/// - allocation: a content table on the global allocator until #7390, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a dependent arrow whose codomain ignores its binder
 ///   converts with the plain arrow in either order and under a further binder,
@@ -636,7 +640,7 @@ pub(crate) fn equal_weakened(
 {
     let watermark = arena.watermark();
     let verdict = {
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut codomains = Vec::new();
         let mut read = BTreeSet::new();
         let mut current = goal;

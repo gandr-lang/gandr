@@ -63,6 +63,7 @@
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
@@ -448,11 +449,13 @@ impl RewriteSupport
         },
         Maybe::Absent(_) => true,
     })]
-    fn build(
-        table: &mut ContentTable,
+    fn build<A>(
+        table: &mut ContentTable<A>,
         arena: &TermArena,
         goal: RewriteGoal,
     ) -> Maybe<Self, rewrite_key::Absent>
+    where
+        A: Allocator + Clone,
     {
         let plane = match goal {
             RewriteGoal::Shift { .. } => RewritePlane::Shift,
@@ -725,15 +728,16 @@ enum RewriteTask
     })]
 #[inline]
 #[must_use]
-pub fn shift_value_type<M>(
+pub fn shift_value_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueTypeId,
     cutoff: BinderDepth,
     amount: BinderDepth,
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
@@ -773,15 +777,16 @@ where
     })]
 #[must_use]
 #[inline]
-pub fn shift_value<M>(
+pub fn shift_value<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueId,
     cutoff: BinderDepth,
     amount: BinderDepth,
 ) -> ValueId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
@@ -819,15 +824,16 @@ where
     })]
 #[inline]
 #[must_use]
-pub fn shift_computation<M>(
+pub fn shift_computation<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ComputationId,
     cutoff: BinderDepth,
     amount: BinderDepth,
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
@@ -869,15 +875,16 @@ where
     })]
 #[inline]
 #[must_use]
-pub fn shift_comp_type<M>(
+pub fn shift_comp_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: CompTypeId,
     cutoff: BinderDepth,
     amount: BinderDepth,
 ) -> CompTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Shift { cutoff, amount };
@@ -919,14 +926,15 @@ where
     })]
 #[inline]
 #[must_use]
-pub fn rotate_comp_type<M>(
+pub fn rotate_comp_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: CompTypeId,
     band: BinderDepth,
 ) -> CompTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     if band == BinderDepth::NONE {
@@ -975,14 +983,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
 #[must_use]
-pub fn substitute_comp_type<M>(
+pub fn substitute_comp_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: CompTypeId,
     replacement: ValueId,
 ) -> CompTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
@@ -1031,14 +1040,15 @@ where
 #[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |_| arena.comp_type(ret).is_some()))]
 #[inline]
 #[must_use]
-pub fn substitute_comp_type_at_call<M>(
+pub fn substitute_comp_type_at_call<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: CompTypeId,
     (replacement, call): (ValueId, ComputationId),
 ) -> CompTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1078,14 +1088,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn abstract_constant_value_type<M>(
+pub fn abstract_constant_value_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueTypeId,
     (constant, index): (ConstantIndex, DeBruijnIndex),
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1126,14 +1137,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn share_endpoint<M>(
+pub fn share_endpoint<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ComputationId,
     endpoint: ValueId,
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let closed = arena.value_support(endpoint).depth() == gandr_kernel_term::LooseDepth::default();
@@ -1168,14 +1180,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn substitute_value_type<M>(
+pub fn substitute_value_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueTypeId,
     replacement: ValueId,
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
@@ -1213,14 +1226,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn substitute_value_type_at<M>(
+pub fn substitute_value_type_at<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     (subject, replacement): (ValueTypeId, ValueId),
     depth: BinderDepth,
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1256,14 +1270,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn substitute_value<M>(
+pub fn substitute_value<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueId,
     replacement: ValueId,
 ) -> ValueId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
@@ -1300,14 +1315,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 #[inline]
-pub fn substitute_value_at<M>(
+pub fn substitute_value_at<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     (subject, replacement): (ValueId, ValueId),
     depth: BinderDepth,
 ) -> ValueId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1344,14 +1360,15 @@ where
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
 #[must_use]
-pub fn substitute_computation<M>(
+pub fn substitute_computation<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ComputationId,
     replacement: ValueId,
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let rewrite = Rewrite::Substitute { replacement };
@@ -1387,14 +1404,15 @@ where
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
-pub fn substitute_computation_at<M>(
+pub fn substitute_computation_at<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     (subject, replacement): (ComputationId, ValueId),
     depth: BinderDepth,
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1438,14 +1456,15 @@ where
 #[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
     arena.computation(ret).is_some_and(|result| core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
-pub fn unload_computation<M>(
+pub fn unload_computation<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     (subject, environment): (ComputationId, ValueId),
     (width, depth): (BinderDepth, BinderDepth),
 ) -> ComputationId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1477,14 +1496,15 @@ where
     matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
-pub fn unload_value<M>(
+pub fn unload_value<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     (subject, environment): (ValueId, ValueId),
     width: BinderDepth,
 ) -> ValueId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1520,14 +1540,15 @@ where
     matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
         core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
-pub fn substitute_outer_value_type<M>(
+pub fn substitute_outer_value_type<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     subject: ValueTypeId,
     replacement: ValueId,
 ) -> ValueTypeId
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     run_rewrite(
@@ -1615,15 +1636,16 @@ where
     (AnyNode::CompType(source), RewriteOutcome::CompType(result)) => arena.comp_type(source).is_some() || result == source,
     _ => false,
 })]
-fn run_rewrite<M>(
+fn run_rewrite<A, M>(
     arena: &mut TermArena,
-    table: &mut ContentTable,
+    table: &mut ContentTable<A>,
     memo: &mut M,
     rewrite: Rewrite,
     root: AnyNode,
     initial_depth: BinderDepth,
 ) -> RewriteOutcome
 where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     if matches!(rewrite, Rewrite::Shift { amount, .. } if amount == BinderDepth::NONE) {
@@ -1914,12 +1936,13 @@ fn note_read(
 #[spec(ensures: (matches!(M::ACTIVITY, MemoActivity::Active)
     && matches!(step.goal(node, depth), Maybe::Present(_)))
     || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
-fn remember_rewrite<M>(
-    (table, arena, memo): (&mut ContentTable, &TermArena, &mut M),
+fn remember_rewrite<A, M>(
+    (table, arena, memo): (&mut ContentTable<A>, &TermArena, &mut M),
     local: &mut HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
     (node, depth, step): (AnyNode, BinderDepth, Rewrite),
     outcome: RewriteOutcome,
 ) where
+    A: Allocator + Clone,
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
     let stored = match step.goal(node, depth) {

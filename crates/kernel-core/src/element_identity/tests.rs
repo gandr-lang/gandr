@@ -1,6 +1,7 @@
 //! Element-identity witnesses: formation, reflexivity, native evidence, higher
 //! fields, higher evaluation, transport and a persisted certificate.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::sync::Arc;
@@ -355,7 +356,7 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
 
     // In a family that reads its binder otherwise, transport along the
     // neutral path is stuck, and along `here` it reduces.
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let cosingleton = arena.value_type_path(family_domain, endpoint, family_left);
     assert_eq!(
@@ -1040,7 +1041,7 @@ fn a_higher_evaluation_proves_function_extensionality()
 
     // At function-identity evidence it stays neutral: the site carries no
     // pointwise evaluation.
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let stuck = related_beta(&mut arena, &mut table, &mut memo, RelatedStep {
         path: funext,
@@ -1609,7 +1610,7 @@ fn transport_on_here_is_the_identity_by_replay()
         computes(&mut arena, closed, falsity),
         KernelVerdict::Convertible
     );
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let Ok(Reduction::Reduced(reduct)) =
         transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
@@ -1747,7 +1748,7 @@ fn transport_computes_through_the_fold_clauses()
         computes(&mut arena, stuck, truth),
         KernelVerdict::Convertible
     );
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     assert_eq!(
         transport_beta(&mut arena, &mut table, &mut memo, ElementTransport {
@@ -3246,7 +3247,7 @@ fn a_one_entry_telescope_motive_is_refused_by_its_shape()
             ..
         })
     ));
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let here = arena.value_here(boolean.truth);
     assert_eq!(
@@ -3277,7 +3278,7 @@ fn telescope_transport_along_here_reduces()
     let motive = arena.comp_type_pi(boolean.ty, entry);
     let here = arena.value_here(boolean.truth);
     let step = |arena: &mut TermArena, path: ValueId, over: ValueId| {
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut memo = gandr_kernel_check_memo::NullMemo;
         telescope_beta(arena, &mut table, &mut memo, TelescopeStep {
             motive,
@@ -3347,7 +3348,7 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
         let entry = arena.comp_type_pi(singleton, returns);
         let motive = arena.comp_type_pi(unit, entry);
         let start = arena.value_here(centre);
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut memo = gandr_kernel_check_memo::NullMemo;
         telescope_beta(arena, &mut table, &mut memo, TelescopeStep {
             motive,
@@ -3399,7 +3400,7 @@ fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     let constant = arena.value_constant(ConstantIndex::from(0_usize));
     for path in [centre, variable, constant] {
-        let mut table = ContentTable::new();
+        let mut table = ContentTable::new_in(Global);
         let mut memo = gandr_kernel_check_memo::NullMemo;
         let Ok(Reduction::Reduced(reduct)) =
             telescope_beta(&mut arena, &mut table, &mut memo, TelescopeStep {
@@ -3498,7 +3499,7 @@ fn j_derived_in_the_singleton_checks_and_computes()
 fn transport_reads_its_family_s_shape_before_it_reduces()
 {
     let mut arena = TermArena::new();
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
     let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
@@ -3579,7 +3580,7 @@ fn transport_along_a_universe_cell_is_its_homotopy_at_the_point_6530()
     // `y` at `#1` and `h` at `#0`; under the family's binder `z`, `y` is
     // `#2`, and under the decode's binder `X`, `z` is `#0` in the path.
     let mut arena = TermArena::new();
-    let mut table = ContentTable::new();
+    let mut table = ContentTable::new_in(Global);
     let mut memo = gandr_kernel_check_memo::NullMemo;
     let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
     let homotopy = binder;
