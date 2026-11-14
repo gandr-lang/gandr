@@ -306,6 +306,11 @@ const DEFINITION_TAG: u8 = 0xF9;
 /// the key follow it, in place of the constant's position.
 const ADMITTED_TAG: u8 = 0xFB;
 
+/// The byte an unadmitted record reserves: a node that reads a position that
+/// holds no declaration and never will. The node's own tag and the position
+/// follow it, so the record names no admitted constant.
+const UNADMITTED_TAG: u8 = 0xFC;
+
 /// The byte that a parameters record reserves. The record names the
 /// parameters that a judgement answers under. It is the lowest reserved byte.
 /// Every node tag sits below it.
@@ -466,6 +471,11 @@ pub enum ConstantName
         /// The content key, which reads no build.
         key: crate::verdict::EntryContentKey,
     },
+    /// As no constant: a vacancy or a retired entry, whose position holds no
+    /// declaration and never will. A node that reads it writes the unadmitted
+    /// tag before its own tag and the position, so no record names it as a
+    /// record names an admitted constant.
+    Unadmitted,
 }
 
 /// How many earlier plain definitions of one environment carry a definition's
@@ -2603,7 +2613,8 @@ impl ContentTable
     }
 
     /// Name the constants of `entries` past those already named: each plain
-    /// definition by its content, every other constant by its position.
+    /// definition by its content, a vacancy and a retired entry as unadmitted,
+    /// and every other constant by its position.
     ///
     /// # Specification
     /// - requires: `entries` extends the entries this table was told before,
@@ -3332,7 +3343,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             Value::ListNil | Value::Variable(_) | Value::Literal(_) => true,
             Value::Constant(index) => match constant_name(&self.constants, index) {
                 ConstantName::Definition { declared, body, .. } => matches!(self.placed.get(AnyNode::ValueType(declared)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(body)), Maybe::Present(_)),
-                ConstantName::Position | ConstantName::Admitted { .. } => true,
+                ConstantName::Position | ConstantName::Admitted { .. } | ConstantName::Unadmitted => true,
             },
             Value::Tuple(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
             Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => matches!(self.placed.get(AnyNode::Value(first)), Maybe::Present(_))
@@ -3373,6 +3384,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 ConstantName::Definition { .. } => WireTag::from(DEFINITION_TAG),
                 ConstantName::Position => gandr_kernel_term::NODE_V_CONSTANT,
                 ConstantName::Admitted { .. } => WireTag::from(ADMITTED_TAG),
+                ConstantName::Unadmitted => WireTag::from(UNADMITTED_TAG),
             },
             Value::ListNil => gandr_kernel_term::NODE_V_LIST_NIL,
             Value::ListCons(..) => gandr_kernel_term::NODE_V_LIST_CONS,
@@ -3606,7 +3618,9 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                     record.put_content(self.content_of(AnyNode::Value(body)));
                     record.put_count(ComponentCount(rank));
                 },
-                ConstantName::Position | ConstantName::Admitted { .. } => {
+                ConstantName::Position
+                | ConstantName::Admitted { .. }
+                | ConstantName::Unadmitted => {
                     put_constant(
                         record,
                         &self.constants,
@@ -4903,7 +4917,7 @@ fn read_id(
 }
 
 /// How `constants` names the constant at `index`: its name there, or its
-/// position for an index past the end.
+/// position for an index past the end, which a later admission fills.
 ///
 /// # Specification
 /// trivial.
@@ -4919,7 +4933,8 @@ fn constant_name(
 }
 
 /// The tag a node that reads the constant at `index` writes first: the
-/// admitted tag when `constants` names it by its content key, and `tag`
+/// admitted tag when `constants` names it by its content key, the unadmitted
+/// tag when its position holds no declaration and never will, and `tag`
 /// otherwise.
 ///
 /// # Specification
@@ -4931,13 +4946,16 @@ fn lead_tag(
 {
     match constant_name(constants, index) {
         ConstantName::Admitted { .. } => WireTag::from(ADMITTED_TAG),
+        ConstantName::Unadmitted => WireTag::from(UNADMITTED_TAG),
         ConstantName::Position | ConstantName::Definition { .. } => tag,
     }
 }
 
 /// Write the head of a node of `tag` that reads the constant at `index`: the
 /// admitted tag, `tag` and the content key when `constants` names the
-/// constant by its content key, and `tag` and the position otherwise.
+/// constant by its content key; the unadmitted tag, `tag` and the position
+/// when its position holds no declaration and never will; and `tag` and the
+/// position otherwise.
 ///
 /// # Specification
 /// trivial.
@@ -4956,6 +4974,11 @@ fn put_constant<const NAMED: bool>(
             for &word in words {
                 record.put_word(EncodedWord(u64::from_le_bytes(word)));
             }
+        },
+        ConstantName::Unadmitted => {
+            record.put_tag(WireTag::from(UNADMITTED_TAG));
+            record.put_tag(tag);
+            record.put_count(ComponentCount(usize::from(index)));
         },
         ConstantName::Position | ConstantName::Definition { .. } => {
             record.put_tag(tag);
@@ -4998,7 +5021,7 @@ Value::Restrict { value: restricted, ref fixed } => opened.eq((core::iter::once(
 Value::ListNil | Value::Variable(_) | Value::Literal(_) => opened.eq((core::iter::empty()).map(Some)),
 Value::Constant(index) => match constant_name(constants, index) {
     ConstantName::Definition { declared, body, .. } => opened.eq([AnyNode::ValueType(declared), AnyNode::Value(body)].into_iter().map(Some)),
-    ConstantName::Position | ConstantName::Admitted { .. } => opened.eq((core::iter::empty()).map(Some)),
+    ConstantName::Position | ConstantName::Admitted { .. } | ConstantName::Unadmitted => opened.eq((core::iter::empty()).map(Some)),
 },
 Value::Tuple(ref components) => opened.eq((components.iter().copied().map(AnyNode::Value)).map(Some)),
 Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => opened.eq(([AnyNode::ValueType(classifier), AnyNode::Value(payload_paths)].into_iter()).map(Some)),
@@ -5096,7 +5119,9 @@ fn push_children(
                     tasks.push(EncodeTask::Open(AnyNode::ValueType(declared)));
                     tasks.push(EncodeTask::Open(AnyNode::Value(body)));
                 },
-                ConstantName::Position | ConstantName::Admitted { .. } => {},
+                ConstantName::Position
+                | ConstantName::Admitted { .. }
+                | ConstantName::Unadmitted => {},
             },
             Some(&Value::Tuple(ref components)) => {
                 tasks.extend(
@@ -6523,7 +6548,8 @@ pub fn name_definition(
             },
             ConstantName::Definition { .. }
             | ConstantName::Position
-            | ConstantName::Admitted { .. } => None,
+            | ConstantName::Admitted { .. }
+            | ConstantName::Unadmitted => None,
         })
         .unwrap_or(0);
     ConstantName::Definition {
@@ -8330,7 +8356,8 @@ mod tests
         match crate::encoding::name_definition(table, arena, first, declared, body) {
             crate::encoding::ConstantName::Definition { digest, .. } => digest,
             crate::encoding::ConstantName::Position
-            | crate::encoding::ConstantName::Admitted { .. } => {
+            | crate::encoding::ConstantName::Admitted { .. }
+            | crate::encoding::ConstantName::Unadmitted => {
                 panic!("a plain definition is named by its content")
             },
         }

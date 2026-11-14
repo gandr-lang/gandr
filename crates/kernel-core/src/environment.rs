@@ -90,18 +90,16 @@
 //! [`Environment::settle`] commits the outcome at the reserved position.
 //! Commits come in any order that the dependences allow. A cursor folds the
 //! states that read the order of every commit, in position order: the order
-//! flag, the rows of the dependents, the chain key and the records of the
-//! verdicts. A release can read an earlier commit before that commit comes.
-//! Then the release holds, and [`Released::Held`] gives the declaration back.
-//! The caller settles the outstanding releases and releases it again. A
-//! refusal below the content of a later staging keeps its content as an
-//! orphan, as the clamp of a rejection does. The bypass, a block and the move
-//! of a seed read every commit. Each refuses with
-//! [`KernelError::UnsettledReleases`] while a release is outstanding. A keep
-//! in place and a retirement go ahead beside the outstanding releases. Each
-//! refuses the same way while a release reads into what it writes. The end of
-//! the chain that a retirement makes waits for the cursor
-//! ([`crate::releases::Releases::end_chain`]).
+//! flag, the rows of the dependents and the records of the verdicts. A
+//! release can read an earlier commit before that commit comes. Then the
+//! release holds, and [`Released::Held`] gives the declaration back. The
+//! caller settles the outstanding releases and releases it again. A refusal
+//! below the content of a later staging keeps its content as an orphan, as
+//! the clamp of a rejection does. The bypass, a block and the move of a seed
+//! read every commit. Each refuses with [`KernelError::UnsettledReleases`]
+//! while a release is outstanding. A keep in place and a retirement go ahead
+//! beside the outstanding releases. Each refuses the same way while a release
+//! reads into what it writes.
 //!
 //! # Receipts and the audit
 //!
@@ -272,9 +270,6 @@ pub enum Hold
     /// content or the same plain definition, which the declaration's key or
     /// name counts.
     Content,
-    /// The declaration has no entry key, so its recall reads the chain key,
-    /// which only the cursor finds.
-    Chain,
 }
 
 impl Check
@@ -407,8 +402,8 @@ pub struct Environment
     /// The position of each abstract type admitted, ascending, open or
     /// closed: the atoms whose scopes a key reads.
     atoms: Vec<ConstantIndex>,
-    /// The verdict state: the policy, the key chain, the receipts verified
-    /// and the verdicts checked here.
+    /// The verdict state: the policy, the receipts verified and the verdicts
+    /// checked here.
     verdicts: crate::verdict::Verdicts,
     /// The session every admission's check is lent, whose names outlive the
     /// admission.
@@ -557,9 +552,9 @@ impl Environment
         self.rollbacks
     }
 
-    /// This environment for a later run that resumes it: the same arena,
-    /// declarations and key chain, and the names and kept outcomes of its
-    /// session, without the verdicts this run checked or recalled, which its
+    /// This environment for a later run that resumes it: the same arena and
+    /// declarations, and the names and kept outcomes of its session, without
+    /// the verdicts this run checked or recalled, which its
     /// own receipt and [`Self::recalls`] answer for. After a [`Self::freeze`]
     /// the copy shares the session until its first check; before one, it
     /// copies the session at once.
@@ -969,7 +964,7 @@ impl Environment
 
     /// Admit a declaration through the checked choke point, or on a verdict
     /// recorded for the same input under a receipt this environment's policy
-    /// trusts: first under its entry key, then under its chain key.
+    /// trusts, by its entry key.
     ///
     /// # Specification
     /// - requires: `staged` was built into this environment's arena through
@@ -987,15 +982,14 @@ impl Environment
     ///   `[admission floor, checker-entry mark]`, so every caller-observable
     ///   face of the environment is exactly what it was before the call. When
     ///   the environment keys its admissions ([`Self::recalling`] under a
-    ///   trusting policy) and every admission before was a lone keyed one, the
-    ///   declaration's key chains the previous key over its canonical segment.
-    ///   A key a verified receipt from a trusted signer attests admits the
-    ///   declaration as [`Admission::Recalled`] with the recorded reading and
-    ///   without the check; any other key is checked and, on success, recorded
-    ///   for [`Self::receipt`] unless its check took an admitted result
+    ///   trusting policy) and the declaration has a content key, its entry key
+    ///   binds that content key to the build. A key a verified receipt from a
+    ///   trusted signer attests admits the declaration as
+    ///   [`Admission::Recalled`] with the recorded reading and without the
+    ///   check; any other key is checked and, on success, recorded for
+    ///   [`Self::receipt`] unless its check took an admitted result
     ///   ([`crate::admitted`]), since a receipt attests only what the kernel
-    ///   checked itself. A rejected declaration enters no environment, so the
-    ///   chain stays where it stood before it.
+    ///   checked itself. A refusal is never recorded.
     /// - provides: the one checked entry into the kernel. It takes **no memo**,
     ///   which is the structural form of the memo's one-call lifetime: nothing
     ///   an earlier check recorded can reach a later one through this entry. A
@@ -1089,11 +1083,10 @@ impl Environment
     ///   that a trusted record holds under its key, or a check that owns a view
     ///   of the entries below its rank through its support, a clone of the
     ///   frozen arena and a fork of the session. Its position is reserved, and
-    ///   no read sees it until the settle. The chain key is taken here only
-    ///   when every earlier release is settled; the cursor takes it otherwise.
-    ///   A held declaration comes back unchanged, with its staged mark
-    ///   outstanding, when its release reads an earlier commit that has not
-    ///   come ([`Hold`]); nothing else changes then.
+    ///   no read sees it until the settle. A held declaration comes back
+    ///   unchanged, with its staged mark outstanding, when its release reads an
+    ///   earlier commit that has not come ([`Hold`]); nothing else changes
+    ///   then.
     /// - fails: as [`Self::add_decl`] fails before its check.
     /// - panics: none.
     /// - executable: none — the clauses state what the check owns, which no
@@ -1196,9 +1189,7 @@ impl Environment
         ) {
             Ok(levels) => levels,
             Err(error) => {
-                // No key was taken: the chain reads the declarations the
-                // environment holds, and a rejected one enters none. Its
-                // position stays as a vacancy.
+                // Its position stays as a vacancy.
                 self.arena.truncate_to(rejected);
                 if alone {
                     self.vacate();
@@ -1210,9 +1201,6 @@ impl Environment
                 return Err(error);
             },
         };
-        // A rejected declaration enters no environment, so the next one's
-        // input does not read it: the chain steps back over it below, and the
-        // encoder forgets the nodes whose ids the arena mints again.
         let content = self.content_key(
             core::slice::from_ref(&declaration),
             (position, core::slice::from_ref(&rank)),
@@ -1241,40 +1229,18 @@ impl Environment
         let sway = sway(&declaration);
         if !alone
             && let Maybe::Present(hold) =
-                self.reads_order((sway, rank), generative_content, (entry_key, key_name))
+                self.reads_order((sway, rank), generative_content, key_name)
         {
             return Ok(self.hand_back(
                 StagedDeclaration::new(content_start, staged_rank, declaration),
                 hold,
             ));
         }
-        // The chain key reads the state that each earlier commit moves, so
-        // only a release at the cursor takes it; the fold takes it otherwise.
-        let chained = if alone {
-            crate::releases::Chained::Taken(self.verdicts.key(&self.arena, (&declaration, rank)))
-        }
-        else {
-            crate::releases::Chained::Deferred
-        };
-        // The entry key first, which an edit the declaration does not read
-        // leaves alone; then the chain key, which a store of an earlier
-        // release holds. A chain key that hits names the same prefix and the
-        // same declaration, so the entry key hits too: a release behind the
-        // cursor loses no recall.
+        // The entry key alone, which an edit that the declaration does not read
+        // leaves alone, wherever the edit stands in the admission order.
         let recalled = match entry_key {
             Maybe::Present(entry_key) => self.verdicts.recall(entry_key),
             Maybe::Absent(_) => Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
-        };
-        let recalled = match (recalled, &chained) {
-            (
-                Maybe::Absent(crate::verdict::stored::Absent::Unrecorded),
-                &crate::releases::Chained::Taken(Maybe::Present(key)),
-            ) => self.verdicts.recall(key),
-            (
-                recalled,
-                &(crate::releases::Chained::Taken(Maybe::Present(_) | Maybe::Absent(_))
-                | crate::releases::Chained::Deferred),
-            ) => recalled,
         };
         let named = references(&self.arena, &declaration);
         // The slot first, so the view that the check takes shares the log
@@ -1307,7 +1273,7 @@ impl Environment
             Pending {
                 place: (position, rank),
                 content: (content, generative),
-                keys: ((entry_content, entry_key), chained),
+                keys: (entry_content, entry_key),
                 references: named,
                 marks: (content_end, rejected),
                 key_name,
@@ -1332,14 +1298,13 @@ impl Environment
     }
 
     /// Why a release behind the cursor reads an earlier commit that has not
-    /// come: the manifest, a declaration that each later check reads, the
-    /// same generative content or plain definition ranked below it, or a
-    /// recall that only the chain key makes. `sway` and `rank` state the
-    /// declaration, `generative` its content key when it is generative, and
-    /// `keyed` its entry key and its name.
+    /// come: the manifest, a declaration that each later check reads, or the
+    /// same generative content or plain definition ranked below it. `sway` and
+    /// `rank` state the declaration, `generative` its content key when it is
+    /// generative, and `key_name` its name.
     ///
     /// # Specification
-    /// - requires: an earlier release is outstanding, and `keyed.1` names the
+    /// - requires: an earlier release is outstanding, and `key_name` names the
     ///   declaration's content in this environment's arena.
     /// - ensures: absent only when no read of order that the release makes
     ///   reads an outstanding release.
@@ -1357,10 +1322,7 @@ impl Environment
         &mut self,
         (sway, rank): (crate::releases::Sway, SourceRank),
         generative: Maybe<crate::verdict::EntryContentKey, crate::releases::generative::Absent>,
-        (entry_key, key_name): (
-            Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
-            ConstantName,
-        ),
+        key_name: ConstantName,
     ) -> Maybe<Hold, crate::releases::free::Absent>
     {
         if !self.manifest.is_empty() {
@@ -1383,9 +1345,6 @@ impl Environment
             ) == crate::encoding::Likeness::Alike
         {
             return Maybe::Present(Hold::Content);
-        }
-        if let (Maybe::Absent(_), Maybe::Present(_)) = (entry_key, self.verdicts.last()) {
-            return Maybe::Present(Hold::Chain);
         }
         Maybe::Absent(crate::releases::free::Absent::Unread)
     }
@@ -1477,8 +1436,7 @@ impl Environment
     ///
     /// # Errors
     /// [`KernelError::UnboundConstant`] at the position of `pending` when the
-    /// cursor passed it, when an admission after it is committed, or when a
-    /// retirement beside the releases ends the chain after a later release.
+    /// cursor passed it, or when an admission after it is committed.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a drop that keeps a later slot, an index or staged
@@ -1712,7 +1670,7 @@ impl Environment
     /// - hypothesis: L3 — as [`Self::add_decl`], and a refusal under a later
     ///   staging keeps that staging's content.
     /// - witness: `environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
-    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566`
+    /// - witness: `tests::verdicts::a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566`
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: [entry_len = self.entries.len(), admitted = self.entries.admitted(), place = lone.place.0], ensures: |ret| self.entries.len() == entry_len && match ret.as_ref() {
         Ok(id) => id.position() == place,
@@ -1727,7 +1685,7 @@ impl Environment
             declaration,
             place: (position, rank),
             content: (content, generative),
-            keys: ((entry_content, entry_key), chained),
+            keys: (entry_content, entry_key),
             references: named,
             census,
             took,
@@ -1752,7 +1710,7 @@ impl Environment
                     .then(|| accessibility.clone());
                 if let Maybe::Absent(_) = self
                     .releases
-                    .commit(offset, crate::releases::Unfolded::Admitted(chained, record))
+                    .commit(offset, crate::releases::Unfolded::Admitted(record))
                 {
                     return Err(KernelError::UnboundConstant { index: position });
                 }
@@ -1803,7 +1761,7 @@ impl Environment
             Err(error) => {
                 if let Maybe::Absent(_) = self
                     .releases
-                    .commit(offset, crate::releases::Unfolded::Vacated(chained))
+                    .commit(offset, crate::releases::Unfolded::Vacated)
                 {
                     return Err(KernelError::UnboundConstant { index: position });
                 }
@@ -1822,10 +1780,8 @@ impl Environment
     }
 
     /// Fold each slot at the cursor whose commit came, in position order: the
-    /// rank that a release predicted, the rows of the dependents, the order,
-    /// the chain key and the record of the verdict. A refused slot folds its
-    /// vacancy, and its chain key steps back when its release took one. The
-    /// chain ends after the slot that a retirement beside the releases marks.
+    /// rank that a release predicted, the rows of the dependents, the order
+    /// and the record of the verdict. A refused slot folds its vacancy.
     ///
     /// # Specification
     /// - requires: each committed slot from the cursor on holds its commit.
@@ -1839,8 +1795,7 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fold out of position order moves the order flag,
-    ///   the reach or the chain key off the serial run's; an end of the chain
-    ///   folded at another slot keys a record that the serial run does not.
+    ///   the reach or the record of a verdict off the serial run's.
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     /// - witness: `environment::tests::a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476`
     /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
@@ -1851,13 +1806,12 @@ impl Environment
                 usize::from(self.entries.len())
                     .saturating_sub(usize::from(self.releases.unfolded())),
             );
-            let past = self.releases.past_front();
             let Maybe::Present((ranked, unfolded)) = self.releases.next()
             else {
                 return;
             };
             match unfolded {
-                crate::releases::Unfolded::Admitted(chained, record) => {
+                crate::releases::Unfolded::Admitted(record) => {
                     if ranked == crate::releases::Ranked::Predicted {
                         self.settle_rank(position);
                     }
@@ -1865,34 +1819,20 @@ impl Environment
                         ref entries,
                         ref mut commits,
                         ref mut verdicts,
-                        ref arena,
                         ..
                     } = *self;
                     if let Some(entry) = entries.live(position) {
                         alloc::sync::Arc::make_mut(commits)
                             .fold((position, entry.rank()), entry.references());
-                        let chain = match chained {
-                            crate::releases::Chained::Taken(key) => key,
-                            crate::releases::Chained::Deferred => {
-                                verdicts.key(arena, (entry.declaration(), entry.rank()))
-                            },
-                        };
                         if let Some(accessibility) = record {
-                            verdicts.checked(entry.key(), chain, accessibility);
+                            verdicts.checked(entry.key(), accessibility);
                         }
                     }
                 },
-                crate::releases::Unfolded::Vacated(chained) => {
+                crate::releases::Unfolded::Vacated => {
                     alloc::sync::Arc::make_mut(&mut self.commits).vacate(position);
-                    match chained {
-                        crate::releases::Chained::Taken(_) => self.verdicts.refused(),
-                        crate::releases::Chained::Deferred => {},
-                    }
                 },
                 crate::releases::Unfolded::Reserved(_) => return,
-            }
-            if past == crate::releases::Past::Ends {
-                self.verdicts.end();
             }
         }
     }
@@ -1909,7 +1849,7 @@ impl Environment
     /// that it names. No live entry ranks between the two ranks, so the
     /// check read what the serial check reads. Its key, its name and its
     /// outcome stand, and no job runs again. The entry, its rows and the rank
-    /// index take the rank, and the order and the chain key fold after it.
+    /// index take the rank, and the order folds after it.
     ///
     /// # Specification
     /// - requires: each slot below `position` is folded, and the release of the
@@ -1925,7 +1865,7 @@ impl Environment
     /// # Adequacy
     /// - hypothesis: L3 — a refusal settled after a later release that
     ///   predicted its admission leaves the later entry one rank too high, and
-    ///   its rank, the order and the chain key differ from the serial run's.
+    ///   its rank and the order differ from the serial run's.
     /// - witness: `environment::tests::a_refusal_before_a_predicted_rank_moves_it_at_the_fold_3476`
     /// - witness: `environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     fn settle_rank(
@@ -1979,8 +1919,8 @@ impl Environment
     /// what the runs after this environment's recorded.
     ///
     /// # Specification
-    /// - ensures: each later admission reads `source` by its key; the policy,
-    ///   the chain and the receipts verified so far are unchanged.
+    /// - ensures: each later admission reads `source` by its key; the policy
+    ///   and the receipts verified so far are unchanged.
     /// - panics: none.
     /// - executable: none — the source is private to the verdicts.
     ///
@@ -2055,9 +1995,9 @@ impl Environment
     ///   here: the bypass destroys nothing, so there is nothing to preserve.
     /// - provides: the tracked, warned bypass.
     /// - fails: [`KernelError::UnsettledReleases`] while a released check is
-    ///   not settled, since the bypass ends the chain and takes the rank past
-    ///   every rank, which each outstanding commit moves. Otherwise never: the
-    ///   bypass does not check.
+    ///   not settled, since the bypass takes the rank past every rank, which
+    ///   each outstanding commit moves. Otherwise never: the bypass does not
+    ///   check.
     /// - panics: none.
     ///
     /// # Errors
@@ -2104,7 +2044,6 @@ impl Environment
         // The bypass commits whatever content the arena holds, so the floor
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
-        self.verdicts.end();
         self.admission_floor = self.arena.watermark();
         let rested_on = self.transitive_rest(
             declaration.content(),
@@ -2156,19 +2095,6 @@ impl Environment
             return Ok(());
         }
         Err(KernelError::UnsettledReleases { unsettled })
-    }
-
-    /// End the chain of keys: now when no slot waits for the cursor, or once
-    /// the cursor folds the slot at the back of the queue, as the serial run
-    /// ends it after the commits of the releases made before this call.
-    ///
-    /// # Specification
-    /// trivial.
-    fn end_chain(&mut self)
-    {
-        if self.releases.end_chain() == crate::releases::Ending::Now {
-            self.verdicts.end();
-        }
     }
 
     /// Refuse a keep in place of the unit whose first member stands at
@@ -2436,7 +2362,6 @@ impl Environment
             },
             Maybe::Present(_) | Maybe::Absent(_) => content,
         };
-        self.verdicts.end();
         let families = members
             .iter()
             .take_while(|member| matches!(*member.content(), DeclarationContent::Data { .. }))
@@ -2580,11 +2505,9 @@ impl Environment
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success, each entry at `positions` is retired, with each
-    ///   member of its unit, and every other entry is as it was; the key chain
-    ///   ends when `positions` names any entry, at once or after the folds of
-    ///   the outstanding releases, so each later admission is recalled by its
-    ///   entry key alone. On refusal, the environment is unchanged. Either way
-    ///   the entries keep their number, and the arena mints nothing.
+    ///   member of its unit, and every other entry is as it was. On refusal,
+    ///   the environment is unchanged. Either way the entries keep their
+    ///   number, and the arena mints nothing.
     /// - provides: the retire of a readmission that keeps each entry outside
     ///   the reach of an edit live, beside the checks it released.
     /// - fails: [`KernelError::UnboundConstant`] at a position that holds no
@@ -2640,12 +2563,6 @@ impl Environment
         {
             return Err(KernelError::UnsettledReleases { unsettled });
         }
-        // A chain key holds each admission and no retirement, so a recall
-        // under it after a retirement could read an environment that holds the
-        // retired entries: the chain ends, and a later admission is recalled
-        // by its entry key alone. The serial run ends it after the commits of
-        // the outstanding releases.
-        self.end_chain();
         for &position in positions {
             let Some(unit) = self.entries.live(position).map(AdmittedDeclaration::unit)
             else {
@@ -2882,11 +2799,10 @@ impl Environment
     /// - ensures: on success, each live entry ranked at or above `floor` holds
     ///   the rank `ranks` names for it, each other entry holds its rank, and
     ///   every reader of ranks reads them: the rank table, the presented types,
-    ///   the types of words over each sort and the order of the twins. When a
-    ///   rank changes, the key chain ends, so each later admission is recalled
-    ///   by its entry key alone; when none changes, the environment is
-    ///   unchanged. On refusal, the environment is unchanged. Either way the
-    ///   entries keep their number, and the arena mints nothing.
+    ///   the types of words over each sort and the order of the twins. When no
+    ///   rank changes, the environment is unchanged. On refusal, the
+    ///   environment is unchanged. Either way the entries keep their number,
+    ///   and the arena mints nothing.
     /// - provides: the rank rewrite of a readmission that keeps each entry
     ///   outside the reach of an edit live.
     /// - fails: [`KernelError::UnboundConstant`] at a position that is not
@@ -2957,10 +2873,6 @@ impl Environment
         let length = self.entries.len();
         alloc::sync::Arc::make_mut(&mut self.commits).rerank((floor, &by_position), length);
         self.entries.rerank(&by_position);
-        // The chain holds each admission at the rank it took, so a chain key
-        // after the rewrite would name an environment of other ranks: the chain
-        // ends, and a later admission is recalled by its entry key alone.
-        self.verdicts.end();
         Ok(())
     }
 
@@ -3101,9 +3013,6 @@ impl Environment
         let length = self.entries.len();
         alloc::sync::Arc::make_mut(&mut self.commits).moved((position, from), to, length);
         self.entries.rerank(&BTreeMap::from([(position, to)]));
-        // The chain holds each admission at the rank it took, as after a rank
-        // rewrite ([`Self::rerank`]).
-        self.verdicts.end();
         Ok(())
     }
 
@@ -4119,7 +4028,7 @@ impl Environment
         ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()
             && *declaration.content() == DeclarationContent::Def { declared, body },
         ConstantName::Position => true,
-        ConstantName::Admitted { .. } => false,
+        ConstantName::Admitted { .. } | ConstantName::Unadmitted => false,
     })]
     fn definition_name(
         &mut self,
@@ -5268,8 +5177,8 @@ struct Lone
         Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its own content key and entry key, and how it finds its chain key.
-    keys: (EntryKeys, crate::releases::Chained),
+    /// Its own content key and entry key.
+    keys: EntryKeys,
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// What its check charged.
@@ -5312,8 +5221,8 @@ pub struct Pending
         Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>,
         bool,
     ),
-    /// Its own content key and entry key, and how it finds its chain key.
-    keys: (EntryKeys, crate::releases::Chained),
+    /// Its own content key and entry key.
+    keys: EntryKeys,
     /// The positions that its content names.
     references: Box<[ConstantIndex]>,
     /// The arena's mark past its content, and the mark that a refusal
@@ -7413,7 +7322,8 @@ mod tests
             Some(crate::encoding::ConstantName::Definition { rank, .. }) => rank,
             Some(
                 crate::encoding::ConstantName::Position
-                | crate::encoding::ConstantName::Admitted { .. },
+                | crate::encoding::ConstantName::Admitted { .. }
+                | crate::encoding::ConstantName::Unadmitted,
             )
             | None => {
                 panic!("a plain definition is named by its content")
@@ -8194,6 +8104,8 @@ mod tests
         ),
         /// By the content key a caller's table gives it.
         Admitted(crate::verdict::EntryContentKey),
+        /// As no constant, which no admitted entry is.
+        Unadmitted,
     }
 
     /// One entry as the release differential compares it: its rank, its key,
@@ -8259,6 +8171,7 @@ mod tests
                                 crate::encoding::ConstantName::Admitted { key } => {
                                     Named::Admitted(key)
                                 },
+                                crate::encoding::ConstantName::Unadmitted => Named::Unadmitted,
                             },
                             entry.admission(),
                             alloc::boxed::Box::<[ConstantIndex]>::from(entry.references()),
@@ -8598,11 +8511,9 @@ mod tests
 
     /// #7281: a keep in place and a retirement go ahead beside two
     /// outstanding releases below them. The environment folds as the serial
-    /// run's, which commits the releases first: the chain ends after the fold
-    /// of the second release, so its record carries its chain key. A release
-    /// ranked above, one that reads order, a generative release of the same
-    /// content and a twin below each hold the keep; and a drop past the end
-    /// of the chain is refused.
+    /// run's, which commits the releases first. A release ranked above, one
+    /// that reads order, a generative release of the same content and a twin
+    /// below each hold the keep.
     #[test]
     fn a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281()
     {
@@ -8671,10 +8582,6 @@ mod tests
             environment.retire(&[retired]),
             Ok(()),
             "the codata retires beside the releases below it"
-        );
-        assert!(
-            environment.drop_after(&first.0).is_err(),
-            "a drop past the end of the chain is refused"
         );
         for (pending, check) in [first, second] {
             assert!(
@@ -9370,9 +9277,8 @@ mod tests
     /// alone. `a`, `b` and `d` are equal data declarations, so the entry key
     /// of each counts the ones ranked below it. One environment admits `d`
     /// with `b` live and records it. One that retired `b` admits `d` at the
-    /// same rank: the chain key would be the recorded one and the entry key is
-    /// another, and it recalls nothing. The environment that recorded `d`
-    /// recalls it.
+    /// same rank: its entry key counts one equal declaration less, and it
+    /// recalls nothing. The environment that recorded `d` recalls it.
     #[test]
     fn an_admission_after_a_retirement_recalls_by_its_entry_key_alone_6846()
     {
@@ -9412,7 +9318,7 @@ mod tests
         assert_eq!(
             usize::from(retired.recalls()),
             0,
-            "after the retirement, the chain key recalls nothing"
+            "after the retirement, the entry key of `d` is another and recalls nothing"
         );
     }
 

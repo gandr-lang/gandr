@@ -248,6 +248,45 @@ fn an_axiom_reference_keeps_its_position()
     );
 }
 
+/// #7426: a position that holds no admitted declaration takes no name by its
+/// position. The reference to constant 0 reads apart in an environment that
+/// admits an axiom at position 0 and in one whose rejection leaves position 0
+/// a vacancy, so no memo key names the vacancy as it names the axiom.
+#[test]
+fn a_reference_to_a_vacancy_reads_apart_from_the_constant_at_its_position_7426()
+{
+    let stream = |environment: &mut crate::Environment| {
+        let mut table = ContentTable::new();
+        table.name_constants(environment.entries());
+        let mut staging = environment.stage();
+        let reference = staging.arena().value_constant(ConstantIndex::from(0_usize));
+        let _id = gandr_kernel_core_base::fixture::place(
+            &mut table,
+            staging.arena(),
+            AnyNode::Value(reference),
+        );
+        gandr_kernel_core_base::fixture::stream(&table).clone()
+    };
+    let mut admitted = crate::Environment::new();
+    let _axiom = unit_axiom(&mut admitted);
+    let mut vacated = crate::Environment::new();
+    let staged = {
+        let mut staging = vacated.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_constant(ConstantIndex::from(9_usize));
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    };
+    assert!(
+        vacated.add_decl(staged).is_err(),
+        "a body naming no declaration is rejected"
+    );
+    assert_ne!(
+        stream(&mut admitted),
+        stream(&mut vacated),
+        "a vacancy takes no name by its position"
+    );
+}
+
 #[test]
 fn a_goal_takes_one_name_in_either_admission_order_864()
 {
@@ -298,7 +337,8 @@ fn each_twin_of_one_content_ranks_past_the_latest_3686()
             Some(crate::encoding::ConstantName::Definition { rank, .. }) => rank,
             Some(
                 crate::encoding::ConstantName::Position
-                | crate::encoding::ConstantName::Admitted { .. },
+                | crate::encoding::ConstantName::Admitted { .. }
+                | crate::encoding::ConstantName::Unadmitted,
             )
             | None => {
                 panic!("a plain definition is named by its content")

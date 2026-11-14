@@ -1,11 +1,10 @@
-//! Verdicts the kernel recalls instead of replaying: a key over its whole
-//! input, a receipt its signer attests, and a policy naming the signers a run
-//! believes.
+//! Verdicts the kernel recalls instead of replaying: a key over what an
+//! admission reads, a receipt its signer attests, and a policy naming the
+//! signers a run believes.
 //!
-//! A key is a BLAKE3 chain. It starts at the kernel's build identity, a digest
-//! of every kernel crate's files and the workspace lock, and each admission
-//! extends it by the declaration's canonical segment, so a key closes over
-//! the whole admitted prefix. Equal keys are equal kernel inputs. A recall is
+//! A key is an entry key. It binds the entry's content key to the kernel's
+//! build identity, a digest of every kernel crate's files and the workspace
+//! lock. Equal keys are equal inputs of the kernel's check. A recall is
 //! integrity, never validity: the record names bytes the kernel judged, and
 //! the receipt names the kernel that judged them. The kernel signs only what
 //! it checked itself (`Environment::receipt`),
@@ -13,24 +12,20 @@
 //! [`TrustPolicy`] lists verifies over the record. Under
 //! [`TrustPolicy::Recheck`] nothing is keyed and nothing is recalled.
 //!
-//! A bypass, a mutual block or an open seal ends the chain. A rejected
-//! declaration enters no environment, so the chain steps back over it and
-//! keys the next declaration as if the rejected one had never been offered. A
-//! refusal is never recorded. `Environment::handed_on` hands the chain to a
-//! resumed run without its records, and the resumed run reads the source of
-//! its own readmission (`Environment::reading`).
-//!
-//! An entry key narrows the input to what the declaration reads. It covers
+//! A content key narrows the input to what the declaration reads. It covers
 //! the declaration's segment written alone, with each position it names
 //! written by where the segment first names it. It also covers the entry keys
 //! of those positions in that order, the keys of the types of words over each
 //! sort its references reach, and the keys of the atoms it reads as
 //! representations. A generative entry also covers a count of the earlier
 //! entries with the same key. So an edit re-keys only the declarations that
-//! read the edited one, and a declaration keeps its key at a new position. A
-//! recall tries the entry key first and then the chain key. A checked record
-//! is kept under both keys. A bypass, an open seal or an input with no entry
-//! key gives no entry key.
+//! read the edited one. A declaration keeps its key at a new position, and
+//! after an edit before it, since no key names a place in the admission
+//! order. A bypass, an open seal or an input with no entry key gives no key,
+//! and the kernel checks the declaration. A refusal is never recorded.
+//! `Environment::handed_on` hands the receipts verified to a resumed run
+//! without its records, and the resumed run reads the source of its own
+//! readmission (`Environment::reading`).
 //!
 //! An installation's key also signs a stratum of the checker's site, which
 //! the checker certified, under a derivation context no admission receipt
@@ -55,9 +50,7 @@ use alloc::vec::Vec;
 
 use ed25519_dalek::Signer as _;
 use gandr_kernel_term::EncodedArtifact;
-use gandr_kernel_term::SegmentEncoder;
 use gandr_kernel_term::StagedPosition;
-use gandr_kernel_term::TermArena;
 use quenchant_shape::shape::Maybe;
 
 use crate::occurrence::Accessibility;
@@ -90,15 +83,11 @@ impl From<[u8; 32]> for BuildIdentity
     }
 }
 
-/// The context a verdict key's digest derives under.
-const KEY_CONTEXT: &str = "gandr kernel verdict key 2026-10-27";
-
-/// The context an entry key's digest derives under. It is not
-/// [`KEY_CONTEXT`], so no entry key is a chain key.
+/// The context an entry key's digest derives under.
 const ENTRY_KEY_CONTEXT: &str = "gandr kernel entry key 2026-11-11";
 
 /// The context an entry's content key derives under. It reads no build
-/// identity, so it is neither an entry key nor a chain key.
+/// identity, so it is no entry key.
 const CONTENT_KEY_CONTEXT: &str = "gandr kernel entry content key 2026-11-13";
 
 /// The context a receipt's message derives under.
@@ -113,15 +102,11 @@ const VERDICT_VERSION: u8 = 1;
 /// A key for one admission.
 ///
 /// An entry key binds an entry's content key ([`EntryContentKey`]) to the
-/// kernel's build identity. A chain key covers the kernel's whole input: its
-/// build, and every declaration admitted up to and including this one.
+/// kernel's build identity.
 ///
 /// # Specification
 /// - ensures: two entry keys are equal exactly when, up to a BLAKE3 collision,
-///   they bind the same build identity to the same content key. Two chain keys
-///   are equal exactly when they chain the same build identity over the same
-///   canonical segments. No entry key is a chain key, because the two derive
-///   under two contexts.
+///   they bind the same build identity to the same content key.
 /// - provides: the identity a recorded verdict is recalled by.
 /// - panics: none.
 /// - executable: none — collision resistance is BLAKE3's.
@@ -165,51 +150,6 @@ impl From<VerdictKey> for [u8; 32]
 
 impl VerdictKey
 {
-    /// The key before any declaration: the kernel's build identity `build`
-    /// alone.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn start(build: BuildIdentity) -> Self
-    {
-        Self(
-            *blake3::Hasher::new_derive_key(KEY_CONTEXT)
-                .update(&build.0)
-                .finalize()
-                .as_bytes(),
-        )
-    }
-
-    /// The key of the declaration whose canonical segment is `segment`,
-    /// ranked at `rank` and admitted after the ones this key closes over.
-    ///
-    /// The chain reads each declaration's rank, so two runs of one sequence
-    /// whose ranks differ take two chains: a ruled definition checks under
-    /// the ranks, and its verdict is never recalled under other ranks.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    fn after(
-        self,
-        segment: &EncodedArtifact,
-        rank: gandr_kernel_term::SourceRank,
-    ) -> Self
-    {
-        let rank = u64::try_from(usize::from(rank)).unwrap_or(u64::MAX);
-        Self(
-            *blake3::Hasher::new_derive_key(KEY_CONTEXT)
-                .update(&self.0)
-                .update(segment.as_ref())
-                .update(&rank.to_le_bytes())
-                .finalize()
-                .as_bytes(),
-        )
-    }
-
     /// The entry key of the entry whose content key is `content`, under the
     /// kernel's build identity `build`.
     ///
@@ -1364,9 +1304,6 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The environment recalls nothing: its policy rechecks.
             Rechecking,
-            /// An earlier admission was not keyed, so no later key would bind
-            /// the whole input.
-            Ended,
             /// The bypass admitted the declaration, so no check read it.
             Bypassed,
             /// The declaration is an abstract type sealed to the end of the
@@ -1380,20 +1317,8 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The chain of keys over the admissions so far.
-#[derive(Clone, Debug)]
-struct Chain
-{
-    /// The segments' encoder, holding what the admitted segments assigned.
-    encoder: SegmentEncoder,
-    /// The key of the last admission, or the start.
-    last: VerdictKey,
-    /// The key before the last admission, which a refusal steps back to.
-    before: VerdictKey,
-}
-
-/// An environment's verdict state: the policy, the source, the key chain,
-/// the receipts verified so far and the records this kernel checked itself.
+/// An environment's verdict state: the policy, the source, the receipts
+/// verified so far and the records this kernel checked itself.
 ///
 /// # Specification
 /// trivial.
@@ -1404,9 +1329,6 @@ pub struct Verdicts
     trusted: BTreeSet<KernelIdentity>,
     /// Where recorded verdicts are found.
     source: Arc<dyn VerdictSource>,
-    /// The key chain, shared with each state handed on until one of them keys
-    /// an admission; absent once an admission was not keyed.
-    chain: Maybe<Arc<Chain>, keyed::Absent>,
     /// The receipts already verified, each with whether it attested.
     verified: BTreeMap<Receipt, Attestation>,
     /// The readings of the records a verified receipt attested, by key.
@@ -1415,8 +1337,8 @@ pub struct Verdicts
     checked: Vec<VerdictRecord>,
     /// How many admissions a recorded verdict answered.
     recalls: usize,
-    /// How many admissions this kernel checked and recorded, each under
-    /// every key it has.
+    /// How many admissions this kernel checked and recorded under their entry
+    /// keys.
     recorded: usize,
     /// The build identity each entry key binds; absent when the policy
     /// rechecks, since no admission is keyed.
@@ -1460,15 +1382,9 @@ impl Verdicts
     #[must_use]
     pub const fn keying(&self) -> Keying
     {
-        match self.chain {
-            Maybe::Absent(keyed::Absent::Rechecking) => Keying::Rechecks,
-            Maybe::Present(_)
-            | Maybe::Absent(
-                keyed::Absent::Ended
-                | keyed::Absent::Bypassed
-                | keyed::Absent::OpenSeal
-                | keyed::Absent::Unkeyed,
-            ) => Keying::Keys,
+        match self.build {
+            Maybe::Present(_) => Keying::Keys,
+            Maybe::Absent(_) => Keying::Rechecks,
         }
     }
 
@@ -1483,20 +1399,6 @@ impl Verdicts
         self.build
     }
 
-    /// The key the chain stands at: the key of the last keyed admission, or
-    /// the start; absent with the reason once the chain keys nothing.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn last(&self) -> Maybe<VerdictKey, keyed::Absent>
-    {
-        match self.chain {
-            Maybe::Present(ref chain) => Maybe::Present(chain.last),
-            Maybe::Absent(absent) => Maybe::Absent(absent),
-        }
-    }
-
     /// The state a run that recalls nothing starts with: no signer is
     /// believed, and nothing is keyed.
     ///
@@ -1507,7 +1409,6 @@ impl Verdicts
         Self {
             trusted: BTreeSet::new(),
             source,
-            chain: Maybe::Absent(keyed::Absent::Rechecking),
             verified: BTreeMap::new(),
             recalled: BTreeMap::new(),
             checked: Vec::new(),
@@ -1518,7 +1419,7 @@ impl Verdicts
     }
 
     /// The state a run under `policy`, finding recorded verdicts in `source`,
-    /// starts with, its chain keyed from the build identity `build`.
+    /// starts with, each entry key bound to the build identity `build`.
     ///
     /// # Specification
     /// trivial.
@@ -1533,11 +1434,6 @@ impl Verdicts
             TrustPolicy::Recheck => Self::rechecking(source),
             TrustPolicy::Trusted(trusted) => Self {
                 trusted,
-                chain: Maybe::Present(Arc::new(Chain {
-                    encoder: SegmentEncoder::default(),
-                    last: VerdictKey::start(build),
-                    before: VerdictKey::start(build),
-                })),
                 build: Maybe::Present(build),
                 ..Self::rechecking(source)
             },
@@ -1545,10 +1441,8 @@ impl Verdicts
     }
 
     /// This state for a later run that resumes the environment: the policy,
-    /// the source, the chain and the receipts verified, without the records
-    /// checked or the recalls counted, which are this run's. The chain is
-    /// shared by reference until either state keys an admission, so a run
-    /// that ends the chain at once copies none of it.
+    /// the source and the receipts verified, without the records checked or
+    /// the recalls counted, which are this run's.
     ///
     /// # Specification
     /// trivial.
@@ -1559,85 +1453,12 @@ impl Verdicts
         Self {
             trusted: self.trusted.clone(),
             source: Arc::clone(&self.source),
-            chain: self.chain.clone(),
             verified: self.verified.clone(),
             recalled: self.recalled.clone(),
             checked: Vec::new(),
             recalls: 0,
             recorded: 0,
             build: self.build,
-        }
-    }
-
-    /// The key of `declaration`, admitted next over `arena` at the rank
-    /// `rank`, extending the chain; the chain ends when the declaration
-    /// cannot be keyed.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn key(
-        &mut self,
-        arena: &TermArena,
-        (declaration, rank): (
-            &gandr_kernel_term::Declaration,
-            gandr_kernel_term::SourceRank,
-        ),
-    ) -> Maybe<VerdictKey, keyed::Absent>
-    {
-        let Maybe::Present(ref mut shared) = self.chain
-        else {
-            return match self.chain {
-                Maybe::Absent(absent) => Maybe::Absent(absent),
-                Maybe::Present(_) => Maybe::Absent(keyed::Absent::Ended),
-            };
-        };
-        // A state handed on shares the chain until it keys: the first key
-        // takes its own copy.
-        let chain = Arc::make_mut(shared);
-        let marked = gandr_kernel_term::MarkedDeclaration::new(
-            gandr_kernel_term::AdmissionMark::Checked,
-            declaration.clone(),
-        );
-        match chain.encoder.segment(arena, &marked) {
-            Maybe::Present(segment) => {
-                chain.before = chain.last;
-                chain.last = chain.last.after(&segment, rank);
-                Maybe::Present(chain.last)
-            },
-            Maybe::Absent(gandr_kernel_term::encoded_prefix::Absent::OpenSeal) => {
-                self.end();
-                Maybe::Absent(keyed::Absent::Ended)
-            },
-        }
-    }
-
-    /// End the chain: no later admission is keyed.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn end(&mut self)
-    {
-        if let Maybe::Present(_) = self.chain {
-            self.chain = Maybe::Absent(keyed::Absent::Ended);
-        }
-    }
-
-    /// Step the chain back over the declaration [`Self::key`] keyed last,
-    /// which the kernel refused: it enters no environment, so the next
-    /// declaration's input does not read it, and the arena mints its nodes'
-    /// ids again.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub fn refused(&mut self)
-    {
-        if let Maybe::Present(ref mut shared) = self.chain {
-            let chain = Arc::make_mut(shared);
-            chain.encoder.forget();
-            chain.last = chain.before;
         }
     }
 
@@ -1707,8 +1528,8 @@ impl Verdicts
             })
     }
 
-    /// Keep the record of an admission this kernel checked itself, under its
-    /// entry key and under its chain key, as the two are present.
+    /// Keep the record of an admission this kernel checked itself under its
+    /// entry key, when it has one.
     ///
     /// # Specification
     /// trivial.
@@ -1716,21 +1537,11 @@ impl Verdicts
     pub fn checked(
         &mut self,
         entry: Maybe<VerdictKey, keyed::Absent>,
-        chain: Maybe<VerdictKey, keyed::Absent>,
         accessibility: Accessibility,
     )
     {
-        let before = self.checked.len();
         if let Maybe::Present(key) = entry {
-            self.checked.push(VerdictRecord {
-                key,
-                accessibility: accessibility.clone(),
-            });
-        }
-        if let Maybe::Present(key) = chain {
             self.checked.push(VerdictRecord { key, accessibility });
-        }
-        if self.checked.len() > before {
             self.recorded = self.recorded.saturating_add(1);
         }
     }
