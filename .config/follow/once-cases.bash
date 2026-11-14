@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # The readings of the toolchain follower (#4540, `follow.bash`'s
 # `follow_once`), run by `check:follow`. Each case builds a bare `origin` with
-# one commit on `main` and a main checkout that follows it, under scratch XDG
-# directories and a scratch git configuration. A stub `cargo` on `PATH` ends
-# its build as the case asks and counts its builds. A warm lock that a live
-# process holds keeps `follow_warm` from starting the gates' builds. The pages
-# go to a file.
+# a `main` and a main checkout that follows it, under scratch XDG directories
+# and a scratch git configuration. The `main` pins `nightly-case`, and the
+# follower carries `nightly-seat`, as a service carries the pin of the main
+# at its start. A stub `cargo` on `PATH` ends its
+# build as the case asks and counts its builds, each with the toolchain that
+# it runs under. A warm lock that a live process holds keeps `follow_warm`
+# from starting the gates' builds. The pages go to a file.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 source "$here/../cases/scratch.bash"
@@ -25,7 +27,7 @@ cat > "$scratch/bin/cargo" << 'EOF'
 # The stub build. `STUB_CARGO` names how it ends: a signal ends it, it writes
 # more than a pipe holds, cargo refuses it, it fetches the git dependency
 # `STUB_DEPENDENCY`, or else it builds a stub `gandr`.
-echo build >> "$STUB_BUILDS"
+echo "build ${RUSTUP_TOOLCHAIN:-none}" >> "$STUB_BUILDS"
 case ${STUB_CARGO:-} in
   signal) kill -TERM $$ ;;
   noisy)
@@ -47,9 +49,9 @@ chmod +x "$scratch/bin/cargo" "$scratch/bin/mise"
 export MISE_CONFIG_DIR=${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}
 export MISE_STATE_DIR=${MISE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/mise}
 export MISE_DATA_DIR=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}
-export PATH=$scratch/bin:$PATH GIT_CONFIG_NOSYSTEM=1
+export PATH=$scratch/bin:$PATH GIT_CONFIG_NOSYSTEM=1 RUSTUP_TOOLCHAIN=nightly-seat
 
-# A bare origin at `$1/origin.git` with one commit on `main`, its main
+# A bare origin at `$1/origin.git` whose `main` pins `nightly-case`, its main
 # checkout `$1/main` cloned by a `file://` URL, and the follower sourced over
 # scratch XDG directories under `$1`, with its pages written to `$1/pages`.
 setup() {
@@ -59,7 +61,8 @@ setup() {
   : > "$GIT_CONFIG_GLOBAL"
   git init --quiet --bare -b main "$1/origin.git"
   git clone --quiet "file://$1/origin.git" "$1/main" 2> /dev/null
-  (cd "$1/main" && identity && commit one one 'one' && git push --quiet origin main)
+  (cd "$1/main" && identity && commit one one 'one' && commit rust-toolchain.toml $'[toolchain]\nchannel = "nightly-case"' 'pin' \
+    && git push --quiet origin main)
   mkdir -p "$XDG_STATE_HOME/gandr/follow.json.warming"
   echo "$$" > "$XDG_STATE_HOME/gandr/follow.json.warming/pid"
   cd "$here"
@@ -137,5 +140,36 @@ got=$(
 )
 [[ $got == "0 1 1" ]] || fail "#4540: the second failed fetch in a row pages, once" "$got"
 
+# Each build runs under the pin of the commit that it builds, not under the
+# follower's own (#7486).
+got=$(
+  setup "$scratch/pin"
+  reading "$scratch/pin" ok
+  echo "$(tail -n 1 "$STUB_BUILDS"), $([[ $(remembered deployed) == $(git -C "$scratch/pin/main" rev-parse HEAD) ]] && echo deployed || echo "not deployed")"
+)
+[[ $got == "build nightly-case, deployed" ]] || fail "#7486: a build runs under the pin of the commit that it builds" "$got"
+
+# A main that moves the pin builds under the new pin, as the toolchain's move
+# moves it, and deploys.
+got=$(
+  setup "$scratch/moved"
+  reading "$scratch/moved" ok
+  (cd "$scratch/moved/main" && commit rust-toolchain.toml $'[toolchain]\nchannel = "nightly-next"' 'move the pin' && git push --quiet origin main)
+  reading "$scratch/moved" ok
+  echo "$(tail -n 1 "$STUB_BUILDS"), $([[ $(remembered deployed) == $(git -C "$scratch/moved/main" rev-parse HEAD) ]] && echo deployed || echo "not deployed")"
+)
+[[ $got == "build nightly-next, deployed" ]] || fail "#7486: a main that moves the pin builds under the new pin" "$got"
+
+# A main that pins no toolchain builds nothing, records `failed` and pages
+# its reason once.
+got=$(
+  setup "$scratch/unpinned"
+  (cd "$scratch/unpinned/main" && git rm --quiet rust-toolchain.toml && git commit --quiet --message 'no pin' && git push --quiet origin main)
+  reading "$scratch/unpinned" ok
+  echo "$(builds) builds, $([[ $(remembered failed) == $(git -C "$scratch/unpinned/main" rev-parse HEAD) ]] && echo failed || echo "not failed")," \
+    "$(grep -c 'pins no toolchain' "$scratch/unpinned/pages" || :) pages name it"
+)
+[[ $got == "0 builds, failed, 1 pages name it" ]] || fail "#7486: a main that pins no toolchain builds nothing and pages its reason" "$got"
+
 (( failed == 0 )) || exit 1
-echo "follow readings OK: 5 cases record, page and deploy as recorded"
+echo "follow readings OK: 8 cases record, page and deploy as recorded"

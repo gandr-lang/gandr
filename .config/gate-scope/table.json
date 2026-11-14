@@ -169,6 +169,7 @@
         ".config/cases/",
         ".config/follow/",
         ".config/mise/tasks/mise-tasks-toolchain.toml",
+        ".config/toolchain/",
         ".github/actions/install-tools/action.yml",
         "Cargo.lock",
         "Cargo.toml",
@@ -237,6 +238,7 @@
         ".config/mise/tasks/mise-tasks-ci.toml",
         ".config/pr-stack/",
         ".config/replay/",
+        ".config/toolchain/",
         ".github/workflows/",
         "crates/",
         "ledger/references.sql"
@@ -291,6 +293,7 @@
         ".config/gh/budget.bash",
         ".config/pr-stack/",
         ".config/replay/",
+        ".config/toolchain/",
         "crates/"
       ],
       "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
