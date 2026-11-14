@@ -195,15 +195,16 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x1b` keeps the reflexivities that the judgement added, beside the
-/// entries of the rows and the handlers that `0x1a` keeps, what the
-/// judgement reported of an item that `0x19` keeps, the table parts that
-/// `0x18` keeps of an item that its judgement entered elaborated, the failure
-/// content that `0x17` keeps and the located program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1b";
+/// `0x1c` keeps the payloads that the judgement added, beside the
+/// reflexivities that `0x1b` keeps, the entries of the rows and the handlers
+/// that `0x1a` keeps, what the judgement reported of an item that `0x19`
+/// keeps, the table parts that `0x18` keeps of an item that its judgement
+/// entered elaborated, the failure content that `0x17` keeps and the located
+/// program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1c";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1b`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1c`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1544,6 +1545,7 @@ const TABLEDS: [tabled::Absent; 4] = [
 ///   and seat as the entries of a fresh judgement.
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 fn write_tables<Out>(
     writer: &mut Writer<'_, Out>,
     tables: Maybe<&TableContent, tabled::Absent>,
@@ -1612,6 +1614,11 @@ where
                 },
             }
         }
+    }
+    writer.count(Count(tables.payloads().len()))?;
+    for &(ref at, ref moved) in tables.payloads() {
+        write_report_place(writer, at)?;
+        write_report_place(writer, moved)?;
     }
     Ok(())
 }
@@ -1889,6 +1896,7 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 /// - hypothesis: L3 — as [`write_tables`].
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 fn read_tables(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -1968,8 +1976,17 @@ fn read_tables(
     if !reflexivities.is_sorted_by(|left, right| left.0 < right.0) {
         return Err(CodecError::NonCanonical);
     }
+    let count = reader.count()?.0;
+    let mut payloads = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        payloads.push((at, places.read(reader)?));
+    }
+    if !payloads.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
     Ok(Maybe::Present(TableContent::from_parts(
-        (rows, handled, reflexivities),
+        (rows, handled, reflexivities, payloads),
         (outside, roots),
     )))
 }

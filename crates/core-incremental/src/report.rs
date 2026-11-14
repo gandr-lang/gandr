@@ -58,6 +58,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::CrossedOperand;
 use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::EndpointSide;
@@ -360,6 +361,7 @@ fn constant_placeholder() -> ConstantIndex
 ///   the kernel checkpoint of a fresh judgement.
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -369,6 +371,9 @@ pub struct TableContent
     handled: Vec<(Place, HandledContent)>,
     /// The dialogues of each reflexivity, in the order of its node's place.
     reflexivities: Vec<(Place, ReflexivityContent)>,
+    /// The payload type of each send and receive, in the order of its node's
+    /// place.
+    payloads: Vec<(Place, Place)>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
@@ -376,12 +381,13 @@ pub struct TableContent
     roots: Vec<TablePlace>,
 }
 
-/// The rows records, the handlers and the reflexivities of a
+/// The rows records, the handlers, the reflexivities and the payloads of a
 /// [`TableContent`], each in the order of its key.
 pub type TableEntries = (
     Vec<RowContent>,
     Vec<(Place, HandledContent)>,
     Vec<(Place, ReflexivityContent)>,
+    Vec<(Place, Place)>,
 );
 
 impl TableContent
@@ -391,7 +397,7 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled, reflexivities): TableEntries,
+        (rows, handled, reflexivities, payloads): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
@@ -399,6 +405,7 @@ impl TableContent
             rows,
             handled,
             reflexivities,
+            payloads,
             outside,
             roots,
         }
@@ -429,6 +436,16 @@ impl TableContent
     pub(crate) fn reflexivities(&self) -> &[(Place, ReflexivityContent)]
     {
         &self.reflexivities
+    }
+
+    /// The payload type of each send and receive, in the order of its node's
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn payloads(&self) -> &[(Place, Place)]
+    {
+        &self.payloads
     }
 
     /// The table of the nodes that neither the item's walk nor the judged
@@ -463,6 +480,7 @@ impl TableContent
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -479,6 +497,7 @@ impl TableContent
         if tabled.rows().records().next().is_none()
             && tabled.handled().is_empty()
             && tabled.reflexivities().is_empty()
+            && tabled.payloads().is_empty()
         {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
@@ -545,12 +564,21 @@ impl TableContent
             });
             reflexivities.push((at, ReflexivityContent { left, right, met }));
         }
+        let mut payloads = Vec::with_capacity(tabled.payloads().len());
+        for (&at, &moved) in tabled.payloads() {
+            let Some(at) = placing.key(ArenaNode::Computation(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            payloads.push((at, placing.place(ArenaNode::ValueType(moved))));
+        }
         let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
             rows,
             handled,
             reflexivities,
+            payloads,
             outside,
             roots,
         };
@@ -573,6 +601,8 @@ impl TableContent
             .reflexivities
             .sort_by(|left, right| left.0.cmp(&right.0));
         content.reflexivities.dedup();
+        content.payloads.sort_by(|left, right| left.0.cmp(&right.0));
+        content.payloads.dedup();
         Maybe::Present(content)
     }
 
@@ -607,6 +637,10 @@ impl TableContent
                 visit(&mut pair.endpoint);
             }
         }
+        for &mut (ref mut at, ref mut moved) in &mut self.payloads {
+            visit(at);
+            visit(moved);
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -616,8 +650,8 @@ impl TableContent
     /// # Specification
     /// - requires: `walk` is the item's walk in `arena`, and the item is
     ///   entered as written, so no key is a node of a judged body.
-    /// - ensures: on success, the rows records, the handlers and the
-    ///   reflexivities whose projection through the same places is this
+    /// - ensures: on success, the rows records, the handlers, the reflexivities
+    ///   and the payloads whose projection through the same places is this
     ///   content.
     /// - fails: [`seating::Absent::Unwalked`] for a place past the walk;
     ///   [`seating::Absent::Unplaceable`] for a judged place or a table place
@@ -632,6 +666,7 @@ impl TableContent
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -694,16 +729,29 @@ impl TableContent
                 .meeting(met),
             ));
         }
-        Ok((Rows::from_records(records), handled, reflexivities))
+        let mut payloads = Vec::with_capacity(self.payloads.len());
+        for &(ref at, ref moved) in &self.payloads {
+            payloads.push((
+                computation_of(seat.node(at)?)?,
+                value_type_of(seat.node(moved)?)?,
+            ));
+        }
+        Ok((
+            Rows::from_records(records),
+            handled,
+            reflexivities,
+            payloads,
+        ))
     }
 }
 
-/// The rows records, the handlers and the reflexivities that a seat of a
-/// [`TableContent`] builds in an edited arena.
+/// The rows records, the handlers, the reflexivities and the payloads that a
+/// seat of a [`TableContent`] builds in an edited arena.
 pub type SeatedTables = (
     Rows,
     Vec<(ComputationId, Handled)>,
     Vec<(ValueId, Reflexivity)>,
+    Vec<(ComputationId, ValueTypeId)>,
 );
 
 /// Where a node of a report stands.

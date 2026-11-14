@@ -335,6 +335,8 @@ enum Tabling
     Handled(ComputationId),
     /// The reflexivity at this node.
     Reflexivity(ValueId),
+    /// The payload type of the send or receive at this node.
+    Payload(ComputationId),
 }
 
 /// How many rows records the gained log held: where [`CheckingContext`]
@@ -4358,7 +4360,12 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         moved: ValueTypeId,
     )
     {
-        let _first = self.payloads.entry(at).or_insert(moved);
+        if let alloc::collections::btree_map::Entry::Vacant(vacant) = self.payloads.entry(at) {
+            let _kept = vacant.insert(moved);
+            if let Some(ref mut log) = self.tabling {
+                log.push(Tabling::Payload(at));
+            }
+        }
     }
 
     /// The types each handler and capability scope the judgement checked was
@@ -4555,9 +4562,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
     /// How many entries the tables hold that no checkpoint keeps yet: the
     /// lifts, the function extensionalities, the coercions, the
-    /// equivalences, the session statements, the directed flows, the motives,
-    /// the payloads and the native paths by node, and the relations and the
-    /// restatements by position.
+    /// equivalences, the session statements, the directed flows, the motives
+    /// and the native paths by node, and the relations and the restatements
+    /// by position.
     ///
     /// # Specification
     /// trivial.
@@ -4572,7 +4579,6 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 self.flows.len(),
                 self.directed.len(),
                 self.motives.len(),
-                self.payloads.len(),
                 self.natives.len(),
                 self.relations.len(),
                 self.restatements.len(),
@@ -4600,8 +4606,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     }
 
     /// Stop the log of [`Self::start_tables`], and give the entries that the
-    /// declaration added to the rows and the handlers, each as it reads now,
-    /// beside whether it added an entry to another table since `before`.
+    /// declaration added to the rows, the handlers, the reflexivities and the
+    /// payloads, each as it reads now, beside whether it added an entry to
+    /// another table since `before`.
     ///
     /// # Specification
     /// - requires: `before` is the census of the matching
@@ -4629,14 +4636,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             .iter()
             .filter_map(|&record| match record {
                 Tabling::Row(gained) => Some(gained),
-                Tabling::Handled(_) | Tabling::Reflexivity(_) => None,
+                Tabling::Handled(_) | Tabling::Reflexivity(_) | Tabling::Payload(_) => None,
             })
             .collect();
         let handled = log
             .iter()
             .filter_map(|&record| match record {
                 Tabling::Handled(at) => self.handled.get(&at).map(|types| (at, types.clone())),
-                Tabling::Row(_) | Tabling::Reflexivity(_) => None,
+                Tabling::Row(_) | Tabling::Reflexivity(_) | Tabling::Payload(_) => None,
             })
             .collect();
         let reflexivities = log
@@ -4646,7 +4653,14 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     .reflexivities
                     .get(&at)
                     .map(|reflexivity| (at, reflexivity.clone())),
-                Tabling::Row(_) | Tabling::Handled(_) => None,
+                Tabling::Row(_) | Tabling::Handled(_) | Tabling::Payload(_) => None,
+            })
+            .collect();
+        let payloads = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Payload(at) => self.payloads.get(&at).map(|&moved| (at, moved)),
+                Tabling::Row(_) | Tabling::Handled(_) | Tabling::Reflexivity(_) => None,
             })
             .collect();
         let others = if self.table_census().0 > before.0 {
@@ -4656,19 +4670,24 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             crate::support::OtherTables::Untouched
         };
         crate::support::Tabled::new(
-            (self.rows.of_gained(&gained), handled, reflexivities),
+            (
+                self.rows.of_gained(&gained),
+                handled,
+                reflexivities,
+                payloads,
+            ),
             others,
         )
     }
 
-    /// Enter the rows records, the handlers and the reflexivities of an
-    /// adopted declaration, as its judgement added them.
+    /// Enter the rows records, the handlers, the reflexivities and the
+    /// payloads of an adopted declaration, as its judgement added them.
     ///
     /// # Specification
     /// - requires: each node and type is minted in this context's arena, at the
     ///   place that the declaration's judgement read it.
-    /// - ensures: each record and each handler reads here, the first one where
-    ///   a key already reads; each reflexivity reads here, as
+    /// - ensures: each record, each handler and each payload reads here, the
+    ///   first one where a key already reads; each reflexivity reads here, as
     ///   [`Self::record_reflexivity`] records it.
     /// - panics: none.
     /// - executable: none — the witness compares a taken item's report with a
@@ -4679,14 +4698,16 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     ///   kernel checkpoint of a fresh judgement.
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     #[inline]
-    pub fn adopt_tabled<Entries, Reflexivities>(
+    pub fn adopt_tabled<Entries, Reflexivities, Payloads>(
         &mut self,
         rows: &crate::program::Rows,
-        (handled, reflexivities): (Entries, Reflexivities),
+        (handled, reflexivities, payloads): (Entries, Reflexivities, Payloads),
     ) where
         Entries: IntoIterator<Item = (ComputationId, crate::handler::Handled)>,
         Reflexivities: IntoIterator<Item = (ValueId, crate::code::Reflexivity)>,
+        Payloads: IntoIterator<Item = (ComputationId, ValueTypeId)>,
     {
         self.rows.absorb(rows);
         for (at, types) in handled {
@@ -4694,6 +4715,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
         for (at, reflexivity) in reflexivities {
             let _replaced = self.reflexivities.insert(at, reflexivity);
+        }
+        for (at, moved) in payloads {
+            let _first = self.payloads.entry(at).or_insert(moved);
         }
     }
 

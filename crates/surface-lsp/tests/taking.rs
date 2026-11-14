@@ -1,6 +1,6 @@
 //! A keystroke's judgement takes each standing declaration from the last
 //! pass, and a taken declaration keeps the entries that its judgement added
-//! to the tables that the bridge reads (#7373, #7399).
+//! to the tables that the bridge reads (#7373, #7399, #7428).
 
 use gandr_core_checker_base::CheckBudget;
 use gandr_core_checker_base::CheckingContext;
@@ -34,7 +34,10 @@ const REFLEXIVITY: &str =
     include_str!("taking/fixtures/a-taken-reflexivity-keeps-its-dialogues-7399.gandr");
 
 /// The payload fixture: a send and a receive over a session endpoint.
-const PAYLOAD: &str = include_str!("taking/fixtures/a-sent-payload-is-judged-again-7399.gandr");
+const PAYLOAD: &str = include_str!("taking/fixtures/a-taken-payload-keeps-its-type-7428.gandr");
+
+/// The lift fixture: a type at the universe above its own.
+const LIFT: &str = include_str!("taking/fixtures/a-lifted-type-is-judged-again-7428.gandr");
 
 /// The reopened fixture: a law whose right endpoint unfolds under a thunk.
 const REOPENED: &str =
@@ -99,6 +102,55 @@ fn taken_past_an_insertion(base: SourceText<'_>) -> ItemCount
         "a judgement that takes the standing declarations composes as a fresh session"
     );
     taking.taken()
+}
+
+/// How many declarations a session reopened over the store of `base` takes,
+/// once an edit puts a definition first, beside how many checkpoints it
+/// restores. The reopened session's kernel checkpoint and composition must
+/// equal a fresh session's.
+///
+/// # Specification
+/// trivial.
+fn taken_past_a_reopening(base: SourceText<'_>) -> (ItemCount, ItemCount)
+{
+    let mut edited = String::from("def prepended = 1;");
+    edited.push('\n');
+    edited.push_str(<&str>::from(base));
+    let mut writer = session();
+    let _base = submit(&mut writer, base);
+    let reopened = Session::reopen(
+        built_in().expect("the built-in grammar builds"),
+        SourceRoot::Fixture,
+        writer.into_store(),
+        InMemoryBlockStore::default(),
+        BackendArtifact::from(b"gandr-surface-lsp taking tests".as_slice()),
+        base,
+    )
+    .expect("the store reopens");
+    let Maybe::Present(restored) = reopened.restored()
+    else {
+        panic!("the reopened store restores the checkpoints");
+    };
+    let mut taking = reopened.into_session();
+    taking.reuse(Reusing::Standing);
+    let submission = submit(&mut taking, SourceText::from(edited.as_str()));
+    let mut whole = session();
+    let fresh = submit(&mut whole, SourceText::from(edited.as_str()));
+    assert!(
+        matches!(fresh.kernel(), Maybe::Present(_)),
+        "the kernel admits the edited revision"
+    );
+    assert_eq!(
+        submission.kernel(),
+        fresh.kernel(),
+        "the kernel crosses each taken declaration with its kept entries, as a fresh session's"
+    );
+    assert_eq!(
+        submission.composed(),
+        fresh.composed(),
+        "the reopened session that takes composes as a fresh session"
+    );
+    (restored, taking.taken())
 }
 
 /// A taken declaration at a row and a taken handler keep the entries that
@@ -173,17 +225,57 @@ fn a_taken_reflexivity_keeps_its_dialogues_7399()
     );
 }
 
-/// A declaration whose judgement adds an entry to a table that a checkpoint
-/// does not keep yet is judged again (#7399). The send and the receive of
-/// `deliver` record their payload types, so its checkpoint keeps no entries,
-/// and the take declines it. A take without the decline takes it.
+/// A taken send and receive keep the payload types that their judgement
+/// recorded (#7428). A session reopened over a store crosses the taken
+/// `deliver` again, and the bridge reads the type of the received payload at
+/// the receive's node. The take seats the kept types at the places that an
+/// edit shifts. The kept types read back from bytes as written.
 #[test]
-fn a_sent_payload_is_judged_again_7399()
+fn a_taken_payload_keeps_its_type_7428()
 {
     assert_eq!(
         taken_past_an_insertion(SourceText::from(PAYLOAD)),
+        ItemCount::from(1_usize),
+        "`deliver` is taken; the appended definition is decided"
+    );
+    assert_eq!(
+        taken_past_a_reopening(SourceText::from(PAYLOAD)),
+        (ItemCount::from(1_usize), ItemCount::from(1_usize)),
+        "the checkpoint of `deliver` is restored and taken; the definition put first is decided"
+    );
+    let mut kept = session();
+    let _kept = submit(&mut kept, SourceText::from(PAYLOAD));
+    let Maybe::Present(resume) = kept.last()
+    else {
+        panic!("the submission resumes");
+    };
+    let checkpoints = resume.checkpoints();
+    assert!(
+        checkpoints
+            .items()
+            .iter()
+            .any(|checkpoint| matches!(checkpoint.tables(), Maybe::Present(_))),
+        "a checkpoint keeps the payload types of `deliver`"
+    );
+    let bytes = encode_checkpoints(checkpoints).expect("the checkpoints encode");
+    assert_eq!(
+        decode_checkpoints(&bytes).expect("the checkpoints decode"),
+        *checkpoints,
+        "the kept payload types read back as written"
+    );
+}
+
+/// A declaration whose judgement adds an entry to a table that a checkpoint
+/// does not keep yet is judged again (#7399, #7428). The judgement of
+/// `raised` records a lift, so its checkpoint keeps no entries, and the take
+/// declines it. A take without the decline takes it.
+#[test]
+fn a_lifted_type_is_judged_again_7428()
+{
+    assert_eq!(
+        taken_past_an_insertion(SourceText::from(LIFT)),
         ItemCount::from(0_usize),
-        "`deliver` and the appended definition are decided"
+        "`raised` and the appended definition are decided"
     );
 }
 
@@ -197,63 +289,27 @@ fn a_sent_payload_is_judged_again_7399()
 #[test]
 fn a_reopened_take_replays_a_kept_dialogue_7399()
 {
-    let mut edited = String::from("def prepended = 1;");
-    edited.push('\n');
-    edited.push_str(REOPENED);
-    let mut writer = session();
-    let _base = submit(&mut writer, SourceText::from(REOPENED));
-    let reopened = Session::reopen(
-        built_in().expect("the built-in grammar builds"),
-        SourceRoot::Fixture,
-        writer.into_store(),
-        InMemoryBlockStore::default(),
-        BackendArtifact::from(b"gandr-surface-lsp taking tests".as_slice()),
-        SourceText::from(REOPENED),
-    )
-    .expect("the store reopens");
     assert_eq!(
-        reopened.restored(),
-        Maybe::Present(ItemCount::from(3_usize)),
-        "the three declarations' checkpoints are restored"
-    );
-    let mut taking = reopened.into_session();
-    taking.reuse(Reusing::Standing);
-    let submission = submit(&mut taking, SourceText::from(edited.as_str()));
-    let mut whole = session();
-    let fresh = submit(&mut whole, SourceText::from(edited.as_str()));
-    assert_eq!(
-        taking.taken(),
-        ItemCount::from(3_usize),
-        "`k`, `j` and the law are taken; the definition put first is decided"
-    );
-    assert!(
-        matches!(fresh.kernel(), Maybe::Present(_)),
-        "the kernel admits the edited revision"
-    );
-    assert_eq!(
-        submission.kernel(),
-        fresh.kernel(),
-        "the kernel crosses the taken law with its kept dialogue, as a fresh session's"
-    );
-    assert_eq!(
-        submission.composed(),
-        fresh.composed(),
-        "the reopened session that takes composes as a fresh session"
+        taken_past_a_reopening(SourceText::from(REOPENED)),
+        (ItemCount::from(3_usize), ItemCount::from(3_usize)),
+        "`k`, `j` and the law are restored and taken; the definition put first is decided"
     );
 }
 
 /// A supported judgement logs the entries that each declaration adds to the
-/// tables (#7373, #7399). `tallyHandled` adds a handler and its rows records,
-/// and it touches no other table. `tallied` stands at a row that names an
-/// instance, which the rows do not record. `unreadCall` adds a reflexivity.
-/// `deliver` adds payload types, a table that a checkpoint does not keep yet.
+/// tables (#7373, #7399, #7428). `tallyHandled` adds a handler and its rows
+/// records, and it touches no other table. `tallied` stands at a row that
+/// names an instance, which the rows do not record. `unreadCall` adds a
+/// reflexivity, and `deliver` adds payload types. `raised` adds a lift, a
+/// table that a checkpoint does not keep yet.
 #[test]
 fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
 {
     for (text, expected) in [
         (HANDLER, (1_usize, 0_usize)),
         (REFLEXIVITY, (1, 0)),
-        (PAYLOAD, (0, 1)),
+        (PAYLOAD, (1, 0)),
+        (LIFT, (0, 1)),
     ] {
         let grammar = built_in().expect("the built-in grammar builds");
         let lowering = lower_source(
@@ -282,6 +338,7 @@ fn a_supported_judgement_logs_the_entries_each_declaration_adds_7373()
             else if tabled.rows().records().next().is_some()
                 || !tabled.handled().is_empty()
                 || !tabled.reflexivities().is_empty()
+                || !tabled.payloads().is_empty()
             {
                 kept = kept.saturating_add(1);
             }
