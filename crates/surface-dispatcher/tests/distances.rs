@@ -62,7 +62,7 @@ fn census() -> Vec<(PathBuf, FusionRow)>
     pool.each(
         &mut takers,
         || (),
-        |(), ()| {
+        |&mut (), &mut ()| {
             let at = || cursor.fetch_add(1, Ordering::Relaxed);
             while let Some((part, rows)) = {
                 let at = at();
