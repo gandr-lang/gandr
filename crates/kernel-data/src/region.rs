@@ -9,13 +9,27 @@
 //! parent makes no id while a child lives. Each id of the parent that a child
 //! can name thus lies in the child's frozen prefix, and `adopt` is the id
 //! itself.
+//!
+//! A region takes the allocator below it as a parameter, `Global` by default,
+//! and draws its buckets from it. A borrow of a region is itself an
+//! allocator: it draws chunks of bytes from the allocator below under the same
+//! budget, and frees them all when the region ends. So the vectors, tables and
+//! strings of one check live inside the region.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::alloc::AllocError;
+use core::alloc::Allocator;
+use core::alloc::Layout;
 use core::cell::Cell;
 use core::cell::OnceCell;
+use core::cell::RefCell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::size_of;
+use core::num::NonZero;
+use core::ptr::NonNull;
 
 use anodized::spec;
 
@@ -31,6 +45,13 @@ const FIRST_LOG: u32 = 6;
 /// The buckets of a layer: enough for each relative index that a `u32`
 /// holds.
 const BUCKETS: usize = 27;
+
+/// The bytes of a chunk of the allocator face, unless one block needs more.
+const CHUNK: usize = 4_096;
+
+/// The alignment of each chunk of the allocator face, unless one block needs
+/// more.
+const CHUNK_ALIGN: usize = 16;
 
 /// The bytes that a region may draw for its buckets.
 ///
@@ -376,9 +397,159 @@ where
     }
 }
 
+/// The free bytes of the newest chunk of an allocator face: its next byte,
+/// and the address past its last byte.
+#[derive(Clone, Copy, Debug)]
+struct Cursor
+{
+    /// The next free byte.
+    next: NonNull<u8>,
+    /// The address past the chunk's last byte.
+    end: NonNull<u8>,
+}
+
+/// The chunks of one layer's allocator face, each drawn from the allocator
+/// below, and each released when the layer drops.
+struct Bytes<Below>
+where
+    Below: Allocator + Clone,
+{
+    /// The allocator below: it draws each chunk and each bucket.
+    allocator: Below,
+    /// The free bytes of the newest chunk; `None` before the first.
+    cursor: Cell<Option<Cursor>>,
+    /// Each chunk with its layout, for its release.
+    chunks: RefCell<Vec<(NonNull<u8>, Layout), Below>>,
+}
+
+impl<Below> Bytes<Below>
+where
+    Below: Allocator + Clone,
+{
+    /// No chunk yet, over `allocator`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(allocator: Below) -> Self
+    {
+        Self {
+            chunks: RefCell::new(Vec::new_in(allocator.clone())),
+            allocator,
+            cursor: Cell::new(None),
+        }
+    }
+
+    /// A block of `layout` from the free bytes of the newest chunk.
+    ///
+    /// # Specification
+    /// - ensures: on `Some`, a block of `layout` that lies in the newest chunk
+    ///   past each block before it, and the cursor past the block; on `None`,
+    ///   the cursor unchanged.
+    /// - panics: none.
+    /// - executable: none — a block is an address range, and no predicate reads
+    ///   the blocks before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector grown in the region keeps each element it
+    ///   holds, which a block that overlaps an earlier one breaks under Miri.
+    /// - witness: `tests::region::a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget`
+    fn carve(
+        &self,
+        layout: Layout,
+    ) -> Option<NonNull<[u8]>>
+    {
+        let cursor = self.cursor.get()?;
+        let start = cursor
+            .next
+            .addr()
+            .get()
+            .checked_next_multiple_of(layout.align())?;
+        let end = start.checked_add(layout.size())?;
+        if end > cursor.end.addr().get() {
+            return None;
+        }
+        self.cursor.set(Some(Cursor {
+            next: cursor.next.with_addr(NonZero::new(end)?),
+            end: cursor.end,
+        }));
+        Some(NonNull::slice_from_raw_parts(
+            cursor.next.with_addr(NonZero::new(start)?),
+            layout.size(),
+        ))
+    }
+
+    /// Draw a chunk of `layout` from the allocator below, and set the cursor
+    /// at its first byte.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, the chunk recorded for its release and the cursor
+    ///   over its bytes.
+    /// - fails: [`AllocError`] when the allocator below refuses the chunk, or
+    ///   the record of chunks cannot grow.
+    /// - panics: none.
+    /// - executable: none — the chunk is a fresh allocation, which no predicate
+    ///   reads before the call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector that outgrows one chunk keeps its elements,
+    ///   and Miri finds no leak of a chunk.
+    /// - witness: `tests::region::a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget`
+    fn draw(
+        &self,
+        layout: Layout,
+    ) -> Result<(), AllocError>
+    {
+        let mut chunks = self.chunks.try_borrow_mut().ok().ok_or(AllocError)?;
+        chunks.try_reserve(1_usize).ok().ok_or(AllocError)?;
+        let chunk = self.allocator.allocate(layout)?.cast::<u8>();
+        chunks.push((chunk, layout));
+        let end = chunk
+            .addr()
+            .get()
+            .checked_add(layout.size())
+            .and_then(NonZero::new)
+            .ok_or(AllocError)?;
+        self.cursor.set(Some(Cursor {
+            next: chunk,
+            end: chunk.with_addr(end),
+        }));
+        Ok(())
+    }
+}
+
+impl<Below> Drop for Bytes<Below>
+where
+    Below: Allocator + Clone,
+{
+    /// # Specification
+    /// - ensures: each chunk returns to the allocator below, once.
+    /// - panics: none.
+    /// - executable: none — a released chunk has no state that a predicate
+    ///   could read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — Miri reports a leak of a chunk that the drop keeps,
+    ///   and a double release of one that it frees twice.
+    /// - witness: `tests::region::a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget`
+    fn drop(&mut self)
+    {
+        for &(chunk, layout) in &*self.chunks.get_mut() {
+            // SAFETY: `Bytes::draw` drew `chunk` from `self.allocator` with
+            // `layout`, and only this drop releases it, once. Each block of
+            // the chunk is borrowed from a `&Region` whose borrow ends before
+            // the layer that owns these bytes drops.
+            unsafe {
+                self.allocator.deallocate(chunk, layout);
+            }
+        }
+    }
+}
+
 /// The storage of one region: its own values from `base` on, over the frozen
 /// prefix of the region it forked from.
-struct Layer<'below, Value>
+struct Layer<'below, Value, Below>
+where
+    Below: Allocator + Clone,
 {
     /// The frozen prefix: every offset below `base`.
     below: Option<&'below Self>,
@@ -391,12 +562,17 @@ struct Layer<'below, Value>
     /// The bytes this layer drew.
     drawn: Cell<Budget>,
     /// The buckets, each drawn at its first value.
-    buckets: [OnceCell<Box<[OnceCell<Value>]>>; BUCKETS],
+    buckets: [OnceCell<Box<[OnceCell<Value>], Below>>; BUCKETS],
+    /// The allocator face's chunks, over the allocator below.
+    bytes: Bytes<Below>,
 }
 
-impl<'below, Value> Layer<'below, Value>
+impl<'below, Value, Below> Layer<'below, Value, Below>
+where
+    Below: Allocator + Clone,
 {
-    /// An empty layer from `base` on, over `below`.
+    /// An empty layer from `base` on, over `below`, that draws from
+    /// `allocator`.
     ///
     /// # Specification
     /// trivial.
@@ -404,6 +580,7 @@ impl<'below, Value> Layer<'below, Value>
         below: Option<&'below Self>,
         base: Offset,
         budget: Budget,
+        allocator: Below,
     ) -> Self
     {
         Self {
@@ -413,7 +590,50 @@ impl<'below, Value> Layer<'below, Value>
             budget,
             drawn: Cell::new(Budget(0_usize)),
             buckets: [const { OnceCell::new() }; BUCKETS],
+            bytes: Bytes::new(allocator),
         }
+    }
+
+    /// A block of `layout` for the allocator face: from the newest chunk, or
+    /// from a fresh chunk under the budget.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, a block of `layout` that no other live block
+    ///   overlaps, and that lives until the layer drops; the drawn bytes grow
+    ///   by each fresh chunk's.
+    /// - fails: [`AllocError`] when a fresh chunk passes the remaining budget,
+    ///   or the allocator below refuses it.
+    /// - panics: none.
+    /// - executable: none — a block is an address range, and no predicate reads
+    ///   the blocks before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector grown in the region keeps its elements, and
+    ///   a reserve past the budget is refused.
+    /// - witness: `tests::region::a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget`
+    fn block(
+        &self,
+        layout: Layout,
+    ) -> Result<NonNull<[u8]>, AllocError>
+    {
+        if let Some(block) = self.bytes.carve(layout) {
+            return Ok(block);
+        }
+        let bytes = layout
+            .size()
+            .checked_add(layout.align())
+            .ok_or(AllocError)?
+            .max(CHUNK);
+        let chunk = Layout::from_size_align(bytes, layout.align().max(CHUNK_ALIGN))
+            .ok()
+            .ok_or(AllocError)?;
+        if Budget(bytes) > self.remaining() {
+            return Err(AllocError);
+        }
+        self.bytes.draw(chunk)?;
+        self.drawn
+            .set(Budget(self.drawn.get().0.saturating_add(bytes)));
+        self.bytes.carve(layout).ok_or(AllocError)
     }
 
     /// The refusal of this layer.
@@ -565,6 +785,7 @@ impl<'below, Value> Layer<'below, Value>
     /// - fails: [`Exhausted`] when the bucket's bytes pass the remaining
     ///   budget.
     /// - panics: none.
+    /// - fails: [`Exhausted`] also when the allocator below refuses the bucket.
     /// - executable: none — the slots are a fresh allocation, which no
     ///   predicate reads before the call.
     ///
@@ -574,7 +795,7 @@ impl<'below, Value> Layer<'below, Value>
     /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
     fn draw<'cell>(
         &self,
-        cell: &'cell OnceCell<Box<[OnceCell<Value>]>>,
+        cell: &'cell OnceCell<Box<[OnceCell<Value>], Below>>,
         bucket: Bucket,
     ) -> Result<&'cell [OnceCell<Value>], Exhausted>
     {
@@ -588,8 +809,13 @@ impl<'below, Value> Layer<'below, Value>
             .slots()
             .and_then(|count| usize::try_from(count.0).ok())
             .ok_or_else(|| self.exhausted())?;
-        let fresh: Box<[OnceCell<Value>]> =
-            core::iter::repeat_with(OnceCell::new).take(count).collect();
+        let mut fresh = Vec::new_in(self.bytes.allocator.clone());
+        fresh
+            .try_reserve_exact(count)
+            .ok()
+            .ok_or_else(|| self.exhausted())?;
+        fresh.extend(core::iter::repeat_with(OnceCell::new).take(count));
+        let fresh = fresh.into_boxed_slice();
         self.drawn
             .set(Budget(self.drawn.get().0.saturating_add(bytes.0)));
         Ok(cell.get_or_init(|| fresh))
@@ -640,11 +866,13 @@ impl<'below, Value> Layer<'below, Value>
 /// - hypothesis: L3 — values minted in order read back at their ids, and a
 ///   budget that holds one bucket refuses the value past it.
 /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
-pub struct Region<'region, Value>
+pub struct Region<'region, Value, Below = Global>
+where
+    Below: Allocator + Clone,
 {
     /// The values and the frozen prefix, owned by the scope or the fork that
     /// made the region, so a join can take them after the child's body.
-    layer: &'region Layer<'region, Value>,
+    layer: &'region Layer<'region, Value, Below>,
     /// The region's brand.
     brand: Brand<'region>,
 }
@@ -680,7 +908,35 @@ pub fn scoped<Value, Answer, Body>(
 where
     Body: for<'region> FnOnce(&'region Region<'region, Value>, Mint<'region>) -> Answer,
 {
-    let layer = Layer::new(None, Offset(0_u32), budget);
+    scoped_in(budget, Global, body)
+}
+
+/// Brand a region under `budget` for `body`, with its one mint, over the
+/// allocator `below`: each bucket and each chunk of the region's bytes comes
+/// from `below`.
+///
+/// # Specification
+/// - ensures: the body's answer, which names no id of the region; each
+///   allocation of the region returns to `below` when the scope ends.
+/// - panics: none.
+/// - executable: none — the answer is generic, and the brand states the clause
+///   at compile time.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a region over a region draws its buckets from the region
+///   below, and the budget below refuses the bucket past it.
+/// - witness: `tests::region::a_region_over_a_region_draws_its_buckets_from_the_region_below`
+#[inline]
+pub fn scoped_in<Value, Below, Answer, Body>(
+    budget: Budget,
+    below: Below,
+    body: Body,
+) -> Answer
+where
+    Below: Allocator + Clone,
+    Body: for<'region> FnOnce(&'region Region<'region, Value, Below>, Mint<'region>) -> Answer,
+{
+    let layer = Layer::new(None, Offset(0_u32), budget, below);
     let region = Region {
         layer: &layer,
         brand: PhantomData,
@@ -688,7 +944,9 @@ where
     body(&region, Mint { brand: PhantomData })
 }
 
-impl<'region, Value> Region<'region, Value>
+impl<'region, Value, Below> Region<'region, Value, Below>
+where
+    Below: Allocator + Clone,
 {
     /// Append `value` and answer its id.
     ///
@@ -824,13 +1082,18 @@ impl<'region, Value> Region<'region, Value>
     where
         Family: Branded,
         Body: for<'child> FnOnce(
-            &'child Region<'child, Value>,
+            &'child Region<'child, Value, Below>,
             Mint<'child>,
             Adopt<'region, 'child>,
         ) -> Option<Family::Of<'child>>,
     {
         let mark = self.layer.extent()?;
-        let layer = Layer::new(Some(self.layer), mark, self.layer.remaining());
+        let layer = Layer::new(
+            Some(self.layer),
+            mark,
+            self.layer.remaining(),
+            self.layer.bytes.allocator.clone(),
+        );
         let child = Region {
             layer: &layer,
             brand: PhantomData,
@@ -878,7 +1141,7 @@ impl<'region, Value> Region<'region, Value>
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     fn fold(
         &self,
-        child: Layer<'_, Value>,
+        child: Layer<'_, Value, Below>,
     ) -> Result<(), Exhausted>
     {
         let count = child.len.get();
@@ -896,5 +1159,52 @@ impl<'region, Value> Region<'region, Value>
             let _offset: Offset = self.layer.push(value)?;
         }
         Ok(())
+    }
+}
+
+// SAFETY: each block lies in a chunk of the region's layer, and the layer
+// outlives each borrow `&Region` of it, so a block stays valid while any copy
+// of this allocator lives. The cursor only moves forward, so no two live
+// blocks overlap. A copy of `&Region` is the same region, so a block from one
+// copy may return through another.
+unsafe impl<Value, Below> Allocator for &Region<'_, Value, Below>
+where
+    Below: Allocator + Clone,
+{
+    /// A block of `layout` from the region's bytes, under its budget.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, a block of `layout` that no other live block
+    ///   overlaps, and that lives until the region ends.
+    /// - fails: [`AllocError`] when a fresh chunk passes the remaining budget,
+    ///   or the allocator below refuses it.
+    /// - panics: none.
+    /// - executable: none — a block is an address range, and no predicate reads
+    ///   the blocks before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a vector grown in the region keeps its elements, and
+    ///   a reserve past the budget is refused.
+    /// - witness: `tests::region::a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget`
+    #[inline]
+    fn allocate(
+        &self,
+        layout: Layout,
+    ) -> Result<NonNull<[u8]>, AllocError>
+    {
+        self.layer.block(layout)
+    }
+
+    /// Keep the block: the region frees each of its chunks when it ends.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    unsafe fn deallocate(
+        &self,
+        _block: NonNull<u8>,
+        _layout: Layout,
+    )
+    {
     }
 }

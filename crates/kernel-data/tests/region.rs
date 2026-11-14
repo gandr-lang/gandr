@@ -4,6 +4,7 @@ use gandr_kernel_data::Budget;
 use gandr_kernel_data::Id;
 use gandr_kernel_data::Key;
 use gandr_kernel_data::scoped;
+use gandr_kernel_data::scoped_in;
 
 /// The bytes of one first bucket of `u64` values with their cells, and a
 /// little more: room for one bucket and not for the second.
@@ -139,4 +140,44 @@ fn a_key_seats_back_in_its_region_and_a_key_past_it_is_refused()
         (true, true, true),
         "each key seats back, and the key past the region is refused"
     );
+}
+
+/// A vector in a region grows across its chunks and keeps each element, and
+/// a reserve past the region's budget is refused.
+#[test]
+fn a_vector_in_a_region_lives_in_its_bytes_and_is_refused_past_its_budget()
+{
+    let (sum, refused) = scoped::<u64, _, _>(Budget::from(LARGE), |region, _mint| {
+        let mut values = Vec::new_in(region);
+        values.extend(0_u64 .. 2_000_u64);
+        let sum: u64 = values.iter().sum();
+        let mut past = Vec::<u64, _>::new_in(region);
+        (sum, past.try_reserve(LARGE).is_err())
+    });
+    assert_eq!(
+        sum, 1_999_000_u64,
+        "a vector across chunks keeps each element"
+    );
+    assert!(refused, "a reserve past the budget is refused");
+}
+
+/// A region over a region draws its buckets from the region below: it reads
+/// its value when the budget below holds the bucket, and is refused when it
+/// does not.
+#[test]
+fn a_region_over_a_region_draws_its_buckets_from_the_region_below()
+{
+    let read = scoped::<u64, _, _>(Budget::from(LARGE), |outer, _outer_mint| {
+        scoped_in::<u64, _, _, _>(Budget::from(LARGE), outer, |inner, mut mint| {
+            let id = inner.mint(&mut mint, 7_u64).ok()?;
+            inner.get(id).copied()
+        })
+    });
+    assert_eq!(read, Some(7_u64), "the region below holds the bucket");
+    let refused = scoped::<u64, _, _>(Budget::from(ONE_BUCKET), |outer, _outer_mint| {
+        scoped_in::<u64, _, _, _>(Budget::from(LARGE), outer, |inner, mut mint| {
+            inner.mint(&mut mint, 7_u64).is_err()
+        })
+    });
+    assert!(refused, "the budget below refuses the bucket's chunk");
 }

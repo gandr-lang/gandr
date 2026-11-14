@@ -585,12 +585,6 @@ default-features = false
 [workspace.dependencies.gandr-kernel-core-base]
 path = "crates/kernel-core-base"
 
-# The kernel's own data types: a budgeted region whose ids carry its brand,
-# with its three crossings.
-# consumers: none
-[workspace.dependencies.gandr-kernel-data]
-path = "crates/kernel-data"
-
 # The certified kernel's universe-level oracle.
 # consumers:
 # - core-checker

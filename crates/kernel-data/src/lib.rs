@@ -6,7 +6,8 @@
 //! A [`Region`] holds values under a budget. A scope brands it, so no
 //! [`Id`] leaves the scope, and three crossings move an id between regions:
 //! [`Adopt`] at a fork, the fold's translation at a join, and a durable
-//! [`Key`] with its checked import, [`Region::seat`].
+//! [`Key`] with its checked import, [`Region::seat`]. A region draws from the
+//! allocator below it, and a borrow of a region is itself an allocator.
 
 #![no_std]
 
@@ -23,3 +24,4 @@ pub use crate::region::Key;
 pub use crate::region::Mint;
 pub use crate::region::Region;
 pub use crate::region::scoped;
+pub use crate::region::scoped_in;
