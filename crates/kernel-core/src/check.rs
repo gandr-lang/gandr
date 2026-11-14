@@ -9669,6 +9669,21 @@ where
     for part in &parts {
         arena.dropped(&part.arena);
     }
+    // The table folds first the part that holds the most own records, before
+    // any agreement places a type: the fold appends them as they stand, and
+    // interns again only what the other parts add.
+    if passed
+        && let Some(lead) = parts.iter_mut().reduce(|lead, part| {
+            if part.session.cmp_own_records(&lead.session) == core::cmp::Ordering::Greater {
+                part
+            }
+            else {
+                lead
+            }
+        })
+    {
+        session.join_table(arena, &mut lead.session);
+    }
     for part in parts {
         let SiblingPart {
             memo: part_memo,
