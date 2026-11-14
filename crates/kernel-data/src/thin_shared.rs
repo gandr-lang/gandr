@@ -228,7 +228,7 @@ impl<H, T> ThinShared<H, T>
     /// - ensures: as [`ThinShared::from_header_and_iter_in`].
     /// - fails: a block past `isize::MAX` bytes panics, and the global
     ///   allocator's refusal goes to its error handler, as a vector's grow
-    ///   does, until the wave of #7419.
+    ///   does; [`ThinShared::from_header_and_iter_in`] returns both.
     /// - panics: as [`ThinShared::from_header_and_iter_in`].
     ///
     /// # Adequacy

@@ -296,16 +296,16 @@ where
 
 /// Drops the block's count and value, and returns its bytes to `alloc`.
 ///
+/// # Safety
+/// - unsafe invariants: the caller is the last holder of `block`, and `alloc`
+///   gave it. No holder of `block` stays after the call.
+///
 /// # Specification
 /// - requires: the caller was the last holder of `block`, which `alloc` gave.
 /// - ensures: the value drops once, and the bytes return to the allocator once,
 ///   when the value's drop panics too.
 /// - panics: when the value's drop panics.
-/// - unsafe invariants: no holder of `block` stays.
 /// - executable: none — the block ends, so no state stays to read.
-///
-/// # Safety
-/// The caller is the last holder of `block`, and `alloc` gave it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a value whose drop panics still frees its block, under
@@ -355,7 +355,7 @@ impl<T> Unique<T>
     /// # Specification
     /// - ensures: the one holder of a block of `value`.
     /// - fails: the global allocator's refusal goes to its error handler, as
-    ///   `Box::new`'s does, until the wave of #7419.
+    ///   `Box::new`'s does; [`Unique::new_in`] returns it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -575,7 +575,7 @@ where
     /// - ensures: `this` is the only holder of its block. A value that other
     ///   holders share stays theirs, and `this` holds a clone of it.
     /// - fails: a copy that the allocator refuses goes to its error handler, as
-    ///   `Box`'s does, until the wave of #7419.
+    ///   `Box`'s does.
     /// - panics: when the value's clone panics; `this` then stays as it was.
     ///
     /// # Adequacy
