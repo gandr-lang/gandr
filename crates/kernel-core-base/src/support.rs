@@ -794,6 +794,56 @@ impl SupportContext
         Ok(())
     }
 
+    /// The order of `self`'s own records against `other`'s, as
+    /// [`ContentTable::cmp_own`] orders their tables.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cmp_own_records(
+        &self,
+        other: &Self,
+    ) -> core::cmp::Ordering
+    {
+        self.table.cmp_own(&other.table)
+    }
+
+    /// Fold the table of `child`, a goal's child forked by
+    /// [`Self::fork_goal`], into this session's table before the rest of the
+    /// child, and leave the child an empty table. A fork point folds first the
+    /// child that holds the most own records, so the fold appends them as they
+    /// stand ([`ContentTable::join`]). The child's [`Self::join_goal`] then
+    /// folds its kept memo, its accruals and its owed keys, in the fork's
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::join_goal`].
+    /// - ensures: as [`ContentTable::join`] of the child's table; the child's
+    ///   table holds no record and no placement.
+    /// - provides: the table's half of the join of the child that a fork point
+    ///   folds first.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the child's records leave with the fold, so no
+    ///   predicate reads them after it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parts of a fork folded with the largest table
+    ///   first, at each order of the parts; each verdict is the serial walk's,
+    ///   and each record carries the name that a serial table gives it.
+    /// - witness: `gandr-kernel-core::check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
+    /// - witness: `encoding::tests::two_overlays_folded_in_either_order_name_each_record_as_a_serial_table_does`
+    #[inline]
+    pub fn join_table(
+        &mut self,
+        arena: &TermArena,
+        child: &mut Self,
+    )
+    {
+        self.table.join(arena, core::mem::take(&mut child.table));
+    }
+
     /// Add what the drain of a forked child checked to what this check's
     /// children drained.
     ///

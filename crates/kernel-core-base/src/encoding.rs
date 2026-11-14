@@ -4550,7 +4550,9 @@ impl ContentTable
     /// and the fold appends the child's records as they stand. Otherwise the
     /// fold interns each record again, its members read through the ids that
     /// the fold gave the records before it, and the record keeps the child's
-    /// name. The caller folds the children of one fork point in their order.
+    /// name. The children of one fork point fold in any order, and the first
+    /// of them appends. So a caller folds first the child that holds the most
+    /// own records ([`Self::cmp_own`]).
     ///
     /// # Specification
     /// - requires: `child` was forked from this table, or from a table whose
@@ -4675,6 +4677,22 @@ impl ContentTable
         }
         self.placed
             .fold((&placed, reach), |id| mapped(id, base, &map));
+    }
+
+    /// The order of this table's own records against `other`'s, by their
+    /// count: the records that a fold of the table appends when it folds
+    /// first, and interns again when it folds later.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cmp_own(
+        &self,
+        other: &Self,
+    ) -> core::cmp::Ordering
+    {
+        self.spans.len().cmp(&other.spans.len())
     }
 
     /// Merge each frozen layer that no overlay reads any more into this
@@ -4892,14 +4910,22 @@ impl ContentTable
                 mine.column.extend_from_slice(&theirs.column);
             }
             if keeps_positions {
-                let offset = u32::try_from(mine.positions.len()).unwrap_or(u32::MAX);
-                mine.positions.extend_from_slice(&theirs.positions);
-                mine.ends.extend(
-                    theirs
-                        .ends
-                        .iter()
-                        .map(|&RunEnd(end)| RunEnd(end.saturating_add(offset))),
-                );
+                // A table that holds no position of its own takes the child's
+                // as they stand, as an extension at offset 0 writes them.
+                if mine.positions.is_empty() && mine.ends.is_empty() {
+                    mine.positions = theirs.positions;
+                    mine.ends = theirs.ends;
+                }
+                else {
+                    let offset = u32::try_from(mine.positions.len()).unwrap_or(u32::MAX);
+                    mine.positions.extend_from_slice(&theirs.positions);
+                    mine.ends.extend(
+                        theirs
+                            .ends
+                            .iter()
+                            .map(|&RunEnd(end)| RunEnd(end.saturating_add(offset))),
+                    );
+                }
             }
         }
     }
