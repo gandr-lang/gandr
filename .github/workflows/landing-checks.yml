@@ -1403,6 +1403,26 @@ jobs:
           case ":$PATH:" in
             *":$HOME/"*) echo "::error::the runner's PATH holds a directory in the host user's home: register the runner again, or write its .path without one (#7352)"; exit 1 ;;
           esac
+      # The host also holds seats, and a job that takes every core starves
+      # them. So the runners of a host take half of it together, and each
+      # job takes the host's cores divided by twice the count of its runners:
+      # its build jobs, its test threads, and a mise tool's build. The count
+      # is the runner directories beside this one, so a runner added or
+      # removed changes the share with no edit here. The job takes no gate
+      # slot of the seats: its share bounds it.
+      - name: bound the job by its host
+        shell: bash
+        run: |
+          root=$RUNNER_WORKSPACE
+          while [[ $root != / && ! -e $root/.runner ]]; do root=${root%/*}; root=${root:-/}; done
+          [[ -e $root/.runner ]] || { echo "::error::the runner's directory holds no .runner file: register the runner again (#7352)"; exit 1; }
+          shopt -s nullglob
+          runners=("${root%/*}"/*/.runner)
+          cores=$(getconf _NPROCESSORS_ONLN)
+          jobs=$(( cores / (2 * ${#runners[@]}) ))
+          (( jobs >= 1 )) || jobs=1
+          printf 'CARGO_BUILD_JOBS=%s\nNEXTEST_TEST_THREADS=%s\nGANDR_GATE_SLOT=runner\n' "$jobs" "$jobs" >> "$GITHUB_ENV"
+          echo "the job takes $jobs of the host's $cores cores: its ${#runners[@]} runners take half the host"
       - name: git checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
