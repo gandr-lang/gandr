@@ -388,6 +388,7 @@ fn constant_placeholder() -> ConstantIndex
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -402,6 +403,9 @@ pub struct TableContent
     payloads: Vec<(Place, Place)>,
     /// The forward and function flows, in the order of their nodes' places.
     directed: Vec<(Place, DirectedContent)>,
+    /// The native path at each `ua` statement, product of paths and fill, in
+    /// the order of its node's place.
+    natives: Vec<(Place, Place)>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
@@ -409,14 +413,16 @@ pub struct TableContent
     roots: Vec<TablePlace>,
 }
 
-/// The rows records, the handlers, the reflexivities, the payloads and the
-/// directed flows of a [`TableContent`], each in the order of its key.
+/// The rows records, the handlers, the reflexivities, the payloads, the
+/// directed flows and the native paths of a [`TableContent`], each in the
+/// order of its key.
 pub type TableEntries = (
     Vec<RowContent>,
     Vec<(Place, HandledContent)>,
     Vec<(Place, ReflexivityContent)>,
     Vec<(Place, Place)>,
     Vec<(Place, DirectedContent)>,
+    Vec<(Place, Place)>,
 );
 
 impl TableContent
@@ -426,7 +432,7 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled, reflexivities, payloads, directed): TableEntries,
+        (rows, handled, reflexivities, payloads, directed, natives): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
@@ -436,6 +442,7 @@ impl TableContent
             reflexivities,
             payloads,
             directed,
+            natives,
             outside,
             roots,
         }
@@ -487,6 +494,16 @@ impl TableContent
         &self.directed
     }
 
+    /// The native path at each `ua` statement, product of paths and fill, in
+    /// the order of its node's place.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn natives(&self) -> &[(Place, Place)]
+    {
+        &self.natives
+    }
+
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds, beside the place of each such node in it.
     ///
@@ -521,6 +538,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -539,6 +557,7 @@ impl TableContent
             && tabled.reflexivities().is_empty()
             && tabled.payloads().is_empty()
             && tabled.directed().is_empty()
+            && tabled.natives().is_empty()
         {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
@@ -634,6 +653,14 @@ impl TableContent
                 },
             }));
         }
+        let mut natives = Vec::with_capacity(tabled.natives().len());
+        for (&at, &path) in tabled.natives() {
+            let Some(at) = placing.key(ArenaNode::Value(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            natives.push((at, placing.place(ArenaNode::Value(path))));
+        }
         let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
@@ -642,6 +669,7 @@ impl TableContent
             reflexivities,
             payloads,
             directed,
+            natives,
             outside,
             roots,
         };
@@ -668,6 +696,8 @@ impl TableContent
         content.payloads.dedup();
         content.directed.sort_by(|left, right| left.0.cmp(&right.0));
         content.directed.dedup();
+        content.natives.sort_by(|left, right| left.0.cmp(&right.0));
+        content.natives.dedup();
         Maybe::Present(content)
     }
 
@@ -722,6 +752,10 @@ impl TableContent
                 DirectedContent::Function(ref mut classifier) => visit(classifier),
             }
         }
+        for &mut (ref mut at, ref mut path) in &mut self.natives {
+            visit(at);
+            visit(path);
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -749,6 +783,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -840,25 +875,31 @@ impl TableContent
                 },
             }));
         }
+        let mut natives = Vec::with_capacity(self.natives.len());
+        for &(ref at, ref path) in &self.natives {
+            natives.push((value_of(seat.node(at)?)?, value_of(seat.node(path)?)?));
+        }
         Ok((
             Rows::from_records(records),
             handled,
             reflexivities,
             payloads,
             directed,
+            natives,
         ))
     }
 }
 
-/// The rows records, the handlers, the reflexivities, the payloads and the
-/// directed flows that a seat of a [`TableContent`] builds in an edited
-/// arena.
+/// The rows records, the handlers, the reflexivities, the payloads, the
+/// directed flows and the native paths that a seat of a [`TableContent`]
+/// builds in an edited arena.
 pub type SeatedTables = (
     Rows,
     Vec<(ComputationId, Handled)>,
     Vec<(ValueId, Reflexivity)>,
     Vec<(ComputationId, ValueTypeId)>,
     Vec<(ValueId, Directed)>,
+    Vec<(ValueId, ValueId)>,
 );
 
 /// Where a node of a report stands.
