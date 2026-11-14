@@ -24,6 +24,7 @@ members = [
   "crates/runtime-stencils",
   "crates/storage-artifact",
   "crates/storage-chunker",
+  "crates/storage-io",
   "crates/storage-records",
   "crates/storage-schema",
   "crates/storage-store",

@@ -1,0 +1,27 @@
+[package]
+name = "gandr-storage-io"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The IO layer of the storage tier: one io_uring for each worker, on the kernel's own system calls, with no C library"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "io-uring", "storage"]
+categories = ["filesystem", "os::linux-apis"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own module, so a witness path
+# reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The crate issues its system calls itself; it links no C library of its
+# own. The pinned anodized facade supplies the specification attribute.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

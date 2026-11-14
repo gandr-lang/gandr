@@ -1537,6 +1537,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-storage-io"
+version = "0.0.0"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
 name = "gandr-storage-records"
 version = "0.0.0"
 dependencies = [

@@ -85,8 +85,9 @@ table() {
     --no-prepend-enum-name \
     --default-enum-style consts \
     --formatter none \
-    --allowlist-type 'io_uring_params|io_sqring_offsets|io_cqring_offsets|io_uring_sqe|io_uring_cqe|io_uring_op' \
+    --allowlist-type 'io_uring_params|io_sqring_offsets|io_cqring_offsets|io_uring_sqe|io_uring_cqe|io_uring_op|io_uring_sqe_flags_bit' \
     --allowlist-var 'IORING_.*|IOSQE_.*' \
+    --with-derive-custom-struct 'io_uring_params|io_sqring_offsets|io_cqring_offsets=Default' \
     --opaque-type 'io_uring_sqe__bindgen_ty_6' \
     -- -I"$cache/headers/include" > "$work/bindings.rs"
   rustfmt --edition 2024 --config-path "$(git rev-parse --show-toplevel)/rustfmt.toml" "$work/bindings.rs"

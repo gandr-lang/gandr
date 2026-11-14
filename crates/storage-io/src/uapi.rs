@@ -267,6 +267,14 @@ pub struct io_uring_sqe__bindgen_ty_6__bindgen_ty_2
     pub attr_ptr: __u64,
     pub attr_type_mask: __u64,
 }
+pub const IOSQE_FIXED_FILE_BIT: io_uring_sqe_flags_bit = 0;
+pub const IOSQE_IO_DRAIN_BIT: io_uring_sqe_flags_bit = 1;
+pub const IOSQE_IO_LINK_BIT: io_uring_sqe_flags_bit = 2;
+pub const IOSQE_IO_HARDLINK_BIT: io_uring_sqe_flags_bit = 3;
+pub const IOSQE_ASYNC_BIT: io_uring_sqe_flags_bit = 4;
+pub const IOSQE_BUFFER_SELECT_BIT: io_uring_sqe_flags_bit = 5;
+pub const IOSQE_CQE_SKIP_SUCCESS_BIT: io_uring_sqe_flags_bit = 6;
+pub type io_uring_sqe_flags_bit = ::core::ffi::c_uint;
 pub const IORING_OP_NOP: io_uring_op = 0;
 pub const IORING_OP_READV: io_uring_op = 1;
 pub const IORING_OP_WRITEV: io_uring_op = 2;
@@ -344,7 +352,7 @@ pub struct io_uring_cqe
     pub big_cqe: [__u64; 0],
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct io_sqring_offsets
 {
     pub head: __u32,
@@ -358,7 +366,7 @@ pub struct io_sqring_offsets
     pub user_addr: __u64,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct io_cqring_offsets
 {
     pub head: __u32,
@@ -372,7 +380,7 @@ pub struct io_cqring_offsets
     pub user_addr: __u64,
 }
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct io_uring_params
 {
     pub sq_entries: __u32,
