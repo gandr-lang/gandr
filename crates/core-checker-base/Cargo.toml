@@ -32,14 +32,13 @@ path = "tests/lib.rs"
 # endpoint's session type is related to another through the session crate's
 # one relation engine. A hole a call nominates for an omitted implicit is a
 # metavariable of the unifier's metacontext, solved by its solver. The pinned
-# anodized facade supplies the executable specifications. A module run forks
-# its independent declarations through the fork crate's trait. The access
-# rules add and compare uses in the ordered-algebras crate's usage semiring.
+# anodized facade supplies the executable specifications. The access rules
+# add and compare uses in the ordered-algebras crate's usage semiring.
 # Nothing here names a surface crate: names, spans and syntax stay above the
 # core. `hotpath` profiles checking for the benchmark report.
 [dependencies]
 anodized.workspace = true
-gandr-core-fork.workspace = true
+gandr-core-fork = { workspace = true, optional = true }
 gandr-core-nbe.workspace = true
 gandr-core-session.workspace = true
 gandr-core-term.workspace = true
@@ -78,7 +77,7 @@ hotpath = ["dep:hotpath", "hotpath/hotpath"]
 # buffer of steps a tracer lends the context, which the trace layer folds; its
 # records read the clock type of the fork crate's activity ring. Off, the
 # context holds no tally and no buffer, and a consult counts nothing.
-instrument = ["gandr-core-fork/instrument"]
+instrument = ["dep:gandr-core-fork", "gandr-core-fork/instrument"]
 unfolding-probe = ["gandr-core-nbe/unfolding-probe"]
 
 [lints]
