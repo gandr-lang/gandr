@@ -23,6 +23,7 @@ Kernel artifacts on the authenticated record plane and the content-addressed val
 ## References
 
 - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: Michael Rainey, Michael H. Borkowski, Michael Vollmer, Chaitanya S. Koparkar, Mikah Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688); [mechanization artifact, doi:10.5281/zenodo.20315616](https://doi.org/10.5281/zenodo.20315616) — the CAM a keyed artifact instantiates, and the token-bound lemmas whose scope the crate root states.
+- `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: the storage programme (§ storage-programme-gluing) — a record names its bytes and never its position, so a record under its value leaf's identity stays where it is across an insertion.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: the integrity design (§ two walls) — a pointer proves which bytes, so the value-plane codec checks the stream's shape alone and the kernel's decoder decides the bytes.
 
 ## Provided features
