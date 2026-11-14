@@ -9389,7 +9389,7 @@ const FORKED_SIBLINGS: usize = 2;
 /// The fewest goals a check expands before it forks a frame's sibling goals.
 /// A check that expanded fewer is small, and its siblings cost less to check
 /// on the calling thread than a part costs to fork and to join.
-const FORKED_AFTER: u64 = 256;
+const FORKED_AFTER: u64 = u64::MAX;
 
 /// The fork through which the sibling goals of `frame` check apart, if the
 /// check forks them: the check holds a fork of more than one worker, the frame
