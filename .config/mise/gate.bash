@@ -328,7 +328,7 @@ gate_hosted() {
   gate_tokens_pid=$gate_tokens_PID
   gate_tokens_in=${gate_tokens[1]}
   gate_tokens_out=${gate_tokens[0]}
-  if IFS= read -r -t 20 fifo <&"$gate_tokens_out" && [[ -p $fifo ]]; then
+  if IFS= read -r -t 20 fifo <&"$gate_tokens_out" 2> /dev/null && [[ -p $fifo ]]; then
     export MAKEFLAGS="-j$1 --jobserver-auth=fifo:$fifo"
     gate_jobs="the host's counter's"
     return 0
@@ -339,10 +339,14 @@ gate_hosted() {
 }
 
 # Ends the hold of `gandr tokens` on the hub: its input closes, so it exits,
-# and the gate waits for it.
+# and the gate waits for it. A coprocess that bash reaped has its ends closed
+# and its names unset already, and the numbers may name other files by now, so
+# the ends close only while the names stand. The `exec` carries no other
+# redirection, since an `exec` keeps each redirection for the rest of the
+# shell.
 gate_unhold() {
   [[ -n ${gate_tokens_pid:-} ]] || return 0
-  exec {gate_tokens_in}>&- {gate_tokens_out}<&- 2> /dev/null || :
+  if [[ -v 'gate_tokens[1]' ]]; then exec {gate_tokens_in}>&- {gate_tokens_out}<&-; fi
   wait "$gate_tokens_pid" 2> /dev/null || :
   gate_tokens_pid=
 }
