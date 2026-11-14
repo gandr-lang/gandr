@@ -57,6 +57,26 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
     assert_eq!(next.items()[0].key().as_ref(), b"fresh");
 }
 #[test]
+fn a_module_with_a_theory_offers_its_theory_code_7395()
+{
+    let items = SurfaceItems::new(grammar());
+    let theory = items
+        .items(&Revision::from(include_str!(
+            "../../../corpus/model/control/module-effect.gandr"
+        )))
+        .expect("a module with a theory is offered");
+    let keys: Vec<&[u8]> = theory
+        .items()
+        .iter()
+        .map(|item| item.key().as_ref())
+        .collect();
+    assert_eq!(
+        keys,
+        [&b"Theory"[..], b"Eff", b"tallied", b"tallyHandled"],
+        "a theory block adds the code that the lowering declares for it, a name the text does not spell"
+    );
+}
+#[test]
 fn revision_faults_retain_fields_and_sink_refusals()
 {
     let span = ByteSpan::new(ByteOffset::from(17_usize), ByteOffset::from(31_usize))

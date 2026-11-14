@@ -30,6 +30,7 @@ use gandr_surface_dispatcher::item_program;
 use gandr_surface_dispatcher::lower_source;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::THEORY_CODE;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -263,7 +264,9 @@ impl ItemSource for SurfaceItems
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the revision parsed and lowered once by the dispatcher's
-    ///   [`lower_source`], and the module's [`item_program`].
+    ///   [`lower_source`], and the module's [`item_program`]. Each item's name
+    ///   occurs in the revision's text, or it is [`THEORY_CODE`], the code that
+    ///   the lowering declares for a `theory` block of the revision.
     /// - fails: [`RevisionFault::Faulted`] when the parser cannot commit its
     ///   tree; [`RevisionFault::Refused`] when the lowering refuses the
     ///   revision as a whole; [`RevisionFault::Unordered`] as [`item_program`].
@@ -273,13 +276,16 @@ impl ItemSource for SurfaceItems
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — modules with distinct names and a top-level
+    /// - hypothesis: L3 — modules with distinct names, a theory and a top-level
     ///   expression refused whole; exact admitted keys and refusal class/span
     ///   distinguish stale revision input, invented names and misplaced
     ///   diagnostics. The predicate checks source membership and span validity
     ///   without replaying parse or lowering; [`item_program`] specifies exact
-    ///   lowered-item correspondence.
+    ///   lowered-item correspondence. A sweep of the corpus and `library/std`
+    ///   finds no other name that the lowering declares and the text does not
+    ///   spell.
     /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
+    /// - witness: `tests::items::a_module_with_a_theory_offers_its_theory_code_7395`
     #[spec(
         ensures: |ret| match ret {
     Ok(ref result) => {
@@ -287,8 +293,11 @@ impl ItemSource for SurfaceItems
             .items()
             .iter()
             .all(|item| {
-                core::str::from_utf8(item.key().name().as_ref())
-                    .is_ok_and(|name| !name.is_empty() && revision.0.contains(name))
+                core::str::from_utf8(item.key().name().as_ref()).is_ok_and(|name| {
+                    !name.is_empty()
+                        && (revision.0.contains(name)
+                            || (name == THEORY_CODE && revision.0.contains("theory")))
+                })
             })
     }
     Err(RevisionFault::Refused { span: Maybe::Present(span), .. }) => {

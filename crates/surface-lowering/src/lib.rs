@@ -542,6 +542,7 @@ pub use crate::module::SealedComponent;
 pub use crate::module::Sealing;
 pub use crate::module::Stratum;
 pub use crate::module::StructureIndex;
+pub use crate::module::THEORY_CODE;
 pub use crate::module::ValueComponent;
 pub use crate::module::labelled;
 pub use crate::module::manifest_type;
