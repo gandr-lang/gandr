@@ -31,8 +31,9 @@ use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::ContentName;
 use gandr_storage_artifact::HEADER_KEY;
 use gandr_storage_artifact::MANIFEST_DOMAIN;
+use gandr_storage_artifact::Naming;
 use gandr_storage_artifact::ORDER_KEY;
-use gandr_storage_artifact::PLACE_LEN;
+use gandr_storage_artifact::RECORD_KEY_LEN;
 use gandr_storage_artifact::RecordKey;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
@@ -253,8 +254,7 @@ fn long_artifact(count: Count) -> EncodedArtifact
 #[spec(ensures: |ret| {
         let mut offset = ret.header().as_ref().len();
         artifact.as_ref().starts_with(ret.header().as_ref())
-            && ret.records().iter().all(|record| {
-                let segment = record.segment();
+            && ret.segments().all(|segment| {
                 let end = offset.saturating_add(segment.as_ref().len());
                 let agrees = artifact.as_ref().get(offset .. end) == Some(segment.as_ref());
                 offset = end;
@@ -290,7 +290,7 @@ fn records_of(artifact: &EncodedArtifact) -> ArtifactRecordSet
 /// - witness: `tests::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
 #[spec(ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
         && usize::try_from(u64::from(ret.0.record_count())).ok()
-            == Some(set.records().len().saturating_add(1))
+            == Some(set.records().len().saturating_add(2))
         && ret.1.load(ret.0.root_node()).is_ok())]
 fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
 {
@@ -341,6 +341,7 @@ fn stored_as_named(records: &[RecordRef<'_>]) -> (ArtifactManifest, InMemoryBloc
         params.boundary_commitment(),
         tree.root().record_count(),
         tree.root_node_hash(),
+        Naming::Bytes,
     );
 
     (manifest, store)
@@ -473,7 +474,7 @@ fn the_same_artifact_mints_the_same_identity()
 fn a_manifest_names_its_version_and_spells_its_identity_bytes()
 {
     let (manifest, _store) = committed(&records_of(&shared_artifact()));
-    assert_eq!(ArtifactManifestVersion::V1, manifest.manifest_version());
+    assert_eq!(ArtifactManifestVersion::V2, manifest.manifest_version());
     let identity = manifest.identity();
     assert_eq!(ARTIFACT_IDENTITY_LEN, identity.as_ref().len());
     let mut spelled = String::new();
@@ -505,14 +506,16 @@ fn any_perturbation_changes_the_identity()
         b"alpha", b"beta",
     ]));
     let (swapped, _swapped_store) = committed(&set_of(header, [b"beta", b"alpha"]));
-    let (renamed, _renamed_store) = committed(
-        &set_of(header, [b"alpha", b"beta"])
+    let named_with = |second: u8| {
+        set_of(header, [b"alpha", b"beta"])
             .named(&[
                 Maybe::Present(ContentName::from([1; 32])),
-                Maybe::Absent(unnamed::Absent::Bytes),
+                Maybe::Present(ContentName::from([second; 32])),
             ])
-            .expect("one name per place"),
-    );
+            .expect("one name per place")
+    };
+    let (named, _named_store) = committed(&named_with(2));
+    let (renamed, _renamed_store) = committed(&named_with(3));
     assert_ne!(
         base.identity(),
         swapped.identity(),
@@ -520,8 +523,13 @@ fn any_perturbation_changes_the_identity()
     );
     assert_ne!(
         base.identity(),
+        named.identity(),
+        "names beside the places move the identity"
+    );
+    assert_ne!(
+        named.identity(),
         renamed.identity(),
-        "a name beside a place moves the identity"
+        "a changed name moves the identity"
     );
     assert_ne!(
         base.identity(),
@@ -570,19 +578,18 @@ fn an_insertion_leaves_every_record_it_does_not_rewrite_7340()
 }
 
 /// A set named by its writer stores and reads back with each name at its
-/// place, and one name too few is refused where the counts part.
+/// place, under a manifest that says it is named. A manifest that says the
+/// other form is refused, and so are one name too few and an absent name.
 #[test]
 fn a_named_set_reads_back_with_its_names_7340()
 {
     let honest = records_of(&shared_artifact());
     let names: Vec<Maybe<ContentName, unnamed::Absent>> = (0_u8 .. 4)
-        .map(|index| match index {
-            2 => Maybe::Absent(unnamed::Absent::Unkeyed),
-            _ => Maybe::Present(ContentName::from([index; 32])),
-        })
+        .map(|index| Maybe::Present(ContentName::from([index; 32])))
         .collect();
     let named = honest.clone().named(&names).expect("one name per place");
     let (manifest, store) = committed(&named);
+    assert_eq!(Naming::Named, manifest.naming());
     let order = named.order_image();
     let refs = named.record_refs(&order);
     let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
@@ -592,12 +599,37 @@ fn a_named_set_reads_back_with_its_names_7340()
         manifest.read_under(&store, TreeParams::current()).is_ok(),
         "a named set reads back through the kernel's decoder"
     );
+    let unnamed_claim = ArtifactManifest::new(
+        FORMAT_VERSION,
+        manifest.commitment().clone(),
+        manifest.record_count(),
+        manifest.root_node(),
+        Naming::Bytes,
+    );
+    assert_eq!(
+        Err(ArtifactError::NamingMismatch {
+            manifest: Naming::Bytes,
+        }),
+        unnamed_claim.read_under(&store, TreeParams::current()),
+        "a manifest that says the other form is refused"
+    );
     assert_eq!(
         Err(ArtifactError::Misnamed {
             place: RecordIndex::from(3_usize)
         }),
-        honest.named(names.get(.. 3).expect("three names")),
+        honest.clone().named(names.get(.. 3).expect("three names")),
         "one name too few is refused at the place without one"
+    );
+    let mut unkeyed = names;
+    if let Some(name) = unkeyed.get_mut(2) {
+        *name = Maybe::Absent(unnamed::Absent::Unkeyed);
+    }
+    assert_eq!(
+        Err(ArtifactError::Misnamed {
+            place: RecordIndex::from(2_usize)
+        }),
+        honest.named(&unkeyed),
+        "a place the kernel gives no key is refused at that place"
     );
 }
 
@@ -656,6 +688,7 @@ fn a_foreign_profile_or_format_is_refused_before_any_load()
         manifest.commitment().clone(),
         manifest.record_count(),
         manifest.root_node(),
+        manifest.naming(),
     );
     assert_eq!(
         Err(ArtifactError::UnsupportedKernelFormat {
@@ -699,6 +732,7 @@ fn a_manifest_naming_another_record_count_is_refused()
         manifest.commitment().clone(),
         RecordCount(u64::from(manifest.record_count()).saturating_add(1)),
         manifest.root_node(),
+        manifest.naming(),
     );
     assert_eq!(
         Err(ArtifactError::TreeMismatch),
@@ -780,6 +814,10 @@ fn a_stored_tree_with_misplaced_keys_is_refused()
     if let Some(stored) = cut_short.get_mut(1) {
         *stored = RecordRef::new(ORDER_KEY, short);
     }
+    let mut unformed: Vec<RecordRef<'_>> = refs.clone();
+    if let Some(stored) = unformed.get_mut(1) {
+        *stored = RecordRef::new(ORDER_KEY, &[0x07]);
+    }
     for (records, expected, what) in [
         (
             vec![
@@ -813,6 +851,13 @@ fn a_stored_tree_with_misplaced_keys_is_refused()
             "a record under another segment's digest is refused",
         ),
         (
+            unformed,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::ZERO,
+            },
+            "an order that opens with no form is refused at place zero",
+        ),
+        (
             cut_short,
             ArtifactError::MalformedOrder {
                 place: RecordIndex::from(place_count.saturating_sub(1)),
@@ -836,7 +881,11 @@ fn a_stored_tree_with_misplaced_keys_is_refused()
     ] {
         assert_eq!(Err(expected), refused(&records), "{what}");
     }
-    assert_eq!(order.as_ref().len(), place_count.saturating_mul(PLACE_LEN));
+    assert_eq!(
+        order.as_ref().len(),
+        place_count.saturating_mul(RECORD_KEY_LEN).saturating_add(1),
+        "an order of bytes alone holds its form and one key per place"
+    );
 }
 
 #[test]
@@ -1076,40 +1125,46 @@ fn an_artifact_commits_and_reads_back_to_the_image_the_kernel_decodes()
     }
 }
 
-/// A set whose places carry names, no names and unkeyed entries reads back
-/// off the value plane whole, and is written again as the stream it was read
-/// from.
+/// A named set reads back off the value plane whole, and so does an empty
+/// named set, whose form no place carries. Each is written again as the
+/// stream it was read from.
 #[test]
 fn a_named_set_reads_back_off_the_value_plane_7340()
 {
     let honest = records_of(&shared_artifact());
-    let set = honest
+    let named = honest
         .named(&[
             Maybe::Present(ContentName::from([0xA5; 32])),
-            Maybe::Absent(unnamed::Absent::Unkeyed),
-            Maybe::Absent(unnamed::Absent::Bytes),
+            Maybe::Present(ContentName::from([0x5A; 32])),
+            Maybe::Present(ContentName::from([0xA5; 32])),
             Maybe::Present(ContentName::from(core::array::from_fn(|index| {
                 u8::try_from(index).unwrap_or(u8::MAX)
             }))),
         ])
         .expect("one name per place");
-    for params in cuts() {
-        let profile = value_profile(params);
-        let mut store = InMemoryChunkStore::new();
-        let manifest = cam_commit(&mut store, &profile, &set).expect("the set commits");
-        let back: ArtifactRecordSet =
-            cam_deref(&store, manifest.root()).expect("the set reads back");
-        assert_eq!(
-            back, set,
-            "under {params:?}, every name reads back at its place"
-        );
-        assert_eq!(
-            cam_commit(&mut store, &profile, &back)
-                .expect("the set commits again")
-                .root(),
-            manifest.root(),
-            "under {params:?}, the set read back is written as the stream it was read from"
-        );
+    let empty = ArtifactRecordSet::from_segments(SegmentBytes::from(b"h".as_slice()), [])
+        .named(&[])
+        .expect("no place, no name");
+    for (set, what) in [(named, "a named set"), (empty, "an empty named set")] {
+        assert_eq!(Naming::Named, set.naming(), "{what} is named");
+        for params in cuts() {
+            let profile = value_profile(params);
+            let mut store = InMemoryChunkStore::new();
+            let manifest = cam_commit(&mut store, &profile, &set).expect("the set commits");
+            let back: ArtifactRecordSet =
+                cam_deref(&store, manifest.root()).expect("the set reads back");
+            assert_eq!(
+                back, set,
+                "under {params:?}, {what} reads back with every name at its place"
+            );
+            assert_eq!(
+                cam_commit(&mut store, &profile, &back)
+                    .expect("the set commits again")
+                    .root(),
+                manifest.root(),
+                "under {params:?}, {what} is written as the stream it was read from"
+            );
+        }
     }
 }
 

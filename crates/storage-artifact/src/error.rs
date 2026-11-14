@@ -8,6 +8,8 @@ use gandr_kernel_term::FormatVersion;
 use gandr_storage_records::RecordIndex;
 use gandr_storage_records::RecordTreeError;
 
+use crate::record::Naming;
+
 /// The field of a manifest image a refusal names, in image order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ManifestField
@@ -26,6 +28,8 @@ pub enum ManifestField
     RecordCount,
     /// The root node's identity.
     RootNode,
+    /// The form of the artifact's names.
+    Naming,
 }
 
 impl fmt::Display for ManifestField
@@ -44,7 +48,7 @@ impl fmt::Display for ManifestField
     /// Propagates the formatter's write failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 on all seven fields observes pairwise distinct names
+    /// - hypothesis: L3 on all eight fields observes pairwise distinct names
     ///   and exact first-write refusal. It distinguishes collapsed fields and
     ///   swallowed errors without pinning diagnostic wording or exercising
     ///   alternate formatter modes.
@@ -63,6 +67,7 @@ impl fmt::Display for ManifestField
             Self::Commitment => "the boundary commitment",
             Self::RecordCount => "the record count",
             Self::RootNode => "the root node identity",
+            Self::Naming => "the naming",
         })
     }
 }
@@ -89,8 +94,8 @@ pub enum ArtifactError
         refusal: RecordTreeError,
     },
 
-    /// The order record holds a place this build does not read: bytes past
-    /// the last whole place, or a tag that no place carries.
+    /// The order record holds bytes this build does not read: an opening byte
+    /// that names no form, or bytes past the last whole place.
     MalformedOrder
     {
         /// The first place refused, in artifact order.
@@ -111,7 +116,8 @@ pub enum ArtifactError
         position: RecordIndex,
     },
 
-    /// The names a caller gives differ in number from the places of the set.
+    /// The names a caller gives differ in number from the places of the set,
+    /// or leave a place without a name.
     Misnamed
     {
         /// The first place without a name, or the first name past the last
@@ -120,7 +126,8 @@ pub enum ArtifactError
     },
 
     /// A manifest image's field holds a value this build does not read: a
-    /// foreign domain or an unknown manifest version.
+    /// foreign domain, an unknown manifest version, or a naming byte that
+    /// names no form.
     MalformedManifest
     {
         /// The field refused.
@@ -152,6 +159,14 @@ pub enum ArtifactError
     /// The records a stored root reaches do not rebuild the tree the manifest
     /// names.
     TreeMismatch,
+
+    /// The manifest names one form of names, and the stored order opens with
+    /// the other.
+    NamingMismatch
+    {
+        /// The form the manifest names.
+        manifest: Naming,
+    },
 
     /// A stored record sits under a key other than the one its position or
     /// its bytes require: the header first, under the empty key, then the
@@ -217,7 +232,7 @@ impl fmt::Display for ArtifactError
     /// Propagates the formatter's write failure.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 on one representative of all fourteen variants observes
+    /// - hypothesis: L3 on one representative of all fifteen variants observes
     ///   complete payload renderings, distinct messages and first-write sink
     ///   refusal. Indices reach the usize ceiling; the matrix distinguishes
     ///   lost or narrowed payloads, collapsed variants and swallowed errors. It
@@ -253,7 +268,7 @@ impl fmt::Display for ArtifactError
             Self::Misnamed { place } => {
                 write!(
                     f,
-                    "the names and the places of the set differ in number at place {place}"
+                    "the names a caller gives stop matching the places of the set at place {place}"
                 )
             },
             Self::MalformedManifest { field } => {
@@ -263,7 +278,7 @@ impl fmt::Display for ArtifactError
                 write!(f, "a manifest image ends inside {field}")
             },
             Self::TrailingManifestBytes => {
-                f.write_str("a manifest image continues past its root node identity")
+                f.write_str("a manifest image continues past its naming")
             },
             Self::UnsupportedKernelFormat { found } => {
                 write!(
@@ -276,6 +291,16 @@ impl fmt::Display for ArtifactError
             },
             Self::TreeMismatch => {
                 f.write_str("the stored records do not rebuild the tree the manifest names")
+            },
+            Self::NamingMismatch { manifest } => {
+                write!(
+                    f,
+                    "the manifest names an artifact {}, and its stored order opens with the other form",
+                    match manifest {
+                        Naming::Named => "whose places carry names",
+                        Naming::Bytes => "cut from bytes alone",
+                    }
+                )
             },
             Self::MisplacedRecord { position } => {
                 write!(
@@ -311,6 +336,7 @@ mod tests
 
     use super::ArtifactError;
     use super::ManifestField;
+    use crate::record::Naming;
 
     /// A sink that refuses the first formatted write.
     #[derive(Debug)]
@@ -373,7 +399,7 @@ mod tests
         let format_text = found.to_string();
         let malformed_field = ManifestField::Commitment.to_string();
         let truncated_field = ManifestField::RootNode.to_string();
-        let cases: [(ArtifactError, &[&str]); 14] = [
+        let cases: [(ArtifactError, &[&str]); 15] = [
             (ArtifactError::Kernel { refusal: kernel }, &[&kernel_text]),
             (ArtifactError::Records { refusal: records }, &[
                 &records_text,
@@ -406,6 +432,12 @@ mod tests
             ]),
             (ArtifactError::IncompatibleProfile, &[]),
             (ArtifactError::TreeMismatch, &[]),
+            (
+                ArtifactError::NamingMismatch {
+                    manifest: Naming::Bytes,
+                },
+                &["bytes alone"],
+            ),
             (ArtifactError::MisplacedRecord { position: first }, &[
                 &first_text,
             ]),
@@ -441,6 +473,7 @@ mod tests
             ManifestField::Commitment,
             ManifestField::RecordCount,
             ManifestField::RootNode,
+            ManifestField::Naming,
         ];
         let rendered = fields.map(|field| field.to_string());
         for (index, field) in fields.into_iter().enumerate() {

@@ -4,12 +4,13 @@
 //! # The tokens
 //!
 //! ```text
-//! open 0x01                 the artifact
+//! open 0x01 or 0x04         the artifact: 0x04 when its places carry names
 //!   bytes                   the header
 //!   word                    the number of places, n
-//!   open 0x02, 0x04 or 0x05 n opens: place k's constructor holds place k − 1's
+//!   open 0x02               n opens: place k's constructor holds place k − 1's
 //!     …
-//!     word × 4              0x04 only: place 1's content name, little-endian
+//!     word × 4              under 0x04 only: place 1's content name,
+//!                           little-endian
 //!     bytes                 the segment at place 1
 //!   close
 //!   [word × 4,] bytes,      places 2 to n, each closing the constructor its
@@ -18,12 +19,12 @@
 //! ```
 //!
 //! The stream walks the order: one constructor per place, which holds the
-//! segment at that place. A place with a content name opens `0x04` and writes
-//! the name as four words before the segment. A place without one opens
-//! `0x02` when the set was cut from bytes alone, or `0x05` when the kernel
-//! computes no key for the entry. The tag `0x03` once opened a record past a
-//! hole in the admission indices. No stream writes it now, and a reader refuses
-//! it.
+//! segment at that place. The artifact's constructor gives the set's form once.
+//! Under `0x04` every place writes its content name as four words before its
+//! segment, and under `0x01` no place writes one. So no stream mixes the two
+//! forms, and a set with no place keeps its form. The tag `0x03` once opened a
+//! record past a hole in the admission indices. No stream writes it now, and a
+//! reader refuses it.
 //!
 //! Two places with equal bytes each write their segment, and a reader folds
 //! them into one record again. So any stream reads back as one set, and that
@@ -84,37 +85,33 @@ use super::ArtifactRecordSet;
 use super::CONTENT_NAME_LEN;
 use super::ContentName;
 use super::SegmentBytes;
-use super::unnamed;
 
-/// The tag an artifact opens with on the value plane.
+/// The tag a set without names opens with on the value plane.
 const ARTIFACT: u8 = 0x01_u8;
 
-/// The tag a place cut from bytes alone opens with.
+/// The tag each place opens with.
 const PLACE: u8 = 0x02_u8;
 
-/// The tag a place with a content name opens with; its first four payloads
-/// are the name's words.
-const NAMED_PLACE: u8 = 0x04_u8;
-
-/// The tag a place whose entry the kernel computes no key for opens with.
-const UNKEYED_PLACE: u8 = 0x05_u8;
+/// The tag a named set opens with on the value plane: each place's first four
+/// payloads are its name's words.
+const NAMED_ARTIFACT: u8 = 0x04_u8;
 
 /// The byte width of one word of a content name.
 const NAME_WORD_LEN: usize = 0x08_usize;
 
 impl CanonicalValue for ArtifactRecordSet
 {
-    /// The set as the module's tokens: the header, the place count, one open
-    /// per place, then each place's name words where it has a name and its
-    /// segment, each closing its constructor.
+    /// The set as the module's tokens: the form's tag, the header, the place
+    /// count, one open per place, then each place's name words when the set
+    /// is named and its segment, each closing its constructor.
     ///
     /// # Specification
     /// - requires: nothing; each place names a held record, as every set's
     ///   does.
     /// - ensures: one balanced value whose segments are the places' bytes in
     ///   the order's sequence, each place's constructor holding its
-    ///   predecessor's; a named place opens [`NAMED_PLACE`] and writes its name
-    ///   as four words.
+    ///   predecessor's; a named set opens [`NAMED_ARTIFACT`], and each of its
+    ///   places writes its name as four words.
     /// - provides: the producer half of the artifact's value-plane codec.
     /// - fails: the sink's refusals, propagated.
     /// - panics: none.
@@ -141,22 +138,26 @@ impl CanonicalValue for ArtifactRecordSet
     where
         Sink: TokenSink + ?Sized,
     {
-        sink.open(ConstructorTag::from(ARTIFACT))?;
+        sink.open(ConstructorTag::from(match self.names {
+            Maybe::Present(_) => NAMED_ARTIFACT,
+            Maybe::Absent(_) => ARTIFACT,
+        }))?;
         sink.bytes(TokenBytes::from(&*self.header))?;
         // A count widens to the word whole on every host whose addresses are
         // sixty-four bits or fewer; past that, the word's ceiling.
         sink.word(CanonicalWord::from(
             u64::try_from(self.places.len()).unwrap_or(u64::MAX),
         ))?;
-        for place in &self.places {
-            sink.open(ConstructorTag::from(match place.name {
-                Maybe::Present(_) => NAMED_PLACE,
-                Maybe::Absent(unnamed::Absent::Bytes) => PLACE,
-                Maybe::Absent(unnamed::Absent::Unkeyed) => UNKEYED_PLACE,
-            }))?;
+        for _place in &self.places {
+            sink.open(ConstructorTag::from(PLACE))?;
         }
-        for (place, segment) in self.places.iter().zip(self.segments()) {
-            if let Maybe::Present(name) = place.name {
+        let names = match self.names {
+            Maybe::Present(ref names) => names.as_ref(),
+            Maybe::Absent(_) => &[],
+        };
+        let mut names = names.iter();
+        for segment in self.segments() {
+            if let Some(name) = names.next() {
                 for word in name.0.as_chunks::<NAME_WORD_LEN>().0 {
                     sink.word(CanonicalWord::from(u64::from_le_bytes(*word)))?;
                 }
@@ -171,13 +172,13 @@ impl CanonicalValue for ArtifactRecordSet
     ///
     /// # Specification
     /// - requires: `reader` stands at an artifact's constructor.
-    /// - ensures: on success the header and the places the stream spells, each
-    ///   naming the record of its segment, and one record per distinct segment,
-    ///   strictly ascending by key.
+    /// - ensures: on success the header, the form and the places the stream
+    ///   spells, each place naming the record of its segment, and one record
+    ///   per distinct segment, strictly ascending by key.
     /// - provides: the consumer half of the artifact's value-plane codec; a
     ///   reader reassembles what it returns and decodes the image.
     /// - fails: [`ValueError::UnexpectedConstructor`] for a constructor other
-    ///   than the artifact's or a place's where one stands, and the reader's
+    ///   than an artifact's or a place's where one stands, and the reader's
     ///   refusals.
     /// - panics: none.
     ///
@@ -197,51 +198,45 @@ impl CanonicalValue for ArtifactRecordSet
     {
         let position = reader.position();
         let found = reader.read_tag()?;
-        if found != ConstructorTag::from(ARTIFACT) {
-            return Err(ValueError::UnexpectedConstructor { found, position });
+        let named = if found == ConstructorTag::from(NAMED_ARTIFACT) {
+            true
         }
+        else if found == ConstructorTag::from(ARTIFACT) {
+            false
+        }
+        else {
+            return Err(ValueError::UnexpectedConstructor { found, position });
+        };
         let header = <&[u8]>::from(reader.read_bytes()?);
         let count = u64::from(reader.read_word()?);
         // The count is the stream's claim, so it bounds the loop and never
         // reserves memory: a short stream is refused when it runs out.
-        let mut tags = Vec::new();
+        let mut opened = 0_usize;
         for _place in 0_u64 .. count {
             let position = reader.position();
             let found = reader.read_tag()?;
-            tags.push(if found == ConstructorTag::from(NAMED_PLACE) {
-                NAMED_PLACE
-            }
-            else if found == ConstructorTag::from(PLACE) {
-                PLACE
-            }
-            else if found == ConstructorTag::from(UNKEYED_PLACE) {
-                UNKEYED_PLACE
-            }
-            else {
+            if found != ConstructorTag::from(PLACE) {
                 return Err(ValueError::UnexpectedConstructor { found, position });
-            });
+            }
+            opened = opened.saturating_add(1);
         }
-        let mut names = Vec::with_capacity(tags.len());
-        let mut segments = Vec::with_capacity(tags.len());
-        for tag in tags {
-            names.push(match tag {
-                NAMED_PLACE => {
-                    let mut name = [0_u8; CONTENT_NAME_LEN];
-                    for word in name.as_chunks_mut::<NAME_WORD_LEN>().0 {
-                        *word = u64::from(reader.read_word()?).to_le_bytes();
-                    }
-                    Maybe::Present(ContentName(name))
-                },
-                UNKEYED_PLACE => Maybe::Absent(unnamed::Absent::Unkeyed),
-                _ => Maybe::Absent(unnamed::Absent::Bytes),
-            });
+        let mut names = Vec::with_capacity(if named { opened } else { 0_usize });
+        let mut segments = Vec::with_capacity(opened);
+        for _place in 0 .. opened {
+            if named {
+                let mut name = [0_u8; CONTENT_NAME_LEN];
+                for word in name.as_chunks_mut::<NAME_WORD_LEN>().0 {
+                    *word = u64::from(reader.read_word()?).to_le_bytes();
+                }
+                names.push(ContentName(name));
+            }
             segments.push(SegmentBytes(<&[u8]>::from(reader.read_bytes()?)));
             reader.read_close()?;
         }
         reader.read_close()?;
         let mut set = Self::gathered(SegmentBytes(header), segments);
-        for (place, name) in set.places.iter_mut().zip(names) {
-            place.name = name;
+        if named {
+            set.names = Maybe::Present(names.into_boxed_slice());
         }
 
         Ok(set)

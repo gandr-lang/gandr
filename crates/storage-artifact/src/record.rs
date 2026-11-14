@@ -13,7 +13,7 @@
 //! | Key | Value |
 //! | --- | ----- |
 //! | the empty key | the header: magic, version, minted-atom table, declaration count |
-//! | [`ORDER_KEY`], one zero byte | the order: [`PLACE_LEN`] bytes per declaration in admission order, and [`CONTENT_NAME_LEN`] more for each named one |
+//! | [`ORDER_KEY`], one zero byte | the order: the set's form, then [`RECORD_KEY_LEN`] bytes per declaration in admission order, and [`CONTENT_NAME_LEN`] more per declaration in a named set |
 //! | the digest of a segment, [`RECORD_KEY_LEN`] bytes | that declaration segment |
 //!
 //! A record's key is the digest of its own bytes under [`RECORD_DOMAIN`]. So
@@ -21,11 +21,12 @@
 //! artifacts that differ by one declaration share each record whose bytes the
 //! edit leaves, at any position. Two places with equal bytes share one record.
 //!
-//! The order is the one record that an insertion always rewrites. Each place
-//! holds a tag and the key of the record that stands there. A named place then
-//! holds the kernel's content key of the entry. The tag tells why a place has
-//! no name: the set was cut from bytes alone, or the kernel computes no key for
-//! the entry. A place without a name writes no name.
+//! The order is the one record that an insertion always rewrites. It opens
+//! with the set's form, [`Naming`]. Each place then holds the key of the record
+//! that stands there. In a named set, each place then holds the kernel's
+//! content key of its entry. A set never mixes the two forms. An admission
+//! whose artifact the store keeps names every place, and an export cut from
+//! bytes alone names none.
 //!
 //! The empty key sorts first. A shorter key sorts before each longer key that
 //! it leads, so the order's one byte sorts before every digest. The header and
@@ -40,9 +41,10 @@
 //! key stays.
 //!
 //! Executable record refinements bind each key to the digest of its bytes,
-//! require strictly increasing keys, and require each place to name a held
-//! record and each record to stand at a place. Raw header and segment bytes
-//! remain admissible; those refinements do not certify kernel validity.
+//! require strictly increasing keys, require each place to name a held record
+//! and each record to stand at a place, and require a named set to hold one
+//! name per place. Raw header and segment bytes remain admissible; those
+//! refinements do not certify kernel validity.
 //!
 //! **Choice.** A record's key is the digest of its own bytes, and the order is
 //! a record of its own. **Alternatives.** The admission index as the key moves
@@ -119,10 +121,6 @@ pub const RECORD_DOMAIN: &[u8] = b"gandr:storage-artifact:record:v1";
 /// The byte width of a content name: the kernel's content key of an entry.
 pub const CONTENT_NAME_LEN: usize = 0x20_usize;
 
-/// The byte width of one place of the order without a name: a tag and a
-/// record key. A named place writes its content name after them.
-pub const PLACE_LEN: usize = 0x21_usize;
-
 /// The key the header record is stored under: the empty key, which sorts
 /// first.
 pub const HEADER_KEY: &[u8] = b"";
@@ -131,17 +129,16 @@ pub const HEADER_KEY: &[u8] = b"";
 /// header's key and before every record key.
 pub const ORDER_KEY: &[u8] = b"\x00";
 
-/// The tag of a place that carries a content name.
-const NAMED: u8 = 0x01_u8;
+/// The tag the order of a named set opens with: each place then holds its
+/// record's key and the content name of its entry.
+pub(crate) const NAMED: u8 = 0x01_u8;
 
-/// The tag of a place cut from the artifact's bytes alone.
-const FROM_BYTES: u8 = 0x02_u8;
-
-/// The tag of a place whose entry the kernel computes no key for.
-const UNKEYED: u8 = 0x03_u8;
+/// The tag the order of a set cut from the artifact's bytes alone opens with:
+/// each place then holds its record's key alone.
+pub(crate) const FROM_BYTES: u8 = 0x02_u8;
 
 quenchant_shape::reason_enum! {
-    /// Why a place of the order carries no content name.
+    /// Why a place carries no content name.
     pub mod unnamed {
         /// The reason a place has no name.
         #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -149,8 +146,39 @@ quenchant_shape::reason_enum! {
             /// The set was cut from the artifact's bytes alone, and no writer
             /// named its places.
             Bytes,
-            /// The kernel computes no content key for the entry.
+            /// The kernel computes no content key for the entry. A named set
+            /// refuses such a place, so no stored artifact holds one.
             Unkeyed,
+        }
+    }
+}
+
+/// The form of an artifact's names. An artifact never mixes the two forms:
+/// every place carries the kernel's content key of its entry, or none does.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Naming
+{
+    /// Each place carries the kernel's content key of its entry: the form of
+    /// an admission whose artifact the store keeps.
+    Named,
+    /// No place carries a name: the form of an export cut from the
+    /// artifact's bytes alone.
+    Bytes,
+}
+
+impl From<Naming> for u8
+{
+    /// The tag that spells the form, in the order and in the manifest:
+    /// [`NAMED`] or [`FROM_BYTES`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(naming: Naming) -> Self
+    {
+        match naming {
+            Naming::Named => NAMED,
+            Naming::Bytes => FROM_BYTES,
         }
     }
 }
@@ -235,15 +263,12 @@ impl AsRef<[u8]> for ContentName
     }
 }
 
-/// One place of the order: the key of the record that stands there, and the
-/// kernel's name of the entry.
+/// One place of the order: the key of the record that stands there.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Place
 {
     /// The key of the record that stands at the place.
     record: RecordKey,
-    /// The kernel's content key of the entry, or why the place has none.
-    name: Maybe<ContentName, unnamed::Absent>,
     /// The position of that record in the key order of the set that holds
     /// the place, found once when the set is built.
     slot: RecordIndex,
@@ -260,17 +285,6 @@ impl Place
     pub const fn record(&self) -> RecordKey
     {
         self.record
-    }
-
-    /// Returns the kernel's content key of the entry, or why the place has
-    /// none.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub const fn name(&self) -> Maybe<ContentName, unnamed::Absent>
-    {
-        self.name
     }
 }
 
@@ -432,25 +446,28 @@ impl ArtifactRecord
     }
 }
 
-/// The record set a kernel artifact is: its header, the order of its places,
-/// and one record per distinct declaration segment, strictly ascending and
-/// unique by key.
+/// The record set a kernel artifact is.
+///
+/// It holds the header, the order of its places, the content name of each
+/// place or why the set names none, and one record per distinct declaration
+/// segment, strictly ascending and unique by key.
 ///
 /// # Specification
 /// - requires: nothing; header and segment bytes need not decode as a kernel
 ///   artifact.
 /// - ensures: each record binds its key to its bytes, keys are strictly
-///   increasing, each place names a held record, and each record stands at a
-///   place.
+///   increasing, each place names a held record, each record stands at a place,
+///   and a named set holds one name per place.
 /// - provides: canonical record ordering without certifying the payload.
 /// - fails: the refinement rejects miskeyed, reversed, duplicate, unheld and
-///   unplaced records.
+///   unplaced records, and names that differ in number from the places.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an empty set admits raw bytes; reversing two records,
-///   repeating one, changing a key, dropping a placed record and adding an
-///   unplaced one each violate a separate part of the refinement.
+///   repeating one, changing a key, dropping a placed record, adding an
+///   unplaced one and dropping a name each violate a separate part of the
+///   refinement.
 /// - witness: `record::tests::record_refinements_bind_keys_and_places`
 #[spec(maintains: bool::from(self.well_formed()))]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -460,6 +477,9 @@ pub struct ArtifactRecordSet
     header: Box<[u8]>,
     /// One place per declaration, in admission order.
     places: Vec<Place>,
+    /// The kernel's content key of the entry at each place, in the order of
+    /// the places, or why the set names none.
+    names: Maybe<Box<[ContentName]>, unnamed::Absent>,
     /// The declaration records, strictly ascending and unique by key.
     records: Vec<ArtifactRecord>,
 }
@@ -467,13 +487,15 @@ pub struct ArtifactRecordSet
 impl ArtifactRecordSet
 {
     /// Whether the records strictly ascend by key, each bound to its bytes,
-    /// and the places and the records name each other.
+    /// the places and the records name each other, and a named set holds one
+    /// name per place.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: holds exactly when each record's key sorts strictly before
     ///   the next record's, each record satisfies its own invariant, each place
-    ///   names a held record, and each record stands at a place.
+    ///   names a held record, each record stands at a place, and the names,
+    ///   when the set has them, are as many as the places.
     /// - provides: the record set's invariant, which a clause reads through
     ///   this bound.
     /// - panics: none.
@@ -481,14 +503,14 @@ impl ArtifactRecordSet
     ///   could only repeat its pass.
     ///
     /// # Clause cost
-    /// - bound: one key comparison and one digest per record, and one search
+    /// - bound: one key comparison and one digest per record, and one lookup
     ///   per place. No function's clause reads the set's invariant; only its
     ///   witness does.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an empty set holds; a reversed set, a repeated
-    ///   record, a miskeyed record, an unheld place and an unplaced record each
-    ///   fail.
+    ///   record, a miskeyed record, an unheld place, an unplaced record and a
+    ///   dropped name each fail.
     /// - witness: `record::tests::record_refinements_bind_keys_and_places`
     fn well_formed(&self) -> Holds
     {
@@ -505,17 +527,22 @@ impl ArtifactRecordSet
             }
             holds
         });
+        let named = match self.names {
+            Maybe::Present(ref names) => names.len() == self.places.len(),
+            Maybe::Absent(_) => true,
+        };
         Holds::from(
             self.records
                 .is_sorted_by(|lower, higher| lower.key < higher.key)
                 && self.records.iter().all(anodized::types::Spec::predicate)
                 && held
-                && placed.iter().all(|&seen| seen),
+                && placed.iter().all(|&seen| seen)
+                && named,
         )
     }
 
     /// The set that `header` and `segments` make, one place per segment in
-    /// the sequence given, each place unnamed for `name`.
+    /// the sequence given, the set unnamed for [`unnamed::Absent::Bytes`].
     ///
     /// # Specification
     /// - requires: nothing.
@@ -542,7 +569,6 @@ impl ArtifactRecordSet
             let record = ArtifactRecord::new(segment);
             places.push(Place {
                 record: record.key,
-                name: Maybe::Absent(unnamed::Absent::Bytes),
                 slot: RecordIndex::ZERO,
             });
             records.push(record);
@@ -559,6 +585,7 @@ impl ArtifactRecordSet
         Self {
             header: Box::from(header.0),
             places,
+            names: Maybe::Absent(unnamed::Absent::Bytes),
             records,
         }
     }
@@ -570,7 +597,7 @@ impl ArtifactRecordSet
     /// - requires: nothing; the bytes are arbitrary.
     /// - ensures: on success the header is the image up to the decoder's header
     ///   end, place `i` names the record of the bytes from the end before it to
-    ///   its own, every place is unnamed for [`unnamed::Absent::Bytes`], and
+    ///   its own, the set is unnamed for [`unnamed::Absent::Bytes`], and
     ///   [`ArtifactRecordSet::reassemble`] gives back exactly `image`.
     /// - provides: the commit path's only way in, so every set it builds was
     ///   decoded, budget-checked and delimited by the kernel first.
@@ -753,7 +780,7 @@ impl ArtifactRecordSet
     }
 
     /// Builds a set from a header and the declaration segments in their
-    /// order, each place unnamed for [`unnamed::Absent::Bytes`].
+    /// order, the set unnamed for [`unnamed::Absent::Bytes`].
     ///
     /// # Specification
     /// - requires: nothing; neither the header nor the segments are checked
@@ -785,27 +812,38 @@ impl ArtifactRecordSet
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success place `i` carries `names[i]`, and the header, the
-    ///   records and each place's record are as they were.
+    /// - ensures: on success the set is [`Naming::Named`] with `names[i]` at
+    ///   place `i`, and the header, the records and each place's record are as
+    ///   they were.
     /// - provides: the writer's way to put the kernel's content key of each
-    ///   entry beside its place.
-    /// - fails: [`ArtifactError::Misnamed`] naming the first place without a
-    ///   name, or the first name past the last place.
+    ///   entry beside its place. A kept artifact is named whole or not stored.
+    /// - fails: [`ArtifactError::Misnamed`] naming the first place past the
+    ///   names, the first name past the places, or the first place whose name
+    ///   is absent.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`ArtifactError::Misnamed`] — `names` and the places differ in number.
+    /// [`ArtifactError::Misnamed`] — `names` and the places differ in number,
+    /// or a place has no name.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a named set stored and read back holds each name at
-    ///   its place, and one name too few or too many is refused at the place
-    ///   where the two counts part.
+    ///   its place; one name too few or too many is refused at the place where
+    ///   the two counts part, and an absent name at its own place.
     /// - witness: `tests::artifact_contract::a_named_set_reads_back_with_its_names_7340`
+    /// - witness: `record::tests::names_go_beside_their_places_in_order`
     #[spec(
         captures: count = self.places.len(),
         ensures: |ret| match ret {
-            Ok(ref set) => set.places.iter().map(Place::name).eq(names.iter().copied()),
-            Err(ArtifactError::Misnamed { place }) => usize::from(place) == names.len().min(count),
+            Ok(ref set) => match set.names {
+                Maybe::Present(ref held) => held.iter().map(|&name| Maybe::Present(name)).eq(names.iter().copied()),
+                Maybe::Absent(_) => false,
+            },
+            Err(ArtifactError::Misnamed { place }) => usize::from(place) == if names.len() == count {
+                names.iter().position(|name| matches!(name, Maybe::Absent(_))).unwrap_or(count)
+            } else {
+                names.len().min(count)
+            },
             Err(_) => false,
         },
     )]
@@ -820,9 +858,18 @@ impl ArtifactRecordSet
                 place: RecordIndex::from(names.len().min(self.places.len())),
             });
         }
-        for (place, &name) in self.places.iter_mut().zip(names) {
-            place.name = name;
+        let mut held = Vec::with_capacity(names.len());
+        for (place, &name) in names.iter().enumerate() {
+            match name {
+                Maybe::Present(name) => held.push(name),
+                Maybe::Absent(_) => {
+                    return Err(ArtifactError::Misnamed {
+                        place: RecordIndex::from(place),
+                    });
+                },
+            }
         }
+        self.names = Maybe::Present(held.into_boxed_slice());
 
         Ok(self)
     }
@@ -841,9 +888,10 @@ impl ArtifactRecordSet
     /// - fails: [`ArtifactError::MisplacedRecord`] naming the first record, in
     ///   key order, whose key is not the one its position or its bytes require
     ///   (the empty set fails at position zero);
-    ///   [`ArtifactError::MalformedOrder`] naming the first place the order
-    ///   does not hold whole; [`ArtifactError::UnheldRecord`] naming the first
-    ///   place whose record the tree does not hold; and
+    ///   [`ArtifactError::MalformedOrder`] naming place zero for an order that
+    ///   opens with no form, and otherwise the first place the order does not
+    ///   hold whole; [`ArtifactError::UnheldRecord`] naming the first place
+    ///   whose record the tree does not hold; and
     ///   [`ArtifactError::UnplacedRecord`] naming the first record no place
     ///   names.
     /// - panics: none.
@@ -903,37 +951,49 @@ impl ArtifactRecordSet
             }
             records.push(kept);
         }
+        // The order opens with its form, then holds each place at the width
+        // the form gives: the record's key, and the name when the set has
+        // names.
         let order_value = order.value();
-        let mut order = order_value.as_ref();
-        let mut places = Vec::with_capacity(order.len().checked_div(PLACE_LEN).unwrap_or_default());
+        let (naming, mut order) = match order_value.as_ref().split_first() {
+            Some((&NAMED, rest)) => (Naming::Named, rest),
+            Some((&FROM_BYTES, rest)) => (Naming::Bytes, rest),
+            _ => {
+                return Err(ArtifactError::MalformedOrder {
+                    place: RecordIndex::ZERO,
+                });
+            },
+        };
+        let width = match naming {
+            Naming::Named => RECORD_KEY_LEN.saturating_add(CONTENT_NAME_LEN),
+            Naming::Bytes => RECORD_KEY_LEN,
+        };
+        let count = order.len().checked_div(width).unwrap_or_default();
+        let mut places = Vec::with_capacity(count);
+        let mut names = Vec::with_capacity(match naming {
+            Naming::Named => count,
+            Naming::Bytes => 0_usize,
+        });
         let mut placed = Vec::new();
         placed.resize(records.len(), false);
         while !order.is_empty() {
-            // A place: its tag, its record's key, then its name when the tag
-            // names one.
             let place = RecordIndex::from(places.len());
             let malformed = ArtifactError::MalformedOrder { place };
-            let Some((&tag, rest)) = order.split_first()
+            let Some((&record, rest)) = order.split_first_chunk::<RECORD_KEY_LEN>()
             else {
                 return Err(malformed);
             };
-            let Some((&record, rest)) = rest.split_first_chunk::<RECORD_KEY_LEN>()
-            else {
-                return Err(malformed);
-            };
-            let (name, rest) = match tag {
-                NAMED => {
+            order = match naming {
+                Naming::Named => {
                     let Some((&name, rest)) = rest.split_first_chunk::<CONTENT_NAME_LEN>()
                     else {
                         return Err(malformed);
                     };
-                    (Maybe::Present(ContentName(name)), rest)
+                    names.push(ContentName(name));
+                    rest
                 },
-                FROM_BYTES => (Maybe::Absent(unnamed::Absent::Bytes), rest),
-                UNKEYED => (Maybe::Absent(unnamed::Absent::Unkeyed), rest),
-                _ => return Err(malformed),
+                Naming::Bytes => rest,
             };
-            order = rest;
             let record = RecordKey(record);
             let slot = records
                 .binary_search_by_key(&record, |held| held.key)
@@ -943,7 +1003,6 @@ impl ArtifactRecordSet
             }
             places.push(Place {
                 record,
-                name,
                 slot: RecordIndex::from(slot),
             });
         }
@@ -955,6 +1014,10 @@ impl ArtifactRecordSet
         let set = Self {
             header: Box::from(header.value().as_ref()),
             places,
+            names: match naming {
+                Naming::Named => Maybe::Present(names.into_boxed_slice()),
+                Naming::Bytes => Maybe::Absent(unnamed::Absent::Bytes),
+            },
             records,
         };
 
@@ -994,6 +1057,34 @@ impl ArtifactRecordSet
         self.places.as_slice()
     }
 
+    /// Returns the kernel's content key of the entry at each place, in
+    /// admission order, or why the set names none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn names(&self) -> Maybe<&[ContentName], unnamed::Absent>
+    {
+        match self.names {
+            Maybe::Present(ref names) => Maybe::Present(names),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
+        }
+    }
+
+    /// Returns the form of the set's names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn naming(&self) -> Naming
+    {
+        match self.names {
+            Maybe::Present(_) => Naming::Named,
+            Maybe::Absent(_) => Naming::Bytes,
+        }
+    }
+
     /// Returns the segment at each place, in admission order.
     ///
     /// # Specification
@@ -1025,8 +1116,9 @@ impl ArtifactRecordSet
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`PLACE_LEN`] bytes per place, and [`CONTENT_NAME_LEN`] more
-    ///   for each named one, in admission order.
+    /// - ensures: the form's tag, then each place in admission order: its
+    ///   record's [`RECORD_KEY_LEN`] bytes, and the [`CONTENT_NAME_LEN`] bytes
+    ///   of its name when the set is [`Naming::Named`].
     /// - provides: the order's value for [`record_refs`](Self::record_refs).
     /// - fails: never.
     /// - panics: none.
@@ -1034,24 +1126,39 @@ impl ArtifactRecordSet
     /// # Adequacy
     /// - hypothesis: L2 — a set stored and read back is the set.
     /// - witness: `tests::artifact_contract::tree_nodes_store_and_reopen`
-    #[spec(ensures: |ret| ret.0.len() >= self.places.len().saturating_mul(PLACE_LEN))]
+    /// - witness: `tests::artifact_contract::a_named_set_reads_back_with_its_names_7340`
+    #[spec(ensures: |ret| ret.0.len() == self.places.len().saturating_mul(match self.names {
+        Maybe::Present(_) => RECORD_KEY_LEN.saturating_add(CONTENT_NAME_LEN),
+        Maybe::Absent(_) => RECORD_KEY_LEN,
+    }).saturating_add(1))]
     #[inline]
     #[must_use]
     pub fn order_image(&self) -> OrderImage
     {
-        let mut order = Vec::with_capacity(self.places.len().saturating_mul(PLACE_LEN));
-        for place in &self.places {
-            // A place: its tag, its record's key, then its name when it has
-            // one.
-            order.push(match place.name {
-                Maybe::Present(_) => NAMED,
-                Maybe::Absent(unnamed::Absent::Bytes) => FROM_BYTES,
-                Maybe::Absent(unnamed::Absent::Unkeyed) => UNKEYED,
-            });
-            order.extend_from_slice(&place.record.0);
-            if let Maybe::Present(name) = place.name {
-                order.extend_from_slice(&name.0);
-            }
+        let width = match self.names {
+            Maybe::Present(_) => RECORD_KEY_LEN.saturating_add(CONTENT_NAME_LEN),
+            Maybe::Absent(_) => RECORD_KEY_LEN,
+        };
+        let mut order = Vec::with_capacity(
+            self.places
+                .len()
+                .saturating_mul(width)
+                .saturating_add(1_usize),
+        );
+        match self.names {
+            Maybe::Present(ref names) => {
+                order.push(NAMED);
+                for (place, name) in self.places.iter().zip(names.iter()) {
+                    order.extend_from_slice(&place.record.0);
+                    order.extend_from_slice(&name.0);
+                }
+            },
+            Maybe::Absent(_) => {
+                order.push(FROM_BYTES);
+                for place in &self.places {
+                    order.extend_from_slice(&place.record.0);
+                }
+            },
         }
 
         OrderImage(order.into_boxed_slice())
@@ -1198,6 +1305,7 @@ impl ArtifactRecordSet
 #[cfg(test)]
 mod tests
 {
+    use alloc::boxed::Box;
     use alloc::vec;
 
     use gandr_storage_records::RecordIndex;
@@ -1205,6 +1313,7 @@ mod tests
 
     use super::ArtifactRecordSet;
     use super::ContentName;
+    use super::Naming;
     use super::RecordKey;
     use super::SegmentBytes;
     use super::unnamed;
@@ -1238,8 +1347,8 @@ mod tests
         );
     }
 
-    /// Names replace each place's reason, and a count that differs is refused
-    /// where the two counts part.
+    /// Names stand beside their places in order; a count that differs is
+    /// refused where the two counts part, and an absent name at its own place.
     #[test]
     fn names_go_beside_their_places_in_order()
     {
@@ -1248,17 +1357,14 @@ mod tests
             header,
             [b"a".as_slice(), b"b"].map(SegmentBytes::from),
         );
-        assert!(
-            set.places()
-                .iter()
-                .all(|place| place.name() == Maybe::Absent(unnamed::Absent::Bytes))
-        );
-        let names = [
-            Maybe::Present(ContentName::from([7; 32])),
-            Maybe::Absent(unnamed::Absent::Unkeyed),
-        ];
+        assert_eq!(Naming::Bytes, set.naming());
+        assert_eq!(Maybe::Absent(unnamed::Absent::Bytes), set.names());
+        let first = ContentName::from([7; 32]);
+        let second = ContentName::from([9; 32]);
+        let names = [Maybe::Present(first), Maybe::Present(second)];
         let named = set.clone().named(&names).expect("one name per place");
-        assert!(named.places().iter().map(super::Place::name).eq(names));
+        assert_eq!(Naming::Named, named.naming());
+        assert_eq!(Maybe::Present([first, second].as_slice()), named.names());
         assert_eq!(set.reassemble(), named.reassemble(), "a name moves no byte");
         assert_eq!(
             Err(ArtifactError::Misnamed {
@@ -1270,7 +1376,14 @@ mod tests
             Err(ArtifactError::Misnamed {
                 place: RecordIndex::from(2_usize)
             }),
-            set.named(&[names[0], names[1], names[0]]),
+            set.clone().named(&[names[0], names[1], names[0]]),
+        );
+        assert_eq!(
+            Err(ArtifactError::Misnamed {
+                place: RecordIndex::from(1_usize)
+            }),
+            set.named(&[names[0], Maybe::Absent(unnamed::Absent::Unkeyed)]),
+            "a named set names every place"
         );
     }
 
@@ -1307,6 +1420,13 @@ mod tests
         let mut unheld = set.clone();
         let _dropped = unheld.records.pop();
         assert!(!anodized::types::Spec::predicate(&unheld));
+        let mut short = set
+            .clone()
+            .named(&[Maybe::Present(ContentName::from([1; 32])); 4])
+            .expect("one name per place");
+        assert!(anodized::types::Spec::predicate(&short));
+        short.names = Maybe::Present(Box::from([ContentName::from([1; 32])].as_slice()));
+        assert!(!anodized::types::Spec::predicate(&short));
         let mut unplaced = set;
         let _dropped = unplaced.places.pop();
         assert!(!anodized::types::Spec::predicate(&unplaced));

@@ -4488,17 +4488,18 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — exact readback after reopening a real block store and
     ///   a manifest whose identity and tree are valid but whose kernel bytes
-    ///   are refused. Format precedence and record/declaration cardinality are
-    ///   executable; full byte, key and cut correspondence is witnessed without
-    ///   repeating storage I/O.
+    ///   are refused. Format precedence and the bound of the record count by
+    ///   the declarations are executable; full byte, key and cut correspondence
+    ///   is witnessed without repeating storage I/O.
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     /// - witness: `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
     #[spec(
         ensures: |ret| match ret {
     Ok(ref decoded) => {
         manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
-            && u64::try_from(decoded.declarations().len().saturating_add(1_usize))
-                == Ok(u64::from(manifest.record_count()))
+            && u64::try_from(decoded.declarations().len()).ok()
+                .and_then(|count| count.checked_add(2))
+                .is_some_and(|bound| (2..=bound).contains(&u64::from(manifest.record_count())))
     }
     Err(ArtifactError::UnsupportedKernelFormat { found }) => {
         found == manifest.kernel_format() && found != gandr_kernel_term::FORMAT_VERSION
@@ -4562,17 +4563,17 @@ impl<Store, Blocks> Session<Store, Blocks>
 /// # Adequacy
 /// - hypothesis: L3 — a committed artifact read back after reopening is exactly
 ///   its independently decoded composition image. The predicate checks the
-///   current format and mandatory header record; store mutation and full record
-///   contents are observed by the readback witness rather than repeated in a
-///   postcondition. A first-insertion refusal is checked by its exact variant
-///   and continued resume/edit state, without assuming store rollback.
+///   current format and the header and order records; store mutation and full
+///   record contents are observed by the readback witness rather than repeated
+///   in a postcondition. A first-insertion refusal is checked by its exact
+///   variant and continued resume/edit state, without assuming store rollback.
 /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
 /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
 #[spec(
     ensures: |ret| match ret {
     KernelCheckpoint::Stored(ref manifest) => {
         manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
-            && u64::from(manifest.record_count()) >= 1_u64
+            && u64::from(manifest.record_count()) >= 2_u64
     }
     KernelCheckpoint::Failed(_) => true,
     KernelCheckpoint::Discarded => false,
