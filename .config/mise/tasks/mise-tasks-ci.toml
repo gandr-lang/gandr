@@ -1978,6 +1978,10 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # branch `attic/<directory>` (#6183). A dirty one stays for its seat. Then
 # `git worktree prune`, and Worktrunk's trash (`.git/wt/trash`), whose
 # background deletes die with the shell that started them, is emptied.
+# A worktree that goes away after the listing, by the run of another seat, is
+# pruned as a prunable one is, and one that goes away after its judgement
+# does not stop the removal of the others (#7490). The judgement of each
+# worktree is `.config/pr-stack/sweep-tree.bash`.
 #
 # With `--guard` (`pr:open`, `pre-start`) the task refuses when the free
 # space left is under 150 GB, naming the largest build directories.
@@ -2029,16 +2033,6 @@ while IFS=$'\t' read -r tree_path sha reason; do
   integrated[$key]=$reason
   judged[$key]=$sha
 done < <(wt list --format=json | jq -r '.items[] | select(.worktree != null and .worktree.path != null) | [.worktree.path, .head.sha, (.default_branch.integration.reason // "")] | @tsv')
-tmp_roots=()
-for root in "${TMPDIR:-/tmp}" /tmp /var/folders; do
-  [[ -d "$root" ]] || continue
-  tmp_roots+=("${root%/}/" "$(realpath "$root")/")
-done
-under_tmp() {
-  local root
-  for root in "${tmp_roots[@]}"; do [[ "$1" == "$root"* ]] && return 0; done
-  return 1
-}
 # One fact line per worktree, then the decisions; the primary is listed
 # first by Git. `asked` holds `<branch> <head>` for each branch whose merged
 # pull requests the decision needs, read in one pass after the listing.
@@ -2054,72 +2048,7 @@ epoch=$(date +%s)
 # a process holds. A process table that cannot be read holds every tree.
 source .config/pr-stack/held.bash
 held_read
-tree() {
-  local merged=false moved=false scratch=null holder=null alive=false young=false watched=null commits=null idle=false ahead=null stale=false dirty=null held= gitdir key mark
-  [[ -n "$path" ]] || return 0
-  if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
-  if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
-  key=$(realpath "$path")
-  if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
-  if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
-  # A branch Worktrunk reads unmerged. The `+` lines of `git cherry` are
-  # read by subject. `ahead` counts commits not on the trunk (#5030).
-  # Merged pull requests are asked about when the trunk lacks one subject.
-  if [[ -n "$branch" && $merged == false && $primary == false && $branch != wip/* ]]; then
-    commits=$(own_commits "$trunk_ref" "$head")
-    ahead=$(git rev-list --count "$trunk_ref..$head")
-    if jq -e 'any(.[]; .on_trunk | not)' <<< "$commits" > /dev/null \
-      && $remote_read && [[ -z ${on_remote[$branch]:-} ]] && git config --get "branch.$branch.remote" > /dev/null; then
-      asked+=("$branch" "$head")
-    fi
-  fi
-  gitdir=$(sed -n 's/^gitdir: //p' "$path/.git" 2> /dev/null) || gitdir=
-  # A live `pr:watch` marks the worktree it runs in (#3798).
-  if [[ -n "$gitdir" ]]; then
-    for mark in "$gitdir"/gandr-watch-*; do
-      if [[ ${mark##*/gandr-watch-} =~ ^[0-9]+$ ]] && kill -0 "${mark##*/gandr-watch-}" 2> /dev/null; then
-        watched=${mark##*/gandr-watch-}
-        break
-      fi
-    done
-  fi
-  if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]] || { [[ -z "$branch" ]] && under_tmp "$path"; }; then
-    if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]]; then
-      holder=${BASH_REMATCH[1]}
-      if kill -0 "$holder" 2> /dev/null; then alive=true; fi
-    fi
-    if [[ -n "$gitdir" && -n $(find "$gitdir" -maxdepth 1 -name index -mmin -240 2> /dev/null) ]]; then young=true; fi
-    scratch=$(jq -nc --argjson holder "$holder" --argjson alive "$alive" --argjson young "$young" '{holder: $holder, alive: $alive, young: $young}')
-  fi
-  # Idle: the tree holds `incremental` caches and no build wrote one within
-  # the claim window.
-  if [[ -d "$path/target" && -n $(find "$path/target" -mindepth 2 -maxdepth 3 -type d -name incremental -print -quit 2> /dev/null) \
-    && -z $(find "$path/target" -mindepth 3 -maxdepth 4 -path '*/incremental/*' -mmin -240 -print -quit 2> /dev/null) ]]; then
-    idle=true
-  fi
-  # Held: a live process works in the tree, read for a tree that is not the
-  # primary or the caller's (#6837). The fact is its pid, or `unread` when
-  # the process table cannot be read.
-  if [[ $primary == false && $key != "$here" ]] && held=$(tree_held "$key"); then held=${held:-unread}; else held=; fi
-  # Stale: no commit at the head, no change to the index or `HEAD` in its git
-  # directory, and no build under `target/` for 24 hours (#6183). A fresh
-  # `wt switch` writes both files, so a tree made and not yet built is not
-  # stale. Read only for a tree the sweep may release.
-  if [[ $primary == false && $key != "$here" && $watched == null && $scratch == null && -n "$gitdir" && -z $held ]] \
-    && (($(git -C "$path" log -1 --format=%ct HEAD 2> /dev/null || echo "$epoch") < epoch - 86400)) \
-    && [[ -z $(find "$gitdir" -maxdepth 1 \( -name index -o -name HEAD \) -mmin -1440 -print -quit 2> /dev/null) ]] \
-    && [[ ! -d "$path/target" || -z $(find "$path/target" -maxdepth 4 -mmin -1440 -print -quit 2> /dev/null) ]]; then
-    stale=true
-    if [[ -n $(git -C "$path" status --porcelain 2> /dev/null) ]]; then dirty=true; else dirty=false; fi
-    if [[ -z "$branch" ]]; then ahead=$(git rev-list --count "$trunk_ref..$head"); fi
-  fi
-  facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
-    --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
-    --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" --argjson watched "$watched" \
-    --slurpfile commits <(printf '%s\n' "$commits") --argjson ahead "$ahead" --argjson idle "$idle" --argjson stale "$stale" --argjson dirty "$dirty" \
-    --arg held "$held" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch, watched: $watched, held: (if $held == "" then null else $held end), commits: $commits[0], ahead: $ahead, pulls: null, idle: $idle, stale: $stale, dirty: $dirty}')")
-}
+source .config/pr-stack/sweep-tree.bash
 # Delete an idle worktree's `incremental` caches, its `target/` measured
 # before and after. A clone shares its blocks with the primary worktree's
 # (`wt:warm`), so the apparent size overstates the disk freed, which the
@@ -2138,21 +2067,7 @@ clear_incremental() {
   printf 'cleared %s: idle for 4 hours; target/ %d GB, %d GB after its incremental caches; %d GB of disk freed\n' \
     "$label" $((before / 1048576)) $((after / 1048576)) $(((free_after - free_before) / 1048576))
 }
-path= head= branch= flag= primary=true
-while IFS= read -r line; do
-  case "$line" in
-    "worktree "*) path=${line#worktree } ;;
-    "HEAD "*) head=${line#HEAD } ;;
-    "branch "*) branch=${line#branch refs/heads/} ;;
-    locked*) flag="locked" ;;
-    prunable*) flag=prunable ;;
-    "")
-      tree
-      if [[ -n "$path" ]]; then primary=false; fi
-      path= head= branch= flag=
-      ;;
-  esac
-done < <(git worktree list --porcelain; echo)
+sweep_judge < <(git worktree list --porcelain; echo)
 # The merged pull requests of every branch asked about, in one reading that
 # makes at most one call (#5839). Each answer goes into its branch's facts.
 if (( ${#asked[@]} > 0 )); then
@@ -2173,7 +2088,7 @@ while IFS=$'\t' read -r action path branch reason clear attic; do
   fi
   case "$action" in
     remove | delete)
-      judged_head=${judged[$(realpath "$path")]:-}
+      judged_head=${judged[$(realpath "$path" 2> /dev/null || printf '%s' "$path")]:-}
       delete=()
       if [[ $action == delete ]]; then delete=(--force-delete); fi
       if now=$(git -C "$path" rev-parse HEAD 2> /dev/null) && [[ "$now" != "$judged_head" ]]; then

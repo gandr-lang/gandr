@@ -126,6 +126,7 @@
 --argjson cores
 --argjson count
 --argjson cutoff
+--argjson cwd
 --argjson dirty
 --argjson end
 --argjson ended
@@ -143,6 +144,7 @@
 --argjson lints
 --argjson held
 --argjson hollow
+--argjson holder
 --argjson i
 --argjson id
 --argjson idle
@@ -151,6 +153,8 @@
 --argjson labels
 --argjson landing
 --argjson limit
+--argjson merged
+--argjson moved
 --argjson n
 --argjson now
 --argjson number
@@ -161,10 +165,12 @@
 --argjson parent
 --argjson peak
 --argjson pr
+--argjson primary
 --argjson pushes
 --argjson ran
 --argjson red
 --argjson retry_at
+--argjson scratch
 --argjson seconds
 --argjson selected
 --argjson self
@@ -180,5 +186,6 @@
 --argjson upto
 --argjson wait
 --argjson wall
+--argjson watched
 --argjson widths
 --argjson young
