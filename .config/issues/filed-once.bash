@@ -22,11 +22,21 @@ set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 # shellcheck source=../mise/disabled-tools.bash
 source "$here/../mise/disabled-tools.bash"
+# shellcheck source=../mise/host-lock.bash
+source "$here/../mise/host-lock.bash"
 disabled=$(disabled_tools github:cli/cli)
 root=$(git -C "$here" rev-parse --show-toplevel)
 cases=$here/filed-once.json
-work=$(mktemp -d "${TMPDIR:-/tmp}/gandr-filed-once.XXXXXX")
+# The work directory holds two working trees, about 280 MB (#7615). A run
+# that `KILL` ends runs no trap, so the run holds the directory's lease for
+# its life, and the next run removes the directory (`host_scratch`).
+host_scratch "${TMPDIR:-/tmp}/gandr-filed-once"
+work=$host_scratch_dir
 trap 'rm -rf "$work"' EXIT
+# Bash runs no EXIT trap when a signal ends it, so each signal exits.
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 failed=0
 
 index=$work/index
@@ -48,6 +58,10 @@ printf '## Observation\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`
 jq -n '{state: "MERGED", headRefName: "triage-7-filed",
   body: "## Refactoring\n\nyes\n\n|Kind|Where|Observation|\n|---|---|---|\n|generalise|`.config/reports/filing.jq`|two readers walk one board|\n",
   closingIssuesReferences: {nodes: [{number: 7, parent: {number: 4481}, labels: {nodes: [{name: "area:workflow"}]}}]}}' > "$work/pr.json"
+# `issue:file` runs `body:prose`, which builds `prose` with cargo at the root
+# of the clone. The build goes to one target under the checkout's, so it stays
+# warm from run to run and holds no space under `TMPDIR` (#7615).
+target=${CARGO_TARGET_DIR:-$root/target}/filed-once
 
 # Run `$3...` in the clone `$1`, with the host directories of `$2`.
 run() {
@@ -61,7 +75,8 @@ run() {
     MISE_DISABLE_TOOLS="$disabled" \
     MISE_CONFIG_DIR="$mise_config" MISE_TRUSTED_CONFIG_PATHS="$work/a:$work/b" \
     XDG_CONFIG_HOME="$work/config" GANDR_HOST_LOCK_DIR="$work/locks-$host" XDG_STATE_HOME="$work/state-$host" \
-    "$@") > "$work/out-$host" 2>&1
+    CARGO_TARGET_DIR="$target" \
+    "$@") > "$work/out-$host" 2>&1 7>&-
 }
 
 while IFS= read -r case; do

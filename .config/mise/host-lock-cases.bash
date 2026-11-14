@@ -332,5 +332,36 @@ GANDR_HOST_LOCK_DIR=$scratch/apart XDG_RUNTIME_DIR=$scratch/runtime bash -c 'sou
 [[ -e $scratch/apart/gandr/apart.1.lock ]] || fail "#6182: a lock took no file under GANDR_HOST_LOCK_DIR"
 [[ -z $(ls -A "$scratch/runtime") ]] || fail "#6182: a lock wrote under XDG_RUNTIME_DIR while GANDR_HOST_LOCK_DIR was set"
 
+# The lease of a scratch directory (#7615). Under one prefix, a directory
+# whose `held` no process locks is dead, one whose `held` a live holder locks
+# stays, and one with no `held` stays, since a call makes it now. A call
+# removes the dead one, keeps the two others, and makes its own directory with
+# its `held` locked. A holder that `KILL` ends runs no trap, so its directory
+# stays until the next call removes it.
+leases=$scratch/leases
+mkdir -p "$leases/case.dead" "$leases/case.live" "$leases/case.making"
+: > "$leases/case.dead/held"
+: > "$leases/case.live/held"
+bash -c 'source "$1"; exec 6<> "$2/held"; host_flock 6; : > "$2/locked"; exec sleep 60' _ "$helper" "$leases/case.live" &
+pids+=("$!")
+tries=0
+until [[ -e $leases/case.live/locked ]] || (( ++tries > 100 )); do sleep 0.05; done
+bash -c 'source "$1"; host_scratch "$2/case"; echo "$host_scratch_dir" > "$2/made"; : > "$2/ready"; exec sleep 60' _ "$helper" "$leases" &
+pids+=("$!")
+leaser=$!
+tries=0
+until [[ -e $leases/ready ]] || (( ++tries > 100 )); do sleep 0.05; done
+made=$(< "$leases/made")
+[[ ! -e $leases/case.dead ]] || fail "#7615: a call kept a directory whose held no process locks"
+[[ -e $leases/case.live ]] || fail "#7615: a call removed a directory whose held a live holder locks"
+[[ -e $leases/case.making ]] || fail "#7615: a call removed a directory with no held"
+[[ -f $made/held && ! -e $made/holding ]] || fail "#7615: a call made no held for its own directory: $made"
+bash -c 'source "$1"; host_scratch "$2/case"' _ "$helper" "$leases"
+[[ -e $made ]] || fail "#7615: a second call removed the directory of a live first call"
+kill -KILL "$leaser"
+wait "$leaser" 2> /dev/null || true
+bash -c 'source "$1"; host_scratch "$2/case"' _ "$helper" "$leases"
+[[ ! -e $made ]] || fail "#7615: a call kept the directory of a holder that KILL ended"
+
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
