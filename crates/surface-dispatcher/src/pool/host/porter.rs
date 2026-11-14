@@ -233,7 +233,7 @@ impl Porter
         made(&path)?;
         let fifo = Fifo::open(&path)?;
         #[cfg(target_os = "linux")]
-        let watch = Watch::on(&path)?;
+        let watched = Watch::on(&path)?;
         let Maybe::Present(host) = Host::join(directory, Class::Batch)
         else {
             return Err(std::io::ErrorKind::NotConnected.into());
@@ -243,7 +243,7 @@ impl Porter
             fifo,
             stop: AtomicBool::new(false),
             #[cfg(target_os = "linux")]
-            watch,
+            watch: watched,
             _lock: lock,
         });
         let thread = std::thread::Builder::new()
