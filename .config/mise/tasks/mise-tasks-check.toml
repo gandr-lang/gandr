@@ -705,6 +705,7 @@ export -f policy
 .config/policy/trait-object-cases.bash
 .config/policy/held-cases.bash
 .config/policy/fresh-cases.bash
+.config/policy/cost-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
