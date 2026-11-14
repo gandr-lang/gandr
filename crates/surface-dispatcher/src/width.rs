@@ -113,15 +113,16 @@ impl Width
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Self::Threads`] answers its count unchanged;
-    ///   [`Self::PerformanceCores`] answers the host's physical performance
-    ///   cores, capped by the parallelism the process may use, and that
-    ///   parallelism alone when the host reports no topology.
+    ///   [`Self::PerformanceCores`] answers the process's [`share`] of the
+    ///   host's physical performance cores, capped by the parallelism the
+    ///   process may use, and of that parallelism alone when the host reports
+    ///   no topology.
     /// - provides: the pool size a walk forks on, before the walk caps it at
     ///   its source count.
     /// - fails: never; a host that answers nothing is one thread.
     /// - panics: none.
-    /// - intension: asks the host once per call, and only for
-    ///   [`Self::PerformanceCores`].
+    /// - intension: asks the host and the environment once per call, and only
+    ///   for [`Self::PerformanceCores`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an explicit count is returned exactly, and the host's
@@ -144,15 +145,89 @@ impl Width
             Self::PerformanceCores => {
                 let available =
                     Threads(std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN));
-                match physical_performance_cores() {
+                let host = match physical_performance_cores() {
                     Maybe::Present(cores) => cores.min(available),
                     Maybe::Absent(topology::Absent::Unsupported | topology::Absent::Unreadable) => {
                         available
                     },
-                }
+                };
+                share(host, bounds(available))
             },
         }
     }
+}
+
+/// The count that the environment variable `name` holds, when it holds a
+/// positive count.
+///
+/// # Specification
+/// trivial.
+fn count(name: &std::ffi::OsStr) -> Option<Threads>
+{
+    let text = std::env::var(name).ok()?;
+    text.trim().parse::<NonZeroUsize>().ok().map(Threads)
+}
+
+/// What the environment bounds a process's width by: the tests that nextest
+/// runs at once, when the process is one of them, and the operator's budget.
+///
+/// nextest runs each test in a process of its own, and gives each one the
+/// run's count of test threads as `NEXTEST_TEST_THREADS`. A test that takes
+/// the host's width takes the host's cores once for each test that runs
+/// beside it, so the count divides the budget (#7447). Without the count,
+/// nextest runs as many tests as `available` at once. `GANDR_JOBS` is the
+/// budget of the run, as the driver's `--jobs` reads it. The grant of #7448
+/// replaces this derived share.
+///
+/// # Specification
+/// trivial.
+fn bounds(available: Threads) -> (Option<Threads>, Option<Threads>)
+{
+    let tested =
+        std::env::var_os("NEXTEST_EXECUTION_MODE").is_some_and(|mode| mode == "process-per-test");
+    let tests =
+        tested.then(|| count(std::ffi::OsStr::new("NEXTEST_TEST_THREADS")).unwrap_or(available));
+    (tests, count(std::ffi::OsStr::new("GANDR_JOBS")))
+}
+
+/// The share of `host` that a process takes: the budget, `host` or `budget`
+/// when it is smaller, divided by the tests that run at once, at least one
+/// thread.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: at most `host` and at most `budget`, at least one thread; at most
+///   `tests`' share of the budget when `tests` is given; the budget itself when
+///   `tests` is not given.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the witness separates the host alone, a division, a
+///   division past the host, a budget below the host divided, a budget above
+///   it, and a budget alone.
+/// - witness: `width::tests::a_test_process_takes_its_share_of_the_host`
+#[spec(ensures: |ret| {
+    let whole = budget.map_or(host, |budget| host.min(budget));
+    ret <= whole
+        && tests.map_or_else(
+            || ret == whole,
+            |tests| ret == Threads::ONE || ret.0.get().saturating_mul(tests.0.get()) <= whole.0.get(),
+        )
+})]
+fn share(
+    host: Threads,
+    (tests, budget): (Option<Threads>, Option<Threads>),
+) -> Threads
+{
+    let whole = budget.map_or(host, |budget| host.min(budget));
+    tests.map_or(whole, |tests| {
+        let each = whole
+            .0
+            .get()
+            .checked_div(tests.0.get())
+            .and_then(NonZeroUsize::new);
+        Threads(each.unwrap_or(NonZeroUsize::MIN))
+    })
 }
 
 /// The host's physical performance cores, as the kernel reports them.
@@ -358,6 +433,7 @@ mod tests
     use super::Width;
     use super::cpus;
     use super::physical_cores_under;
+    use super::share;
     use super::topology;
 
     /// A scratch device tree, removed when dropped.
@@ -480,6 +556,44 @@ mod tests
     {
         let available = std::thread::available_parallelism().expect("the host reports parallelism");
         assert!(Width::PerformanceCores.threads() <= Threads(available));
+    }
+
+    #[test]
+    fn a_test_process_takes_its_share_of_the_host()
+    {
+        let threads = |count: usize| Threads(NonZeroUsize::new(count).expect("a positive count"));
+        let host = threads(16);
+        assert_eq!(share(host, (None, None)), host, "no bound takes the host");
+        assert_eq!(
+            share(host, (Some(threads(4)), None)),
+            threads(4),
+            "four tests at once take a quarter each"
+        );
+        assert_eq!(
+            share(host, (Some(threads(32)), None)),
+            Threads::ONE,
+            "more tests than cores take one thread each"
+        );
+        assert_eq!(
+            share(host, (Some(threads(4)), Some(threads(4)))),
+            Threads::ONE,
+            "a budget of four over four tests takes one thread each, as a macOS shard does"
+        );
+        assert_eq!(
+            share(host, (Some(threads(2)), Some(threads(8)))),
+            threads(4),
+            "a budget below the host is divided among the tests"
+        );
+        assert_eq!(
+            share(host, (Some(threads(4)), Some(threads(64)))),
+            threads(4),
+            "a budget above the host divides the host"
+        );
+        assert_eq!(
+            share(host, (None, Some(threads(3)))),
+            threads(3),
+            "a budget alone bounds the host"
+        );
     }
 
     #[test]

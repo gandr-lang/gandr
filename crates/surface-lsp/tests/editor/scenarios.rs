@@ -21,6 +21,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Width;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lsp::DocumentUri;
@@ -835,7 +836,7 @@ fn each_in_parallel(
     let mut ordered: Vec<&Source> = sources.iter().collect();
     ordered.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
     let next = AtomicUsize::new(0_usize);
-    let workers = std::thread::available_parallelism().map_or(1_usize, NonZeroUsize::get);
+    let workers = NonZeroUsize::from(Width::PerformanceCores.threads()).get();
     std::thread::scope(|scope| {
         for _ in 0_usize .. workers {
             let _worker = scope.spawn(|| {

@@ -1674,10 +1674,12 @@ fn closure_address(
     hasher.finalize()
 }
 
-/// #6406: every corpus package's address, at one thread and at every thread
-/// the host gives the process, is the digest of each source's own items
-/// lowered over the source's own closure, though the identity lowers each
-/// import-connected component once.
+/// #6406: every corpus package's address, at one thread and at four, is the
+/// digest of each source's own items lowered over the source's own closure,
+/// though the identity lowers each import-connected component once. The wide
+/// pool holds four threads, not the host's width: the process's share of the
+/// host is one thread under the gate (#7447), and a pool of one compares
+/// nothing.
 #[test]
 fn every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406()
 {
@@ -1685,7 +1687,7 @@ fn every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6
     let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let store = stored(Path::new("closure-address"));
     let widest = Pool::new(Width::Threads(Threads::from(
-        std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+        NonZeroUsize::new(4_usize).expect("four threads"),
     )));
     for library in [
         "corpus/model/projects/hello/package.gandr",
