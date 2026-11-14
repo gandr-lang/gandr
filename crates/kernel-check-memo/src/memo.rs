@@ -27,6 +27,7 @@ use crate::digest::ContentDigest;
 use crate::key::MemoKey;
 use crate::overlay::Disagreement;
 use crate::overlay::OverlaidMemo;
+use crate::table::HashFilter;
 use crate::table::HashIndex;
 use crate::table::Probe;
 use crate::table::TableHash;
@@ -731,6 +732,16 @@ where
         self.entries
             .iter()
             .map(|entry| (&entry.support, &entry.outcome))
+    }
+
+    /// A filter of the hashes of this memo's digests, sized by its count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn filter(&self) -> HashFilter
+    {
+        self.index.filter()
     }
 
     /// Remove each entry that `keep` refuses. The last entry takes the place

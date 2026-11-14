@@ -47,6 +47,9 @@ use crate::memo::HashedMemo;
 use crate::memo::MemoActivity;
 use crate::memo::MemoHit;
 use crate::memo::MemoRecord;
+use crate::table::Admission;
+use crate::table::HashFilter;
+use crate::table::TableHash;
 
 /// A memo over the layers frozen at the fork points that opened it.
 ///
@@ -173,6 +176,10 @@ where
     /// The count of freezes of the memo's line at the freeze of the layer's
     /// newest entries.
     stamp: u64,
+    /// The filter of the layer's hashes, when a join linked the layer or a
+    /// compaction merged it. A layer that a fork froze carries none, so the
+    /// fork builds nothing.
+    filter: Option<Arc<HashFilter>>,
 }
 
 impl<Support, Outcome> Clone for Frozen<Support, Outcome>
@@ -189,7 +196,29 @@ where
         Self {
             memo: Arc::clone(&self.memo),
             stamp: self.stamp,
+            filter: self.filter.clone(),
         }
+    }
+}
+
+impl<Support, Outcome> Frozen<Support, Outcome>
+where
+    Support: MemoKey,
+{
+    /// Whether a read under `hash` goes into this layer: the filter's answer,
+    /// or `Admitted` for a layer with no filter.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn admits(
+        &self,
+        hash: TableHash,
+    ) -> Admission
+    {
+        self.filter
+            .as_ref()
+            .map_or(Admission::Admitted, |filter| filter.admits(hash))
     }
 }
 
@@ -211,6 +240,7 @@ where
         f.debug_struct("Frozen")
             .field("stamp", &self.stamp)
             .field("memo", &self.memo)
+            .field("filtered", &self.filter.is_some())
             .finish()
     }
 }
@@ -379,6 +409,7 @@ where
             self.layers.push(Frozen {
                 memo: Arc::new(frozen),
                 stamp: self.frozen,
+                filter: None,
             });
         }
         let stamp = self.layers.last().map_or(0, |newest| newest.stamp);
@@ -495,10 +526,12 @@ where
                 .flat_map(|layer| layer.memo.entries())
                 .chain(own.entries());
             for (support, outcome) in offered {
+                let hash = TableHash::of(&support.digest());
                 let held = self.own.recall(support).or_else(|| {
                     since
                         .iter()
                         .rev()
+                        .filter(|layer| layer.admits(hash) == Admission::Admitted)
                         .find_map(|layer| layer.memo.recall(support))
                 });
                 if let Some(held) = held
@@ -515,19 +548,20 @@ where
         // What this memo recorded since the fork stays below the child's.
         if self.own.entry_count() != MemoEntryCount::zero() {
             let recorded = core::mem::take(&mut self.own);
-            self.link(Arc::new(recorded));
+            self.link(Arc::new(recorded), None);
         }
         for layer in layers.drain(first_own ..) {
-            self.link(layer.memo);
+            self.link(layer.memo, layer.filter);
         }
         if own.entry_count() != MemoEntryCount::zero() {
-            self.link(Arc::new(own));
+            self.link(Arc::new(own), None);
         }
         Ok(())
     }
 
     /// Push `memo` onto the stack as the newest layer, under the next stamp,
-    /// when it holds an entry.
+    /// when it holds an entry. The layer keeps `filter` when it carries one,
+    /// and else takes a filter of its hashes, sized by its count.
     ///
     /// # Specification
     /// trivial.
@@ -535,15 +569,18 @@ where
     fn link(
         &mut self,
         memo: Arc<HashedMemo<Support, Outcome>>,
+        filter: Option<Arc<HashFilter>>,
     )
     {
         if memo.entry_count() == MemoEntryCount::zero() {
             return;
         }
+        let filter = filter.unwrap_or_else(|| Arc::new(memo.filter()));
         self.frozen = self.frozen.saturating_add(1);
         self.layers.push(Frozen {
             memo,
             stamp: self.frozen,
+            filter: Some(filter),
         });
     }
 
@@ -591,6 +628,7 @@ where
                     self.layers.push(Frozen {
                         memo: shared,
                         stamp: newest.stamp,
+                        filter: newest.filter,
                     });
                     return;
                 },
@@ -710,6 +748,7 @@ where
                 }
             },
         }
+        older.filter = Some(Arc::new(merged.filter()));
     }
 }
 
@@ -745,10 +784,12 @@ where
         Support: 'memo,
         Outcome: 'memo,
     {
+        let hash = TableHash::of(&digest);
         self.own.filed(digest).chain(
             self.layers
                 .iter()
                 .rev()
+                .filter(move |layer| layer.admits(hash) == Admission::Admitted)
                 .flat_map(move |layer| layer.memo.filed(digest)),
         )
     }
