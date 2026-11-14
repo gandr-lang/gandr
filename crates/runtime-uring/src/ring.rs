@@ -71,6 +71,11 @@ impl<'fd> IoUring<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
     ///
     /// - fails: the kernel refuses the ring.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ring that this sets up takes a submission and
+    ///   gives its completion.
+    /// - witness: `cqueue::test::cqes::ready::one`
     #[inline]
     pub fn new() -> ::std::io::Result<Self>
     {
@@ -108,6 +113,14 @@ where
     ///
     /// - fails: the kernel refuses the ring or the mark against fork.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each setup flag that the kernel takes alone gives a
+    ///   ring, and a flag that needs the caller's memory is refused with
+    ///   `ENOMEM`.
+    /// - witness: `ring::test::new::with_setup_sqpoll`
+    /// - witness: `ring::test::new::with_setup_cqsize`
+    /// - witness: `ring::test::new::with_setup_no_mmap`
     #[builder(builder_type = IoUringBuilder, finish_fn = build, state_mod(vis = "pub(crate)"))]
     pub fn make(
         #[builder(default = 4096)] entries: u32,

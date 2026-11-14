@@ -78,6 +78,12 @@ where
     ///
     /// - fails: the kernel refuses the submission.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the kernel takes each prepared entry, and the count
+    ///   says how many.
+    /// - witness: `sqe::bind::test::bind`
+    /// - witness: `sqe::listen::test::listen`
     #[inline]
     pub fn submit(&mut self) -> ::std::io::Result<u32>
     {
@@ -99,6 +105,11 @@ where
     ///
     /// - fails: the kernel refuses the submission or the wait.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one prepared entry is taken, and its completion is
+    ///   ready when the call returns.
+    /// - witness: `squeue::test::sqe64::submit_and_wait`
     #[inline]
     pub fn submit_and_wait(
         &mut self,

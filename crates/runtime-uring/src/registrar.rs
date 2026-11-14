@@ -44,6 +44,13 @@ impl<'ring> Registrar<'ring>
     ///
     /// - fails: the count does not fit, or the kernel refuses the table.
     /// - executable: none — the outcome is the kernel's.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            adequacy_present,
+            reason = "no test of the owner's registers a table of open files; #7645 owes the witness"
+        )
+    )]
     #[inline]
     pub fn register_files(
         &self,
@@ -70,6 +77,12 @@ impl<'ring> Registrar<'ring>
     ///
     /// - fails: the count does not fit, or the kernel refuses the table.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sparse table of slots takes a direct socket in its
+    ///   slot.
+    /// - witness: `sqe::socket::test::socket_direct`
+    /// - witness: `sqe::socket::test::socket_direct_cqe_skip`
     #[inline]
     pub fn register_files_sparse(
         &self,

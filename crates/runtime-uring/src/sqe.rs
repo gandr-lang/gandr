@@ -149,6 +149,12 @@ pub trait Kind: self::sealed::Kind
     /// # Specification
     ///
     /// - executable: none — a trait declaration has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each kind prepares the entries of a ring of that
+    ///   kind.
+    /// - declaration-only: each kind of entry implements it, and its tests
+    ///   prepare the entries of a ring of that kind.
     unsafe fn new(sqe: &mut ::liburing_rs::io_uring_sqe) -> Self::Repr<'_>;
 }
 

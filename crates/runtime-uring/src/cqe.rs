@@ -244,6 +244,12 @@ pub trait Kind: self::sealed::Kind
     /// # Specification
     ///
     /// - executable: none — a trait declaration has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each kind gives the completions of a ring of that
+    ///   kind.
+    /// - declaration-only: each kind of entry implements it, and its tests read
+    ///   the completions of a ring of that kind.
     unsafe fn new(cqe: &::liburing_rs::io_uring_cqe) -> Self::Repr<'_>;
 }
 

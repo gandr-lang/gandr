@@ -58,6 +58,13 @@ where
     ///
     /// - fails: the kernel refuses the wait.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a wait for zero, one or two completions gives as many
+    ///   as the submissions before it.
+    /// - witness: `cqueue::test::cqes::wait::zero`
+    /// - witness: `cqueue::test::cqes::wait::one`
+    /// - witness: `cqueue::test::cqes::wait::two`
     #[inline]
     pub fn wait(
         &mut self,

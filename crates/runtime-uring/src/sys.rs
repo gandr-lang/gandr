@@ -14,6 +14,12 @@ pub trait SysResult: self::private::SysResult
     ///
     /// - fails: the answer is not zero.
     /// - executable: none — a trait declaration has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero or a count is success, and a negative answer is
+    ///   its error number.
+    /// - declaration-only: the implementation for the kernel's answer carries
+    ///   the witnesses.
     fn sys_zero(&self) -> ::std::io::Result<()>;
     /// A count as success, and a negative answer as its error number.
     ///
@@ -25,6 +31,12 @@ pub trait SysResult: self::private::SysResult
     ///
     /// - fails: the answer is negative.
     /// - executable: none — a trait declaration has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero or a count is success, and a negative answer is
+    ///   its error number.
+    /// - declaration-only: the implementation for the kernel's answer carries
+    ///   the witnesses.
     fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>;
 }
 
