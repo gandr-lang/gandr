@@ -1137,7 +1137,7 @@ mod tests
                 && let Some((oldest, recorded)) = open.pop_front()
             {
                 parent
-                    .join(oldest, |_, _| true)
+                    .join(oldest, |_, _| true, PartialEq::eq)
                     .expect("children of distinct supports glue");
                 record(&mut serial, &[(Named(recorded), Kept(recorded))]);
             }
@@ -1145,7 +1145,7 @@ mod tests
         }
         while let Some((oldest, recorded)) = open.pop_front() {
             parent
-                .join(oldest, |_, _| true)
+                .join(oldest, |_, _| true, PartialEq::eq)
                 .expect("children of distinct supports glue");
             record(&mut serial, &[(Named(recorded), Kept(recorded))]);
         }
@@ -1204,13 +1204,13 @@ mod tests
                 && let Some(oldest) = open.pop_front()
             {
                 parent
-                    .join(oldest, |_, _| true)
+                    .join(oldest, |_, _| true, PartialEq::eq)
                     .expect("siblings of distinct supports glue");
             }
         }
         while let Some(oldest) = open.pop_front() {
             parent
-                .join(oldest, |_, _| true)
+                .join(oldest, |_, _| true, PartialEq::eq)
                 .expect("siblings of distinct supports glue");
         }
         parent.compact();
@@ -1230,10 +1230,10 @@ mod tests
         record(&mut shadowing, &[(Named(1), Kept(11))]);
         record(&mut disagreeing, &[(Named(2), Kept(21))]);
         parent
-            .join(shadowing, |_, _| true)
+            .join(shadowing, |_, _| true, PartialEq::eq)
             .expect("a child that answers again an entry it read glues");
         let refused = parent
-            .join(disagreeing, |_, _| true)
+            .join(disagreeing, |_, _| true, PartialEq::eq)
             .expect_err("an entry that disagrees with a layer frozen after the fork does not glue");
         assert_eq!(
             (*refused.support(), *refused.held(), *refused.offered()),
