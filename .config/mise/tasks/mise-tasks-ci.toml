@@ -4169,6 +4169,48 @@ elif [[ -z ${REPORT_FILE:-} && $(jq '.grew | length' "$scratch/night.json") -gt 
 fi
 {% endraw %}'''
 
+# The wasm driver's night (#7402, `nightly-sweeps.yml`'s `wasm`). The job
+# builds the release driver for wasm32-wasip3 and compares it with the
+# native one (`test:wasm`), and `reports` gives its result to this task as
+# WASM_RESULT, `success` or `failure`. A failure opens the one issue of the
+# title below, or updates it and reopens it. A success closes an open one
+# (`.config/issues/keep.bash`). Only with REPORT_FILE set does the task write
+# the issue. Without it, the task prints what it would write. GITHUB_RUN_ID
+# and GITHUB_RUN_URL name the night's run, and GH_REPO the repository.
+["ci:wasm-file"]
+description = "Keep one issue while the night's wasm driver fails to build or to agree with the native one"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/issues/keep.bash
+title="distribution: the night's wasm driver does not build or does not agree with the native one"
+result=${WASM_RESULT:?}
+case $result in
+  failure) count=1 ;;
+  success) count=0 ;;
+  *) echo "ci:wasm-file: WASM_RESULT is \`$result\`, not \`success\` or \`failure\`" >&2; exit 2 ;;
+esac
+run="[${GITHUB_RUN_ID:?}](${GITHUB_RUN_URL:?})"
+body=$(mktemp)
+trap 'rm -f "$body"' EXIT
+if (( count )); then
+  printf '%s\n' "## Observation" "" \
+    "The night's build of the wasm driver fails in the run $run. \`mise run test:wasm\` builds the release driver for \`wasm32-wasip3\` and compares each case of \`.config/wasm/cases.txt\` with the native driver. The job's log names the crate that does not build or the case that does not agree." "" \
+    "The next night that passes closes this issue." > "$body"
+else
+  printf '%s\n' "## Observation" "" \
+    "The night's build of the wasm driver passes in the run $run. Each case agrees with the native driver." > "$body"
+fi
+if [[ -z ${REPORT_FILE:-} ]]; then
+  echo "ci:wasm-file: the night's wasm build gives \`$result\`; REPORT_FILE unset, nothing written"
+  cat "$body"
+  exit 0
+fi
+issue_keep "$title" "$(issue_found "$title")" "$count" "$body" \
+  mise run --quiet issue:file "$title" "$body" kind:defect area:distribution collector
+'''
+
 # How the pull request obligations are answered (#2886): over the pull
 # requests merged in a period and the unit issues they close, five tables,
 # the lane (the closed unit's first `area:`) as the row and the ISO week of

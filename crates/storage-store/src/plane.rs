@@ -65,7 +65,10 @@ use std::fs::File;
 use std::io;
 use std::io::Read as _;
 use std::io::Seek as _;
+#[cfg(unix)]
 use std::os::unix::fs::FileExt as _;
+#[cfg(target_os = "wasi")]
+use std::os::wasi::fs::FileExt as _;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::OnceLock;

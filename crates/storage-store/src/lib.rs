@@ -49,6 +49,19 @@
 //!   two puts of one object write the same bytes, so neither waits. Its
 //!   register is the one owner of the roots.
 
+// The planes read and write a segment at an offset through a shared file. On
+// WASI that interface is the unstable `wasi_ext`, and a seek with a read is no
+// equivalent, since two readers would move one cursor. So only a WASI build
+// turns the feature on. Reversal: `wasi_ext` stabilises, and this leaves.
+#![cfg_attr(
+    target_os = "wasi",
+    feature(wasi_ext),
+    expect(
+        unstable_features,
+        reason = "positional reads and writes of a segment on WASI; no stable equivalent"
+    )
+)]
+
 extern crate alloc;
 
 mod crash;

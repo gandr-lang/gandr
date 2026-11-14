@@ -31,7 +31,6 @@ gandr-surface-dispatcher.workspace = true
 gandr-surface-features.workspace = true
 gandr-surface-lsp.workspace = true
 gandr-surface-render-remote = { workspace = true, features = ["serde"] }
-gandr-surface-tui.workspace = true
 httparse.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true
@@ -41,6 +40,12 @@ serde_json = { workspace = true, features = ["std"] }
 # targets turn its `instrument` feature on.
 [dev-dependencies]
 gandr-surface-agentic = { workspace = true, features = ["instrument"] }
+
+# The toolset prints a report's lines through the terminal face, and only the
+# toolset of `rap`, compiled on unix, reads them. The terminal face draws
+# through crossterm, which has no WASI terminal, so a WASI build takes none.
+[target."cfg(unix)".dependencies]
+gandr-surface-tui.workspace = true
 
 [features]
 default = []

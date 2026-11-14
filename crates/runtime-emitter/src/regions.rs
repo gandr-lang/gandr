@@ -743,6 +743,7 @@ static ACCOUNT: OnceLock<Account> = OnceLock::new();
 /// The exponent of the first size that the probe of a process's address
 /// space asks: 2⁴⁷ bytes, the user space of a 4-level x86-64 host or a
 /// 48-bit arm64 host.
+#[cfg(unix)]
 const PROBE_TOP: u32 = 47;
 
 /// The address space of a process.
@@ -753,6 +754,13 @@ const PROBE_TOP: u32 = 47;
 enum Space
 {
     /// The host grants the process one mapping of this many bytes.
+    #[cfg_attr(
+        all(not(unix), not(test)),
+        expect(
+            dead_code,
+            reason = "a host with no mapping reports no space; only the probe of a unix host and the tests build this"
+        )
+    )]
     Bounded(Bytes),
     /// The host maps nothing, so it reports no space.
     Unread,
@@ -824,6 +832,7 @@ impl Width
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(unix)]
 enum Probe
 {
     /// The host mapped the probe.
@@ -1063,6 +1072,10 @@ pub(crate) struct Reservation
     stacked: bool,
     /// The allocation that holds the region, on a host with no mapping.
     #[cfg(not(unix))]
+    #[expect(
+        dead_code,
+        reason = "the field owns the region's allocation, which its drop frees; nothing reads it"
+    )]
     backing: alloc::vec::Vec<Word>,
 }
 
