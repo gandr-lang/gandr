@@ -2779,10 +2779,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','typed::unrefused::Absent','enum
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::AlreadyInstalled','struct','Says a process already installed its verdict cache or its admission policy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictCache','struct','Holds the policy, store, key and counts every readmission of a process recalls and records under.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::VerdictTally','struct','Counts what a process''s verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_obligation_fork','function','Installs the fork that each kernel check of a process drains its obligations through, once.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_readmission_pool','function','Installs the pool that each readmission of a process runs its checks on, once.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_speculation','function','Installs the speculation group that each readmission of a process runs under, once.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_verdict_cache','function','Installs a process''s verdict cache before its walk, once.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','verdicts::install_width','function','Installs what a run at a pool''s width spends it on: the pool of each readmission, the speculation group with the rank, and the fork of each last drain, once.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','verdicts::verdict_tally','function','Reads what the installed verdict cache recalled, recorded and could not write.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::Reached','enum','What the traversal reached next, at the walk''s current path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','walk::SourceFault','enum','Why a path could not be carried through the pipeline.',NULL,'fits','sound',NULL);

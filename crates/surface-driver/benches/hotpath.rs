@@ -17,6 +17,8 @@
 //! | `lsp keystroke` | the same session after its first keystroke, erasing the next line; only this change is timed | the server's recheck with the closure warm, the cost each later keystroke pays |
 //! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
 //! | `lsp comment edit` | a session that opens the group laws, waits for the open's judgement, then adds a comment line before their first, outside the rule block; only the change is timed | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
+//! | `distinct definitions, serial` | `gandr check` of two sources of 5,000 distinct plain definitions each, on one thread | each declaration's check and commit, the cost that the wider run must match |
+//! | `distinct definitions, two jobs` | the same check at two jobs, or at the series' width when wider, under the policy that the driver installs for the width | each commit beside an open check: a copy of what an open check shares shows here as bytes past the serial run's |
 //!
 //! Each language-server workload serves its session on the bench's thread,
 //! and a client on a thread of its own speaks to it over pipes
@@ -63,14 +65,19 @@
 mod lsp;
 mod support;
 
+use core::fmt::Write as _;
+use core::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ProgramSpec;
+use gandr_surface_dispatcher::Threads;
+use gandr_surface_dispatcher::Width;
 use lsp::live;
 use support::check;
+use support::check_at;
 use support::corpus;
 use support::width;
 
@@ -120,6 +127,10 @@ const NEGATION: &str = "../../corpus/model/identity/negation-lengths.gandr";
 
 /// How many one-definition components the component floor checks.
 const FLOOR: usize = 64;
+
+/// How many distinct plain definitions each of the two sources of the
+/// distinct definitions holds.
+const DISTINCT: usize = 5_000;
 
 /// The path of [`SOURCE`] from the driver's manifest directory.
 ///
@@ -223,6 +234,53 @@ fn component_floor()
     }
     check(vec![directory.clone()]);
     std::fs::remove_dir_all(&directory).expect("the floor's directory is removed");
+}
+
+/// Check two sources of [`DISTINCT`] distinct plain definitions each, written
+/// under a directory of their own: first on one thread, then at two jobs, or
+/// at the series' width when it is wider. A commit beside an open check
+/// costs what a commit beside none costs, so the wider block allocates what
+/// the serial one allocates; a copy of a structure that an open check shares
+/// shows as the difference.
+///
+/// # Specification
+/// trivial.
+fn distinct_definitions()
+{
+    let directory =
+        std::env::temp_dir().join(format!("gandr-hotpath-distinct-{}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .expect("the directory of the distinct definitions is created");
+    for (source, first) in [(1_usize, 0_usize), (2, DISTINCT)] {
+        let text = (first .. first.saturating_add(DISTINCT)).fold(
+            String::new(),
+            |mut text, definition| {
+                let _written = writeln!(
+                    text,
+                    "/// One more definition.\ndef p{definition} : Integer = {definition};"
+                );
+                text
+            },
+        );
+        std::fs::write(directory.join(format!("p{source}.gandr")), text)
+            .expect("a source of distinct definitions is written");
+    }
+    let wide = if width().threads() == Threads::ONE {
+        Width::Threads(Threads::from(NonZeroUsize::MIN.saturating_add(1)))
+    }
+    else {
+        width()
+    };
+    hotpath::measure_block!(
+        "distinct definitions, serial",
+        check_at(vec![directory.clone()], Width::SERIAL)
+    );
+    hotpath::measure_block!(
+        "distinct definitions, two jobs",
+        check_at(vec![directory.clone()], wide)
+    );
+    std::fs::remove_dir_all(&directory)
+        .expect("the directory of the distinct definitions is removed");
 }
 
 /// Stage [`PROGRAMS`] and readmit every certificate they produce.
@@ -357,4 +415,7 @@ fn main()
     lsp_keystrokes();
     lsp_burst();
     lsp_comment_edit();
+    // Last: its wider check installs the driver's policy for the process, so
+    // each workload after it would run under that policy.
+    distinct_definitions();
 }

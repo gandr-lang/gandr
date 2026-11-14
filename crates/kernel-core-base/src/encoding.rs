@@ -1485,6 +1485,10 @@ pub struct ContentTable
     forked_at: ArenaWatermark,
     /// How many records the table holds, the ones below included.
     records: u64,
+    /// How many records the layers held that this table read at its fork:
+    /// zero for a table that no fork opened. A compaction merges no layer
+    /// below it with a layer this table froze itself.
+    floor: u64,
     /// The record being built.
     scratch: ContentEncoding,
     /// The binder names of the goal, or the members of the parameters, being
@@ -1640,6 +1644,85 @@ impl TableLayer
         }
     }
 
+    /// What a merge of the layer copies: its records and the nodes it places.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn size(&self) -> LayerSize
+    {
+        LayerSize(self.spans.len().saturating_add(self.count.0))
+    }
+
+    /// Take `newer`, the layer above this one, into this layer: its records
+    /// after this layer's own, and its placements over this layer's. Each
+    /// layer's placements hold under its own reach, so each is cut there
+    /// first. The merged layer keeps the member positions of its records
+    /// only when both layers kept them, as the oldest layer of a table keeps
+    /// none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn absorb(
+        &mut self,
+        reach: ArenaWatermark,
+        (newer, newer_reach): (&Self, ArenaWatermark),
+    )
+    {
+        let words = self.stream.0.len();
+        let held = self.spans.len();
+        self.stream.0.extend_from_slice(&newer.stream.0);
+        self.spans.extend(newer.spans.iter().map(|span| RecordSpan {
+            start: span.start.saturating_add(words),
+            end: span.end.saturating_add(words),
+        }));
+        for (hash, position) in newer.interned.entries() {
+            // Past the index's position ceiling a record is held but not
+            // filed, as at an admission.
+            if let Ok(shifted) = TablePosition::try_from(usize::from(position).saturating_add(held))
+            {
+                self.interned.file(hash, shifted);
+            }
+        }
+        let keeps = |names: &RecordNames| names.ends.len() == names.column.len();
+        let positioned = keeps(&self.names) && keeps(&newer.names);
+        let offset = u32::try_from(self.names.positions.len()).unwrap_or(u32::MAX);
+        self.names.column.extend_from_slice(&newer.names.column);
+        if positioned {
+            self.names
+                .positions
+                .extend_from_slice(&newer.names.positions);
+            self.names.ends.extend(
+                newer
+                    .names
+                    .ends
+                    .iter()
+                    .map(|&RunEnd(end)| RunEnd(end.saturating_add(offset))),
+            );
+        }
+        else {
+            self.names.positions.clear();
+            self.names.ends.clear();
+        }
+        for ((family, column), theirs) in Family::ALL
+            .into_iter()
+            .zip(&mut self.columns)
+            .zip(&newer.columns)
+        {
+            let PlacementCount(forgotten) = column.forget_from(family.length(reach));
+            self.count = PlacementCount(self.count.0.saturating_sub(forgotten));
+            let length = family.length(newer_reach);
+            for (offset, id) in theirs.placed() {
+                if offset >= length {
+                    break;
+                }
+                if column.set(offset, id) == Placement::Unplaced {
+                    self.count = PlacementCount(self.count.0.saturating_add(1));
+                }
+            }
+        }
+    }
+
     /// The name of the layer's record at `id`, when the layer holds it and
     /// names it.
     ///
@@ -1756,6 +1839,17 @@ enum Placement
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 struct PlacementCount(usize);
+
+/// What a merge of a frozen layer copies: its records and the nodes it
+/// places.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct LayerSize(usize);
+
+/// The place of a frozen layer among a table's layers, from the oldest.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct LayerAt(usize);
 
 /// One node's slot as a column page stores it: the placed id, or
 /// [`PlacementSlot::UNPLACED`], an id no table assigns.
@@ -4307,6 +4401,7 @@ impl ContentTable
         Self {
             base: self.records,
             records: self.records,
+            floor: self.records,
             placed: Placements {
                 layers: self.placed.layers.clone(),
                 ..Placements::default()
@@ -4496,6 +4591,97 @@ impl ContentTable
                 },
             }
         }
+    }
+
+    /// Merge each two neighbouring frozen layers where the older holds at
+    /// most twice what the newer holds, and never a layer below the table's
+    /// floor with one above it. A layer that only this table holds merges in
+    /// place, and a layer that an overlay holds is copied, so the overlay
+    /// keeps what it read. An overlay's fold reads no layer of this table, so
+    /// a merge changes no fold.
+    ///
+    /// The halving bound copies each record at most once for each doubling
+    /// of the layers below it. So a table that forks an overlay at each step,
+    /// while some overlays stay open, keeps a logarithm of its records in
+    /// layers, and a lookup reads as many.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this table names nodes of.
+    /// - ensures: this table gives each node and each record the id and the
+    ///   name it gave them before the call; each overlay folds as before.
+    /// - provides: the bound on the layers of a table that forks without a
+    ///   break.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the layers are private, and the ids and the names
+    ///   that the call keeps are a walk of the arena, which no predicate runs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a table that forks an overlay at each step and folds
+    ///   the overlay of the step before keeps few layers and names each node as
+    ///   a serial table names it.
+    /// - witness: `encoding::tests::a_table_that_forks_without_a_break_keeps_its_layers_to_a_logarithm_7335`
+    #[inline]
+    pub fn compact(
+        &mut self,
+        arena: &TermArena,
+    )
+    {
+        self.forget_truncated(arena);
+        let now = arena.watermark();
+        let mut upper = self.placed.layers.len();
+        while let Some(lower) = upper.checked_sub(2) {
+            if let Some(lower) = self.mergeable_at(LayerAt(lower)) {
+                self.merge_above(lower, now);
+            }
+            upper = upper.saturating_sub(1);
+        }
+    }
+
+    /// The layer at `lower`, when it and the one above it may merge: the
+    /// older at most twice the newer, and the newer not the first layer that
+    /// this table froze above its floor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn mergeable_at(
+        &self,
+        lower: LayerAt,
+    ) -> Option<LayerAt>
+    {
+        let older = self.placed.layers.get(lower.0)?;
+        let newer = self.placed.layers.get(lower.0.saturating_add(1))?;
+        (newer.layer.base != self.floor
+            && older.layer.size().0 <= newer.layer.size().0.saturating_mul(2))
+        .then_some(lower)
+    }
+
+    /// Merge the layer above `lower` into the layer at `lower`, as
+    /// [`TableLayer::absorb`] takes it. The merged layer's placements hold
+    /// under the arena's length `now`: each layer's own were cut at its reach.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn merge_above(
+        &mut self,
+        LayerAt(lower): LayerAt,
+        now: ArenaWatermark,
+    )
+    {
+        let Some(newer) = (lower.saturating_add(1) < self.placed.layers.len())
+            .then(|| self.placed.layers.remove(lower.saturating_add(1)))
+        else {
+            return;
+        };
+        let Some(older) = self.placed.layers.get_mut(lower)
+        else {
+            return;
+        };
+        let reach = older.reach;
+        Arc::make_mut(&mut older.layer).absorb(reach, (&newer.layer, newer.reach));
+        older.reach = now;
     }
 
     /// Take `layer`, the newest frozen layer, back as the start of this
@@ -7712,6 +7898,73 @@ mod tests
                 "and the late node's record was folded, swapped: {swapped}"
             );
         }
+    }
+
+    /// A table that forks an overlay at each step, while three overlays stay
+    /// open, as the environment's session forks a check's at each release.
+    /// Each overlay places a node minted before its fork, and each step folds
+    /// the oldest overlay. With a compaction before each fork, the layers stay
+    /// within a logarithm of the steps, and each node takes the name that a
+    /// serial table gives it (#7335).
+    #[test]
+    fn a_table_that_forks_without_a_break_keeps_its_layers_to_a_logarithm_7335()
+    {
+        let steps = 512_usize;
+        let open_at_once = 3_usize;
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let mut table = ContentTable::named();
+        let _base = table.place(&arena, AnyNode::ValueType(unit));
+        let mut nodes = Vec::with_capacity(steps);
+        let mut open = alloc::collections::VecDeque::new();
+        let mut deepest = 0_usize;
+        let mut last = unit;
+        for _ in 0 .. steps {
+            last = arena.value_type_product(&[last, unit]);
+            nodes.push(AnyNode::ValueType(last));
+            table.compact(&arena);
+            let mut overlay = table.fork(&arena);
+            let _id = overlay.place(&arena, AnyNode::ValueType(last));
+            open.push_back(overlay);
+            if open.len() > open_at_once
+                && let Some(oldest) = open.pop_front()
+            {
+                table.join(&arena, oldest);
+            }
+            deepest = deepest.max(table.placed.layers.len());
+        }
+        while let Some(oldest) = open.pop_front() {
+            table.join(&arena, oldest);
+        }
+        table.settle();
+        let bound = open_at_once
+            .saturating_add(usize::try_from(steps.ilog2()).unwrap())
+            .saturating_add(2);
+        assert!(
+            deepest <= bound,
+            "the layers stay within a logarithm of the steps, {bound}, not {deepest}"
+        );
+        let mut serial = ContentTable::named();
+        let _base = serial.place(&arena, AnyNode::ValueType(unit));
+        let expected: Vec<_> = nodes
+            .iter()
+            .map(|&node| {
+                let id = serial.place(&arena, node);
+                serial.name(id)
+            })
+            .collect();
+        let found: Vec<_> = nodes
+            .iter()
+            .map(|&node| {
+                let id = table.place(&arena, node);
+                table.name(id)
+            })
+            .collect();
+        assert_eq!(found, expected, "each node takes the serial table's name");
+        assert_eq!(
+            table.records, serial.records,
+            "each content takes one record"
+        );
     }
 
     #[test]

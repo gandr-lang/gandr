@@ -1733,6 +1733,11 @@ pub struct Entries
     /// The support of the check that runs over the entries: none until a
     /// check opens one, and never shared with a clone.
     support: Option<alloc::sync::Arc<crate::weakening::Support>>,
+    /// The supports that closed checks gave back beside the one above, which
+    /// the next views take. A view beside an open one then reuses a support
+    /// under a fresh stamp, and allocates and clears no stamp for each
+    /// position. They number at most the checks open at once.
+    spares: alloc::vec::Vec<alloc::sync::Arc<crate::weakening::Support>>,
     /// The rank the check that runs reads below: none until a check opens
     /// one, and never shared with a clone.
     horizon: Option<Horizon>,
@@ -1878,6 +1883,7 @@ impl Clone for Entries
         Self {
             log: self.log.clone(),
             support: None,
+            spares: alloc::vec::Vec::new(),
             horizon: None,
         }
     }
@@ -1920,6 +1926,7 @@ impl Entries
         Self {
             log: None,
             support: None,
+            spares: alloc::vec::Vec::new(),
             horizon: None,
         }
     }
@@ -2408,13 +2415,16 @@ impl Entries
         Self {
             log: self.log.clone(),
             support: self.support.clone(),
+            spares: alloc::vec::Vec::new(),
             horizon: self.horizon.clone(),
         }
     }
 
-    /// These entries for one check: the log shared, and the buffer of the
-    /// support taken from the entries, so the check opens a horizon and a
-    /// support of its own while the entries keep none.
+    /// These entries for one check: the log shared, and the buffer of a
+    /// support taken from the entries, or a spare that a closed check gave
+    /// back, so the check opens a horizon and a support of its own. The slots
+    /// of the log freeze first, so a change of the log beside the view copies
+    /// the chunk that it writes and no other slot.
     ///
     /// # Specification
     /// trivial.
@@ -2422,16 +2432,23 @@ impl Entries
     #[must_use]
     pub fn view(&mut self) -> Self
     {
+        // A freeze moves the slots admitted since the last one into a shared
+        // chunk, so the log that the view shares holds no slot of its own.
+        if let Some(log) = self.log.as_mut() {
+            alloc::sync::Arc::make_mut(log).family.freeze();
+        }
         Self {
             log: self.log.clone(),
-            support: self.support.take(),
+            support: self.support.take().or_else(|| self.spares.pop()),
+            spares: alloc::vec::Vec::new(),
             horizon: None,
         }
     }
 
     /// Take back the buffer of the support that `view` held, once its check
-    /// closed it. The view's share of the log ends here, so the next
-    /// admission changes the log in place.
+    /// closed it: as the support of the next view, or as a spare when a
+    /// support waits there already. The view's share of the log ends here,
+    /// so the next admission changes the log in place.
     ///
     /// # Specification
     /// trivial.
@@ -2441,7 +2458,16 @@ impl Entries
         view: Self,
     )
     {
-        self.support = view.support;
+        let Some(support) = view.support
+        else {
+            return;
+        };
+        if self.support.is_none() {
+            self.support = Some(support);
+        }
+        else {
+            self.spares.push(support);
+        }
     }
 
     /// The log, to change: shared with no clone or reading after.
@@ -3862,8 +3888,82 @@ mod tests
     use gandr_kernel_term::Seam;
     use gandr_kernel_term::TermArena;
 
+    use super::Entries;
     use super::OutstandingCount;
+    use super::Slot;
     use super::StagedMarks;
+
+    /// A change of the log beside an open view copies the chunk that it
+    /// writes. The view keeps its own slot, and the two share each other
+    /// slot, so a commit beside open checks costs no copy of the module
+    /// (#7335).
+    #[test]
+    fn a_change_beside_a_view_copies_one_chunk_of_the_log_7335()
+    {
+        let count = 4096_usize;
+        let mut entries = Entries::default();
+        for _ in 0 .. count {
+            entries.vacate();
+        }
+        entries.reserve();
+        let view = entries.view();
+        entries.vacate_at(ConstantIndex::from(count));
+        let (Some(changed), Some(viewed)) = (entries.log(), view.log())
+        else {
+            panic!("the entries and the view each hold the log");
+        };
+        assert!(
+            matches!(viewed.family.get(count), Some(&Slot::Reserved)),
+            "the view keeps the slot that it shared"
+        );
+        assert!(
+            matches!(changed.family.get(count), Some(&Slot::Vacant)),
+            "the entries take the change"
+        );
+        let shared = usize::from(changed.family.shared_frozen(&viewed.family));
+        assert!(
+            shared >= count.saturating_sub(count >> 3),
+            "the change shares each slot but its chunk, not {shared} of {count}"
+        );
+    }
+
+    /// Two views open at once open a support each. Once both checks close
+    /// and the views come back, the next two views open at once take both
+    /// supports back, so neither allocates a stamp for each position again
+    /// (#7335).
+    #[test]
+    fn views_beside_open_ones_reuse_the_supports_that_closed_checks_gave_back_7335()
+    {
+        let mut entries = Entries::default();
+        for _ in 0 .. 1024_usize {
+            entries.vacate();
+        }
+        let end = entries.len();
+        let mut first = entries.view();
+        let mut second = entries.view();
+        for view in [&mut first, &mut second] {
+            view.open(core::iter::empty(), (super::SourceRank::ABOVE, end));
+            let _outside = view.close();
+        }
+        let mut given =
+            [&first, &second].map(|view| view.support.as_ref().map(alloc::sync::Arc::as_ptr));
+        entries.restore(first);
+        entries.restore(second);
+        let third = entries.view();
+        let fourth = entries.view();
+        let mut taken =
+            [&third, &fourth].map(|view| view.support.as_ref().map(alloc::sync::Arc::as_ptr));
+        assert!(
+            taken.iter().all(Option::is_some),
+            "each view beside an open one takes a support back"
+        );
+        given.sort_unstable();
+        taken.sort_unstable();
+        assert_eq!(
+            taken, given,
+            "the two views take the two supports that came back"
+        );
+    }
 
     #[test]
     fn registration_resolution_preserves_multiplicity_and_order()

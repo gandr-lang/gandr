@@ -36,6 +36,7 @@
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::fmt;
+use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use std::sync::LazyLock;
@@ -56,10 +57,13 @@ use gandr_kernel_core::verdict::VerdictSource;
 use quenchant_shape::shape::Maybe;
 
 use crate::compose::Reuse;
+use crate::entry::report::SourceCount;
 use crate::held::Held;
 use crate::held::HeldVerdicts;
 use crate::pool::Pool;
 use crate::receipts::StoredVerdicts;
+use crate::walk::Walk;
+use crate::width::Threads;
 use crate::width::Width;
 
 /// The recall of a process that installed no cache.
@@ -411,22 +415,6 @@ pub fn install_verdict_cache(cache: VerdictCache) -> Result<(), AlreadyInstalled
     INSTALLED.set(cache).map_err(|_refused| AlreadyInstalled)
 }
 
-/// Install `fork` for the last drain of each kernel check this process makes.
-///
-/// A fork installed already stays. A process that installs none drains the
-/// obligations of each check on the calling thread.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// [`AlreadyInstalled`].
-#[inline]
-pub fn install_obligation_fork(fork: SharedFork) -> Result<(), AlreadyInstalled>
-{
-    FORKING.set(fork).map_err(|_refused| AlreadyInstalled)
-}
-
 /// The fork this process installed for the obligations of each kernel check,
 /// or the serial drain.
 ///
@@ -435,25 +423,6 @@ pub fn install_obligation_fork(fork: SharedFork) -> Result<(), AlreadyInstalled>
 fn forking() -> SharedFork
 {
     FORKING.get().cloned().unwrap_or_default()
-}
-
-/// Install `speculation` for each readmission this process makes: what a
-/// release behind the cursor predicts of the earlier commits.
-///
-/// A group installed already stays. A process that installs none predicts
-/// nothing, as the release in serial order.
-///
-/// # Specification
-/// trivial.
-///
-/// # Errors
-/// [`AlreadyInstalled`].
-#[inline]
-pub fn install_speculation(speculation: Speculation) -> Result<(), AlreadyInstalled>
-{
-    SPECULATION
-        .set(speculation)
-        .map_err(|_refused| AlreadyInstalled)
 }
 
 /// The speculation group this process installed, or the group off.
@@ -465,20 +434,37 @@ fn speculation() -> Speculation
     SPECULATION.get().copied().unwrap_or(Speculation::OFF)
 }
 
-/// Install `pool` for the checks of each readmission this process makes.
+/// Install what a run at `pool`'s width spends its width on, for each
+/// readmission this process makes after.
 ///
-/// A pool installed already stays. A process that installs none runs each
-/// check on the calling thread, in module order.
+/// Wider than one thread, the checks of each readmission run on `pool` under
+/// the speculation group on, the rank among it. The last drain of each kernel
+/// check forks its obligations on `pool` when `walk` holds fewer sources than
+/// threads: in a wider run the other sources keep each worker busy. A serial
+/// run installs nothing and predicts nothing, as the release in serial order
+/// does. What a process installed first stays.
+///
+/// The driver and the benchmark series both install through this call, so a
+/// series measures the policy that a run of the driver takes.
 ///
 /// # Specification
 /// trivial.
-///
-/// # Errors
-/// [`AlreadyInstalled`].
 #[inline]
-pub fn install_readmission_pool(pool: Arc<Pool>) -> Result<(), AlreadyInstalled>
+pub fn install_width(
+    pool: &Arc<Pool>,
+    walk: &Walk,
+)
 {
-    SCHEDULING.set(pool).map_err(|_refused| AlreadyInstalled)
+    let threads = pool.width().threads();
+    if threads == Threads::ONE {
+        return;
+    }
+    let _pool = SCHEDULING.set(Arc::clone(pool));
+    let _speculation = SPECULATION.set(Speculation::ON);
+    let spare = SourceCount::from(NonZeroUsize::from(threads).get());
+    if walk.sources_up_to(spare) < spare {
+        let _fork = FORKING.set(SharedFork::through(Arc::<Pool>::clone(pool)));
+    }
 }
 
 /// The pool this process installed for the checks of each readmission, or

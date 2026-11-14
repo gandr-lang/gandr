@@ -36,6 +36,8 @@ INSERT INTO position VALUES('crates/core-term/src/arena.rs','ValueTypeId','','lo
 INSERT INTO position VALUES('crates/kernel-check-memo/src/accounting.rs','MemoBucketCount','','none',NULL,'A count of memo buckets.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/accounting.rs','MemoEntryCount','','none',NULL,'A count of memo entries.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/digest.rs','DigestWord','','none',NULL,'A word of a content digest.');
+INSERT INTO position VALUES('crates/kernel-check-memo/src/overlay.rs','Holders','','none',NULL,'A count of the children that hold a fork point.');
+INSERT INTO position VALUES('crates/kernel-check-memo/src/overlay.rs','LayerAt','','local',NULL,'A frozen layer''s place in the stack of one memo in one process, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/table.rs','Fold','','none',NULL,'The state of a hash fold.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/table.rs','TableHash','','none',NULL,'A hash that the table probes by.');
 INSERT INTO position VALUES('crates/kernel-check-memo/src/table.rs','TablePosition','','local',NULL,'A record''s place in the stream of one interning table; a named record reads its children by their names.');
@@ -49,6 +51,8 @@ INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','ContentId
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','DefinitionRank','kernel-core-base::encoding','kept',NULL,'The count of earlier plain definitions with one declared type and body, a place among the twins of one content.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','EncodedWord','','none',NULL,'A carrier of the words of an encoding; each place it writes is a row of the place''s own struct.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','EncodingLength','','none',NULL,'A length of an encoding.');
+INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','LayerAt','','local',NULL,'A frozen layer''s place among the layers of one content table in one process, which no key, name or byte form writes.');
+INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','LayerSize','','none',NULL,'A count of the records and the nodes that a merge of a frozen layer copies.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','NameKey','','none',NULL,'A digest that names a record.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','PlacementCount','','none',NULL,'A count of placed nodes.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/encoding.rs','RunEnd','','local',NULL,'The end of a run of words in an encoding under construction.');
