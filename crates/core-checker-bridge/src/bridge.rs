@@ -3820,7 +3820,7 @@ where
                     };
                     return match released {
                         Ok(Released::Running(pending, check)) => {
-                            if let (Offer::Definition { body, .. }, Maybe::Present(image)) =
+                            if let (Offer::Definition { body, .. }, &Maybe::Present(image)) =
                                 (offer, &staged.image)
                                 && frontier
                                 && self.environment.entries().predicted(next).is_some()
@@ -3831,7 +3831,7 @@ where
                                     .get(&constant)
                                     .copied()
                                     .unwrap_or(body);
-                                self.positions.predict(constant, next, defined, *image);
+                                self.positions.predict(constant, next, defined, image);
                                 self.predicted_through = index.saturating_add(1);
                             }
                             if let Some(slot) = self.slots.get_mut(at) {

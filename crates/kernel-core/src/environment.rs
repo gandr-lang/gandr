@@ -1933,10 +1933,11 @@ impl Environment
                     rank,
                     unit: Unit::lone(position),
                 });
-                if let Some(crate::env::Prediction::Missed) = self
+                if self
                     .entries
                     .predicted(position)
                     .map(|predicted| predicted.agrees(&entry))
+                    == Some(crate::env::Prediction::Missed)
                 {
                     self.miss(position, content_end);
                 }

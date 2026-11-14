@@ -1861,11 +1861,6 @@ pub struct EntryLog
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per position, read by every check; boxing the declaration would allocate per \
-              admission and add an indirection to every read to shrink the rare vacant slot"
-)]
 pub enum Slot
 {
     /// A live admitted declaration.
