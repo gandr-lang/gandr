@@ -49,7 +49,10 @@ while IFS= read -r case; do
     closingIssuesReferences: {nodes: []}}' > "$work/gh/pr.json"
   jq .units <<< "$case" > "$work/gh/units.json"
   jq -r '.labels[]' <<< "$case" > "$work/gh/labels.txt"
-  decision=$(cd "$here" && PATH="$work/gh:$PATH" STUB_GH="$work/gh" GH_BUDGET_TTL=0 MISE_DISABLE_TOOLS="$disabled" \
+  # The stub reads no token. A host can put a `gh` wrapper first on `PATH`,
+  # and with no `GH_TOKEN` that wrapper asks the next `gh`, the stub, for one
+  # (#6632, #7521). So the case sets a token of its own.
+  decision=$(cd "$here" && PATH="$work/gh:$PATH" GH_TOKEN=case STUB_GH="$work/gh" GH_BUDGET_TTL=0 MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet refactor:file 7 --dry-run 2> "$work/err") || true
   unit=$(sed -nE 's|^api repos/[^ ]+/issues/([0-9]+) .*|#\1|p' "$work/gh/calls" | paste -sd ' ' -)
   label=$(sed -nE 's|^label list .*--search ([^ ]+) .*|\1|p' "$work/gh/calls" | paste -sd ' ' -)

@@ -3222,7 +3222,10 @@ jq -n '{state: "MERGED", body: "## Refactoring\n\nno\n", headRefName: "triage-7-
 while IFS= read -r case; do
   jq -n --argjson count "$(jq .issues <<< "$case")" \
     '[range($count) | {number: (. + 1), state: "CLOSED", body: ("a refactor body of the argument-limit case, " * 6)}]' > "$scratch/gh/issues.json"
-  decision=$(PATH="$scratch/gh:$PATH" STUB_GH="$scratch/gh" MISE_DISABLE_TOOLS="$disabled" \
+  # The stub reads no token. A host can put a `gh` wrapper first on `PATH`,
+  # and with no `GH_TOKEN` that wrapper asks the next `gh`, the stub, for one
+  # (#6632, #7521). So the case sets a token of its own.
+  decision=$(PATH="$scratch/gh:$PATH" GH_TOKEN=case STUB_GH="$scratch/gh" MISE_DISABLE_TOOLS="$disabled" \
     mise run --quiet refactor:file 7 --dry-run 2> "$scratch/err") || true
   if [[ $(jq -r '.act // empty' <<< "$decision" 2> /dev/null) != $(jq -r .act <<< "$case") ]]; then
     printf 'board case FAILED: %s\n  gave: %s\n%s\n' "$(jq -r .name <<< "$case")" "$decision" "$(cat "$scratch/err")" >&2
