@@ -811,8 +811,8 @@ fn apply(
     }
 }
 
-/// Visit every source, spread over the machine's cores, the longest first so
-/// no core is left with a long source at the end.
+/// Visit every source, spread over the threads of `width`, the longest first
+/// so no thread is left with a long source at the end.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -831,13 +831,14 @@ fn apply(
 /// - witness: `tests::editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful`
 fn each_in_parallel(
     sources: &[Source],
+    width: Width,
     visit: impl Fn(&Source) + Sync,
 )
 {
     let mut ordered: Vec<&Source> = sources.iter().collect();
     ordered.sort_by_key(|source| core::cmp::Reverse(source.text.len()));
     let next = AtomicUsize::new(0_usize);
-    let workers = NonZeroUsize::from(Width::PerformanceCores.threads()).get();
+    let workers = NonZeroUsize::from(width.threads()).get();
     std::thread::scope(|scope| {
         for _ in 0_usize .. workers {
             let _worker = scope.spawn(|| {
@@ -1833,28 +1834,40 @@ mod sweeps
     /// Every source of the run typed: from its start, or under the `nightly`
     /// profile opened whole up to the night's part of [`TYPED_NIGHTS`] and
     /// typed through it, so every keystroke of every source is typed once
-    /// every [`TYPED_NIGHTS`] nights.
+    /// every [`TYPED_NIGHTS`] nights. The sweep is wide by design: it asks
+    /// for [`Width::Reserved`], and nextest's override reserves the host for
+    /// it (#7539).
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful()
     {
-        types_each(&Sweep::asked().expect("the run's sweep resolves"));
+        types_each(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            Width::Reserved,
+        );
     }
 
     /// The change's sources beside the fixed set (#4654).
     #[test]
     fn typing_each_corpus_source_keeps_every_answer_faithful_changed()
     {
-        types_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+        types_each(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            Width::PerformanceCores,
+        );
     }
 
-    /// Every source `sweep` visits typed, each keystroke held to the oracle.
+    /// Every source `sweep` visits typed on the threads of `width`, each
+    /// keystroke held to the oracle.
     ///
     /// # Specification
     /// trivial.
-    fn types_each(sweep: &Sweep)
+    fn types_each(
+        sweep: &Sweep,
+        width: Width,
+    )
     {
         let (rotation, sources) = visited(sweep, TYPED, Some(TYPED_CEILING), Nightly::Part);
-        each_in_parallel(&sources, |source| {
+        each_in_parallel(&sources, width, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), TYPED_NIGHTS);
             let opening = source
                 .text
@@ -1879,29 +1892,40 @@ mod sweeps
     /// `nightly` profile opened up to the end of the night's part of
     /// [`ERASED_NIGHTS`] and erased line by line down to its start, so every
     /// text the erasure checks is checked once every [`ERASED_NIGHTS`] nights.
+    /// The sweep is wide by design: it asks for [`Width::Reserved`], and
+    /// nextest's override reserves the host for it (#7539).
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful()
     {
-        erases_each(&Sweep::asked().expect("the run's sweep resolves"));
+        erases_each(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            Width::Reserved,
+        );
     }
 
     /// The change's sources beside the fixed set (#4654).
     #[test]
     fn erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful_changed()
     {
-        erases_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+        erases_each(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            Width::PerformanceCores,
+        );
     }
 
-    /// Every source `sweep` visits erased line by line, each keystroke held
-    /// to the oracle.
+    /// Every source `sweep` visits erased line by line on the threads of
+    /// `width`, each keystroke held to the oracle.
     ///
     /// # Specification
     /// trivial.
-    fn erases_each(sweep: &Sweep)
+    fn erases_each(
+        sweep: &Sweep,
+        width: Width,
+    )
     {
         let (rotation, sources) = visited(sweep, ERASED, Some(ERASED_CEILING), Nightly::Part);
         let grammar = built_in().expect("the built-in grammar builds");
-        each_in_parallel(&sources, |source| {
+        each_in_parallel(&sources, width, |source| {
             let part = rotation.part(gandr_workflow_sweep::Text(&source.text), ERASED_NIGHTS);
             let opening = source
                 .text
@@ -2012,31 +2036,44 @@ mod sweeps
         );
     }
 
+    /// Every position of every source of the run hovered. The sweep is wide
+    /// by design: it asks for [`Width::Reserved`], and nextest's override
+    /// reserves the host for it (#7539).
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault()
     {
-        hovers_each(&Sweep::asked().expect("the run's sweep resolves"));
+        hovers_each(
+            &Sweep::asked().expect("the run's sweep resolves"),
+            Width::Reserved,
+        );
     }
 
     /// The change's sources beside the fixed set (#4654).
     #[test]
     fn hovering_every_position_of_each_corpus_source_answers_without_fault_changed()
     {
-        hovers_each(&Sweep::asked().expect("the run's sweep resolves").changed());
+        hovers_each(
+            &Sweep::asked().expect("the run's sweep resolves").changed(),
+            Width::PerformanceCores,
+        );
     }
 
-    /// Every position of every source `sweep` visits hovers without fault.
+    /// Every position of every source `sweep` visits hovers without fault, on
+    /// the threads of `width`.
     ///
     /// # Specification
     /// trivial.
-    fn hovers_each(sweep: &Sweep)
+    fn hovers_each(
+        sweep: &Sweep,
+        width: Width,
+    )
     {
         let (drawn, sources) = hovered_sources(sweep);
         let grammar = built_in().expect("the built-in grammar builds");
         let positions = AtomicUsize::new(0_usize);
         let unanswered = AtomicUsize::new(0_usize);
         let by_kind: Mutex<BTreeMap<String, Coverage>> = Mutex::new(BTreeMap::new());
-        each_in_parallel(&sources, |source| {
+        each_in_parallel(&sources, width, |source| {
             let hovers = hovered(&grammar, source, hovered_every(&grammar, source));
             let shaped = shapes::judged(&grammar, source, &hovers);
             let text = Text(&source.text);

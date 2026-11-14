@@ -99,6 +99,12 @@ pub enum Width
     /// The host's physical performance cores, never more than the threads the
     /// process may run on.
     PerformanceCores,
+    /// The host's physical performance cores, whatever count of tests runs at
+    /// once: the width of a test that is wide by design. nextest reserves the
+    /// threads for such a test by the `threads-required` override that names
+    /// it in `.config/nextest.toml`, and `check:reserved-width` holds the
+    /// override and the tests that ask for this width equal (#7539).
+    Reserved,
     /// Exactly this many threads; one is the serial walk.
     Threads(Threads),
 }
@@ -116,13 +122,14 @@ impl Width
     ///   [`Self::PerformanceCores`] answers the process's [`share`] of the
     ///   host's physical performance cores, capped by the parallelism the
     ///   process may use, and of that parallelism alone when the host reports
-    ///   no topology.
+    ///   no topology; [`Self::Reserved`] answers the host's count under the
+    ///   budget, as [`Self::whole`] does, with no share of it for each test.
     /// - provides: the pool size a walk forks on, before the walk caps it at
     ///   its source count.
     /// - fails: never; a host that answers nothing is one thread.
     /// - panics: none.
     /// - intension: asks the host and the environment once per call, and only
-    ///   for [`Self::PerformanceCores`].
+    ///   for [`Self::PerformanceCores`] and [`Self::Reserved`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an explicit count is returned exactly, and the host's
@@ -131,11 +138,12 @@ impl Width
     ///   measured hosts, not a test oracle.
     /// - witness: `width::tests::an_explicit_width_is_exact`
     /// - witness: `width::tests::the_host_width_fits_the_process`
+    /// - witness: `width::tests::a_reserved_width_takes_no_share_7539`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match self {
         Self::Threads(threads) => ret == threads,
-        Self::PerformanceCores => std::thread::available_parallelism()
+        Self::PerformanceCores | Self::Reserved => std::thread::available_parallelism()
             .map_or(ret == Threads::ONE, |available| ret <= Threads(available)),
     })]
     pub fn threads(self) -> Threads
@@ -146,6 +154,7 @@ impl Width
                 let available = available();
                 share(host(available), bounds(available))
             },
+            Self::Reserved => reserved(),
         }
     }
 
@@ -156,12 +165,12 @@ impl Width
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Self::Threads`] answers its count unchanged;
-    ///   [`Self::PerformanceCores`] answers the host's physical performance
-    ///   cores, capped by the parallelism the process may use and by
-    ///   `GANDR_JOBS`, and at least [`Self::threads`].
+    ///   [`Self::PerformanceCores`] and [`Self::Reserved`] answer the host's
+    ///   physical performance cores, capped by the parallelism the process may
+    ///   use and by `GANDR_JOBS`, and at least [`Self::threads`].
     /// - panics: none.
     /// - intension: asks the host and the environment once per call, and only
-    ///   for [`Self::PerformanceCores`].
+    ///   for [`Self::PerformanceCores`] and [`Self::Reserved`].
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an explicit count is returned exactly, and a share
@@ -172,19 +181,27 @@ impl Width
     #[must_use]
     #[spec(ensures: |ret| match self {
         Self::Threads(threads) => ret == threads,
-        Self::PerformanceCores => ret >= self.threads(),
+        Self::PerformanceCores | Self::Reserved => ret >= self.threads(),
     })]
     pub(crate) fn whole(self) -> Threads
     {
         match self {
             Self::Threads(threads) => threads,
-            Self::PerformanceCores => {
-                let available = available();
-                let (_tests, budget) = bounds(available);
-                share(host(available), (None, budget))
-            },
+            Self::PerformanceCores | Self::Reserved => reserved(),
         }
     }
+}
+
+/// The host's physical performance cores under the operator's budget, with no
+/// share of them for each test that runs at once.
+///
+/// # Specification
+/// trivial.
+fn reserved() -> Threads
+{
+    let available = available();
+    let (_tests, budget) = bounds(available);
+    share(host(available), (None, budget))
 }
 
 /// The parallelism the process may use, at least one thread.
@@ -650,6 +667,25 @@ mod tests
             share(host, (None, Some(threads(3)))),
             threads(3),
             "a budget alone bounds the host"
+        );
+    }
+
+    /// A reserved width takes the host under the budget, as a grant's pool
+    /// does, and never the share of a test process: under nextest the share
+    /// divides the host by the tests that run at once, and the reserved width
+    /// does not (#7539).
+    #[test]
+    fn a_reserved_width_takes_no_share_7539()
+    {
+        let reserved = Width::Reserved.threads();
+        assert_eq!(
+            reserved,
+            Width::PerformanceCores.whole(),
+            "a reserved width is the host's count under the budget"
+        );
+        assert!(
+            reserved >= Width::PerformanceCores.threads(),
+            "a reserved width is never below a test process's share"
         );
     }
 

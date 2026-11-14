@@ -25,6 +25,16 @@ slow-timeout = { period = "30s", terminate-after = 10 }
 filter = "test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_1) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_2) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_3) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_4) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_5) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_6) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_7)"
 priority = 70
 
+# The sweeps that are wide by design reserve every thread of the run. Each
+# one asks for `Width::Reserved` in its own body and takes the host's width,
+# so nextest runs no other test beside it. nextest passes no
+# `threads-required` to a test, so the test states its width itself, and
+# `check:reserved-width` holds this filter and those tests equal (#7539). An
+# override of the default profile holds in every profile.
+[[profile.default.overrides]]
+filter = "test(=editor::scenarios::sweeps::erasing_each_corpus_source_line_by_line_keeps_every_answer_faithful) or test(=editor::scenarios::sweeps::hovering_every_position_of_each_corpus_source_answers_without_fault) or test(=editor::scenarios::sweeps::typing_each_corpus_source_keeps_every_answer_faithful)"
+threads-required = "num-test-threads"
+
 # The arm64 runner runs four tests at once in 16.7 GB. The dispatcher's
 # corpus walks need no group of their own since #4869 (#4854): a walk holds
 # 1.1 GB, and the shard peaks at 4.3 GB on a local four-thread run (#4874).
