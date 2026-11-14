@@ -38,13 +38,17 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_checker::Directed;
+use gandr_core_checker::Evaluation;
 use gandr_core_checker::Forward;
+use gandr_core_checker::Funext;
+use gandr_core_checker::FunextStep;
 use gandr_core_checker::Handled;
 use gandr_core_checker::MetPair;
 use gandr_core_checker::NestedElaboration;
 use gandr_core_checker::Nesting;
 use gandr_core_checker::OtherTables;
 use gandr_core_checker::Reflexivity;
+use gandr_core_checker::Stalled;
 use gandr_core_checker::Tabled;
 use gandr_core_checker::elaboration::Equation;
 use gandr_core_checker::elaboration::Suspension;
@@ -283,6 +287,64 @@ pub enum DirectedContent
     Function(Place),
 }
 
+/// What a checkpoint keeps of one claim that returns, in a step of a function
+/// extensionality, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct EvaluationContent
+{
+    /// The claim's normal form.
+    pub normal: Place,
+    /// The value the body returns, under the claim's binders.
+    pub returned: Place,
+    /// The derivation that the claim converts to its normal form, in order.
+    pub decisions: Vec<ConversionDecision<TraceContent>>,
+}
+
+/// What a checkpoint keeps of one claim whose normal form does not return, in
+/// a step of a function extensionality, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct StalledContent
+{
+    /// The claim's stuck normal form.
+    pub normal: Place,
+    /// The derivation that the claim converts to its normal form, in order.
+    pub decisions: Vec<ConversionDecision<TraceContent>>,
+}
+
+/// What a checkpoint keeps of one step of a function extensionality, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum StepContent
+{
+    /// Both functions return at the step.
+    Return
+    {
+        /// The first function's evaluation.
+        left: EvaluationContent,
+        /// The second function's evaluation.
+        right: EvaluationContent,
+    },
+    /// Both functions stick at an application of the two functions that the
+    /// premise at `fibre` relates.
+    Apply
+    {
+        /// The premise's de Bruijn index in the step's telescope.
+        fibre: DeBruijnIndex,
+        /// The first function's stuck normal form.
+        left: StalledContent,
+        /// The second function's stuck normal form.
+        right: StalledContent,
+    },
+}
+
 /// A kept dialogue, each constant at the item that holds it.
 ///
 /// # Specification
@@ -389,6 +451,7 @@ fn constant_placeholder() -> ConstantIndex
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableContent
 {
@@ -406,6 +469,9 @@ pub struct TableContent
     /// The native path at each `ua` statement, product of paths and fill, in
     /// the order of its node's place.
     natives: Vec<(Place, Place)>,
+    /// The steps of each function extensionality, in the order of its node's
+    /// place.
+    funexts: Vec<(Place, Vec<StepContent>)>,
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds.
     outside: Vec<SupportedNode>,
@@ -414,8 +480,8 @@ pub struct TableContent
 }
 
 /// The rows records, the handlers, the reflexivities, the payloads, the
-/// directed flows and the native paths of a [`TableContent`], each in the
-/// order of its key.
+/// directed flows, the native paths and the function extensionalities of a
+/// [`TableContent`], each in the order of its key.
 pub type TableEntries = (
     Vec<RowContent>,
     Vec<(Place, HandledContent)>,
@@ -423,6 +489,7 @@ pub type TableEntries = (
     Vec<(Place, Place)>,
     Vec<(Place, DirectedContent)>,
     Vec<(Place, Place)>,
+    Vec<(Place, Vec<StepContent>)>,
 );
 
 impl TableContent
@@ -432,7 +499,7 @@ impl TableContent
     /// # Specification
     /// trivial.
     pub(crate) fn from_parts(
-        (rows, handled, reflexivities, payloads, directed, natives): TableEntries,
+        (rows, handled, reflexivities, payloads, directed, natives, funexts): TableEntries,
         (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
     ) -> Self
     {
@@ -443,6 +510,7 @@ impl TableContent
             payloads,
             directed,
             natives,
+            funexts,
             outside,
             roots,
         }
@@ -504,6 +572,16 @@ impl TableContent
         &self.natives
     }
 
+    /// The steps of each function extensionality, in the order of its node's
+    /// place.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn funexts(&self) -> &[(Place, Vec<StepContent>)]
+    {
+        &self.funexts
+    }
+
     /// The table of the nodes that neither the item's walk nor the judged
     /// body holds, beside the place of each such node in it.
     ///
@@ -539,6 +617,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
     pub(crate) fn of(
         (arena, layout): (&CoreArena, &Layout),
         (sites, body): (&Sites, Option<&Placer>),
@@ -558,6 +637,7 @@ impl TableContent
             && tabled.payloads().is_empty()
             && tabled.directed().is_empty()
             && tabled.natives().is_empty()
+            && tabled.funexts().is_empty()
         {
             return Maybe::Absent(tabled::Absent::Untabled);
         }
@@ -661,6 +741,67 @@ impl TableContent
             };
             natives.push((at, placing.place(ArenaNode::Value(path))));
         }
+        let mut funexts = Vec::with_capacity(tabled.funexts().len());
+        for (&at, funext) in tabled.funexts() {
+            let Some(at) = placing.key(ArenaNode::Value(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            let mut steps = Vec::with_capacity(funext.steps().len());
+            for step in funext.steps() {
+                steps.push(match *step {
+                    FunextStep::Return {
+                        ref left,
+                        ref right,
+                    } => {
+                        let (Some(left_decisions), Some(right_decisions)) = (
+                            dialogue_content(layout, left.decisions()),
+                            dialogue_content(layout, right.decisions()),
+                        )
+                        else {
+                            return Maybe::Absent(tabled::Absent::Unplaced);
+                        };
+                        StepContent::Return {
+                            left: EvaluationContent {
+                                normal: placing.place(ArenaNode::Value(left.normal())),
+                                returned: placing.place(ArenaNode::Value(left.returned())),
+                                decisions: left_decisions,
+                            },
+                            right: EvaluationContent {
+                                normal: placing.place(ArenaNode::Value(right.normal())),
+                                returned: placing.place(ArenaNode::Value(right.returned())),
+                                decisions: right_decisions,
+                            },
+                        }
+                    },
+                    FunextStep::Apply {
+                        fibre,
+                        ref left,
+                        ref right,
+                    } => {
+                        let (Some(left_decisions), Some(right_decisions)) = (
+                            dialogue_content(layout, left.decisions()),
+                            dialogue_content(layout, right.decisions()),
+                        )
+                        else {
+                            return Maybe::Absent(tabled::Absent::Unplaced);
+                        };
+                        StepContent::Apply {
+                            fibre,
+                            left: StalledContent {
+                                normal: placing.place(ArenaNode::Value(left.normal())),
+                                decisions: left_decisions,
+                            },
+                            right: StalledContent {
+                                normal: placing.place(ArenaNode::Value(right.normal())),
+                                decisions: right_decisions,
+                            },
+                        }
+                    },
+                });
+            }
+            funexts.push((at, steps));
+        }
         let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
         let (roots, remap) = merged(places);
         let mut content = Self {
@@ -670,6 +811,7 @@ impl TableContent
             payloads,
             directed,
             natives,
+            funexts,
             outside,
             roots,
         };
@@ -698,6 +840,8 @@ impl TableContent
         content.directed.dedup();
         content.natives.sort_by(|left, right| left.0.cmp(&right.0));
         content.natives.dedup();
+        content.funexts.sort_by(|left, right| left.0.cmp(&right.0));
+        content.funexts.dedup();
         Maybe::Present(content)
     }
 
@@ -756,6 +900,30 @@ impl TableContent
             visit(at);
             visit(path);
         }
+        for &mut (ref mut at, ref mut steps) in &mut self.funexts {
+            visit(at);
+            for step in steps {
+                match *step {
+                    StepContent::Return {
+                        ref mut left,
+                        ref mut right,
+                    } => {
+                        for side in [left, right] {
+                            visit(&mut side.normal);
+                            visit(&mut side.returned);
+                        }
+                    },
+                    StepContent::Apply {
+                        ref mut left,
+                        ref mut right,
+                        ..
+                    } => {
+                        visit(&mut left.normal);
+                        visit(&mut right.normal);
+                    },
+                }
+            }
+        }
     }
 
     /// Seat the entries in `arena`, constants placed through `layout`: a key
@@ -784,6 +952,7 @@ impl TableContent
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
     pub(crate) fn seat(
         &self,
         (arena, layout): (&mut CoreArena, &Layout),
@@ -879,6 +1048,45 @@ impl TableContent
         for &(ref at, ref path) in &self.natives {
             natives.push((value_of(seat.node(at)?)?, value_of(seat.node(path)?)?));
         }
+        let mut funexts = Vec::with_capacity(self.funexts.len());
+        for &(ref at, ref steps) in &self.funexts {
+            let mut seated = Vec::with_capacity(steps.len());
+            for step in steps {
+                seated.push(match *step {
+                    StepContent::Return {
+                        ref left,
+                        ref right,
+                    } => FunextStep::Return {
+                        left: Evaluation::new(
+                            value_of(seat.node(&left.normal)?)?,
+                            value_of(seat.node(&left.returned)?)?,
+                            seated_dialogue(layout, &left.decisions)?,
+                        ),
+                        right: Evaluation::new(
+                            value_of(seat.node(&right.normal)?)?,
+                            value_of(seat.node(&right.returned)?)?,
+                            seated_dialogue(layout, &right.decisions)?,
+                        ),
+                    },
+                    StepContent::Apply {
+                        fibre,
+                        ref left,
+                        ref right,
+                    } => FunextStep::Apply {
+                        fibre,
+                        left: Stalled::new(
+                            value_of(seat.node(&left.normal)?)?,
+                            seated_dialogue(layout, &left.decisions)?,
+                        ),
+                        right: Stalled::new(
+                            value_of(seat.node(&right.normal)?)?,
+                            seated_dialogue(layout, &right.decisions)?,
+                        ),
+                    },
+                });
+            }
+            funexts.push((value_of(seat.node(at)?)?, Funext::new(seated)));
+        }
         Ok((
             Rows::from_records(records),
             handled,
@@ -886,13 +1094,14 @@ impl TableContent
             payloads,
             directed,
             natives,
+            funexts,
         ))
     }
 }
 
 /// The rows records, the handlers, the reflexivities, the payloads, the
-/// directed flows and the native paths that a seat of a [`TableContent`]
-/// builds in an edited arena.
+/// directed flows, the native paths and the function extensionalities that a
+/// seat of a [`TableContent`] builds in an edited arena.
 pub type SeatedTables = (
     Rows,
     Vec<(ComputationId, Handled)>,
@@ -900,6 +1109,7 @@ pub type SeatedTables = (
     Vec<(ComputationId, ValueTypeId)>,
     Vec<(ValueId, Directed)>,
     Vec<(ValueId, ValueId)>,
+    Vec<(ValueId, Funext)>,
 );
 
 /// Where a node of a report stands.

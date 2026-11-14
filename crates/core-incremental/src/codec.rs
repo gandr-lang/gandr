@@ -168,6 +168,7 @@ use crate::report::CrossingContent;
 use crate::report::DirectedContent;
 use crate::report::ElaborationContent;
 use crate::report::EquationContent;
+use crate::report::EvaluationContent;
 use crate::report::HandledContent;
 use crate::report::MetContent;
 use crate::report::NestingContent;
@@ -176,6 +177,8 @@ use crate::report::Place as ReportPlace;
 use crate::report::ReflexivityContent;
 use crate::report::ReportContent;
 use crate::report::RowContent;
+use crate::report::StalledContent;
+use crate::report::StepContent;
 use crate::report::SuspensionContent;
 use crate::report::TableContent;
 use crate::report::TraceContent;
@@ -196,17 +199,17 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x1e` keeps the native paths that the judgement added, beside the
-/// directed flows that `0x1d` keeps, the payloads that `0x1c` keeps, the
-/// reflexivities that `0x1b` keeps, the entries of the rows and the handlers
-/// that `0x1a` keeps, what the judgement reported of an item that `0x19`
-/// keeps, the table parts that `0x18` keeps of an item that its judgement
-/// entered elaborated, the failure content that `0x17` keeps and the located
-/// program that `0x16` persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1e";
+/// `0x1f` keeps the function extensionalities that the judgement added,
+/// beside the native paths that `0x1e` keeps, the directed flows that `0x1d`
+/// keeps, the payloads that `0x1c` keeps, the reflexivities that `0x1b` keeps,
+/// the entries of the rows and the handlers that `0x1a` keeps, what the
+/// judgement reported of an item that `0x19` keeps, the table parts that
+/// `0x18` keeps of an item that its judgement entered elaborated, the failure
+/// content that `0x17` keeps and the located program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1f";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1e`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1f`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1550,6 +1553,7 @@ const TABLEDS: [tabled::Absent; 4] = [
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
 fn write_tables<Out>(
     writer: &mut Writer<'_, Out>,
     tables: Maybe<&TableContent, tabled::Absent>,
@@ -1654,6 +1658,38 @@ where
     for &(ref at, ref path) in tables.natives() {
         write_report_place(writer, at)?;
         write_report_place(writer, path)?;
+    }
+    writer.count(Count(tables.funexts().len()))?;
+    for &(ref at, ref steps) in tables.funexts() {
+        write_report_place(writer, at)?;
+        writer.count(Count(steps.len()))?;
+        for step in steps {
+            match *step {
+                StepContent::Return {
+                    ref left,
+                    ref right,
+                } => {
+                    writer.tag(Tag(0));
+                    for side in [left, right] {
+                        write_report_place(writer, &side.normal)?;
+                        write_report_place(writer, &side.returned)?;
+                        write_dialogue(writer, &side.decisions, write_trace)?;
+                    }
+                },
+                StepContent::Apply {
+                    fibre,
+                    ref left,
+                    ref right,
+                } => {
+                    writer.tag(Tag(1));
+                    writer.word(Word(u64::from(u32::from(fibre))));
+                    for side in [left, right] {
+                        write_report_place(writer, &side.normal)?;
+                        write_dialogue(writer, &side.decisions, write_trace)?;
+                    }
+                },
+            }
+        }
     }
     Ok(())
 }
@@ -1943,6 +1979,7 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
 /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_funext_keeps_its_steps_7463`
 fn read_tables(
     reader: &mut Reader<'_>,
     body: Option<&[SupportedNode]>,
@@ -2071,8 +2108,64 @@ fn read_tables(
     if !natives.is_sorted_by(|left, right| left.0 < right.0) {
         return Err(CodecError::NonCanonical);
     }
+    let count = reader.count()?.0;
+    let mut funexts = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        let length = reader.count()?.0;
+        let mut steps = Vec::new();
+        for _ in 0 .. length {
+            steps.push(match reader.tag()?.0 {
+                0 => {
+                    let mut sides = Vec::with_capacity(2);
+                    for _ in 0 .. 2 {
+                        let normal = places.read(reader)?;
+                        let returned = places.read(reader)?;
+                        let decisions = read_dialogue(reader, read_trace)?;
+                        sides.push(EvaluationContent {
+                            normal,
+                            returned,
+                            decisions,
+                        });
+                    }
+                    let (Some(right), Some(left)) = (sides.pop(), sides.pop())
+                    else {
+                        return Err(CodecError::Corrupt);
+                    };
+                    StepContent::Return { left, right }
+                },
+                1 => {
+                    let fibre = read_narrow::<DeBruijnIndex>(reader)?;
+                    let mut sides = Vec::with_capacity(2);
+                    for _ in 0 .. 2 {
+                        let normal = places.read(reader)?;
+                        let decisions = read_dialogue(reader, read_trace)?;
+                        sides.push(StalledContent { normal, decisions });
+                    }
+                    let (Some(right), Some(left)) = (sides.pop(), sides.pop())
+                    else {
+                        return Err(CodecError::Corrupt);
+                    };
+                    StepContent::Apply { fibre, left, right }
+                },
+                _ => return Err(CodecError::Corrupt),
+            });
+        }
+        funexts.push((at, steps));
+    }
+    if !funexts.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
     Ok(Maybe::Present(TableContent::from_parts(
-        (rows, handled, reflexivities, payloads, directed, natives),
+        (
+            rows,
+            handled,
+            reflexivities,
+            payloads,
+            directed,
+            natives,
+            funexts,
+        ),
         (outside, roots),
     )))
 }

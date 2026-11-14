@@ -162,6 +162,18 @@ pub struct Funext
 
 impl Funext
 {
+    /// The decision whose steps, in pre-order and input after input, are
+    /// `steps`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(steps: Vec<Step>) -> Self
+    {
+        Self { steps }
+    }
+
     /// The steps, in pre-order, input after input.
     ///
     /// # Specification

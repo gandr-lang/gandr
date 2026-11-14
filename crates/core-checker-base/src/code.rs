@@ -554,6 +554,26 @@ pub struct Evaluation
 
 impl Evaluation
 {
+    /// The reading whose normal form is `normal`, whose body returns
+    /// `returned`, and whose claim converts to `normal` by `decisions`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        normal: ValueId,
+        returned: ValueId,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self {
+            normal,
+            returned,
+            decisions,
+        }
+    }
+
     /// The claim's normal form, `thunk (λⁿ. return v)`.
     ///
     /// # Specification
@@ -2418,6 +2438,21 @@ pub struct Stalled
 
 impl Stalled
 {
+    /// The reading whose stuck normal form is `normal`, and whose claim
+    /// converts to `normal` by `decisions`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        normal: ValueId,
+        decisions: Vec<ConversionDecision<TraceNode>>,
+    ) -> Self
+    {
+        Self { normal, decisions }
+    }
+
     /// The claim's normal form.
     ///
     /// # Specification
