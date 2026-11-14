@@ -42,6 +42,9 @@
 //!   always available.
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
 //!   strata persist in the store, under a receipt the installation's key signs.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: §
+//!   storage-programme-gluing — an admission recalls its verdict by its entry
+//!   key alone, and no key names a place in the admission order.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
