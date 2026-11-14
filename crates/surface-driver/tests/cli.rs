@@ -4146,26 +4146,57 @@ impl Builds
         self.toolchain(&[os("toolchain"), os("default"), os("second")]);
     }
 
-    /// Assert that each build served the session from a hub of its own, and
-    /// that the next build removed the handover it read.
+    /// The names of the entries of the runtime directory that holds the hubs.
     ///
     /// # Specification
     /// trivial.
-    fn served_by_both(&self)
+    fn hubs(&self) -> Vec<String>
     {
-        let hubs = std::fs::read_dir(self.runtime.join("gandr"))
+        std::fs::read_dir(self.runtime.join("gandr"))
             .expect("the runtime directory holds the hubs")
             .filter_map(Result::ok)
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .collect::<Vec<String>>();
-        assert_eq!(
-            hubs.iter()
-                .filter(|name| Path::new(name)
+            .collect()
+    }
+
+    /// The sockets of the hubs that serve now, by name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sockets(&self) -> BTreeSet<String>
+    {
+        self.hubs()
+            .into_iter()
+            .filter(|name| {
+                Path::new(name)
                     .extension()
-                    .is_some_and(|extension| extension == "sock"))
-                .count(),
-            2_usize,
-            "each build serves the session from a hub of its own: {hubs:?}"
+                    .is_some_and(|extension| extension == "sock")
+            })
+            .collect()
+    }
+
+    /// Assert that each build served the session from a hub of its own, and
+    /// that the next build removed the handover it read. `first` holds the
+    /// sockets before the switch. The first build's hub may end its linger
+    /// before the next build answers, so the proof is a socket that `first`
+    /// does not hold, not a count of the sockets now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn served_by_both(
+        &self,
+        first: &BTreeSet<String>,
+    )
+    {
+        assert_eq!(
+            first.len(),
+            1_usize,
+            "the first build serves the session from one hub: {first:?}"
+        );
+        let hubs = self.hubs();
+        assert!(
+            self.sockets().difference(first).next().is_some(),
+            "the next build serves the session from a hub of its own: before {first:?}, now {hubs:?}"
         );
         assert!(
             hubs.iter().all(|name| !name.starts_with("handover-")),
@@ -4239,6 +4270,7 @@ fn a_language_server_follows_a_toolchain_switch()
         builds.first.join("gandr"),
         "the session starts in the first build"
     );
+    let first = builds.sockets();
     builds.switch();
     to_editor
         .write_all(
@@ -4258,7 +4290,7 @@ fn a_language_server_follows_a_toolchain_switch()
         builds.second.join("gandr"),
         "the change found the switch, and the session runs in the second build"
     );
-    builds.served_by_both();
+    builds.served_by_both(&first);
     to_editor
         .write_all(
             frames(&[
@@ -4332,6 +4364,7 @@ fn a_model_session_follows_a_toolchain_switch()
         builds.first.join("gandr"),
         "the session starts in the first build"
     );
+    let first = builds.sockets();
     builds.switch();
     to_model
         .write_all(concat!(
@@ -4356,7 +4389,7 @@ fn a_model_session_follows_a_toolchain_switch()
         builds.second.join("gandr"),
         "the call found the switch, and the session runs in the second build"
     );
-    builds.served_by_both();
+    builds.served_by_both(&first);
     drop(to_model);
     let mut rest = String::new();
     std::io::Read::read_to_string(&mut from_model, &mut rest).expect("the model's output ends");
