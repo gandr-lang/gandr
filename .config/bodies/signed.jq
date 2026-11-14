@@ -14,9 +14,9 @@
 # the label. The label is a future event, never a refusal (#4164): its
 # `wait:` line says so, and its `arm:` line arms `pr:await` on the issue
 # (`.config/pr-stack/await.jq`), whose exit wakes the seat to run `pr:open`
-# again. An issue sectioned before its claim is signed by construction,
-# `issue:file` labelling it as it files a passing body. An epic or a
-# `collector` keeps its own shape and is not read.
+# again. An issue sectioned before its claim is signed by construction:
+# `issue:file` labels it once the filed issue passes `unit:check` (#7545).
+# An epic or a `collector` keeps its own shape and is not read.
 
 include "findings";
 include "await" {search: "../pr-stack"};

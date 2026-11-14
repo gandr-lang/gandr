@@ -26,9 +26,9 @@ unit_frame_marker() {
 
 # The sign-off of issue `$2` at the frame now of the tree `$1`: one comment
 # that holds the frame's marker and a line that names the signer `$3`.
-# `unit:sign` writes it after it adds `shape:signed`, and `issue:file` after
-# it files a unit whole under that label, so `claim:take` takes the unit
-# (#7129). One GitHub write.
+# `unit:sign` writes it after it adds `shape:signed`. `issue:file` writes it
+# when a unit filed whole passes `unit:check`, and then adds the label
+# (#7545). So `claim:take` takes the unit (#7129). One GitHub write.
 unit_frame_signoff() {
   local root=$1 number=$2 signer=$3 frame
   frame=$(unit_frame "$root")

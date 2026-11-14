@@ -3145,8 +3145,10 @@ exit "$status"
 # a `kind:defect` that is no `collector` and fails `unit:check` is refused
 # unless it carries `status:unsectioned`, its claiming seat's to section
 # (#3134). A unit filed whole is sectioned before its claim, so it is signed
-# by construction: `issue:file` labels it `shape:signed`, the label
-# `pr:open` waits for (`signed.jq`).
+# by construction: once `unit:check` passes on the filed issue, `issue:file`
+# writes the frame's marker and then labels it `shape:signed`, the label
+# `pr:open` waits for (`signed.jq`). A refused check stops the task before
+# both, and the issue stays unsigned with the check's findings (#7545).
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
@@ -3223,7 +3225,6 @@ if [[ $unit == true || $defect == true ]]; then
     exit 1
   fi
   unit=true
-  labels+=(shape:signed)
 fi
 plan=$(labels_plan "$(printf '%s\n' "${labels[@]}" | jq -R . | jq -s -c 'map(select(. != ""))')" "$(labels_defaults)")
 refused=$(awk -F'\t' '$1 == "refuse" { print "  - " $2 }' <<< "$plan")
@@ -3290,10 +3291,13 @@ for blocked in "${blocks[@]}"; do
 done
 if [[ $unit == true ]]; then
   mise run --quiet unit:check --fix "$number" >&2
-  # A unit filed whole carries `shape:signed`, so it carries the marker of
-  # the frame its sections pass at too, or `claim:take` refuses it (#7129).
+  # A unit filed whole is signed once the check passes (#7545): the marker of
+  # the frame its sections pass at, or `claim:take` refuses it (#7129), then
+  # `shape:signed`. A failed edit leaves a marker that no label reads.
   source "$config_dir/bodies/frame.bash"
   unit_frame_signoff "$root" "$number" "issue:file" > /dev/null
+  gh issue edit "$number" --add-label shape:signed > /dev/null \
+    || { echo "issue:file: #$number passes unit:check and carries its frame marker, and GitHub refuses the label shape:signed: add the label to #$number by hand" >&2; exit 1; }
 fi
 echo "$url"
 {% endraw %}'''
