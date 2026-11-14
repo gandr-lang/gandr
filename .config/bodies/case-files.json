@@ -18,7 +18,7 @@
     "file": ".config/probe/probe-cases.bash",
     "text": "fail \"the probe holds\"\n",
     "regressions": [],
-    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
   },
   {
     "name": "#5498: a change whose Rust edit is a module doc counts as no Rust, so its JSON case witnesses #7",
@@ -42,6 +42,6 @@
       "head": "/// Two.\npub const N: u8 = 2;\n"
     },
     "regressions": [".config/probe/probe.json"],
-    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue.\n<!-- gandr-observed:end -->"
+    "observed": "<!-- gandr-observed:start -->\n### Observed\n\n- [ ] observed — no transcript under a crate's `tests/debug-traces/` stops in a test the body names. Run `mise run debug:refusal <Refusal> <package> <test>` or `mise run debug:test <package> <test>` and commit its transcript; a change touching no Rust records a `.config` case whose name cites the issue; a refusal of a check commits the check's transcript, its command, issue, head and exit before and after.\n<!-- gandr-observed:end -->"
   }
 ]
