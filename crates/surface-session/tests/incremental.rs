@@ -18,11 +18,16 @@ use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Refusal;
 use gandr_core_incremental::Typing;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::compose;
+use gandr_surface_evaluate::Evaluator;
+use gandr_surface_session::Reusing;
 use gandr_surface_session::Revision;
 use gandr_surface_session::Session;
 use gandr_surface_session::SurfaceItems;
 use gandr_surface_session::Verdicts;
+use gandr_surface_syntax::SourceText;
 use proptest::prelude::ProptestConfig;
 use proptest::prop_assert_eq;
 use proptest::prop_oneof;
@@ -36,11 +41,9 @@ use quenchant_shape::shape::Maybe;
 use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::batch;
-use crate::common::reports_as_batch;
 use crate::common::resumed;
 use crate::common::session;
 use crate::common::submit;
-use crate::common::submit_read;
 use crate::generate::CASES;
 use crate::generate::apply;
 use crate::generate::program_and_edits;
@@ -93,14 +96,21 @@ fn gate<'text>(
     let Text(edited) = edited.into();
     let mut session = session(SourceRoot::Strict);
     let _base = submit(&mut session, base);
-    let (_submission, reading) = submit_read(&mut session, edited);
-    reports_as_batch(
-        reading.as_ref(),
-        Text(edited),
-        SourceRoot::Strict,
-        &format_args!("base {base:?}, edited {edited:?}"),
-    );
+    let submission = submit(&mut session, edited);
     let grammar = &*GRAMMAR;
+    let mut lowerings = LoweringCount::default();
+    let composed = compose::<Evaluator>(
+        grammar,
+        SourceRoot::Strict.corpus_root(),
+        SourceText::from(edited),
+        &mut lowerings,
+    )
+    .expect("the edited revision composes");
+    assert_eq!(
+        *submission.composed(),
+        composed,
+        "the resumed submission reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
+    );
     let program = SurfaceItems::new(grammar.clone())
         .items(&Revision::from(edited))
         .expect("the edited revision is offered");
@@ -344,15 +354,22 @@ fn taken<'text>(
     let Text(base) = base.into();
     let Text(edited) = edited.into();
     let mut session = session(SourceRoot::Strict);
+    session.reuse(Reusing::Standing);
     let _base = submit(&mut session, base);
-    let (_submission, reading) = submit_read(&mut session, edited);
-    reports_as_batch(
-        reading.as_ref(),
-        Text(edited),
-        SourceRoot::Strict,
-        &format_args!("base {base:?}, edited {edited:?}"),
-    );
+    let submission = submit(&mut session, edited);
     let grammar = &*GRAMMAR;
+    let composed = compose::<Evaluator>(
+        grammar,
+        SourceRoot::Strict.corpus_root(),
+        SourceText::from(edited),
+        &mut LoweringCount::default(),
+    )
+    .expect("the edited revision composes");
+    assert_eq!(
+        *submission.composed(),
+        composed,
+        "a judgement that takes the standing declarations reports what the batch pipeline reports\n base:   {base:?}\n edited: {edited:?}"
+    );
     let program = SurfaceItems::new(grammar.clone())
         .items(&Revision::from(edited))
         .expect("the edited revision is offered");
@@ -439,13 +456,16 @@ proptest! {
         for edit in &edits {
             current = apply(&current, edit);
             let text = render(&current);
-            let (_submission, reading) = submit_read(&mut session, &text);
-            reports_as_batch(
-                reading.as_ref(),
-                Text(&text),
-                SourceRoot::Fixture,
-                &format_args!("{text:?}"),
-            );
+            let submission = submit(&mut session, &text);
+            let mut lowerings = LoweringCount::default();
+            let composed = compose::<Evaluator>(
+                grammar,
+                SourceRoot::Fixture.corpus_root(),
+                SourceText::from(text.as_str()),
+                &mut lowerings,
+            )
+            .expect("a generated revision composes");
+            prop_assert_eq!(submission.composed(), &composed, "the report, for {:?}", text);
             let program = items
                 .items(&Revision::from(text.as_str()))
                 .expect("a generated revision is offered");

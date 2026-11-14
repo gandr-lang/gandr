@@ -4611,6 +4611,7 @@ INSERT INTO purpose VALUES('surface-session','session::Persistence','enum','Name
 INSERT INTO purpose VALUES('surface-session','session::Ran','struct','Holds a run''s result, so the run''s computation is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Reopened','struct','Holds a reopened session, so the session''s state is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Resumed','struct','Holds a resumed session, so the session''s state is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-session','session::Reusing','enum','Whether a session''s untabled judgement takes each declaration whose checkpoint stands from the last pass or decides each declaration.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Session','struct','Holds the interactive session, so the session''s form store and resume are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::SessionFault','enum','Names why a session''s call faults, so the fault''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-session','session::Submission','struct','Holds a submission, so the submission''s report and edit script are read.',NULL,'fits','sound',NULL);

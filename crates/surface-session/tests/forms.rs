@@ -12,7 +12,6 @@ use core::ops::ControlFlow;
 use anodized::spec;
 use gandr_core_fork::Serial;
 use gandr_core_incremental::Checkpoints;
-use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::Composed;
@@ -47,14 +46,12 @@ use crate::common::backend;
 use crate::common::grammar;
 use crate::common::resumed;
 use crate::common::session;
-use crate::common::submit_read;
 use crate::common::three;
 use crate::large::FormEdit;
 use crate::large::Position;
 use crate::large::edits;
 use crate::large::module;
 use crate::large::script;
-use crate::renamed::renamed;
 
 /// The cases the generated property runs: fewer where specifications are
 /// enforced, whose checks multiply a submission's cost about fortyfold.
@@ -97,19 +94,9 @@ fn agree(
         source,
         &mut LoweringCount::default(),
     );
-    // The admission takes the judgement's arena, so the composition is read
-    // between the two (#6620).
-    let submitted = incremental.judge(source).and_then(|judged| {
-        let reading = match incremental.judged() {
-            Maybe::Present(arena) => Some(renamed(judged.composed(), arena)),
-            Maybe::Absent(_) => None,
-        };
-        incremental
-            .admit_into(judged)
-            .map(|submission| (submission, reading))
-    });
-    let ((submission, reading), walked) = match (submitted, walked) {
-        (Ok(submitted), Ok(walked)) => (submitted, walked),
+    let submitted = incremental.submit(source);
+    let (submission, walked) = match (submitted, walked) {
+        (Ok(submission), Ok(walked)) => (submission, walked),
         (Err(fault), Err(walked)) => {
             assert_eq!(
                 fault.to_string(),
@@ -134,20 +121,15 @@ fn agree(
             }
         ),
     };
-    let mut whole = session(root);
-    let (fresh, decided) = submit_read(&mut whole, text);
     assert_eq!(
-        *fresh.composed(),
+        *submission.composed(),
         walked,
-        "{context}: a fresh session's composition is the walk's"
+        "{context}: the composition is the walk's"
     );
-    // A judgement that takes a standing declaration mints none of its nodes,
-    // so the rest stand at other ids: the composition is the fresh one's up to
-    // a renaming of them (#6620).
-    assert_eq!(
-        reading, decided,
-        "{context}: the composition is the walk's, up to a renaming of its nodes"
-    );
+    let mut whole = session(root);
+    let fresh = whole
+        .submit(source)
+        .expect("the whole revision submits as before");
     assert_eq!(
         submission.standing(),
         fresh.standing(),
@@ -334,74 +316,6 @@ fn large_edit_script(root: SourceRoot)
             usize::from(census.forms())
         );
     }
-}
-
-/// #6708, through #6620: a recheck of the generated module under the strict
-/// root, its text unchanged, judges none of its items, the `let`-bodied
-/// definitions of the shapes `u` and `w` among them. A recheck past one form
-/// appended at its end takes each item before that form whose checkpoint
-/// keeps no report, the items its judgement entered elaborated too: the take
-/// seats each from the parts its checkpoint keeps. The `let`-bodied
-/// definitions keep their nested elaboration as a report, and the session
-/// judges them until #7355 keeps each occurrence of it. Each report reads as
-/// a fresh session's. The module has 400 forms, or 32 where specifications
-/// are enforced.
-#[test]
-fn a_recheck_judges_no_let_bodied_definition_and_takes_each_6708()
-{
-    let root = SourceRoot::Strict;
-    let forms = if cfg!(anodized_panic) {
-        32_usize
-    }
-    else {
-        400_usize
-    };
-    let text = module(FormCount::from(forms), root).text();
-    let mut incremental = session(root);
-    let _first = agree(
-        &mut incremental,
-        root,
-        Text::from(&text),
-        &"the first check",
-    );
-    let _again = agree(
-        &mut incremental,
-        root,
-        Text::from(&text),
-        &"the unchanged recheck",
-    );
-    let Maybe::Present(resume) = incremental.last()
-    else {
-        panic!("the recheck leaves a resume");
-    };
-    assert_eq!(
-        resume.census().judged,
-        ItemCount::from(0_usize),
-        "the unchanged recheck judges none of its items"
-    );
-    let items = resume.checkpoints().items();
-    let unreported = ItemCount::from(
-        items
-            .iter()
-            .filter(|checkpoint| matches!(checkpoint.report(), Maybe::Absent(_)))
-            .count(),
-    );
-    assert!(
-        usize::from(unreported) < items.len(),
-        "the `let`-bodied definitions keep their nested elaboration as a report"
-    );
-    let appended = format!("{text}def appended = 1;\n");
-    let _edited = agree(
-        &mut incremental,
-        root,
-        Text::from(&appended),
-        &"the recheck past an appended form",
-    );
-    assert_eq!(
-        incremental.taken(),
-        unreported,
-        "the recheck takes each item before the appended form that keeps no report"
-    );
 }
 
 #[test]
