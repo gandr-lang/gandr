@@ -11,6 +11,13 @@
 //! one thread runs the checks, and off for a serial run. The measure output
 //! prints the group that a run ran under, and the count of its rollbacks.
 //!
+//! The fold is a setting of the schedule and not a prediction, and the kernel
+//! reads no part of it. The bridge folds a check onto the calling thread when
+//! its price is below the cost of a hand-off: the measured cost of its record
+//! entry, or the pool's price of its size where no record stands. A
+//! readmission times each check while the fold is on, so the record holds the
+//! measure exactly when the setting that reads it is on.
+//!
 //! # References
 //!
 //! - gandr #3476 — the parallel replay, § "Speculation as a policy of the
@@ -90,6 +97,10 @@ pub struct Speculation
     /// reads the entry that its commit makes when its check admits it, and
     /// that commit compares the two.
     pub signature: Setting,
+    /// Whether the plan of a schedule folds a check whose price is below the
+    /// cost of a hand-off onto the calling thread, and so whether a
+    /// readmission times each check.
+    pub fold: Setting,
 }
 
 impl Speculation
@@ -103,6 +114,7 @@ impl Speculation
             manifest: Setting::Off,
         },
         signature: Setting::Off,
+        fold: Setting::Off,
     };
     /// Every setting on.
     pub const ON: Self = Self {
@@ -113,13 +125,14 @@ impl Speculation
             manifest: Setting::On,
         },
         signature: Setting::On,
+        fold: Setting::On,
     };
 }
 
 impl fmt::Display for Speculation
 {
     /// Each setting, by its name in the group: `rank on, order.generative on,
-    /// order.twin on, order.manifest on, signature on`.
+    /// order.twin on, order.manifest on, signature on, fold on`.
     ///
     /// # Specification
     /// trivial.
@@ -131,8 +144,13 @@ impl fmt::Display for Speculation
     {
         write!(
             f,
-            "rank {}, order.generative {}, order.twin {}, order.manifest {}, signature {}",
-            self.rank, self.order.generative, self.order.twin, self.order.manifest, self.signature
+            "rank {}, order.generative {}, order.twin {}, order.manifest {}, signature {}, fold {}",
+            self.rank,
+            self.order.generative,
+            self.order.twin,
+            self.order.manifest,
+            self.signature,
+            self.fold
         )
     }
 }

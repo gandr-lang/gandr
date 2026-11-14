@@ -109,7 +109,6 @@ use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
@@ -126,6 +125,7 @@ use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
+use gandr_core_fork::unpriced;
 use gandr_kernel_core::fork::ForkWidth;
 use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
@@ -147,6 +147,7 @@ use self::lane::Tending;
 use self::spawning::Scope;
 use self::workers::Back;
 use self::workers::Band;
+use self::workers::Hands;
 use self::workers::JobRef;
 use self::workers::Part;
 use self::workers::Parts;
@@ -155,6 +156,7 @@ use self::workers::Posts;
 use self::workers::Retracted;
 use self::workers::Runs;
 use self::workers::Tally;
+use self::workers::Wake;
 use self::workers::Workers;
 use crate::width::Threads;
 use crate::width::Width;
@@ -787,6 +789,62 @@ impl Fork for Pool
         }
     }
 
+    /// What a hand-off costs the pool's workers, of the class that a post
+    /// makes now, as they measure their hand-offs over the process, once they
+    /// have started. A pool that has not started, or that runs on one thread,
+    /// measures none, so a plan over it folds nothing. The call starts no
+    /// thread.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hand_off(&self) -> Duration
+    {
+        match self.started.get() {
+            Some(&Ok(Started {
+                pool: Maybe::Present(ref workers),
+                ..
+            })) => workers.hand(workers.applies()),
+            Some(
+                &Ok(Started {
+                    pool: Maybe::Absent(_),
+                    ..
+                })
+                | &Err(_),
+            )
+            | None => Duration::ZERO,
+        }
+    }
+
+    /// What a job of `size` is expected to cost on the calling thread, as the
+    /// pool's workers price a node of the jobs that ran there, once they have
+    /// started. A pool that has not started, or that runs on one thread, prices
+    /// no job. The call starts no thread.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn price(
+        &self,
+        size: ItemSize,
+    ) -> Maybe<Duration, unpriced::Absent>
+    {
+        match self.started.get() {
+            Some(&Ok(Started {
+                pool: Maybe::Present(ref workers),
+                ..
+            })) => priced(workers, size),
+            Some(
+                &Ok(Started {
+                    pool: Maybe::Absent(_),
+                    ..
+                })
+                | &Err(_),
+            )
+            | None => Maybe::Absent(unpriced::Absent::Unmeasured),
+        }
+    }
+
     /// Release each item on the calling thread in slice order, run each job
     /// on the pool's workers, and commit each item on the calling thread as
     /// its job returns.
@@ -1041,6 +1099,31 @@ impl Fork for Pooled<'_>
         Scope::open(self.workers, self.spin, body)
     }
 
+    /// What a hand-off costs the pool's workers, of the class that a post
+    /// makes now, as they measure their hand-offs over the process.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hand_off(&self) -> Duration
+    {
+        self.workers.hand(self.workers.applies())
+    }
+
+    /// What a job of `size` is expected to cost on the calling thread, as the
+    /// pool's workers price a node of the jobs that ran there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn price(
+        &self,
+        size: ItemSize,
+    ) -> Maybe<Duration, unpriced::Absent>
+    {
+        priced(self.workers, size)
+    }
+
     /// Release each item on the calling thread in slice order, run each job
     /// on the pool's workers, and commit each item on the calling thread as
     /// its job returns.
@@ -1058,8 +1141,10 @@ impl Fork for Pooled<'_>
     ///   each job that it keeps or that a lane holds is committed. While the
     ///   calling thread can neither release nor commit, it runs the oldest job
     ///   that it keeps, or else a job of a lane whose task does not run, and it
-    ///   parks only when neither is left. A schedule of one item, or a pool of
-    ///   one worker, runs on the calling thread.
+    ///   parks only when neither is left. A release that answers
+    ///   [`Releasing::Fold`] runs its job on the calling thread at once and
+    ///   commits it, with no hand-off. A schedule of one item, or a pool of one
+    ///   worker, runs on the calling thread.
     /// - panics: a panic of `release`, `run` or `commit`, resumed on the
     ///   calling thread once it has returned; no queued job starts after it.
     /// - executable: none — the schedule is the pool's.
@@ -1075,6 +1160,7 @@ impl Fork for Pooled<'_>
     /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     /// - witness: `pool::tests::a_held_release_waits_until_every_running_job_is_committed`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
+    /// - witness: `pool::tests::a_folded_job_runs_and_commits_on_the_calling_thread_at_its_release_7285`
     #[inline]
     fn schedule<Item, Job, Out, Release, Run, Commit>(
         &self,
@@ -1356,7 +1442,7 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
         for (index, item) in items.iter_mut().enumerate() {
             let position = gandr_core_fork::ItemIndex::from(index);
             let out = match release(position, item) {
-                Releasing::Run(job) => run(ItemIndex(index), job),
+                Releasing::Run(job) | Releasing::Fold(job) => run(ItemIndex(index), job),
                 // No job runs at a release here, so a held release commits
                 // the result that it holds.
                 Releasing::Settled(out) | Releasing::Held(out, ..) => out,
@@ -1390,14 +1476,20 @@ type Returned<Out> = Result<(ItemIndex, Out, Took), Box<dyn Any + Send>>;
 /// A job that may run: its item's place and the job that the release gave.
 type Ready<Job> = (ItemIndex, Job);
 
-/// Where a scheduled job ran, and the nanoseconds that its run took.
+/// A job in a lane's ring: its item's place, its job, and when the calling
+/// thread pushed it, from which the lane's pair measures the hand-off.
+type Pushed<Job> = (ItemIndex, Job, Instant);
+
+/// Where a scheduled job ran, and the nanoseconds that it took.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug)]
 struct Took
 {
-    /// The nanoseconds of the run.
+    /// On a lane, the latency of the hand-off: from when the job could start
+    /// there, at its push or at the end of the lane's job before it, to its
+    /// start. On the calling thread, the run.
     nanos: u64,
     /// Where the job ran.
     place: Place,
@@ -1412,13 +1504,29 @@ enum Place
 {
     /// On the calling thread.
     Calling,
-    /// On a lane's task.
-    Lane,
+    /// On a lane's task, reached by a hand-off of the class it names.
+    Lane(Wake),
 }
 
-/// Add the run of a job of `size` nodes that `took` names to `tally`: the run
-/// prices a node where it ran on the calling thread, and it tells what a
-/// hand-off added where it ran on a lane. A job of no size measures nothing.
+/// What a job of `size` is expected to cost on the calling thread, as
+/// `workers` price a node of the jobs that ran there.
+///
+/// # Specification
+/// trivial.
+fn priced(
+    workers: &Workers,
+    size: ItemSize,
+) -> Maybe<Duration, unpriced::Absent>
+{
+    workers
+        .expected(size, &Tally::default())
+        .map_or(Maybe::Absent(unpriced::Absent::Unmeasured), Maybe::Present)
+}
+
+/// Add what the job of `size` nodes that `took` names took: the latency of
+/// its hand-off to `workers`' class of it where it ran on a lane, and the run
+/// to `tally`'s price of a node where it ran on the calling thread. A job of
+/// no size prices no node.
 ///
 /// # Specification
 /// trivial.
@@ -1429,25 +1537,17 @@ fn measured(
     took: Took,
 )
 {
-    let Ok(nodes) = u64::try_from(usize::from(size))
-    else {
-        return;
-    };
-    if nodes == 0 {
-        return;
-    }
     match took.place {
+        Place::Lane(wake) => workers.handed(wake, Duration::from_nanos(took.nanos)),
         Place::Calling => {
-            tally.home_nanos = tally.home_nanos.saturating_add(took.nanos);
-            tally.home_nodes = tally.home_nodes.saturating_add(nodes);
-        },
-        Place::Lane => {
-            let priced = workers.expected(size, tally).unwrap_or_default().as_nanos();
-            let added = u128::from(took.nanos).saturating_sub(priced);
-            tally.added_nanos = tally
-                .added_nanos
-                .saturating_add(u64::try_from(added).unwrap_or(u64::MAX));
-            tally.handed = tally.handed.saturating_add(1);
+            let Ok(nodes) = u64::try_from(usize::from(size))
+            else {
+                return;
+            };
+            if nodes > 0 {
+                tally.home_nanos = tally.home_nanos.saturating_add(took.nanos);
+                tally.home_nodes = tally.home_nodes.saturating_add(nodes);
+            }
         },
     }
 }
@@ -1480,7 +1580,7 @@ enum Taken
 struct Scheduled<Job, Out, Run>
 {
     /// One lane for each task beside the calling thread.
-    lanes: Vec<Lane<Ready<Job>, Returned<Out>>>,
+    lanes: Vec<Lane<Pushed<Job>, Returned<Out>>>,
     /// The calling thread, which parks while it waits for a result.
     caller: Sleeper,
     /// Runs a released job.
@@ -1496,8 +1596,6 @@ struct Scheduled<Job, Out, Run>
     ended: AtomicBool,
     /// How many posted tasks have not ended or come back.
     tasks: AtomicUsize,
-    /// The nanoseconds that the lanes' tasks spun on their empty rings.
-    spun: AtomicU64,
     /// The calling thread, which the last task wakes once the schedule ends.
     waiter: Thread,
 }
@@ -1515,7 +1613,7 @@ struct Scheduled<Job, Out, Run>
 struct Ledger<'pool, Job, Out>
 {
     /// The calling thread's end of each lane.
-    feeds: Vec<Feed<Ready<Job>, Returned<Out>>>,
+    feeds: Vec<Feed<Pushed<Job>, Returned<Out>>>,
     /// The lanes that hold a job not yet committed, in no order.
     busy: Vec<usize>,
     /// How many lanes hold fewer than [`DEPTH`] jobs.
@@ -1526,8 +1624,10 @@ struct Ledger<'pool, Job, Out>
     turn: usize,
     /// The workers, and the posts of the lanes' tasks.
     tasks: Tasks<'pool>,
-    /// What the schedule measures of its jobs.
+    /// What the schedule measures of the jobs on its calling thread.
     tally: Tally,
+    /// The price of a hand-off of each class, read at the schedule's start.
+    hands: Hands,
 }
 
 /// The tasks that the calling thread posted: the workers, and the last post
@@ -1566,7 +1666,6 @@ impl<Job, Out, Run> Drop for Ending<'_, '_, Job, Out, Run>
     fn drop(&mut self)
     {
         self.schedule.close(&mut self.ledger.tasks);
-        self.ledger.tally.spun_nanos = self.schedule.spun.load(Ordering::Relaxed);
         self.ledger.tasks.workers.add(&self.ledger.tally);
     }
 }
@@ -1891,7 +1990,6 @@ where
                 park: workers.park(),
                 ended: AtomicBool::new(false),
                 tasks: AtomicUsize::new(0),
-                spun: AtomicU64::new(0),
                 waiter: std::thread::current(),
             },
             Ledger {
@@ -1905,6 +2003,7 @@ where
                     posted: alloc::vec![None; lanes_count],
                 },
                 tally: Tally::default(),
+                hands: workers.hands(),
             },
         )
     }
@@ -2008,6 +2107,7 @@ where
                         && ledger.room > 0
                         && ledger.tasks.workers.band(
                             sizes.get(next.0).copied().unwrap_or_default(),
+                            ledger.hands.of(self.applies(ledger)),
                             &ledger.tally,
                         ) == Band::Beside))
                 && waiting.free(next) == Released::Free
@@ -2031,6 +2131,25 @@ where
                         if !chained && (outstanding > 1 || waiting.free(next) == Released::Free) {
                             self.hand(ledger);
                         }
+                    },
+                    // The plan folds a job cheaper than a hand-off: it runs
+                    // here at its release and commits at once, so it takes no
+                    // slot and no lane. Its run prices a node, as the run of a
+                    // kept job on the calling thread does.
+                    Releasing::Fold(job) => {
+                        let (position, out, took) = self
+                            .run_job(next, job, Place::Calling, None)
+                            .0
+                            .unwrap_or_else(|panic| self.stop(panic));
+                        measured(
+                            ledger.tasks.workers,
+                            &mut ledger.tally,
+                            sizes.get(position.0).copied().unwrap_or_default(),
+                            took,
+                        );
+                        commit_one(position, item, out, &mut waiting);
+                        committed = committed.saturating_add(1);
+                        next = ItemIndex(next.0.saturating_add(1));
                     },
                     Releasing::Held(_, _, waited) if outstanding > 0 => {
                         chained = true;
@@ -2106,7 +2225,8 @@ where
             // wait for one to return.
             if let Some((position, job)) = ledger.kept.take() {
                 let (position, out, took) = self
-                    .run_job(position, job, Place::Calling)
+                    .run_job(position, job, Place::Calling, None)
+                    .0
                     .unwrap_or_else(|panic| self.stop(panic));
                 measured(
                     ledger.tasks.workers,
@@ -2127,6 +2247,23 @@ where
             else if self.take(ledger) == Taken::Idle {
                 self.wait(ledger);
             }
+        }
+    }
+
+    /// The class of the hand-off that the next release beside a running job
+    /// takes: awake when a task attends the lane that the next hand-off tries
+    /// first, and otherwise the class of the post that starts its task.
+    ///
+    /// # Specification
+    /// trivial.
+    fn applies(
+        &self,
+        ledger: &Ledger<'_, Job, Out>,
+    ) -> Wake
+    {
+        match self.lanes.get(ledger.turn).map(Lane::attendance) {
+            Some(Attendance::Attended) => Wake::Awake,
+            Some(Attendance::Unattended) | None => ledger.tasks.workers.applies(),
         }
     }
 
@@ -2170,12 +2307,14 @@ where
                 else {
                     continue;
                 };
-                let Some(ready) = ledger.kept.take()
+                let Some((position, job)) = ledger.kept.take()
                 else {
                     break;
                 };
-                if let Err(rtrb::PushError::Full(ready)) = feed.jobs.push(ready) {
-                    ledger.kept = Some(ready);
+                if let Err(rtrb::PushError::Full((position, job, _))) =
+                    feed.jobs.push((position, job, Instant::now()))
+                {
+                    ledger.kept = Some((position, job));
                     continue;
                 }
                 tried = 0;
@@ -2284,11 +2423,11 @@ where
             return Taken::Idle;
         };
         let runner = claim.runner();
-        let Ok((position, job)) = runner.jobs.pop()
+        let Ok((position, job, _)) = runner.jobs.pop()
         else {
             return Taken::Idle;
         };
-        let returning = self.run_job(position, job, Place::Calling);
+        let (returning, _) = self.run_job(position, job, Place::Calling, None);
         let refused = runner.results.push(returning).is_err();
         debug_assert!(
             !refused,
@@ -2366,23 +2505,30 @@ where
     /// - witness: `pool::tests::a_schedule_whose_jobs_fork_again_ends`
     fn work(
         &self,
-        lane: &Lane<Ready<Job>, Returned<Out>>,
+        lane: &Lane<Pushed<Job>, Returned<Out>>,
     )
     {
+        // The task's first job reached it as its worker took the task: woken
+        // when the worker parked before it, and awake otherwise. Each later
+        // job reaches a task that polls its lane, so it is awake.
+        let mut wake = workers::woke();
         loop {
             if let Some(mut claim) = lane.claim() {
                 let mut polls = 0_u32;
                 // When the task found the ring empty, until the next job.
                 let mut emptied: Option<Instant> = None;
-                // When the task's polls of the empty ring began, which the
-                // lanes' spin counts.
-                let mut idle: Option<Instant> = None;
+                // When the task's last job ended: a job pushed before then
+                // could start only then.
+                let mut ended: Option<Instant> = None;
                 while self.phase() == Phase::Running {
                     let runner = claim.runner();
-                    if let Ok((position, job)) = runner.jobs.pop() {
-                        self.spun_since(idle.take());
+                    if let Ok((position, job, pushed)) = runner.jobs.pop() {
                         emptied = None;
-                        let returning = self.run_job(position, job, Place::Lane);
+                        let ready = ended.map_or(pushed, |ended| ended.max(pushed));
+                        let (returning, end) =
+                            self.run_job(position, job, Place::Lane(wake), Some(ready));
+                        ended = Some(end);
+                        wake = Wake::Awake;
                         let refused = runner.results.push(returning).is_err();
                         debug_assert!(
                             !refused,
@@ -2392,12 +2538,10 @@ where
                         polls = 0;
                     }
                     else if polls < self.spin.0 {
-                        idle.get_or_insert_with(Instant::now);
                         polls = polls.saturating_add(1);
                         core::hint::spin_loop();
                     }
                     else if emptied.get_or_insert_with(Instant::now).elapsed() < self.park {
-                        idle.get_or_insert_with(Instant::now);
                         // The task attends the lane while it polls, so it
                         // holds its core and never yields it.
                         core::hint::spin_loop();
@@ -2406,7 +2550,6 @@ where
                         break;
                     }
                 }
-                self.spun_since(idle);
             }
             lane.leave();
             // A job that the calling thread handed after the last poll shows
@@ -2445,29 +2588,15 @@ where
         std::panic::resume_unwind(panic)
     }
 
-    /// Count the time since `emptied` among the lanes' spin.
-    ///
-    /// # Specification
-    /// trivial.
-    fn spun_since(
-        &self,
-        emptied: Option<Instant>,
-    )
-    {
-        if let Some(emptied) = emptied {
-            self.spun.fetch_add(
-                u64::try_from(emptied.elapsed().as_nanos()).unwrap_or(u64::MAX),
-                Ordering::Relaxed,
-            );
-        }
-    }
-
     /// Run the job of the item at `position`, which runs at `place`, and time
-    /// the run.
+    /// it: where the job waited on a lane, the latency of its hand-off from
+    /// `ready` to its start, and its run otherwise.
     ///
     /// # Specification
     /// - ensures: the item's place, the job's result and what its run took,
-    ///   once the job has returned; or the panic of the job.
+    ///   once the job has returned, or the panic of the job; beside it, the
+    ///   instant that the run ended, read from the run's own two reads of the
+    ///   clock.
     /// - panics: none; a panic of the job is returned.
     /// - executable: none — the result is the caller's closure's.
     ///
@@ -2480,12 +2609,16 @@ where
         position: ItemIndex,
         job: Job,
         place: Place,
-    ) -> Returned<Out>
+        ready: Option<Instant>,
+    ) -> (Returned<Out>, Instant)
     {
         let started = Instant::now();
-        let out = std::panic::catch_unwind(AssertUnwindSafe(|| (self.run)(position, job)))?;
-        let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        Ok((position, out, Took { nanos, place }))
+        let ran = std::panic::catch_unwind(AssertUnwindSafe(|| (self.run)(position, job)));
+        let run = started.elapsed();
+        let ended = started.checked_add(run).unwrap_or(started);
+        let took = ready.map_or(run, |ready| started.saturating_duration_since(ready));
+        let nanos = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+        (ran.map(|out| (position, out, Took { nanos, place })), ended)
     }
 }
 
@@ -3004,6 +3137,79 @@ mod tests
         );
         drop(pool);
         drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// A release that answers a fold runs its job on the calling thread and
+    /// commits it before the next release, beside jobs handed to the workers;
+    /// each item commits once at every width.
+    #[test]
+    fn a_folded_job_runs_and_commits_on_the_calling_thread_at_its_release_7285()
+    {
+        let caller = std::thread::current().id();
+        let count = 64_usize;
+        let folds = |position: usize| position % 3 == 1;
+        for threads in [2_usize, 4, 16] {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::new(threads).unwrap(),
+            )));
+            // Each release and each commit, in the order the calling thread
+            // made them.
+            let events = core::cell::RefCell::new(Vec::new());
+            let mut ran: Vec<Option<ThreadId>> = vec![None; count];
+            pool.schedule(
+                &mut ran,
+                &Dependences::default(),
+                |position, _ran| {
+                    let position = usize::from(position);
+                    events.borrow_mut().push(("release", position));
+                    if folds(position) {
+                        Releasing::<(), ThreadId>::Fold(())
+                    }
+                    else {
+                        Releasing::Run(())
+                    }
+                },
+                |()| std::thread::current().id(),
+                |position, ran, thread| {
+                    *ran = Some(thread);
+                    events.borrow_mut().push(("commit", usize::from(position)));
+                },
+            );
+            let events = events.into_inner();
+            // One pass over the events: the commits of each item, and the event
+            // that follows the release of each item.
+            let mut commits = vec![0_usize; count];
+            let mut after_release: Vec<Option<(&str, usize)>> = vec![None; count];
+            for (at, &(kind, position)) in events.iter().enumerate() {
+                if kind == "commit" {
+                    if let Some(commit) = commits.get_mut(position) {
+                        *commit = commit.saturating_add(1);
+                    }
+                }
+                else if let Some(after) = after_release.get_mut(position) {
+                    *after = events.get(at.saturating_add(1)).copied();
+                }
+            }
+            for position in 0 .. count {
+                assert_eq!(
+                    commits.get(position).copied(),
+                    Some(1),
+                    "item {position} commits once at {threads} threads"
+                );
+                if folds(position) {
+                    assert_eq!(
+                        ran.get(position).copied().flatten(),
+                        Some(caller),
+                        "the folded job of item {position} runs on the calling thread at {threads} threads"
+                    );
+                    assert_eq!(
+                        after_release.get(position).copied().flatten(),
+                        Some(("commit", position)),
+                        "the folded item {position} commits right after its release at {threads} threads"
+                    );
+                }
+            }
+        }
     }
 
     /// A pool of sixteen threads under a hub's counter of one token, and the
