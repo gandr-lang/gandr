@@ -2,8 +2,12 @@
 //! submitted incrementally and whole, and the heap the edit loop keeps.
 //!
 //! Run with `cargo run --release -p gandr-surface-session --example
-//! edit_loop`. `FORMS` sets the generated module's top-level forms (2000) and
-//! `REPEATS` the samples behind each median (9).
+//! edit_loop`. `FORMS` sets the generated module's top-level forms (2000).
+//! `REPEATS` sets the samples behind each median (9). `WIDTH` sets the threads
+//! of the wider pool (the host's performance cores). `EDITS` names the edit
+//! classes that the rows time, separated by spaces (all of them). A process
+//! installs one wider pool, so a curve over widths runs one process for each
+//! width.
 //!
 //! The module is the session tests' generated module, and the edits their
 //! script, applied in order: a change, an insertion, a deletion, a move, a
@@ -16,7 +20,8 @@
 //! column is a fresh session's first submission of it, and the check column
 //! the dispatcher's composition of it, the path `gandr check` takes. The
 //! molded column is the judgement's forms molded of the revision's forms, and
-//! the share column the judged wall as a share of the whole.
+//! the share column the judged wall as a share of the whole. The admitted
+//! spread column holds the least and the most of the admitted samples.
 //!
 //! The memory rows are heap bytes still allocated when each measured scope
 //! closes, counted on the calling thread at one thread's width, so every
@@ -44,6 +49,7 @@ extern crate alloc;
 mod large;
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
@@ -78,6 +84,7 @@ use gandr_surface_session::FormCount;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::SourceText;
 
+use crate::large::FormEdit;
 use crate::large::module;
 use crate::large::script;
 
@@ -172,6 +179,9 @@ enum Setting
     Forms,
     /// `REPEATS`: the samples behind each median, 9 by default.
     Repeats,
+    /// `WIDTH`: the threads of the wider pool, with no default: unset, the
+    /// wider pool takes the host's performance cores.
+    Width,
 }
 
 /// A positive number a setting configured.
@@ -185,20 +195,71 @@ impl Setting
     ///
     /// # Specification
     /// trivial.
-    fn read(self) -> Configured
+    fn read(self) -> Option<Configured>
     {
         let (name, default) = match self {
             Self::Forms => ("FORMS", NonZeroUsize::new(2_000)),
             Self::Repeats => ("REPEATS", NonZeroUsize::new(9)),
+            Self::Width => ("WIDTH", None),
         };
-        Configured(
-            std::env::var(name)
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .or(default)
-                .unwrap_or(NonZeroUsize::MIN),
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .or(default)
+            .map(Configured)
+    }
+}
+
+/// The edit classes that the timing rows measure, by the names the matrix
+/// writes; no name selects every class.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Selected(BTreeSet<String>);
+
+impl Selected
+{
+    /// The classes that `EDITS` names, separated by spaces.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read() -> Self
+    {
+        Self(
+            std::env::var("EDITS")
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect(),
         )
     }
+
+    /// How the rows treat `edit`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn timing(
+        &self,
+        edit: FormEdit,
+    ) -> Timing
+    {
+        if self.0.is_empty() || self.0.contains(&edit.to_string()) {
+            Timing::Timed
+        }
+        else {
+            Timing::Applied
+        }
+    }
+}
+
+/// How the rows treat one edit of the script.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Timing
+{
+    /// The rows time the edit and write its row.
+    Timed,
+    /// The rows apply the edit untimed, so the next edit meets the revision
+    /// it follows in the script.
+    Applied,
 }
 
 /// A fresh session under `root`, parsing on `pool`.
@@ -219,6 +280,18 @@ fn fresh(
         BackendArtifact::from(b"edit-loop".as_slice()),
     )
     .with_pool(Arc::clone(pool))
+}
+
+/// The least, the median and the most of one measurement's samples.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Spread
+{
+    /// The least sample.
+    least: Duration,
+    /// The middle sample, as [`median`] takes it.
+    median: Duration,
+    /// The most sample.
+    most: Duration,
 }
 
 /// The median of `samples`.
@@ -244,18 +317,18 @@ fn median(samples: &mut [Duration]) -> Duration
         .unwrap_or_default()
 }
 
-/// The wall `body` takes over `state`, as the median of `repeats` runs, each
-/// after `prepare` has readied `state` unmeasured.
+/// The walls `body` takes over `state` in `repeats` runs, each after `prepare`
+/// has readied `state` unmeasured.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: runs `prepare` then `body` on `state` `repeats` times, timing
-///   only `body`, and answers the median wall; the first failure ends the
-///   measurement.
+///   only `body`, and answers the least, the median and the most wall; the
+///   first failure ends the measurement.
 /// - fails: the first failure `prepare` or `body` reports.
 /// - panics: none.
 /// - executable: none — the closures' effects and the clock are outside the
-///   returned median.
+///   returned spread.
 ///
 /// # Errors
 /// [`Failure`], as above.
@@ -269,7 +342,7 @@ fn timed<State>(
     state: &mut State,
     mut prepare: impl FnMut(&mut State) -> Result<(), Failure>,
     mut body: impl FnMut(&mut State) -> Result<(), Failure>,
-) -> Result<Duration, Failure>
+) -> Result<Spread, Failure>
 {
     let mut samples = Vec::with_capacity(repeats.0.get());
     for _ in 0 .. repeats.0.get() {
@@ -278,11 +351,16 @@ fn timed<State>(
         body(state)?;
         samples.push(start.elapsed());
     }
-    Ok(median(&mut samples))
+    let median = median(&mut samples);
+    Ok(Spread {
+        least: samples.first().copied().unwrap_or_default(),
+        median,
+        most: samples.last().copied().unwrap_or_default(),
+    })
 }
 
-/// The median wall of a fresh session's first submission of `text`, the
-/// session built unmeasured.
+/// The walls of a fresh session's first submission of `text`, the session
+/// built unmeasured.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -290,7 +368,7 @@ fn timed<State>(
 ///   [`fresh`] built before the clock started.
 /// - fails: a submission's fault.
 /// - panics: none.
-/// - executable: none — the clock is outside the returned median.
+/// - executable: none — the clock is outside the returned spread.
 ///
 /// # Errors
 /// [`Failure`], as above.
@@ -305,7 +383,7 @@ fn whole(
     pool: &Arc<Pool>,
     text: SourceText<'_>,
     repeats: Repeats,
-) -> Result<Duration, Failure>
+) -> Result<Spread, Failure>
 {
     timed(
         repeats,
@@ -325,17 +403,18 @@ fn whole(
     )
 }
 
-/// Write one timing row per edit of the script over a module of `forms`
-/// forms under `root`, submitted on `pool`, after a row for the module's
-/// first submission.
+/// Write one timing row per selected edit of the script over a module of
+/// `forms` forms under `root`, submitted on `pool`, after a row for the
+/// module's first submission.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one Markdown row for the first submission and one per scripted
-///   edit, each naming the root, the width, the edit, the forms molded of the
-///   revision's forms, the judged, admitted, whole and check medians and the
-///   judged median's share of the whole; the incremental session ends holding
-///   the script's last revision, admitted.
+///   edit that `selected` holds, each naming the root, the width, the edit, the
+///   forms molded of the revision's forms, the judged, admitted, whole and
+///   check medians, the admitted spread and the judged median's share of the
+///   whole; the script applies whole, so each timed edit meets the revision it
+///   follows in the script.
 /// - fails: a submission's or a composition's fault, and a refused write.
 /// - panics: none.
 /// - executable: none — the rows go to a writer the signature cannot read back.
@@ -353,6 +432,7 @@ fn rows(
     pool: &Arc<Pool>,
     forms: FormCount,
     repeats: Repeats,
+    selected: &Selected,
     out: &mut dyn Write,
 ) -> Result<(), Failure>
 {
@@ -373,14 +453,18 @@ fn rows(
         .forms();
     writeln!(
         out,
-        "| {root} | {threads} | first | {}/{} | — | — | {:.2} | — | — |",
+        "| {root} | {threads} | first | {}/{} | — | — | — | {:.2} | — | — |",
         usize::from(census.molded()),
         usize::from(census.forms()),
-        first.as_secs_f64() * 1_000.0_f64,
+        first.median.as_secs_f64() * 1_000.0_f64,
     )?;
     for edit in script(forms) {
         generated.edit(&edit);
         let edited = generated.text();
+        if selected.timing(edit) == Timing::Applied {
+            previous = edited;
+            continue;
+        }
         let mut census = None;
         let judged = timed(
             repeats,
@@ -443,14 +527,16 @@ fn rows(
         let census = census.ok_or(Failure::Unmeasured)?;
         writeln!(
             out,
-            "| {root} | {threads} | {edit} | {}/{} | {:.2} | {:.2} | {:.2} | {:.2} | {:.1} % |",
+            "| {root} | {threads} | {edit} | {}/{} | {:.2} | {:.2} | {:.2}–{:.2} | {:.2} | {:.2} | {:.1} % |",
             usize::from(census.molded()),
             usize::from(census.forms()),
-            judged.as_secs_f64() * 1_000.0_f64,
-            admitted.as_secs_f64() * 1_000.0_f64,
-            whole.as_secs_f64() * 1_000.0_f64,
-            check.as_secs_f64() * 1_000.0_f64,
-            judged.as_secs_f64() / whole.as_secs_f64() * 100.0_f64,
+            judged.median.as_secs_f64() * 1_000.0_f64,
+            admitted.median.as_secs_f64() * 1_000.0_f64,
+            admitted.least.as_secs_f64() * 1_000.0_f64,
+            admitted.most.as_secs_f64() * 1_000.0_f64,
+            whole.median.as_secs_f64() * 1_000.0_f64,
+            check.median.as_secs_f64() * 1_000.0_f64,
+            judged.median.as_secs_f64() / whole.median.as_secs_f64() * 100.0_f64,
         )?;
         previous = edited;
     }
@@ -591,8 +677,8 @@ fn memory_rows(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: prints one timing row per root, width and edit, then the memory
-///   rows.
+/// - ensures: prints one timing row per root, width and selected edit, then the
+///   memory rows.
 /// - fails: the built-in grammar's fault, any measurement's failure, and a
 ///   refused write.
 /// - panics: none.
@@ -608,22 +694,30 @@ fn memory_rows(
 /// - witness: `tests::an_edit_keeps_less_than_a_first_submission`
 fn main() -> Result<(), Failure>
 {
-    let Configured(forms) = Setting::Forms.read();
+    let forms = Setting::Forms
+        .read()
+        .map_or(NonZeroUsize::MIN, |Configured(forms)| forms);
     let forms = FormCount::from(forms.get());
-    let Configured(repeats) = Setting::Repeats.read();
-    let repeats = Repeats(repeats);
+    let repeats = Repeats(
+        Setting::Repeats
+            .read()
+            .map_or(NonZeroUsize::MIN, |Configured(repeats)| repeats),
+    );
+    let wider = Setting::Width
+        .read()
+        .map_or(Width::PerformanceCores, |Configured(threads)| {
+            Width::Threads(Threads::from(threads))
+        });
+    let selected = Selected::read();
     let grammar = built_in()?;
     let mut out = io::stdout().lock();
     writeln!(
         out,
-        "| root | threads | edit | molded | judged ms | admitted ms | whole ms | check ms | judged/whole |"
+        "| root | threads | edit | molded | judged ms | admitted ms | admitted spread ms | whole ms | check ms | judged/whole |"
     )?;
-    writeln!(out, "|---|---:|---|---:|---:|---:|---:|---:|---:|")?;
+    writeln!(out, "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|")?;
     let mut retained = None;
-    for width in [
-        Width::Threads(Threads::from(NonZeroUsize::MIN)),
-        Width::PerformanceCores,
-    ] {
+    for width in [Width::Threads(Threads::from(NonZeroUsize::MIN)), wider] {
         let pool = Arc::new(Pool::new(width));
         // The pool starts before any clock does, so no row times its threads
         // starting.
@@ -639,7 +733,7 @@ fn main() -> Result<(), Failure>
         // each row at one thread runs before the wider pool stands.
         gandr_surface_dispatcher::install_session(&pool);
         for root in [SourceRoot::Strict, SourceRoot::Fixture] {
-            rows(&grammar, root, &pool, forms, repeats, &mut out)?;
+            rows(&grammar, root, &pool, forms, repeats, &selected, &mut out)?;
         }
     }
     // A host of one core has no wider pool, so its memory rows run last.
@@ -667,6 +761,7 @@ mod tests
     use gandr_surface_session::FormCount;
 
     use super::Repeats;
+    use super::Selected;
     use super::median;
     use super::memory;
     use super::rows;
@@ -696,6 +791,7 @@ mod tests
                     &Arc::new(Pool::new(width)),
                     FormCount::from(16_usize),
                     Repeats(NonZeroUsize::MIN),
+                    &Selected::default(),
                     &mut out,
                 )
                 .expect("the matrix is measured");
