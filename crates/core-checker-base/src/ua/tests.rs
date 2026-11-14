@@ -13,11 +13,14 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::Level as _;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeBudget;
+use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Unreplayed;
 use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::WreathStratum;
 use quenchant_shape::shape::Maybe;
 
@@ -426,5 +429,118 @@ fn a_second_context_builds_nothing_a_first_shared_7413()
             Err(StratumDefect::Budget { bound, .. }) if bound == at.bound
         ),
         "a budget that the chains exceed refuses them, whatever is shared"
+    );
+}
+
+/// #7453: level two over the faces of `[1](2)`, the 1-chain carrying the
+/// 2-chain, at total size nine, asked of two contexts handed one sharing
+/// store. The stratum is at the object's degree, over the objects with a map
+/// into it alone. The first context shares three values: the chain catalogue,
+/// level one at its reach, and the stratum. The second context reads the
+/// first's stratum and shares nothing. A store that keeps strata is handed no
+/// image. A degree zero and a degree past every object are refused by the
+/// degree, and an object past the bound is absent.
+#[test]
+fn level_two_over_a_composite_s_faces_is_shared_and_refused_as_the_whole_7453()
+{
+    let at = StratumAt {
+        bound: ShapeSize::from(9),
+        degree: Degree::from(4),
+    };
+    let chain = |cells: usize| Shape::chain(cells.into()).expect("the chain builds");
+    let object = WreathShape::new(chain(1), alloc::vec![chain(2)]).expect("one column");
+    let degree = <Wreath<Catalogue> as gandr_theory_sites::Level>::degree(&object);
+    let chains = Catalogue::chains(at.bound).expect("the chains build");
+    let whole = Wreath::build(&chains, &chains, at.bound);
+    let target = whole.find(&object);
+    let faces = (0 .. whole.objects().len())
+        .filter(|&source| {
+            matches!(target, Maybe::Present(onto)
+                if !whole.hom(ShapeIndex::from(source), onto).is_empty())
+        })
+        .count();
+    let store = Arc::new(Sharing::default());
+    let mut first_arena = CoreArena::new();
+    let mut first = CheckingContext::new(&mut first_arena, CheckBudget::DEFAULT);
+    first.keep_strata_in(Arc::<Sharing>::clone(&store));
+    let Ok(Maybe::Present(stratum)) = first.strata_mut().faces_two(at, &object)
+    else {
+        panic!("level two over the faces is certified");
+    };
+    assert_eq!(
+        stratum.degree(),
+        degree,
+        "the stratum is at the object's degree"
+    );
+    assert_eq!(stratum.wreath().objects().len(), faces, "the faces alone");
+    assert!(
+        faces < whole.objects().len(),
+        "fewer objects than the whole"
+    );
+    assert_eq!(
+        store.shares.load(Ordering::Relaxed),
+        3,
+        "the first context shares the catalogue, level one and the stratum"
+    );
+    let mut second_arena = CoreArena::new();
+    let mut second = CheckingContext::new(&mut second_arena, CheckBudget::DEFAULT);
+    second.keep_strata_in(Arc::<Sharing>::clone(&store));
+    let Ok(Maybe::Present(again)) = second.strata_mut().faces_two(at, &object)
+    else {
+        panic!("level two over the faces is read");
+    };
+    assert!(
+        Arc::ptr_eq(&stratum, &again),
+        "the second context reads the first's stratum"
+    );
+    assert_eq!(
+        store.shares.load(Ordering::Relaxed),
+        3,
+        "the second context shares nothing"
+    );
+    let keeping = Answering::new(
+        Maybe::Absent(recalled::Absent::Unkept),
+        Unreplayed::Malformed,
+    );
+    let mut kept_arena = CoreArena::new();
+    let mut kept = CheckingContext::new(&mut kept_arena, CheckBudget::DEFAULT);
+    kept.keep_strata_in(Arc::<Answering>::clone(&keeping));
+    assert!(matches!(
+        kept.strata_mut().faces_two(at, &object),
+        Ok(Maybe::Present(_))
+    ));
+    assert_eq!(
+        keeping.counts(),
+        Counts {
+            kept: 0,
+            refused: 0,
+            other: 0,
+        },
+        "a store that keeps strata is handed no image"
+    );
+    for past in [Degree::from(0), Degree::from(100)] {
+        let mut arena = CoreArena::new();
+        assert!(
+            matches!(
+                CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+                    .strata_mut()
+                    .faces_two(StratumAt { degree: past, ..at }, &object),
+                Err(StratumDefect::Degree { degree }) if degree == past
+            ),
+            "the degree {past}"
+        );
+    }
+    let beyond = WreathShape::new(chain(1), alloc::vec![chain(6)]).expect("one column");
+    let mut arena = CoreArena::new();
+    assert!(
+        matches!(
+            CheckingContext::new(&mut arena, CheckBudget::DEFAULT)
+                .strata_mut()
+                .faces_two(at, &beyond),
+            Ok(Maybe::Absent(
+                gandr_theory_sites::shape_class::Absent::PastTheBound
+            ))
+        ),
+        "an object past the bound"
     );
 }

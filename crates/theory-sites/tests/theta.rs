@@ -8,24 +8,34 @@
 //! counts are pinned against the site's own enumeration here. `tests::oracle`
 //! sets them beside Θ₂'s by Leclerc and Mimram's Definition 1.
 
+use alloc::sync::Arc;
+
+use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
 use gandr_theory_sites::CaseCount;
 use gandr_theory_sites::Catalogue;
+use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::Level as _;
 use gandr_theory_sites::Membership;
 use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeIndex;
 use gandr_theory_sites::ShapeSize;
+use gandr_theory_sites::SiteMap;
+use gandr_theory_sites::Spot;
 use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathCocone;
+use gandr_theory_sites::WreathMap;
 use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::WreathShapeObstruction;
+use gandr_theory_sites::WreathStratum;
 use gandr_theory_sites::shape_class;
 use quenchant_shape::shape::Maybe;
 
 use crate::fixture::Length;
 use crate::fixture::column;
 use crate::fixture::index;
+use crate::fixture::level_one;
 use crate::fixture::restriction;
 use crate::fixture::theta;
 
@@ -290,4 +300,166 @@ fn a_cycle_at_the_outer_level_is_refused_by_name()
             columns: EdgeCount::from(1_usize),
         })
     );
+}
+
+/// At each object of the chain restriction to total size nine, the faces are
+/// the objects of the whole wreath with a map into it, in its order, and each
+/// hom set between two faces is the whole wreath's. An object past the bound
+/// and two outside the chains are named as `find` names them (#7453).
+#[test]
+fn the_faces_are_the_full_sub_wreath_on_the_objects_with_a_map_in_7453()
+{
+    let bound = ShapeSize::from(9_usize);
+    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let whole = Wreath::build(&chains, &chains, bound);
+    for (at, object) in whole.objects().iter().enumerate() {
+        let target = ShapeIndex::from(at);
+        let Maybe::Present(faces) = Wreath::faces(&chains, &chains, bound, object)
+        else {
+            panic!("{object} is held at the bound");
+        };
+        let expected = whole
+            .objects()
+            .iter()
+            .enumerate()
+            .filter(|&(source, _)| !whole.hom(ShapeIndex::from(source), target).is_empty())
+            .map(|(_, face)| face);
+        assert!(faces.objects().iter().eq(expected), "the faces of {object}");
+        for (source, from) in faces.objects().iter().enumerate() {
+            for (onto, to) in faces.objects().iter().enumerate() {
+                assert_eq!(
+                    faces.hom(ShapeIndex::from(source), ShapeIndex::from(onto)),
+                    whole.hom(index(&whole, from), index(&whole, to)),
+                    "the maps from {from} to {to} among the faces of {object}"
+                );
+            }
+        }
+    }
+    let empty = Shape::default;
+    let object = |outer: Shape, columns: Vec<Shape>| {
+        WreathShape::new(outer, columns).expect("one column per outer vertex")
+    };
+    let bigon = shape!(2; 0 > 1, 0 > 1);
+    for (absent, reason) in [
+        (theta(&[Length(6)]), shape_class::Absent::PastTheBound),
+        (
+            object(bigon.clone(), vec![empty(), empty()]),
+            shape_class::Absent::OutsideTheFamily,
+        ),
+        (
+            object(column(Length(1)), vec![bigon]),
+            shape_class::Absent::OutsideTheFamily,
+        ),
+    ] {
+        assert_eq!(
+            Wreath::faces(&chains, &chains, bound, &absent).map(|faces| faces.objects().len()),
+            Maybe::Absent(reason),
+            "the faces of {absent}"
+        );
+    }
+}
+
+/// The top degree at each total size from one to nine is the highest degree
+/// among the objects of the chain restriction there (#7453).
+#[test]
+fn the_top_degree_is_the_highest_degree_of_the_whole_wreath_7453()
+{
+    for size in 1 ..= 9_usize {
+        let bound = ShapeSize::from(size);
+        let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+        let highest = Wreath::build(&chains, &chains, bound)
+            .objects()
+            .iter()
+            .map(Wreath::<Catalogue>::degree)
+            .max()
+            .unwrap_or_else(|| Degree::from(0_usize));
+        assert_eq!(
+            Wreath::top_degree(&chains, &chains, bound),
+            highest,
+            "at total size {size}"
+        );
+    }
+}
+
+/// The cells of `cocone` with the objects of `wreath` in place of their
+/// positions, so that the cocones of one object over two wreaths compare.
+///
+/// # Specification
+/// trivial.
+fn cells_of<'held, Glue>(
+    cocone: &'held WreathCocone<SiteMap, Glue>,
+    wreath: &'held Wreath<Catalogue>,
+) -> impl Iterator<
+    Item = (
+        Edge,
+        Spot,
+        &'held WreathShape<Shape>,
+        &'held WreathMap<SiteMap>,
+    ),
+> + 'held
+{
+    cocone.cells().iter().map(|cell| {
+        (
+            cell.column,
+            cell.spot,
+            &wreath.objects()[usize::from(cell.object)],
+            &cell.map,
+        )
+    })
+}
+
+/// Over the faces of each object of degree two or more in the chain
+/// restriction to total size nine, level two is certified at the object's
+/// degree, and the object's cocone has the cells, the maps and the glue of its
+/// cocone over the whole wreath (#7453).
+#[test]
+fn level_two_over_the_faces_agrees_with_the_whole_7453()
+{
+    let bound = ShapeSize::from(9_usize);
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
+    let level: &Catalogue = &chains;
+    let whole = Arc::new(Wreath::build(level, level, bound));
+    let top = Wreath::top_degree(level, level, bound);
+    let below = level_one(&chains);
+    let certified = WreathStratum::certify(Arc::clone(&whole), top, below.clone())
+        .expect("level two over the whole wreath is certified");
+    let mut agreed = 0_usize;
+    for (at, object) in whole.objects().iter().enumerate() {
+        let degree = Wreath::<Catalogue>::degree(object);
+        if degree < Degree::from(2_usize) {
+            continue;
+        }
+        let Maybe::Present(faces) = Wreath::faces(level, level, bound, object)
+        else {
+            panic!("{object} is held at the bound");
+        };
+        let faces = Arc::new(faces);
+        let over_faces = WreathStratum::certify(Arc::clone(&faces), degree, below.clone())
+            .unwrap_or_else(|refused| panic!("level two over the faces of {object}: {refused:?}"));
+        let cocone_in = |stratum: &WreathStratum, at: ShapeIndex| {
+            stratum
+                .cocones()
+                .iter()
+                .position(|cocone| cocone.object() == at)
+                .expect("each object of degree two to the degree has a cocone")
+        };
+        let in_whole = &certified.cocones()[cocone_in(&certified, ShapeIndex::from(at))];
+        let in_faces = &over_faces.cocones()[cocone_in(&over_faces, index(&*faces, object))];
+        assert!(
+            cells_of(in_faces, &faces).eq(cells_of(in_whole, &whole)),
+            "the cells of {object}"
+        );
+        assert_eq!(
+            in_faces.outer(),
+            in_whole.outer(),
+            "the outer grafts of {object}"
+        );
+        assert_eq!(
+            in_faces.inner(),
+            in_whole.inner(),
+            "the columns' glue of {object}"
+        );
+        agreed = agreed.saturating_add(1);
+    }
+    assert_eq!(agreed, 23, "each object of degree two or more agrees");
 }

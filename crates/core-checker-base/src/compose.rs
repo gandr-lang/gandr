@@ -153,9 +153,12 @@ pub enum Endpoint
 ///   past level one. Past one cell, the chain lies in
 ///   [`gandr_theory_sites::Catalogue::chains`] at the bound, and the stratum at
 ///   the degree certifies and reaches the chain's degree. A tree of degree two
-///   or more at level two to four is an object of the wreath of the chains at
-///   the bound over the level below, its level certifies at the degree, and the
-///   object's degree reaches no further.
+///   or more at level two is an object of the wreath of the chains at the
+///   bound, level two certifies over its faces at its degree, and that degree
+///   reaches no further than the degree written. At level three or four, the
+///   tree is an object of the wreath of the chains at the bound over the level
+///   below, its level certifies at the degree, and the object's degree reaches
+///   no further.
 /// - fails: [`CheckRefusal::ComposeNotAShape`] for the chain of no cell or of
 ///   more than a shape holds, a chain past the bound or the degree, a tree no
 ///   object of its level's wreath or past the degree, or a pasting past level
@@ -229,10 +232,10 @@ pub fn admit(
     if degree < Degree::from(2_usize) {
         return Ok(outer);
     }
-    let stratum = strata
-        .level_two(written)
+    let faces = strata
+        .faces_two(written, &object)
         .map_err(|stratum| CheckRefusal::ComposeUncertified { at, stratum })?;
-    if matches!(stratum.wreath().find(&object), Maybe::Absent(_)) || degree > stratum.degree() {
+    if matches!(faces, Maybe::Absent(_)) || degree > written.degree {
         return Err(not_a_shape);
     }
     Ok(outer)
