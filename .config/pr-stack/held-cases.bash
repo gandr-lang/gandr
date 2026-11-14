@@ -37,13 +37,13 @@ case_held() {
 }
 case_held "a tree that a process works below is held by that process" "$scratch/held" "held $holder"
 case_held "a tree that no process works in is free" "$scratch/free" free
-case_held "the caller's own directory is held by the caller" "$scratch/caller" "held $$"
+case_held "#7502: the caller's own directory is held by the caller" "$scratch/caller" "held $$"
 # The landing's shell moves out of the landed tree before it reads, and the
 # shell that called it stays there.
 moved=$(cd / && held_read && { tree_held "$scratch/caller" || echo free; })
 if [[ $moved != "$$" ]]; then
   printf 'held case FAILED: %s\n  wanted: %s\n  got:    %s\n' \
-    "a shell that moves out leaves its tree held by its parent" "$$" "$moved" >&2
+    "#7502: a shell that moves out leaves its tree held by its parent" "$$" "$moved" >&2
   failed=1
 fi
 (( failed == 0 )) || exit 1
