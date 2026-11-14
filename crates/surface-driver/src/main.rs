@@ -4373,9 +4373,9 @@ fn run(
 ///   position when its declaration has no name. Then one line for the
 ///   speculation group that the admission ran under: `speculation: <path>: rank
 ///   <setting>, order.generative <setting>, order.twin <setting>,
-///   order.manifest <setting>; <n> rollbacks`, each setting `on` or `off`. An
-///   artifact that does not decode is `gandr: <path>: <why>` on standard error.
-///   Any other step prints nothing.
+///   order.manifest <setting>, signature <setting>; <n> rollbacks`, each
+///   setting `on` or `off`. An artifact that does not decode is `gandr: <path>:
+///   <why>` on standard error. Any other step prints nothing.
 /// - fails: the first write error, without writing anything after it.
 /// - panics: none.
 /// - executable: none — the lines are the streams'.

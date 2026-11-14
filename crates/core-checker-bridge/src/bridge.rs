@@ -2249,6 +2249,9 @@ impl Crossed
                 // A walk that misplaces a formation records nothing.
                 misplaced: false,
                 unkeyed: false,
+                // The cursor stands at the boundary, so no record made at a
+                // release stands past it.
+                running: BTreeSet::new(),
             },
             readmitted: readmitted.to_vec(),
             encoded: None,
@@ -3184,6 +3187,7 @@ where
         cursor: from,
         answerable,
         serially: false,
+        predicted_through: from,
         keys,
         keeping,
         kept: 0,
@@ -3418,6 +3422,11 @@ where
     /// Whether the cursor releases a dropped declaration again: then the
     /// declaration crosses on the calling thread.
     serially: bool,
+    /// The index past the last declaration that the bridge recorded at its
+    /// release, in an unbroken run from the cursor. A predicted definition
+    /// records at its release only there, so the definitions keep module
+    /// order.
+    predicted_through: usize,
     /// The content key of each declaration, which a record of every
     /// declaration carries.
     keys: &'crossed [DeclarationKey],
@@ -3690,6 +3699,9 @@ where
             {
                 let defined = source.definitions.get(&constant).copied().unwrap_or(body);
                 self.positions.definitions.define(constant, defined);
+                if index == self.cursor.max(self.predicted_through) {
+                    self.predicted_through = index.saturating_add(1);
+                }
                 crossed(Outcome::Static, Tail::Lone)
             },
             (Some((declared, body)), _) => self.offer(item, judged, Offer::Definition {
@@ -3793,8 +3805,35 @@ where
                     self.positions.reads(constant, &staged.formations);
                     let staged_as = staged.declaration.declaration().clone();
                     let started = self.stopwatch.start();
-                    return match self.environment.release(staged.declaration) {
+                    // A definition asks the kernel to predict its entry when
+                    // each declaration before it is recorded. A predicted one
+                    // records here as its settle records it, so a later
+                    // staging reads it as the serial run reads it.
+                    let index = self.from.saturating_add(at);
+                    let frontier = matches!(offer, Offer::Definition { .. })
+                        && index == self.cursor.max(self.predicted_through);
+                    let released = if frontier {
+                        self.environment.release_predicting(staged.declaration)
+                    }
+                    else {
+                        self.environment.release(staged.declaration)
+                    };
+                    return match released {
                         Ok(Released::Running(pending, check)) => {
+                            if let (Offer::Definition { body, .. }, Maybe::Present(image)) =
+                                (offer, &staged.image)
+                                && frontier
+                                && self.environment.entries().predicted(next).is_some()
+                            {
+                                let defined = self
+                                    .source
+                                    .definitions
+                                    .get(&constant)
+                                    .copied()
+                                    .unwrap_or(body);
+                                self.positions.predict(constant, next, defined, *image);
+                                self.predicted_through = index.saturating_add(1);
+                            }
                             if let Some(slot) = self.slots.get_mut(at) {
                                 *slot = Slot::Running(
                                     Offered {
@@ -3843,9 +3882,9 @@ where
 
     /// Commit what the release of the declaration at `item` handed on: settle
     /// a check that ran, or keep its run for the cursor in a module whose pair
-    /// the kernel may leave undecided; keep a crossing found at the release;
-    /// discard the run of a dropped release; then record each declaration
-    /// whose turn has come.
+    /// the kernel may leave undecided or after a definition recorded at its
+    /// release; keep a crossing found at the release; discard the run of a
+    /// dropped release; then record each declaration whose turn has come.
     ///
     /// # Specification
     /// - requires: `answer` is what the release of `item` handed on, or the run
@@ -3860,6 +3899,7 @@ where
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
     /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::a_definition_released_beside_the_running_one_that_it_names_readmits_as_the_serial_run_7282`
     fn commit(
         &mut self,
         item: ItemIndex,
@@ -3875,11 +3915,21 @@ where
                     return;
                 };
                 match core::mem::replace(slot, Slot::Open) {
-                    Slot::Running(offered, pending) if self.answerable => {
+                    // A release after a definition recorded at its release
+                    // commits after it, as the kernel's prediction asks.
+                    Slot::Running(offered, pending)
+                        if self.answerable
+                            || self
+                                .positions
+                                .running
+                                .first()
+                                .is_some_and(|&first| first < offered.constant) =>
+                    {
                         Slot::Ran(offered, pending, alloc::boxed::Box::new(ran), took)
                     },
                     Slot::Running(offered, pending) => {
-                        Slot::Settled(offered, self.environment.settle(pending, ran), took)
+                        let settled = self.settle_here((item, offered.constant), pending, ran);
+                        Slot::Settled(offered, settled, took)
                     },
                     // A run answers a running release alone. A drop took the
                     // release back, so its run is discarded.
@@ -4051,6 +4101,7 @@ where
         (ran, took): (Ran, AdmissionCost),
     ) -> Crossing
     {
+        let here = ItemIndex::from(self.cursor.saturating_sub(self.from));
         let undecided =
             match ran.outcome() {
                 Err(&KernelError::Identity(
@@ -4060,30 +4111,14 @@ where
             };
         let Some(pair) = undecided
         else {
-            let settled = self.environment.settle(pending, ran);
+            let settled = self.settle_here((here, offered.constant), pending, ran);
             return self.settled_crossing(offered, settled, took);
         };
         if self.environment.drop_after(&pending).is_err() {
-            let settled = self.environment.settle(pending, ran);
+            let settled = self.settle_here((here, offered.constant), pending, ran);
             return self.settled_crossing(offered, settled, took);
         }
-        let at = self.cursor.saturating_sub(self.from);
-        for slot in self.slots.iter_mut().skip(at.saturating_add(1)) {
-            match core::mem::replace(slot, Slot::Dropped) {
-                Slot::Open => {
-                    *slot = Slot::Open;
-                    break;
-                },
-                Slot::Ran(_, _, dropped, _) => self.environment.discard(*dropped),
-                Slot::Running(..)
-                | Slot::Member(_)
-                | Slot::Settled(..)
-                | Slot::Crossed(_)
-                | Slot::Skipped
-                | Slot::Dropped
-                | Slot::Recorded => {},
-            }
-        }
+        self.dropped_after((here, offered.constant));
         // The answer reads the next position, past the vacancy that the
         // refusal leaves there.
         let next = ConstantIndex::from(self.environment.entries().len());
@@ -4099,7 +4134,7 @@ where
             (offered.offer, crossing, base),
             pair,
         );
-        let settled = self.environment.settle(pending, ran);
+        let settled = self.settle_here((here, offered.constant), pending, ran);
         match (settled, answers) {
             (
                 Err(KernelError::Identity(gandr_kernel_core::IdentityError::EndpointsUndecided {
@@ -4132,6 +4167,91 @@ where
             },
             (settled, _) => self.settled_crossing(offered, settled, took),
         }
+    }
+
+    /// Settle the run of the declaration at `constant`, whose slot is
+    /// `item`. When the settle takes back the kernel's prediction of it, the
+    /// kernel drops each later release, and the bridge drops their slots.
+    /// When the kernel refuses a declaration recorded at its release, that
+    /// record goes back with each slot after it.
+    ///
+    /// # Specification
+    /// - requires: the release of `item` gave `pending`, `ran` answers its
+    ///   check, and no definition recorded at a release stands before it.
+    /// - ensures: the kernel's settle. After a drop or such a refusal, each
+    ///   released slot after `item` is dropped as [`Self::dropped_after`] drops
+    ///   it. After a refusal, no record made at a release stands at `constant`
+    ///   or after it.
+    /// - panics: none.
+    /// - executable: none — the settle is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prediction taken back that keeps a later slot, or a
+    ///   refused declaration whose record stays, records other positions or
+    ///   outcomes than the serial run.
+    /// - witness: `bridge::tests::a_definition_released_beside_the_running_one_that_it_names_readmits_as_the_serial_run_7282`
+    /// - witness: `bridge::tests::a_reader_of_a_refused_prediction_readmits_as_the_serial_run_7282`
+    fn settle_here(
+        &mut self,
+        (item, constant): (ItemIndex, ConstantIndex),
+        pending: Pending,
+        ran: Ran,
+    ) -> Result<CheckedId, KernelError>
+    {
+        let recorded = self.positions.running.contains(&constant);
+        let reserved = self.environment.entries().len();
+        let settled = self.environment.settle(pending, ran);
+        // A settle fills its slot in place; only a drop shortens the entries.
+        if self.environment.entries().len() < reserved || (recorded && settled.is_err()) {
+            self.dropped_after((item, constant));
+        }
+        if settled.is_err() {
+            self.positions.unpredict_from(constant);
+        }
+        settled
+    }
+
+    /// Drop each released slot after `item`, the slot of the declaration at
+    /// `constant`, up to the first open one: discard each run that a dropped
+    /// slot kept, and take back each record made at a release after
+    /// `constant`.
+    ///
+    /// # Specification
+    /// - requires: the kernel dropped each release after the release of `item`.
+    /// - ensures: each released slot after `item` dropped up to the first open
+    ///   one, and no record made at a release stands after `constant`.
+    /// - panics: none.
+    /// - executable: none — as [`Self::settle_at_cursor`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::settle_at_cursor`].
+    /// - witness: `bridge::tests::an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476`
+    /// - witness: `bridge::tests::a_reader_of_a_refused_prediction_readmits_as_the_serial_run_7282`
+    fn dropped_after(
+        &mut self,
+        (item, constant): (ItemIndex, ConstantIndex),
+    )
+    {
+        let at = usize::from(item);
+        for slot in self.slots.iter_mut().skip(at.saturating_add(1)) {
+            match core::mem::replace(slot, Slot::Dropped) {
+                Slot::Open => {
+                    *slot = Slot::Open;
+                    break;
+                },
+                Slot::Ran(_, _, dropped, _) => self.environment.discard(*dropped),
+                Slot::Running(..)
+                | Slot::Member(_)
+                | Slot::Settled(..)
+                | Slot::Crossed(_)
+                | Slot::Skipped
+                | Slot::Dropped
+                | Slot::Recorded => {},
+            }
+        }
+        self.positions
+            .unpredict_from(ConstantIndex::from(usize::from(constant).saturating_add(1)));
+        self.predicted_through = self.from.saturating_add(at).saturating_add(1);
     }
 
     /// Release the dropped declaration at `item` again, at the cursor: it
@@ -4173,7 +4293,7 @@ where
                     .get_mut(at)
                     .map(|slot| core::mem::replace(slot, Slot::Recorded));
                 if let Some(Slot::Running(offered, pending)) = running {
-                    let settled = self.environment.settle(pending, ran);
+                    let settled = self.settle_here((item, offered.constant), pending, ran);
                     Some(self.settled_crossing(offered, settled, took))
                 }
                 else {
@@ -6824,6 +6944,10 @@ struct Positions
     /// The crossed definitions' kernel bodies, by kernel position: what the
     /// kernel's replay may unfold.
     unfoldings: BTreeMap<ConstantIndex, gandr_kernel_term::ValueId>,
+    /// The module positions of the plain definitions recorded at their
+    /// release, before the kernel committed them: each stands here until its
+    /// settle confirms the record or a drop takes it back.
+    running: BTreeSet<ConstantIndex>,
     /// The declarations the kernel admitted, as they were staged — an
     /// abstract type's scope closed once its seal ends — in kernel admission
     /// order.
@@ -7098,14 +7222,17 @@ impl Positions
     }
 
     /// Record that the module definition at `constant`, of core body `body`,
-    /// crossed as `admitted` with kernel body `image`.
+    /// crossed as `admitted` with kernel body `image`. A definition recorded
+    /// at its release keeps that record, which is the same.
     ///
     /// # Specification
-    /// - requires: `constant` follows every prior crossed or static definition;
-    ///   `admitted` is a fresh kernel position.
+    /// - requires: `constant` was recorded at its release, or it follows every
+    ///   prior crossed or static definition and `admitted` is a fresh kernel
+    ///   position.
     /// - ensures: the crossed table answers `admitted`'s position for
     ///   `constant`; a decode of a code naming `constant` unfolds to `body`;
-    ///   the kernel's replay may unfold `admitted` to `image`.
+    ///   the kernel's replay may unfold `admitted` to `image`; `constant` is no
+    ///   longer a record made at a release.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -7114,11 +7241,14 @@ impl Positions
     ///   or retaining module positions change admission and certificate replay.
     /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
     /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::a_definition_released_beside_the_running_one_that_it_names_readmits_as_the_serial_run_7282`
     #[spec(
-        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
-            && !self.unfoldings.contains_key(&admitted.position()),
+        requires: self.running.contains(&constant)
+            || (self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+                && !self.unfoldings.contains_key(&admitted.position())),
         ensures: self.admitted.get(&constant) == Some(&admitted.position())
-            && self.unfoldings.get(&admitted.position()) == Some(&image),
+            && self.unfoldings.get(&admitted.position()) == Some(&image)
+            && !self.running.contains(&constant),
     )]
     fn define(
         &mut self,
@@ -7128,9 +7258,83 @@ impl Positions
         image: gandr_kernel_term::ValueId,
     )
     {
+        if self.running.remove(&constant) {
+            return;
+        }
         self.admitted.insert(constant, admitted.position());
         self.definitions.define(constant, body);
         self.unfoldings.insert(admitted.position(), image);
+    }
+
+    /// Record at its release the plain definition at `constant`, of core
+    /// body `body`, whose admission the kernel predicted at `position` with
+    /// kernel body `image`: a later staging reads it as [`Self::define`]
+    /// records it.
+    ///
+    /// # Specification
+    /// - requires: `constant` follows every prior crossed or static definition,
+    ///   and `position` is a fresh kernel position.
+    /// - ensures: as [`Self::define`] at `position`, and `constant` is a record
+    ///   made at a release.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record that misses the body, the position or the
+    ///   unfolding stages a later declaration otherwise than the serial run.
+    /// - witness: `bridge::tests::a_definition_released_beside_the_running_one_that_it_names_readmits_as_the_serial_run_7282`
+    #[spec(
+        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+            && !self.unfoldings.contains_key(&position),
+        ensures: self.admitted.get(&constant) == Some(&position)
+            && self.unfoldings.get(&position) == Some(&image)
+            && self.running.contains(&constant),
+    )]
+    fn predict(
+        &mut self,
+        constant: ConstantIndex,
+        position: ConstantIndex,
+        body: ValueId,
+        image: gandr_kernel_term::ValueId,
+    )
+    {
+        self.admitted.insert(constant, position);
+        self.definitions.define(constant, body);
+        self.unfoldings.insert(position, image);
+        self.running.insert(constant);
+    }
+
+    /// Take back each record made at a release at `constant` or after it:
+    /// each such definition is unrecorded again on both sides, and each
+    /// static definition after the first of them is undefined with it.
+    ///
+    /// # Specification
+    /// - requires: the slot of each static definition after the first record
+    ///   taken back is dropped, so that the cursor defines it again.
+    /// - ensures: no record made at a release stands at `constant` or after it,
+    ///   and none of their positions or bodies stays.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a record that stays past its drop stages a later
+    ///   declaration against a definition that the serial run never recorded.
+    /// - witness: `bridge::tests::a_reader_of_a_refused_prediction_readmits_as_the_serial_run_7282`
+    #[spec(ensures: self.running.last().is_none_or(|&last| last < constant))]
+    fn unpredict_from(
+        &mut self,
+        constant: ConstantIndex,
+    )
+    {
+        let taken = self.running.split_off(&constant);
+        let Some(&first) = taken.first()
+        else {
+            return;
+        };
+        for held in taken {
+            if let Some(position) = self.admitted.remove(&held) {
+                let _unfolded = self.unfoldings.remove(&position);
+            }
+        }
+        self.definitions.truncate_from(first);
     }
 
     /// Record a bodiless kernel admission: an owed axiom or native data

@@ -137,6 +137,46 @@ fn a_definition_out_of_admission_order_is_refused()
     );
 }
 
+/// #7282: a cut takes back the definitions at its position and after it, and
+/// the chain defines that position again as if they were never appended.
+#[test]
+fn a_cut_chain_holds_the_definitions_before_the_cut_alone_7282()
+{
+    let mut chain = DefinitionChain::new();
+    for (at, body) in [(0_usize, 0_u32), (2, 1), (4, 2)] {
+        let defined = chain.define(
+            ConstantIndex::from(at),
+            GlobalIndex::from(body),
+            Transparency::Manifest,
+            &[],
+        );
+        assert!(defined.is_ok(), "{at} defines in order");
+    }
+    chain.truncate_from(ConstantIndex::from(1_usize));
+    assert!(
+        chain
+            .entries()
+            .iter()
+            .map(DefinitionEntry::constant)
+            .eq([ConstantIndex::from(0_usize)]),
+        "the entry before the cut stays, and each entry at or past it goes"
+    );
+    assert!(
+        chain.entry(ConstantIndex::from(4_usize)).is_none(),
+        "a definition past the cut no longer unfolds"
+    );
+    assert_eq!(
+        chain.define(
+            ConstantIndex::from(2_usize),
+            GlobalIndex::from(1_u32),
+            Transparency::Manifest,
+            &[ConstantIndex::from(0_usize)],
+        ),
+        Ok(DefinitionHeight::from(2_u32)),
+        "the position past the cut defines again in admission order"
+    );
+}
+
 #[test]
 fn a_forward_mention_is_refused()
 {

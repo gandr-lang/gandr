@@ -1493,17 +1493,28 @@ impl gandr_core_checker_base::tier::EndpointTier for Agreeing
 /// How many times [`undecided_beside_later`] doubles the run of `f0`.
 const DOUBLINGS: usize = 22;
 
+/// Whether a declaration of [`undecided_beside_later`] reads `r`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReaderOfR
+{
+    /// No declaration reads `r`.
+    Absent,
+    /// `s : Path(big, d) = r` follows `r`.
+    Present,
+}
+
 /// The module `f0 = λx. return x`, `f(k+1) = λx. fk x to y. fk y` up to
 /// [`DOUBLINGS`], `big : Unit = f22 ()`, `d : Unit = big`,
 /// `r : Path(big, d) = here(big)`, then three declarations that read
-/// nothing after `d`. It is judged under [`Agreeing`], so the tier met each
-/// pair of `r`. The kernel unfolds `big` first against `d`, and the run of
-/// `f22` takes more steps than its budget, so the pair is undecided. The
+/// nothing after `d`; with [`ReaderOfR::Present`], `s : Path(big, d) = r`
+/// comes first among them. It is judged under [`Agreeing`], so the tier met
+/// each pair of `r`. The kernel unfolds `big` first against `d`, and the run
+/// of `f22` takes more steps than its budget, so the pair is undecided. The
 /// machine's dialogue unfolds `d` to `big`, which answers the pair.
 ///
 /// # Specification
 /// trivial.
-fn undecided_beside_later() -> (CoreArena, ModuleReport)
+fn undecided_beside_later(reader: ReaderOfR) -> (CoreArena, ModuleReport)
 {
     let mut arena = CoreArena::new();
     let unit_type = arena.value_type_unit();
@@ -1554,14 +1565,18 @@ fn undecided_beside_later() -> (CoreArena, ModuleReport)
         let lambda = arena.computation_lambda(returned);
         arena.value_thunk(lambda)
     };
-    let rest = [
+    let r = arena.value_constant(ConstantIndex::from(big_at.saturating_add(2)));
+    let mut rest = Vec::from([
         (unit_type, run),
         (unit_type, big),
         (path, here),
         (unit_type, d),
         (unit_type, unit),
         (function_type, constant_unit),
-    ];
+    ]);
+    if reader == ReaderOfR::Present {
+        rest.insert(3, (path, r));
+    }
     for (offset, (declared, defined)) in rest.into_iter().enumerate() {
         module.push(declaration(
             At(big_at.saturating_add(offset)),
@@ -1592,7 +1607,7 @@ fn undecided_beside_later() -> (CoreArena, ModuleReport)
 #[test]
 fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_3476()
 {
-    let (mut arena, report) = undecided_beside_later();
+    let (mut arena, report) = undecided_beside_later(ReaderOfR::Absent);
     let leading = (
         LeadingCount::from(report.judged().len().saturating_sub(1)),
         Maybe::Absent(crossed::Absent::Unasked),
@@ -1652,9 +1667,244 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
     );
     assert_eq!(
         usize::from(reversed.environment().rollbacks()),
-        2,
-        "the undecided pair drops the two releases that ran beside it"
+        3,
+        "the undecided pair drops the two releases that ran beside it, and takes back the \
+             kernel's prediction of `r`"
     );
+}
+
+/// #7282: `s : Path(big, d) = r` reads `r`, whose entry the kernel predicts
+/// at its release, so `s` runs beside `r` against the prediction. The pair at
+/// `r` is undecided, so the kernel refuses `r` and takes the prediction back:
+/// the slot of `s` is dropped, and the cursor releases `s` again against `r`
+/// at the next position. The entries, the declarations that the kernel admits
+/// and the record at the boundary are the serial ones.
+#[test]
+fn a_reader_of_a_refused_prediction_readmits_as_the_serial_run_7282()
+{
+    let (mut arena, report) = undecided_beside_later(ReaderOfR::Present);
+    let leading = (
+        LeadingCount::from(report.judged().len().saturating_sub(1)),
+        Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let (serial, serial_record) = readmit_retiring(
+        &mut arena.clone(),
+        &report,
+        leading,
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    let fork = Holding::default();
+    let (reversed, reversed_record) = readmit_retiring(
+        &mut arena,
+        &report,
+        leading,
+        &Recall::recheck().speculating(gandr_kernel_core::speculation::Speculation::ON),
+        &Unretired,
+        &mut Untimed,
+        &fork,
+    )
+    .whole();
+    let s = DOUBLINGS.saturating_add(4);
+    let outcome = serial.readmitted().get(s).map(|entry| &entry.outcome);
+    assert!(
+        matches!(
+            outcome,
+            Some(&Outcome::Defined { admitted, .. })
+                if admitted.position() == ConstantIndex::from(s.saturating_add(1))
+        ),
+        "`s` reads `r` at the next position, and is admitted after it: {outcome:?}"
+    );
+    assert_eq!(
+        reversed.readmitted(),
+        serial.readmitted(),
+        "each declaration crosses as the serial run crosses it"
+    );
+    assert!(
+        reversed.admitted.iter().eq(serial.admitted.iter()),
+        "the kernel admits the serial declarations, in the serial order"
+    );
+    let bounded = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
+        Maybe::Present(ref record) => Ok(record.boundary()),
+        Maybe::Absent(absent) => Err(absent),
+    };
+    assert_eq!(
+        bounded(&reversed_record),
+        bounded(&serial_record),
+        "the record at the boundary is the serial one"
+    );
+    assert_eq!(
+        fork.0.load(core::sync::atomic::Ordering::Relaxed),
+        1_usize,
+        "only the boundary's release holds, for the cursor: `s` runs beside `r`"
+    );
+}
+
+/// The fork [`Reversed`], counting each release that holds.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+struct Holding(core::sync::atomic::AtomicUsize);
+
+impl gandr_core_fork::Fork for Holding
+{
+    /// Every item in slice order, as the serial fork runs them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn each<Item, State, Start, Job>(
+        &self,
+        items: &mut [Item],
+        start: Start,
+        job: Job,
+    ) where
+        Item: Send,
+        Start: Fn() -> State + Sync,
+        Job: Fn(&mut State, &mut Item) + Sync,
+    {
+        Serial.each(items, start, job);
+    }
+
+    /// The left half, then the right.
+    ///
+    /// # Specification
+    /// trivial.
+    fn join<Left, Right, LeftOutput, RightOutput>(
+        &self,
+        left: Left,
+        right: Right,
+    ) -> (LeftOutput, RightOutput)
+    where
+        Left: FnOnce() -> LeftOutput + Send,
+        Right: FnOnce() -> RightOutput + Send,
+        LeftOutput: Send,
+        RightOutput: Send,
+    {
+        Serial.join(left, right)
+    }
+
+    /// As [`Reversed`] schedules, counting each release that holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn schedule<Item, Job, Out, Release, Run, Commit>(
+        &self,
+        items: &mut [Item],
+        after: &gandr_core_fork::Dependences,
+        mut release: Release,
+        run: Run,
+        commit: Commit,
+    ) where
+        Job: Send,
+        Out: Send,
+        Release:
+            FnMut(gandr_core_fork::ItemIndex, &mut Item) -> gandr_core_fork::Releasing<Job, Out>,
+        Run: Fn(Job) -> Out + Sync,
+        Commit: FnMut(gandr_core_fork::ItemIndex, &mut Item, Out),
+    {
+        Reversed.schedule(
+            items,
+            after,
+            |at, item| {
+                let released = release(at, item);
+                if matches!(released, gandr_core_fork::Releasing::Held(_)) {
+                    let _counted = self.0.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                }
+                released
+            },
+            run,
+            commit,
+        );
+    }
+}
+
+/// The module `x : Unit = ()`, `d : Unit = x`, `e : Unit = d`: each
+/// definition names the one before it.
+///
+/// # Specification
+/// trivial.
+fn named_in_a_chain() -> (CoreArena, ModuleReport)
+{
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let bodies = [
+        arena.value_unit(),
+        arena.value_constant(ConstantIndex::from(0_usize)),
+        arena.value_constant(ConstantIndex::from(1_usize)),
+    ];
+    let module = bodies
+        .into_iter()
+        .enumerate()
+        .map(|(at, body)| declaration(At(at), Maybe::Present(unit_type), Maybe::Present(body)))
+        .collect::<Vec<_>>();
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    (arena, report)
+}
+
+/// #7282: in [`named_in_a_chain`], `d` names `x` and `e` names `d`. With the
+/// kernel's predictions off, each of them holds until the definition that it
+/// names is recorded. With them on, each definition is recorded at its
+/// release, so `d` and `e` run beside the definition that they name, and
+/// [`Reversed`] commits them first. The entries and the declarations that
+/// the kernel admits are the serial ones, and no prediction is taken back.
+#[test]
+fn a_definition_released_beside_the_running_one_that_it_names_readmits_as_the_serial_run_7282()
+{
+    use gandr_kernel_core::speculation::Setting;
+    use gandr_kernel_core::speculation::Speculation;
+    let (arena, report) = named_in_a_chain();
+    let leading = (LeadingCount::NONE, Maybe::Absent(crossed::Absent::Unasked));
+    let (serial, _) = readmit_retiring(
+        &mut arena.clone(),
+        &report,
+        leading,
+        &Recall::recheck(),
+        &Unretired,
+        &mut Untimed,
+        &Serial,
+    )
+    .whole();
+    let unpredicted = Speculation {
+        signature: Setting::Off,
+        ..Speculation::ON
+    };
+    for (speculation, holds) in [(unpredicted, 2_usize), (Speculation::ON, 0)] {
+        let fork = Holding::default();
+        let (reversed, _) = readmit_retiring(
+            &mut arena.clone(),
+            &report,
+            leading,
+            &Recall::recheck().speculating(speculation),
+            &Unretired,
+            &mut Untimed,
+            &fork,
+        )
+        .whole();
+        assert_eq!(
+            reversed.readmitted(),
+            serial.readmitted(),
+            "{speculation}: each declaration crosses as the serial run crosses it"
+        );
+        assert!(
+            reversed.admitted.iter().eq(serial.admitted.iter()),
+            "{speculation}: the kernel admits the serial declarations, in the serial order"
+        );
+        assert_eq!(
+            fork.0.load(core::sync::atomic::Ordering::Relaxed),
+            holds,
+            "{speculation}: each release that holds waits for the definition that it names"
+        );
+        assert_eq!(
+            usize::from(reversed.environment().rollbacks()),
+            0_usize,
+            "{speculation}: no prediction is taken back"
+        );
+    }
 }
 
 /// A clock one microsecond past its last reading at each reading.

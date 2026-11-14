@@ -1588,6 +1588,52 @@ impl AdmittedDeclaration
         self.declaration = self.declaration.clone().closed(extent);
     }
 
+    /// Whether `found`, the entry that a commit makes, is the entry that
+    /// this prediction states: in each part that a check reads, which is
+    /// each part but the census.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn agrees(
+        &self,
+        found: &Self,
+    ) -> Prediction
+    {
+        let Self {
+            ref declaration,
+            admission,
+            ref rested_on,
+            ref references,
+            block,
+            ref accessibility,
+            key_name,
+            census: _,
+            key,
+            content,
+            rank,
+            unit,
+        } = *self;
+        let agreed = *declaration == found.declaration
+            && admission == found.admission
+            && *rested_on == found.rested_on
+            && *references == found.references
+            && block == found.block
+            && *accessibility == found.accessibility
+            && key_name == found.key_name
+            && key == found.key
+            && content == found.content
+            && rank == found.rank
+            && unit == found.unit;
+        if agreed {
+            Prediction::Held
+        }
+        else {
+            Prediction::Missed
+        }
+    }
+
     /// The live entry of an admission's `parts`.
     ///
     /// # Specification
@@ -1807,7 +1853,9 @@ pub struct EntryLog
 /// orphan below later content, so its slot holds no declaration. No read sees
 /// a vacancy, no rank table holds it, no reach holds it, and the chain passes
 /// it. No read sees a reservation either, until its commit fills it. A
-/// retired entry keeps its position as a name in the same way, and its slot
+/// predicted slot reads as the entry that its commit makes when its check
+/// admits it, and its commit compares that entry with what the check found.
+/// A retired entry keeps its position as a name in the same way, and its slot
 /// frees its declaration, its key and its rows.
 ///
 /// # Specification
@@ -1829,12 +1877,15 @@ pub enum Slot
     /// The position of an entry that a readmission retired: a name that no
     /// later entry takes.
     Retired,
+    /// The position of a released plain definition whose commit has not
+    /// come, with the entry that its commit makes when its check admits it.
+    Predicted(AdmittedDeclaration),
 }
 
 impl Slot
 {
-    /// The admitted declaration in this slot: none for a vacancy, a
-    /// reservation or a retired entry.
+    /// The admitted declaration in this slot, or the predicted one: none for
+    /// a vacancy, a reservation or a retired entry.
     ///
     /// # Specification
     /// trivial.
@@ -1843,13 +1894,28 @@ impl Slot
     pub const fn admitted(&self) -> Option<&AdmittedDeclaration>
     {
         match *self {
-            Self::Admitted(ref entry) => Some(entry),
+            Self::Admitted(ref entry) | Self::Predicted(ref entry) => Some(entry),
             Self::Vacant | Self::Reserved | Self::Retired => None,
         }
     }
 
-    /// The admitted declaration in this slot, to change in place: none for a
+    /// The admitted declaration in this slot: none for a prediction, a
     /// vacancy, a reservation or a retired entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn committed(&self) -> Option<&AdmittedDeclaration>
+    {
+        match *self {
+            Self::Admitted(ref entry) => Some(entry),
+            Self::Predicted(_) | Self::Vacant | Self::Reserved | Self::Retired => None,
+        }
+    }
+
+    /// The admitted declaration in this slot, to change in place: none for a
+    /// prediction, a vacancy, a reservation or a retired entry.
     ///
     /// # Specification
     /// trivial.
@@ -1858,9 +1924,22 @@ impl Slot
     {
         match *self {
             Self::Admitted(ref mut entry) => Some(entry),
-            Self::Vacant | Self::Reserved | Self::Retired => None,
+            Self::Predicted(_) | Self::Vacant | Self::Reserved | Self::Retired => None,
         }
     }
+}
+
+/// What a commit finds of the entry that its slot predicts.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Prediction
+{
+    /// The slot predicts the entry that the commit makes.
+    Held,
+    /// The slot predicts another entry than the commit makes.
+    Missed,
 }
 
 /// No slot.
@@ -2084,7 +2163,7 @@ impl Entries
     #[must_use]
     pub fn last(&self) -> Option<&AdmittedDeclaration>
     {
-        self.family().iter().rev().find_map(Slot::admitted)
+        self.family().iter().rev().find_map(Slot::committed)
     }
 
     /// Every live entry, in admission order, read outside any support: for a
@@ -2098,7 +2177,7 @@ impl Entries
     #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &AdmittedDeclaration>
     {
-        self.family().iter().filter_map(Slot::admitted)
+        self.family().iter().filter_map(Slot::committed)
     }
 
     /// How a memo key names a reference to each position from `from` on, in
@@ -2469,14 +2548,125 @@ impl Entries
         log.family.push(Slot::Reserved);
     }
 
+    /// Predict the entry at the reserved `position`, its content in `arena`:
+    /// each read sees `entry` there until the commit comes, and the indexes
+    /// hold its rows as [`Self::push`] states.
+    ///
+    /// # Specification
+    /// - requires: the slot at `position` is reserved for a plain definition
+    ///   that holds no role, and `entry` is the entry that its commit makes
+    ///   when its check admits it, its content in `arena`.
+    /// - ensures: the slot holds the prediction when it was reserved, and
+    ///   nothing changes otherwise. The length and the count of admitted
+    ///   entries are unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prediction that a read does not see sends its
+    ///   reader back to wait, and one whose rows the indexes miss names the
+    ///   reader's references other than the serial run names them.
+    /// - witness: `gandr-kernel-core::environment::tests::a_definition_released_beside_the_running_one_that_it_names_folds_as_the_serial_run_7282`
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
+    #[inline]
+    pub fn predict(
+        &mut self,
+        arena: &TermArena,
+        position: ConstantIndex,
+        entry: AdmittedDeclaration,
+    )
+    {
+        let log = self.log_mut();
+        if !matches!(log.family.get(usize::from(position)), Some(&Slot::Reserved)) {
+            return;
+        }
+        log.index(arena, position, &entry);
+        if let Some(slot) = log.family.get_mut(usize::from(position)) {
+            *slot = Slot::Predicted(entry);
+        }
+    }
+
+    /// The entry that the slot at `position` predicts: none when its slot
+    /// holds no prediction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn predicted(
+        &self,
+        position: ConstantIndex,
+    ) -> Option<&AdmittedDeclaration>
+    {
+        match *self.family().get(usize::from(position))? {
+            Slot::Predicted(ref entry) => Some(entry),
+            Slot::Admitted(_) | Slot::Vacant | Slot::Reserved | Slot::Retired => None,
+        }
+    }
+
+    /// The first position from `from` up to `to` whose slot holds a
+    /// prediction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn predicted_within(
+        &self,
+        (from, to): (ConstantIndex, ConstantIndex),
+    ) -> Option<ConstantIndex>
+    {
+        let family = self.family();
+        (usize::from(from) .. usize::from(to))
+            .find(|&at| matches!(family.get(at), Some(&Slot::Predicted(_))))
+            .map(ConstantIndex::from)
+    }
+
+    /// Take back the prediction at `position`: its slot is reserved again,
+    /// and the indexes hold none of its rows.
+    ///
+    /// # Specification
+    /// - requires: the prediction at `position` is of a plain definition that
+    ///   holds no role, so its only row is its content name.
+    /// - ensures: the slot is reserved when it held a prediction, and nothing
+    ///   changes otherwise. The length and the count of admitted entries are
+    ///   unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prediction left in the indexes names a refused
+    ///   definition to each later reader, which the serial run never names.
+    /// - witness: `gandr-kernel-core::environment::tests::a_reader_of_a_refused_prediction_is_dropped_and_released_again_7282`
+    #[spec(captures: [entry_len = self.len(), admitted = self.admitted()], ensures: self.len() == entry_len && self.admitted() == admitted)]
+    #[inline]
+    pub fn unpredict(
+        &mut self,
+        position: ConstantIndex,
+    )
+    {
+        let log = self.log_mut();
+        if !matches!(
+            log.family.get(usize::from(position)),
+            Some(&Slot::Predicted(_))
+        ) {
+            return;
+        }
+        log.definitions.retain_items(|&held| held != position);
+        if let Some(slot) = log.family.get_mut(usize::from(position)) {
+            *slot = Slot::Reserved;
+        }
+    }
+
     /// Admit `entry` at its reserved `position`, its content in `arena`.
     ///
     /// # Specification
-    /// - requires: the slot at `position` is reserved, and `entry` is the
-    ///   declaration released there, its content in `arena`, at a rank no entry
-    ///   holds.
+    /// - requires: the slot at `position` is reserved, or predicts `entry`, and
+    ///   `entry` is the declaration released there, its content in `arena`, at
+    ///   a rank no entry holds.
     /// - ensures: the slot holds `entry`, and the indexes hold its rows as
-    ///   [`Self::push`] states. The length is unchanged.
+    ///   [`Self::push`] states: a prediction indexed them already. The length
+    ///   is unchanged.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2494,7 +2684,12 @@ impl Entries
     )
     {
         let log = self.log_mut();
-        log.index(arena, position, &entry);
+        if !matches!(
+            log.family.get(usize::from(position)),
+            Some(&Slot::Predicted(_))
+        ) {
+            log.index(arena, position, &entry);
+        }
         if let Some(slot) = log.family.get_mut(usize::from(position)) {
             *slot = Slot::Admitted(entry);
             log.reservations = log.reservations.saturating_sub(1);
@@ -2754,7 +2949,7 @@ impl Entries
             |(vacant, reserved), slot| match *slot {
                 Slot::Admitted(_) | Slot::Retired => (vacant, reserved),
                 Slot::Vacant => (vacant.saturating_add(1), reserved),
-                Slot::Reserved => (vacant, reserved.saturating_add(1)),
+                Slot::Reserved | Slot::Predicted(_) => (vacant, reserved.saturating_add(1)),
             },
         );
         log.vacancies = log.vacancies.saturating_sub(vacant);

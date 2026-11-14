@@ -1213,6 +1213,49 @@ fn definitions_reject_reordering_without_replacing_earlier_bodies()
     );
 }
 
+/// #7282: a cut makes each definition at or past it rigid, and a definition of
+/// the same constant after the cut unfolds to its own body, in the table and in
+/// the normaliser that certifies the step.
+#[test]
+fn a_definition_past_a_cut_is_rigid_until_it_is_defined_again_7282()
+{
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let kept_body = arena.value_quote(integer);
+    let cut_body = arena.value_quote(string);
+    let kept = ConstantIndex::from(2_usize);
+    let later = ConstantIndex::from(4_usize);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(kept, kept_body);
+    definitions.define(later, cut_body);
+    definitions.truncate_from(ConstantIndex::from(3_usize));
+    assert_eq!(definitions.body(kept), Maybe::Present(kept_body));
+    assert_eq!(
+        definitions.body(later),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "the definition past the cut is rigid"
+    );
+    definitions.define(later, kept_body);
+    assert_eq!(
+        definitions.body(later),
+        Maybe::Present(kept_body),
+        "the constant past the cut defines again, at its new body"
+    );
+    let reference = arena.value_constant(later);
+    let Maybe::Present(step) = definitions.reduce(&mut arena, reference).unwrap()
+    else {
+        panic!("the new definition unfolds");
+    };
+    assert_eq!(step.reduct(), kept_body);
+    let certificate = definitions.certify(&arena, step).unwrap();
+    assert_eq!(
+        certificate.verdict(),
+        gandr_core_nbe::MachineVerdict::Convertible,
+        "the normaliser unfolds the constant to its new body, not the one cut"
+    );
+}
+
 #[test]
 fn the_normaliser_unfolds_each_recorded_definition()
 {

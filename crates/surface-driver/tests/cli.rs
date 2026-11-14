@@ -879,8 +879,8 @@ fn a_lint_reports_each_inferred_exit_and_its_fix_settles_it()
 /// #3476: `gandr check --measure` prints the speculation group that each
 /// source's admission ran under, and the count of its rollbacks. A serial run
 /// predicts nothing, and a run of more than one job runs the whole group on,
-/// the rank among it (#7335). A source that refuses nothing rolls nothing
-/// back.
+/// the rank (#7335) and the signature (#7282) among it. A source that refuses
+/// nothing rolls nothing back.
 #[test]
 fn check_measures_the_speculation_each_width_runs_under_3476()
 {
@@ -895,11 +895,11 @@ fn check_measures_the_speculation_each_width_runs_under_3476()
     for (jobs, group) in [
         (
             "1",
-            "rank off, order.generative off, order.twin off, order.manifest off",
+            "rank off, order.generative off, order.twin off, order.manifest off, signature off",
         ),
         (
             "2",
-            "rank on, order.generative on, order.twin on, order.manifest on",
+            "rank on, order.generative on, order.twin on, order.manifest on, signature on",
         ),
     ] {
         // A verdict cache of each run's own, so each run checks each

@@ -948,6 +948,33 @@ impl CodeDefinitions
         }
     }
 
+    /// Take back each definition at `constant` or after it, as if none of
+    /// them was defined: each such constant is rigid again, and the next
+    /// definition takes the entry index that the first taken-back one took.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::body`] answers each definition before `constant` as
+    ///   before, and none at `constant` or after it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cut that keeps a taken-back body unfolds a constant
+    ///   that its admission never recorded, and one that keeps the count of
+    ///   entries refuses the next definition's entry index.
+    /// - witness: `code::tests::a_definition_past_a_cut_is_rigid_until_it_is_defined_again_7282`
+    #[spec(ensures: matches!(self.body(constant), Maybe::Absent(_)))]
+    #[inline]
+    pub fn truncate_from(
+        &mut self,
+        constant: ConstantIndex,
+    )
+    {
+        let _taken = self.bodies.split_off(&constant);
+        self.lowered.truncate_from(constant);
+    }
+
     /// Record the data declaration at `constant` as presented by its
     /// signature's rules, when it has any: every later conversion reads its
     /// terms by their normal forms.

@@ -456,6 +456,34 @@ impl DefinitionChain
         });
         Ok(height)
     }
+
+    /// Take back each definition at `constant` or after it, as if none of
+    /// them was appended.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: no entry stands at `constant` or after it, and each entry
+    ///   before it stays as it was, in order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a cut that keeps an entry at its position leaves a
+    ///   taken-back definition unfoldable, and one that drops an earlier entry
+    ///   makes a recorded definition rigid.
+    /// - witness: `definition::tests::a_cut_chain_holds_the_definitions_before_the_cut_alone_7282`
+    #[inline]
+    #[spec(ensures: self.entries.last().is_none_or(|last| last.constant() < constant))]
+    pub fn truncate_from(
+        &mut self,
+        constant: ConstantIndex,
+    )
+    {
+        let kept = self
+            .entries
+            .partition_point(|entry| entry.constant < constant);
+        self.entries.truncate(kept);
+    }
 }
 
 /// The offset of one scope frame within the environment's flat vector.
