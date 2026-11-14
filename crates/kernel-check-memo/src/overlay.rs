@@ -33,10 +33,12 @@
 //!   agreement on its keys, which the join computes and never asserts (§
 //!   sharing-rule-descent).
 
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 
 use crate::accounting::MemoEntryCount;
 use crate::accounting::MemoError;
@@ -75,7 +77,7 @@ where
     Support: MemoKey,
 {
     /// The layers frozen at the fork points below this memo, oldest first.
-    layers: Vec<Frozen<Support, Outcome>>,
+    layers: SmallVec<Frozen<Support, Outcome>, 0, Global>,
     /// The entries recorded since the newest fork point.
     own: HashedMemo<Support, Outcome>,
     /// How many freezes the line of this memo made: its parent's at the fork,
@@ -86,9 +88,9 @@ where
     forked: u64,
     /// The points this memo forked children at, by the stamp of the newest
     /// layer there, in stamp order. A point is open while a child holds it.
-    points: Vec<ForkPoint>,
+    points: SmallVec<ForkPoint, 0, Global>,
     /// The point of this memo's own fork, held until its join or its drop.
-    point: Option<Arc<()>>,
+    point: Option<Shared<(), Global>>,
 }
 
 /// One point that an [`OverlaidMemo`] forked children at: the stamp of its
@@ -103,7 +105,7 @@ struct ForkPoint
     stamp: u64,
     /// The token of the point: the memo's count, and one for each child that
     /// holds the point.
-    open: Arc<()>,
+    open: Shared<(), Global>,
 }
 
 /// How many children hold a fork point.
@@ -124,7 +126,7 @@ impl ForkPoint
     #[inline]
     fn holders(&self) -> Holders
     {
-        Holders(Arc::strong_count(&self.open).saturating_sub(1))
+        Holders(usize::from(Shared::strong_count(&self.open)).saturating_sub(1))
     }
 }
 
@@ -147,6 +149,10 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: copies of the layer stack and of the own entries, growth
+    ///   within the memo's layers and entries
     #[inline]
     fn clone(&self) -> Self
     {
@@ -155,7 +161,7 @@ where
             own: self.own.clone(),
             frozen: self.frozen,
             forked: self.forked,
-            points: Vec::new(),
+            points: SmallVec::<_, 0, Global>::new(),
             point: self.point.clone(),
         }
     }
@@ -172,14 +178,14 @@ where
     Support: MemoKey,
 {
     /// The entries, shared by reference.
-    memo: Arc<HashedMemo<Support, Outcome>>,
+    memo: Shared<HashedMemo<Support, Outcome>, Global>,
     /// The count of freezes of the memo's line at the freeze of the layer's
     /// newest entries.
     stamp: u64,
     /// The filter of the layer's hashes, when a join linked the layer or a
     /// compaction merged it. A layer that a fork froze carries none, so the
     /// fork builds nothing.
-    filter: Option<Arc<HashFilter>>,
+    filter: Option<Shared<HashFilter, Global>>,
 }
 
 impl<Support, Outcome> Clone for Frozen<Support, Outcome>
@@ -194,7 +200,7 @@ where
     fn clone(&self) -> Self
     {
         Self {
-            memo: Arc::clone(&self.memo),
+            memo: Shared::clone(&self.memo),
             stamp: self.stamp,
             filter: self.filter.clone(),
         }
@@ -370,11 +376,11 @@ where
     pub fn new() -> Self
     {
         Self {
-            layers: Vec::new(),
+            layers: SmallVec::<_, 0, Global>::new(),
             own: HashedMemo::new(),
             frozen: 0,
             forked: 0,
-            points: Vec::new(),
+            points: SmallVec::<_, 0, Global>::new(),
             point: None,
         }
     }
@@ -394,6 +400,11 @@ where
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the frozen layer of this memo's own entries, its filter
+    ///   and the child's stack of layers, growth within the memo's layers and
+    ///   entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`].
     /// - witness: `overlay::tests::a_child_reads_the_memo_as_it_stood_at_the_fork`
@@ -407,7 +418,7 @@ where
             let frozen = core::mem::take(&mut self.own);
             self.frozen = self.frozen.saturating_add(1);
             self.layers.push(Frozen {
-                memo: Arc::new(frozen),
+                memo: Shared::new(frozen),
                 stamp: self.frozen,
                 filter: None,
             });
@@ -417,12 +428,12 @@ where
         // stamp is at or above each open point, and the points stay in order.
         self.points.retain(|point| point.holders() != Holders(0));
         let point = match self.points.last() {
-            Some(last) if last.stamp == stamp => Arc::clone(&last.open),
+            Some(last) if last.stamp == stamp => Shared::clone(&last.open),
             Some(_) | None => {
-                let open = Arc::new(());
+                let open = Shared::new(());
                 self.points.push(ForkPoint {
                     stamp,
-                    open: Arc::clone(&open),
+                    open: Shared::clone(&open),
                 });
                 open
             },
@@ -432,7 +443,7 @@ where
             own: HashedMemo::new(),
             frozen: self.frozen,
             forked: stamp,
-            points: Vec::new(),
+            points: SmallVec::<_, 0, Global>::new(),
             point: Some(point),
         }
     }
@@ -474,6 +485,10 @@ where
     /// [`Disagreement`], naming the support, the outcome that this memo holds
     /// and the outcome that the child offers.
     ///
+    /// # Cost
+    /// - allocation: the layers of the child's own entries and of this memo's
+    ///   recent entries, with their filters, growth within the child's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`OverlaidMemo`]; an entry that `keep` drops is
     ///   not served after the join, two siblings that keep two outcomes under
@@ -509,7 +524,7 @@ where
         // before its filter, so the sharer keeps what it read.
         let first_own = layers.partition_point(|layer| layer.stamp <= forked);
         for layer in layers.get_mut(first_own ..).unwrap_or_default() {
-            Arc::make_mut(&mut layer.memo).retain(&mut keep);
+            Shared::make_mut(&mut layer.memo).retain(&mut keep);
         }
         own.retain(&mut keep);
         // The layers stamped after the child's newest one were frozen after
@@ -548,13 +563,13 @@ where
         // What this memo recorded since the fork stays below the child's.
         if self.own.entry_count() != MemoEntryCount::zero() {
             let recorded = core::mem::take(&mut self.own);
-            self.link(Arc::new(recorded), None);
+            self.link(Shared::new(recorded), None);
         }
         for layer in layers.drain(first_own ..) {
             self.link(layer.memo, layer.filter);
         }
         if own.entry_count() != MemoEntryCount::zero() {
-            self.link(Arc::new(own), None);
+            self.link(Shared::new(own), None);
         }
         Ok(())
     }
@@ -565,17 +580,21 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the layer's filter and its place on the stack, growth
+    ///   within the memo's layers
     #[inline]
     fn link(
         &mut self,
-        memo: Arc<HashedMemo<Support, Outcome>>,
-        filter: Option<Arc<HashFilter>>,
+        memo: Shared<HashedMemo<Support, Outcome>, Global>,
+        filter: Option<Shared<HashFilter, Global>>,
     )
     {
         if memo.entry_count() == MemoEntryCount::zero() {
             return;
         }
-        let filter = filter.unwrap_or_else(|| Arc::new(memo.filter()));
+        let filter = filter.unwrap_or_else(|| Shared::new(memo.filter()));
         self.frozen = self.frozen.saturating_add(1);
         self.layers.push(Frozen {
             memo,
@@ -601,6 +620,10 @@ where
     /// - executable: none — which layer a child reads is a point that the child
     ///   holds, which no predicate over this memo reads.
     ///
+    /// # Cost
+    /// - allocation: the place on the stack of a layer that a child still
+    ///   shares, growth within the memo's layers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a settle after the last join leaves one layer that
     ///   counts each entry once.
@@ -615,7 +638,7 @@ where
             .layers
             .pop_if(|newest| guard.is_none_or(|stamp| newest.stamp > stamp))
         {
-            match Arc::try_unwrap(newest.memo) {
+            match Shared::try_unwrap(newest.memo) {
                 Ok(mut layer) => {
                     for (support, outcome) in core::mem::take(&mut self.own).into_entries() {
                         // As at a join: an entry declined at the ceiling costs
@@ -715,6 +738,10 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared older layer, the merged entries and the
+    ///   new filter, growth within the two layers' entries
     #[inline]
     fn merge_above(
         &mut self,
@@ -724,7 +751,7 @@ where
         Outcome: Clone,
     {
         let Some(newer) = (lower.saturating_add(1) < self.layers.len())
-            .then(|| self.layers.remove(lower.saturating_add(1)))
+            .then(|| self.layers.remove(Count::from(lower.saturating_add(1))))
         else {
             return;
         };
@@ -733,8 +760,8 @@ where
             return;
         };
         older.stamp = newer.stamp;
-        let merged = Arc::make_mut(&mut older.memo);
-        match Arc::try_unwrap(newer.memo) {
+        let merged = Shared::make_mut(&mut older.memo);
+        match Shared::try_unwrap(newer.memo) {
             Ok(layer) => {
                 for (support, outcome) in layer.into_entries() {
                     // As at a settle: an entry declined at the ceiling costs
@@ -748,7 +775,7 @@ where
                 }
             },
         }
-        older.filter = Some(Arc::new(merged.filter()));
+        older.filter = Some(Shared::new(merged.filter()));
     }
 }
 

@@ -196,6 +196,7 @@ digraph crates {
   "core-unify" -> "core-term";
   "core-unify" -> "kernel-strata";
   "core-unify" -> "kernel-term";
+  "kernel-check-memo" -> "kernel-data";
   "kernel-conversion-trace" -> "kernel-data";
   "kernel-core" -> "kernel-check-memo";
   "kernel-core" -> "kernel-conversion-trace";

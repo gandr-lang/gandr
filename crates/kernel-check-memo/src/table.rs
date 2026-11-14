@@ -16,12 +16,14 @@
 //! A producer that chooses colliding keys can lengthen probe sequences toward
 //! linear time, though it cannot merge two keys.
 
-use alloc::vec::Vec;
+use alloc::alloc::Global;
 use core::alloc::Allocator;
 use core::hash::Hash;
 use core::hash::Hasher;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 /// The capacity a first insertion allocates.
 const MINIMUM: usize = 16;
@@ -298,7 +300,7 @@ pub enum Probe
 pub struct HashIndex<A: Allocator>
 {
     /// The slots, vacant where the position is [`VACANT`].
-    slots: Vec<Slot, A>,
+    slots: SmallVec<Slot, 0, A>,
     /// The number of occupied slots.
     len: usize,
 }
@@ -360,7 +362,7 @@ const FILTER_SPREAD: u32 = 0x9E37_79B9;
 pub struct HashFilter
 {
     /// The bits, 64 to a word.
-    words: Vec<u64>,
+    words: SmallVec<u64, 0, Global>,
 }
 
 /// Whether a [`HashFilter`] lets a read go into its layer.
@@ -453,7 +455,7 @@ impl<A: Allocator + Clone> HashIndex<A>
     pub fn new_in(allocator: A) -> Self
     {
         Self {
-            slots: Vec::new_in(allocator),
+            slots: SmallVec::<_, 0, A>::new_in(allocator),
             len: 0,
         }
     }
@@ -580,6 +582,10 @@ impl<A: Allocator + Clone> HashIndex<A>
     /// - provides: the filter that a frozen layer of a memo carries.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the filter's words, growth within the index's count of
+    ///   hashes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`HashFilter`].
     /// - witness: `table::tests::a_filter_admits_each_filed_hash_and_refuses_most_others`
@@ -597,7 +603,10 @@ impl<A: Allocator + Clone> HashIndex<A>
             .checked_next_power_of_two()
             .unwrap_or(1_usize.wrapping_shl(usize::BITS.saturating_sub(1)));
         let mut filter = HashFilter {
-            words: alloc::vec![0; bits.wrapping_shr(6)],
+            words: SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(
+                0,
+                bits.wrapping_shr(6),
+            )),
         };
         for slot in self.slots.iter().filter(|slot| slot.position != VACANT) {
             for bit in filter.bits(slot.hash) {
@@ -689,8 +698,11 @@ impl<A: Allocator + Clone> HashIndex<A>
     fn grow(&mut self)
     {
         let capacity = self.slots.len().saturating_mul(2).max(MINIMUM);
-        let mut grown = Vec::with_capacity_in(capacity, self.slots.allocator().clone());
-        grown.resize(capacity, Slot::EMPTY);
+        let mut grown = SmallVec::<_, 0, A>::with_capacity_in(
+            Count::from(capacity),
+            self.slots.allocator().clone(),
+        );
+        grown.extend(core::iter::repeat_n(Slot::EMPTY, capacity));
         let old = core::mem::replace(&mut self.slots, grown);
         for entry in old {
             if entry.position != VACANT {
@@ -726,6 +738,13 @@ impl<A: Allocator + Clone> HashIndex<A>
         expect(
             spec_clause_traversal,
             reason = "the check walks only the probe run from `hash`'s home slot to its first vacant slot, the run the body searches and shifts"
+        )
+    )]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            allocation_free_region,
+            reason = "neither the body nor the postcondition allocates: the postcondition borrows the slots through iterators, and the lint reads the call of its closure as a call whose body is unavailable (gandr-lang/quenchant#152)"
         )
     )]
     #[spec(captures: [before = self.len, recorded = self.slots.iter().chain(&self.slots).skip(self.home(hash).0)

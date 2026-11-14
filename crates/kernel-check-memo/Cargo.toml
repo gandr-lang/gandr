@@ -22,6 +22,7 @@ path = "tests/lib.rs"
 # logic/BigInt stays disabled in this no_std library.
 [dependencies]
 anodized.workspace = true
+gandr-kernel-data.workspace = true
 
 [lints]
 workspace = true
