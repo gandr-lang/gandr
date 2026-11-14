@@ -537,6 +537,171 @@ fn a_declaration_that_names_the_vacancy_of_a_rejection_is_checked_7426()
     );
 }
 
+/// A kind of constant that the content encoding writes by its position, since
+/// it has no content key.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Positional
+{
+    /// A declaration that the bypass admits.
+    Bypassed,
+    /// An abstract type sealed to the end of its sequence.
+    OpenSeal,
+    /// A declaration whose admission reads an input with no entry key: a
+    /// value of an abstract type sealed to the end of its sequence.
+    Unkeyed,
+}
+
+/// One of the two runs of a probe.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+enum Run
+{
+    /// The run that gives the receipt.
+    First,
+    /// The run that reads it.
+    Second,
+}
+
+/// Admit a constant of `kind` at the next position of `environment`, and
+/// answer its position: of the unit in the first run and of the pair of units
+/// in the second, after its abstract type for [`Positional::Unkeyed`].
+///
+/// # Specification
+/// trivial.
+fn positional_constant(
+    environment: &mut Environment,
+    (kind, run): (Positional, Run),
+) -> ConstantIndex
+{
+    let first = ConstantIndex::from(usize::from(environment.entries().len()));
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let unit = arena.value_type_unit();
+    let held = match run {
+        Run::First => unit,
+        Run::Second => arena.value_type_product(&[unit, unit]),
+    };
+    match kind {
+        Positional::Bypassed => {
+            let staged = staging.axiom(LevelSignature::monomorphic(), held);
+            let _bypassed = environment
+                .add_decl_unchecked(staged)
+                .expect("the bypass admits");
+            first
+        },
+        Positional::OpenSeal | Positional::Unkeyed => {
+            let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+            let staged = staging.abstract_type(
+                LevelSignature::monomorphic(),
+                universe,
+                held,
+                SealScope::Open,
+            );
+            let _sealed = environment
+                .add_decl(staged)
+                .expect("the abstract type admits");
+            if matches!(kind, Positional::OpenSeal) {
+                first
+            }
+            else {
+                let mut staging = environment.stage();
+                let arena = staging.arena();
+                let declared = arena.value_type_abstract(first);
+                let point = arena.value_unit();
+                let body = match run {
+                    Run::First => point,
+                    Run::Second => arena.value_tuple(&[point, point]),
+                };
+                let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+                environment
+                    .add_decl(staged)
+                    .expect("the value of the abstract type admits")
+                    .position()
+            }
+        },
+    }
+}
+
+/// Offer `b`, which reads the constant of `kind` at `positional` as of the
+/// unit, and answer whether `b` admits.
+///
+/// # Specification
+/// trivial.
+fn reader_of(
+    environment: &mut Environment,
+    (kind, positional): (Positional, ConstantIndex),
+) -> Result<(), KernelError>
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let staged = match kind {
+        Positional::Bypassed | Positional::Unkeyed => {
+            let declared = arena.value_type_unit();
+            let body = arena.value_constant(positional);
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        },
+        Positional::OpenSeal => {
+            let declared = arena.value_type_abstract(positional);
+            let body = arena.value_unit();
+            staging.def(LevelSignature::monomorphic(), declared, body)
+        },
+    };
+    environment.add_decl(staged).map(drop)
+}
+
+/// #7426: the content encoding writes a position for a constant with no
+/// content key: a declaration that the bypass admits, an abstract type sealed
+/// to the end of its sequence, and a declaration that reads such a type. Two
+/// runs hold two declarations of one such kind at one position, and `b` names
+/// that position. The receipt of the first run holds the unit at position 0.
+/// `b` has no entry key, since the constant that it names has no content key.
+/// So the second run checks `b` and refuses it, where the first run admits it.
+/// A run under a policy that rechecks gives no receipt, which
+/// `a_rechecking_environment_recalls_nothing` reads.
+#[test]
+fn a_declaration_that_names_a_constant_with_no_content_key_is_checked_in_each_run_7426()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    for kind in [
+        Positional::Bypassed,
+        Positional::OpenSeal,
+        Positional::Unkeyed,
+    ] {
+        let mut first = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+        let _unit = admit_one(&mut first, None);
+        let positional = positional_constant(&mut first, (kind, Run::First));
+        assert!(
+            reader_of(&mut first, (kind, positional)).is_ok(),
+            "{kind:?}: the first run admits `b`"
+        );
+        let Maybe::Present(receipt) = first.receipt(&signer)
+        else {
+            panic!("{kind:?}: the first run checked the unit under its key");
+        };
+        let mut second = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
+        assert_eq!(
+            admit_one(&mut second, None),
+            Admission::Recalled,
+            "{kind:?}: the unit recalls at position 0"
+        );
+        let positional = positional_constant(&mut second, (kind, Run::Second));
+        assert!(
+            reader_of(&mut second, (kind, positional)).is_err(),
+            "{kind:?}: the second run checks `b` and refuses it"
+        );
+        assert_eq!(
+            usize::from(second.recalls()),
+            1,
+            "{kind:?}: no receipt recalls `b`"
+        );
+    }
+}
+
 /// #4034: a stratum receipt is believed over its own key and image under a
 /// policy listing its signer. A changed image, another key, an unlisted signer
 /// and the recheck policy believe nothing, and a stratum receipt beside an
