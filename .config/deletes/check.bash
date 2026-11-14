@@ -191,9 +191,9 @@ if [[ $mode == full ]]; then
         'include "paths"; {root: ($unit | sub("\\.[a-z-]+$"; "")), kind: ($unit | capture("\\.(?<k>[a-z-]+)$").k),
           items: [.[] | select(.record == "item") | {id: .path, kind, file: (.file | tree_path), start, end, line, exported}]}' "$unit" \
         || return 2
-    done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: [.items[].id]}) | from_entries) as $lib
+    done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: (reduce .items[].id as $id ({}; .[$id] = true))}) | from_entries) as $lib
       | [.[] | .root as $root | .kind as $kind | .items[]
-          | . + {test: ($kind == "test" and .kind == "fn" and (.id | IN(($lib[$root] // [])[]) | not))}]
+          | . + {test: ($kind == "test" and .kind == "fn" and ($lib[$root][.id] | not))}]
       | unique_by(.id)'
   }
   # A record whose relative path leaves the tree is refused (`paths.jq`),
@@ -233,18 +233,25 @@ if [[ $mode == full ]]; then
   # commit (`origin.bash`, #7259).
   origin() { "$here/origin.bash" "$base" text "$2" "$1"; }
   added() { "$here/origin.bash" "$base" file "$1"; }
+  # The items of the base that the head lacks, in one pass over an object
+  # keyed by the head's ids (#7479): a scan of the head's list for each item
+  # of the base took minutes. Each line carries the item's fields and its
+  # JSON, and the loop prints each item beside its origin, so one `jq` run
+  # splits the lines and one more writes the records.
   left=$({
-    jq -c --slurpfile head "$scratch/items-head.json" '($head[0] | map(.id)) as $h | .[] | select(.id | IN($h[]) | not)' "$scratch/items-base.json" \
-      | while IFS= read -r item; do
-          IFS=$'\t' read -r id file start end < <(jq -r '[.id, .file, (.start // ""), (.end // "")] | @tsv' <<< "$item")
+    jq -r --slurpfile head "$scratch/items-head.json" '(reduce $head[0][].id as $id ({}; .[$id] = true)) as $h
+      | .[] | select($h[.id] | not) | "\(.id)\t\(.file // "")\t\(.start // "")\t\(.end // "")\t\(tojson)"' "$scratch/items-base.json" \
+      | while IFS=$'\t' read -r id file start end item; do
           if [[ $start =~ ^[0-9]+$ && $end =~ ^[0-9]+$ ]]; then
             found=$("$here/origin.bash" "$base" span "$file" "$start" "$end")
           else
             found=$(origin "$(sed -E 's/.*:://; s/[<>]//g' <<< "$id")" "$file")
           fi
-          jq -c --argjson origin "$found" --slurpfile acts "$scratch/acts.json" \
-            '{id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}' <<< "$item"
-        done
+          printf '%s\t%s\n' "$found" "$item"
+        done \
+      | jq -R -c --slurpfile acts "$scratch/acts.json" \
+          'index("\t") as $at | (.[:$at] | fromjson) as $origin | .[$at + 1:] | fromjson
+            | {id, kind: (if .test then "test" else "item" end), names: [.id], file, origin: $origin, moved: ($acts[0][.id] // null)}'
     comm -23 "$scratch/ledger-base" "$scratch/ledger-head" | while IFS= read -r key; do
       table=${key%%:*}
       fields=${key#*:}

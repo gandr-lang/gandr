@@ -59,8 +59,12 @@
 # When the working state moves during a run, the run writes no entry, since
 # its records would then sit under the key of a different content.
 # The cache lives at `${XDG_CACHE_HOME:-$HOME/.cache}/gandr/deletes-records`,
-# or at `GANDR_DELETES_RECORDS`. A read touches its entry, and past 2 GiB the
-# entries with the oldest touch leave first.
+# or at `GANDR_DELETES_RECORDS`. A read touches its entry, and past the bound
+# the entries with the oldest touch leave first. The host gives the bound
+# (#7479): 5 % of the free space of the cache's filesystem and of the cache
+# itself, and at least 2 GiB. A fixed bound of 2 GiB held about five runs of
+# a change of 64 crates, at 421 MiB each. Its cache stood full on a host
+# that seats share, so a base that an earlier run read missed.
 #
 # Usage: records.bash <tree> <target> <out> <package>=<directory>...
 # `<directory>` is the package's directory in the tree. Prints one line with
@@ -69,7 +73,8 @@
 # The cases (`records-cases.bash`) source this file for its functions.
 set -euo pipefail
 records_here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
-records_bound_kib=$((2 * 1024 * 1024))
+records_floor_kib=$((2 * 1024 * 1024))
+records_bound_kib=
 records_rustflags=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no'
 
 # A copy on one host clones.
@@ -254,8 +259,8 @@ records_extras() {
   cargo_home=${CARGO_HOME:-$HOME/.cargo}
   {
     # The dep-info of each workspace unit that the package reaches.
-    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
-      'select(.reason == "compiler-artifact" and (.package_id | IN($closure[0].packages[])) and (.package_id | startswith("path+file://"))) | .filenames[]' \
+    jq -rn --slurpfile closure <(printf '%s\n' "$closure") \
+      '(reduce $closure[0].packages[] as $p ({}; .[$p] = true)) as $reached | inputs | select(.reason == "compiler-artifact" and $reached[.package_id] and (.package_id | startswith("path+file://"))) | .filenames[]' \
       "$messages" | while IFS= read -r file; do
         base=$(basename "$file")
         base=${base%.rmeta}
@@ -267,8 +272,8 @@ records_extras() {
           /:$/ && !/: / && !/^#/ { path = substr($0, 1, length($0) - 1); print "dep", (path ~ /^\// ? path : tree "/" path) }' "$file"
       done
     # The stdout of each build script that the package reaches.
-    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
-      'select(.reason == "build-script-executed" and (.package_id | IN($closure[0].packages[]))) | [.package_id, .out_dir] | @tsv' \
+    jq -rn --slurpfile closure <(printf '%s\n' "$closure") \
+      '(reduce $closure[0].packages[] as $p ({}; .[$p] = true)) as $reached | inputs | select(.reason == "build-script-executed" and $reached[.package_id]) | [.package_id, .out_dir] | @tsv' \
       "$messages" | while IFS=$'\t' read -r package file; do
         stdout=$(dirname "$file")/run/stdout
         [[ -f $stdout ]] || stdout=$(dirname "$file")/output
@@ -366,14 +371,26 @@ records_put() {
   perl -e 'rename($ARGV[0], $ARGV[1]) or exit 1' "$tmp" "$records_cache/$key" 2> /dev/null || rm -rf "$tmp"
 }
 
+# The bound in KiB, from the host: 5 % of the free space of the cache's
+# filesystem and of the cache's own size `$1`, and at least the floor.
+records_bound() {
+  local free bound
+  free=$(df -Pk "$records_cache" | awk 'NR == 2 { print $4 }')
+  bound=$(( (free + $1) / 20 ))
+  (( bound > records_floor_kib )) || bound=$records_floor_kib
+  echo "$bound"
+}
+
 # Removes each crash's leftover, and the entries with the oldest touch past
-# the bound.
+# the bound: `records_bound_kib` when it is set, as the cases set it, and
+# the host's otherwise.
 records_evict() {
-  local size entry used
+  local size entry used bound
   find "$records_cache" -mindepth 1 -maxdepth 1 -name '.tmp-*' -mmin +60 -exec rm -rf {} +
   size=$(du -sk "$records_cache" | awk '{ print $1 }')
+  bound=${records_bound_kib:-$(records_bound "$size")}
   while IFS= read -r entry; do
-    (( size > records_bound_kib )) || break
+    (( size > bound )) || break
     used=$(du -sk "$records_cache/$entry" | awk '{ print $1 }')
     rm -rf "${records_cache:?}/$entry"
     size=$((size - used))
