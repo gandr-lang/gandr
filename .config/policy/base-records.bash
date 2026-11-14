@@ -20,11 +20,15 @@
 #
 # Usage: base-records.bash <base> <out>
 # `<out>` is a directory that holds nothing. Exits 2 when the records do not
-# build.
+# build. A clone that does not hold the base fetches it alone, as the job of a
+# merge group checks out its own commit at a depth of one (#7632).
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 root=$(git rev-parse --show-toplevel)
-base=$(git rev-parse --verify --quiet "${1:?usage: base-records.bash <base> <out>}^{commit}") \
+if ! git cat-file -e "${1:?usage: base-records.bash <base> <out>}^{commit}" 2> /dev/null; then
+  git fetch --quiet --no-tags --depth=1 origin "$1" || :
+fi
+base=$(git rev-parse --verify --quiet "$1^{commit}") \
   || { echo "base-records: $1 is no commit" >&2; exit 2; }
 out=$(cd "${2:?usage: base-records.bash <base> <out>}" && pwd)
 scratch=$(mktemp -d)

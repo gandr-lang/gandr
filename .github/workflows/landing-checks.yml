@@ -1579,15 +1579,17 @@ jobs:
         env:
           GATE_BASE: ${{ github.event.merge_group.base_sha }}
         run: mise run check:format
-      # The scope of the two lints of a group on `landing` (#6894). The image
-      # holds jq as a tool of mise alone, as the tasks pin it.
+      # The scope of the two lints of a group on `landing` (#6894), and the
+      # base that each later step reads: the compiler policy holds each
+      # function that the change alters against it (#7632). The image holds jq
+      # as a tool of mise alone, as the tasks pin it.
       - &lint-scope
         name: name the packages that the change reaches
         if: ${{ github.event.merge_group.base_ref == 'refs/heads/landing' && needs.prepare.outputs.lints == 'true' }}
         env:
           GATE_BASE: ${{ github.event.merge_group.base_sha }}
         shell: bash
-        run: mise exec jq@1.8.1 -- .config/gate-scope/scope.bash --lints | awk '{ print "GATE_SCOPE=" $0 }' >> "$GITHUB_ENV"
+        run: mise exec jq@1.8.1 -- .config/gate-scope/scope.bash --lints | awk -v base="$GATE_BASE" '{ print "GATE_SCOPE=" $0 } END { print "GATE_BASE=" base }' >> "$GITHUB_ENV"
       # The format check and the scope read the change as the working tree
       # against the group's base, so a step that writes a tracked file widens
       # both: the job's mise wrote `mise.lock` and every group read the whole
