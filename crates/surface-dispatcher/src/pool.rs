@@ -1791,13 +1791,15 @@ where
                 waiting.commit(position);
             };
         while committed < count {
-            // A release with no slot waits for one. A lane's ring holds DEPTH
-            // jobs, its running one among them, and the calling thread holds
-            // the one released job that no ring takes. So the released jobs
-            // that are not committed stay within the rings' capacity and the
-            // calling thread's slot, a bound of no number of its own. DEPTH is
-            // the one number left, and #7339 owes a depth that the host
-            // measures.
+            // Each released job holds what its run reads until its commit, a
+            // check's view of the environment among them. A release with no
+            // slot waits for one. A lane's ring holds DEPTH jobs, its running
+            // one among them, and the calling thread holds the one released job
+            // that no ring takes. So the released jobs that are not committed
+            // stay within the rings' capacity and the calling thread's slot,
+            // and what they hold stays a bound of the width. The bound has no
+            // number of its own. DEPTH is the one number left, and #7339 owes a
+            // depth that the host measures.
             while !holding && ledger.kept.is_none() && waiting.free(next) == Released::Free {
                 // A chain releases beside a running job only once in
                 // `CHAIN_PROBE` releases: each other try stages the item and
