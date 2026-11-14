@@ -24,6 +24,8 @@ mod cochains;
 #[cfg(test)]
 mod junction;
 #[cfg(test)]
+mod linear;
+#[cfg(test)]
 mod rational;
 #[cfg(test)]
 mod reduce;

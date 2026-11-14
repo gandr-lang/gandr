@@ -43,7 +43,7 @@ INSERT INTO reference VALUES('Barrett-2025-proof_compression_subatomic_logic_gua
 INSERT INTO reference VALUES('Bauer-2009-dedekind_reals_abstract_stone_duality','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Bauer-efficient_computation_dedekind_reals','theory-exact-reals','','exemplar','ceaf6665d2b7506cdd0e73995ba04ec6b4e0548b','2026-11-07','9e0d29dcb41e28bf1dfa4f17bc9c76800ca3975d');
 INSERT INTO reference VALUES('Berger-2007-iterated_wreath_product_simplex_category_iterated_loop_spaces','theory-sites','wreath','lineage',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
+INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-cellular-sheaves','','background','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-shapes','formula','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','36f894989d773771961311177868caf3f968d516');
 INSERT INTO reference VALUES('Cherubini-2024-foundation_synthetic_stone_duality','theory-stone-duality','','dependency','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','24bac3438243f9d8aabb12c04fbfb26c5b8416ac');
 INSERT INTO reference VALUES('Cockx-2018-elaborating_dependent_copattern_matching','core-checker-base','solution','exemplar',NULL,NULL,NULL);
@@ -64,7 +64,7 @@ INSERT INTO reference VALUES('Escardó-2004-synthetic_topology_data_types_classi
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells::fusion','exemplar','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
+INSERT INTO reference VALUES('Ghrist-2022-cellular_sheaves_lattices_tarski_laplacian','theory-cellular-sheaves','','background','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-core-base','levels','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','b4d5d86272f0c379e8626491b800d6a720394e35');
 INSERT INTO reference VALUES('Grodin-2026-potential_functions_types','kernel-strata','poset','background','98276fb75d8d6879c2bf6acfc66587e60fcae258','2026-11-07','63cf51119ea5e8cbfa160672f287983114665a83');
 INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_resolutions_associative_algebras','theory-coherent-resolutions','basis','dependency',NULL,NULL,NULL);
@@ -75,7 +75,7 @@ INSERT INTO reference VALUES('Guiraud-2019-convergent_presentations_polygraphic_
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','surface-dispatcher','cells::fusion','newest','586e64cdd35be5eae39e021356e86d0e26eb6462','2026-11-07','cd72addbc37d1800e66d15304a1a6b424528b44d');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-cell-complexes','alphabet','newest','4932b17daeb4a275c0daef9c897b1675b3db7053','2026-11-07','bf6997119a02467715b6559415cec8dcf840a52a');
 INSERT INTO reference VALUES('Hadzihasanovic-2023-higherdimensional_subdiagram_matching','theory-deep-inference','shift','newest','636e467ee5712506801b88233c6fcf12fa19b076','2026-11-07','6bc30c8da526d378521d82a4fbbbe26219b64de2');
-INSERT INTO reference VALUES('Hansen-2020-laplacians_cellular_sheaves_theory_applications','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
+INSERT INTO reference VALUES('Hansen-2020-laplacians_cellular_sheaves_theory_applications','theory-cellular-sheaves','','background','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reference VALUES('Henry-2018-nonunital_polygraphs_form_presheaf_category','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Jeandel-2018-complete_axiomatisation_zxcalculus_clifford+t_quantum_mechanics','theory-ordered-algebras','','dependency','6ac5e25f30e5d98caed7a3aa40a0e9716b3595c5','2026-11-07','f3a5c644a24d2aa271da3450ba19bc89e4317451');
 INSERT INTO reference VALUES('Kessler-2025-computational_aspects_rewriting_higherdimensional_diagrams','theory-graded-posets','traversal','dependency',NULL,NULL,NULL);
@@ -83,7 +83,7 @@ INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theo
 INSERT INTO reference VALUES('Leclerc-2026-cellular_type_theory','theory-sites','ascent','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Li-2024-nominal_approach_probabilistic_separation_logic','theory-probability','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','234f19cce3f96fa69a4cea4c6ff5b3cbaadb754d');
 INSERT INTO reference VALUES('Liesnikov-2025-filling_gaps_polarity_implementing_dependent_data_codata_types_implicit_arguments','core-term','rewrite','newest',NULL,NULL,NULL);
-INSERT INTO reference VALUES('Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory','theory-cellular-sheaves','','background','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
+INSERT INTO reference VALUES('Ljungström-2025-computational_synthetic_cohomology_theory_homotopy_type_theory','theory-cellular-sheaves','','background','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','lawvere::brown','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Malbos-2021-completion_operads_essential_syzygies','theory-coherent-resolutions','triple','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker-bridge','bridge','background','d38ffeaccc6639cb2a02ad7a18fd25b0d03a892d','2026-10-29','663ac54adb8b393f7ff7154d3c59eac7fcf7c44c');
@@ -700,7 +700,7 @@ INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surfa
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-evaluate','evaluate::reals','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering-base','description::theory','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','surface-lowering-base','module::sealing','anchor',NULL,NULL,NULL);
-INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','exemplar','3733211b5af43c30d9e4cebee16c666287f095b4','2026-11-07','1faf81dce18168f20f9b718b1634bd337408d13f');
+INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-cellular-sheaves','','newest','587e03d49c1c2243e10197c7debc99b281773a42','2026-11-14','f5c99f4282c43c9fa9583cccc76285890167e21c');
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-circuit-algebras','normal_form::spider','newest',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1aa2d-a69c-7030-91e0-337d68d88151','theory-coherent-resolutions','lawvere::brown','anchor',NULL,NULL,NULL);

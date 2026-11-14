@@ -7,6 +7,7 @@ use gandr_theory_graded_posets::Rank;
 use gandr_theory_stone_duality::DualityError;
 use gandr_theory_stone_duality::Element;
 
+use crate::index::Dimension;
 use crate::index::Entry;
 use crate::index::Level;
 use crate::index::Width;
@@ -21,7 +22,8 @@ pub enum SheafError
     /// The graded poset refused to read a cell.
     Poset(DualityError),
     /// The map from the first cell to the second, which is above it, has this
-    /// width, and the stalk of the second cell has another.
+    /// width, and the stalk of the second cell has another. The width of an
+    /// entry map is its number of entries, and of a matrix its rows.
     RestrictionWidth
     {
         /// The cell the map starts at.
@@ -41,6 +43,17 @@ pub enum SheafError
         upper: Element,
         /// The entry past the lower stalk.
         entry: Entry,
+    },
+    /// The matrix from the first cell to the second has this number of
+    /// columns, and the stalk of the first cell has another width.
+    RestrictionColumns
+    {
+        /// The cell the map starts at.
+        lower: Element,
+        /// The cell the map ends at.
+        upper: Element,
+        /// The number of columns of the matrix.
+        columns: Dimension,
     },
     /// At this entry of the upper stalk, the map from the lower cell to the
     /// upper cell differs from the map through the middle cell.
@@ -130,6 +143,15 @@ pub enum SheafError
     /// Two matrices, or a matrix and a row or a column, do not fit together:
     /// unreachable for the matrices the crate builds.
     ShapeMismatch,
+    /// A matrix of this shape is given another number of entries than its
+    /// rows times its columns.
+    MatrixEntries
+    {
+        /// The number of rows.
+        rows: Dimension,
+        /// The number of columns.
+        columns: Dimension,
+    },
 }
 
 impl fmt::Display for SheafError
@@ -170,6 +192,17 @@ impl fmt::Display for SheafError
                 usize::from(lower),
                 usize::from(upper),
                 usize::from(entry)
+            ),
+            Self::RestrictionColumns {
+                lower,
+                upper,
+                columns,
+            } => write!(
+                f,
+                "the matrix from cell {} to cell {} has {} columns, not the width of its lower stalk",
+                usize::from(lower),
+                usize::from(upper),
+                usize::from(columns)
             ),
             Self::NotFunctorial {
                 lower,
@@ -245,6 +278,12 @@ impl fmt::Display for SheafError
             ),
             Self::Overflow => f.write_str("exact arithmetic past the integers it holds"),
             Self::ShapeMismatch => f.write_str("two matrices that do not fit together"),
+            Self::MatrixEntries { rows, columns } => write!(
+                f,
+                "a matrix of {} rows and {} columns is given another number of entries",
+                usize::from(rows),
+                usize::from(columns)
+            ),
         }
     }
 }
