@@ -2943,6 +2943,10 @@ fn mcp(
 /// - hypothesis: L3 — a client that starts the hub names the FIFO of the hub's
 ///   porter, and exits once its input ends.
 /// - witness: `tests::cli::tokens_names_the_fifo_of_the_hub_s_porter_7605`
+///
+/// # Cost
+/// - allocation: the socket's path and the hub's answer and the FIFO's path,
+///   setup
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNPORTED) || ret == ExitCode::from(FAULTED))]
 fn tokens(

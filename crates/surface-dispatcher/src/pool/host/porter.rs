@@ -162,6 +162,9 @@ impl Watch
     /// # Errors
     /// Returns the host's error for an instance or a watch that the host
     /// refuses, and for a path that holds a NUL.
+    ///
+    /// # Cost
+    /// - allocation: the path's C string, setup
     fn on(path: &Path) -> std::io::Result<Self>
     {
         let instance = inotify::init(inotify::CreateFlags::CLOEXEC)?;
@@ -195,6 +198,10 @@ impl Porter
     /// # Adequacy
     /// - hypothesis: L3 — as [`Porter`].
     /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+    ///
+    /// # Cost
+    /// - allocation: the porter's paths and its shared state and its threads,
+    ///   setup
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -280,6 +287,9 @@ impl Porter
     /// - hypothesis: L3 — a running porter's FIFO is named, and once the porter
     ///   ends none is.
     /// - witness: `pool::host::porter::tests::a_porter_s_fifo_is_named_while_it_carries`
+    ///
+    /// # Cost
+    /// - allocation: the paths of the porter's lock and its FIFO, setup
     #[inline]
     pub fn carried(directory: &Path) -> Maybe<PathBuf, unported::Absent>
     {
@@ -307,6 +317,9 @@ impl Drop for Porter
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the host's error of the FIFO's removal, error path
     #[inline]
     fn drop(&mut self)
     {

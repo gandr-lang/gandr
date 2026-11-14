@@ -145,6 +145,9 @@ impl Grant
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
     /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
     /// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+    ///
+    /// # Cost
+    /// - allocation: the value of each flag from the environment, setup
     #[inline]
     #[must_use]
     pub fn of_process(class: Class) -> Self
@@ -666,6 +669,10 @@ enum Opening
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+///
+/// # Cost
+/// - allocation: the host's error of an open or of a read of the metadata,
+///   error path
 #[cfg(unix)]
 fn end(
     path: &Path,

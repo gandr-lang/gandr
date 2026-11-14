@@ -109,6 +109,10 @@ impl Identity
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the host's error for a time that it does not record, error
+    ///   path
     fn of(metadata: &Metadata) -> Self
     {
         Self {
