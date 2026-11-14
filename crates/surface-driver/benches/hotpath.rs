@@ -18,7 +18,7 @@
 //! | `lsp burst` | a session that opens the same source, waits for the open's judgement, then erases the end of its middle line one character per content change, every change carried by one notification; only the burst is timed | the server's recheck, once per burst |
 //! | `lsp comment edit` | a session that opens the group laws, waits for the open's judgement, then adds a comment line before their first, outside the rule block; only the change is timed | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
 //! | `distinct definitions, serial` | `gandr check` of two sources of 5,000 distinct plain definitions each, on one thread | each declaration's check and commit, the cost that the wider run must match |
-//! | `distinct definitions, two jobs` | the same check at two jobs, or at the series' width when wider, under the policy that the driver installs for the width | each commit beside an open check: a copy of what an open check shares shows here as bytes past the serial run's (#7299, #7335) |
+//! | `distinct definitions, two jobs` | the same check at two jobs, or at the series' width when wider, under the policy that the driver installs for the width | each commit beside an open check: a copy of what an open check shares shows here as bytes past the serial run's |
 //!
 //! Each language-server workload serves its session on the bench's thread,
 //! and a client on a thread of its own speaks to it over pipes
@@ -129,7 +129,7 @@ const NEGATION: &str = "../../corpus/model/identity/negation-lengths.gandr";
 const FLOOR: usize = 64;
 
 /// How many distinct plain definitions each of the two sources of the
-/// distinct definitions holds, as the repro of #7299 holds them.
+/// distinct definitions holds.
 const DISTINCT: usize = 5_000;
 
 /// The path of [`SOURCE`] from the driver's manifest directory.
@@ -241,7 +241,7 @@ fn component_floor()
 /// at the series' width when it is wider. A commit beside an open check
 /// costs what a commit beside none costs, so the wider block allocates what
 /// the serial one allocates; a copy of a structure that an open check shares
-/// shows as the difference (#7299, #7335).
+/// shows as the difference.
 ///
 /// # Specification
 /// trivial.

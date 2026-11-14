@@ -438,11 +438,11 @@ fn speculation() -> Speculation
 /// readmission this process makes after.
 ///
 /// Wider than one thread, the checks of each readmission run on `pool` under
-/// the speculation group on, the rank among it (#7335). The last drain of each
-/// kernel check forks its obligations on `pool` when `walk` holds fewer
-/// sources than threads: in a wider run the other sources keep each worker
-/// busy. A serial run installs nothing and predicts nothing, as the release in
-/// serial order (gandr #3476). What a process installed first stays.
+/// the speculation group on, the rank among it. The last drain of each kernel
+/// check forks its obligations on `pool` when `walk` holds fewer sources than
+/// threads: in a wider run the other sources keep each worker busy. A serial
+/// run installs nothing and predicts nothing, as the release in serial order
+/// does. What a process installed first stays.
 ///
 /// The driver and the benchmark series both install through this call, so a
 /// series measures the policy that a run of the driver takes.
