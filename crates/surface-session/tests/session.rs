@@ -1198,15 +1198,16 @@ struct Counted
 }
 
 /// What admitting `own`, laid out after the sibling beside `document`,
-/// counted, its artifact and commit those a whole admission of the same text
-/// exports and commits.
+/// counted, its artifact the one a whole judgement of the same text exports,
+/// and its commit the one a fresh session commits for that text.
 ///
 /// # Specification
 /// - requires: `document` names a file beside the sibling `own` imports.
 /// - ensures: no more declarations offered than judged.
 /// - panics: when the revision is not laid out, judged, admitted or lowered,
-///   the kernel does not re-derive it whole, or the admission's artifact or
-///   commit is not the whole admission's.
+///   the kernel does not re-derive it whole, the admission's artifact is not
+///   the whole judgement's, or its commit is not the fresh session's stored
+///   commit.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as each witness's revisions.
@@ -1223,10 +1224,6 @@ fn admitted_after<'text>(
 ) -> Counted
 {
     use gandr_core_checker::HostGrant;
-    use gandr_storage_artifact::ArtifactRecordSet;
-    use gandr_storage_artifact::build;
-    use gandr_storage_records::InMemoryBlockStore;
-    use gandr_storage_records::TreeParams;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
@@ -1266,19 +1263,24 @@ fn admitted_after<'text>(
     .1
     .admit()
     .expect("the kernel re-derives the revision");
-    let cut = ArtifactRecordSet::from_artifact(whole.as_image()).expect("the export cuts");
-    let committed = build(
-        &cut,
-        TreeParams::current(),
-        &mut InMemoryBlockStore::default(),
-    )
-    .expect("the records commit");
+    // A fresh session's first admission crosses every declaration, keyed as
+    // each kept admission is, so its commit is the whole one.
+    let mut fresh = crate::common::session(SourceRoot::Strict);
+    let fresh_slot = gandr_surface_session::ClosureSlot::new();
+    let _fresh_judged = fresh
+        .judge_unit_reading(text, &laid.unit, laid.base, &fresh_slot, |_| ())
+        .expect("a fresh session judges the revision");
+    let Ok(Maybe::Present(whole_admitted)) = fresh.admit()
+    else {
+        panic!("the fresh judgement left its admission");
+    };
     assert!(
         *admitted.kernel() == whole,
         "the admission exports what a whole one does: {own}"
     );
     assert!(
-        *admitted.checkpoint() == KernelCheckpoint::Stored(committed),
+        matches!(whole_admitted.checkpoint(), KernelCheckpoint::Stored(_))
+            && *admitted.checkpoint() == *whole_admitted.checkpoint(),
         "the admission commits what a whole one does: {own}"
     );
     Counted {

@@ -10,6 +10,7 @@
 //!          || u64le commitment length || boundary commitment
 //!          || u64le record count
 //!          || 32-byte root node identity
+//!          || u8 naming: 0x01 named, 0x02 bytes alone
 //! identity := BLAKE3(image)
 //! ```
 //!
@@ -30,7 +31,8 @@
 //! kernel's decoder, which refuses what it refuses whatever the identity.
 //!
 //! **Choice.** The identity binds the record plane's boundary commitment, the
-//! record count, the root node identity and the kernel format version, under
+//! record count, the root node identity, the kernel format version and the
+//! form of the artifact's names, under
 //! its own domain and its own type, `ArtifactIdentity`. The commitment is
 //! `TreeParams::boundary_commitment`, carried opaque; the root node's bytes
 //! carry the record encoding version, so the node identity binds that too. The
@@ -51,7 +53,7 @@
 //! layout, or a reader that must recognise a value manifest and an artifact
 //! manifest in one slot, makes the shared scheme a shared type.
 //!
-//! The manifest refinement admits only layout version one without narrowing the
+//! The manifest refinement admits only layout version two without narrowing the
 //! opaque metadata. The owned image refinement checks the exact domain, version
 //! and commitment length against the complete frame without allocating or
 //! decoding the kernel. Fixed witnesses reject every proper golden prefix,
@@ -65,8 +67,9 @@
 //! bytes. [`ArtifactManifest::read_under`] refuses a kernel format or a
 //! boundary commitment the reader does not share before the store is asked
 //! for anything; then the record plane's refusals for a node the store cannot
-//! authenticate; then a tree the records do not rebuild; then a misplaced key;
-//! then the kernel's decoder; then a record cut off a segment boundary.
+//! authenticate; then a tree the records do not rebuild; then a misplaced key
+//! or a malformed order; then an order whose form is not the manifest's; then
+//! the kernel's decoder; then a record cut off a segment boundary.
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -93,6 +96,9 @@ use gandr_storage_records::decode_node;
 use crate::error::ArtifactError;
 use crate::error::ManifestField;
 use crate::record::ArtifactRecordSet;
+use crate::record::FROM_BYTES;
+use crate::record::NAMED;
+use crate::record::Naming;
 
 /// The domain every manifest image opens with, inside the hashed preimage.
 pub const MANIFEST_DOMAIN: &[u8] = b"gandr:storage-artifact:manifest:v1";
@@ -104,8 +110,9 @@ pub const ARTIFACT_IDENTITY_LEN: usize = 0x20_usize;
 const ROOT_NODE_LEN: usize = 0x20_usize;
 
 /// The image's fixed-width fields after the domain, the commitment aside: the
-/// two versions, the commitment length, the record count and the root node.
-const MANIFEST_FIXED_LEN: usize = 0x34_usize;
+/// two versions, the commitment length, the record count, the root node and
+/// the naming.
+const MANIFEST_FIXED_LEN: usize = 0x35_usize;
 
 /// The layout version of an artifact manifest.
 #[repr(transparent)]
@@ -114,8 +121,9 @@ pub struct ArtifactManifestVersion(u16);
 
 impl ArtifactManifestVersion
 {
-    /// The manifest layout this build names artifacts under.
-    pub const V1: Self = Self(1_u16);
+    /// The manifest layout this build names artifacts under: the one that
+    /// says the form of the artifact's names.
+    pub const V2: Self = Self(2_u16);
 }
 
 impl From<u16> for ArtifactManifestVersion
@@ -308,7 +316,7 @@ impl AsRef<[u8]> for ManifestImage<'_>
 /// - witness: `manifest::tests::manifest_refinements_preserve_metadata_and_canonical_framing`
 /// - witness: `manifest::tests::the_manifest_layout_is_golden`
 #[spec(maintains: self.0.strip_prefix(MANIFEST_DOMAIN).is_some_and(|fields|
-    fields.get(.. 2) == Some(ArtifactManifestVersion::V1.0.to_le_bytes().as_slice())
+    fields.get(.. 2) == Some(ArtifactManifestVersion::V2.0.to_le_bytes().as_slice())
         && fields.len().checked_sub(MANIFEST_FIXED_LEN)
             .and_then(|length| u64::try_from(length).ok())
             .is_some_and(|length| fields.get(4 .. 12) == Some(length.to_le_bytes().as_slice()))
@@ -344,25 +352,28 @@ impl ManifestImageBuf
     }
 }
 
-/// The identity of one committed kernel artifact: the kernel format its
-/// records carry, the boundary commitment its tree was cut under, the records
-/// it holds and the root node they hang from.
+/// The identity of one committed kernel artifact.
+///
+/// It names the kernel format its records carry, the boundary commitment its
+/// tree was cut under, the records it holds, the root node they hang from,
+/// and the form of its names.
 ///
 /// # Specification
 /// - requires: nothing; the named tree need not exist and supplied metadata is
 ///   not certified by constructing a manifest.
 /// - ensures: the manifest uses the supported layout version; kernel format,
-///   commitment, record count and root identity remain claims for a later read.
+///   commitment, record count, root identity and naming remain claims for a
+///   later read.
 /// - provides: versioned metadata without rejecting future kernel formats.
 /// - fails: the refinement rejects an unsupported manifest layout.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 versions zero, two and the maximum are rejected as states;
-///   version one admits an empty commitment, zero/maximum counts and a future
+/// - hypothesis: L3 versions zero, one and the maximum are rejected as states;
+///   version two admits an empty commitment, zero/maximum counts and a future
 ///   kernel version. Decode round trips preserve these uncertified claims.
 /// - witness: `manifest::tests::manifest_refinements_preserve_metadata_and_canonical_framing`
-#[spec(maintains: self.manifest_version.0 == ArtifactManifestVersion::V1.0)]
+#[spec(maintains: self.manifest_version.0 == ArtifactManifestVersion::V2.0)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ArtifactManifest
 {
@@ -372,10 +383,13 @@ pub struct ArtifactManifest
     kernel_format: FormatVersion,
     /// The record plane's boundary commitment the tree was cut under.
     commitment: ProfileCommitment,
-    /// The records the tree holds: the header and one per declaration.
+    /// The records the tree holds: the header, the order and one per distinct
+    /// segment.
     record_count: RecordCount,
     /// The root node's identity.
     root_node: NodeHash,
+    /// The form of the artifact's names, which its order also opens with.
+    naming: Naming,
 }
 
 impl ArtifactManifest
@@ -386,7 +400,7 @@ impl ArtifactManifest
     /// - requires: nothing; these are metadata fields, not evidence that a
     ///   corresponding tree is available or valid. A read checks the claim.
     /// - ensures: the manifest carries the fields unchanged at
-    ///   [`ArtifactManifestVersion::V1`]. The predicate checks scalar fields
+    ///   [`ArtifactManifestVersion::V2`]. The predicate checks scalar fields
     ///   and the moved commitment's length and endpoints; the wire golden
     ///   observes every commitment byte.
     /// - provides: the description [`crate::build`] returns.
@@ -396,7 +410,7 @@ impl ArtifactManifest
     /// # Adequacy
     /// - hypothesis: L2 on the golden's synthetic metadata observes every field
     ///   through independently specified wire bytes. L3 perturbs each of the
-    ///   four supplied fields and observes a changed identity. It distinguishes
+    ///   five supplied fields and observes a changed identity. It distinguishes
     ///   omitted fields and substituted defaults, not arbitrary commitment
     ///   interiors; storing or validating the named tree is outside this item.
     /// - witness: `manifest::tests::the_manifest_layout_is_golden`
@@ -410,7 +424,8 @@ impl ArtifactManifest
         ensures: |ret| ret.kernel_format == kernel_format
             && ret.record_count == record_count
             && ret.root_node == root_node
-            && ret.manifest_version == ArtifactManifestVersion::V1
+            && ret.naming == naming
+            && ret.manifest_version == ArtifactManifestVersion::V2
             && ret.commitment.as_ref().len() == length
             && ret.commitment.as_ref().first().copied() == first
             && ret.commitment.as_ref().last().copied() == last,
@@ -420,14 +435,16 @@ impl ArtifactManifest
         commitment: ProfileCommitment,
         record_count: RecordCount,
         root_node: NodeHash,
+        naming: Naming,
     ) -> Self
     {
         Self {
-            manifest_version: ArtifactManifestVersion::V1,
+            manifest_version: ArtifactManifestVersion::V2,
             kernel_format,
             commitment,
             record_count,
             root_node,
+            naming,
         }
     }
 
@@ -464,8 +481,8 @@ impl ArtifactManifest
         &self.commitment
     }
 
-    /// Returns the records the tree holds: the header and one per
-    /// declaration.
+    /// Returns the records the tree holds: the header, the order and one per
+    /// distinct segment.
     ///
     /// # Specification
     /// trivial.
@@ -485,6 +502,17 @@ impl ArtifactManifest
     pub const fn root_node(&self) -> NodeHash
     {
         self.root_node
+    }
+
+    /// Returns the form of the artifact's names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming(&self) -> Naming
+    {
+        self.naming
     }
 
     /// Writes the manifest's image: the domain, then every field in fixed
@@ -525,6 +553,7 @@ impl ArtifactManifest
             .chain(self.commitment.as_ref().iter().copied())
             .chain(u64::from(self.record_count).to_le_bytes())
             .chain(self.root_node.as_ref().iter().copied())
+            .chain(core::iter::once(u8::from(self.naming)))
     ))]
     pub fn encode(&self) -> ManifestImageBuf
     {
@@ -545,6 +574,7 @@ impl ArtifactManifest
         image.extend_from_slice(commitment);
         image.extend_from_slice(u64::from(self.record_count).to_le_bytes().as_slice());
         image.extend_from_slice(self.root_node.as_ref());
+        image.push(u8::from(self.naming));
 
         ManifestImageBuf(image.into_boxed_slice())
     }
@@ -560,12 +590,13 @@ impl ArtifactManifest
     ///   field once, front to back, with no recursion, and checks a declared
     ///   length against the bytes that remain before reading under it.
     /// - fails: in image order, [`ArtifactError::MalformedManifest`] naming a
-    ///   foreign domain or a manifest version other than one;
+    ///   foreign domain or a manifest version other than two;
     ///   [`ArtifactError::TruncatedManifest`] naming the field the image ends
     ///   inside, the commitment when its declared length passes the image's
-    ///   end; then [`ArtifactError::TrailingManifestBytes`] for bytes past the
-    ///   root node identity. Every kernel format version and every commitment
-    ///   is admitted; whether the reader shares them is
+    ///   end; [`ArtifactError::MalformedManifest`] naming the naming for a byte
+    ///   that names no form; then [`ArtifactError::TrailingManifestBytes`] for
+    ///   bytes past the naming. Every kernel format version and every
+    ///   commitment is admitted; whether the reader shares them is
     ///   [`ArtifactManifest::read_under`]'s question.
     /// - panics: none.
     ///
@@ -594,9 +625,10 @@ impl ArtifactManifest
             .chain(manifest.commitment.as_ref().iter().copied())
             .chain(u64::from(manifest.record_count).to_le_bytes())
             .chain(manifest.root_node.as_ref().iter().copied())
+            .chain(core::iter::once(u8::from(manifest.naming)))
         ),
         Err(ArtifactError::MalformedManifest { field }) =>
-            matches!(field, ManifestField::Domain | ManifestField::ManifestVersion),
+            matches!(field, ManifestField::Domain | ManifestField::ManifestVersion | ManifestField::Naming),
         Err(ArtifactError::TruncatedManifest { .. } | ArtifactError::TrailingManifestBytes) => true,
         Err(_) => false,
     })]
@@ -609,6 +641,7 @@ impl ArtifactManifest
         let commitment = cursor.commitment()?;
         let record_count = cursor.record_count()?;
         let root_node = cursor.root_node()?;
+        let naming = cursor.naming()?;
         cursor.finish()?;
 
         Ok(Self {
@@ -617,6 +650,7 @@ impl ArtifactManifest
             commitment,
             record_count,
             root_node,
+            naming,
         })
     }
 
@@ -634,7 +668,7 @@ impl ArtifactManifest
     ///
     /// # Adequacy
     /// - hypothesis: L2 checks the fixed golden against a recorded BLAKE3
-    ///   digest of its hand-written wire image. L3 changes each of the four
+    ///   digest of its hand-written wire image. L3 changes each of the five
     ///   supplied fields separately and observes a changed identity, detecting
     ///   omitted fields or the wrong preimage. It neither proves collision
     ///   resistance nor exhausts pairs of manifests.
@@ -656,6 +690,7 @@ impl ArtifactManifest
         hasher.update(self.commitment.as_ref());
         hasher.update(&u64::from(self.record_count).to_le_bytes());
         hasher.update(self.root_node.as_ref());
+        hasher.update(&[u8::from(self.naming)]);
         ret.0 == *hasher.finalize().as_bytes()
     })]
     #[inline]
@@ -675,9 +710,13 @@ impl ArtifactManifest
     ///   does not.
     /// - ensures: on success the artifact the kernel's decoder returns for the
     ///   reassembled records, read only after the manifest's kernel format and
-    ///   boundary commitment matched `expected`, the stored records rebuilt the
-    ///   tree the manifest names, their keys stood where their positions
-    ///   require, and each record ended at a segment boundary of the decode.
+    ///   boundary commitment matched `expected`, the stored index rebuilt the
+    ///   tree the manifest names, the order placed each record, the store held
+    ///   each record as a value leaf under its key, and each place ended at a
+    ///   segment boundary of the decode. The manifest counts the header, the
+    ///   order and one record for each distinct segment: two records for an
+    ///   artifact with no declaration, and at most two more than its
+    ///   declarations otherwise.
     /// - provides: the checked read: integrity first — the stored bytes are the
     ///   ones the manifest names — then validity, decided by the kernel's
     ///   decoder alone under its work budgets. A decoded artifact is not an
@@ -686,14 +725,19 @@ impl ArtifactManifest
     ///   [`ArtifactError::Records`] for parameters this build does not
     ///   implement, and [`ArtifactError::IncompatibleProfile`], before the
     ///   store is asked for anything; [`ArtifactError::Records`] for a node the
-    ///   store does not hold or cannot authenticate, or a node of the wrong
-    ///   shape; [`ArtifactError::TreeMismatch`];
-    ///   [`ArtifactError::MisplacedRecord`]; [`ArtifactError::Kernel`];
+    ///   store does not hold or cannot authenticate, a node of the wrong shape,
+    ///   or a leaf that is not a value leaf; [`ArtifactError::TreeMismatch`]
+    ///   for an index that does not rebuild the tree, or an order that holds
+    ///   other than the manifest's count of records;
+    ///   [`ArtifactError::MisplacedRecord`]; [`ArtifactError::MalformedOrder`];
+    ///   [`ArtifactError::UnheldRecord`]; [`ArtifactError::UnplacedRecord`];
+    ///   [`ArtifactError::NamingMismatch`] for an order whose form is not the
+    ///   manifest's; [`ArtifactError::Kernel`];
     ///   [`ArtifactError::SegmentBoundary`].
     /// - panics: none.
-    /// - intension: the store is read at the root and, for an internal root, at
-    ///   each child leaf, iteratively; a record tree is one leaf or one
-    ///   internal node over leaves, so nothing descends further.
+    /// - intension: the store is read at the index root and, for an internal
+    ///   root, at each child leaf, iteratively; then at each value leaf the
+    ///   order names. Nothing descends further.
     ///
     /// # Errors
     /// [`ArtifactError`] — as listed above.
@@ -714,11 +758,14 @@ impl ArtifactManifest
     #[spec(ensures: |ret| match ret {
         Ok(ref decoded) => self.kernel_format == FORMAT_VERSION
             && u64::try_from(decoded.declarations().len()).ok()
-                .and_then(|count| count.checked_add(1)) == Some(u64::from(self.record_count)),
+                .and_then(|count| count.checked_add(2))
+                .is_some_and(|bound| (2..=bound).contains(&u64::from(self.record_count))),
         Err(ArtifactError::UnsupportedKernelFormat { found }) =>
             found == self.kernel_format && found != FORMAT_VERSION,
         Err(ArtifactError::Records { .. } | ArtifactError::IncompatibleProfile
             | ArtifactError::TreeMismatch | ArtifactError::MisplacedRecord { .. }
+            | ArtifactError::MalformedOrder { .. } | ArtifactError::UnheldRecord { .. }
+            | ArtifactError::UnplacedRecord { .. } | ArtifactError::NamingMismatch { .. }
             | ArtifactError::Kernel { .. } | ArtifactError::SegmentBoundary { .. }) =>
             self.kernel_format == FORMAT_VERSION,
         Err(_) => false,
@@ -744,11 +791,22 @@ impl ArtifactManifest
         let loaded = load_records(store, self.root_node)?;
         let refs: Vec<RecordRef<'_>> = loaded.iter().map(Record::as_record_ref).collect();
         let rebuilt = RecordTree::build(&refs, expected)?;
-        let named = TreeRoot::seal(expected, self.record_count, self.root_node)?;
+        let named = TreeRoot::seal(expected, RecordCount::from(2_u64), self.root_node)?;
         if rebuilt.root() != named {
             return Err(ArtifactError::TreeMismatch);
         }
-        let set = ArtifactRecordSet::from_stored(rebuilt.records())?;
+        let set = ArtifactRecordSet::from_stored(rebuilt.records(), store)?;
+        let held = u64::try_from(set.records().len())
+            .ok()
+            .and_then(|count| count.checked_add(2_u64));
+        if held != Some(u64::from(self.record_count)) {
+            return Err(ArtifactError::TreeMismatch);
+        }
+        if set.naming() != self.naming {
+            return Err(ArtifactError::NamingMismatch {
+                manifest: self.naming,
+            });
+        }
         let image = set.reassemble();
         let decoded = decode(image.as_image())?;
         set.ensure_cut_at(decoded.segments())?;
@@ -940,7 +998,7 @@ impl ManifestCursor<'_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success [`ArtifactManifestVersion::V1`].
+    /// - ensures: on success [`ArtifactManifestVersion::V2`].
     /// - provides: the version gate before any versioned field is read.
     /// - fails: [`ArtifactError::MalformedManifest`] naming the version for any
     ///   other number, and the truncation refusal.
@@ -951,7 +1009,7 @@ impl ManifestCursor<'_>
     ///
     /// # Adequacy
     /// - hypothesis: L3 on versions zero, one, two, 256 and the u16 ceiling
-    ///   plus truncation observes admission only of one and consumption of an
+    ///   plus truncation observes admission only of two and consumption of an
     ///   invalid full field. It distinguishes wrong values, consumption and
     ///   refusal attribution; these bounded probes do not exhaust input byte
     ///   strings.
@@ -959,8 +1017,8 @@ impl ManifestCursor<'_>
     #[spec(captures: entry = self.0, ensures: |ret| entry.first_chunk::<2>().map_or_else(
         || ret == Err(ArtifactError::TruncatedManifest { field: ManifestField::ManifestVersion })
             && self.0.len() == entry.len() && core::ptr::eq(self.0.as_ptr(), entry.as_ptr()),
-        |bytes| entry.get(2 ..).is_some_and(|rest| self.0.len() == rest.len() && core::ptr::eq(self.0.as_ptr(), rest.as_ptr())) && if u16::from_le_bytes(*bytes) == 1 {
-            ret == Ok(ArtifactManifestVersion::V1)
+        |bytes| entry.get(2 ..).is_some_and(|rest| self.0.len() == rest.len() && core::ptr::eq(self.0.as_ptr(), rest.as_ptr())) && if u16::from_le_bytes(*bytes) == 2 {
+            ret == Ok(ArtifactManifestVersion::V2)
         } else {
             ret == Err(ArtifactError::MalformedManifest { field: ManifestField::ManifestVersion })
         },
@@ -969,7 +1027,7 @@ impl ManifestCursor<'_>
     {
         let bytes = self.take::<2>(ManifestField::ManifestVersion)?;
         let version = ArtifactManifestVersion(u16::from_le_bytes(bytes.0));
-        if version != ArtifactManifestVersion::V1 {
+        if version != ArtifactManifestVersion::V2 {
             return Err(ArtifactError::MalformedManifest {
                 field: ManifestField::ManifestVersion,
             });
@@ -1126,6 +1184,48 @@ impl ManifestCursor<'_>
         Ok(NodeHash::from(bytes.0))
     }
 
+    /// Reads the naming: the form of the artifact's names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the form the byte spells; whether the stored order
+    ///   opens with it is the read's question.
+    /// - provides: the naming field.
+    /// - fails: the truncation refusal, and
+    ///   [`ArtifactError::MalformedManifest`] naming the naming for a byte that
+    ///   names no form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ArtifactError::TruncatedManifest`] and
+    /// [`ArtifactError::MalformedManifest`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on each form's byte, a byte that names no form and an
+    ///   empty remainder observes the form, the named refusal and the unread
+    ///   suffix.
+    /// - witness: `manifest::tests::cursor_transitions_preserve_suffixes_and_refusal_positions`
+    #[spec(captures: entry = self.0, ensures: |ret| match entry.first() {
+        None => ret == Err(ArtifactError::TruncatedManifest { field: ManifestField::Naming }),
+        Some(&byte) => match ret {
+            Ok(naming) => u8::from(naming) == byte
+                && entry.get(1 ..).is_some_and(|rest| self.0.len() == rest.len() && core::ptr::eq(self.0.as_ptr(), rest.as_ptr())),
+            Err(ArtifactError::MalformedManifest { field: ManifestField::Naming }) => byte != NAMED && byte != FROM_BYTES,
+            Err(_) => false,
+        },
+    })]
+    fn naming(&mut self) -> Result<Naming, ArtifactError>
+    {
+        let bytes = self.take::<1>(ManifestField::Naming)?;
+        match bytes.0 {
+            [NAMED] => Ok(Naming::Named),
+            [FROM_BYTES] => Ok(Naming::Bytes),
+            _ => Err(ArtifactError::MalformedManifest {
+                field: ManifestField::Naming,
+            }),
+        }
+    }
+
     /// Refuses bytes past the last field.
     ///
     /// # Specification
@@ -1182,25 +1282,26 @@ mod tests
     use super::ManifestImage;
     use crate::error::ArtifactError;
     use crate::error::ManifestField;
+    use crate::record::Naming;
 
     /// The golden commitment: three bytes, so its length prefix is visible.
     const COMMITMENT: [u8; 3] = [0xC0, 0xC1, 0xC2];
 
     /// The golden manifest: kernel format `0x0203`, the three-byte commitment
-    /// `c0 c1 c2`, forty-two records, and a root node at bytes `0x00` to
-    /// `0x1f`.
+    /// `c0 c1 c2`, forty-two records, a root node at bytes `0x00` to `0x1f`,
+    /// and named places.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the declared kernel version, commitment, record count and
-    ///   root identity at manifest layout version one.
+    /// - ensures: the declared kernel version, commitment, record count, root
+    ///   identity and naming at manifest layout version two.
     /// - provides: synthetic metadata for independent wire and digest goldens.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L2 observes all returned fields through a hand-written
-    ///   89-byte wire image and its recorded digest. It detects fixture drift
+    ///   90-byte wire image and its recorded digest. It detects fixture drift
     ///   that would invalidate those goldens; it makes no claim about a stored
     ///   tree corresponding to these synthetic fields.
     /// - witness: `manifest::tests::the_manifest_layout_is_golden`
@@ -1208,7 +1309,8 @@ mod tests
     #[spec(ensures: |ret| ret.kernel_format == FormatVersion(0x0203)
         && ret.commitment.as_ref() == COMMITMENT
         && ret.record_count == RecordCount(42)
-        && ret.root_node.as_ref() == ROOT)]
+        && ret.root_node.as_ref() == ROOT
+        && ret.naming == Naming::Named)]
     fn golden() -> ArtifactManifest
     {
         ArtifactManifest::new(
@@ -1216,6 +1318,7 @@ mod tests
             ProfileCommitment::from(Vec::from(COMMITMENT)),
             RecordCount(42),
             NodeHash::from(ROOT),
+            Naming::Named,
         )
     }
 
@@ -1235,14 +1338,15 @@ mod tests
     {
         let image = golden().encode();
         let root = ROOT;
-        let fields: [(&str, &[u8]); 7] = [
+        let fields: [(&str, &[u8]); 8] = [
             ("domain", b"gandr:storage-artifact:manifest:v1"),
-            ("manifest version", &[0x01, 0x00]),
+            ("manifest version", &[0x02, 0x00]),
             ("kernel format version", &[0x03, 0x02]),
             ("commitment length", &[0x03, 0, 0, 0, 0, 0, 0, 0]),
             ("commitment", &COMMITMENT),
             ("record count", &[0x2A, 0, 0, 0, 0, 0, 0, 0]),
             ("root node identity", root.as_slice()),
+            ("naming", &[0x01]),
         ];
 
         // Read back field by field, so a disagreement says which field moved.
@@ -1252,8 +1356,8 @@ mod tests
             assert_eq!(head, field, "the image's {name}");
             rest = tail;
         }
-        assert!(rest.is_empty(), "nothing follows the root node identity");
-        assert_eq!(89, image.as_ref().len(), "the golden image's length");
+        assert!(rest.is_empty(), "nothing follows the naming");
+        assert_eq!(90, image.as_ref().len(), "the golden image's length");
     }
 
     #[test]
@@ -1275,9 +1379,9 @@ mod tests
         // literal, never recomputed: recomputing it would be the implementation
         // agreeing with itself.
         const IDENTITY: [u8; 32] = [
-            0x08, 0xF5, 0x06, 0x1C, 0xF4, 0xBA, 0x0E, 0x73, 0x32, 0xB0, 0x84, 0xDB, 0x93, 0x9E,
-            0x54, 0x38, 0x1E, 0x6B, 0x41, 0xC9, 0x05, 0x72, 0x06, 0xBB, 0x39, 0x1F, 0xE1, 0x30,
-            0x2F, 0x57, 0xD1, 0xD8,
+            0x63, 0x7A, 0x3B, 0xB0, 0x58, 0xF5, 0xDE, 0x69, 0x72, 0x0E, 0x01, 0xBE, 0x78, 0x81,
+            0x4C, 0xF0, 0x6F, 0xDA, 0xE6, 0x93, 0xA3, 0x94, 0x56, 0x71, 0x6D, 0xFF, 0x2E, 0xBE,
+            0xC9, 0x82, 0x5F, 0x72,
         ];
 
         assert_eq!(
@@ -1302,6 +1406,7 @@ mod tests
                     ProfileCommitment::from(Vec::from(COMMITMENT)),
                     RecordCount(42),
                     NodeHash::from(ROOT),
+                    Naming::Named,
                 ),
             ),
             (
@@ -1311,6 +1416,7 @@ mod tests
                     ProfileCommitment::from(Vec::from([0xC0, 0xC1, 0xC3])),
                     RecordCount(42),
                     NodeHash::from(ROOT),
+                    Naming::Named,
                 ),
             ),
             (
@@ -1320,6 +1426,7 @@ mod tests
                     ProfileCommitment::from(Vec::from(COMMITMENT)),
                     RecordCount(43),
                     NodeHash::from(ROOT),
+                    Naming::Named,
                 ),
             ),
             (
@@ -1329,6 +1436,17 @@ mod tests
                     ProfileCommitment::from(Vec::from(COMMITMENT)),
                     RecordCount(42),
                     NodeHash::from(root),
+                    Naming::Named,
+                ),
+            ),
+            (
+                "the naming",
+                ArtifactManifest::new(
+                    FormatVersion(0x0203),
+                    ProfileCommitment::from(Vec::from(COMMITMENT)),
+                    RecordCount(42),
+                    NodeHash::from(ROOT),
+                    Naming::Bytes,
                 ),
             ),
         ];
@@ -1340,7 +1458,7 @@ mod tests
     #[test]
     fn an_unknown_manifest_version_is_refused()
     {
-        for version in [0_u16, 2, 0x100, u16::MAX] {
+        for version in [0_u16, 1, 0x100, u16::MAX] {
             let mut bytes = Vec::from(golden().encode().as_ref());
             let start = MANIFEST_DOMAIN.len();
             bytes[start .. start + 2].copy_from_slice(&version.to_le_bytes());
@@ -1372,10 +1490,21 @@ mod tests
         let short = good.split_last().expect("the image is not empty").1;
         assert_eq!(
             Err(ArtifactError::TruncatedManifest {
-                field: ManifestField::RootNode,
+                field: ManifestField::Naming,
             }),
             ArtifactManifest::decode(ManifestImage::from(short)),
-            "an image one byte short ends inside the root node identity"
+            "an image one byte short ends inside the naming"
+        );
+
+        let mut unnamed = good.clone();
+        let naming = unnamed.last_mut().expect("the image is not empty");
+        *naming = 0x03;
+        assert_eq!(
+            Err(ArtifactError::MalformedManifest {
+                field: ManifestField::Naming,
+            }),
+            ArtifactManifest::decode(ManifestImage::from(unnamed.as_slice())),
+            "a naming byte that names no form is refused"
         );
 
         let mut trailing = good;
@@ -1433,8 +1562,11 @@ mod tests
             else if length < domain + 23 {
                 ManifestField::RecordCount
             }
-            else {
+            else if length < domain + 55 {
                 ManifestField::RootNode
+            }
+            else {
+                ManifestField::Naming
             };
             assert_eq!(
                 Err(ArtifactError::TruncatedManifest { field }),
@@ -1587,8 +1719,8 @@ mod tests
             let [low, high] = value.to_le_bytes();
             let image = [low, high, 0xa7];
             let mut version = ManifestCursor(&image);
-            let expected = if value == 1 {
-                Ok(ArtifactManifestVersion::V1)
+            let expected = if value == 2 {
+                Ok(ArtifactManifestVersion::V2)
             }
             else {
                 Err(ArtifactError::MalformedManifest {
@@ -1598,7 +1730,7 @@ mod tests
             assert_eq!(expected, version.manifest_version());
             suffix(version.0, &image[2 ..]);
         }
-        let short_version_image = [1];
+        let short_version_image = [2];
         let mut short_version = ManifestCursor(&short_version_image);
         assert_eq!(
             Err(ArtifactError::TruncatedManifest {
@@ -1687,6 +1819,28 @@ mod tests
         );
         suffix(short_root.0, &root_image[.. 31]);
 
+        for (byte, expected) in [
+            (0x01, Ok(Naming::Named)),
+            (0x02, Ok(Naming::Bytes)),
+            (
+                0x03,
+                Err(ArtifactError::MalformedManifest {
+                    field: ManifestField::Naming,
+                }),
+            ),
+        ] {
+            let image = [byte, 0xa7];
+            let mut naming = ManifestCursor(&image);
+            assert_eq!(expected, naming.naming());
+            suffix(naming.0, &image[1 ..]);
+        }
+        let mut empty_naming = ManifestCursor(&[]);
+        assert_eq!(
+            Err(ArtifactError::TruncatedManifest {
+                field: ManifestField::Naming
+            }),
+            empty_naming.naming()
+        );
         assert_eq!(Ok(()), ManifestCursor(&[]).finish());
         assert_eq!(
             Err(ArtifactError::TrailingManifestBytes),
@@ -1702,7 +1856,7 @@ mod tests
         assert!(anodized::types::Spec::predicate(&manifest));
         let image = manifest.encode();
         assert!(anodized::types::Spec::predicate(&image));
-        for version in [0_u16, 2, u16::MAX] {
+        for version in [0_u16, 1, u16::MAX] {
             let mut invalid = manifest.clone();
             invalid.manifest_version = ArtifactManifestVersion::from(version);
             assert!(!anodized::types::Spec::predicate(&invalid));
@@ -1713,6 +1867,7 @@ mod tests
                 ProfileCommitment::from(Vec::new()),
                 RecordCount(count),
                 NodeHash::from([0; 32]),
+                Naming::Bytes,
             );
             assert!(anodized::types::Spec::predicate(&metadata));
             let encoded = metadata.encode();

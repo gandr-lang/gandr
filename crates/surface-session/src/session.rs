@@ -355,7 +355,9 @@ use gandr_kernel_term::EncodedArtifact;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::ContentName;
 use gandr_storage_artifact::build;
+use gandr_storage_artifact::unnamed;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
@@ -3881,7 +3883,12 @@ impl<Store, Blocks> Session<Store, Blocks>
         });
         self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
-            Keeping::Kept => checkpoint_kernel(&kernel, &mut self.blocks, held.as_deref()),
+            Keeping::Kept => checkpoint_kernel(
+                &kernel,
+                &resumption.names,
+                &mut self.blocks,
+                held.as_deref(),
+            ),
             Keeping::Discarded => KernelCheckpoint::Discarded,
         };
         Ok(Maybe::Present(Admitted {
@@ -4481,17 +4488,18 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Adequacy
     /// - hypothesis: L3 — exact readback after reopening a real block store and
     ///   a manifest whose identity and tree are valid but whose kernel bytes
-    ///   are refused. Format precedence and record/declaration cardinality are
-    ///   executable; full byte, key and cut correspondence is witnessed without
-    ///   repeating storage I/O.
+    ///   are refused. Format precedence and the bound of the record count by
+    ///   the declarations are executable; full byte, key and cut correspondence
+    ///   is witnessed without repeating storage I/O.
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     /// - witness: `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
     #[spec(
         ensures: |ret| match ret {
     Ok(ref decoded) => {
         manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
-            && u64::try_from(decoded.declarations().len().saturating_add(1_usize))
-                == Ok(u64::from(manifest.record_count()))
+            && u64::try_from(decoded.declarations().len()).ok()
+                .and_then(|count| count.checked_add(2))
+                .is_some_and(|bound| (2..=bound).contains(&u64::from(manifest.record_count())))
     }
     Err(ArtifactError::UnsupportedKernelFormat { found }) => {
         found == manifest.kernel_format() && found != gandr_kernel_term::FORMAT_VERSION
@@ -4534,15 +4542,17 @@ impl<Store, Blocks> Session<Store, Blocks>
 }
 
 /// Commits `kernel` into `blocks` as artifact records under the current tree
-/// parameters, resuming the decode that cuts them after the closure's kernel
-/// declarations `held` keeps, or keeping it there.
+/// parameters, each place named by the kernel's content key `names` gives it,
+/// resuming the decode that cuts them after the closure's kernel declarations
+/// `held` keeps, or keeping it there.
 ///
 /// # Specification
 /// - requires: `held`, when given, holds the readmission of the declarations
-///   `kernel` leads with.
+///   `kernel` leads with; `names` holds one entry per declaration of `kernel`,
+///   in its order.
 /// - ensures: [`KernelCheckpoint::Stored`] with the manifest [`build`] mints
 ///   over the records [`ArtifactRecordSet::from_artifact`] cuts from `kernel`,
-///   every node of their tree then in `blocks`; otherwise
+///   named by `names`, every node of their tree then in `blocks`; otherwise
 ///   [`KernelCheckpoint::Failed`] with the first refusal. The records are cut
 ///   after the decode `held` keeps when it keeps one; otherwise `held`, when
 ///   given, keeps the decode of the declarations its readmission admitted.
@@ -4553,17 +4563,17 @@ impl<Store, Blocks> Session<Store, Blocks>
 /// # Adequacy
 /// - hypothesis: L3 — a committed artifact read back after reopening is exactly
 ///   its independently decoded composition image. The predicate checks the
-///   current format and mandatory header record; store mutation and full record
-///   contents are observed by the readback witness rather than repeated in a
-///   postcondition. A first-insertion refusal is checked by its exact variant
-///   and continued resume/edit state, without assuming store rollback.
+///   current format and the header and order records; store mutation and full
+///   record contents are observed by the readback witness rather than repeated
+///   in a postcondition. A first-insertion refusal is checked by its exact
+///   variant and continued resume/edit state, without assuming store rollback.
 /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
 /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
 #[spec(
     ensures: |ret| match ret {
     KernelCheckpoint::Stored(ref manifest) => {
         manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
-            && u64::from(manifest.record_count()) >= 1_u64
+            && u64::from(manifest.record_count()) >= 2_u64
     }
     KernelCheckpoint::Failed(_) => true,
     KernelCheckpoint::Discarded => false,
@@ -4571,6 +4581,7 @@ impl<Store, Blocks> Session<Store, Blocks>
 )]
 fn checkpoint_kernel<Blocks>(
     kernel: &EncodedArtifact,
+    names: &[Maybe<ContentName, unnamed::Absent>],
     blocks: &mut Blocks,
     held: Option<&ClosureAdmission>,
 ) -> KernelCheckpoint
@@ -4595,7 +4606,9 @@ where
             )
         },
     );
-    let committed = records.and_then(|records| build(&records, TreeParams::current(), blocks));
+    let committed = records
+        .and_then(|records| records.named(names))
+        .and_then(|records| build(&records, TreeParams::current(), blocks));
     match committed {
         Ok(manifest) => KernelCheckpoint::Stored(manifest),
         Err(refusal) => KernelCheckpoint::Failed(refusal),

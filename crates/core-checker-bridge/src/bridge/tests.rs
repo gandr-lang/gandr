@@ -11772,3 +11772,66 @@ fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
         "the readmission after it answers as a whole one"
     );
 }
+
+/// Across one insertion each unchanged declaration keeps its name, one place
+/// on past the insertion, and the export holds one name per declaration it
+/// writes.
+#[test]
+fn each_name_stands_beside_the_declaration_the_export_writes_7340()
+{
+    let original: Vec<Shaped> = (0_u32 .. 20)
+        .map(|n| Shaped {
+            name: Named(n),
+            shape: match n % 5 {
+                0 => Shape::Code,
+                1 => Shape::Value(u8::try_from(n % 7).unwrap_or(0)),
+                2 => Shape::Element(Named(n - 2), u8::try_from(n % 3).unwrap_or(0)),
+                3 => Shape::Copy(Named(n - 2)),
+                _ => Shape::Alias(Named(n - 4)),
+            },
+        })
+        .collect();
+    let mut inserted = original.clone();
+    inserted.insert(10, Shaped {
+        name: Named(1_000),
+        shape: Shape::Value(42),
+    });
+    let names = |module: &[Shaped]| {
+        let (mut arena, report, keys) = keyed_module(module);
+        let (whole, _) = super::readmit_keeping(
+            &mut arena,
+            &report,
+            (&keys, Maybe::Absent(crossed::Absent::Unasked)),
+            &Recall::recheck(),
+            &Unretired,
+            &mut Untimed,
+            &Serial,
+        )
+        .whole();
+        let exported = whole.export(alloc::collections::BTreeMap::new());
+        let decoded = gandr_kernel_term::decode(exported.as_image()).expect("the export decodes");
+        let names = whole.content_names();
+        assert_eq!(
+            decoded.declarations().len(),
+            names.len(),
+            "one name per declaration the export writes"
+        );
+        names
+    };
+    let before = names(&original);
+    let after = names(&inserted);
+    assert!(
+        before.iter().all(|name| matches!(*name, Maybe::Present(_))),
+        "the kernel keys each declaration"
+    );
+    assert_eq!(
+        before.get(.. 10),
+        after.get(.. 10),
+        "the names before the insertion stay"
+    );
+    assert_eq!(
+        before.get(10 ..),
+        after.get(11 ..),
+        "each name past the insertion moves one place on"
+    );
+}

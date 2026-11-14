@@ -24,16 +24,20 @@ use gandr_kernel_term::TermArena;
 use gandr_kernel_term::decode;
 use gandr_kernel_term::encode;
 use gandr_storage_artifact::ARTIFACT_IDENTITY_LEN;
-use gandr_storage_artifact::AdmissionKey;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactManifestVersion;
-use gandr_storage_artifact::ArtifactRecord;
 use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::ContentName;
 use gandr_storage_artifact::HEADER_KEY;
 use gandr_storage_artifact::MANIFEST_DOMAIN;
+use gandr_storage_artifact::Naming;
+use gandr_storage_artifact::ORDER_KEY;
+use gandr_storage_artifact::RECORD_KEY_LEN;
+use gandr_storage_artifact::RecordKey;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
+use gandr_storage_artifact::unnamed;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
@@ -46,6 +50,7 @@ use gandr_storage_records::DecodeWork;
 use gandr_storage_records::EncodingVersion;
 use gandr_storage_records::HashAlgorithm;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::NodeHash;
 use gandr_storage_records::NodeKind;
 use gandr_storage_records::RecordCount;
 use gandr_storage_records::RecordIndex;
@@ -53,9 +58,12 @@ use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::RecordTreeError;
 use gandr_storage_records::SeparatorConvention;
+use gandr_storage_records::StoredNode;
 use gandr_storage_records::TreeKind;
 use gandr_storage_records::TreeParams;
 use gandr_storage_records::decode_node;
+use gandr_storage_records::encode_leaf;
+use gandr_storage_records::hash_node;
 use gandr_storage_values::CanonicalValue;
 use gandr_storage_values::CanonicalWord;
 use gandr_storage_values::ChildIndexBase;
@@ -72,7 +80,6 @@ use gandr_storage_values::TokenReader;
 use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueProfile;
-use gandr_storage_values::ValueQuantity;
 use gandr_storage_values::cam_commit;
 use gandr_storage_values::cam_deref;
 use gandr_storage_values::measure_edit;
@@ -251,8 +258,7 @@ fn long_artifact(count: Count) -> EncodedArtifact
 #[spec(ensures: |ret| {
         let mut offset = ret.header().as_ref().len();
         artifact.as_ref().starts_with(ret.header().as_ref())
-            && ret.records().iter().all(|record| {
-                let segment = record.segment();
+            && ret.segments().all(|segment| {
                 let end = offset.saturating_add(segment.as_ref().len());
                 let agrees = artifact.as_ref().get(offset .. end) == Some(segment.as_ref());
                 offset = end;
@@ -288,7 +294,7 @@ fn records_of(artifact: &EncodedArtifact) -> ArtifactRecordSet
 /// - witness: `tests::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
 #[spec(ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
         && usize::try_from(u64::from(ret.0.record_count())).ok()
-            == Some(set.records().len().saturating_add(1))
+            == Some(set.records().len().saturating_add(2))
         && ret.1.load(ret.0.root_node()).is_ok())]
 fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
 {
@@ -298,16 +304,17 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
     (manifest, store)
 }
 
-/// `records` written as a record tree under the current parameters, and
-/// the manifest naming that tree exactly.
+/// `records` written as an index tree under the current parameters into
+/// `store`, and the manifest naming that tree exactly.
 ///
 /// # Specification
 /// - requires: records are strictly ascending and within current record-plane
 ///   limits.
 /// - ensures: the manifest counts exactly records and its root is present in
-///   the returned store; the artifact layer has not admitted their keys.
+///   the returned store, beside what `store` held; the artifact layer has not
+///   admitted their keys.
 /// - provides: authenticated but potentially misplaced records for refusal
-///   probes.
+///   probes, over a store that holds an honest set's value leaves or none.
 /// - fails: never.
 /// - panics: if the record plane refuses the supplied fixture.
 ///
@@ -316,10 +323,10 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
 /// parameters.
 ///
 /// # Adequacy
-/// - hypothesis: L3 on a missing-header tree and a skipped-initial-index tree
-///   observes exact misplaced-key positions after authentication. It
-///   distinguishes losing the stored root from the intended key refusal;
-///   arbitrary record-plane refusal paths are outside this helper's domain.
+/// - hypothesis: L3 on forged indexes observes exact misplaced-key positions
+///   after authentication. It distinguishes losing the stored root from the
+///   intended key refusal; arbitrary record-plane refusal paths are outside
+///   this helper's domain.
 /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
 #[spec(
         requires: records.iter().zip(records.iter().skip(1))
@@ -328,17 +335,20 @@ fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
             && usize::try_from(u64::from(ret.0.record_count())).ok() == Some(records.len())
             && ret.1.load(ret.0.root_node()).is_ok(),
     )]
-fn stored_as_named(records: &[RecordRef<'_>]) -> (ArtifactManifest, InMemoryBlockStore)
+fn stored_as_named(
+    records: &[RecordRef<'_>],
+    mut store: InMemoryBlockStore,
+) -> (ArtifactManifest, InMemoryBlockStore)
 {
     let params = TreeParams::current();
     let tree = RecordTree::build(records, params).expect("the records build a tree");
-    let mut store = InMemoryBlockStore::new();
     tree.write_to(&mut store).expect("the tree writes");
     let manifest = ArtifactManifest::new(
         FORMAT_VERSION,
         params.boundary_commitment(),
         tree.root().record_count(),
         tree.root_node_hash(),
+        Naming::Bytes,
     );
 
     (manifest, store)
@@ -401,15 +411,16 @@ fn records_round_trip_to_a_byte_identical_artifact()
     assert_eq!(
         artifact.as_ref(),
         set.reassemble().as_ref(),
-        "the header and the segments in key order are the artifact, byte for byte"
+        "the header and the segment at each place are the artifact, byte for byte"
     );
-    assert_eq!(4, set.records().len(), "one record per declaration");
+    assert_eq!(4, set.places().len(), "one place per declaration");
+    assert_eq!(4, set.records().len(), "one record per distinct segment");
 
     let (manifest, _store) = committed(&set);
     assert_eq!(
-        record_count(Count(5)),
+        record_count(Count(6)),
         manifest.record_count(),
-        "the manifest counts the header and the four declarations"
+        "the manifest counts the header, the order and the four distinct segments"
     );
 }
 
@@ -470,7 +481,7 @@ fn the_same_artifact_mints_the_same_identity()
 fn a_manifest_names_its_version_and_spells_its_identity_bytes()
 {
     let (manifest, _store) = committed(&records_of(&shared_artifact()));
-    assert_eq!(ArtifactManifestVersion::V1, manifest.manifest_version());
+    assert_eq!(ArtifactManifestVersion::V2, manifest.manifest_version());
     let identity = manifest.identity();
     assert_eq!(ARTIFACT_IDENTITY_LEN, identity.as_ref().len());
     let mut spelled = String::new();
@@ -493,20 +504,40 @@ fn a_manifest_names_its_version_and_spells_its_identity_bytes()
 fn any_perturbation_changes_the_identity()
 {
     let header = SegmentBytes::from(b"header".as_slice());
-    let set_of = |header: SegmentBytes<'_>, second: &[u8]| {
-        ArtifactRecordSet::from_records(header, vec![
-            ArtifactRecord::new(
-                ConstantIndex::from(0_usize),
-                SegmentBytes::from(b"alpha".as_slice()),
-            ),
-            ArtifactRecord::new(ConstantIndex::from(1_usize), SegmentBytes::from(second)),
-        ])
-        .expect("the keys are unique")
+    let set_of = |header: SegmentBytes<'_>, segments: [&[u8]; 2]| {
+        ArtifactRecordSet::from_segments(header, segments.map(SegmentBytes::from))
     };
-    let (base, _base_store) = committed(&set_of(header, b"beta"));
-    let (segment, _segment_store) = committed(&set_of(header, b"BETA!"));
-    let (headed, _headed_store) =
-        committed(&set_of(SegmentBytes::from(b"HEADER".as_slice()), b"beta"));
+    let (base, _base_store) = committed(&set_of(header, [b"alpha", b"beta"]));
+    let (segment, _segment_store) = committed(&set_of(header, [b"alpha", b"BETA!"]));
+    let (headed, _headed_store) = committed(&set_of(SegmentBytes::from(b"HEADER".as_slice()), [
+        b"alpha", b"beta",
+    ]));
+    let (swapped, _swapped_store) = committed(&set_of(header, [b"beta", b"alpha"]));
+    let named_with = |second: u8| {
+        set_of(header, [b"alpha", b"beta"])
+            .named(&[
+                Maybe::Present(ContentName::from([1; 32])),
+                Maybe::Present(ContentName::from([second; 32])),
+            ])
+            .expect("one name per place")
+    };
+    let (named, _named_store) = committed(&named_with(2));
+    let (renamed, _renamed_store) = committed(&named_with(3));
+    assert_ne!(
+        base.identity(),
+        swapped.identity(),
+        "two places swapped move the identity, though the records are the same"
+    );
+    assert_ne!(
+        base.identity(),
+        named.identity(),
+        "names beside the places move the identity"
+    );
+    assert_ne!(
+        named.identity(),
+        renamed.identity(),
+        "a changed name moves the identity"
+    );
     assert_ne!(
         base.identity(),
         segment.identity(),
@@ -519,36 +550,125 @@ fn any_perturbation_changes_the_identity()
     );
 }
 
+/// An insertion of a declaration whose bytes the artifact already holds
+/// leaves every record as it was: the order alone takes the new place.
 #[test]
-fn a_permuted_build_order_yields_the_same_identity()
+fn an_insertion_leaves_every_record_it_does_not_rewrite_7340()
 {
-    let base = records_of(&shared_artifact());
-    let reversed: Vec<ArtifactRecord> = base.records().iter().rev().cloned().collect();
-    let permuted =
-        ArtifactRecordSet::from_records(base.header(), reversed).expect("the keys are unique");
-    let (base_manifest, _base_store) = committed(&base);
-    let (permuted_manifest, _permuted_store) = committed(&permuted);
+    let cycle = [
+        Kind::UnitDefinition,
+        Kind::ReferenceToFirst,
+        Kind::UniverseAxiom,
+        Kind::UnitAxiom,
+    ];
+    let kinds: Vec<Kind> = cycle.iter().copied().cycle().take(40).collect();
+    let mut inserted = kinds.clone();
+    inserted.insert(20, Kind::UnitAxiom);
+    let base = records_of(&artifact_of(&kinds));
+    let edited = records_of(&artifact_of(&inserted));
     assert_eq!(
-        base_manifest.identity(),
-        permuted_manifest.identity(),
-        "the order records were gathered in does not reach the identity"
+        base.records(),
+        edited.records(),
+        "each record past the insertion keeps its key and its bytes"
+    );
+    assert_eq!(base.places().len().saturating_add(1), edited.places().len());
+    assert_eq!(
+        base.places().get(.. 20),
+        edited.places().get(.. 20),
+        "the places before the insertion stay"
     );
     assert_eq!(
-        base_manifest.root_node(),
-        permuted_manifest.root_node(),
-        "nor the root node"
+        base.places().get(20 ..),
+        edited.places().get(21 ..),
+        "the places past the insertion move one place on, each naming its record"
+    );
+}
+
+/// A set named by its writer stores and reads back with each name at its
+/// place, under a manifest that says it is named. A manifest that says the
+/// other form is refused, and so are one name too few and an absent name.
+#[test]
+fn a_named_set_reads_back_with_its_names_7340()
+{
+    let honest = records_of(&shared_artifact());
+    let names: Vec<Maybe<ContentName, unnamed::Absent>> = (0_u8 .. 4)
+        .map(|index| Maybe::Present(ContentName::from([index; 32])))
+        .collect();
+    let named = honest.clone().named(&names).expect("one name per place");
+    let (manifest, store) = committed(&named);
+    assert_eq!(Naming::Named, manifest.naming());
+    let order = named.order_image();
+    let refs = named.record_refs(&order);
+    let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
+    let back =
+        ArtifactRecordSet::from_stored(tree.records(), &store).expect("the stored set reads back");
+    assert_eq!(back, named, "each name reads back at its place");
+    assert!(
+        manifest.read_under(&store, TreeParams::current()).is_ok(),
+        "a named set reads back through the kernel's decoder"
+    );
+    let unnamed_claim = ArtifactManifest::new(
+        FORMAT_VERSION,
+        manifest.commitment().clone(),
+        manifest.record_count(),
+        manifest.root_node(),
+        Naming::Bytes,
+    );
+    assert_eq!(
+        Err(ArtifactError::NamingMismatch {
+            manifest: Naming::Bytes,
+        }),
+        unnamed_claim.read_under(&store, TreeParams::current()),
+        "a manifest that says the other form is refused"
+    );
+    assert_eq!(
+        Err(ArtifactError::Misnamed {
+            place: RecordIndex::from(3_usize)
+        }),
+        honest.clone().named(names.get(.. 3).expect("three names")),
+        "one name too few is refused at the place without one"
+    );
+    let mut unkeyed = names;
+    if let Some(name) = unkeyed.get_mut(2) {
+        *name = Maybe::Absent(unnamed::Absent::Unkeyed);
+    }
+    assert_eq!(
+        Err(ArtifactError::Misnamed {
+            place: RecordIndex::from(2_usize)
+        }),
+        honest.named(&unkeyed),
+        "a place the kernel gives no key is refused at that place"
     );
 }
 
 #[test]
 fn tree_nodes_store_and_reopen()
 {
-    // These concrete fixtures witness both supported root shapes.
-    for (artifact, root_kind) in [
-        (artifact_of(&[Kind::UnitDefinition]), NodeKind::Leaf),
-        (long_artifact(Count(300)), NodeKind::Internal),
+    // The index holds two records. Under the current rule they share one leaf;
+    // a rule that caps a leaf at one record puts each in a leaf of its own,
+    // under an internal root. So these fixtures witness both root shapes.
+    let current = TreeParams::current();
+    let one_per_leaf = TreeParams::new(
+        TreeKind::CURRENT,
+        EncodingVersion::CURRENT,
+        HashAlgorithm::CURRENT,
+        SeparatorConvention::CURRENT,
+        BoundaryParams::new(
+            BoundaryProfile::CURRENT,
+            current.boundary().mask_bits(),
+            BoundaryRecordCap::try_from(1_u32).expect("a record cap"),
+        ),
+    );
+    for (artifact, params, root_kind) in [
+        (
+            artifact_of(&[Kind::UnitDefinition]),
+            current,
+            NodeKind::Leaf,
+        ),
+        (long_artifact(Count(300)), one_per_leaf, NodeKind::Internal),
     ] {
-        let (manifest, store) = committed(&records_of(&artifact));
+        let mut store = InMemoryBlockStore::new();
+        let manifest = build(&records_of(&artifact), params, &mut store).expect("the set commits");
         let root = store
             .load(manifest.root_node())
             .expect("the root is stored");
@@ -561,14 +681,14 @@ fn tree_nodes_store_and_reopen()
         let expected = decode(artifact.as_image()).expect("the artifact decodes");
         assert_eq!(
             Ok(expected.clone()),
-            manifest.read_under(&store, TreeParams::current()),
+            manifest.read_under(&store, params),
             "the stored artifact reads back as the decode of its own image"
         );
         let reread = ArtifactManifest::decode(manifest.encode().as_image())
             .expect("the manifest's image decodes");
         assert_eq!(
             Ok(expected),
-            reread.read_under(&store, TreeParams::current()),
+            reread.read_under(&store, params),
             "a manifest read from its bytes reads the same artifact"
         );
         assert_eq!(
@@ -577,7 +697,7 @@ fn tree_nodes_store_and_reopen()
                     hash: manifest.root_node(),
                 },
             }),
-            manifest.read_under(&InMemoryBlockStore::new(), TreeParams::current()),
+            manifest.read_under(&InMemoryBlockStore::new(), params),
             "a store without the root refuses it by name"
         );
     }
@@ -595,6 +715,7 @@ fn a_foreign_profile_or_format_is_refused_before_any_load()
         manifest.commitment().clone(),
         manifest.record_count(),
         manifest.root_node(),
+        manifest.naming(),
     );
     assert_eq!(
         Err(ArtifactError::UnsupportedKernelFormat {
@@ -638,6 +759,7 @@ fn a_manifest_naming_another_record_count_is_refused()
         manifest.commitment().clone(),
         RecordCount(u64::from(manifest.record_count()).saturating_add(1)),
         manifest.root_node(),
+        manifest.naming(),
     );
     assert_eq!(
         Err(ArtifactError::TreeMismatch),
@@ -656,11 +778,8 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     let mut header = honest.header().as_ref().to_vec();
     let first = header.first_mut().expect("the header is not empty");
     *first = b'X';
-    let forged = ArtifactRecordSet::from_records(
-        SegmentBytes::from(header.as_slice()),
-        honest.records().to_vec(),
-    )
-    .expect("the keys are unique");
+    let forged =
+        ArtifactRecordSet::from_segments(SegmentBytes::from(header.as_slice()), honest.segments());
     let (manifest, store) = committed(&forged);
     let held = manifest.identity();
     let handed = ArtifactManifest::decode(manifest.encode().as_image())
@@ -681,35 +800,187 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
 fn a_stored_tree_with_misplaced_keys_is_refused()
 {
     let honest = records_of(&shared_artifact());
-    let header = honest.header();
-    let segment = honest
+    let (_honest_manifest, leaves) = committed(&honest);
+    let order = honest.order_image();
+    let refs = honest.record_refs(&order);
+    let place_count = honest.places().len();
+    let record_count = honest.records().len();
+    let refused = |records: &[RecordRef<'_>], store: &InMemoryBlockStore| {
+        let (manifest, store) = stored_as_named(records, store.clone());
+        manifest.read_under(&store, TreeParams::current())
+    };
+    let header_bytes = honest.header();
+    let header = RecordRef::new(HEADER_KEY, header_bytes.as_ref());
+    let first = honest
         .records()
         .first()
-        .expect("the artifact has a declaration")
-        .segment();
-
-    let skipping = AdmissionKey::from(ConstantIndex::from(1_usize));
-    let (manifest, store) = stored_as_named(&[
-        RecordRef::new(HEADER_KEY, header.as_ref()),
-        RecordRef::new(skipping.as_ref(), segment.as_ref()),
-    ]);
-    assert_eq!(
-        Err(ArtifactError::MisplacedRecord {
-            position: RecordIndex::from(1_usize),
-        }),
-        manifest.read_under(&store, TreeParams::current()),
-        "the declaration keys start at admission index zero"
+        .expect("the artifact has a declaration");
+    let segment = first.segment();
+    let key = RecordKey::of(segment);
+    // The order's keys start past its form and its count, and its places
+    // past its keys.
+    let keys_at = 5_usize;
+    let places_at = keys_at.saturating_add(record_count.saturating_mul(RECORD_KEY_LEN));
+    let short = order
+        .as_ref()
+        .get(.. order.as_ref().len().saturating_sub(1))
+        .expect("a prefix");
+    let second_key_at = keys_at.saturating_add(RECORD_KEY_LEN);
+    let first_key = order
+        .as_ref()
+        .get(keys_at .. second_key_at)
+        .expect("a first key")
+        .to_vec();
+    let mut repeated = order.as_ref().to_vec();
+    repeated
+        .get_mut(second_key_at .. second_key_at.saturating_add(RECORD_KEY_LEN))
+        .expect("a second key")
+        .copy_from_slice(&first_key);
+    let mut early = order.as_ref().to_vec();
+    early
+        .get_mut(places_at .. places_at.saturating_add(4))
+        .expect("a first place")
+        .copy_from_slice(&1_u32.to_le_bytes());
+    let past_keys = u32::try_from(record_count)
+        .expect("a count fits four bytes")
+        .to_le_bytes();
+    let mut past = order.as_ref().to_vec();
+    past.get_mut(places_at .. places_at.saturating_add(4))
+        .expect("a first place")
+        .copy_from_slice(&past_keys);
+    let mut unplaced = order.as_ref().get(.. 1).expect("the form").to_vec();
+    unplaced.extend_from_slice(
+        &u32::try_from(record_count.saturating_add(1))
+            .expect("a count fits four bytes")
+            .to_le_bytes(),
     );
-
-    let first = AdmissionKey::from(ConstantIndex::from(0_usize));
-    let (headless, headless_store) =
-        stored_as_named(&[RecordRef::new(first.as_ref(), segment.as_ref())]);
+    unplaced.extend_from_slice(order.as_ref().get(keys_at .. places_at).expect("the keys"));
+    unplaced.extend_from_slice(&[0xff; RECORD_KEY_LEN]);
+    unplaced.extend_from_slice(order.as_ref().get(places_at ..).expect("the places"));
+    for (records, expected, what) in [
+        (
+            vec![header, RecordRef::new(key.as_ref(), segment.as_ref())],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::from(1_usize),
+            },
+            "a tree without the order is refused at its second record",
+        ),
+        (
+            vec![
+                RecordRef::new(ORDER_KEY, order.as_ref()),
+                RecordRef::new(key.as_ref(), segment.as_ref()),
+            ],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::ZERO,
+            },
+            "a tree without a header record is refused at its first record",
+        ),
+        (
+            vec![
+                header,
+                RecordRef::new(ORDER_KEY, order.as_ref()),
+                RecordRef::new(key.as_ref(), segment.as_ref()),
+            ],
+            ArtifactError::TreeMismatch,
+            "an index of three records is refused: the manifest names an index of two",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, &[0x07])],
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::ZERO,
+            },
+            "an order that opens with no form is refused at place zero",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, short)],
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::from(place_count.saturating_sub(1)),
+            },
+            "an order one byte short is refused at its last place",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, repeated.as_slice())],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::from(3_usize),
+            },
+            "a key the order lists twice is refused at its second listing",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, early.as_slice())],
+            ArtifactError::MisplacedRecord {
+                position: RecordIndex::from(3_usize),
+            },
+            "a place that names a key before its turn is refused at that key",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, past.as_slice())],
+            ArtifactError::UnheldRecord {
+                place: RecordIndex::ZERO,
+            },
+            "a slot past the keys is refused at its place",
+        ),
+        (
+            vec![header, RecordRef::new(ORDER_KEY, unplaced.as_slice())],
+            ArtifactError::UnplacedRecord {
+                position: RecordIndex::from(record_count.saturating_add(2)),
+            },
+            "a key no place names is refused at that key",
+        ),
+    ] {
+        assert_eq!(Err(expected), refused(&records, &leaves), "{what}");
+    }
+    let three = [
+        header,
+        RecordRef::new(ORDER_KEY, order.as_ref()),
+        RecordRef::new(key.as_ref(), segment.as_ref()),
+    ];
+    let three = RecordTree::build(&three, TreeParams::current()).expect("the records build a tree");
     assert_eq!(
         Err(ArtifactError::MisplacedRecord {
-            position: RecordIndex::ZERO,
+            position: RecordIndex::from(2_usize),
         }),
-        headless.read_under(&headless_store, TreeParams::current()),
-        "a tree without a header record is refused at its first record"
+        ArtifactRecordSet::from_stored(three.records(), &leaves).map(|set| set.records().len()),
+        "a record past the order is refused at its position: no record stores its key beside \
+         its bytes"
+    );
+    assert_eq!(
+        Err(ArtifactError::Records {
+            refusal: RecordTreeError::UnknownNode {
+                hash: NodeHash::from(first.key()),
+            },
+        }),
+        refused(&refs, &InMemoryBlockStore::new()),
+        "an index whose value leaves the store lacks is refused at the first key"
+    );
+    let foreign = encode_leaf(&[RecordRef::new(b"a", b"1")]).expect("the leaf encodes");
+    let foreign_hash = hash_node(foreign.as_borrowed());
+    let mut holding = InMemoryBlockStore::new();
+    holding
+        .insert(StoredNode::new(foreign_hash, foreign.as_borrowed()))
+        .expect("the leaf stores");
+    let mut lone = vec![u8::from(Naming::Bytes)];
+    lone.extend_from_slice(&1_u32.to_le_bytes());
+    lone.extend_from_slice(foreign_hash.as_ref());
+    lone.extend_from_slice(&0_u32.to_le_bytes());
+    assert!(
+        matches!(
+            refused(
+                &[header, RecordRef::new(ORDER_KEY, lone.as_slice())],
+                &holding
+            ),
+            Err(ArtifactError::Records {
+                refusal: RecordTreeError::MalformedNode { .. }
+            })
+        ),
+        "a key that names a node other than a value leaf is refused"
+    );
+    assert_eq!(
+        order.as_ref().len(),
+        record_count
+            .saturating_mul(RECORD_KEY_LEN)
+            .saturating_add(place_count.saturating_mul(4))
+            .saturating_add(5),
+        "an order of bytes alone holds its form, its count, each key once and four bytes per place"
     );
 }
 
@@ -727,31 +998,25 @@ fn records_cut_off_a_segment_boundary_are_refused()
     let bytes = artifact.as_ref();
     let header_end = honest.header().as_ref().len();
     let ends: Vec<usize> = honest
-        .records()
-        .iter()
-        .scan(header_end, |end, record| {
-            *end = end.saturating_add(record.segment().as_ref().len());
+        .segments()
+        .scan(header_end, |end, segment| {
+            *end = end.saturating_add(segment.as_ref().len());
             Some(*end)
         })
         .collect();
-    let record = |index: usize, start: usize, end: usize| {
-        ArtifactRecord::new(
-            ConstantIndex::from(index),
-            SegmentBytes::from(bytes.get(start .. end).expect("a run of the artifact")),
-        )
-    };
     let cut_at = |header: usize, cuts: &[usize]| {
-        let mut records = Vec::new();
+        let mut segments = Vec::new();
         let mut start = header;
-        for (index, &end) in cuts.iter().enumerate() {
-            records.push(record(index, start, end));
+        for &end in cuts {
+            segments.push(SegmentBytes::from(
+                bytes.get(start .. end).expect("a run of the artifact"),
+            ));
             start = end;
         }
-        ArtifactRecordSet::from_records(
+        ArtifactRecordSet::from_segments(
             SegmentBytes::from(bytes.get(.. header).expect("a prefix of the artifact")),
-            records,
+            segments,
         )
-        .expect("the keys are unique")
     };
 
     // The header carries the first declaration's first byte.
@@ -795,22 +1060,20 @@ fn a_set_is_held_to_the_layout_s_segment_count()
         honest
             .records()
             .iter()
-            .all(|record| record.key().as_ref()
-                == AdmissionKey::from(record.admission_index()).as_ref()),
-        "each record sits under its admission index's key"
+            .all(|record| record.key() == RecordKey::of(record.segment())),
+        "each record sits under the identity of its bytes' value leaf"
     );
     let decoded = decode(artifact.as_image()).expect("the artifact decodes");
     let layout = decoded.segments();
     assert_eq!(Ok(()), honest.ensure_cut_at(layout));
 
-    let count = honest.records().len();
-    let mut padded_records = honest.records().to_vec();
-    padded_records.push(ArtifactRecord::new(
-        ConstantIndex::from(count),
-        SegmentBytes::from(b"".as_slice()),
-    ));
-    let padded = ArtifactRecordSet::from_records(honest.header(), padded_records)
-        .expect("the keys are unique");
+    let count = honest.places().len();
+    let padded = ArtifactRecordSet::from_segments(
+        honest.header(),
+        honest
+            .segments()
+            .chain(core::iter::once(SegmentBytes::from(b"".as_slice()))),
+    );
     assert_eq!(
         Err(ArtifactError::SegmentBoundary {
             position: RecordIndex::from(count.saturating_add(1)),
@@ -819,16 +1082,10 @@ fn a_set_is_held_to_the_layout_s_segment_count()
         "a record past the last segment is refused at that record"
     );
 
-    let short = ArtifactRecordSet::from_records(
+    let short = ArtifactRecordSet::from_segments(
         honest.header(),
-        honest
-            .records()
-            .iter()
-            .take(count.saturating_sub(1))
-            .cloned()
-            .collect(),
-    )
-    .expect("the keys are unique");
+        honest.segments().take(count.saturating_sub(1)),
+    );
     assert_eq!(
         Err(ArtifactError::SegmentBoundary {
             position: RecordIndex::from(count),
@@ -841,7 +1098,8 @@ fn a_set_is_held_to_the_layout_s_segment_count()
         Err(ArtifactError::MisplacedRecord {
             position: RecordIndex::ZERO,
         }),
-        ArtifactRecordSet::from_stored(&[]).map(|set| set.records().len()),
+        ArtifactRecordSet::from_stored(&[], &InMemoryBlockStore::new())
+            .map(|set| set.records().len()),
         "an empty tree has no header"
     );
 }
@@ -877,8 +1135,9 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     /// Over generated environments the records reassemble to the artifact,
-    /// one record per declaration plus the header, the identity is
-    /// deterministic, and the stored artifact reads back as its decode.
+    /// one place per declaration and one record per distinct segment beside
+    /// the header and the order, the identity is deterministic, and the
+    /// stored artifact reads back as its decode.
     #[test]
     fn round_trip_over_generated_environments(
         kinds in proptest::collection::vec(kind(), 0 .. 48_usize)
@@ -888,12 +1147,15 @@ proptest! {
         let set = records_of(&artifact);
         let reassembled = set.reassemble();
         prop_assert_eq!(artifact.as_ref(), reassembled.as_ref());
-        prop_assert_eq!(kinds.len(), set.records().len());
+        prop_assert_eq!(kinds.len(), set.places().len());
+        let distinct: alloc::collections::BTreeSet<Vec<u8>> =
+            set.segments().map(|segment| segment.as_ref().to_vec()).collect();
+        prop_assert_eq!(distinct.len(), set.records().len());
 
         let (first, store) = committed(&set);
         let (second, _second_store) = committed(&set);
         prop_assert_eq!(first.identity(), second.identity());
-        prop_assert_eq!(record_count(Count(kinds.len().saturating_add(1))), first.record_count());
+        prop_assert_eq!(record_count(Count(distinct.len().saturating_add(2))), first.record_count());
         prop_assert_eq!(
             decode(artifact.as_image()).map_err(ArtifactError::from),
             first.read_under(&store, TreeParams::current())
@@ -960,42 +1222,46 @@ fn an_artifact_commits_and_reads_back_to_the_image_the_kernel_decodes()
     }
 }
 
+/// A named set reads back off the value plane whole, and so does an empty
+/// named set, whose form no place carries. Each is written again as the
+/// stream it was read from.
 #[test]
-fn a_set_with_holes_reads_back_off_the_value_plane()
+fn a_named_set_reads_back_off_the_value_plane_7340()
 {
-    // Holes before the first record, between two, and across the 255/256
-    // carry, beside two records with none between them.
-    let indices = [2_usize, 3, 255, 256, 1000];
-    let segments: Vec<Vec<u8>> = indices
-        .iter()
-        .map(|index| format!("segment {index}").into_bytes())
-        .collect();
-    let records = indices
-        .iter()
-        .zip(&segments)
-        .map(|(&index, segment)| {
-            ArtifactRecord::new(
-                ConstantIndex::from(index),
-                SegmentBytes::from(segment.as_slice()),
-            )
-        })
-        .collect();
-    let set = ArtifactRecordSet::from_records(SegmentBytes::from(b"header".as_slice()), records)
-        .expect("the indices are distinct");
-    for params in cuts() {
-        let profile = value_profile(params);
-        let mut store = InMemoryChunkStore::new();
-        let manifest = cam_commit(&mut store, &profile, &set).expect("the set commits");
-        let back: ArtifactRecordSet =
-            cam_deref(&store, manifest.root()).expect("the set reads back");
-        assert_eq!(back, set, "under {params:?}, every index reads back");
-        assert_eq!(
-            cam_commit(&mut store, &profile, &back)
-                .expect("the set commits again")
-                .root(),
-            manifest.root(),
-            "under {params:?}, the set read back is written as the stream it was read from"
-        );
+    let honest = records_of(&shared_artifact());
+    let named = honest
+        .named(&[
+            Maybe::Present(ContentName::from([0xA5; 32])),
+            Maybe::Present(ContentName::from([0x5A; 32])),
+            Maybe::Present(ContentName::from([0xA5; 32])),
+            Maybe::Present(ContentName::from(core::array::from_fn(|index| {
+                u8::try_from(index).unwrap_or(u8::MAX)
+            }))),
+        ])
+        .expect("one name per place");
+    let empty = ArtifactRecordSet::from_segments(SegmentBytes::from(b"h".as_slice()), [])
+        .named(&[])
+        .expect("no place, no name");
+    for (set, what) in [(named, "a named set"), (empty, "an empty named set")] {
+        assert_eq!(Naming::Named, set.naming(), "{what} is named");
+        for params in cuts() {
+            let profile = value_profile(params);
+            let mut store = InMemoryChunkStore::new();
+            let manifest = cam_commit(&mut store, &profile, &set).expect("the set commits");
+            let back: ArtifactRecordSet =
+                cam_deref(&store, manifest.root()).expect("the set reads back");
+            assert_eq!(
+                back, set,
+                "under {params:?}, {what} reads back with every name at its place"
+            );
+            assert_eq!(
+                cam_commit(&mut store, &profile, &back)
+                    .expect("the set commits again")
+                    .root(),
+                manifest.root(),
+                "under {params:?}, {what} is written as the stream it was read from"
+            );
+        }
     }
 }
 
@@ -1074,19 +1340,12 @@ fn a_stream_that_is_no_artifact_is_refused_off_the_value_plane()
     let bytes = Token::Bytes(TokenBytes::from(b"bytes".as_slice()));
     // A record's constructor where the artifact's stands.
     let headless = Stream(vec![tag(0x02), bytes, Token::Close]);
-    // Two records after holes: the first lands on the last index the host
-    // addresses, so the second has no index left to land on.
-    let last = u64::try_from(usize::MAX).expect("addresses fit a word");
-    let past = Stream(vec![
+    // A place opening the retired hole tag.
+    let retired = Stream(vec![
         tag(0x01),
         bytes,
-        word(2),
+        word(1),
         tag(0x03),
-        tag(0x03),
-        word(last.saturating_sub(1)),
-        bytes,
-        Token::Close,
-        word(0),
         bytes,
         Token::Close,
         Token::Close,
@@ -1096,8 +1355,9 @@ fn a_stream_that_is_no_artifact_is_refused_off_the_value_plane()
             found: ConstructorTag::from(0x02_u8),
             position: TokenOffset::ZERO,
         }),
-        (past, ValueError::ArithmeticOverflow {
-            quantity: ValueQuantity::PayloadIndex,
+        (retired, ValueError::UnexpectedConstructor {
+            found: ConstructorTag::from(0x03_u8),
+            position: TokenOffset::from(3_u32),
         }),
     ] {
         let mut store = InMemoryChunkStore::new();
@@ -1117,29 +1377,22 @@ fn an_edit_shares_every_chunk_before_it_on_the_value_plane()
     let set = records_of(&long_artifact(Count(40)));
     let edited = 30_usize;
     let segments: Vec<Vec<u8>> = set
-        .records()
-        .iter()
+        .segments()
         .enumerate()
-        .map(|(index, record)| {
-            let mut segment = record.segment().as_ref().to_vec();
+        .map(|(index, segment)| {
+            let mut segment = segment.as_ref().to_vec();
             if index == edited {
                 segment.push(0xA5_u8);
             }
             segment
         })
         .collect();
-    let records = segments
-        .iter()
-        .enumerate()
-        .map(|(index, segment)| {
-            ArtifactRecord::new(
-                ConstantIndex::from(index),
-                SegmentBytes::from(segment.as_slice()),
-            )
-        })
-        .collect();
-    let changed =
-        ArtifactRecordSet::from_records(set.header(), records).expect("the indices are distinct");
+    let changed = ArtifactRecordSet::from_segments(
+        set.header(),
+        segments
+            .iter()
+            .map(|segment| SegmentBytes::from(segment.as_slice())),
+    );
     // Every record a chunk of its own: each chunk before the edit is shared,
     // and the edited record's, each after it and the root's are written anew.
     let profile = value_profile(cuts()[0]);

@@ -918,10 +918,10 @@ fn corpus(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every current corpus export is committed, read through
-///   the manifest and compared with the kernel-decoded artifact; its manifest
-///   count also matches the independently observed admitted declarations. The
-///   predicate verifies the returned manifest/store root association without
-///   another whole-artifact reconstruction.
+///   the manifest and compared with the kernel-decoded artifact; its places
+///   also match the independently observed admitted declarations. The predicate
+///   verifies the returned manifest/store root association without another
+///   whole-artifact reconstruction.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
 #[spec(
@@ -1434,11 +1434,12 @@ mod kernel_corpus_partition
     ///
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
-    /// - ensures: no withheld declaration names one that crossed; each manifest
-    ///   counts its header, every native signature, session assumption, free
-    ///   model and declaration that crossed; each session assumption and each
-    ///   free model is numbered in admission order; and besides them each
-    ///   artifact holds the declarations that crossed, in admission order,
+    /// - ensures: no withheld declaration names one that crossed; each order
+    ///   holds one place for every native signature, session assumption, free
+    ///   model and declaration that crossed, and each manifest counts no more
+    ///   records than those, the header and the order; each session assumption
+    ///   and each free model is numbered in admission order; and besides them
+    ///   each artifact holds the declarations that crossed, in admission order,
     ///   under their names, and between them only distinct natives the source
     ///   uses.
     /// - panics: when any of those fails.
@@ -1593,13 +1594,20 @@ mod kernel_corpus_partition
                 .saturating_add(models.len())
                 .saturating_add(formations.len());
             assert_eq!(
-                RecordCount(
-                    u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
-                ),
-                manifest.record_count(),
-                "{path}: the manifest counts the header, every native signature, every session \
+                crossed,
+                read.declarations().len(),
+                "{path}: the order holds one place for every native signature, every session \
                  assumption, every free model, every formation witness and every declaration \
                  that crossed"
+            );
+            assert!(
+                manifest.record_count()
+                    <= RecordCount(
+                        u64::try_from(crossed.saturating_add(2))
+                            .expect("a count fits sixty-four bits")
+                    ),
+                "{path}: the manifest counts the header, the order and one record for each \
+                 distinct segment, so no more records than places and two"
             );
         }
     }

@@ -583,6 +583,7 @@ use gandr_kernel_core::places;
 use gandr_kernel_core::read_step;
 use gandr_kernel_core::replay;
 use gandr_kernel_core::speculation::Speculation;
+use gandr_kernel_core::verdict::EntryContentKey;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictSource;
@@ -1765,6 +1766,55 @@ impl Readmission
         match places {
             Maybe::Present(ref places) => encode_placed(self.environment.arena(), &marked, places),
             Maybe::Absent(places::Absent::InOrder) => encode(self.environment.arena(), &marked),
+        }
+    }
+
+    /// The kernel's content key of each declaration [`export`](Self::export)
+    /// writes, in the artifact's order.
+    ///
+    /// # Specification
+    /// - requires: as [`export`](Self::export).
+    /// - ensures: one entry per declaration the export writes, in the order the
+    ///   export writes them: the content key the environment holds at the
+    ///   declaration's position, or why it holds none.
+    /// - provides: the names a stored artifact carries beside its places, so a
+    ///   reader finds a declaration by the kernel's name of it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the count rests on the environment's places, which
+    ///   a clause could read only by walking the environment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — across one insertion in an environment in admission
+    ///   order, each unchanged declaration keeps its name one place on, and the
+    ///   names count the declarations the export writes. The branch for an
+    ///   environment whose places differ from its positions walks the export's
+    ///   own enumeration; this witness does not reach it.
+    /// - witness: `bridge::tests::each_name_stands_beside_the_declaration_the_export_writes_7340`
+    #[inline]
+    #[must_use]
+    pub fn content_names(
+        &self
+    ) -> Vec<Maybe<EntryContentKey, gandr_kernel_core::verdict::keyed::Absent>>
+    {
+        let entries = self.environment.entries();
+        match self.environment.places() {
+            // As in `marked`: in kernel admission order each row stands at its
+            // own position.
+            Maybe::Absent(places::Absent::InOrder) => self
+                .admitted
+                .iter()
+                .enumerate()
+                .map(|(position, _declaration)| entries.content(ConstantIndex::from(position)))
+                .collect(),
+            Maybe::Present(_) => {
+                let vacancies: Vec<ConstantIndex> = entries.vacancies().collect();
+                self.environment
+                    .in_rank_order()
+                    .filter(|&position| self.staged_at(&vacancies, position).is_some())
+                    .map(|position| entries.content(position))
+                    .collect()
+            },
         }
     }
 

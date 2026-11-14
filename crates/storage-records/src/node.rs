@@ -34,6 +34,7 @@ use crate::bytes::OwnedEncodedNode;
 use crate::bytes::OwnedRecordKey;
 use crate::bytes::OwnedRecordValue;
 use crate::bytes::RecordKey;
+use crate::bytes::RecordValue;
 use crate::error::RecordTreeError;
 use crate::error::WireVersion;
 use crate::params::EncodingVersion;
@@ -41,6 +42,7 @@ use crate::record::Record;
 use crate::record::RecordCount;
 use crate::record::RecordIndex;
 use crate::record::RecordRef;
+use crate::store::BlockStore;
 use crate::wire::ChildCount;
 use crate::wire::Cursor;
 use crate::wire::DecodeCompletion;
@@ -60,6 +62,9 @@ use crate::wire::digest;
 
 /// The discriminator of a leaf node.
 const TAG_LEAF: WireTag = WireTag(0x00_u8);
+
+/// The key a value leaf holds its one record under: the empty key.
+const VALUE_LEAF_KEY: &[u8] = b"";
 
 /// The discriminator of an internal node.
 const TAG_INTERNAL: WireTag = WireTag(0x01_u8);
@@ -919,6 +924,307 @@ pub fn encode_leaf(records: &[RecordRef<'_>]) -> Result<OwnedEncodedNode, Record
     Ok(node)
 }
 
+/// Encodes `value` as a value leaf: a leaf that holds one record, `value`,
+/// under the empty key.
+///
+/// # Specification
+/// - requires: nothing; the value is opaque.
+/// - ensures: on success the leaf [`value_leaf`] reads back as `value`, under
+///   the identity [`ValueLeafHasher::hash`] gives for `value`.
+/// - provides: a node for a value that a caller names by its identity alone, so
+///   the value stands in a store once under one name.
+/// - fails: as [`encode_leaf`] for a run of one record.
+/// - panics: none.
+///
+/// # Errors
+/// [`RecordTreeError::BudgetExceeded`] — the leaf exceeds the node byte
+/// budget. [`RecordTreeError::ArithmeticOverflow`] — the value's length
+/// exceeds the wire width.
+///
+/// # Adequacy
+/// - hypothesis: L2 on an empty value and a short one compares the read-back
+///   value and the streamed identity; a pinned image fixes the framing.
+/// - witness: `node::tests::a_value_leaf_holds_one_record_under_the_empty_key`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|leaf| {
+    value_leaf(leaf.as_borrowed()) == Ok(value)
+        && hash_node(leaf.as_borrowed()) == ValueLeafHasher::new().hash(value)
+}))]
+pub fn encode_value_leaf(value: RecordValue<'_>) -> Result<OwnedEncodedNode, RecordTreeError>
+{
+    encode_leaf(&[RecordRef::new(VALUE_LEAF_KEY, value)])
+}
+
+/// A hasher of value leaves: the hash state with every byte of a value
+/// leaf's framing before the value's length already taken in.
+///
+/// The framing before the length is the same for every value leaf, and its
+/// first block is compressed once, when the hasher is made. Each value then
+/// costs the hash of its length and its own bytes alone. A caller that names
+/// many values makes one hasher.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct ValueLeafHasher(blake3::Hasher);
+
+impl ValueLeafHasher
+{
+    /// A hasher holding a value leaf's framing up to the value's length.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the hasher [`ValueLeafHasher::hash`] reads, holding the node
+    ///   domain tag, the node's own tag and version, the leaf kind, a record
+    ///   count of one and the empty key's length.
+    /// - provides: the fixed half of every value leaf's identity, paid once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`ValueLeafHasher::hash`].
+    /// - witness: `node::tests::a_value_leaf_holds_one_record_under_the_empty_key`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| encode_leaf(&[RecordRef::new(VALUE_LEAF_KEY, VALUE_LEAF_KEY)])
+        .is_ok_and(|leaf| ret.hash(RecordValue::from(VALUE_LEAF_KEY)) == hash_node(leaf.as_borrowed())))]
+    pub fn new() -> Self
+    {
+        let tag = Domain::Node.tag();
+        let mut hasher = blake3::Hasher::new();
+        let _domain = hasher.update(tag.as_ref());
+        let _header = hasher.update(tag.as_ref());
+        let _version = hasher.update(&u16::from(EncodingVersion::CURRENT.number()).to_le_bytes());
+        let _kind = hasher.update(&[u8::from(TAG_LEAF)]);
+        let _count = hasher.update(&1_u64.to_le_bytes());
+        let _key = hasher.update(&0_u64.to_le_bytes());
+
+        Self(hasher)
+    }
+
+    /// The identity of the value leaf of `value`, without the leaf.
+    ///
+    /// # Specification
+    /// - requires: nothing; the value is opaque.
+    /// - ensures: the [`hash_node`] of the leaf [`encode_value_leaf`] writes
+    ///   for `value`, whenever that leaf encodes.
+    /// - provides: the name a value leaf stands under, at one pass over the
+    ///   value and with no copy of it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on an empty value and a short one, each through one
+    ///   hasher, compares the identity with the hash of the encoded leaf, which
+    ///   a dropped field of the framing would change.
+    /// - witness: `node::tests::a_value_leaf_holds_one_record_under_the_empty_key`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| encode_leaf(&[RecordRef::new(VALUE_LEAF_KEY, value)])
+        .is_ok_and(|leaf| ret == hash_node(leaf.as_borrowed())))]
+    pub fn hash(
+        &self,
+        value: RecordValue<'_>,
+    ) -> NodeHash
+    {
+        let value = <&[u8]>::from(value);
+        // A length past sixty-four bits has no leaf: the encoder refuses it,
+        // so the ceiling here names no stored node.
+        let length = u64::try_from(value.len()).unwrap_or(u64::MAX);
+        let mut hasher = self.0.clone();
+        let _length = hasher.update(&length.to_le_bytes());
+        let _value = hasher.update(value);
+        let mut output = [0_u8; NODE_HASH_LEN];
+        hasher.finalize_xof().fill(output.as_mut_slice());
+
+        NodeHash::from(output)
+    }
+
+    /// The value beside the identity of its value leaf, paired here.
+    ///
+    /// # Specification
+    /// - requires: nothing; the value is opaque.
+    /// - ensures: a copy of `value` under [`ValueLeafHasher::hash`] of it.
+    /// - provides: one of the two paths that make a [`NamedValue`], so a store
+    ///   admits the value with no second hash.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a value named here, admitted and loaded back, reads
+    ///   as itself under its identity.
+    /// - witness: `store::tests::a_named_value_is_admitted_under_its_identity`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.identity == Self::new().hash(value)
+        && ret.value.as_ref() == <&[u8]>::from(value))]
+    pub fn named(
+        &self,
+        value: RecordValue<'_>,
+    ) -> NamedValue
+    {
+        NamedValue {
+            identity: self.hash(value),
+            value: Box::from(value),
+        }
+    }
+}
+
+impl Default for ValueLeafHasher
+{
+    /// The hasher [`ValueLeafHasher::new`] makes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
+/// A value beside the identity of its value leaf, paired by the record plane
+/// itself.
+///
+/// Two paths make the pair: [`ValueLeafHasher::named`] hashes the value, and
+/// [`NamedValue::load`] takes it from a store's verified load. No other path
+/// sets either field, so a store admits the value under its identity
+/// ([`BlockStore::admit_value`]) with no second hash.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the identity is [`ValueLeafHasher::hash`] of the value, the
+///   identity of the leaf [`encode_value_leaf`] writes for it.
+/// - provides: a value whose identity a store need not compute again.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a named value admitted into a store loads back as itself,
+///   and a store that holds the leaf already keeps one entry.
+/// - witness: `store::tests::a_named_value_is_admitted_under_its_identity`
+#[spec(maintains: self.identity == ValueLeafHasher::new().hash(RecordValue::from(&*self.value)))]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NamedValue
+{
+    /// The identity of the value's leaf.
+    identity: NodeHash,
+    /// The value's bytes.
+    value: Box<[u8]>,
+}
+
+impl NamedValue
+{
+    /// The value of the leaf `store` holds under `identity`, under that
+    /// identity.
+    ///
+    /// # Specification
+    /// - requires: nothing; an identity the store does not hold is admissible.
+    /// - ensures: on success a copy of the value of the leaf
+    ///   [`BlockStore::load`] yields for `identity`, under `identity`; the
+    ///   load's verification is the pairing.
+    /// - provides: the read path's half of the pairing, at the one hash the
+    ///   verified load takes.
+    /// - fails: the load's refusals, and [`RecordTreeError::MalformedNode`] for
+    ///   a node that is not a value leaf.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`RecordTreeError`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a held leaf, and L3 on an identity the store does
+    ///   not hold, which a load that trusted its caller would answer.
+    /// - witness: `store::tests::a_named_value_is_admitted_under_its_identity`
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|named| named.identity == identity))]
+    pub fn load<S>(
+        store: &S,
+        identity: NodeHash,
+    ) -> Result<Self, RecordTreeError>
+    where
+        S: BlockStore + ?Sized,
+    {
+        let node = store.load(identity)?;
+        let value = value_leaf(node.bytes())?;
+
+        Ok(Self {
+            identity,
+            value: Box::from(value),
+        })
+    }
+
+    /// Returns the identity of the value's leaf.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn identity(&self) -> NodeHash
+    {
+        self.identity
+    }
+
+    /// Borrows the value's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn value(&self) -> RecordValue<'_>
+    {
+        RecordValue::from(&*self.value)
+    }
+}
+
+/// Reads the one value of a value leaf, borrowed from its bytes.
+///
+/// # Specification
+/// - requires: nothing; the bytes may be arbitrary.
+/// - ensures: the value exactly when [`decode_node`] reads the bytes as a leaf
+///   of one record under the empty key, and a refusal otherwise.
+/// - provides: the read of a value leaf a store has verified, with no second
+///   decode and no copy of the value.
+/// - fails: [`RecordTreeError::MalformedNode`] for bytes that are not a value
+///   leaf.
+/// - panics: none.
+///
+/// # Errors
+/// [`RecordTreeError::MalformedNode`] — the bytes are not a value leaf.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a leaf of two records, a leaf whose one key is not
+///   empty, an internal node, a value leaf cut short and one with a byte past
+///   its value, each refused, beside value leaves read back whole.
+/// - witness: `node::tests::a_value_leaf_holds_one_record_under_the_empty_key`
+#[inline]
+#[spec(ensures: |ret| match decode_node(bytes, &mut DecodeWork::new()) {
+    Ok(DecodedNode::Leaf(ref leaf)) => match *leaf.records() {
+        [ref only] if only.key().as_ref().is_empty() =>
+            ret.as_ref().is_ok_and(|value| value.as_ref() == only.value().as_ref()),
+        _ => ret.is_err(),
+    },
+    _ => ret.is_err(),
+})]
+pub fn value_leaf(bytes: EncodedNode<'_>) -> Result<RecordValue<'_>, RecordTreeError>
+{
+    let malformed = || RecordTreeError::MalformedNode {
+        context: "a value leaf holds one record under the empty key".into(),
+    };
+    let version = u16::from(EncodingVersion::CURRENT.number()).to_le_bytes();
+    let rest = <&[u8]>::from(bytes)
+        .strip_prefix(Domain::Node.tag().as_ref())
+        .and_then(|rest| rest.strip_prefix(version.as_slice()))
+        .and_then(|rest| rest.strip_prefix([u8::from(TAG_LEAF)].as_slice()))
+        .and_then(|rest| rest.strip_prefix(1_u64.to_le_bytes().as_slice()))
+        .and_then(|rest| rest.strip_prefix(0_u64.to_le_bytes().as_slice()))
+        .ok_or_else(malformed)?;
+    let (length, value) = rest.split_first_chunk::<8>().ok_or_else(malformed)?;
+    if u64::try_from(value.len()).ok() != Some(u64::from_le_bytes(*length)) {
+        return Err(malformed());
+    }
+
+    Ok(RecordValue::from(value))
+}
+
 /// Encodes child references as an internal node.
 ///
 /// # Specification
@@ -1519,11 +1825,14 @@ mod tests
     use super::DecodedNode;
     use super::NodeKind;
     use super::StoredNode;
+    use super::ValueLeafHasher;
     use super::decode_node;
     use super::encode_internal;
     use super::encode_leaf;
+    use super::encode_value_leaf;
     use super::hash_node;
     use super::inspect_node;
+    use super::value_leaf;
     use super::verify_stored_node;
     use crate::bytes::EncodedNode;
     use crate::bytes::NodeHash;
@@ -1702,6 +2011,59 @@ mod tests
             format!("{hash}"),
             "3ee3f38a2610c969e4695d08f800611d7d8dba159c6dfe6cc2c81f5713ebc327"
         );
+    }
+
+    /// A value leaf reads back as its value under the identity streamed
+    /// without it, and every other node is refused as one.
+    #[test]
+    fn a_value_leaf_holds_one_record_under_the_empty_key()
+    {
+        let hasher = ValueLeafHasher::new();
+        for value in [b"".as_slice(), b"a declaration segment"] {
+            let leaf = encode_value_leaf(RecordValue::from(value)).expect("the value leaf encodes");
+            assert_eq!(Ok(RecordValue::from(value)), value_leaf(leaf.as_borrowed()));
+            assert_eq!(
+                hash_node(leaf.as_borrowed()),
+                hasher.hash(RecordValue::from(value)),
+                "one hasher names each value's leaf"
+            );
+        }
+        // The domain tag, version two, leaf kind, one record, the empty key's
+        // length, then the value's length and the value form the whole image.
+        let leaf = encode_value_leaf(RecordValue::from(b"1")).expect("the value leaf encodes");
+        assert_eq!(
+            leaf,
+            OwnedEncodedNode::from(
+                b"gandr:storage-records:node:v1\
+                    \x02\0\0\
+                    \x01\0\0\0\0\0\0\0\
+                    \0\0\0\0\0\0\0\0\
+                    \x01\0\0\0\0\0\0\0\x31",
+            )
+        );
+        let refused = |bytes: &[u8]| {
+            matches!(
+                value_leaf(EncodedNode::from(bytes)),
+                Err(RecordTreeError::MalformedNode { .. })
+            )
+        };
+        let two = encode_leaf(&[RecordRef::new(b"", b"1"), RecordRef::new(b"a", b"2")])
+            .expect("the leaf encodes");
+        assert!(refused(two.as_ref()), "a leaf of two records");
+        let keyed = encode_leaf(&[RecordRef::new(b"a", b"1")]).expect("the leaf encodes");
+        assert!(refused(keyed.as_ref()), "a leaf whose one key is not empty");
+        let internal = encode_internal(&[ChildRef::new(
+            vec![0x61_u8],
+            node_hash(HashSeed(1_u8)),
+            RecordCount::from(1_u64),
+        )])
+        .expect("the internal node encodes");
+        assert!(refused(internal.as_ref()), "an internal node");
+        let (_last, short) = leaf.as_ref().split_last().expect("a leaf has bytes");
+        assert!(refused(short), "a value leaf cut short");
+        let mut long = leaf.as_ref().to_vec();
+        long.push(0_u8);
+        assert!(refused(&long), "a byte past the value");
     }
 
     #[test]

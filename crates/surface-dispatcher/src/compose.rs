@@ -238,6 +238,8 @@ use gandr_kernel_core::tallied;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::StructuredName;
+use gandr_storage_artifact::ContentName;
+use gandr_storage_artifact::unnamed;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Declined;
@@ -1006,6 +1008,18 @@ impl Admission
                 },
                 declined: declined(&readmission),
                 tiers: tiers(&readmission),
+                // The kernel's reasons stay the kernel's: storage records only
+                // that the kernel computes no key for the entry.
+                names: readmission
+                    .content_names()
+                    .into_iter()
+                    .map(|name| match name {
+                        Maybe::Present(key) => {
+                            Maybe::Present(ContentName::from(<[u8; 32]>::from(key)))
+                        },
+                        Maybe::Absent(_) => Maybe::Absent(unnamed::Absent::Unkeyed),
+                    })
+                    .collect(),
                 artifact: Ok(readmission.export_resuming(
                     self.names,
                     reuse.record(),
@@ -1015,6 +1029,7 @@ impl Admission
             },
             Err(fault) => Resumption {
                 artifact: Err(fault),
+                names: Vec::new(),
                 positions: Maybe::Absent(positioned::Absent::Disagreed),
                 declined: Vec::new(),
                 tiers: Vec::new(),
@@ -1061,6 +1076,10 @@ pub struct Resumption
     /// The kernel artifact of every declaration that crossed, or the first
     /// declaration the kernel did not re-derive.
     pub artifact: Result<EncodedArtifact, bridge::Readmitted>,
+    /// The kernel's content key of each declaration the artifact writes, in
+    /// its order, as storage names it: empty when the kernel did not
+    /// re-derive every declaration.
+    pub names: Vec<Maybe<ContentName, unnamed::Absent>>,
     /// Where each declaration that crossed stands in the artifact, when the
     /// admission was asked to record it and the kernel re-derived every one.
     pub positions: Maybe<ArtifactPositions, positioned::Absent>,
