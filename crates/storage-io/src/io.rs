@@ -1339,10 +1339,10 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a cancel of a staged write completes the write
-    ///   cancelled with its buffer, and a cancel of a completed write finds no
-    ///   entry.
+    ///   cancelled with its buffer, and a cancel of a completed write cancels
+    ///   nothing.
     /// - witness: `tests::io::a_cancel_before_submission_completes_the_target_cancelled`
-    /// - witness: `tests::io::a_cancel_after_completion_finds_no_entry`
+    /// - witness: `tests::io::a_cancel_after_completion_cancels_nothing_7646`
     #[inline]
     pub fn cancel(
         &mut self,

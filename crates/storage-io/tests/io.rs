@@ -156,9 +156,14 @@ fn a_cancel_before_submission_completes_the_target_cancelled()
     }
 }
 
-/// A cancel of a write that has completed finds no entry, under each form.
+/// A cancel of a write that has completed cancels nothing, under each form.
+///
+/// The blocking form finds no entry. The ring answers either way: an io-wq
+/// worker posts the write's completion before it releases the work, so a
+/// cancel between the two finds the work running, `ALREADY`, and a later
+/// one finds no entry. `Io::cancel` states both answers.
 #[test]
-fn a_cancel_after_completion_finds_no_entry()
+fn a_cancel_after_completion_cancels_nothing_7646()
 {
     for mut io in forms(Count::from(8_u32)) {
         let scratch = Scratch::new();
@@ -180,10 +185,18 @@ fn a_cancel_after_completion_finds_no_entry()
             .iter()
             .map(|each| (each.pending, each.outcome))
             .collect();
-        assert_eq!(
-            outcomes,
-            vec![(cancel, Err(Errno::NO_ENTRY))],
-            "the cancel finds no entry under {form:?}"
+        let answers: &[Errno] = if form == Form::Ring {
+            &[Errno::NO_ENTRY, Errno::ALREADY]
+        }
+        else {
+            &[Errno::NO_ENTRY]
+        };
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [(pending, Err(errno))] if *pending == cancel && answers.contains(errno)
+            ),
+            "the cancel cancels nothing under {form:?}: {outcomes:?}"
         );
     }
 }
