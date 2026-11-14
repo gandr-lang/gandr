@@ -150,6 +150,12 @@ enum Operation
     Write(usize, u16),
     /// Keep the items below the bound.
     Retain(u16),
+    /// Remove the item at the index by a swap, if the vector holds one there.
+    SwapRemove(usize),
+    /// Remove the item at the index, if the vector holds one there.
+    Remove(usize),
+    /// Pop the last item if it is below the bound.
+    PopIf(u16),
 }
 
 /// Any operation, over lengths up to about three times the largest `N`.
@@ -168,6 +174,9 @@ fn operation() -> impl Strategy<Value = Operation>
             .prop_map(|(first, second)| Operation::Drain(first.min(second), first.max(second))),
         (0_usize .. 24_usize, any::<u16>()).prop_map(|(at, item)| Operation::Write(at, item)),
         any::<u16>().prop_map(Operation::Retain),
+        (0_usize .. 24_usize).prop_map(Operation::SwapRemove),
+        (0_usize .. 24_usize).prop_map(Operation::Remove),
+        any::<u16>().prop_map(Operation::PopIf),
     ]
 }
 
@@ -218,6 +227,22 @@ fn agree<const N: usize>(operations: &[Operation]) -> Result<(), TestCaseError>
             Operation::Retain(bound) => {
                 small.retain(|&item| item < bound);
                 model.retain(|&item| item < bound);
+            },
+            Operation::SwapRemove(at) => {
+                if at < model.len() {
+                    prop_assert_eq!(small.swap_remove(Count::from(at)), model.swap_remove(at));
+                }
+            },
+            Operation::Remove(at) => {
+                if at < model.len() {
+                    prop_assert_eq!(small.remove(Count::from(at)), model.remove(at));
+                }
+            },
+            Operation::PopIf(bound) => {
+                prop_assert_eq!(
+                    small.pop_if(|item| *item < bound),
+                    model.pop_if(|item| *item < bound)
+                );
             },
         }
         prop_assert_eq!(small.as_slice(), model.as_slice());
