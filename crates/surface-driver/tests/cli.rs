@@ -1005,8 +1005,7 @@ fn check_measures_each_declaration_a_source_writes()
                 );
                 let file = Path::new(path)
                     .file_name()
-                    .map(|file| file.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                    .map_or_default(|file| file.to_string_lossy().into_owned());
                 (file, name.to_owned(), fields.map(str::to_owned).collect())
             })
             .collect();
@@ -5111,7 +5110,7 @@ fn smoke_is_terminal_free_but_interactive_tui_refuses_pipes()
     let smoke = ran(gandr(&["tui", "--smoke"]));
     let interactive = ran(gandr(&["tui"]));
     assert_eq!(code(&smoke), Code(0));
-    assert!(stderr(&smoke).is_empty());
+    assert_eq!(stderr(&smoke), "");
     assert!(
         !smoke.stdout.contains(&0x1b_u8),
         "the headless face emits no terminal commands"

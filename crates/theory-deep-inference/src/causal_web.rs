@@ -1329,7 +1329,7 @@ mod tests
         else {
             panic!("the empty web refines itself");
         };
-        assert!(witness.steps().is_empty());
+        assert!(witness.steps().is_empty(), "{:?}", witness.steps());
         let source = causal_web(&two_event_order(f_cell()));
         let ragged = DependenceBits {
             rows: vec![

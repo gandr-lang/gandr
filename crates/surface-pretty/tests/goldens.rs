@@ -5202,7 +5202,8 @@ fn an_inverse_and_an_action_on_a_path_are_written_as_derived_778()
     let mapped = gandr_core_term::identity::cong(&mut core, circle, parameter, start, around);
     let mapped = core.value_returned(mapped);
     // A transport whose fixed endpoint is no image of the map is no action:
-    // `Path.ap(spin, loop)` would derive `Path[.A = Circle](spin(base), spin(a))`.
+    // `Path.ap(spin, loop)` would derive `Path[.A = Circle](spin(base),
+    // spin(a))`.
     let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = core.computation_force(spin);
     let applied = core.computation_application(forced, bound);
@@ -8423,7 +8424,8 @@ fn a_return_leaving_a_handler_prints_as_written_941()
         reply: unit,
     }])
     .expect("one operation is a signature");
-    // `handle a : std.process.Exit.Eff { … } with { pure(a) => a }` over `subject`.
+    // `handle a : std.process.Exit.Eff { … } with { pure(a) => a }` over
+    // `subject`.
     let scoped = |core: &mut CoreArena, subject| {
         let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let on_return = core.computation_return(answer);

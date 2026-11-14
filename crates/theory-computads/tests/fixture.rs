@@ -33,7 +33,8 @@ use quenchant_shape::shape::Maybe;
 /// The grade a test description's fields would carry; no field here is
 /// graded.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Ungraded {}
+#[repr(transparent)]
+pub struct Ungraded(pub !);
 
 /// A face over two terms, with no derived metadata and an empty span.
 ///

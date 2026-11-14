@@ -553,10 +553,10 @@ fn a_quoted_variable_is_read_through_the_environment()
 #[test]
 fn motives_written_apart_are_alike_read_through_their_environments_650()
 {
-    // #650: `c. Path[.A = Unit](c, x)` written twice, once over `[x]` reading `x`
-    // past the motive's binder as `#1` and once over `[x, y]` as `#2`, is one
-    // family though the bodies and the depths differ; the first body over
-    // `[y]` reads another variable and is not.
+    // #650: `c. Path[.A = Unit](c, x)` written twice, once over `[x]` reading
+    // `x` past the motive's binder as `#1` and once over `[x, y]` as `#2`,
+    // is one family though the bodies and the depths differ; the first body
+    // over `[y]` reads another variable and is not.
     let mut core = CoreArena::new();
     let unit = core.value_type_unit();
     let family = |core: &mut CoreArena, far: u32| {
@@ -880,12 +880,12 @@ fn motives_applying_a_stated_lambda_agree_with_its_reduct_4073()
 #[test]
 fn motives_over_composites_written_apart_are_alike_3968()
 {
-    // #3968: `z. Path[.A = El(c)](s, ⟨tr(y. Path[.A = El(c)](s, y), g, z)⟩)`, the
-    // composite `z then g` written as the path transport `then` lowers to.
-    // Each side writes the transport in its own place, so the two composites
-    // are two nodes. The walk reads them by their paths, their values and
-    // their motives under one binder crossed alike. A composite along `s`
-    // instead of `g` stays undecided, never apart.
+    // #3968: `z. Path[.A = El(c)](s, ⟨tr(y. Path[.A = El(c)](s, y), g, z)⟩)`,
+    // the composite `z then g` written as the path transport `then` lowers
+    // to. Each side writes the transport in its own place, so the two
+    // composites are two nodes. The walk reads them by their paths, their
+    // values and their motives under one binder crossed alike. A composite
+    // along `s` instead of `g` stays undecided, never apart.
     let mut core = CoreArena::new();
     let family = |core: &mut CoreArena, along: u32| {
         let read = |core: &mut CoreArena, index: u32| {

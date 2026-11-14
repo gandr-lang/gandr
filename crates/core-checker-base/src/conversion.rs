@@ -3690,7 +3690,8 @@ fn relocated_comps(
                         .copied()
                         .zip(right_results.iter().copied())
                         .collect();
-                    // Each result stands under the binders of the results before it.
+                    // Each result stands under the binders of the results
+                    // before it.
                     for (before, (left_result, right_result)) in pairs.into_iter().enumerate() {
                         let under = Binders::from(
                             u32::try_from(before)

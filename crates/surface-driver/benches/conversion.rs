@@ -16,7 +16,10 @@
     reason = "a measurement binary: a workload that cannot start ends the run"
 )]
 
+#[path = "shared/support.rs"]
 mod support;
+
+use std::path::Path;
 
 use support::check;
 use support::corpus;
@@ -32,7 +35,7 @@ const SUBJECT: &str = "../../corpus/model/conversion";
 /// trivial.
 fn conversion_set()
 {
-    check(vec![corpus(SUBJECT)]);
+    check(vec![corpus(Path::new(SUBJECT))]);
 }
 
 /// Run the conversion set once under its own measured block.

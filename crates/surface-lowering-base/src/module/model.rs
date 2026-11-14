@@ -565,14 +565,13 @@ impl<'source> Collected<'source>
         )
         .ok()
         .and_then(|(_, presentation)| crate::model::derive(presentation).ok())
-        .map(|derived| {
+        .map_or_default(|derived| {
             derived
                 .components
                 .into_iter()
                 .map(|component| component.name)
                 .collect()
         })
-        .unwrap_or_default()
     }
 
     /// The slot `position` and the presentation it holds, when a `theory`
@@ -714,8 +713,7 @@ impl<'source> Collector<'_, 'source>
             .collected
             .parameter_lists
             .get_mut(parameters.0)
-            .map(core::mem::take)
-            .unwrap_or_default();
+            .map_or_default(core::mem::take);
         self.collected.own(defined.node, held);
         self.collected.scopes.push((defined.node, scope));
         for parameter in &parameters {

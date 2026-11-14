@@ -1551,8 +1551,8 @@ fn named(row: &EffectRow) -> Vec<String>
 #[test]
 fn an_open_row_takes_what_the_other_row_adds_2270()
 {
-    // `F^[Console | ?r] Unit` against `F^[Console, Partial] Unit` solves `?r` as
-    // `[Partial]`; against `F^[Console] Unit` as the empty row; against
+    // `F^[Console | ?r] Unit` against `F^[Console, Partial] Unit` solves `?r`
+    // as `[Partial]`; against `F^[Console] Unit` as the empty row; against
     // `F^[Partial] Unit`, which lacks `Console`, the rows clash.
     for (written, solved) in [
         (&["Console", "Partial"][..], &["Partial"][..]),

@@ -291,9 +291,9 @@ fn declarations(
     // when unindexed). `where` then opens the members in braces: each
     // constructor and each cell opens on an arm bar, `| Nil : List(a)`,
     // `| Cons : (head : a, tail : List(a)) --> List(a)`, `| VCons : (n : Nat,
-    // x : a) --> Vec(a, Succ(n))`, `| loop : Base <-> Base`, and the keyword-led
-    // `oper` and `rule` members end on `;`. The bar is never hole content, so
-    // it ends the member before it without a separator.
+    // x : a) --> Vec(a, Succ(n))`, `| loop : Base <-> Base`, and the
+    // keyword-led `oper` and `rule` members end on `;`. The bar is never
+    // hole content, so it ends the member before it without a separator.
     let mut data = r(
         RuleName("data_declaration"),
         Provenance("data_declaration"),
@@ -349,10 +349,10 @@ fn declarations(
     // the members, as it opens every declaration block. The members are
     // lowercase-led observations (`head : a`) plus the reserved `rule` 2-cell —
     // observations are not generators, so no result-head discipline applies to
-    // them. `codata` reserves as one whole keyword. Observations are inline (the
-    // `ident : Type` shape, like the constructor field, never a standalone
-    // rule). The bare-parameter head stays admissible for the elaborator's
-    // decline, as on `data`.
+    // them. `codata` reserves as one whole keyword. Observations are inline
+    // (the `ident : Type` shape, like the constructor field, never a
+    // standalone rule). The bare-parameter head stays admissible for the
+    // elaborator's decline, as on `data`.
     let mut codata = r(
         RuleName("codata_declaration"),
         Provenance("codata_declaration"),
@@ -391,8 +391,9 @@ fn declarations(
     ));
     out.push(codata);
 
-    // --- module declaration ----------------------------------------------------
-    // `module M where { … }`, optionally ascribed against a `#{ … }` signature,
+    // --- module declaration
+    // ---------------------------------------------------- `module M where
+    // { … }`, optionally ascribed against a `#{ … }` signature,
     // `:` transparently or `:>` opaquely (`module_ascription_tail`); `where`
     // opens the members, as it opens every declaration block. The shared
     // `module` opener and its name own one mold. The body is a repetition of
@@ -597,11 +598,11 @@ fn declarations(
     // --- offers declaration -----------------------------
     // `offers [ … ] ;` is a site's answer to the requirement rows of the
     // worlds placed at it, its entries mirroring a requirement's: a host
-    // interface by its path, `std.io.Console.Eff`, which the site grants from its
-    // ambient authority, and `label = Module`, a model module the same file
-    // declares, named bare as a handler is. The label is an operand, as a
-    // row's is, so it shares the hole a package's lowercase path reads in.
-    // Closed, as a requirement is, and one to a site's file.
+    // interface by its path, `std.io.Console.Eff`, which the site grants from
+    // its ambient authority, and `label = Module`, a model module the same
+    // file declares, named bare as a handler is. The label is an operand,
+    // as a row's is, so it shares the hole a package's lowercase path reads
+    // in. Closed, as a requirement is, and one to a site's file.
     //
     // A label's module may be read through a translation, as an import's
     // source is: `store = Echo via downgrade` or `store = Echo renaming {
@@ -1626,13 +1627,14 @@ fn attributes_parameters_externs(
     // (`id : T?`) helpers are inline-only: each appears solely inside an
     // enclosing form (`attribute` in `attribute_block`, `parameters` /
     // `parameter` in the def-function tail, lambda, and extern members). A
-    // standalone rule additionally gives their opener a form-first Item-sort mold
-    // — `attribute` / `parameter` a bare `identifier`, `parameters` a `(` — that
-    // ties with every operand at a fresh slot, a spurious competitor the molder
-    // must break by lookahead (the helper-rule class the fold-in audit found;
-    // folding it fixes correctness and cost together). They are folded into
-    // `attribute_block` (recorded as adaptations for the parity inventory); their
-    // inlined occurrences still realise each helper's shape.
+    // standalone rule additionally gives their opener a form-first Item-sort
+    // mold — `attribute` / `parameter` a bare `identifier`, `parameters` a
+    // `(` — that ties with every operand at a fresh slot, a spurious
+    // competitor the molder must break by lookahead (the helper-rule class
+    // the fold-in audit found; folding it fixes correctness and cost
+    // together). They are folded into `attribute_block` (recorded as
+    // adaptations for the parity inventory); their inlined occurrences
+    // still realise each helper's shape.
     let mut attribute_block = r(
         RuleName("attribute_block"),
         Provenance("attribute_block"),
@@ -1664,15 +1666,16 @@ fn attributes_parameters_externs(
         inner_attr_block_inline(),
     ));
     // The extern members `extern_type` (`type T ;`) and `extern_function`
-    // (`def id (params) -> T? ;`) live only inside an `extern { … }` block, where
-    // they are inlined below. Declaring them as standalone top-level Item rules
-    // additionally gives their opener tiles (`type`, `def`) a form-first mold at
-    // the top level, where an `extern_function`'s `def` then competes with a real
-    // top-level `def` — an ambiguity no lookahead can settle since the two only
-    // diverge deep in the body. They are folded into `extern_block` (recorded as
-    // adaptations for the parity inventory); the block's inlined members still
-    // realise the members' shape, and their `def` / `type` carry a required
-    // `≐`-predecessor so they are never top-level form-starts.
+    // (`def id (params) -> T? ;`) live only inside an `extern { … }` block,
+    // where they are inlined below. Declaring them as standalone top-level
+    // Item rules additionally gives their opener tiles (`type`, `def`) a
+    // form-first mold at the top level, where an `extern_function`'s `def`
+    // then competes with a real top-level `def` — an ambiguity no lookahead
+    // can settle since the two only diverge deep in the body. They are
+    // folded into `extern_block` (recorded as adaptations for the parity
+    // inventory); the block's inlined members still realise the members'
+    // shape, and their `def` / `type` carry a required `≐`-predecessor so
+    // they are never top-level form-starts.
     let mut extern_block = r(
         RuleName("extern_block"),
         Provenance("extern_block"),
@@ -4284,15 +4287,16 @@ fn primary_expressions(
 )
 {
     let s = Sort::Expression;
-    // A user-written typed hole `?` (anonymous) or `?name` (the optional Hazelnut
-    // hole *name*, addressing the hole in the goal stream). The `hole_name` tile
-    // occurs ONLY here, as the hole's optional tail; it is deliberately NOT also a
-    // standalone Expression atom. A standalone `hole_name` rule gave
-    // the tile a second, fresh-slot mold that ties with every bare `identifier` on
-    // the molder's local key and — sitting at a smaller `MoldId` — would win,
-    // reading every lowercase word as a hole name. Folding it away leaves one
-    // `hole_name` mold, a form-end reachable only while a `?` frontier is open, so
-    // `?name`'s name attaches without shadowing the identifier menu. The `?` hole
+    // A user-written typed hole `?` (anonymous) or `?name` (the optional
+    // Hazelnut hole *name*, addressing the hole in the goal stream). The
+    // `hole_name` tile occurs ONLY here, as the hole's optional tail; it is
+    // deliberately NOT also a standalone Expression atom. A standalone
+    // `hole_name` rule gave the tile a second, fresh-slot mold that ties
+    // with every bare `identifier` on the molder's local key and — sitting
+    // at a smaller `MoldId` — would win, reading every lowercase word as a
+    // hole name. Folding it away leaves one `hole_name` mold, a form-end
+    // reachable only while a `?` frontier is open, so `?name`'s name
+    // attaches without shadowing the identifier menu. The `?` hole
     // is in the grammar LAST set (its tail is nullable), so the melder closes a
     // bare `?` cleanly instead of demanding the name.
     let mut hole = r(
@@ -4318,15 +4322,16 @@ fn primary_expressions(
         p,
         t(TileLabel("_")),
     ));
-    // The `(`-opened expression atoms — unit `( )`, parenthesized `( E )`, tuple
-    // `( E , )` or `( E , E+ )`, and annotation `( E : T )` — share the `( E`
-    // prefix and diverge only at the tile after the expression (`)` versus `,`
-    // versus `:`), which for a long `E` sits arbitrarily far past the `(`, out
-    // of reach of a bounded lookahead. They are factored into one form whose
-    // tail alternates on that discriminating tile, so the `(` owns one mold and
-    // the choice is locally decidable — the discriminator `≐`-continues exactly
-    // one tail. The concrete language is unchanged; the folded kinds are
-    // recorded as adaptations for the parity inventory.
+    // The `(`-opened expression atoms — unit `( )`, parenthesized `( E )`,
+    // tuple `( E , )` or `( E , E+ )`, and annotation `( E : T )` — share
+    // the `( E` prefix and diverge only at the tile after the expression
+    // (`)` versus `,` versus `:`), which for a long `E` sits arbitrarily
+    // far past the `(`, out of reach of a bounded lookahead. They are
+    // factored into one form whose tail alternates on that discriminating
+    // tile, so the `(` owns one mold and the choice is locally decidable —
+    // the discriminator `≐`-continues exactly one tail. The concrete
+    // language is unchanged; the folded kinds are recorded as adaptations
+    // for the parity inventory.
     //
     // A labelled group of outputs, `( .l = E, … )`, has its own `(`. The next
     // tile selects it, as the next tile selects the labelled telescope
@@ -4433,12 +4438,13 @@ fn primary_expressions(
     }
     out.push(block_rule);
     // The value lambda `fun (params) { … }` and the type abstraction
-    // `fun [ tyvars ] { … }` share the `fun` prefix and diverge only at the tile
-    // after it — `(` versus `[`. Declaring them as two rules gives `fun` two molds
-    // that tie on the molder's local key and fire a lookahead window per `fun`;
-    // they are factored into one form whose tail alternates on that discriminating
-    // tile (the `def` / `let` idiom), so `fun` owns one mold and the choice is
-    // locally decidable. The folded kind is an adaptation for the parity inventory.
+    // `fun [ tyvars ] { … }` share the `fun` prefix and diverge only at the
+    // tile after it — `(` versus `[`. Declaring them as two rules gives
+    // `fun` two molds that tie on the molder's local key and fire a
+    // lookahead window per `fun`; they are factored into one form whose
+    // tail alternates on that discriminating tile (the `def` / `let`
+    // idiom), so `fun` owns one mold and the choice is locally decidable.
+    // The folded kind is an adaptation for the parity inventory.
     let mut lambda = r(
         RuleName("lambda_expression"),
         Provenance("lambda_expression"),
@@ -4478,8 +4484,8 @@ fn primary_expressions(
         ]),
     ));
     // The `arm` (`PAT => E`) helper is inline-only — it appears solely inside a
-    // `match` / `offer` body. A standalone rule additionally gives its first tile
-    // (a pattern atom: `identifier`, `constructor`, …) a form-first
+    // `match` / `offer` body. A standalone rule additionally gives its first
+    // tile (a pattern atom: `identifier`, `constructor`, …) a form-first
     // Expression-sort mold that ties with every operand, a spurious competitor
     // the molder must break by lookahead. It is folded into `match_expression`
     // (recorded as an adaptation); the inlined arms still realise its shape.
@@ -4600,14 +4606,14 @@ fn primary_expressions(
     // Each is keyword-led — a fresh first-token discriminator, siblings of
     // `if` / `match` at `expression.atom`, flowing into `expression_statement`
     // for `;`-terminated statement position. `for` binds a single identifier
-    // (the MVP; a full pattern binder is a later widening); `break` / `continue`
-    // are bare single-tile atoms (unlabeled, unit payload). `break(v)` leaves
-    // the loop with a value: its parenthesis is a tile of its own form, so the
-    // molder settles the two `break` molds by the next tile alone. A prefix
-    // `break v` would not settle: an operand may stand beside an atom, and a
-    // `;` reads as the shell's list-operator atom, so `break v` and `break;`
-    // would each mold both ways with no obligation. These are PBG-only,
-    // parity-exempt.
+    // (the MVP; a full pattern binder is a later widening); `break` /
+    // `continue` are bare single-tile atoms (unlabeled, unit payload).
+    // `break(v)` leaves the loop with a value: its parenthesis is a tile of
+    // its own form, so the molder settles the two `break` molds by the next
+    // tile alone. A prefix `break v` would not settle: an operand may stand
+    // beside an atom, and a `;` reads as the shell's list-operator atom, so
+    // `break v` and `break;` would each mold both ways with no obligation.
+    // These are PBG-only, parity-exempt.
     out.push(r(
         RuleName("for_expression"),
         Provenance("for_expression"),
@@ -4791,12 +4797,13 @@ fn primary_expressions(
     ));
     session_expressions(out, p);
     access_expressions(out, p);
-    // The shell block's interior is a generic Expression hole: its commands mold
-    // as juxtaposed command atoms (`command_name`, `single_quoted_string`, …)
-    // joined by the separator / operator forms (`;`, `&&`, the `|` pipeline), the
-    // way a POSIX shell reads them. The `[ … ]` subshell is an
-    // Expression-atom form of its own (`type_shell::add_shell_rules`), molded
-    // on distinct shell-context bracket tiles, so this block does not fold it.
+    // The shell block's interior is a generic Expression hole: its commands
+    // mold as juxtaposed command atoms (`command_name`,
+    // `single_quoted_string`, …) joined by the separator / operator forms
+    // (`;`, `&&`, the `|` pipeline), the way a POSIX shell reads them. The
+    // `[ … ]` subshell is an Expression-atom form of its own
+    // (`type_shell::add_shell_rules`), molded on distinct shell-context
+    // bracket tiles, so this block does not fold it.
     out.push(r(
         RuleName("shell_block"),
         Provenance("shell_block"),

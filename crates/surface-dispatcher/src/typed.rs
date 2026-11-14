@@ -4095,8 +4095,7 @@ impl TypeTable
                 .referents
                 .at(offset)
                 .and_then(|&(_, target)| target.family())
-                .map(|family| Vec::from([family]))
-                .unwrap_or_default();
+                .map_or_default(|family| Vec::from([family]));
         }
         let names: Vec<Name<'_>> = self
             .names
@@ -5057,8 +5056,7 @@ impl TypeTable
                     binders: self
                         .contexts
                         .get(context.0)
-                        .map(|names| names.iter().cloned().map(Some).collect())
-                        .unwrap_or_default(),
+                        .map_or_default(|names| names.iter().cloned().map(Some).collect()),
                     regions: Vec::new(),
                     types: Vec::new(),
                     slots: Vec::new(),

@@ -882,7 +882,8 @@ pub trait Identification: Clone + Copy + core::fmt::Debug + Eq + core::hash::Has
 /// tags, their payloads and their members' names agree, and the descent datum
 /// is empty.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Exact {}
+#[repr(transparent)]
+pub struct Exact(pub !);
 
 impl Identification for Exact
 {
@@ -3187,7 +3188,8 @@ impl ContentTable
             start: end.saturating_sub(self.scratch.0.len()),
             end,
         });
-        // Each record occupies memory, so the allocated table bounds this count.
+        // Each record occupies memory, so the allocated table bounds this
+        // count.
         self.records = u64::from(arith::add(
             arith::Int::from(self.records),
             arith::Int::from(1_u64),

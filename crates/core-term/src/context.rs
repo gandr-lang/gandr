@@ -162,7 +162,6 @@ impl LinearZone
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn slots(
         &self
     ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
@@ -1080,7 +1079,6 @@ impl Context
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn linear_slots(
         &self
     ) -> impl DoubleEndedIterator<Item = (ValueTypeId, LinearUse)> + ExactSizeIterator + '_
@@ -1095,7 +1093,6 @@ impl Context
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn linear_worlds(&self) -> impl DoubleEndedIterator<Item = World> + ExactSizeIterator + '_
     {
         self.linear.iter().map(|slot| slot.world)

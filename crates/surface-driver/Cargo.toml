@@ -22,14 +22,6 @@ autotests = false
 name = "gandr"
 path = "src/main.rs"
 
-# The parser's report: keystroke latency, throughput, recovery and how the
-# molder settles its decisions over the corpus. Built only with the `census`
-# feature.
-[[example]]
-name = "parser_report"
-path = "examples/parser_report.rs"
-required-features = ["census"]
-
 # One integration target, each area file its own `cfg(test)` module, so a
 # witness path reads `tests::<area>::<name>`.
 [[test]]
@@ -97,25 +89,16 @@ toml.workspace = true
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
-# The parser's report example reads the corpus the sweeps list, molds it
-# with the parser and counts the molder's decisions. Its recovery axis reads
-# the recovery sweep of the ledger tasks. Its latency workload types into a
-# language-server session through the language server's client, as the
-# hotpath bench's workloads do, and its incremental workload parses each
-# revision through the session's form store, on the serial fork. The
-# `check --activity` witness reads the activity ring, so the crate's own
+# The `check --activity` witness reads the activity ring, so the crate's own
 # targets turn its `instrument` feature on. The counting allocator's witness
-# reads its thread's count through the checker's `Meter`.
+# reads its thread's count through the checker's `Meter`. The benchmark
+# report's workloads type into a language-server session through the
+# language server's client.
 [dev-dependencies]
 gandr-core-checker.workspace = true
 gandr-core-fork.workspace = true
 gandr-lang = { workspace = true, features = ["counts", "instrument"] }
 gandr-surface-lsp = { workspace = true, features = ["client"] }
-gandr-surface-parser.workspace = true
-gandr-surface-session.workspace = true
-gandr-surface-syntax.workspace = true
-gandr-workflow-ledger-tasks.workspace = true
-gandr-workflow-sweep.workspace = true
 
 # The terminal face draws through crossterm, which has no WASI 0.3 terminal,
 # so `gandr tui` is absent from a `wasm32-wasip3` build.
@@ -131,8 +114,6 @@ nix.workspace = true
 
 [features]
 default = []
-# The parser's report example: the molder keeps its census of decisions.
-census = ["gandr-surface-parser/census"]
 # The small-device bench's count build (#7359): `gandr check --counts` prints
 # the run's allocations over every thread and the frames that its checks pop.
 # It takes the instrument's counting allocator. Off, no count is compiled.

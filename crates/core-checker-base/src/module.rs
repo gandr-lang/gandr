@@ -1103,7 +1103,8 @@ fn decide(
                 let crossed = context.take_crossings();
                 // The run types the body as written, its omitted implicits
                 // standing as holes; each type is read with their solutions.
-                // A hole the body leaves unbound reads the signature's solution.
+                // A hole the body leaves unbound reads the signature's
+                // solution.
                 let mut read = signing;
                 read.extend(solutions.iter().map(|(&hole, &solved)| (hole, solved)));
                 typings = Maybe::Present(

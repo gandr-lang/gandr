@@ -541,7 +541,8 @@ impl<'store> Node<'store>
                 HeapValue::Thunk { body, environment } => {
                     let first = pending.len();
                     pending.extend(store.bound_values(environment));
-                    // The innermost capture is the first field, so it goes on top.
+                    // The innermost capture is the first field, so it goes on
+                    // top.
                     pending.get_mut(first ..).unwrap_or_default().reverse();
                     Self::Thunk {
                         body,
@@ -639,7 +640,8 @@ impl<'store> Node<'store>
             },
             Self::Thunk { body, captures } => {
                 let captured = fields(laid, captures);
-                // Each binding becomes the innermost, so the outermost binds first.
+                // Each binding becomes the innermost, so the outermost binds
+                // first.
                 let environment = captured
                     .iter()
                     .rev()

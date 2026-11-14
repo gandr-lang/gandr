@@ -452,14 +452,16 @@ impl Generalizer
                 continue;
             }
             let first = *column.first().ok_or(StageError::Unbalanced)?;
-            // Non-numeral columns cannot use the producer's one arithmetic relation.
+            // Non-numeral columns cannot use the producer's one arithmetic
+            // relation.
             let numeral_points = if matches!(self.graph.node(first)?.head, Head::OuterNatural(_)) {
                 usize::from(source_points)
             }
             else {
                 0
             };
-            // Only a source point can justify the one supported numeral relation.
+            // Only a source point can justify the one supported numeral
+            // relation.
             let mut predecessor = None;
             for source in self.arms.iter().take(numeral_points) {
                 if source.len() != column.len() {
@@ -1718,7 +1720,8 @@ pub fn readmit(
                     match template.peak_substitution(arena, step.source) {
                         Ok(substitution) => {
                             let (instance, projected) = template.instantiate(&substitution)?;
-                            // Full replay below checks this same equation with its
+                            // Full replay below checks this same equation with
+                            // its
                             // original identities and every congruence premise.
                             let mut graph = Graph::default();
                             let expected = graph.import(arena, &[step.target])?;

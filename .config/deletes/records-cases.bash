@@ -14,7 +14,10 @@
 #     stops after half its files leaves no entry;
 #   - past the bound, the entries with the oldest touch leave first;
 #   - the run of a package records its library, though the run of a package
-#     that depends on it built that library first (#7092).
+#     that depends on it built that library first (#7092);
+#   - a package whose every target requires a feature reads the features
+#     that its targets require, and a unit graph without them holds no unit
+#     of it.
 # With `--build`, one case builds: a hit from an entry that a scratch
 # worktree writes equals a fresh run in this worktree, byte for byte, for
 # each package named (`gandr-core-fork` by default).
@@ -63,6 +66,8 @@ rustc() {
 # library and the test unit of the package and the library of each
 # dependency, each unit that its check target lacks, as Cargo builds each
 # unit that is not fresh. It writes a record for each unit that it builds.
+# The targets of `r` build only with the features that they require, so a
+# run of `r` without `--features extra,report` stops.
 # The check target is `dylint/target/<toolchain>` of the records target, as
 # `cargo dylint` keeps it. `cargo clean --quiet -p <name> --target-dir <dir>`
 # takes the units of the package out of `<dir>`.
@@ -71,6 +76,7 @@ cargo() {
     -V) echo "cargo 1.0.0-nightly" ;;
     dylint)
       if [[ $2 == --version ]]; then echo "$tool_dylint"; return; fi
+      if [[ $6 == r && ${8:-} != extra,report ]]; then return 101; fi
       local unit units=("$6.lib" "$6.test") built=$records_target/dylint/target/nightly-x
       if [[ $6 == a ]]; then units+=(b.lib); fi
       mkdir -p "$built"
@@ -79,6 +85,9 @@ cargo() {
         touch "$built/$unit"
         echo "{\"unit\": \"$unit\"}" > "$records_work/records/crates_${unit%%.*}_src_lib.rs.${unit#*.}.jsonl"
       done ;;
+    metadata)
+      jq -n '{packages: [{name: "a", targets: [{kind: ["lib"]}]},
+        {name: "r", targets: [{kind: ["bin"], "required-features": ["report"]}, {kind: ["bench"], "required-features": ["report", "extra"]}]}]}' ;;
     clean) rm -f "${6%/}/$4".* ;;
   esac
 }
@@ -99,6 +108,9 @@ echo 'fn main() {}' > "$tree/crates/b/build.rs"
 echo shared > "$tree/crates/shared/data.txt"
 echo tools > "$tree/crates/tools/gen.txt"
 echo rules > "$tree/crates/rules/surface.rs"
+# The tree's lint passes turn on the features that its targets require.
+mkdir -p "$tree/.config/policy"
+records_clone "$here/../policy/required.bash" "$tree/.config/policy/"
 git -C "$tree" init --quiet
 git -C "$tree" config core.excludesFile /dev/null
 identity "$tree"
@@ -327,6 +339,30 @@ records_build a || fail "#7092: the run of a does not build"
 records_build b || fail "#7092: the run of b does not build"
 [[ -e $records_work/records/crates_b_src_lib.rs.lib.jsonl ]] \
   || fail "#7092: the run of b after the run of a records no library unit of b: $(ls "$records_work/records" | tr '\n' ' ')"
+cases=$((cases + 1))
+
+# The run reads the features that the targets of a package require, as the
+# tree's lint passes read them, and builds the package with them. A package
+# whose targets require none reads nothing.
+[[ $(records_required r) == "extra,report" ]] || fail "the features that the targets of r require read: $(records_required r)"
+[[ -z $(records_required a) ]] || fail "a, whose targets require no feature, reads: $(records_required a)"
+records_build r "$(records_required r)" || fail "the run of r with the features that its targets require does not build"
+[[ -e $records_work/records/crates_r_src_lib.rs.lib.jsonl ]] || fail "the run of r with its features records no library unit"
+! records_build r 2> /dev/null || fail "the run of r without its features builds"
+# A tree older than the script, as a base before this change, reads no
+# feature: its lint passes build no target that requires one.
+mv "$tree/.config/policy/required.bash" "$work/required.bash"
+[[ -z $(records_required r) ]] || fail "a tree without the script of its lint passes reads: $(records_required r)"
+mv "$work/required.bash" "$tree/.config/policy/required.bash"
+cases=$((cases + 1))
+
+# The lint passes read the features of each package that the scope keeps.
+required() { records_run cargo metadata --no-deps --locked --format-version 1 | "$here/../policy/required.bash" "$@"; }
+[[ $(required --workspace) == "--features r/extra,r/report" ]] || fail "the workspace reads: $(required --workspace)"
+[[ -z $(required --workspace --exclude r) ]] || fail "the workspace without r reads: $(required --workspace --exclude r)"
+[[ $(required -p a --package r) == "--features r/extra,r/report" ]] || fail "a and r read: $(required -p a --package r)"
+! required --workspace --all 2> /dev/null || fail "a scope with an argument that no scope takes reads"
+! "$here/../policy/required.bash" --workspace < /dev/null 2> /dev/null || fail "a run with no metadata reads"
 cases=$((cases + 1))
 
 echo "records-cases OK: $cases cases"

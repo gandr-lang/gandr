@@ -484,7 +484,7 @@ fn left_holes(
         .and_then(|at| molds.get(at))
         .and_then(|def| usize::try_from(u32::from(def.rctx)).ok())
         .and_then(|at| rctxs.get(at))
-        .map(|data| {
+        .map_or_default(|data| {
             data.left_steps
                 .iter()
                 .fold(HoleSorts::default(), |sorts, step| match step.crossed {
@@ -492,7 +492,6 @@ fn left_holes(
                     StepSym::Tile(_) => sorts,
                 })
         })
-        .unwrap_or_default()
 }
 
 /// The mold and context tables of a checked grammar.
@@ -1681,8 +1680,7 @@ impl MoldTable
     ) -> LabelFollowsForm
     {
         self.menus(id)
-            .map(|menus| menus.left_holes)
-            .unwrap_or_default()
+            .map_or_default(|menus| menus.left_holes)
             .follows(sort)
     }
 

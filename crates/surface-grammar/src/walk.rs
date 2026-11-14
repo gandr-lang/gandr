@@ -806,14 +806,14 @@ mod tests
                 level.swings().first().expect("one swing").nonterminals()
             );
             assert_eq!(1, level.swings().len());
-            assert!(level.stances().is_empty());
+            assert!(level.stances().is_empty(), "{:?}", level.stances());
             let descent = descent_walk(outer, inner).expect("two nonterminals are a valid swing");
             assert_eq!(
                 [outer, inner],
                 descent.swings().first().expect("one swing").nonterminals()
             );
             assert_eq!(1, descent.swings().len());
-            assert!(descent.stances().is_empty());
+            assert!(descent.stances().is_empty(), "{:?}", descent.stances());
         }
     }
 
@@ -870,7 +870,8 @@ mod tests
         let index = walk_index(&pbg).expect("empty grammar");
         assert_eq!([End::Root], index.ends());
         assert!(reachable_molds(&pbg, &index).is_empty());
-        assert!(comparison_table(&pbg, &index).is_empty());
+        let table = comparison_table(&pbg, &index);
+        assert!(table.is_empty(), "{table:?}");
         assert_eq!(Ok(SeenKeyVerdict::Equivalent), seen_key_verdict(&pbg));
     }
 
@@ -914,7 +915,8 @@ mod tests
             ]),
             projected
         );
-        assert!(comparison_table(&pbg, &index).is_empty());
+        let table = comparison_table(&pbg, &index);
+        assert!(table.is_empty(), "{table:?}");
         assert_eq!(Ok(SeenKeyVerdict::Equivalent), seen_key_verdict(&pbg));
     }
 }

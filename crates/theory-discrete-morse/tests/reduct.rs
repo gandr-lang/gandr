@@ -309,7 +309,7 @@ fn the_critical_cells_run_by_rank_and_then_by_place()
             Some(Rank::from(1_usize))
         ]
     );
-    assert!(reduced.boundary(Place::from(2)).is_empty());
+    assert_eq!(reduced.boundary(Place::from(2)), []);
 }
 
 #[test]
@@ -331,10 +331,10 @@ fn the_walk_of_the_critical_edge_runs_around_the_circle()
         Place::from(0),
         Place::from(1)
     ]);
-    assert!(reduced.boundary(Place::from(1)).is_empty());
-    assert!(reduced.walk(Place::from(0)).is_empty());
-    assert!(reduced.walk(Place::from(2)).is_empty());
-    assert!(reduced.boundary(Place::from(2)).is_empty());
+    assert_eq!(reduced.boundary(Place::from(1)), []);
+    assert_eq!(reduced.walk(Place::from(0)), []);
+    assert_eq!(reduced.walk(Place::from(2)), []);
+    assert_eq!(reduced.boundary(Place::from(2)), []);
     assert_eq!(reduced.rank(Place::from(1)), Some(Rank::from(1_usize)));
     assert_eq!(reduced.rank(Place::from(2)), None);
 }

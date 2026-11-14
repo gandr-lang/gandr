@@ -1020,7 +1020,7 @@ fn substitution_laws()
             fixture.binding
         );
         let newest = BindingJudgement {
-            context: weakened.context.clone(),
+            context: weakened.context,
             sort: extension,
             term: v::<0>(),
         };

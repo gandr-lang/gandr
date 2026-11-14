@@ -207,7 +207,7 @@ fn shadow_policy_uses_site_tags_independently_of_recognized_kinds()
         Maybe::Present(RecognitionSite::Source(at)),
         "and the note gives the source site the root holds"
     );
-    assert!(scope.shadowed().is_empty());
+    assert_eq!(scope.shadowed(), []);
     scope.declare_resumed(
         Segment::from("builtin"),
         core::iter::once((
@@ -231,7 +231,7 @@ fn shadow_policy_uses_site_tags_independently_of_recognized_kinds()
             entry: 0_usize
         }))
     );
-    assert!(scope.shadowed().is_empty());
+    assert_eq!(scope.shadowed(), []);
 }
 
 #[test]

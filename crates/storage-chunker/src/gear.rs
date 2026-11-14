@@ -1877,7 +1877,7 @@ mod tests
                 operation: super::ArithmeticOperation::RecordIndex,
             })
         );
-        assert!(scan.chunks.is_empty());
+        assert!(scan.chunks.is_empty(), "{:?}", scan.chunks);
         assert_eq!(scan.chunk_records, super::RecordCount::from(1_u32));
         let start = u64::MAX.checked_sub(1).expect("positive width");
         scan.chunk_start_record = super::RecordPosition::from(start);

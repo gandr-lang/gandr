@@ -590,7 +590,7 @@ fn a_recursive_family_names_itself_in_its_fields()
     else {
         panic!("two constructors");
     };
-    assert!(zero.is_empty());
+    assert_eq!(zero.as_slice(), []);
     let [predecessor] = **succ
     else {
         panic!("one field");
@@ -2582,7 +2582,7 @@ fn a_constructor_applies_to_its_fields()
         panic!("a bare constructor is a constructor value");
     };
     assert_eq!(tag, ConstructorTag::from(1_usize));
-    assert!(fields.is_empty());
+    assert_eq!(fields.as_slice(), []);
     assert_eq!(
         arena.value_type(datatype),
         Some(&ValueType::Data {
@@ -4022,7 +4022,8 @@ fn a_nested_match_records_its_cover_5103()
         ],
         "one split for each switch, inner first, each over its family's two constructors"
     );
-    // Mint the same steps again in order, leaving `Some` out of `Maybe`'s split.
+    // Mint the same steps again in order, leaving `Some` out of `Maybe`'s
+    // split.
     let mut dropped = Cover::new();
     for (_id, step) in cover.steps() {
         let step = match *step {

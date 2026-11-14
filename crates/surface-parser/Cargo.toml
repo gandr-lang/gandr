@@ -40,7 +40,7 @@ regex-lite.workspace = true
 [features]
 default = []
 # The molder counts how it settles each decision, for the parser's report
-# (the driver's `parser_report` example). Off, the molder keeps no census.
+# (`gandr-workflow-parser-report`). Off, the molder keeps no census.
 census = []
 
 [lints]

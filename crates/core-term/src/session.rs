@@ -1241,7 +1241,6 @@ impl<'session, Id: Copy> Branches<'session, Id>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn labels(&self) -> impl ExactSizeIterator<Item = &'session FieldLabel> + 'session
     {
         self.branches.keys()

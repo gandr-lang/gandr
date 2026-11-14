@@ -422,8 +422,9 @@ fn a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751()
 #[test]
 fn a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832()
 {
-    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
-    // def via = thunk λw. λx. case w { _ => pick(x) ; _ => return ⌜Unit⌝ } ;
+    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝
+    // } ; def via = thunk λw. λx. case w { _ => pick(x) ; _ => return
+    // ⌜Unit⌝ } ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let unit_type = arena.value_type_unit();
@@ -498,12 +499,12 @@ fn a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832()
 #[test]
 fn a_definition_whose_arm_calls_over_a_stuck_call_steps_to_it_3042()
 {
-    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
-    // def tail = thunk λx. case x { p => return p ; p => return p } ;
+    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝
+    // } ; def tail = thunk λx. case x { p => return p ; p => return p } ;
     // def via = thunk λw. λx. case w { _ => y <- tail(x); pick(y) ; _ => return
     // ⌜Unit⌝ } ; def inline = thunk λw. λx. case w {
-    //   _ => y <- tail(x); case y { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
-    //   _ => return ⌜Unit⌝
+    //   _ => y <- tail(x); case y { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝
+    // } ;   _ => return ⌜Unit⌝
     // } ;
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);

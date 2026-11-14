@@ -955,7 +955,8 @@ mod tests
             super::FormStretch::default(),
             "a stretch of no entry is the empty one"
         );
-        assert!(narrow.read(super::FormStretch::default()).is_empty());
+        let stretch = narrow.read(super::FormStretch::default());
+        assert!(stretch.is_empty(), "{stretch:?}");
         let mut store = ByForm::<char>::default();
         store.enter(LayoutBlock::from(1_usize));
         let first = store.mark();

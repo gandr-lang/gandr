@@ -849,7 +849,7 @@ mod tests
         assert_eq!(sink.open.len(), 1_usize);
         assert!(anodized::types::Spec::predicate(&sink));
         sink.close().expect("the root closes");
-        assert!(sink.open.is_empty());
+        assert!(sink.open.is_empty(), "{:?}", sink.open);
         assert!(anodized::types::Spec::predicate(&sink));
         let (root, delivered) = sink.finish().expect("the complete value commits");
         assert_eq!(root.offset(), TokenOffset::ZERO);

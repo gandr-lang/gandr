@@ -522,8 +522,7 @@ pub fn hovering_laid<Store, Blocks>(
                 .unit
                 .sources()
                 .last()
-                .map(|importer| importer.imports().to_vec())
-                .unwrap_or_default();
+                .map_or_default(|importer| importer.imports().to_vec());
             (typed, (laid.paths.clone(), laid.opened.clone()), targets)
         },
         Maybe::Absent(_) => (
@@ -1463,8 +1462,7 @@ fn kept(
         let site = table.half(referent, DeclaredHalf::Signature);
         let written = table
             .source_text(site.source())
-            .map(<&str>::from)
-            .unwrap_or_default();
+            .map_or_default(<&str>::from);
         let named = usize::from(site.named().start());
         let before = written.get(.. named).unwrap_or_default();
         let from = before

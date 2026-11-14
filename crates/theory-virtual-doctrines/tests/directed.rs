@@ -84,8 +84,8 @@ mod tests
     #[test]
     fn a_producer_hole_checks_covariantly()
     {
-        // `m` is a producer var; sorted covariantly, the the reflection rules metadata
-        // checks.
+        // `m` is a producer var; sorted covariantly, the the reflection rules
+        // metadata checks.
         let ctx = DirectedContext::new().with_var(NameRef::from("m"), OpSig::covariant(nat_sig()));
         assert_eq!(
             Ok(()),
@@ -140,8 +140,9 @@ mod tests
     #[test]
     fn a_producer_hole_sorted_contravariantly_is_rejected()
     {
-        // The the reflection rules metadata is now CHECKABLE: a producer hole declared
-        // contravariant is a variance mismatch (not merely derived).
+        // The the reflection rules metadata is now CHECKABLE: a producer hole
+        // declared contravariant is a variance mismatch (not merely
+        // derived).
         let ctx =
             DirectedContext::new().with_var(NameRef::from("m"), OpSig::contravariant(nat_sig()));
         assert_eq!(

@@ -45,8 +45,7 @@ fn read(
     {
         Some(NodeLabel::Meld(mold)) => grammar
             .rule_of(mold)
-            .map(|rule| String::from(rule.name().0))
-            .unwrap_or_default(),
+            .map_or_default(|rule| String::from(rule.name().0)),
         Some(_) | None => String::from("<root>"),
     };
     (

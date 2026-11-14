@@ -279,11 +279,11 @@ fn add_type_rules(
     ));
     // A definition's result written as a value type takes the returner the
     // lowering inserts, `-> B` for `-> -F B`, and the row of that returner is
-    // written before the type, as the row form writes it after `-F`: `-> [Partial]
-    // B` for `-> -F [Partial] B`, `-> [Partial | r] B` and `-> [r] B` open through
-    // a tail. The form realises the kind `f_type` as the row form does; no
-    // other type form opens with `[`, and the lowering reads it only at a
-    // definition's result.
+    // written before the type, as the row form writes it after `-F`: `->
+    // [Partial] B` for `-> -F [Partial] B`, `-> [Partial | r] B` and `->
+    // [r] B` open through a tail. The form realises the kind `f_type` as
+    // the row form does; no other type form opens with `[`, and the
+    // lowering reads it only at a definition's result.
     rules.push(Rule::with_provenance(
         RuleName("f_type.result"),
         Provenance("f_type"),
@@ -352,8 +352,9 @@ fn add_type_rules(
     // The universe of representable sorts, `Type+`: the classifier a `theory`
     // block's `sort` member writes for a sort a port may bind a variable of.
     // It is one marked tile, so `Type[+]`, the universe of value types, keeps
-    // its bracket and the sum `Type + A` its sign. The grammar reads it at every
-    // type slot; the lowering admits it only as a sort member's classifier.
+    // its bracket and the sum `Type + A` its sign. The grammar reads it at
+    // every type slot; the lowering admits it only as a sort member's
+    // classifier.
     rules.push(rule(
         RuleName("representable_universe_type"),
         ty,
@@ -937,8 +938,8 @@ fn add_type_rules(
         ]),
     ));
     // Identity endpoints: a number literal is a Type-sort atom, so
-    // `Path[.A = Integer](4, 4)` molds with literal endpoints. The Expression- and
-    // Pattern-sort `number` realisations live in the term lexical forms
+    // `Path[.A = Integer](4, 4)` molds with literal endpoints. The Expression-
+    // and Pattern-sort `number` realisations live in the term lexical forms
     // (`number.expression` / `number.pattern`); this is the Type-sort third
     // realisation of the same provenance, admissible only in a type hole (the
     // per-sort menus keep the three from tying, as `identifier` and
@@ -1095,16 +1096,18 @@ fn add_shell_rules(
         AdaptationReason("a shell `a && b` molds as the expression binary `binary_expression.and` between two commands, so the shell has no `&&` composite of its own"),
     ));
     rules.push(list_operator);
-    // A shell pipeline `cmd | cmd` (and stderr-merging `cmd |& cmd`) is a binary
-    // infix between two command expressions, exactly the shape the term binaries
-    // (`&&`, `||`) take: a single `|` / `|&` tile with a recursive-sort hole on
-    // each side, so the melder classifies it as an operator (paper Fig. 29's
-    // Reduce) admissible in the shell block's expression hole. The tree-sitter
-    // `pipeline` (`_shell_command (choice("|","|&") optional(_shell_command))+`)
-    // chains the operator with a `repeat`, which the melder reads as a form-mid
-    // continuation tile — inadmissible as an operator between two juxtaposed
+    // A shell pipeline `cmd | cmd` (and stderr-merging `cmd |& cmd`) is a
+    // binary infix between two command expressions, exactly the shape the
+    // term binaries (`&&`, `||`) take: a single `|` / `|&` tile with a
+    // recursive-sort hole on each side, so the melder classifies it as an
+    // operator (paper Fig. 29's Reduce) admissible in the shell block's
+    // expression hole. The tree-sitter `pipeline` (`_shell_command
+    // (choice("|","|&") optional(_shell_command))+`) chains the operator
+    // with a `repeat`, which the melder reads as a form-mid continuation
+    // tile — inadmissible as an operator between two juxtaposed
     // command atoms; the binary shape keeps operator status. Both spellings
-    // keep the `pipeline` provenance so the named-kind inventory covers the kind.
+    // keep the `pipeline` provenance so the named-kind inventory covers the
+    // kind.
     rules.push(pipe_rule(
         RuleName("pipeline.pipe"),
         expr,
@@ -1178,14 +1181,15 @@ fn add_shell_rules(
     // A shell double-quoted string `"…"`: a `"`-delimited run
     // of `double_string_fragment` text, `\.` escapes, and parameter expansions
     // (`$name` / `${name}`). The labeler's shell double-quote mode emits these
-    // constituent tokens, so the string is one atom (interior spaces preserved),
-    // not juxtaposed shell words. The parameter expansion is INLINED here (the
-    // `$ variable_name` / `${ variable_name }` shapes, matching the labeler's
-    // tokens) rather than a `variable_expansion` composite tile the labeler never
-    // emits. The tree-sitter grammar also admits a `command_substitution`
-    // inside the string; this surface does not (command substitution belongs
-    // to the POSIX tail it leaves out) and records that as an adaptation — the
-    // named kind stays covered by the standalone rule.
+    // constituent tokens, so the string is one atom (interior spaces
+    // preserved), not juxtaposed shell words. The parameter expansion is
+    // INLINED here (the `$ variable_name` / `${ variable_name }` shapes,
+    // matching the labeler's tokens) rather than a `variable_expansion`
+    // composite tile the labeler never emits. The tree-sitter grammar also
+    // admits a `command_substitution` inside the string; this surface does
+    // not (command substitution belongs to the POSIX tail it leaves out)
+    // and records that as an adaptation — the named kind stays covered by
+    // the standalone rule.
     let mut double_quoted_string = rule(
         RuleName("double_quoted_string"),
         expr,
@@ -1208,11 +1212,11 @@ fn add_shell_rules(
     rules.push(double_quoted_string);
     // A parameter expansion `$name` OR its braced form `${name}`.
     // The two spellings share ONE `variable_expansion` provenance
-    // and discriminate on the opener tile (`$` vs `${`), so a shell parameter is
-    // one construct with one eventual semantics seam. The braced form is a
-    // divergence from the tree-sitter grammar (whose `variable_expansion` is
-    // `$` `variable_name` alone), recorded as an adaptation. Its interior is a
-    // `variable_name`, NOT a host-expression hole:
+    // and discriminate on the opener tile (`$` vs `${`), so a shell parameter
+    // is one construct with one eventual semantics seam. The braced form is
+    // a divergence from the tree-sitter grammar (whose `variable_expansion`
+    // is `$` `variable_name` alone), recorded as an adaptation. Its
+    // interior is a `variable_name`, NOT a host-expression hole:
     // the labeler's shell-brace mode keeps the interior a shell parameter name,
     // DISTINCT from the string-interpolation `${ E }` (whose interior is host
     // tokens) — a shell parameter is not a gandr binding.
@@ -1768,7 +1772,11 @@ mod tests
             };
             assert_eq!([mold], grammar.form_first());
             assert_eq!([mold], grammar.form_last());
-            assert!(grammar.adjacencies().is_empty());
+            assert!(
+                grammar.adjacencies().is_empty(),
+                "{:?}",
+                grammar.adjacencies()
+            );
             assert!(!bool::from(grammar.mold_has_required_tail(mold)));
             assert_eq!(
                 provenance,

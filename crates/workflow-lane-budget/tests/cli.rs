@@ -360,9 +360,9 @@ fn a_nightly_lane_is_sampled_over_the_nightly_runs()
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // The nightly-sweeps workflow's scheduled runs 6 and 5 hold a Clippy job of 600
-    // and 500 seconds; the landing runs hold one of 300 and 200. Each table
-    // reads its own window, the nightly one after the daily one.
+    // The nightly-sweeps workflow's scheduled runs 6 and 5 hold a Clippy job of
+    // 600 and 500 seconds; the landing runs hold one of 300 and 200. Each
+    // table reads its own window, the nightly one after the daily one.
     assert!(
         stdout.contains(
             "| check Clippy wall | surface | 3m 20s | 4m 10s | 2 | within |\n\nThe table reads runs 3, 2.\n\n</details>\n"

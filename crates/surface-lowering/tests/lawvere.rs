@@ -860,7 +860,8 @@ fn the_boundary_of_each_boundary_of_the_circle_is_zero()
 {
     // The rules of the circle keep their variables, so its truncation holds
     // no cell whose boundary has a boundary.
-    assert!(unclosed(&mut circle(), bound(Count(2), Count(5))).is_empty());
+    let cells = unclosed(&mut circle(), bound(Count(2), Count(5)));
+    assert!(cells.is_empty(), "{cells:?}");
 }
 
 #[test]

@@ -2919,8 +2919,9 @@ mod kernel_presented_readmission
             panic!("`add` carries its three rules");
         };
         // Without `add(m, Zero) ==> m` the other two rules still converge, but
-        // the body's leaf at `add(Succ(m), Zero)` returns its first input, which
-        // the recursion `add(Succ(m), n) ==> Succ(add(m, n))` does not.
+        // the body's leaf at `add(Succ(m), Zero)` returns its first input,
+        // which the recursion `add(Succ(m), n) ==> Succ(add(m, n))`
+        // does not.
         let twin_declaration =
             marked
                 .declaration()

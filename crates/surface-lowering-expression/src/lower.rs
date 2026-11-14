@@ -9239,8 +9239,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             };
             return Native::new(self.host()).staged_descent(site, named, written);
         }
-        // A type former the expression grammar molds as a call, `Path[.A = A](x,
-        // y)`, is the former the type grammar spells (#4508).
+        // A type former the expression grammar molds as a call, `Path[.A =
+        // A](x, y)`, is the former the type grammar spells (#4508).
         if let Maybe::Present(name) = self.former_head(site, head)? {
             let _head = cursor.operands();
             let start = self.cx().operands.entries().len();
@@ -12952,7 +12952,8 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
         exhausted(site, &cursor)?;
         let kind = self.cx().kinds.contains(&site.at.node);
         // The static Pi is a type operator: both its domain and its codomain
-        // classify codes. Any other arrow where a value type is read is the box.
+        // classify codes. Any other arrow where a value type is read is the
+        // box.
         let kinded = self.ranges_over_codes(domain)?.0 && self.ranges_over_codes(codomain)?.0;
         let boxes = value_typed && !kinded;
         // In a kind, the box is a family's telescope, `(a : A, …) -> U`; a

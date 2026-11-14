@@ -687,7 +687,7 @@ fn a_matching_with_no_pair_gives_the_identity()
     let mut scheme = none.on(&mut two);
     let built = equivalence(&mut scheme, &cells, room).expect("an acyclic matching");
     assert_eq!(built.critical(), cells.as_slice());
-    assert!(built.removals().is_empty());
+    assert_eq!(built.removals(), []);
     let mut bound = built
         .on(&mut scheme, &cells, room)
         .expect("the equivalence reads");

@@ -98,7 +98,8 @@ fn symmetry_on_a_boolean_square_computes()
             Err(HigherError::Relation(RelationError::Typing(_)))
         ));
         // A neutral inhabitant of Unit is valid evidence, but the parent's
-        // native transport does not reduce this non-reflexive proof-index action.
+        // native transport does not reduce this non-reflexive proof-index
+        // action.
         assert!(matches!(
             symmetry(
                 &mut arena,

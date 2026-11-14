@@ -1155,7 +1155,8 @@ fn converge(
                             payloads: b,
                         },
                     ) => {
-                        // Graphs contain no native children; structural graph equality is finite.
+                        // Graphs contain no native children; structural graph
+                        // equality is finite.
                         if one != other {
                             return Convertibility::Distinct;
                         }

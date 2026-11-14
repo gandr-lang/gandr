@@ -4093,7 +4093,8 @@ mod tests
             ]
         );
         // A bare digit word (`echo 2 things`) and a digit-led word (`2nd`) are
-        // NOT file descriptors — the lookahead requires an abutting redirection.
+        // NOT file descriptors — the lookahead requires an abutting
+        // redirection.
         assert_eq!(
             tiles(
                 SourceFragment::from("#!{ echo 2 2nd; }"),
@@ -4353,8 +4354,8 @@ mod tests
     fn shell_env_assignment_is_one_token()
     {
         // `NAME=value` munches across the `=` into ONE token — the whole-token
-        // shape the tree-sitter `token(seq(…))` and the PBG's single-tile atom both
-        // expect. Splitting it left the `=` with no admissible
+        // shape the tree-sitter `token(seq(…))` and the PBG's single-tile atom
+        // both expect. Splitting it left the `=` with no admissible
         // shell mold at all.
         let src = "#!{ FOO=1 echo }";
         assert_eq!(
@@ -4388,9 +4389,10 @@ mod tests
     fn shell_words_containing_eq_are_not_assignments()
     {
         // The name part must be identifier-shaped, so a flag with an `=` is ONE
-        // ordinary shell word (it was three tiles, with an unmoldable `=`, before
-        // the environment-assignment munch) and a bare `=` — the `[ "$a" = "$b" ]` test
-        // operator — is a plain word rather than an `UnmoldedTok`.
+        // ordinary shell word (it was three tiles, with an unmoldable `=`,
+        // before the environment-assignment munch) and a bare `=` — the
+        // `[ "$a" = "$b" ]` test operator — is a plain word rather than
+        // an `UnmoldedTok`.
         let flag = "#!{ ls --color=auto }";
         assert_eq!(
             tiles(
@@ -4664,7 +4666,8 @@ mod tests
                 (Lexeme::Punct, "}".to_owned()),
             ]
         );
-        // A word-embedded parameter `pre${x}post` splits into three shell atoms.
+        // A word-embedded parameter `pre${x}post` splits into three shell
+        // atoms.
         let embedded = "#!{ echo pre${x}post; }";
         assert_eq!(
             reconstruct(

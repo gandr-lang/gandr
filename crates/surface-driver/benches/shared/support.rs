@@ -2,10 +2,13 @@
 //! directory, the width a series runs at, and a check that visits every step
 //! of its walk under the policy that the driver installs for its width.
 
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
-use std::num::NonZeroUsize;
+use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::HostGrant;
@@ -21,7 +24,7 @@ use gandr_surface_evaluate::Evaluator;
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn corpus(relative: &str) -> PathBuf
+pub fn corpus(relative: &Path) -> PathBuf
 {
     std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative))
         .expect("the corpus source exists")
@@ -34,7 +37,7 @@ pub(crate) fn corpus(relative: &str) -> PathBuf
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn width() -> Width
+pub fn width() -> Width
 {
     let mut arguments = std::env::args();
     while let Some(argument) = arguments.next() {
@@ -54,7 +57,7 @@ pub(crate) fn width() -> Width
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn check(paths: Vec<PathBuf>)
+pub fn check(paths: Vec<PathBuf>)
 {
     check_at(paths, width());
 }
@@ -67,7 +70,7 @@ pub(crate) fn check(paths: Vec<PathBuf>)
 ///
 /// # Specification
 /// trivial.
-pub(crate) fn check_at(
+pub fn check_at(
     paths: Vec<PathBuf>,
     width: Width,
 )

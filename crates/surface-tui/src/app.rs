@@ -297,9 +297,9 @@ mod tests
     fn unicode_edits_and_empty_backspace_preserve_input_boundaries()
     {
         let mut app = App::new(Spelling::Unicode).expect("the grammar builds");
-        assert!(app.line().as_ref().is_empty());
-        assert!(app.waiting().is_empty());
-        assert!(app.transcript().is_empty());
+        assert!(app.line().as_ref().is_empty(), "{:?}", app.line().as_ref());
+        assert!(app.waiting().is_empty(), "{:?}", app.waiting());
+        assert!(app.transcript().is_empty(), "{:?}", app.transcript());
         assert_eq!(app.prompt(), Prompt::Fresh);
         for typed in "aé𐐀".chars() {
             assert_eq!(
@@ -314,8 +314,8 @@ mod tests
                 Handled::Continue
             );
             assert_eq!(app.line().as_ref(), expected);
-            assert!(app.waiting().is_empty());
-            assert!(app.transcript().is_empty());
+            assert!(app.waiting().is_empty(), "{:?}", app.waiting());
+            assert!(app.transcript().is_empty(), "{:?}", app.transcript());
             assert_eq!(app.prompt(), Prompt::Fresh);
         }
         assert_eq!(
@@ -344,14 +344,14 @@ mod tests
             Handled::Continue
         );
         assert_eq!(app.prompt(), Prompt::Continuing);
-        assert!(app.line().as_ref().is_empty());
+        assert!(app.line().as_ref().is_empty(), "{:?}", app.line().as_ref());
         assert!(
             app.waiting()
                 .iter()
                 .map(String::as_str)
                 .eq(["def kept = ("])
         );
-        assert!(app.transcript().is_empty());
+        assert!(app.transcript().is_empty(), "{:?}", app.transcript());
         for typed in "17) ;".chars() {
             assert_eq!(
                 app.handle(Key::Char(typed)).expect("typing succeeds"),
@@ -363,7 +363,7 @@ mod tests
             Handled::Continue
         );
         assert_eq!(app.prompt(), Prompt::Fresh);
-        assert!(app.waiting().is_empty());
+        assert!(app.waiting().is_empty(), "{:?}", app.waiting());
         assert_eq!(app.transcript().len(), 1_usize);
         assert_eq!(app.transcript()[0_usize].source, "def kept = (\n17) ;");
         for typed in "def abandoned = (".chars() {
@@ -384,8 +384,8 @@ mod tests
             app.handle(Key::Interrupt).expect("interrupting succeeds"),
             Handled::Continue
         );
-        assert!(app.line().as_ref().is_empty());
-        assert!(app.waiting().is_empty());
+        assert!(app.line().as_ref().is_empty(), "{:?}", app.line().as_ref());
+        assert!(app.waiting().is_empty(), "{:?}", app.waiting());
         assert_eq!(app.prompt(), Prompt::Fresh);
         assert_eq!(app.transcript().len(), 1_usize);
         assert_eq!(app.transcript()[0_usize].source, "def kept = (\n17) ;");

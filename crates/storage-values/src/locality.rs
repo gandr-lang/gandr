@@ -118,7 +118,8 @@ pub fn expected_chunk_bound(
     let kappa = u64::from(params.kappa());
     let cap = u64::from(params.cap());
 
-    // Twice any input fits in u128; narrowing before division rejects valid bounds.
+    // Twice any input fits in u128; narrowing before division rejects valid
+    // bounds.
     let twice = u128::from(depth).saturating_mul(2_u128);
     let Ok(path) = u64::try_from(twice.div_ceil(u128::from(kappa)))
     else {

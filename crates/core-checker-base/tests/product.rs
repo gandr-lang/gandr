@@ -311,8 +311,8 @@ fn what_the_product_cannot_read_it_refuses_by_name()
     let pair = arena.value_type_product(&[integer, unit]);
     let integral_type = identity(&mut arena, (pair, pair));
     // λ p. return pathProduct(p, p) at U (Path[.A = Type](Bool, Bool) →
-    // F Path[.A = Type](#{Bool, Bool}, #{Bool, Bool})): a path a parameter binds
-    // names no certificate.
+    // F Path[.A = Type](#{Bool, Bool}, #{Bool, Bool})): a path a parameter
+    // binds names no certificate.
     let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open = arena.value_path_product(parameter, parameter);
     let returned = arena.computation_return(open);
@@ -381,9 +381,10 @@ fn a_flow_product_synthesises_the_flow_between_its_pairs()
     let nested = arena.value_flow_product(stay, paired);
     let deep = arena.value_type_product(&[unit, pair]);
     let deepening = directed(&mut arena, (deep, deep));
-    // λ p. return flowProduct(p, stay(Unit)) at U (Flow[.A = Type](Bool, Bool) →
-    // F Flow[.A = Type](#{Bool, Unit}, #{Bool, Unit})): a flow a parameter binds is
-    // a flow, unlike a path, which must name a certificate.
+    // λ p. return flowProduct(p, stay(Unit)) at U (Flow[.A = Type](Bool, Bool)
+    // → F Flow[.A = Type](#{Bool, Unit}, #{Bool, Unit})): a flow a
+    // parameter binds is a flow, unlike a path, which must name a
+    // certificate.
     let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open = arena.value_flow_product(parameter, stay);
     let returned = arena.computation_return(open);

@@ -868,6 +868,10 @@ impl Store
         }
         // A record key sorts as its bytes, so the index is spelled most
         // significant byte first and the pieces stand in their order.
+        #[expect(
+            clippy::big_endian_bytes,
+            reason = "a record key sorts as its bytes, so its index is big-endian"
+        )]
         let keys: Vec<[u8; 8]> = (0_u64 ..)
             .take(pointers.len())
             .map(u64::to_be_bytes)

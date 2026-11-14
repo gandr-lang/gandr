@@ -801,7 +801,7 @@ fn every_precedence_refusal_renders_what_it_names() -> Result<(), Box<dyn Error>
         refused.source().map(ToString::to_string)
     );
     assert!(PrecDagError::Inconsistent.source().is_none());
-    assert!(!PrecDagError::Inconsistent.to_string().is_empty());
+    assert_ne!(PrecDagError::Inconsistent.to_string(), "");
 
     let (dag, [loose, left_mid, right_mid, tight]) = diamond()?;
     assert!(bool::from(

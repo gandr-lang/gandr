@@ -461,8 +461,9 @@ impl<'form> Unstated<'form>
                     if let Some(operation) = operations.get(name) {
                         for (arg, port) in args.clone().zip(&operation.inputs) {
                             // The fields written over the argument: a variable
-                            // under one per variable the port binds is a term of
-                            // the port's sort, one under fewer the port's own.
+                            // under one per variable the port binds is a term
+                            // of the port's sort,
+                            // one under fewer the port's own.
                             let mut held = arg;
                             let mut fields = 0_usize;
                             loop {
@@ -1677,8 +1678,8 @@ impl Typer<'_>
             );
             scope.binders.truncate(base);
         }
-        // A rule a derived rule declaration states is a law no component states:
-        // its nodes read at the sorts the theory writes.
+        // A rule a derived rule declaration states is a law no component
+        // states: its nodes read at the sorts the theory writes.
         for derived in &written.derived {
             let unstated = Unstated::of(&presented, &derived.left.0);
             for &(ref side, ref nodes) in [&derived.left, &derived.right] {

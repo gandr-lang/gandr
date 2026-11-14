@@ -1272,8 +1272,10 @@ mod tests
             table.role_of(past),
             "the first id past the table is refused"
         );
-        assert!(molds_of(&pbg, TileLabel("number"), NamedKind("absent-kind")).is_empty());
-        assert!(molds_of(&pbg, TileLabel("absent-label"), NamedKind("number")).is_empty());
+        let absent_kind = molds_of(&pbg, TileLabel("number"), NamedKind("absent-kind"));
+        assert!(absent_kind.is_empty(), "{absent_kind:?}");
+        let absent_label = molds_of(&pbg, TileLabel("absent-label"), NamedKind("number"));
+        assert!(absent_label.is_empty(), "{absent_label:?}");
     }
 
     #[test]

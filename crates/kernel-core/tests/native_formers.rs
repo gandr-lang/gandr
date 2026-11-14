@@ -140,7 +140,7 @@ fn nominal_identity_and_constructor_refusals()
     let admitted = environment
         .add_decl(declaration)
         .expect("matching nominal constructor");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -256,7 +256,7 @@ fn data_parameters_preserve_open_indices()
     let admitted = environment
         .add_decl(declaration)
         .expect("ambient type and term arguments retain their scopes");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 }
 
 #[test]
@@ -476,9 +476,10 @@ fn an_indexed_case_prunes_a_constructor_at_an_apart_index()
     let (nat, admitted) = vector(&mut environment, Stated::Successor);
     let family = admitted.expect("a vector over its length").position();
     // `case v { Nil => λe. case e {}; Cons(n, x, xs) => λe. return n }`:
-    // `Nil`'s branch owes `Path[.A = Nat](Z, at)`, absurd exactly where `at` is a
-    // successor, and `Cons` at `v = Cons(Z, (), Nil)` answers its length field
-    // once the case supplies its equation, read back as `Z` when `answered`.
+    // `Nil`'s branch owes `Path[.A = Nat](Z, at)`, absurd exactly where `at` is
+    // a successor, and `Cons` at `v = Cons(Z, (), Nil)` answers its length
+    // field once the case supplies its equation, read back as `Z` when
+    // `answered`.
     let at =
         |environment: &mut Environment, (successor, equations): (bool, usize), answered: bool| {
             let mut staging = environment.stage();
@@ -1215,7 +1216,7 @@ fn empty_nominal_case_eliminates_only_an_empty_declaration()
     let admitted = environment
         .add_decl(declaration)
         .expect("empty case checks under its impossible argument");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 }
 
 #[test]
@@ -1747,7 +1748,7 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
     else {
         panic!("nominal signature was not decoded");
     };
-    assert!(parameters.is_empty());
+    assert_eq!(parameters.as_slice(), []);
     assert!(indices.is_empty() && results.is_empty());
     assert_eq!(constructors.len(), 1);
     assert_eq!(
@@ -3309,9 +3310,9 @@ fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
 fn a_word_written_as_a_transport_path_is_that_path()
 {
     let mut environment = one_loop();
-    // `Path[.A = Path[.A = S](Base, Base)](⟨loop then ε⟩, right)` at reflexivity on
-    // `right`, the loop transported along the empty word, written as a
-    // constructor of the words, whose type is the words' own.
+    // `Path[.A = Path[.A = S](Base, Base)](⟨loop then ε⟩, right)` at
+    // reflexivity on `right`, the loop transported along the empty word,
+    // written as a constructor of the words, whose type is the words' own.
     let mut composes_to = |right: Built| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3366,8 +3367,9 @@ fn a_word_appends_on_its_first_word()
         Inverted,
     }
     let mut environment = one_loop();
-    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base, Base)](⟨w
-    // then p⟩, right)` at reflexivity on `right`, `p` moved along nothing.
+    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base,
+    // Base)](⟨w then p⟩, right)` at reflexivity on `right`, `p` moved along
+    // nothing.
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3438,9 +3440,9 @@ fn a_word_of_two_letters_moves_a_path_whole()
         Left,
     }
     let mut environment = one_loop();
-    // `Path[.A = Path[.A = S](Base, Base)](tr(family, loop ∷ loop ∷ ε, ε), right)`
-    // at reflexivity on `right`: the family's endpoints are fixed and moving,
-    // so the empty path moves along the whole word in one step.
+    // `Path[.A = Path[.A = S](Base, Base)](tr(family, loop ∷ loop ∷ ε, ε),
+    // right)` at reflexivity on `right`: the family's endpoints are fixed
+    // and moving, so the empty path moves along the whole word in one step.
     let mut moves_to = |moving: Moving, tag: usize| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3588,8 +3590,8 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
     }
     let mut environment = one_loop();
     // `zero : U F Path[.A = S](Base, Base)`, `thunk (return ε)`, and `same : U
-    // ((p : Path[.A = S](Base, Base)) → F Path[.A = S](Base, Base))`, `thunk (λp.
-    // return p)`: two definitions only an unfolding reads through.
+    // ((p : Path[.A = S](Base, Base)) → F Path[.A = S](Base, Base))`, `thunk
+    // (λp. return p)`: two definitions only an unfolding reads through.
     let mut define = |body: fn(&mut TermArena, ValueTypeId) -> (ValueTypeId, ValueId)| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3620,8 +3622,8 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
         let pi = arena.comp_type_pi(at_point, returner);
         (arena.value_type_thunk(pi), arena.value_thunk(lambda))
     });
-    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base, Base)](⟨w
-    // then q⟩, q)` at reflexivity on `q`.
+    // `(p : Path[.A = S](Base, Base)) → F Path[.A = Path[.A = S](Base,
+    // Base)](⟨w then q⟩, q)` at reflexivity on `q`.
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -3710,10 +3712,10 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         let forced = arena.computation_force(function);
         arena.value_thunk(forced)
     });
-    // `inner = thunk (return here(Base))` and `outer = thunk (tr(v. Path[.A = S](v,
-    // v), ⟨force inner⟩, ε))`: both ends of the motive move, so no append row
-    // reads the transport, and it reduces only once the run goes on through
-    // `inner`.
+    // `inner = thunk (return here(Base))` and `outer = thunk (tr(v. Path[.A =
+    // S](v, v), ⟨force inner⟩, ε))`: both ends of the motive move, so no
+    // append row reads the transport, and it reduces only once the run goes
+    // on through `inner`.
     let inner = define(&|arena, _at_point| {
         let point = build(arena, Built::Point);
         let reflexive = arena.value_here(point);
@@ -3832,10 +3834,10 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     let declared = arena.value_type_thunk(arrow);
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
     let _spin = environment.add_decl(staged).expect("spin checks");
-    // `stated : (n : N) → F Path[.A = Path[.A = S](Base, Base)](loop ∷ ⟨spin(n)⟩,
-    // loop ∷ ⟨spin(n)⟩)`, and its call where `⟨spin(Sc(n))⟩` stands at
-    // both ends: the computation types meet at the mode switch, where
-    // the forced reading reads both endpoints.
+    // `stated : (n : N) → F Path[.A = Path[.A = S](Base, Base)](loop ∷
+    // ⟨spin(n)⟩, loop ∷ ⟨spin(n)⟩)`, and its call where `⟨spin(Sc(n))⟩`
+    // stands at both ends: the computation types meet at the mode switch,
+    // where the forced reading reads both endpoints.
     let path_at = |arena: &mut TermArena, successor: bool| {
         let nat = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
         let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);

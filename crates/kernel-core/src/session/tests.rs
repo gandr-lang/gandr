@@ -185,7 +185,8 @@ fn session_codes_are_closed_and_contractive()
         check_closed_value(&mut arena, reflexive, classifier),
         Ok(())
     );
-    // A surrounding function binder must not close an open session payload code.
+    // A surrounding function binder must not close an open session payload
+    // code.
     let variable = arena.value_variable(gandr_kernel_term::DeBruijnIndex::from(0_u32));
     let open = arena.value_type_element(variable, gandr_kernel_strata::Level::zero());
     let quoted = code(
@@ -477,7 +478,8 @@ fn session_flows_persist_and_refuse_by_family()
     let admitted = environment
         .add_decl(staged)
         .expect("a widening simulation admits at Flow_U");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    let axioms = environment.audit(admitted).axioms().to_vec();
+    assert!(axioms.is_empty(), "{axioms:?}");
 
     // The reverse request offers a label the narrower protocol never selects.
     let before = environment.arena().watermark();

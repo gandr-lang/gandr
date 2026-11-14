@@ -4988,8 +4988,8 @@ where
         )
     };
     let reflexive = matches!(source.read(value), Former::Here(_));
-    // A nullary constructor at `Path[.A = A](a, a)` is the empty word of the words
-    // at a looped point `a`, which an inverse moves there.
+    // A nullary constructor at `Path[.A = A](a, a)` is the empty word of the
+    // words at a looped point `a`, which an inverse moves there.
     let empty = matches!(source.read(value), Former::Constructor { arity, .. } if usize::from(arity) == 0_usize);
     // The map applied and returned, as an action's endpoints are: `f(x)`.
     let image = |node: S::Node| {

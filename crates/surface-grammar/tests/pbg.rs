@@ -480,7 +480,7 @@ fn grouped_forms_preserve_branch_and_rule_order() -> Result<(), Box<dyn Error>>
             .collect::<Vec<_>>()
             .as_slice()
     );
-    assert!(pbg.adaptations().is_empty());
+    assert_eq!(pbg.adaptations(), []);
     for (label, owner) in [("a", "first"), ("t", "other"), ("d", "last")] {
         let &[mold] = pbg.candidates(TileLabel(label))
         else {

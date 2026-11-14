@@ -588,7 +588,8 @@ fn one_way_classes_preserve_leaves()
     admit(&mut arena, projection).expect("terminal projection");
     computes(&mut arena, projection, sample_pair, unit);
 
-    // Two equal-typed input positions must remain distinct in symbolic coverage.
+    // Two equal-typed input positions must remain distinct in symbolic
+    // coverage.
     let identity = returning(&mut arena, variable);
     let first = arena.value_variable(DeBruijnIndex::from(1_u32));
     let output = arena.value_tuple(&[first, variable]);
@@ -1417,8 +1418,8 @@ fn directed_j_rides_the_telescope()
     let string = arena.value_type_base(BaseType::String);
     let here = arena.value_literal(Literal::Text(StringLiteral::new("here".into())));
     let there = arena.value_literal(Literal::Text(StringLiteral::new("there".into())));
-    // Π (y : String). Π (z : Flow[.A = String](here, y)). F Flow[.A = String](here,
-    // y).
+    // Π (y : String). Π (z : Flow[.A = String](here, y)). F Flow[.A =
+    // String](here, y).
     let point = arena.value_variable(DeBruijnIndex::from(0_u32));
     let family = arena.value_type_flow(string, here, point);
     let outer = arena.value_variable(DeBruijnIndex::from(1_u32));

@@ -613,7 +613,7 @@ fn rctx_steps_cross_adjacent_symbols() -> Result<(), Box<dyn Error>>
 
     let paren = paren_pbg()?;
     let open = paren.mold(only_mold(&paren, TileLabel("(")))?;
-    assert!(paren.step(open.rctx, Dir::Left)?.is_empty());
+    assert_eq!(paren.step(open.rctx, Dir::Left)?, []);
     assert_eq!(
         vec![StepSym::Sort(Sort::Expression)],
         paren
@@ -636,7 +636,7 @@ fn same_form_adjacency_is_the_eq_relation() -> Result<(), Box<dyn Error>>
 
     // A one-tile form has no same-form partner.
     let (infix, _base) = synthetic_pbg(PrecName("base"))?;
-    assert!(infix.adjacencies().is_empty());
+    assert_eq!(infix.adjacencies(), []);
 
     // The comparison table's `≐` face is that pair.
     let index = walk_index(&paren)?;
@@ -677,7 +677,7 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
             .expect("the drop count fits");
     }
     assert!(dropped > 0, "some mold needs an open form");
-    assert!(pbg.fresh_candidates(TileLabel("no such label")).is_empty());
+    assert_eq!(pbg.fresh_candidates(TileLabel("no such label")), []);
     Ok(())
 }
 
@@ -846,7 +846,7 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
     assert!(!bool::from(pbg.mold_is_form_first(past)));
     assert!(!bool::from(pbg.mold_is_form_last(past)));
     assert!(!bool::from(pbg.mold_has_required_tail(past)));
-    assert!(pbg.mold_successors(past).is_empty());
+    assert_eq!(pbg.mold_successors(past), []);
     for &(left, right) in adjacencies {
         assert!(bool::from(pbg.molds_adjacent(left, right)));
         assert_eq!(

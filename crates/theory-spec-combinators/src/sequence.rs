@@ -315,14 +315,14 @@ mod tests
         assert_eq!(at(0), [1, 2, 3]);
         assert_eq!(at(1), [2, 3]);
         assert_eq!(at(2), [3]);
-        assert!(at(3).is_empty());
-        assert!(at(5).is_empty());
+        assert_eq!(at(3), []);
+        assert_eq!(at(5), []);
         for position in 0 ..= 5 {
             assert!(core::ptr::eq(at(position).as_ptr_range().end, end));
         }
         let empty: [u8; 0] = [];
-        assert!(appended(&empty, Mark::from(0)).is_empty());
-        assert!(appended(&empty, Mark::of(&items)).is_empty());
+        assert_eq!(appended(&empty, Mark::from(0)), []);
+        assert_eq!(appended(&empty, Mark::of(&items)), []);
     }
 
     #[test]
@@ -333,7 +333,7 @@ mod tests
         for length in 0 ..= LONGEST {
             let mark = Mark::of(&items);
             assert_eq!(usize::from(mark), length);
-            assert!(appended(&items, mark).is_empty());
+            assert_eq!(appended(&items, mark), []);
             for position in 0 ..= length.saturating_add(2) {
                 let suffix = appended(&items, Mark::from(position));
                 assert_eq!(suffix.len(), length.saturating_sub(position));

@@ -390,7 +390,8 @@ impl Session
         mut id: NodeId,
     ) -> Result<(NodeId, &Node), TypeError>
     {
-        // At most Var -> Mu -> action; construction rejects administrative cycles.
+        // At most Var -> Mu -> action; construction rejects administrative
+        // cycles.
         for _step in 0 .. 3_u8 {
             let node = self.node(id)?;
             match node {

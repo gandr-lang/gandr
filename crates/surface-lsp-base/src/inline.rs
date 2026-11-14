@@ -1608,7 +1608,7 @@ fn candidates(
         // written text; nothing when the written text already fills the slot.
         let rest = slotted.map(|mut material| {
             let fit = subtract(&mut material, written);
-            let after = material.get(1 ..).map(<[Part]>::to_vec).unwrap_or_default();
+            let after = material.get(1 ..).map_or_default(<[Part]>::to_vec);
             if material.is_empty() {
                 Rest::Written
             }

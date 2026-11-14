@@ -805,10 +805,14 @@ mod tests
         )];
         let generalization = generalized(&[&uniform, &uniform]);
         assert_eq!(uniform.as_slice(), generalization.patterns.as_slice());
-        assert!(generalization.points.is_empty());
+        assert!(
+            generalization.points.is_empty(),
+            "{:?}",
+            generalization.points
+        );
         let empty = generalized(&[&[], &[]]);
-        assert!(empty.patterns.is_empty());
-        assert!(empty.points.is_empty());
+        assert!(empty.patterns.is_empty(), "{:?}", empty.patterns);
+        assert!(empty.points.is_empty(), "{:?}", empty.points);
     }
 
     /// A count of `Succ` constructors.

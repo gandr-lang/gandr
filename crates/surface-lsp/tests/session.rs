@@ -1700,7 +1700,8 @@ fn an_endpoint_loop_publishes_its_kernel_decline_6155()
     else {
         panic!("the endpoint loop publishes before and after admission: {publications:?}");
     };
-    assert!(published(before).is_empty());
+    let quiet = published(before);
+    assert!(quiet.is_empty(), "{quiet:?}");
     let reported = published(after);
     let expected = format!(
         "{}: settled `follow` at 1136..1401: states checks owing 0; produced checks owing 0; no kernel image: EndpointLoop (unimplemented, #6099)",
@@ -1825,7 +1826,8 @@ mod sweeps
                 else {
                     panic!("every corpus path is carried through the pipeline");
                 };
-                // An importer's text is its component's; the editor holds its own.
+                // An importer's text is its component's; the editor holds its
+                // own.
                 let own = <&str>::from(text)
                     .get(usize::from(base) ..)
                     .expect("a source's own text starts inside its unit's");
@@ -1880,7 +1882,8 @@ mod sweeps
         let (served, written) = session(&messages);
         assert_eq!(served, Served::Clean, "the session ends cleanly");
         // An unused binder's and an unused import's hints are the editor's own,
-        // read off the composition; the walk reports the model's diagnostics alone.
+        // read off the composition; the walk reports the model's diagnostics
+        // alone.
         let mut publications = BTreeMap::new();
         for message in &written {
             if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {

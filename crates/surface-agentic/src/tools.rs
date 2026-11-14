@@ -1206,8 +1206,7 @@ pub fn prepared(
     )?;
     let mut unvisited: Vec<&Value> = symbols
         .as_array()
-        .map(|top| top.iter().rev().collect())
-        .unwrap_or_default();
+        .map_or_default(|top| top.iter().rev().collect());
     let mut position = None;
     while let Some(symbol) = unvisited.pop() {
         if symbol.get("name").and_then(Value::as_str) == Some(entry.as_str()) {

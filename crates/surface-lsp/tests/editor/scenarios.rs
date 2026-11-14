@@ -562,8 +562,9 @@ fn owners(
                 let dotted = after_dot.take();
                 match parent.map(|parent| (parent, parent.label())) {
                     Some((parent, NodeLabel::Meld(form))) if rule(form) == rule(mold) => {
-                        // A positional label, the number after a form's `.`, names
-                        // its entry as a written label does.
+                        // A positional label, the number after a form's `.`,
+                        // names its entry as a written
+                        // label does.
                         if label == "." {
                             after_dot = Some(range(parent));
                         }
@@ -1186,7 +1187,7 @@ fn publications(messages: &[Value]) -> Vec<Vec<Value>>
             message
                 .pointer("/params/diagnostics")
                 .and_then(Value::as_array)
-                .map(|diagnostics| {
+                .map_or_default(|diagnostics| {
                     diagnostics
                         .iter()
                         .map(|diagnostic| {
@@ -1197,7 +1198,6 @@ fn publications(messages: &[Value]) -> Vec<Vec<Value>>
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         })
         .collect()
 }

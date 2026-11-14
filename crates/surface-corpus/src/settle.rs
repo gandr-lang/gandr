@@ -659,6 +659,7 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn admitted(&self) -> &Maybe<Vec<SurfaceName<'source>>, admitted::Absent>
     {
         &self.admitted
@@ -670,6 +671,7 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn discharged(
         &self
     ) -> &Maybe<(Vec<SurfaceName<'source>>, Filler), discharged::Absent>
@@ -3156,7 +3158,7 @@ mod tests
             resumed.produced()
         );
         assert_eq!(usize::from(resumed.owed()), 0_usize);
-        assert!(resumed.waits().is_empty());
+        assert_eq!(resumed.waits(), []);
     }
 
     /// #2356: a law a module admits at a primitive carrier crosses as the

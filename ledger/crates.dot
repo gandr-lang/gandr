@@ -117,6 +117,7 @@ digraph crates {
     "workflow-hotpath-guard";
     "workflow-lane-budget";
     "workflow-ledger-tasks";
+    "workflow-parser-report";
     "workflow-prose";
     "workflow-spec-cost";
     "workflow-sweep";
@@ -584,6 +585,14 @@ digraph crates {
   "workflow-ledger-tasks" -> "surface-parser";
   "workflow-ledger-tasks" -> "surface-syntax";
   "workflow-ledger-tasks" -> "theory-graphs";
+  "workflow-parser-report" -> "core-fork";
+  "workflow-parser-report" -> "surface-grammar";
+  "workflow-parser-report" -> "surface-lsp";
+  "workflow-parser-report" -> "surface-parser";
+  "workflow-parser-report" -> "surface-session";
+  "workflow-parser-report" -> "surface-syntax";
+  "workflow-parser-report" -> "workflow-ledger-tasks";
+  "workflow-parser-report" -> "workflow-sweep";
   "workflow-prose" -> "workflow-debt-ledger";
   "workflow-spec-cost" -> "workflow-test-timing";
   "workflow-sweep" -> "surface-format";

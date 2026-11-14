@@ -2252,7 +2252,7 @@ fn congruences_preserve_formers_and_child_order()
         };
         assert_ne!(original, rewritten);
         assert_eq!(Some(&expected), engine.arena.value(rewritten));
-        assert!(engine.results.is_empty());
+        assert!(engine.results.is_empty(), "{:?}", engine.results);
     }
     for (original, unchanged, changed, expected) in [
         (
@@ -2318,7 +2318,7 @@ fn congruences_preserve_formers_and_child_order()
         };
         assert_ne!(original, rewritten);
         assert_eq!(Some(&expected), engine.arena.computation(rewritten));
-        assert!(engine.results.is_empty());
+        assert!(engine.results.is_empty(), "{:?}", engine.results);
     }
     for (original, unchanged, changed, expected) in [
         (
@@ -2382,7 +2382,7 @@ fn congruences_preserve_formers_and_child_order()
         };
         assert_ne!(original, rewritten);
         assert_eq!(Some(&expected), engine.arena.value_type(rewritten));
-        assert!(engine.results.is_empty());
+        assert!(engine.results.is_empty(), "{:?}", engine.results);
     }
     for (original, unchanged, changed, expected) in [
         (
@@ -2437,7 +2437,7 @@ fn congruences_preserve_formers_and_child_order()
         };
         assert_ne!(original, rewritten);
         assert_eq!(Some(&expected), engine.arena.comp_type(rewritten));
-        assert!(engine.results.is_empty());
+        assert!(engine.results.is_empty(), "{:?}", engine.results);
     }
     let quoted_value = arena.value_quote(u0);
     let quoted_comp = arena.value_quote_computation(l0);
@@ -4026,8 +4026,8 @@ fn an_environment_substitution_reaches_into_types()
         (integer, constant, Some(1)),
         "a covered index is its entry and one past the environment is lowered"
     );
-    // `Π (_ : Integer). F Path[.A = Integer](#0, #1)`: the codomain's own binder
-    // stands, and the covered index under it is the entry.
+    // `Π (_ : Integer). F Path[.A = Integer](#0, #1)`: the codomain's own
+    // binder stands, and the covered index under it is the entry.
     let under = arena.value_type_path(integer, zero, one);
     let returns = arena.comp_type_returner(under);
     let pi = arena.comp_type_pi(integer, returns);

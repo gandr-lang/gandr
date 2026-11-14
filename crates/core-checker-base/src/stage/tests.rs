@@ -185,9 +185,13 @@ fn power_is_admitted_and_executed()
         let mut environment = Environment::new();
         let admitted = residual.admit(&mut environment).unwrap();
         let audit = environment.audit(admitted.definition);
-        assert!(audit.unchecked_admissions().is_empty());
+        assert!(
+            audit.unchecked_admissions().is_empty(),
+            "{:?}",
+            audit.unchecked_admissions()
+        );
         if exponent == 0 {
-            assert!(audit.axioms().is_empty());
+            assert!(audit.axioms().is_empty(), "{:?}", audit.axioms());
         }
         else {
             assert_eq!(audit.axioms(), &[admitted.multiplication.position()]);

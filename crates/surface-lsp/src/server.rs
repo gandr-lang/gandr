@@ -9186,9 +9186,7 @@ fn initial_settings(params: &Value) -> Settings
 /// trivial.
 fn initial_markup(params: &Value) -> Markup
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.markup())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.markup())
 }
 
 /// Whether the client sending the `initialize` parameters `params` takes a
@@ -9198,9 +9196,7 @@ fn initial_markup(params: &Value) -> Markup
 /// trivial.
 fn initial_links(params: &Value) -> Linked
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.links())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.links())
 }
 
 /// Whether the client `initialize` names in `params` takes a signature's
@@ -9211,9 +9207,7 @@ fn initial_links(params: &Value) -> Linked
 /// trivial.
 fn initial_offsets(params: &Value) -> LabelOffsets
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.label_offsets())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.label_offsets())
 }
 
 /// Whether the client `initialize` names in `params` shows a completion's
@@ -9223,9 +9217,7 @@ fn initial_offsets(params: &Value) -> LabelOffsets
 /// trivial.
 fn initial_detailing(params: &Value) -> LabelsDetailed
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.label_details())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.label_details())
 }
 
 /// Whether the client `initialize` names in `params` takes a completion's
@@ -9235,9 +9227,7 @@ fn initial_detailing(params: &Value) -> LabelsDetailed
 /// trivial.
 fn initial_snipping(params: &Value) -> TakesSnippets
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.snippets())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.snippets())
 }
 
 /// Whether the client `initialize` names in `params` shows the text a fold
@@ -9247,9 +9237,7 @@ fn initial_snipping(params: &Value) -> TakesSnippets
 /// trivial.
 fn initial_collapsing(params: &Value) -> FoldsCollapsed
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.collapsed_folds())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.collapsed_folds())
 }
 
 /// Whether the client `initialize` names in `params` asks for an inlay hint
@@ -9266,9 +9254,7 @@ fn initial_collapsing(params: &Value) -> FoldsCollapsed
 /// - witness: `server::tests::an_inlay_hint_links_the_families_its_type_names_764`
 fn initial_deferring(params: &Value) -> ResolvesHintLocations
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.resolves_hint_locations())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.resolves_hint_locations())
 }
 
 /// Whether the client `initialize` names in `params` watches files for the
@@ -9278,9 +9264,7 @@ fn initial_deferring(params: &Value) -> ResolvesHintLocations
 /// trivial.
 fn initial_watching(params: &Value) -> WatchesFiles
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.watches_files())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.watches_files())
 }
 
 /// Whether the client `initialize` names in `params` shows the progress of
@@ -9290,9 +9274,7 @@ fn initial_watching(params: &Value) -> WatchesFiles
 /// trivial.
 fn initial_progress(params: &Value) -> ShowsProgress
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.shows_progress())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.shows_progress())
 }
 
 /// Which answers the client `initialize` names in `params` requests again
@@ -9302,9 +9284,7 @@ fn initial_progress(params: &Value) -> ShowsProgress
 /// trivial.
 fn initial_refreshing(params: &Value) -> Refreshing
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.refreshing())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.refreshing())
 }
 
 /// How much of its exchanges the client `initialize` names in `params` has
@@ -9314,9 +9294,7 @@ fn initial_refreshing(params: &Value) -> Refreshing
 /// trivial.
 fn initial_trace(params: &Value) -> Trace
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.trace())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.trace())
 }
 
 /// Whether the client `initialize` names in `params` answers a pull of its
@@ -9326,9 +9304,7 @@ fn initial_trace(params: &Value) -> Trace
 /// trivial.
 fn initial_pulling(params: &Value) -> PullsConfiguration
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.pulls_configuration())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.pulls_configuration())
 }
 
 /// Whether the client `initialize` names in `params` applies an edit the
@@ -9338,9 +9314,7 @@ fn initial_pulling(params: &Value) -> PullsConfiguration
 /// trivial.
 fn initial_applying(params: &Value) -> AppliesEdits
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.applies_edits())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.applies_edits())
 }
 
 /// How the client `initialize` names in `params` takes a workspace edit; by
@@ -9350,9 +9324,7 @@ fn initial_applying(params: &Value) -> AppliesEdits
 /// trivial.
 fn initial_editing(params: &Value) -> EditsShaped
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.edits_shaped())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.edits_shaped())
 }
 
 /// Whether the client `initialize` names in `params` shows a document the
@@ -9362,9 +9334,7 @@ fn initial_editing(params: &Value) -> EditsShaped
 /// trivial.
 fn initial_showing(params: &Value) -> ShowsDocuments
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.shows_documents())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.shows_documents())
 }
 
 /// Whether the client `initialize` names in `params` draws the kernel tiers
@@ -9374,9 +9344,7 @@ fn initial_showing(params: &Value) -> ShowsDocuments
 /// trivial.
 fn initial_tiering(params: &Value) -> DrawsTiers
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.draws_tiers())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.draws_tiers())
 }
 
 /// Whether the client `initialize` names in `params` answers a request for
@@ -9386,9 +9354,7 @@ fn initial_tiering(params: &Value) -> DrawsTiers
 /// trivial.
 fn initial_listing(params: &Value) -> ListsFolders
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.lists_folders())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.lists_folders())
 }
 
 /// Whether the client `initialize` names in `params` shows the text of a
@@ -9398,9 +9364,7 @@ fn initial_listing(params: &Value) -> ListsFolders
 /// trivial.
 fn initial_viewer(params: &Value) -> ViewsContent
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.views_content())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.views_content())
 }
 
 /// Whether the client `initialize` names in `params` pulls a document's
@@ -9410,9 +9374,7 @@ fn initial_viewer(params: &Value) -> ViewsContent
 /// trivial.
 fn initial_pulled(params: &Value) -> PullsDiagnostics
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.pulls_diagnostics())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.pulls_diagnostics())
 }
 
 /// Keep the checkpoints of `document`, the copy at `uri`, in `saved`, its owed
@@ -9516,9 +9478,7 @@ fn unread_settings(error: &serde_json::Error) -> Outgoing
 /// trivial.
 fn initial_roots(params: &Value) -> Vec<PathBuf>
 {
-    InitializeParams::deserialize(params)
-        .map(|params| params.roots())
-        .unwrap_or_default()
+    InitializeParams::deserialize(params).map_or_default(|params| params.roots())
 }
 
 quenchant_shape::reason_enum! {
@@ -11346,25 +11306,20 @@ mod tests
         let names = |answer: &Value| -> Vec<(String, u64, String)> {
             answer[0_usize]["result"]
                 .as_array()
-                .map(|found| {
+                .map_or_default(|found| {
                     found
                         .iter()
                         .map(|symbol| {
                             (
-                                symbol["name"]
-                                    .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_default(),
+                                symbol["name"].as_str().map_or_default(String::from),
                                 symbol["kind"].as_u64().unwrap_or_default(),
                                 symbol["location"]["uri"]
                                     .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_default(),
+                                    .map_or_default(String::from),
                             )
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             names(&search(&mut server, "nat")),
@@ -11393,22 +11348,18 @@ mod tests
         let held = |answer: &Value| -> Vec<(String, u64, Option<String>)> {
             answer[0_usize]["result"]
                 .as_array()
-                .map(|found| {
+                .map_or_default(|found| {
                     found
                         .iter()
                         .map(|symbol| {
                             (
-                                symbol["name"]
-                                    .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_default(),
+                                symbol["name"].as_str().map_or_default(String::from),
                                 symbol["kind"].as_u64().unwrap_or_default(),
                                 symbol["containerName"].as_str().map(String::from),
                             )
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             held(&search(&mut server, "mono")),
@@ -11485,25 +11436,20 @@ mod tests
                 "params": {"query": query}});
             send(server, Json(&request.to_string()))[0_usize]["result"]
                 .as_array()
-                .map(|found| {
+                .map_or_default(|found| {
                     found
                         .iter()
                         .map(|symbol| {
                             (
-                                symbol["name"]
-                                    .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_default(),
+                                symbol["name"].as_str().map_or_default(String::from),
                                 symbol["location"]["uri"]
                                     .as_str()
-                                    .map(String::from)
-                                    .unwrap_or_default(),
+                                    .map_or_default(String::from),
                                 symbol["location"]["range"].clone(),
                             )
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         };
         let at = |line: i32, start: i32, end: i32| {
             serde_json::json!({"start": {"line": line, "character": start},
@@ -11601,8 +11547,8 @@ mod tests
                 .flatten()
                 .map(|item| {
                     (
-                        item["uri"].as_str().map(String::from).unwrap_or_default(),
-                        item["kind"].as_str().map(String::from).unwrap_or_default(),
+                        item["uri"].as_str().map_or_default(String::from),
+                        item["kind"].as_str().map_or_default(String::from),
                         item["items"]
                             .as_array()
                             .into_iter()
@@ -11779,7 +11725,7 @@ mod tests
                 .flatten()
                 .map(|item| {
                     (
-                        item["uri"].as_str().map(String::from).unwrap_or_default(),
+                        item["uri"].as_str().map_or_default(String::from),
                         item["items"]
                             .as_array()
                             .into_iter()
@@ -11886,7 +11832,7 @@ mod tests
                     "position": {"line": line, "character": character}}});
             send(server, Json(&request.to_string()))[0_usize]["result"]["items"]
                 .as_array()
-                .map(|items| {
+                .map_or_default(|items| {
                     items
                         .iter()
                         .filter(|item| item["label"] == "faraway")
@@ -11897,7 +11843,6 @@ mod tests
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             offered(&mut server, 2_i32, 13_i32),
@@ -11980,7 +11925,7 @@ mod tests
                 .flatten()
                 .find(|message| message["id"] == 2_i32)
                 .and_then(|answer| answer["result"].as_array().cloned())
-                .map(|actions| {
+                .map_or_default(|actions| {
                     actions
                         .into_iter()
                         .filter(|action| {
@@ -11990,7 +11935,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             ask(&mut server, 1_u32),
@@ -12386,15 +12330,12 @@ mod tests
         .unwrap_or(Value::Null);
         // A run lens names its command as it is listed; the references
         // lenses are those that carry data to resolve.
-        let lenses: Vec<Value> = listed
-            .as_array()
-            .map(|all| {
-                all.iter()
-                    .filter(|lens| lens.get("data").is_some())
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
+        let lenses: Vec<Value> = listed.as_array().map_or_default(|all| {
+            all.iter()
+                .filter(|lens| lens.get("data").is_some())
+                .cloned()
+                .collect()
+        });
         assert!(
             lenses.iter().all(|lens| lens.get("command").is_none()),
             "a listed references lens carries no command until it is resolved: {listed}"
@@ -12438,7 +12379,8 @@ mod tests
             if name == "invLooper" {
                 shown = Some(resolved.clone());
             }
-            // Each lens's line is named by the declaration it stands in (#2786).
+            // Each lens's line is named by the declaration it stands in
+            // (#2786).
             rows.push(format!(
                 "{}: {name}: {title}",
                 crate::anchor::anchored(
@@ -13310,7 +13252,7 @@ mod tests
             connected
                 .workspace
                 .accounted(&document)
-                .map(|(_, cards)| {
+                .map_or_default(|(_, cards)| {
                     cards
                         .iter()
                         .map(|card| {
@@ -13332,7 +13274,6 @@ mod tests
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             counts(&connected),
@@ -13817,14 +13758,13 @@ mod tests
                 .get(0)
                 .and_then(|answer| answer.get("result"))
                 .and_then(Value::as_array)
-                .map(|found| {
+                .map_or_default(|found| {
                     found
                         .iter()
                         .filter_map(|location| location.get("uri").and_then(Value::as_str))
                         .map(str::to_owned)
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let folders = |side: &str| {
             serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWorkspaceFolders",
@@ -14043,23 +13983,20 @@ mod tests
             (String::from(head), slot, arity, expected.map(String::from))
         };
         let rows = |answer: &Value| {
-            answer
-                .as_array()
-                .map(|rows| {
-                    rows.iter()
-                        .map(|row| {
-                            (
-                                String::from(row["head"].as_str().unwrap_or_default()),
-                                u32::try_from(row["slot"].as_u64().unwrap_or(u64::MAX))
-                                    .unwrap_or(u32::MAX),
-                                u32::try_from(row["arity"].as_u64().unwrap_or(u64::MAX))
-                                    .unwrap_or(u32::MAX),
-                                row["expected"].as_str().map(String::from),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
+            answer.as_array().map_or_default(|rows| {
+                rows.iter()
+                    .map(|row| {
+                        (
+                            String::from(row["head"].as_str().unwrap_or_default()),
+                            u32::try_from(row["slot"].as_u64().unwrap_or(u64::MAX))
+                                .unwrap_or(u32::MAX),
+                            u32::try_from(row["arity"].as_u64().unwrap_or(u64::MAX))
+                                .unwrap_or(u32::MAX),
+                            row["expected"].as_str().map(String::from),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
         };
         for (main, at, stacked) in [
             (
@@ -14963,22 +14900,19 @@ mod tests
                 "method": "workspace/didChangeWatchedFiles",
                 "params": {"changes": [{"uri": uri(file), "type": kind}]}});
             let published = send(server, Json(&notification.to_string()));
-            published
-                .as_array()
-                .map(|messages| {
-                    messages
-                        .iter()
-                        .map(|message| {
-                            (
-                                message["params"]["uri"].as_str().map(String::from),
-                                message["params"]["diagnostics"]
-                                    .as_array()
-                                    .map_or(0_usize, Vec::len),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
+            published.as_array().map_or_default(|messages| {
+                messages
+                    .iter()
+                    .map(|message| {
+                        (
+                            message["params"]["uri"].as_str().map(String::from),
+                            message["params"]["diagnostics"]
+                                .as_array()
+                                .map_or(0_usize, Vec::len),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
         };
         std::fs::write(
             directory.join("base.gandr"),
@@ -15224,7 +15158,7 @@ mod tests
                 "params": {"files": files}});
             send(server, Json(&notification.to_string()))
                 .as_array()
-                .map(|messages| {
+                .map_or_default(|messages| {
                     messages
                         .iter()
                         .map(|message| {
@@ -15237,7 +15171,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         std::fs::write(
             directory.join("later.gandr"),
@@ -15414,7 +15347,7 @@ mod tests
         let published = |server: &mut Connected, message: &Value| {
             send(server, Json(&message.to_string()))
                 .as_array()
-                .map(|messages| {
+                .map_or_default(|messages| {
                     messages
                         .iter()
                         .map(|message| {
@@ -15427,7 +15360,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let open = |file: &str, text: &str| {
             serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
@@ -15514,7 +15446,7 @@ mod tests
         let published = |server: &mut Connected, message: &Value| {
             send(server, Json(&message.to_string()))
                 .as_array()
-                .map(|messages| {
+                .map_or_default(|messages| {
                     messages
                         .iter()
                         .filter(|message| message["method"] == "textDocument/publishDiagnostics")
@@ -15526,7 +15458,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let open = |text: &str| {
             serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
@@ -15683,14 +15614,13 @@ mod tests
                 "version": 1_i32, "text": text}}});
             send(server, Json(&message.to_string()))
                 .as_array()
-                .map(|messages| {
+                .map_or_default(|messages| {
                     messages
                         .iter()
                         .filter_map(|message| message["method"].as_str().map(String::from))
                         .filter(|method| method.ends_with("/refresh"))
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let type_of_one = |server: &mut Connected| {
             let asked = serde_json::json!({"jsonrpc": "2.0", "id": 9_i32,
@@ -16756,7 +16686,7 @@ mod tests
         let hinted = |published: &Value, text: &str| {
             published[0]["params"]["diagnostics"]
                 .as_array()
-                .map(|diagnostics| {
+                .map_or_default(|diagnostics| {
                     diagnostics
                         .iter()
                         .filter(|diagnostic| diagnostic["code"] == "UnusedBinder")
@@ -16777,7 +16707,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let (uri, text) = corpus("pathological/control/capability-drop.gandr");
         assert_eq!(
@@ -16811,7 +16740,7 @@ mod tests
             let published = send(server, Json(&notification.to_string()));
             published[0]["params"]["diagnostics"]
                 .as_array()
-                .map(|diagnostics| {
+                .map_or_default(|diagnostics| {
                     diagnostics
                         .iter()
                         .filter(|diagnostic| diagnostic["code"] == "UnusedImport")
@@ -16826,7 +16755,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         assert_eq!(
             opened(&mut server, "model/cancellation/answered.gandr"),
@@ -16882,7 +16810,7 @@ mod tests
                 .flatten()
                 .find(|message| message["id"] == 2_i32)
                 .and_then(|answer| answer["result"].as_array().cloned())
-                .map(|actions| {
+                .map_or_default(|actions| {
                     actions
                         .into_iter()
                         .filter(|action| {
@@ -16892,7 +16820,6 @@ mod tests
                         })
                         .collect::<Vec<_>>()
                 })
-                .unwrap_or_default()
         };
         let lines = |from: u32, to: u32| {
             serde_json::json!({"range": {"start": {"line": from, "character": 0_u32},
@@ -17590,7 +17517,7 @@ mod tests
             };
             let outcome = server.handle(&exit);
             assert_eq!(outcome.flow, Flow::Exit(expected));
-            assert!(outcome.messages.is_empty());
+            assert!(outcome.messages.is_empty(), "{:?}", outcome.messages);
         }
     }
 
@@ -18230,8 +18157,7 @@ mod tests
             published
                 .pointer("/0/params/diagnostics/0/message")
                 .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_default()
+                .map_or_default(str::to_owned)
         };
         let hovered = |server: &mut Connected| {
             send(
@@ -19786,15 +19712,12 @@ mod tests
             "a cursor outside every proposal sees none: {outside}"
         );
         let lenses = asked(&workspace, Json("textDocument/codeLens"), Json(""));
-        let fills: Vec<&Value> = lenses
-            .as_array()
-            .map(|lenses| {
-                lenses
-                    .iter()
-                    .filter(|lens| lens.get("data").is_none())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let fills: Vec<&Value> = lenses.as_array().map_or_default(|lenses| {
+            lenses
+                .iter()
+                .filter(|lens| lens.get("data").is_none())
+                .collect()
+        });
         assert_eq!(
             fills
                 .iter()
@@ -20436,15 +20359,14 @@ mod tests
         let runs: Vec<&Value> = listed
             .pointer("/0/result")
             .and_then(Value::as_array)
-            .map(|lenses| {
+            .map_or_default(|lenses| {
                 lenses
                     .iter()
                     .filter(|lens| {
                         lens.pointer("/command/command") == Some(&serde_json::json!("gandr.run"))
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         let lens = |line: u32, start: u32, end: u32| {
             serde_json::json!({"range": {"start": at(line, start), "end": at(line, end)},
                 "command": {"title": "Run", "command": "gandr.run",

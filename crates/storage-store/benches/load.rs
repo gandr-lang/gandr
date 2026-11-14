@@ -389,8 +389,7 @@ impl Substrate
     fn of(directory: &Path) -> Self
     {
         let filesystem = nix::sys::statfs::statfs(directory)
-            .map(|stat| String::from(stat.filesystem_type_name()))
-            .unwrap_or_default();
+            .map_or_default(|stat| String::from(stat.filesystem_type_name()));
         let held = fs::metadata(directory).expect("the directory reads").dev();
         let device = fs::read_dir("/dev")
             .expect("the devices list")
@@ -403,8 +402,7 @@ impl Substrate
                     && fs::metadata(path)
                         .is_ok_and(|node| node.file_type().is_block_device() && node.rdev() == held)
             })
-            .map(|path| path.display().to_string())
-            .unwrap_or_default();
+            .map_or_default(|path| path.display().to_string());
         Self { filesystem, device }
     }
 

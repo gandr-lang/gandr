@@ -289,7 +289,8 @@ fn reference(
                 .map(move |(b, _)| (NodeId(a), NodeId(b)))
         })
         .collect();
-    // Each changing pass removes at least one pair; the finite product bounds it.
+    // Each changing pass removes at least one pair; the finite product bounds
+    // it.
     let mut kept = BTreeSet::new();
     for _pass in 0 ..= candidates.len() {
         kept.clear();

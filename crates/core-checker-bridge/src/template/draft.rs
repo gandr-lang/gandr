@@ -1398,8 +1398,7 @@ impl Template
                 .rows
                 .get_mut(at)
                 .map(core::mem::take)
-                .map(Vec::from)
-                .unwrap_or_default();
+                .map_or_default(Vec::from);
             guards.clear();
             guards.reserve(points);
             for (index, column) in order.iter_mut().enumerate() {

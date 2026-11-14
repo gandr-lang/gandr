@@ -121,8 +121,7 @@ pub fn text(
 ) -> String
 {
     tree.fragment(at)
-        .map(|fragment| <&str>::from(fragment).to_owned())
-        .unwrap_or_default()
+        .map_or_default(|fragment| <&str>::from(fragment).to_owned())
 }
 
 /// The content digest of the root.

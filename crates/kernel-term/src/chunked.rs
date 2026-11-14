@@ -199,7 +199,6 @@ impl<Key, Value> ChunkedMap<Key, Value>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&Key, &Value)>
     {
         self.entries().map(|&(ref key, ref value)| (key, value))
@@ -210,7 +209,6 @@ impl<Key, Value> ChunkedMap<Key, Value>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn keys(&self) -> impl DoubleEndedIterator<Item = &Key>
     {
         self.entries().map(|&(ref key, _)| key)
@@ -221,7 +219,6 @@ impl<Key, Value> ChunkedMap<Key, Value>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn values(&self) -> impl DoubleEndedIterator<Item = &Value>
     {
         self.entries().map(|&(_, ref value)| value)

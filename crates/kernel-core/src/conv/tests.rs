@@ -234,7 +234,7 @@ fn a_unit_against_a_neutral_is_set_aside_6110()
         ),
         Convertibility::Distinct
     );
-    assert!(pending.is_empty());
+    assert!(pending.is_empty(), "{pending:?}");
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn a_decode_of_a_returned_code_is_set_aside_against_another_former()
         ),
         Convertibility::Distinct
     );
-    assert!(pending.is_empty());
+    assert!(pending.is_empty(), "{pending:?}");
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn a_thunk_pair_forcing_a_thunk_is_set_aside_3733()
         Convertibility::Distinct,
         "two thunks forcing no thunk separate in place"
     );
-    assert!(pending.is_empty());
+    assert!(pending.is_empty(), "{pending:?}");
 }
 
 #[test]

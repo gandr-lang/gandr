@@ -1121,10 +1121,10 @@ impl Environment
         // The guard, before anything is truncated: a declaration staged after
         // this one owns arena nodes above this one's content-start, and the
         // rollback below is a contiguous truncation that cannot spare them.
-        // Refusing is the fail-closed answer; the alternative is deleting a live
-        // producer's content, or worse, letting a later staging re-mint those
-        // indices so a subsequent admission checks other content under that
-        // declaration's name.
+        // Refusing is the fail-closed answer; the alternative is deleting a
+        // live producer's content, or worse, letting a later staging
+        // re-mint those indices so a subsequent admission checks other
+        // content under that declaration's name.
         self.outstanding.resolve(content_start);
         let above = self.outstanding.above(content_start);
         if usize::from(above) != 0 {
@@ -4333,8 +4333,8 @@ impl Environment
                 };
                 order.push((ranked, KeyedCount::from(named.len().saturating_add(offset))));
             }
-            // An operation that stands neither in `named` nor in the unit has no
-            // key to read.
+            // An operation that stands neither in `named` nor in the unit has
+            // no key to read.
             if order.len() != operations.len() {
                 return Err(Absent::Unkeyed);
             }
@@ -6905,8 +6905,12 @@ mod tests
             Some(gandr_kernel_term::ValueType::Product(parts)) if parts.is_empty()
         ));
         let report = environment.audit(admitted);
-        assert!(report.axioms().is_empty());
-        assert!(report.unchecked_admissions().is_empty());
+        assert!(report.axioms().is_empty(), "{:?}", report.axioms());
+        assert!(
+            report.unchecked_admissions().is_empty(),
+            "{:?}",
+            report.unchecked_admissions()
+        );
     }
 
     /// The blocker's scenario: a rejection may not truncate through content a
@@ -6955,7 +6959,8 @@ mod tests
         );
 
         // The producer's remedy: resolve the later staging, then retry. The
-        // retry now runs the check, and refuses on the declaration's own merits.
+        // retry now runs the check, and refuses on the declaration's own
+        // merits.
         let second = environment
             .add_decl(second)
             .expect("the later declaration admits on its own");

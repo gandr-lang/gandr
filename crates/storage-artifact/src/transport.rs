@@ -629,7 +629,6 @@ impl TransportStepIndex
         match self.entries.entry(address) {
             Entry::Vacant(slot) => {
                 slot.insert((cert, multiplicity));
-                Ok(())
             },
             Entry::Occupied(mut slot) => {
                 let graded = slot.get_mut();
@@ -643,9 +642,9 @@ impl TransportStepIndex
                 graded.1 = PrimMultiplicity::from(
                     u32::from(graded.1).saturating_add(u32::from(multiplicity)),
                 );
-                Ok(())
             },
         }
+        Ok(())
     }
 }
 

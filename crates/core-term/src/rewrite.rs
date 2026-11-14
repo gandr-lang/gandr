@@ -1938,8 +1938,7 @@ impl<'arena> Engine<'arena>
         let runs: Vec<ValueId> = self
             .regions
             .get(&region)
-            .map(|runs| runs.iter().map(|&(run, _)| run).collect())
-            .unwrap_or_default();
+            .map_or_default(|runs| runs.iter().map(|&(run, _)| run).collect());
         let mut bound = Self::computation(&mut self.results, region);
         let shifted: Vec<ComputationId> = runs
             .iter()
@@ -2070,7 +2069,8 @@ impl<'arena> Engine<'arena>
                     Occurrence::Answered(id)
                 }
                 else {
-                    // reason: a raised index clamps at the representable ceiling.
+                    // reason: a raised index clamps at the representable
+                    // ceiling.
                     let raised = u32::from(arith::saturating_add(
                         arith::Int::from(position.0),
                         arith::Int::from(amount.0),
@@ -2097,8 +2097,9 @@ impl<'arena> Engine<'arena>
                         .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth.0)),
                 ),
                 Some(past) if past < band.0 => {
-                    // reason: an index inside the band sits below the binder the
-                    // band names, so one more stays representable.
+                    // reason: an index inside the band sits below the binder
+                    // the band names, so one more stays
+                    // representable.
                     let raised = u32::from(arith::saturating_add(
                         arith::Int::from(position.0),
                         arith::Int::from(1_u32),
@@ -2115,7 +2116,8 @@ impl<'arena> Engine<'arena>
                     Occurrence::Answered(id)
                 }
                 else {
-                    // reason: a raised index clamps at the representable ceiling.
+                    // reason: a raised index clamps at the representable
+                    // ceiling.
                     let raised = u32::from(arith::saturating_add(
                         arith::Int::from(position.0),
                         arith::Int::from(1_u32),

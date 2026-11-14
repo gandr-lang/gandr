@@ -393,6 +393,7 @@ impl Staged
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn outcome(&self) -> &Result<Checked, StageFault>
     {
         &self.outcome

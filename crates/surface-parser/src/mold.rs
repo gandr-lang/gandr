@@ -2913,8 +2913,9 @@ impl<'pbg> Molder<'pbg>
         let open = state.open_form_mold();
         self.gather_menu(labels, open, CandidateMenu::Fresh);
         if self.candidates.is_empty() {
-            // A stray form-continuation with no matching frontier: the full menu
-            // supplies the tile the melder pushes to flag the exact obligation.
+            // A stray form-continuation with no matching frontier: the full
+            // menu supplies the tile the melder pushes to flag the
+            // exact obligation.
             self.gather_menu(labels, open, CandidateMenu::Declared);
             // Every open frontier's successors of the label are in the
             // declared menu: a window class's members meet their own here
@@ -3729,10 +3730,10 @@ impl<'pbg> Molder<'pbg>
         );
         // Operand-continuation tiebreak: with the head an operand, a call `(` /
         // projection `.` / infix operator that extends it beats a fresh atom or
-        // paren over the same lexeme, so the molder settles that family (the `(`
-        // call-vs-parenthesised tie, `>` comparison-vs-redirection) with no
-        // lookahead window. It ranks below sort so it never overrides a
-        // sort-correct reading.
+        // paren over the same lexeme, so the molder settles that family (the
+        // `(` call-vs-parenthesised tie, `>` comparison-vs-redirection)
+        // with no lookahead window. It ranks below sort so it never
+        // overrides a sort-correct reading.
         let continue_rank = CandidateRank::from(!bool::from(state.continues_operand(mold)));
         CandidateKey {
             delta: Delta::empty(),
@@ -4102,24 +4103,26 @@ impl<'pbg> Molder<'pbg>
     ) -> Option<MoldId>
     {
         // Fast path: the pre-filter usually collapses the menu to
-        // a lone admissible candidate, which needs no dry-run at all — the whole
-        // point of the filter, and what keeps the batch cost inside budget. The
-        // admissibility frontier is computed once and reused for every candidate.
+        // a lone admissible candidate, which needs no dry-run at all — the
+        // whole point of the filter, and what keeps the batch cost
+        // inside budget. The admissibility frontier is computed once
+        // and reused for every candidate.
         let frontier = state.admissibility_frontier();
         self.admit(state, &frontier, procedure, None);
         if let [sole] = *self.eligible.as_slice() {
             return Some(sole);
         }
         // Keep the pre-filter only when at least one candidate survives it; an
-        // empty admissible set falls back to the full menu (push is total on any
-        // mold, so a last resort always exists).
+        // empty admissible set falls back to the full menu (push is total on
+        // any mold, so a last resort always exists).
         if self.eligible.is_empty() {
             self.eligible.extend_from_slice(&self.candidates);
         }
         // Pass one: the least local `(Delta, continuation, sort)` key and its
-        // ties, in ascending `MoldId` order. The expensive `completion` finalize
-        // only breaks a residual key-tie, and the overwhelming majority of
-        // tokens have a unique key minimum, so the finalize never runs for them.
+        // ties, in ascending `MoldId` order. The expensive `completion`
+        // finalize only breaks a residual key-tie, and the overwhelming
+        // majority of tokens have a unique key minimum, so the finalize
+        // never runs for them.
         self.least_candidates(state, text, &frontier, procedure);
         if self.tied.len() <= 1 {
             return self.tied.first().copied();
@@ -4402,7 +4405,8 @@ impl<'pbg> Molder<'pbg>
             StepSym::Tile("rule"),
         ];
         // Both readings begin with the same `(` prefix; only the first
-        // interior token separates the direct binder from an expression endpoint.
+        // interior token separates the direct binder from an expression
+        // endpoint.
         if steps.len() != direct_prefix.len()
             || !direct_prefix
                 .iter()
@@ -5653,7 +5657,7 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        assert!(molder.candidates.is_empty());
+        assert!(molder.candidates.is_empty(), "{:?}", molder.candidates);
         let token = *label(SourceFragment::from("xyz")).first().unwrap();
         let expected: alloc::collections::BTreeSet<_> =
             ["xyz", "identifier", "type_variable", "hole_name"]
@@ -6709,7 +6713,8 @@ mod tests
             candidate_labels(Lexeme::UpperWord, TokenText::from("Integer")).as_slice(),
             [CandidateLabel::from("Integer")]
         );
-        // An ordinary uppercase word gets the constructor / type-identifier menu.
+        // An ordinary uppercase word gets the constructor / type-identifier
+        // menu.
         assert_eq!(
             candidate_labels(Lexeme::UpperWord, TokenText::from("Inl")).as_slice(),
             [

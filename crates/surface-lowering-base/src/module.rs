@@ -7433,9 +7433,9 @@ impl<'source> Collector<'_, 'source>
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
         let top = self.collected.top(module.span.start());
-        // A dotted name, `module Gandr.Workspace where { … }`, declares the module in
-        // the modules its prefix names; a functor or an application is bound
-        // at the top level alone.
+        // A dotted name, `module Gandr.Workspace where { … }`, declares the
+        // module in the modules its prefix names; a functor or an
+        // application is bound at the top level alone.
         let dotted = match Self::dotted_name(&pieces, module) {
             Maybe::Present((prefix, _)) => prefix.first().copied(),
             Maybe::Absent(_) => None,
@@ -9539,7 +9539,7 @@ impl<'source> Collector<'_, 'source>
             .collected
             .structures
             .get(structure.0)
-            .map(|entry| {
+            .map_or_default(|entry| {
                 entry
                     .members
                     .iter()
@@ -9548,8 +9548,7 @@ impl<'source> Collector<'_, 'source>
                         Member::Slot(_) => None,
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         for nested in nested {
             let Some((name, named)) = self
                 .collected

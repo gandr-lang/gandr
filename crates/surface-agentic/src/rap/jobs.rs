@@ -250,8 +250,7 @@ impl Pinned
             Job::Check(ref paths) | Job::Test(ref paths) => held_under(workspace, &roots(paths)),
             Job::Replay(ref document) | Job::Run { ref document, .. } => {
                 version_of(workspace, document)
-                    .map(|version| BTreeMap::from([(document.clone(), version)]))
-                    .unwrap_or_default()
+                    .map_or_default(|version| BTreeMap::from([(document.clone(), version)]))
             },
         })
     }

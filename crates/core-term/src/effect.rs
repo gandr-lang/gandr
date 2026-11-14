@@ -425,7 +425,6 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn operations(&self) -> impl ExactSizeIterator<Item = &EffectOp<Id>>
     {
         self.0.operations.values()
@@ -457,7 +456,6 @@ impl<Id: Copy + Eq + 'static> EffectSig<Id>
     ///
     /// # Specification
     /// trivial.
-    #[must_use]
     #[inline]
     pub fn types(&self) -> impl DoubleEndedIterator<Item = Id> + Clone + '_
     {
@@ -941,7 +939,6 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn instances(&self) -> impl ExactSizeIterator<Item = (&EffectLabel, &EffectSig<Id>)>
     {
         self.entries().iter()
@@ -1079,7 +1076,6 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn signatures(&self) -> impl ExactSizeIterator<Item = &EffectSig<Id>>
     {
         self.entries().values()
@@ -1091,7 +1087,6 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn types(&self) -> impl DoubleEndedIterator<Item = Id> + Clone + '_
     {
         self.entries()

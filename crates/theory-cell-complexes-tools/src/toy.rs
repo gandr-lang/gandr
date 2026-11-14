@@ -1965,12 +1965,16 @@ mod tests
                 alloc::vec![(x.clone(), SeamRole::Forward)],
                 ToyAlphabet::hole_flow(&meta, &x)
             );
-            assert!(ToyAlphabet::hole_flow(&meta, &ToyVar::from("missing")).is_empty());
+            let missing = ToyAlphabet::hole_flow(&meta, &ToyVar::from("missing"));
+            assert!(missing.is_empty(), "{missing:?}");
         }
         assert!(
             ToyAlphabet::derive_meta(&Toy::zero(), &Toy::zero(), CellInvertibility::from(false))
                 .vars
-                .is_empty()
+                .is_empty(),
+            "{:?}",
+            ToyAlphabet::derive_meta(&Toy::zero(), &Toy::zero(), CellInvertibility::from(false))
+                .vars
         );
         let expected_constants = Toy(alloc::vec![
             ToyHead::Add,

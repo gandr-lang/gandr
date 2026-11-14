@@ -6696,7 +6696,7 @@ mod tests
                     mold
                 })
             );
-            assert!(read.pieces.is_empty());
+            assert!(read.pieces.is_empty(), "{:?}", read.pieces);
             assert_eq!(
                 read.repair,
                 Maybe::Absent(super::repair::Absent::Unrepaired)
@@ -6795,7 +6795,7 @@ mod tests
                     nested: Maybe::Absent(crate::form::nested::Absent::Own),
                 });
                 read_pieces(&pbg, &tree, child, &mut read).unwrap();
-                assert!(read.pieces.is_empty());
+                assert!(read.pieces.is_empty(), "{:?}", read.pieces);
                 assert_eq!(
                     read.repair,
                     Maybe::Absent(super::repair::Absent::Unrepaired)

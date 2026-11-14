@@ -2339,8 +2339,7 @@ mod tests
         let cards = following
             .accounts
             .get(&uri)
-            .map(|&(_, ref cards)| cards.clone())
-            .unwrap_or_default();
+            .map_or_default(|&(_, ref cards)| cards.clone());
         let _heard = following.hear(&RenderFrame::accounts(at(1_i32), cards));
         let pending = Attribute::Hue(Warrant::Pending.colour());
         assert!(
@@ -3022,6 +3021,6 @@ mod tests
             follow_plain(&b"\xff\n"[..], &mut output),
             Ok(Ended::Faulted(Fault::Input(ref error))) if error.kind() == io::ErrorKind::InvalidData
         ));
-        assert!(output.is_empty());
+        assert!(output.is_empty(), "{output:?}");
     }
 }

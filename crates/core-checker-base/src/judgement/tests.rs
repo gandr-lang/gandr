@@ -3653,12 +3653,14 @@ fn tier_dialogues(
         let applied = arena.computation_application(forced, argument);
         arena.value_returned(applied)
     };
-    // here(5) against Path[.A = Integer](5, ⟨id 5⟩): no side mentions a variable.
+    // here(5) against Path[.A = Integer](5, ⟨id 5⟩): no side mentions a
+    // variable.
     let five = arena.value_literal(integer(Numeral::Five));
     let closed_endpoint = called(&mut arena, five);
     let closed = arena.value_here(five);
     let closed_path = arena.value_type_path(integer_type, five, closed_endpoint);
-    // \y. return here(y), against (y : Integer) -> F Path[.A = Integer](y, ⟨id y⟩).
+    // \y. return here(y), against (y : Integer) -> F Path[.A = Integer](y, ⟨id
+    // y⟩).
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let open_endpoint = called(&mut arena, bound);
     let open = arena.value_here(bound);
@@ -3749,7 +3751,8 @@ fn reflexivity_at_a_stuck_native_point_meets_it_by_syntax()
         );
         arena.value_returned(redex)
     });
-    // \y. return here(y + 0), against (y : Integer) -> F Path[.A = Integer](l, r).
+    // \y. return here(y + 0), against (y : Integer) -> F Path[.A = Integer](l,
+    // r).
     let [(shared, shared_type), (copied, copied_type)] =
         [(point, point), (left, right)].map(|(left, right)| {
             let here = arena.value_here(point);
@@ -3819,8 +3822,8 @@ fn identity_at_an_open_type_is_a_neutral_fibre()
     let under_code = arena.computation_lambda(transport_lambda);
     let integer_pi = arena.comp_type_pi(decoded, returns_integer);
     let code_pi = arena.comp_type_pi(small, integer_pi);
-    // (a : U) -> (x y : El a) -> Path[.A = El a](x, y) -> F Path[.A = El a](x, y),
-    // and the same returning Path[.A = El a](y, x).
+    // (a : U) -> (x y : El a) -> Path[.A = El a](x, y) -> F Path[.A = El a](x,
+    // y), and the same returning Path[.A = El a](y, x).
     let echoed = |arena: &mut CoreArena, (left, right): (u32, u32)| {
         let carrier = decode(arena, 3_u32);
         let left = variable(arena, left);

@@ -751,7 +751,8 @@ impl StagedMarks
         let mut found: usize = 0;
         for &held in &self.marks {
             if held.clamped_into(ArenaWatermark::default(), mark) != held {
-                // At most marks.len() distinct entries contribute to this count.
+                // At most marks.len() distinct entries contribute to this
+                // count.
                 found = usize::from(arith::add(
                     arith::Int::from(found),
                     arith::Int::from(1_usize),
@@ -2148,7 +2149,6 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &AdmittedDeclaration>
     {
         self.family().iter().filter_map(Slot::admitted)
@@ -3992,7 +3992,7 @@ mod tests
         assert_eq!([low, high], marks.marks.as_slice());
         marks.resolve(low);
         marks.resolve(high);
-        assert!(marks.marks.is_empty());
+        assert!(marks.marks.is_empty(), "{:?}", marks.marks);
     }
 
     #[test]

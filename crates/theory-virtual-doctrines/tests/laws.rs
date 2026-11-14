@@ -187,7 +187,8 @@ mod tests
         let re = rel(NameRef::from("RE"), Vec::new());
         let d_first = cert(first.clone(), ra.clone(), rc.clone());
         let d_second = cert(second.clone(), rc, re.clone());
-        // compose_cells(outer = second, inners = [first]) grafts first then second.
+        // compose_cells(outer = second, inners = [first]) grafts first then
+        // second.
         let graft = vdc.compose_cells(&d_second, &[d_first]);
         assert!(
             bool::from(graft.replays(&store)),
@@ -468,7 +469,8 @@ mod tests
             ConsPat::frame("Succ", ConsPat::top()),
         );
         let path = query.path(&start, RewriteStepBudget::from(16_usize));
-        // PathInd: base on refl (0 steps) plus one per reduction — the trace length.
+        // PathInd: base on refl (0 steps) plus one per reduction — the trace
+        // length.
         let steps = Query::induct(&path, 0_usize, |acc, _step| acc.saturating_add(1));
         assert_eq!(1, steps, "the induction counts the single reduction");
         assert_eq!(1, path.steps.len(), "the trace has one step");
@@ -496,7 +498,8 @@ mod tests
             path.target, expected,
             "the μ̃ reduction wrapped Zero in Succ"
         );
-        // The trace re-runs to its target (external oracle: the engine's rewriting).
+        // The trace re-runs to its target (external oracle: the engine's
+        // rewriting).
         assert!(
             bool::from(query.reaches(&start, &expected, RewriteStepBudget::from(16_usize))),
             "the recorded trace reaches the target"
@@ -508,9 +511,9 @@ mod tests
     #[test]
     fn the_seam_family_is_the_overlap_indexed_multi_sum()
     {
-        // A non-linear seam: `plus` leaves a `g`-redex two consumers both match,
-        // so the ⊙ family has two members, never one collapsed rule (the reflection
-        // rules).
+        // A non-linear seam: `plus` leaves a `g`-redex two consumers both
+        // match, so the ⊙ family has two members, never one collapsed
+        // rule (the reflection rules).
         let (store, [plus, linear, nonlinear]) = g_seam_store();
         let query = Query::new(&store);
         let left = rel(NameRef::from("plus"), vec![plus]);
@@ -520,7 +523,8 @@ mod tests
             family.len() >= 2,
             "the g-seam composition is a multi-sum family, not a single rule"
         );
-        // Every member re-derives its composite from the overlap (engine oracle).
+        // Every member re-derives its composite from the overlap (engine
+        // oracle).
         for member in &family {
             assert_eq!(member.left, plus, "each member is a plus∘g overlap");
         }
@@ -721,7 +725,8 @@ mod tests
     fn a_non_replaying_certificate_is_rejected()
     {
         let (store, tracelet) = peano_fused();
-        // Retarget the join to an unreachable term: the certificate no longer replays.
+        // Retarget the join to an unreachable term: the certificate no longer
+        // replays.
         let mut broken = tracelet;
         broken.joins_at = CmdPat::cut(
             Polarity::Positive,
@@ -834,7 +839,8 @@ mod tests
             bool::from(iso.is_valid(&derivations, &store)),
             "the reflected ProtypeIso surface agrees with the witness"
         );
-        // Composed in the invertible mode, the iso stays valid (the reflection rules).
+        // Composed in the invertible mode, the iso stays valid (the reflection
+        // rules).
         assert!(
             bool::from(witness.compose(&witness).is_valid(&store)),
             "invertible composition of valid isos is unconditional"
@@ -870,7 +876,8 @@ mod tests
             rel(NameRef::from("R"), Vec::new()),
             rel(NameRef::from("R"), Vec::new()),
         );
-        // A broken forward direction: retargeted join, neither reflexive nor replaying.
+        // A broken forward direction: retargeted join, neither reflexive nor
+        // replaying.
         let mut broken = base;
         broken.joins_at = CmdPat::cut(
             Polarity::Positive,

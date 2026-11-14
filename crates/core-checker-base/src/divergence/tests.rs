@@ -234,8 +234,8 @@ fn no_handler_discharges_partial()
     let unit = arena.value_type_unit();
     let pure = arena.comp_type_returner(unit);
     let stated_row = diverging(&mut arena, unit);
-    // `handle Partial { (fix f. force f : F^⟨Partial⟩ 1) } with { return x ↦ return
-    // x }`.
+    // `handle Partial { (fix f. force f : F^⟨Partial⟩ 1) } with { return x ↦
+    // return x }`.
     let own = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let forced = arena.computation_force(own);
     let fixpoint = arena.computation_fixpoint(forced, FixpointEvidence::Partial);
@@ -243,7 +243,8 @@ fn no_handler_discharges_partial()
     let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
     let returned = arena.computation_return(bound);
     let handled = arena.computation_handle(partiality(), subject, returned, [].into());
-    // The same subject under a capability scope of `Partial`, its binder unused.
+    // The same subject under a capability scope of `Partial`, its binder
+    // unused.
     let scoped = arena.computation_scope(partiality(), subject, returned, [].into());
     let declare = |arena: &mut CoreArena, at: ConstantIndex, returner: CompTypeId, term| {
         let declared = arena.value_type_thunk(returner);

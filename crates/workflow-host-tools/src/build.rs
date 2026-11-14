@@ -650,7 +650,7 @@ mod tests
             fails: false,
         };
         assert_eq!(build(&job(), &into, &host(), &mut runner), Ok(Built::Kept));
-        assert!(runner.ran.is_empty());
+        assert_eq!(runner.ran, Vec::<String>::new());
         std::fs::remove_dir_all(&into).unwrap();
     }
 

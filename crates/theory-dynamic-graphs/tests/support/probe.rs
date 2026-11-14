@@ -323,9 +323,9 @@ mod tests
     #[test]
     fn acyclicity_refuses_a_superset_of_what_offsets_refute()
     {
-        // The direction is the load-bearing claim: `compare` errors whenever the
-        // valuation refutes something the order admitted, so a clean sweep over
-        // every regime is the assertion.
+        // The direction is the load-bearing claim: `compare` errors whenever
+        // the valuation refutes something the order admitted, so a
+        // clean sweep over every regime is the assertion.
         for regime in Regime::all() {
             let result = sweep(regime);
             assert!(
@@ -340,8 +340,8 @@ mod tests
     fn the_probe_catches_a_seeded_converse_divergence()
     {
         // The teeth: a run in which the valuation is reported as refuting an
-        // offer the order admitted must be rejected, at every position where the
-        // order admits.
+        // offer the order admitted must be rejected, at every position where
+        // the order admits.
         let (nodes, length) = dimensions();
         let offers = stream(Family::Interleaved, nodes, length, Seed::from(3));
         let offsets = offsets_for(

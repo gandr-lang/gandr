@@ -470,7 +470,7 @@ mod tests
         let mut judged = Vec::new();
         while let Some(path) = sweep.next(&list, rendering, &Unshadowed) {
             keep(&mut sweep, &path);
-            judged.push(path.clone());
+            judged.push(path);
             if judged.len() == 2_usize {
                 std::fs::write(&sources[0_usize], "def x : Integer ;\ndef x = 1 ;\n")
                     .expect("the first source is rewritten behind the pass");

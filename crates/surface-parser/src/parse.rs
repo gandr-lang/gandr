@@ -1358,11 +1358,11 @@ mod tests
             ClosingClass::Paren
         ]);
         let pbg = built_in().unwrap();
+        let plain = parse(&pbg, SourceText::from("def x = 1;")).unwrap();
         assert!(
-            parse(&pbg, SourceText::from("def x = 1;"))
-                .unwrap()
-                .minted_close_classes()
-                .is_empty()
+            plain.minted_close_classes().is_empty(),
+            "{:?}",
+            plain.minted_close_classes()
         );
     }
 
@@ -1509,7 +1509,11 @@ mod tests
                 .zip(paths.iter().skip(1))
                 .all(|(left, right)| left <= right)
         );
-        assert!(gandr_files(&root.join("strict/values.gandr/child")).is_empty());
+        assert!(
+            gandr_files(&root.join("strict/values.gandr/child")).is_empty(),
+            "{:?}",
+            gandr_files(&root.join("strict/values.gandr/child"))
+        );
     }
 
     #[test]

@@ -684,7 +684,7 @@ fn every_refusal_renders_apart()
     let mut rendered = refusals.to_vec();
     rendered.push(DerivationError::MissingOuter.to_string());
     for (index, text) in rendered.iter().enumerate() {
-        assert!(!text.is_empty());
+        assert_ne!(text, "");
         assert!(
             rendered[index + 1 ..].iter().all(|other| other != text),
             "`{text}` renders like a later refusal"

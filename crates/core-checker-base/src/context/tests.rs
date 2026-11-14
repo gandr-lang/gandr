@@ -193,7 +193,8 @@ fn an_adopted_abstract_type_mints_its_site_again()
 #[test]
 fn a_second_unfold_of_a_code_takes_its_held_step()
 {
-    // def Name : Type = Integer ; and the static redex (\A. El A * El A) String.
+    // def Name : Type = Integer ; and the static redex (\A. El A * El A)
+    // String.
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let string = arena.value_type_base(BaseType::String);

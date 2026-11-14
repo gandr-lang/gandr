@@ -250,7 +250,8 @@ fn incremental_equals_from_scratch()
 #[test]
 fn resumptions_commute()
 {
-    // Lemma 3.19 / §1.2.5: commuting partiality actions, not just well-typedness.
+    // Lemma 3.19 / §1.2.5: commuting partiality actions, not just
+    // well-typedness.
     let mut arena = CoreArena::new();
     let fixture = route(&mut arena);
     let mut artifacts = Vec::new();
@@ -304,8 +305,9 @@ fn checked_success_is_stable_without_rejudgement()
 #[test]
 fn refused_subterms_refuse_the_declaration()
 {
-    // Corollary 5.2 multistrictness: a refused argument poisons its application,
-    // then its enclosing returner thunk; the good neighboring term still checks.
+    // Corollary 5.2 multistrictness: a refused argument poisons its
+    // application, then its enclosing returner thunk; the good neighboring
+    // term still checks.
     let mut arena = CoreArena::new();
     let integer = arena.value_type_base(BaseType::Integer);
     let result = arena.comp_type_returner(integer);
@@ -478,7 +480,8 @@ fn outputs_materialize_nested_lifts()
 #[test]
 fn dependent_resumption_closes_its_prerequisites()
 {
-    // Theorem 5.1: composition's support is the conjunction of premise supports.
+    // Theorem 5.1: composition's support is the conjunction of premise
+    // supports.
     let mut arena = CoreArena::new();
     let mut fixture = route(&mut arena);
     let reference = arena.value_constant(ConstantIndex::from(1_usize));

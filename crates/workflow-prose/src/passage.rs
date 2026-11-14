@@ -1654,7 +1654,8 @@ mod tests
             matches!(read[..], [ref one] if one.advice == Advice::Missing && one.what.text.starts_with("`answer`")),
             "{read:?}"
         );
-        assert!(golden(Text("g/json.txt"), Text("{\"severity\":\"error\"}\n")).is_empty());
+        let json = golden(Text("g/json.txt"), Text("{\"severity\":\"error\"}\n"));
+        assert!(json.is_empty(), "{json:?}");
         let two = "error[A]: first\n  │\n1 │ def a\n  │ ━━━━━ the first\n  ╰ help: write it\n\nerror[B]: \
                    second\n  ╰ note: `b` is expected to check\n";
         let read = golden(Text("g/two.txt"), Text(two));

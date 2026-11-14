@@ -393,8 +393,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 .collected
                 .stage_binders
                 .get(&owner)
-                .map(|names| ordinals(names))
-                .unwrap_or_default(),
+                .map_or_default(|names| ordinals(names)),
             Maybe::Absent(_) => BTreeMap::new(),
         };
         let mut scratch = core::mem::take(&mut self.cx_mut().scratch);

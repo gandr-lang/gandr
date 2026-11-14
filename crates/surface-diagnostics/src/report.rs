@@ -2272,13 +2272,12 @@ mod tests
             serde_json::from_str(&diagnostic.json()).expect("the JSON image parses");
         let annotations: Vec<(&serde_json::Value, &serde_json::Value)> = image["annotations"]
             .as_array()
-            .map(|annotations| {
+            .map_or_default(|annotations| {
                 annotations
                     .iter()
                     .map(|annotation| (&annotation["start"], &annotation["end"]))
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         assert_eq!(annotations, [(
             &serde_json::json!(0_u64),
             &serde_json::json!(5_u64)

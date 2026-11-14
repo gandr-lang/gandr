@@ -142,11 +142,7 @@ fn a_name_two_children_use_is_duplicated_once()
         entry(&ownership, NodeAddress::Producer(pair)).dups,
         [x0()].as_slice()
     );
-    assert!(
-        entry(&ownership, NodeAddress::Command(root))
-            .dups
-            .is_empty()
-    );
+    assert_eq!(entry(&ownership, NodeAddress::Command(root)).dups, []);
 }
 
 /// A `μ̃` whose body ignores its bound name drops it on entry; one whose
@@ -206,7 +202,7 @@ fn an_arm_drops_what_its_sibling_uses()
     let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
     let reading = entry(&ownership, NodeAddress::Consumer(matched));
-    assert!(reading.dups.is_empty());
+    assert_eq!(reading.dups, []);
     let drops = [names, ignores].map(|arm| entry(&ownership, NodeAddress::Command(arm)).drops);
     let none: &[DeBruijnIndex] = &[];
     assert_eq!(drops, [none, [x0(), x1(), x2()].as_slice()]);
@@ -314,7 +310,7 @@ fn a_nullary_match_reuses_nothing()
 
     let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
-    assert!(ownership.reuses().is_empty());
+    assert_eq!(ownership.reuses(), []);
 }
 
 /// A linear name two children read is never duplicated: only `Γ` is counted.
@@ -329,11 +325,7 @@ fn a_linear_name_is_never_counted()
 
     let ownership = read(&arena, &[NodeAddress::Command(root)]);
 
-    assert!(
-        entry(&ownership, NodeAddress::Producer(pair))
-            .dups
-            .is_empty()
-    );
+    assert_eq!(entry(&ownership, NodeAddress::Producer(pair)).dups, []);
 }
 
 /// The point step, as lowered: `⟨x0 |+ datacase({force(α) ⇒ ⟨cocase

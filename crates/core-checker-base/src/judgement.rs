@@ -10114,8 +10114,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let types: Vec<ValueTypeId> = self
                     .native_types
                     .get(base ..)
-                    .map(<[ValueTypeId]>::to_vec)
-                    .unwrap_or_default();
+                    .map_or_default(<[ValueTypeId]>::to_vec);
                 self.native_types.truncate(base);
                 self.filled(at, &types)
             },
@@ -10155,8 +10154,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let types: Vec<ValueTypeId> = self
                     .native_types
                     .get(base ..)
-                    .map(<[ValueTypeId]>::to_vec)
-                    .unwrap_or_default();
+                    .map_or_default(<[ValueTypeId]>::to_vec);
                 self.native_types.truncate(base);
                 self.composed(at, &types)
             },
@@ -10792,8 +10790,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
                 Produced::CompType(synthesised),
             ) => {
-                // Every binder stays open until the type has left them all, so a
-                // refusal attributes each to this frame.
+                // Every binder stays open until the type has left them all, so
+                // a refusal attributes each to this frame.
                 let mut lowered = synthesised;
                 for _ in 0_usize .. usize::from(arity) {
                     let Maybe::Present(outer) =
@@ -11099,8 +11097,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::CompType(synthesised),
             ) => self.bound_all(at, (bound, arity, body), direction, synthesised),
             (Frame::BindAllBody { at, arity, bound }, Produced::CompType(synthesised)) => {
-                // Every binder stays open until the type has left them all, so a
-                // refusal attributes each to this frame.
+                // Every binder stays open until the type has left them all, so
+                // a refusal attributes each to this frame.
                 let mut lowered = synthesised;
                 for _ in 0_usize .. usize::from(arity) {
                     let Maybe::Present(outer) =

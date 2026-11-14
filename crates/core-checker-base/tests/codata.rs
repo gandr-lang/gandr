@@ -187,7 +187,7 @@ fn a_stream_is_admitted_observed_and_adopted()
         "{:?}",
         crossed.readmitted()[0].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 
     let fresh = {
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);

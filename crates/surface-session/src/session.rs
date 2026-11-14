@@ -1656,6 +1656,7 @@ impl<'text> Trial<'text>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn outcome(&self) -> &Result<Submission<'text>, SessionFault<'text>>
     {
         &self.outcome

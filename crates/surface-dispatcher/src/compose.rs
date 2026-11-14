@@ -692,6 +692,7 @@ impl<'source> Judged<'source>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn settled(&self) -> &Result<Composed<'source>, SettleFault>
     {
         &self.settled
@@ -5135,8 +5136,8 @@ pub fn adapt(
 {
     let mut declarations = Vec::with_capacity(module.declarations().iter().len());
     for lowered in module.declarations() {
-        // The role a `builtin` mark gives the declaration, of any judgement. The
-        // checker refuses a role on the wrong judgement.
+        // The role a `builtin` mark gives the declaration, of any judgement.
+        // The checker refuses a role on the wrong judgement.
         let marked = |declaration: Declaration| match module.builtin(lowered) {
             Maybe::Present(role) => declaration.built_in(role),
             Maybe::Absent(_) => declaration,
@@ -6607,7 +6608,8 @@ mod tests
             .map_or_else(Restoration::default, |elaboration| {
                 Restoration::of(elaboration.carried())
             });
-        // `rec dbl { fun (n) { case n { …, S(x) => arm, … } } }`: the arm at `S`.
+        // `rec dbl { fun (n) { case n { …, S(x) => arm, … } } }`: the arm at
+        // `S`.
         let arm = match arena.value(defined("dbl")) {
             Some(&Value::Thunk(fixpoint)) => match arena.computation(fixpoint) {
                 Some(&Computation::Fixpoint { body, .. }) => match arena.computation(body) {

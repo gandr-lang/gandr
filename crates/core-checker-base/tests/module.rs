@@ -673,7 +673,8 @@ fn an_element_of_a_patched_type_stands_at_its_base_as_its_record_5579()
     let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
     let integer = arena.value_type_base(BaseType::Integer);
     let zero = arena.value_literal(integer_literal());
-    // `secured : *{host, port, tls : Integer}[.port = 0, .tls = 0] = *{.host = 0}`.
+    // `secured : *{host, port, tls : Integer}[.port = 0, .tls = 0] = *{.host =
+    // 0}`.
     let record_type = arena.value_type_record(alloc::collections::BTreeMap::from([
         (label("host"), integer),
         (label("port"), integer),
@@ -812,8 +813,8 @@ fn a_record_update_in_a_signature_reads_its_record_2159()
         let overlay = arena.value_record(alloc::collections::BTreeMap::from([(label(name), zero)]));
         arena.value_record_update(base, overlay)
     };
-    // `commute : Path[.A = R](#{#{point | x = 0} | y = 0}, #{#{point | y = 0} | x =
-    // 0})`.
+    // `commute : Path[.A = R](#{#{point | x = 0} | y = 0}, #{#{point | y = 0} |
+    // x = 0})`.
     let commuted = {
         let first = written(&mut arena, point, "x");
         let left = written(&mut arena, first, "y");
@@ -881,7 +882,8 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
             let arrow = arena.comp_type_arrow(domain, returns);
             arena.value_type_thunk(arrow)
         };
-        // `reduct = thunk(λm. split m as (a, r). split r as (b, c). return (a, b))`.
+        // `reduct = thunk(λm. split m as (a, r). split r as (b, c). return (a,
+        // b))`.
         let reduct_type = thunk_of(&mut arena, wide, narrow);
         let reduct = {
             let a = variable(&mut arena, 3);
@@ -1739,7 +1741,8 @@ fn a_call_returning_a_function_runs_where_one_is_read_2327()
     let (function, identity) = integer_function(&mut arena);
     let integer = arena.value_type_base(BaseType::Integer);
     let returns = arena.comp_type_returner(integer);
-    // `maker : U (Integer -> F (U (Integer -> F Integer)))`, `λn. return identity`.
+    // `maker : U (Integer -> F (U (Integer -> F Integer)))`, `λn. return
+    // identity`.
     let makes = arena.comp_type_returner(function);
     let maker_arrow = arena.comp_type_arrow(integer, makes);
     let maker_type = arena.value_type_thunk(maker_arrow);

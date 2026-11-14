@@ -1241,7 +1241,7 @@ mod tests
             warning.shadow(&at, Collision { former, latter }),
             Ok(latter)
         );
-        assert!(warning.shadowed.is_empty());
+        assert!(warning.shadowed.is_empty(), "{:?}", warning.shadowed);
         let mut rejecting = RecognitionHandler {
             policy: ShadowPolicy::Reject,
             shadowed: Vec::new(),
@@ -1251,7 +1251,7 @@ mod tests
             .expect_err("a formerly builtin-tagged binding is protected under rejection");
         assert_eq!(refused.kind(), EventKind::Shadow);
         assert_eq!(refused.path(), &at);
-        assert!(rejecting.shadowed.is_empty());
+        assert!(rejecting.shadowed.is_empty(), "{:?}", rejecting.shadowed);
     }
     #[test]
     fn ordered_bindings_shadow_from_the_right()

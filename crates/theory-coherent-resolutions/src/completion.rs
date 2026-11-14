@@ -1561,7 +1561,11 @@ mod tests
             orient::<ToyAlphabet>(Toy::succ(Toy::var("x")), Toy::var("y"))
         );
         let mut store = CellStore::<ToyAlphabet>::new();
-        assert!(scheduled_confluence_batches(&store).is_empty());
+        assert!(
+            scheduled_confluence_batches(&store).is_empty(),
+            "{:?}",
+            scheduled_confluence_batches(&store)
+        );
         let first = toy_cell(small.clone(), small);
         let second = toy_cell(large.clone(), large);
         let first_id = store.insert(first.clone());
@@ -1569,7 +1573,11 @@ mod tests
         let a = crate::overlap::overlaps_between((first_id, &first), (first_id, &first)).remove(0);
         let b =
             crate::overlap::overlaps_between((second_id, &second), (second_id, &second)).remove(0);
-        assert!(scheduled_confluence_batches(&store).is_empty());
+        assert!(
+            scheduled_confluence_batches(&store).is_empty(),
+            "{:?}",
+            scheduled_confluence_batches(&store)
+        );
         let batch = alloc::vec![a.clone(), b.clone()];
         let tail = VecDeque::from([alloc::vec![a.clone()], Vec::new(), alloc::vec![b.clone()]]);
         assert_eq!(

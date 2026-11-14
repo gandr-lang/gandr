@@ -146,8 +146,7 @@ impl DocumentUri
             .unwrap_or_default();
         percent_encoding::percent_decode_str(path)
             .decode_utf8()
-            .map(|path| PathBuf::from(path.as_ref()))
-            .unwrap_or_default()
+            .map_or_default(|path| PathBuf::from(path.as_ref()))
     }
 
     /// The `file` URI naming the absolute path `path`.
@@ -4813,15 +4812,12 @@ mod tests
             symbol("last", None),
         ]));
         let wire = serde_json::to_value(&symbols).expect("the symbols encode");
-        let names: Vec<&str> = wire
-            .as_array()
-            .map(|roots| {
-                roots
-                    .iter()
-                    .filter_map(|root| root.get("name").and_then(serde_json::Value::as_str))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let names: Vec<&str> = wire.as_array().map_or_default(|roots| {
+            roots
+                .iter()
+                .filter_map(|root| root.get("name").and_then(serde_json::Value::as_str))
+                .collect()
+        });
         assert_eq!(names, ["outer", "itself", "forward", "last"]);
         assert_eq!(
             wire.pointer("/0/children/0/name")

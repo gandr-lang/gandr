@@ -9,14 +9,15 @@
 # kept: the walk stops at the commit's first parent, whose channel differs.
 # The CI image's driver stage and `check:dylint` both run through here.
 #
-# The pin is the commit on the first-parent line of rust-clippy's
-# rust-<stable> tag that set the channel, the tag quenchant's clippy_utils
-# pins; `mise run toolchain:bump` moves it with the channel. A commit naming
-# another channel than <channel>, or whose parent names the same, is refused.
+# The pin is the commit that set the channel, on the first-parent line of the
+# rust-clippy source quenchant's clippy_utils pins: a rust-<stable> tag, or a
+# full commit for a nightly that no release tag names. `mise run
+# toolchain:bump` moves it with the channel. A commit naming another channel
+# than <channel>, or whose parent names the same, is refused.
 # `RUST_CLIPPY_URL` names another source to fetch the commit from.
 set -euo pipefail
-# rust-clippy's rust-1.99.0, the commit that set nightly-2026-08-07.
-rev=1a65e083e1c7c13503d79ed4d8e115888c845b19
+# rust-clippy's 281a3af2d, the commit that set nightly-2026-10-01.
+rev=281a3af2d08bc87fa8b9a7fd0829cfde47dd638a
 (( $# > 2 )) || { echo 'usage: rust-clippy.bash <repository> <channel> <command>…' >&2; exit 2; }
 repository=$1 channel=$2
 shift 2

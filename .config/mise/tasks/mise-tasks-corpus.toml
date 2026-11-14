@@ -351,8 +351,8 @@ done
 {% endraw %}'''
 
 # The parser's report (#4550): today's grammar read on each axis a syntax
-# candidate is measured against, one Markdown row per measure, from the
-# driver's `parser_report` example under the release profile, its molder
+# candidate is measured against, one Markdown row per measure, from
+# `gandr-workflow-parser-report` under the release profile, its molder
 # keeping the census. The table is printed and written to the file named,
 # `target/parser-report.md` by default. The report states its axes and what
 # each is read from.
@@ -366,6 +366,6 @@ run = '''
 set -euo pipefail
 report={{ usage.report }}
 mkdir -p "$(dirname "$report")"
-.config/mise/scope cargo run --release --locked --quiet --package gandr-lang --features census --example parser_report > "$report"
+.config/mise/scope cargo run --release --locked --quiet --package gandr-workflow-parser-report --features census > "$report"
 cat "$report"
 '''

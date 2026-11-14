@@ -163,11 +163,22 @@ records_fixed() {
   if value=$(printenv DYLINT_LIBRARY_PATH); then echo "library-path set $(records_sha <<< "$value")"; else echo "library-path unset"; fi
 }
 
-# Cargo's unit graph of the run over the packages `$@`, as JSON.
+# Cargo's unit graph of the run over package `$1`, as JSON. A second
+# argument names the features to turn on, joined by commas.
 records_units() {
-  local args=() name
-  for name in "$@"; do args+=(-p "$name"); done
+  local args=(-p "$1")
+  [[ -z ${2:-} ]] || args+=(--features "$2")
   records_run cargo check --unit-graph -Z unstable-options "${args[@]}" --all-targets --locked
+}
+
+# The features that the targets of package `$1` require, joined by commas,
+# or nothing. The tree's own lint passes decide, as for its policy: a tree
+# whose passes turn on these features carries `.config/policy/required.bash`,
+# and the passes of an older tree build no target that requires a feature.
+records_required() {
+  local script=$records_tree/.config/policy/required.bash
+  [[ -x $script ]] || return 0
+  records_run cargo metadata --no-deps --locked --format-version 1 | "$script" --package "$1"
 }
 
 # What the units of the package in directory `$2` reach in the unit graph
@@ -370,13 +381,15 @@ records_evict() {
 }
 
 # Builds the records of package `$1` into `$records_work/records`, with the
-# run's messages in `$records_work/messages.json`. The run first takes the
+# run's messages in `$records_work/messages.json`. A second argument names
+# the features to turn on, as for `records_units`. The run first takes the
 # package's own artifacts out of the check targets that `cargo dylint` keeps
 # under `dylint/target/<toolchain>` of the records target. The run of a
 # package that depends on it builds its library there, a fresh unit gives no
 # record, and the entry would then hold no library unit (#7092).
 records_build() {
-  local dir
+  local dir args=(-p "$1")
+  [[ -z ${2:-} ]] || args+=(--features "$2")
   rm -rf "$records_work/records"
   mkdir -p "$records_work/records"
   : > "$records_work/dylint.log"
@@ -384,7 +397,7 @@ records_build() {
     [[ -d $dir ]] || continue
     records_run cargo clean --quiet -p "$1" --target-dir "$dir" 2>> "$records_work/dylint.log" || return
   done
-  records_run cargo dylint --lib quenchant_dylints -- -p "$1" --all-targets --locked --quiet --message-format=json \
+  records_run cargo dylint --lib quenchant_dylints -- "${args[@]}" --all-targets --locked --quiet --message-format=json \
     > "$records_work/messages.json" 2>> "$records_work/dylint.log"
 }
 
@@ -398,11 +411,13 @@ records_main() {
   mkdir -p "$out" "$records_cache"
   records_open "$tree" "$target"
   trap 'rm -rf "$records_work"' EXIT
-  local names=() dirs=() pair i fixed key root prefix files missed=() hits=0
+  local names=() dirs=() features=() pair i fixed key root prefix files missed=() hits=0
   for pair in "$@"; do names+=("${pair%%=*}"); dirs+=("${pair#*=}"); done
   fixed=$(records_fixed)
   for i in "${!names[@]}"; do
-    records_units "${names[i]}" > "$records_work/units-$i.json" 2> "$records_work/units.log" \
+    features[i]=$(records_required "${names[i]}") \
+      || { echo "check:deletes: no metadata of ${names[i]} at $records_tree" >&2; return 2; }
+    records_units "${names[i]}" "${features[i]}" > "$records_work/units-$i.json" 2> "$records_work/units.log" \
       || { echo "check:deletes: no unit graph of ${names[i]} at $records_tree:" >&2; tail -n 20 "$records_work/units.log" >&2; return 2; }
     records_closure "$records_work/units-$i.json" "${dirs[i]}" > "$records_work/closure-$i"
     records_manifest "$fixed" "$(< "$records_work/closure-$i")" > "$records_work/manifest-$i"
@@ -411,7 +426,7 @@ records_main() {
   done
   root=$records_root
   for i in "${missed[@]}"; do
-    records_build "${names[i]}" \
+    records_build "${names[i]}" "${features[i]}" \
       || { echo "check:deletes: the records of ${names[i]} at $records_tree do not build:" >&2; tail -n 20 "$records_work/dylint.log" >&2; return 2; }
     prefix=$(tr '/' '_' <<< "${dirs[i]}")_
     shopt -s nullglob

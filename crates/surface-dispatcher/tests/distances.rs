@@ -107,8 +107,7 @@ fn hole_count(
     row.holes
         .iter()
         .find(|&&(ref var, _)| var.hole() == hole)
-        .map(|&(_, count)| count)
-        .unwrap_or_default()
+        .map_or_default(|&(_, count)| count)
 }
 
 /// `count` ticks as a distance.

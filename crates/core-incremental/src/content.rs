@@ -1483,7 +1483,6 @@ impl ContentNode
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn child_indices(&self) -> impl DoubleEndedIterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
         self.children().iter()

@@ -1528,7 +1528,7 @@ mod tests
             ])
         );
         assert!(bool::from(fixed.diverged));
-        assert!(fixed.log.is_empty());
+        assert!(fixed.log.is_empty(), "{:?}", fixed.log);
     }
 
     #[test]

@@ -1825,7 +1825,8 @@ mod tests
             precs_of_nodes(vec![NodeId::from(0), foreign, NodeId::from(1)]),
             Err(PrecDagError::Inconsistent)
         );
-        assert!(precs_of_nodes(Vec::new()).expect("empty groups").is_empty());
+        let groups = precs_of_nodes(Vec::new()).expect("empty groups");
+        assert!(groups.is_empty(), "{groups:?}");
     }
 
     #[test]

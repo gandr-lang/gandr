@@ -480,7 +480,7 @@ fn a_codata_declaration_lowers_to_its_signature()
         matches!(arena.comp_type(tail), Some(&CompType::Codata { declaration, .. }) if declaration == stream.constant()),
         "the tail is the family itself"
     );
-    assert!(module.description_diagnostics().is_empty());
+    assert_eq!(module.description_diagnostics(), []);
     let DeclarationOutcome::Uncompleted { declared_type } = ones.outcome()
     else {
         panic!("the stream is declared: {:?}", ones.outcome())
@@ -664,7 +664,7 @@ fn a_codata_family_reads_a_data_family_as_the_lowering_does_2665()
         panic!("the argument is a code: {:?}", arena.value(argument))
     };
     assert!(is_small(code), "the tail is at the code of `Small`");
-    assert!(module.description_diagnostics().is_empty());
+    assert_eq!(module.description_diagnostics(), []);
 }
 
 #[test]

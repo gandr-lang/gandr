@@ -1325,8 +1325,8 @@ mod tests
         ]);
         arena.truncate_to(floor);
         assert_eq!(arena.extent(), floor);
-        assert!(arena.terms_above(floor).is_empty());
-        assert!(arena.types_above(floor).is_empty());
+        assert_eq!(arena.terms_above(floor), []);
+        assert_eq!(arena.types_above(floor), []);
         for term in &above {
             assert_eq!(
                 arena.find(term),
@@ -1345,8 +1345,8 @@ mod tests
             terms: TermId(usize::MAX),
             types: TypeId(usize::MAX),
         };
-        assert!(arena.terms_above(past).is_empty());
-        assert!(arena.types_above(past).is_empty());
+        assert_eq!(arena.terms_above(past), []);
+        assert_eq!(arena.types_above(past), []);
         arena.truncate_to(past);
         assert_eq!(arena.extent(), grown);
     }

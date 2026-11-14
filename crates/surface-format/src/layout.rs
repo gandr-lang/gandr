@@ -1082,7 +1082,8 @@ fn items<'group, 'source>(
                     matches!(current.element, Element::Text(text) if <&str>::from(text) == "|");
                 let unseparated = !ended && !barred && breaks;
                 let deeper = base.is_some_and(|statement| current.indent > statement);
-                // A separator on a line of its own ends the statement before it.
+                // A separator on a line of its own ends the statement before
+                // it.
                 let separator = matches!(current.element, Element::Text(text)
                     if SEPARATORS.contains(&<&str>::from(text)));
                 let continues = after == Opens::Other

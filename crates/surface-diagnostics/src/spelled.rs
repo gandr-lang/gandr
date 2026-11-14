@@ -772,7 +772,7 @@ fn spell<'failure>(
             .get(scope)
             .and_then(|around| around.get(.. within))
             .unwrap_or_default();
-        let bound = bindings.get(scope).map(Vec::as_slice).unwrap_or_default();
+        let bound = bindings.get(scope).map_or_default(Vec::as_slice);
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode),
             (Spelling::Ascii, &mut ascii),
@@ -824,7 +824,7 @@ fn spell<'failure>(
             .get(scope)
             .and_then(|around| around.get(.. within))
             .unwrap_or_default();
-        let bound = bindings.get(scope).map(Vec::as_slice).unwrap_or_default();
+        let bound = bindings.get(scope).map_or_default(Vec::as_slice);
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode_loops),
             (Spelling::Ascii, &mut ascii_loops),

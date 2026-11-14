@@ -1903,7 +1903,6 @@ pub(super) fn transport(
             machine
                 .comps
                 .push(domain.comp_return(moved, CompTermFace::Reduced));
-            Ok(Moved::Stepped)
         },
         (None, _) => {
             let onward = domain.native_continuation(CompBody::Conjugated {
@@ -1914,7 +1913,6 @@ pub(super) fn transport(
             });
             machine.tasks.push(Task::BindClosure(onward));
             endpoint_image(core, domain, machine, (at, Side::Left), (path, rest))?;
-            Ok(Moved::Stepped)
         },
         (Some(left), None) => {
             let onward = domain.native_continuation(CompBody::Conjugated {
@@ -1925,9 +1923,9 @@ pub(super) fn transport(
             });
             machine.tasks.push(Task::BindClosure(onward));
             endpoint_image(core, domain, machine, (at, Side::Right), (path, rest))?;
-            Ok(Moved::Stepped)
         },
     }
+    Ok(Moved::Stepped)
 }
 
 /// Take one transport step in a singleton family by the word moved, where the

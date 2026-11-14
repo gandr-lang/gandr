@@ -617,7 +617,7 @@ fn transitive_queue_prunes_only_node_endpoints_not_already_seen() -> Result<(), 
     );
 
     let root_index = WalkIndex::build(&root_terminal)?;
-    assert!(root_index.walks(Dir::Left, &a, &c).is_empty());
+    assert_eq!(root_index.walks(Dir::Left, &a, &c), []);
     assert_eq!(
         &[fixture_support::walk(
             &[&[fixture_support::nt(3_u8, 0_u8, 3_u64)]],
@@ -855,11 +855,11 @@ fn query_orientation_filters_direct_rows() -> Result<(), Box<dyn Error>>
     spec.insert_direct(Dir::Right, r.clone(), l.clone(), right_walk.clone());
     let index = WalkIndex::build(&spec)?;
     assert_eq!(core::slice::from_ref(&eq_walk), index.eq(&l, &r));
-    assert!(index.eq(&r, &l).is_empty());
+    assert_eq!(index.eq(&r, &l), []);
     assert_eq!(core::slice::from_ref(&neq_walk), index.lt(&l, &r));
-    assert!(index.lt(&r, &l).is_empty());
+    assert_eq!(index.lt(&r, &l), []);
     assert_eq!(core::slice::from_ref(&right_walk), index.gt(&l, &r));
-    assert!(index.gt(&r, &l).is_empty());
+    assert_eq!(index.gt(&r, &l), []);
     Ok(())
 }
 #[test]
@@ -1546,13 +1546,13 @@ fn empty_machine_preserves_root_and_empty_projections() -> Result<(), Box<dyn Er
         SeenKeyVerdict::Equivalent
     );
     for dir in [Dir::Left, Dir::Right] {
-        assert!(index.walks(dir, &End::Root, &End::Root).is_empty());
-        assert!(index.walks(dir, &End::Root, &absent).is_empty());
+        assert_eq!(index.walks(dir, &End::Root, &End::Root), []);
+        assert_eq!(index.walks(dir, &End::Root, &absent), []);
     }
-    assert!(index.eq(&End::Root, &End::Root).is_empty());
-    assert!(index.lt(&End::Root, &absent).is_empty());
-    assert!(index.gt(&absent, &End::Root).is_empty());
-    assert!(index.molds(&TestLabel(1)).is_empty());
+    assert_eq!(index.eq(&End::Root, &End::Root), []);
+    assert_eq!(index.lt(&End::Root, &absent), []);
+    assert_eq!(index.gt(&absent, &End::Root), []);
+    assert_eq!(index.molds(&TestLabel(1)), []);
     assert_eq!(u64::from(index.fingerprint()), 0xc749_02ca_177d_edaf_u64);
     Ok(())
 }

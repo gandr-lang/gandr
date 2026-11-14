@@ -332,6 +332,7 @@ impl OperationPlan
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn output_labels(&self) -> &[Maybe<ByteSpan, port_name::Absent>]
     {
         &self.labels

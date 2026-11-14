@@ -3795,7 +3795,8 @@ impl<'pbg> MeldState<'pbg>
             Kind::FormStart { absorb_left } => {
                 if absorb_left {
                     // The absorbing start applies only to a head operand of its
-                    // own sort — never a top-level `def` item's Item-sorted head.
+                    // own sort — never a top-level `def` item's Item-sorted
+                    // head.
                     bool::from(frontier.head_operand)
                         && self.pbg.mold(mold).is_ok_and(|def| {
                             frontier.head_sort == Some(def.sort) || def.sort == Sort::Item
@@ -6238,10 +6239,11 @@ impl<'pbg> MeldState<'pbg>
                 Role::Operand | Role::Operator { .. } => None,
             })
             .unwrap_or(false);
-        // A completable frontier (its mold in the grammar's LAST set) is already
-        // a complete form: close it cleanly with no ghost end and no obligation
-        // — a bare `?` hole at end of input is a whole hole, not an incomplete
-        // form. Content above it stays a sibling.
+        // A completable frontier (its mold in the grammar's LAST set) is
+        // already a complete form: close it cleanly with no ghost end
+        // and no obligation — a bare `?` hole at end of input is a
+        // whole hole, not an incomplete form. Content above it stays a
+        // sibling.
         if !required_tail
             && let Some(Role::FormTile { mold, .. }) =
                 self.stack.get(frontier_index).map(|cell| cell.role)
@@ -7138,8 +7140,9 @@ impl<'pbg> MeldState<'pbg>
                     if bool::from(self.tail_is_under_way(FrontierIndex::from(index), mold)) {
                         continue;
                     }
-                    // An open form frontier expects its `≐`-continuation; commit
-                    // force-closes it with a ghost end and a MissingTile.
+                    // An open form frontier expects its `≐`-continuation;
+                    // commit force-closes it with a ghost
+                    // end and a MissingTile.
                     let above = index.checked_add(1).and_then(|next| self.stack.get(next));
                     visit(Shortfall::Continuation {
                         mold,
@@ -11502,7 +11505,7 @@ mod tests
         assert_eq!(reader.pos, 35);
         assert_eq!(reader.u8(), Err(super::CheckpointError::Truncated));
         assert_eq!(reader.pos, 35);
-        assert!(reader.take(super::ByteCount::from(0))?.as_ref().is_empty());
+        assert_eq!(reader.take(super::ByteCount::from(0))?.as_ref(), []);
         assert_eq!(reader.pos, 35);
         assert_eq!(
             reader.take(super::ByteCount::from(usize::MAX)),
@@ -11555,7 +11558,7 @@ mod tests
             bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
             pos: 0,
         };
-        assert!(reader.blob()?.as_ref().is_empty());
+        assert_eq!(reader.blob()?.as_ref(), []);
         assert_eq!(reader.pos, 8);
         assert_eq!(reader.blob()?.as_ref(), b"\xff\0");
         assert_eq!(reader.pos, 18);
@@ -12344,7 +12347,8 @@ mod tests
     {
         // `x @a x @b x`: `@a` and `@b` are precedence-incomparable within one
         // sort, so the melder emits exactly one AmbiguousPrec at the smallest
-        // responsible span (the second operator `@b`) and the parse stays total.
+        // responsible span (the second operator `@b`) and the parse stays
+        // total.
         let pbg = ambiguous_pbg()?;
         let x = only(&pbg, TileLabel("x"));
         let opa = only(&pbg, TileLabel("@a"));
@@ -12518,7 +12522,8 @@ mod tests
             "an operator missing its right operand expects a hole"
         );
 
-        // Querying finalize at every prefix leaves the committed parse unchanged.
+        // Querying finalize at every prefix leaves the committed parse
+        // unchanged.
         let mut queried = MeldState::new(&pbg);
         for tile in [
             MoldedTile::new(x, TileText::from("x")),
@@ -12898,8 +12903,8 @@ mod tests
     {
         // A form-end closer (`)` / `;` / a closing `"`) is admissible only when
         // it `≐`-continues an open form frontier: at the base none is open, so
-        // every closer is rejected (the pre-filter cannot pick a mold that would
-        // immediately flag a `MissingTile`).
+        // every closer is rejected (the pre-filter cannot pick a mold that
+        // would immediately flag a `MissingTile`).
         let pbg = built_in()?;
         let state = MeldState::new(&pbg);
         for closer in [")", "}", "]", ";"] {
@@ -12918,9 +12923,10 @@ mod tests
     #[test]
     fn expected_sort_reads_the_open_slot() -> Result<(), Box<dyn Error>>
     {
-        // `expected_operand_sort` reads the head's expected operand slot: at the
-        // base it defaults to `Expression`, and after a `ret` prefix operator the
-        // unsaturated right hole is still `Expression`.
+        // `expected_operand_sort` reads the head's expected operand slot: at
+        // the base it defaults to `Expression`, and after a `ret`
+        // prefix operator the unsaturated right hole is still
+        // `Expression`.
         let pbg = built_in()?;
         let mut state = MeldState::new(&pbg);
         assert_eq!(Sort::Expression, state.expected_operand_sort());
@@ -12997,7 +13003,8 @@ mod tests
         // *complete* form (its mold is in the grammar LAST set), so committing
         // closes it cleanly — a one-tile hole meld, ZERO obligations — rather
         // than force-closing an "incomplete" form with a ghost end and a
-        // spurious MissingTile. `finalize` agrees (it reports the input complete).
+        // spurious MissingTile. `finalize` agrees (it reports the input
+        // complete).
         let pbg = completable_pbg()?;
         let only = |label: &'static str| -> MoldId {
             let molds = pbg.candidates(TileLabel(label));
@@ -13043,9 +13050,10 @@ mod tests
     fn completable_hole_does_not_absorb_enclosing_closer() -> Result<(), Box<dyn Error>>
     {
         // An open completable `?` frontier does not shadow the
-        // enclosing form — pushing the group's `)` closes the *hole* cleanly and
-        // then the *group*, so the `)` is a sibling of the hole, never absorbed
-        // into its meld (which is what structurally broke block recovery).
+        // enclosing form — pushing the group's `)` closes the *hole* cleanly
+        // and then the *group*, so the `)` is a sibling of the hole,
+        // never absorbed into its meld (which is what structurally
+        // broke block recovery).
         let pbg = completable_pbg()?;
         let only = |label: &'static str| -> MoldId {
             let molds = pbg.candidates(TileLabel(label));
@@ -13057,7 +13065,8 @@ mod tests
             state.push(&MoldedTile::new(only(label), TileText::from(text)));
             // The completable-hole clean-close mutates the slope through
             // `close_form`; the head caches must stay exact across it (the
-            // shared invariant with `head_caches_match_a_fresh_scan_across_streams`).
+            // shared invariant with
+            // `head_caches_match_a_fresh_scan_across_streams`).
             state.assert_head_caches_exact();
         }
         let (tree, obligations) = state.commit_with_obligations(SourceText::from("(?)"))?;
@@ -13067,7 +13076,8 @@ mod tests
             obligations.iter().map(|o| o.class).collect::<Vec<_>>()
         );
         // The group meld holds `(`, the hole meld, and `)` as three children;
-        // the hole meld holds ONLY `?` (the `)` is a group sibling, not absorbed).
+        // the hole meld holds ONLY `?` (the `)` is a group sibling, not
+        // absorbed).
         let root_children = children(&tree, tree.root());
         assert_eq!(1, root_children.len(), "one top-level group");
         let group_children = children(&tree, root_children[0]);
@@ -13649,8 +13659,7 @@ mod tests
             let found_first = menu
                 .closings()
                 .first()
-                .map(|closing| written(closing.steps()))
-                .unwrap_or_default();
+                .map_or_default(|closing| written(closing.steps()));
             assert_eq!(
                 (pending.to_owned(), head.to_owned(), first.to_owned()),
                 (written(menu.pending()), found_head, found_first),
