@@ -324,6 +324,29 @@ struct Sealed
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct Foresight(usize);
 
+/// One record that the declaration under way added to a table that a
+/// checkpoint keeps.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Tabling
+{
+    /// A rows record.
+    Row(crate::program::Gained),
+    /// The types of the handler at this node.
+    Handled(ComputationId),
+}
+
+/// How many rows records the gained log held: where [`CheckingContext`]
+/// starts to log the records that one write adds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct RowsMark(usize);
+
+/// How many entries the context's tables held that no checkpoint keeps yet,
+/// when the judgement of one declaration started.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub(crate) struct TableCensus(usize);
+
 /// The core context wrapped with the signature table, the admission position,
 /// the atoms, the code definitions, the sealed abstract types, the lifts and
 /// the step allowance.
@@ -387,6 +410,10 @@ pub struct CheckingContext<'arena>
     /// The records [`Self::rows`] gained since the first run of the body
     /// under way began: what its second run forgets.
     gained_rows: Vec<crate::program::Gained>,
+    /// The records that the declaration under way added to [`Self::rows`] and
+    /// [`Self::handled`] since [`Self::start_tables`], or none while no
+    /// judgement logs them.
+    tabling: Option<Vec<Tabling>>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -844,6 +871,7 @@ impl<'arena> CheckingContext<'arena>
             handled: BTreeMap::new(),
             rows: crate::program::Rows::default(),
             gained_rows: Vec::new(),
+            tabling: None,
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -938,6 +966,7 @@ impl<'arena> CheckingContext<'arena>
             ref handled,
             ref rows,
             gained_rows: _,
+            tabling: _,
             ref reflexivities,
             ref nesting,
             ref crossings,
@@ -1150,6 +1179,7 @@ impl<'arena> CheckingContext<'arena>
             handled,
             rows,
             gained_rows: Vec::new(),
+            tabling: None,
             reflexivities,
             nesting,
             crossings,
@@ -4367,7 +4397,33 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         handled: crate::handler::Handled,
     )
     {
-        let _first = self.handled.entry(at).or_insert(handled);
+        if let alloc::collections::btree_map::Entry::Vacant(vacant) = self.handled.entry(at) {
+            let _kept = vacant.insert(handled);
+            if let Some(ref mut log) = self.tabling {
+                log.push(Tabling::Handled(at));
+            }
+        }
+    }
+
+    /// Log each rows record gained since the gained log held `from` records,
+    /// while a judgement logs the records of the declaration under way.
+    ///
+    /// # Specification
+    /// trivial.
+    fn log_rows(
+        &mut self,
+        from: RowsMark,
+    )
+    {
+        if let Some(ref mut log) = self.tabling {
+            log.extend(
+                self.gained_rows
+                    .get(from.0 ..)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|&gained| Tabling::Row(gained)),
+            );
+        }
     }
 
     /// The computations the judgement checked or synthesised at a returner
@@ -4413,8 +4469,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         if let Maybe::Present(level) = self.row_level(expected) {
+            let from = RowsMark(self.gained_rows.len());
             self.rows
                 .check(at, (expected, level), &mut self.gained_rows);
+            self.log_rows(from);
         }
     }
 
@@ -4444,6 +4502,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         (synthesised, against): (CompTypeId, Option<CompTypeId>),
     )
     {
+        let from = RowsMark(self.gained_rows.len());
         match self.row_level(synthesised) {
             Maybe::Present(level) => {
                 self.rows
@@ -4462,6 +4521,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             },
             Maybe::Absent(_) => {},
         }
+        self.log_rows(from);
     }
 
     /// Record the level of `formed`'s result, when `formed` is a returner over
@@ -4485,7 +4545,135 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         if let Maybe::Present(level) = self.row_level(formed) {
+            let from = RowsMark(self.gained_rows.len());
             self.rows.form(formed, level, &mut self.gained_rows);
+            self.log_rows(from);
+        }
+    }
+
+    /// How many entries the tables hold that no checkpoint keeps yet: the
+    /// lifts, the function extensionalities, the coercions, the
+    /// equivalences, the session statements, the directed flows, the motives,
+    /// the payloads, the reflexivities and the native paths by node, and the
+    /// relations and the restatements by position.
+    ///
+    /// # Specification
+    /// trivial.
+    fn table_census(&self) -> TableCensus
+    {
+        TableCensus(
+            [
+                self.lifts.len(),
+                self.funexts.len(),
+                self.coercions.len(),
+                self.equivalences.len(),
+                self.flows.len(),
+                self.directed.len(),
+                self.motives.len(),
+                self.payloads.len(),
+                self.reflexivities.len(),
+                self.natives.len(),
+                self.relations.len(),
+                self.restatements.len(),
+            ]
+            .into_iter()
+            .fold(0_usize, usize::saturating_add),
+        )
+    }
+
+    /// Start the log of the table entries that the judgement of one
+    /// declaration adds, and count the entries that no checkpoint keeps yet.
+    ///
+    /// # Specification
+    /// - ensures: logging is on with an empty log; an earlier log is dropped.
+    /// - panics: none.
+    /// - executable: none — [`Self::finish_tables`] reads the log.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::finish_tables`].
+    /// - witness: `gandr-surface-lsp::tests::taking::a_supported_judgement_logs_the_entries_each_declaration_adds_7373`
+    pub(crate) fn start_tables(&mut self) -> TableCensus
+    {
+        self.tabling = Some(Vec::new());
+        self.table_census()
+    }
+
+    /// Stop the log of [`Self::start_tables`], and give the entries that the
+    /// declaration added to the rows and the handlers, each as it reads now,
+    /// beside whether it added an entry to another table since `before`.
+    ///
+    /// # Specification
+    /// - requires: `before` is the census of the matching
+    ///   [`Self::start_tables`].
+    /// - ensures: the rows records and the handlers logged that still read,
+    ///   each at its value now; [`crate::support::OtherTables::Written`] when
+    ///   another table holds more entries than at `before`; logging is off
+    ///   afterwards.
+    /// - panics: none.
+    /// - executable: none — the witness compares a taken item's report with a
+    ///   fresh judgement's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a taken item that seats the entries given here gives
+    ///   the kernel checkpoint of a fresh judgement.
+    /// - witness: `gandr-surface-lsp::tests::taking::a_supported_judgement_logs_the_entries_each_declaration_adds_7373`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    pub(crate) fn finish_tables(
+        &mut self,
+        before: TableCensus,
+    ) -> crate::support::Tabled
+    {
+        let log = self.tabling.take().unwrap_or_default();
+        let gained: Vec<crate::program::Gained> = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Row(gained) => Some(gained),
+                Tabling::Handled(_) => None,
+            })
+            .collect();
+        let handled = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Handled(at) => self.handled.get(&at).map(|types| (at, types.clone())),
+                Tabling::Row(_) => None,
+            })
+            .collect();
+        let others = if self.table_census().0 > before.0 {
+            crate::support::OtherTables::Written
+        }
+        else {
+            crate::support::OtherTables::Untouched
+        };
+        crate::support::Tabled::new(self.rows.of_gained(&gained), handled, others)
+    }
+
+    /// Enter the rows records and the handlers of an adopted declaration, as
+    /// its judgement added them.
+    ///
+    /// # Specification
+    /// - requires: each node and type is minted in this context's arena, at the
+    ///   place that the declaration's judgement read it.
+    /// - ensures: each record and each handler reads here, the first one where
+    ///   a key already reads.
+    /// - panics: none.
+    /// - executable: none — the witness compares a taken item's report with a
+    ///   fresh judgement's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a taken item that enters its entries here gives the
+    ///   kernel checkpoint of a fresh judgement.
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    #[inline]
+    pub fn adopt_tabled<Entries>(
+        &mut self,
+        rows: &crate::program::Rows,
+        handled: Entries,
+    ) where
+        Entries: IntoIterator<Item = (ComputationId, crate::handler::Handled)>,
+    {
+        self.rows.absorb(rows);
+        for (at, types) in handled {
+            let _first = self.handled.entry(at).or_insert(types);
         }
     }
 

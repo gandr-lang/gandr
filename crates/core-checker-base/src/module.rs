@@ -1908,7 +1908,9 @@ pub fn check_declaration_supported(
 ) -> Supported
 {
     context.start_support();
+    let census = context.start_tables();
     let decision = decide(context, declaration, Run::Judged);
+    let tabled = context.finish_tables(census);
     let entered = entered(context, declaration, decision.verdict);
     let residue = match decision.verdict {
         Verdict::Suspended(_) => Maybe::Present(decision.residue),
@@ -1923,6 +1925,7 @@ pub fn check_declaration_supported(
         decision.failure,
         (decision.elaboration, residue),
     )
+    .tabling(tabled)
 }
 
 /// The form the table holds `declaration` in after its judgement gave
@@ -2430,7 +2433,9 @@ impl ModuleRun
                             #[cfg(feature = "instrument")]
                             let before = context.tally();
                             context.start_support();
+                            let census = context.start_tables();
                             let decision = decide(context, declaration, kind);
+                            let tabled = context.finish_tables(census);
                             let support = context.finish_support();
                             let entered = entered(context, declaration, decision.verdict);
                             let kept = Supported::new(
@@ -2440,7 +2445,8 @@ impl ModuleRun
                                     Maybe::Absent(elaborated::Absent::Reported),
                                     Maybe::Absent(waits::Absent::Reported),
                                 ),
-                            );
+                            )
+                            .tabling(tabled);
                             // The counts layer charges these consults to the
                             // item a pass takes the verdict for.
                             #[cfg(feature = "instrument")]

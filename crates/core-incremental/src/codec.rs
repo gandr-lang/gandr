@@ -162,13 +162,17 @@ use crate::region::Reference;
 use crate::report::CrossingContent;
 use crate::report::ElaborationContent;
 use crate::report::EquationContent;
+use crate::report::HandledContent;
 use crate::report::NestingContent;
 use crate::report::OperandContent;
 use crate::report::Place as ReportPlace;
 use crate::report::ReportContent;
+use crate::report::RowContent;
 use crate::report::SuspensionContent;
+use crate::report::TableContent;
 use crate::report::nesting;
 use crate::report::reported;
+use crate::report::tabled;
 use crate::report::waiting;
 use crate::support::SupportedNode;
 use crate::typing::EndpointSite;
@@ -183,14 +187,15 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with. Version
-/// `0x19` keeps what the judgement reported of an item, beside the table parts
-/// that `0x18` keeps of an item that its judgement entered elaborated, the
-/// failure content that `0x17` keeps and the located program that `0x16`
-/// persists.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x19";
+/// `0x1a` keeps the entries that the judgement added to the rows and the
+/// handlers, beside what the judgement reported of an item that `0x19`
+/// keeps, the table parts that `0x18` keeps of an item that its judgement
+/// entered elaborated, the failure content that `0x17` keeps and the located
+/// program that `0x16` persists.
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x1a";
 
 /// The magic and version a program's address is computed over. Version
-/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x19`
+/// `0x0d` reads its items' content as checkpoint versions `0x16` to `0x1a`
 /// write it.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x0d";
 
@@ -1498,6 +1503,155 @@ fn read_report(
     };
     Ok(Maybe::Present(ReportContent::from_parts(
         (elaboration, suspension),
+        (outside, roots),
+    )))
+}
+
+/// Why a checkpoint keeps no entries of the tables, in stable wire order.
+const TABLEDS: [tabled::Absent; 4] = [
+    tabled::Absent::Untabled,
+    tabled::Absent::Unkept,
+    tabled::Absent::Unread,
+    tabled::Absent::Unplaced,
+];
+
+/// Write the entries a checkpoint keeps of the rows and the handlers: tag 0
+/// and why it keeps none; else tag 1, the entries' own table and the place
+/// of each root in it, then the rows records and the handlers, each a count
+/// and its entries.
+///
+/// # Specification
+/// - ensures: [`read_tables`] reads back `tables` from what was written, given
+///   the table of the body that the checkpoint keeps.
+/// - fails: as [`write_nodes`], [`write_report_place`] and [`write_level`].
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the entries of a handler at a row read back as written,
+///   and seat as the entries of a fresh judgement.
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+fn write_tables<Out>(
+    writer: &mut Writer<'_, Out>,
+    tables: Maybe<&TableContent, tabled::Absent>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let tables = match tables {
+        Maybe::Present(tables) => tables,
+        Maybe::Absent(reason) => {
+            writer.tag(Tag(0));
+            return write_listed(writer, &TABLEDS, &reason);
+        },
+    };
+    writer.tag(Tag(1));
+    let (outside, roots) = tables.outside();
+    write_nodes(writer, outside)?;
+    writer.count(Count(roots.len()))?;
+    for root in roots {
+        write_index(writer, root.node)?;
+        write_selection(writer, &root.support);
+    }
+    writer.count(Count(tables.rows().len()))?;
+    for row in tables.rows() {
+        match *row {
+            RowContent::Checked(ref at, ref ty) => {
+                writer.tag(Tag(0));
+                write_report_place(writer, at)?;
+                write_report_place(writer, ty)?;
+            },
+            RowContent::Synthesised(ref at, ref ty) => {
+                writer.tag(Tag(1));
+                write_report_place(writer, at)?;
+                write_report_place(writer, ty)?;
+            },
+            RowContent::Level(ref ty, ref level) => {
+                writer.tag(Tag(2));
+                write_report_place(writer, ty)?;
+                write_level(writer, level)?;
+            },
+        }
+    }
+    writer.count(Count(tables.handled().len()))?;
+    for &(ref at, ref types) in tables.handled() {
+        write_report_place(writer, at)?;
+        write_report_place(writer, &types.subject)?;
+        write_report_place(writer, &types.answer)?;
+        write_level(writer, &types.level)?;
+    }
+    Ok(())
+}
+
+/// Read the entries a checkpoint keeps of the rows and the handlers, as
+/// [`write_tables`] writes them, a judged node's support read against
+/// `body`, the table of the body that the checkpoint keeps.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] as [`read_report`] fails on a place or a
+///   root; [`CodecError::NonCanonical`] for a table not numbered from its
+///   roots, or entries out of the order of their keys.
+/// - panics: none.
+/// - executable: none — the witness reads the bytes back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`write_tables`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+fn read_tables(
+    reader: &mut Reader<'_>,
+    body: Option<&[SupportedNode]>,
+) -> Result<Maybe<TableContent, tabled::Absent>, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => return Ok(Maybe::Absent(read_listed(reader, &TABLEDS)?)),
+        1 => {},
+        _ => return Err(CodecError::Corrupt),
+    }
+    let outside = read_nodes(reader)?;
+    let count = reader.count()?.0;
+    let mut roots = Vec::new();
+    for _ in 0 .. count {
+        roots.push(read_table_place(reader, &outside)?);
+    }
+    check_discovery(&outside, roots.iter().map(|root| root.node))?;
+    let places = Places {
+        body,
+        roots: roots.len(),
+    };
+    let count = reader.count()?.0;
+    let mut rows = Vec::new();
+    for _ in 0 .. count {
+        rows.push(match reader.tag()?.0 {
+            0 => RowContent::Checked(places.read(reader)?, places.read(reader)?),
+            1 => RowContent::Synthesised(places.read(reader)?, places.read(reader)?),
+            2 => RowContent::Level(places.read(reader)?, read_level(reader)?),
+            _ => return Err(CodecError::Corrupt),
+        });
+    }
+    if !rows.is_sorted_by(|left, right| left.key() < right.key()) {
+        return Err(CodecError::NonCanonical);
+    }
+    let count = reader.count()?.0;
+    let mut handled = Vec::new();
+    for _ in 0 .. count {
+        let at = places.read(reader)?;
+        handled.push((at, HandledContent {
+            subject: places.read(reader)?,
+            answer: places.read(reader)?,
+            level: read_level(reader)?,
+        }));
+    }
+    if !handled.is_sorted_by(|left, right| left.0 < right.0) {
+        return Err(CodecError::NonCanonical);
+    }
+    Ok(Maybe::Present(TableContent::from_parts(
+        (rows, handled),
         (outside, roots),
     )))
 }
@@ -9405,7 +9559,8 @@ where
     write_entered(writer, checkpoint.entered());
     write_failed(writer, checkpoint.failure())?;
     write_elaborated(writer, checkpoint.entry())?;
-    write_report(writer, checkpoint.report())
+    write_report(writer, checkpoint.report())?;
+    write_tables(writer, checkpoint.tables())
 }
 
 /// Read one item's checkpoint.
@@ -9481,14 +9636,19 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
     let checkpoint = ItemCheckpoint::new(content, footprint, support, typing, entered);
     let checkpoint = checkpoint.with_failure(read_failed(reader)?);
     let entry = read_elaborated(reader)?;
-    let report = read_report(reader, match entry {
+    let body = match entry {
         Maybe::Present(ref entry) => match entry.body() {
             Maybe::Present(body) => Some(body.nodes()),
             Maybe::Absent(written::Absent::Written) => None,
         },
         Maybe::Absent(_) => None,
-    })?;
-    Ok(checkpoint.with_entry(entry).with_report(report))
+    };
+    let report = read_report(reader, body)?;
+    let tables = read_tables(reader, body)?;
+    Ok(checkpoint
+        .with_entry(entry)
+        .with_report(report)
+        .with_tables(tables))
 }
 
 /// Write the form the table held an item in: tag 0 as written, tag 1

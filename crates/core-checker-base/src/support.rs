@@ -52,6 +52,18 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement keeps no entries of the tables.
+    pub mod untabled {
+        /// The reason no entries are kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The judgement logged no entries of the tables.
+            Unlogged,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a declaration's judgement carries no elaboration.
     pub mod elaborated {
         /// The reason no elaboration is carried.
@@ -383,6 +395,101 @@ pub enum Entered
     Elaborated,
 }
 
+/// Whether one declaration's judgement added an entry to a table that a
+/// checkpoint does not keep yet.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum OtherTables
+{
+    /// The judgement added no entry to such a table.
+    Untouched,
+    /// The judgement added an entry to such a table.
+    Written,
+}
+
+/// The entries one declaration's judgement added to the tables that the
+/// bridge reads: the rows records and the handlers, each with its value, and
+/// whether it added an entry to another table.
+///
+/// # Specification
+/// - executable: none — data declaration; the judgement writes it and a
+///   checkpoint keeps it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a taken item that seats these entries gives the kernel
+///   checkpoint of a fresh judgement.
+/// - witness: `gandr-surface-lsp::tests::taking::a_supported_judgement_logs_the_entries_each_declaration_adds_7373`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Tabled
+{
+    /// The rows records, each with its value.
+    rows: crate::program::Rows,
+    /// The types of each handler, by node.
+    handled: alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>,
+    /// Whether the judgement added an entry to another table.
+    others: OtherTables,
+}
+
+impl Tabled
+{
+    /// The entries `rows` and `handled`, beside `others`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn new(
+        rows: crate::program::Rows,
+        handled: alloc::collections::BTreeMap<
+            gandr_core_term::ComputationId,
+            crate::handler::Handled,
+        >,
+        others: OtherTables,
+    ) -> Self
+    {
+        Self {
+            rows,
+            handled,
+            others,
+        }
+    }
+
+    /// The rows records, each with its value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn rows(&self) -> &crate::program::Rows
+    {
+        &self.rows
+    }
+
+    /// The types of each handler, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn handled(
+        &self
+    ) -> &alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>
+    {
+        &self.handled
+    }
+
+    /// Whether the judgement added an entry to another table.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn others(&self) -> OtherTables
+    {
+        self.others
+    }
+}
+
 /// One declaration's verdict, beside the support its judgement consulted and
 /// the form the table holds it in.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -402,6 +509,9 @@ pub struct Supported
     elaboration: Maybe<crate::NestedElaboration, elaborated::Absent>,
     /// What a suspended run left undecided, or why this judgement keeps none.
     residue: Maybe<crate::elaboration::Residue, waits::Absent>,
+    /// The entries the judgement added to the tables that the bridge reads,
+    /// or why this judgement logged none.
+    tabled: Maybe<Tabled, untabled::Absent>,
     /// The goal memo's consults of the decision, where a module run that
     /// keeps supports counted them; none otherwise.
     #[cfg(feature = "instrument")]
@@ -432,8 +542,38 @@ impl Supported
             failure,
             elaboration,
             residue,
+            tabled: Maybe::Absent(untabled::Absent::Unlogged),
             #[cfg(feature = "instrument")]
             memo: crate::tally::MemoTally::NONE,
+        }
+    }
+
+    /// This verdict, beside the entries `tabled` that its judgement added to
+    /// the tables.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn tabling(
+        mut self,
+        tabled: Tabled,
+    ) -> Self
+    {
+        self.tabled = Maybe::Present(tabled);
+        self
+    }
+
+    /// The entries the judgement added to the tables that the bridge reads,
+    /// or why this judgement logged none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn tabled(&self) -> Maybe<&Tabled, untabled::Absent>
+    {
+        match self.tabled {
+            Maybe::Present(ref tabled) => Maybe::Present(tabled),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 

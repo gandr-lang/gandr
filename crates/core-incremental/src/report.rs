@@ -36,16 +36,24 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use gandr_core_checker::Handled;
 use gandr_core_checker::NestedElaboration;
 use gandr_core_checker::Nesting;
+use gandr_core_checker::OtherTables;
+use gandr_core_checker::Tabled;
 use gandr_core_checker::elaboration::Equation;
 use gandr_core_checker::elaboration::Suspension;
+use gandr_core_checker::program::RowRecord;
+use gandr_core_checker::program::Rows;
+use gandr_core_checker::untabled;
 use gandr_core_term::Carried;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::CrossedOperand;
 use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
 use gandr_core_term::effect::Purity;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -111,6 +119,361 @@ quenchant_shape::reason_enum! {
         }
     }
 }
+
+quenchant_shape::reason_enum! {
+    /// Why a checkpoint keeps no entries of the tables that the bridge reads.
+    pub mod tabled {
+        /// The reason no entries are kept.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The judgement added no entry to the rows or the handlers, and
+            /// none to another table.
+            Untabled,
+            /// The judgement added an entry to a table that a checkpoint does
+            /// not keep yet.
+            Unkept,
+            /// The maker of the checkpoint read no entries of the judgement.
+            Unread,
+            /// An entry's key stands outside the item and its judged body.
+            Unplaced,
+        }
+    }
+}
+
+/// One rows record that a checkpoint keeps, its nodes placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RowContent
+{
+    /// The computation, checked at the returner.
+    Checked(Place, Place),
+    /// The computation, which synthesised the returner.
+    Synthesised(Place, Place),
+    /// The returner, whose result stands at the level.
+    Level(Place, Level),
+}
+
+impl RowContent
+{
+    /// The record's kind and its key: the order a checkpoint keeps the
+    /// records in.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn key(&self) -> (RowKind, &Place)
+    {
+        match *self {
+            Self::Checked(ref at, _) => (RowKind::Checked, at),
+            Self::Synthesised(ref at, _) => (RowKind::Synthesised, at),
+            Self::Level(ref ty, _) => (RowKind::Level, ty),
+        }
+    }
+}
+
+/// The kind of a rows record, in the order a checkpoint keeps the kinds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RowKind
+{
+    /// A checked computation.
+    Checked,
+    /// A synthesised computation.
+    Synthesised,
+    /// A returner's level.
+    Level,
+}
+
+/// The types that a checkpoint keeps of one handler, placed.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct HandledContent
+{
+    /// The value type the subject returns.
+    pub subject: Place,
+    /// The computation type the handler is checked at.
+    pub answer: Place,
+    /// The level of the universe the subject's result inhabits.
+    pub level: Level,
+}
+
+/// The entries that an item's judgement added to the rows and the handlers,
+/// each node at its place, as a checkpoint keeps them.
+///
+/// A key is a node of the item, at its place in the item's walk, or a node
+/// of the judged body. A type inside an entry stands at any of the three
+/// places, so a seat mints a type that neither the item nor the body holds.
+///
+/// # Specification
+/// - executable: none — data declaration; [`TableContent::of`] projects a
+///   judgement's entries and [`TableContent::seat`] builds them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a taken item whose entries seat from this content gives
+///   the kernel checkpoint of a fresh judgement.
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TableContent
+{
+    /// The rows records, in the order of their kinds and keys.
+    rows: Vec<RowContent>,
+    /// The types of each handler, in the order of its node's place.
+    handled: Vec<(Place, HandledContent)>,
+    /// The table of the nodes that neither the item's walk nor the judged
+    /// body holds.
+    outside: Vec<SupportedNode>,
+    /// The place in `outside` of each such node, by its index.
+    roots: Vec<TablePlace>,
+}
+
+impl TableContent
+{
+    /// The entries of these parts, as the decoder reassembles them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn from_parts(
+        (rows, handled): (Vec<RowContent>, Vec<(Place, HandledContent)>),
+        (outside, roots): (Vec<SupportedNode>, Vec<TablePlace>),
+    ) -> Self
+    {
+        Self {
+            rows,
+            handled,
+            outside,
+            roots,
+        }
+    }
+
+    /// The rows records, in the order of their kinds and keys.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn rows(&self) -> &[RowContent]
+    {
+        &self.rows
+    }
+
+    /// The types of each handler, in the order of its node's place.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn handled(&self) -> &[(Place, HandledContent)]
+    {
+        &self.handled
+    }
+
+    /// The table of the nodes that neither the item's walk nor the judged
+    /// body holds, beside the place of each such node in it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn outside(&self) -> (&[SupportedNode], &[TablePlace])
+    {
+        (&self.outside, &self.roots)
+    }
+
+    /// The entries that `tabled` names, each node read in `arena` through
+    /// `layout`: a node of the item placed by `sites`, a node of the judged
+    /// body by `body`.
+    ///
+    /// # Specification
+    /// - requires: `sites` is the item's walk in `arena`, and `body` holds the
+    ///   places of the judged body's table when the entry keeps the body.
+    /// - ensures: [`tabled::Absent::Unread`] for a judgement that logged no
+    ///   entries; [`tabled::Absent::Unkept`] when it added an entry to another
+    ///   table; [`tabled::Absent::Untabled`] when it added none;
+    ///   [`tabled::Absent::Unplaced`] when a key stands outside the item and
+    ///   the body; otherwise each entry, every node at the first place that
+    ///   holds it, in the order of the places.
+    /// - panics: none.
+    /// - executable: none — a predicate would place every node again, which the
+    ///   witness does through a seat.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TableContent`].
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    pub(crate) fn of(
+        (arena, layout): (&CoreArena, &Layout),
+        (sites, body): (&Sites, Option<&Placer>),
+        tabled: Maybe<&Tabled, untabled::Absent>,
+    ) -> Maybe<Self, tabled::Absent>
+    {
+        let Maybe::Present(tabled) = tabled
+        else {
+            return Maybe::Absent(tabled::Absent::Unread);
+        };
+        if tabled.others() == OtherTables::Written {
+            return Maybe::Absent(tabled::Absent::Unkept);
+        }
+        if tabled.rows().records().next().is_none() && tabled.handled().is_empty() {
+            return Maybe::Absent(tabled::Absent::Untabled);
+        }
+        let mut placing = Placing {
+            sites,
+            body,
+            layout,
+            indices: BTreeMap::new(),
+            roots: Vec::new(),
+        };
+        let mut rows = Vec::new();
+        for record in tabled.rows().records() {
+            rows.push(match record {
+                RowRecord::Checked(at, ty) => {
+                    let Some(at) = placing.key(ArenaNode::Computation(at))
+                    else {
+                        return Maybe::Absent(tabled::Absent::Unplaced);
+                    };
+                    RowContent::Checked(at, placing.place(ArenaNode::CompType(ty)))
+                },
+                RowRecord::Synthesised(at, ty) => {
+                    let Some(at) = placing.key(ArenaNode::Computation(at))
+                    else {
+                        return Maybe::Absent(tabled::Absent::Unplaced);
+                    };
+                    RowContent::Synthesised(at, placing.place(ArenaNode::CompType(ty)))
+                },
+                RowRecord::Level(ty, level) => {
+                    RowContent::Level(placing.place(ArenaNode::CompType(ty)), level)
+                },
+            });
+        }
+        let mut handled = Vec::with_capacity(tabled.handled().len());
+        for (&at, types) in tabled.handled() {
+            let Some(at) = placing.key(ArenaNode::Computation(at))
+            else {
+                return Maybe::Absent(tabled::Absent::Unplaced);
+            };
+            handled.push((at, HandledContent {
+                subject: placing.place(ArenaNode::ValueType(types.subject)),
+                answer: placing.place(ArenaNode::CompType(types.answer)),
+                level: types.level.clone(),
+            }));
+        }
+        let (outside, places) = crate::content::tabled_roots(arena, layout, &placing.roots);
+        let (roots, remap) = merged(places);
+        let mut content = Self {
+            rows,
+            handled,
+            outside,
+            roots,
+        };
+        if let Some(remap) = remap {
+            content.places_mut(&mut |place| {
+                if let Place::Outside(ref mut index) = *place
+                    && let Some(&to) = remap.get(usize::from(*index))
+                {
+                    *index = to;
+                }
+            });
+        }
+        content
+            .rows
+            .sort_by(|left, right| left.key().cmp(&right.key()));
+        content.rows.dedup();
+        content.handled.sort_by(|left, right| left.0.cmp(&right.0));
+        content.handled.dedup();
+        Maybe::Present(content)
+    }
+
+    /// Hand each place of the entries to `visit`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn places_mut(
+        &mut self,
+        visit: &mut impl FnMut(&mut Place),
+    )
+    {
+        for row in &mut self.rows {
+            match *row {
+                RowContent::Checked(ref mut at, ref mut ty)
+                | RowContent::Synthesised(ref mut at, ref mut ty) => {
+                    visit(at);
+                    visit(ty);
+                },
+                RowContent::Level(ref mut ty, _) => visit(ty),
+            }
+        }
+        for &mut (ref mut at, ref mut types) in &mut self.handled {
+            visit(at);
+            visit(&mut types.subject);
+            visit(&mut types.answer);
+        }
+    }
+
+    /// Seat the entries in `arena`, constants placed through `layout`: a key
+    /// of the item at its place in `walk`, the item's walk in the edited
+    /// program.
+    ///
+    /// # Specification
+    /// - requires: `walk` is the item's walk in `arena`, and the item is
+    ///   entered as written, so no key is a node of a judged body.
+    /// - ensures: on success, the rows records and the handlers whose
+    ///   projection through the same places is this content.
+    /// - fails: [`seating::Absent::Unwalked`] for a place past the walk;
+    ///   [`seating::Absent::Unplaceable`] for a judged place or a table place
+    ///   that no mint reached; [`seating::Absent::IllSorted`] for a node of the
+    ///   wrong sort; and otherwise as the mint of the outside table fails.
+    /// - panics: none.
+    /// - executable: none — the witness compares a taken item's report with a
+    ///   fresh judgement's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TableContent`].
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    pub(crate) fn seat(
+        &self,
+        (arena, layout): (&mut CoreArena, &Layout),
+        walk: &[ArenaNode],
+    ) -> Result<SeatedTables, seating::Absent>
+    {
+        let outside = match Minted::of(&self.outside, self.roots.iter().cloned(), (arena, layout)) {
+            Maybe::Present(outside) => outside,
+            Maybe::Absent(reason) => return Err(reason),
+        };
+        let seat = Seat {
+            walk,
+            body: None,
+            outside: (&outside, &self.roots),
+            layout,
+        };
+        let mut records = Vec::with_capacity(self.rows.len());
+        for row in &self.rows {
+            records.push(match *row {
+                RowContent::Checked(ref at, ref ty) => RowRecord::Checked(
+                    computation_of(seat.node(at)?)?,
+                    comp_type_of(seat.node(ty)?)?,
+                ),
+                RowContent::Synthesised(ref at, ref ty) => RowRecord::Synthesised(
+                    computation_of(seat.node(at)?)?,
+                    comp_type_of(seat.node(ty)?)?,
+                ),
+                RowContent::Level(ref ty, ref level) => {
+                    RowRecord::Level(comp_type_of(seat.node(ty)?)?, level.clone())
+                },
+            });
+        }
+        let mut handled = Vec::with_capacity(self.handled.len());
+        for &(ref at, ref types) in &self.handled {
+            handled.push((computation_of(seat.node(at)?)?, Handled {
+                subject: value_type_of(seat.node(&types.subject)?)?,
+                answer: comp_type_of(seat.node(&types.answer)?)?,
+                level: types.level.clone(),
+            }));
+        }
+        Ok((Rows::from_records(records), handled))
+    }
+}
+
+/// The rows records and the handlers that a seat of a [`TableContent`]
+/// builds in an edited arena.
+pub type SeatedTables = (Rows, Vec<(ComputationId, Handled)>);
 
 /// Where a node of a report stands.
 ///
@@ -328,6 +691,22 @@ impl Placing<'_, '_, '_>
             self.roots.push(node);
         }
         Place::Outside(index)
+    }
+
+    /// The place of `node` as a key of an entry: its place in the item's
+    /// walk or the judged body, or none for a node outside both.
+    ///
+    /// # Specification
+    /// trivial.
+    fn key(
+        &mut self,
+        node: ArenaNode,
+    ) -> Option<Place>
+    {
+        match self.place(node) {
+            place @ (Place::Written(_) | Place::Judged(_)) => Some(place),
+            Place::Outside(_) => None,
+        }
     }
 
     /// The content of `elaboration`.

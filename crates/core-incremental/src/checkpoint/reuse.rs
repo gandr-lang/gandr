@@ -58,6 +58,7 @@ use crate::region::Layout;
 use crate::region::Program;
 use crate::region::Reference;
 use crate::report::reported;
+use crate::report::tabled;
 use crate::typing::Typing;
 
 /// The checkpoints of a session's last pass, offered to the judgement of the
@@ -316,6 +317,21 @@ impl Taking for Reuse<'_>
             ) => Kind::Synthesised(conversions, body),
             _ => return unheld,
         };
+        // The bridge reads each entry that the judgement added to a table, so
+        // a checkpoint that does not keep an entry is never taken.
+        let tables = match checkpoint.tables() {
+            Maybe::Present(tables) => {
+                let walk = item.sites.walk();
+                match tables.seat((context.arena_mut(), self.layout), &walk) {
+                    Ok(seated) => Some(seated),
+                    Err(_) => return unheld,
+                }
+            },
+            Maybe::Absent(tabled::Absent::Untabled) => None,
+            Maybe::Absent(
+                tabled::Absent::Unkept | tabled::Absent::Unread | tabled::Absent::Unplaced,
+            ) => return unheld,
+        };
         let seat = seat_of(
             checkpoint,
             item,
@@ -339,6 +355,9 @@ impl Taking for Reuse<'_>
             return unheld;
         };
         self.supplied.own.push(answer);
+        if let Some((rows, handled)) = tables {
+            context.adopt_tabled(&rows, handled);
+        }
         self.taken = ItemCount::from(usize::from(self.taken).saturating_add(1));
         let verdict = match (kind, context.signature(declaration.constant())) {
             (Kind::Data, _) => Verdict::Data,

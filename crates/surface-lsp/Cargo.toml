@@ -63,9 +63,11 @@ serde_json.workspace = true
 # through the sweep crate, and name each corpus source by its percent-encoded
 # `file` URI. The test of the store card commits a value into a store of its
 # own, through the store and the value plane. The session tests compose a
-# source through the run stage's evaluator.
+# source through the run stage's evaluator. The taking tests read the rows
+# records that a checkpoint keeps through the checker's base.
 [dev-dependencies]
 expect-test.workspace = true
+gandr-core-checker-base.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-evaluate.workspace = true
