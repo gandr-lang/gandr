@@ -117,8 +117,7 @@ impl Listed
     /// - witness: `typed::tests::an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181`
     ///
     /// # Cost
-    /// - allocation: the standard library's path and text and the laid source,
-    ///   setup
+    /// - allocation: the library's text and the laid source, setup
     #[spec(ensures: |ref ret| ret.text.ends_with(<&str>::from(source)) && ret.text.len() == usize::from(ret.base).saturating_add(<&str>::from(source).len()))]
     #[inline]
     #[must_use]

@@ -200,8 +200,7 @@ impl Porter
     /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
     ///
     /// # Cost
-    /// - allocation: the porter's paths and its shared state and its threads,
-    ///   setup
+    /// - allocation: the porter's paths and state and threads, setup
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
