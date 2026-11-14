@@ -128,6 +128,7 @@
 --argjson count
 --argjson cutoff
 --argjson cwd
+--argjson cycle
 --argjson dirty
 --argjson end
 --argjson ended
