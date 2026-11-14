@@ -126,6 +126,12 @@ fn a_regressed_push_writes_a_neutral_check()
         summary,
         "standard output carries the summary"
     );
+    let table = body["table"].as_str().unwrap();
+    assert!(
+        table.contains("|`gandr_storage_schema::store::edit::Store::delete_part`|avg|")
+            && table.contains("|suspect: a second set decides|\n"),
+        "one set's finding reads as a suspect in the comment's table: {table}"
+    );
 }
 
 #[test]
@@ -140,10 +146,12 @@ fn a_second_set_fails_only_a_row_both_sets_find()
         first: Some(flagged),
     });
     assert!(confirmed.output.status.success(), "{:?}", confirmed.output);
-    assert_eq!(
-        check(&confirmed)["conclusion"],
-        "failure",
-        "both sets find delete_part"
+    let body = check(&confirmed);
+    assert_eq!(body["conclusion"], "failure", "both sets find delete_part");
+    let table = body["table"].as_str().unwrap();
+    assert!(
+        table.contains("|fails: two sets find it|\n"),
+        "a finding of both sets reads as failing in the comment's table: {table}"
     );
     let cleared = judge(&Case {
         name: "cleared",

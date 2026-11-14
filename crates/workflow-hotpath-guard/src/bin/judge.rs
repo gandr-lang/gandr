@@ -5,8 +5,9 @@
 //! NAME --policy FILE --base-run FILE… --head-run FILE… --output FILE
 //! [--confirm FILE]` reads each run's JSON report and the policy, judges the
 //! rows ([`gandr_workflow_hotpath_guard::judge`]), prints the summary, and
-//! writes the check run's body, its name, conclusion, title, summary and
-//! suspects, as JSON to the output file. The judge reads every row.
+//! writes the check run's body, its name, conclusion, title, summary,
+//! suspects and the table of every judged row, as JSON to the output file.
+//! The judge reads every row.
 //!
 //! One set of runs fails no row: on a shared runner one set passes a margin by
 //! noise. A first set that finds rows writes a
@@ -211,10 +212,11 @@ impl File
 /// - requires: nothing.
 /// - ensures: standard output receives the summary; the output file holds
 ///   `{"name": "hotpath / <benchmark>", "conclusion", "output": {"title",
-///   "summary"}, "suspects"}`. Without `--confirm` the conclusion is `neutral`
-///   exactly when a row regressed, and `success` otherwise. With it, the
-///   conclusion is `failure` exactly when a row regressed that the first check
-///   names, and `success` otherwise.
+///   "summary"}, "suspects", "table"}`, the table each judged row of the pull
+///   request's comment. Without `--confirm` the conclusion is `neutral` exactly
+///   when a row regressed, and `success` otherwise. With it, the conclusion is
+///   `failure` exactly when a row regressed that the first check names, and
+///   `success` otherwise.
 /// - provides: the whole command.
 /// - fails: every refusal of [`File::read`], [`File::suspects`],
 ///   [`judge::Run::read`] and [`judge::Policy::read`]; [`GuardError::Input`]
@@ -252,14 +254,26 @@ fn run(cli: &Cli) -> Result<(), GuardError>
         Some(ref check) => judged.confirmed(&check.suspects()?),
         None => judged,
     };
+    let subject = judge::Subject {
+        repository: &cli.repository,
+        head: &cli.head,
+        base: &cli.base,
+        benchmark: &cli.benchmark,
+    };
     let summary = judge::Summary {
-        subject: judge::Subject {
-            repository: &cli.repository,
-            head: &cli.head,
-            base: &cli.base,
-            benchmark: &cli.benchmark,
-        },
+        subject,
         verdict: &verdict,
+    }
+    .to_string();
+    let table = judge::Table {
+        subject,
+        verdict: &verdict,
+        sets: if first.is_some() {
+            judge::Sets::Two
+        }
+        else {
+            judge::Sets::One
+        },
     }
     .to_string();
     write!(std::io::stdout(), "{summary}").map_err(|error| GuardError::Output {
@@ -286,6 +300,7 @@ fn run(cli: &Cli) -> Result<(), GuardError>
         "conclusion": conclusion,
         "output": {"title": title, "summary": summary},
         "suspects": suspects.iter().map(judge::Suspect::to_string).collect::<Vec<_>>(),
+        "table": table,
     });
     std::fs::write(&cli.output, body.to_string()).map_err(|error| GuardError::Input {
         path: cli.output.display().to_string(),
