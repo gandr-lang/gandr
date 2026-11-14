@@ -2084,6 +2084,82 @@ read -r structs kept owed local none <<< "$counts"
 echo "positions check OK: $structs structs, each with its row; rows: $kept kept, $owed owed, $local local, $none none"
 {% endraw %}'''
 
+# The sharing ledger (#7339, `ledger/shared.sql`): every field whose type
+# holds an `Arc`, alone or in an `Option`, a `Maybe` or a `Vec`, in a struct or
+# an enum of a kernel crate or of the fork crate outside its tests, has a row
+# in `shared`, and every row names such a field. A freeze, a fork or a hand-on
+# clones such a field by a count, so the row classes what a write after it
+# does: `chunked`, `layered`, `copied whole` or `grows with the module`, the
+# last two with the issue whose unit moves them, or `read only`. Each row of
+# `stated` names an item that its file declares: an id that takes a width, a
+# structure that takes the arena's region, or a window of the schedule. The
+# dump builds with every constraint holding and is its own re-dump. Each case
+# in `.config/shared/cases.json` holds the lines that `git grep` prints and the
+# fields that `.config/shared/hits.jq` reads from them. Every finding is
+# printed before the gate fails.
+["check:shared"]
+description = "Every shared field of the kernel crates and of the fork crate has its row in the sharing ledger, every row names one, and every stated row names an item its file declares"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+.config/cases/run.bash 'shared' .config/shared/cases.json --program .config/shared/hits.jq || failed=1
+db="$fresh/shared.db"
+sqlite3 -bail "$db" < ledger/shared.sql
+sqlite3 "$db" .dump > "$fresh/shared.sql"
+if ! cmp -s "$fresh/shared.sql" ledger/shared.sql; then
+  diff -u ledger/shared.sql "$fresh/shared.sql" >&2 || true
+  echo 'ledger/shared.sql is not its own re-dump; normalize it with `mise run ledger:shared`' >&2
+  failed=1
+fi
+visibility='(pub(\([a-z]+\))?\s+)?'
+holds='((Option|Maybe|Vec|alloc::vec::Vec)<)?(alloc::sync::|std::sync::|core::sync::)?Arc<'
+field="^\s*${visibility}[a-z_][a-z0-9_]*:\s*${holds}"
+tuple="^\s*([A-Z]\w*|${visibility}struct\s+[A-Z]\w*(<[^>]*>)?)\(${visibility}${holds}"
+opener="^\s*${visibility}(struct|enum|union)\s+[A-Z]"
+function="^\s*${visibility}(const\s+)?(async\s+)?(unsafe\s+)?fn\s+\w+"
+test_cfg='^\s*#\[cfg\((all\()?test\b'
+module="^\s*${visibility}mod\s+\w+\s*(\{.*)?$"
+git grep -n -I -P -e "$field" -e "$tuple" -e "$opener" -e "$function" -e "$test_cfg" -e "$module" -- ':(glob)crates/kernel-*/src/**' ':(glob)crates/core-fork/src/**' \
+  ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' \
+  | jq -R -s 'split("\n")' | jq -r -f .config/shared/hits.jq > "$fresh/hits.tsv"
+git grep -I -o -P "^\s*${visibility}(struct|enum|union|type|const|static)\s+\K[A-Z]\w*" -- ':(glob)crates/*/src/**' \
+  | tr ':' '\t' > "$fresh/declared.tsv"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE hit(file TEXT, name TEXT); CREATE TABLE declared(file TEXT, item TEXT);' \
+  ".import $fresh/hits.tsv hit" ".import $fresh/declared.tsv declared"
+findings=$(sqlite3 -bail "$db" <<'SQL'
+SELECT h.file || ': `' || h.name || '` has no row; add'
+  || ' INSERT INTO shared VALUES(' || quote(h.file) || ',' || quote(h.name)
+  || ',''<class>'',<unit>,''<why>'');'
+  || ' to ledger/shared.sql, each column as its schema there states, then run `mise run ledger:shared`'
+FROM hit h
+WHERE NOT EXISTS (SELECT 1 FROM shared s WHERE (s.file, s.name) = (h.file, h.name))
+UNION ALL
+SELECT s.file || ': `' || s.name || '`: a row naming no field of the pattern; correct its file or its name, or delete it'
+FROM shared s
+WHERE NOT EXISTS (SELECT 1 FROM hit h WHERE (h.file, h.name) = (s.file, s.name))
+UNION ALL
+SELECT DISTINCT s.file || ': `' || s.item || '`: a stated row naming no item that its file declares; correct its file or its item, or delete it'
+FROM stated s
+WHERE NOT EXISTS (SELECT 1 FROM declared d WHERE (d.file, d.item) = (s.file, s.item));
+SQL
+)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'shared check FAILED' >&2
+  exit 1
+fi
+counts=$(sqlite3 -separator ' ' "$db" "SELECT (SELECT count(*) FROM hit), (SELECT count(*) FROM shared WHERE class = 'chunked'), (SELECT count(*) FROM shared WHERE class = 'layered'), (SELECT count(*) FROM shared WHERE class = 'copied whole'), (SELECT count(*) FROM shared WHERE class = 'grows with the module'), (SELECT count(*) FROM shared WHERE class = 'read only'), (SELECT count(*) FROM stated);")
+read -r fields chunked layered whole grows read_only stated <<< "$counts"
+echo "shared check OK: $fields fields, each with its row; rows: $chunked chunked, $layered layered, $whole copied whole, $grows grows with the module, $read_only read only; $stated stated rows, each naming an item its file declares"
+{% endraw %}'''
+
 # The references ledger (`ledger/references.sql`) is what `ledger:references`
 # writes from the crates' documentation, and the documentation keeps its
 # shape: a key line names a library citation key, or `vault:` and a vault
