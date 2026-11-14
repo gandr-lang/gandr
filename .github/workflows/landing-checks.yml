@@ -1406,10 +1406,11 @@ jobs:
       # The host also holds seats, and a job that takes every core starves
       # them. So the runners of a host take half of it together, and each
       # job takes the host's cores divided by twice the count of its runners:
-      # its build jobs, its test threads, and a mise tool's build. The count
-      # is the runner directories beside this one, so a runner added or
-      # removed changes the share with no edit here. The job takes no gate
-      # slot of the seats: its share bounds it.
+      # its build jobs, its test threads, a mise tool's build, and the width
+      # of each driver that a test starts (`GANDR_JOBS`). The count is the
+      # runner directories beside this one, so a runner added or removed
+      # changes the share with no edit here. The job takes no gate slot of
+      # the seats: its share bounds it.
       - name: bound the job by its host
         shell: bash
         run: |
@@ -1421,7 +1422,7 @@ jobs:
           cores=$(getconf _NPROCESSORS_ONLN)
           jobs=$(( cores / (2 * ${#runners[@]}) ))
           (( jobs >= 1 )) || jobs=1
-          printf 'CARGO_BUILD_JOBS=%s\nNEXTEST_TEST_THREADS=%s\nGANDR_GATE_SLOT=runner\n' "$jobs" "$jobs" >> "$GITHUB_ENV"
+          printf 'CARGO_BUILD_JOBS=%s\nNEXTEST_TEST_THREADS=%s\nGANDR_JOBS=%s\nGANDR_GATE_SLOT=runner\n' "$jobs" "$jobs" "$jobs" >> "$GITHUB_ENV"
           echo "the job takes $jobs of the host's $cores cores: its ${#runners[@]} runners take half the host"
       - name: git checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
