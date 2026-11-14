@@ -56,13 +56,17 @@ use std::path::Path;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+use super::host::Host;
+use super::host::runtime_directory;
+
 quenchant_shape::reason_enum! {
-    /// Why no jobserver bounds a process.
+    /// Why no jobserver and no hub's counter bounds a process.
     pub mod ungranted {
         /// The reason the process runs as with no jobserver.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// No variable of the environment names a jobserver.
+            /// No variable of the environment names a jobserver, and no hub
+            /// owns the host's counter.
             Unnamed,
             /// The named jobserver does not open as a pipe or a FIFO.
             Unopened,
@@ -75,7 +79,7 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a read gave no token.
+    /// Why a take gave no token.
     pub mod untaken {
         /// The reason the party holds no token.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -89,7 +93,7 @@ quenchant_shape::reason_enum! {
 }
 
 /// What bounds the parts that a process runs at once: the tokens of the
-/// host's jobserver, or nothing when no jobserver is named.
+/// host's jobserver or of the hub's counter, or nothing when neither stands.
 ///
 /// # Specification
 /// - provides: the tokens that the workers of a pool take, one for each part.
@@ -109,19 +113,25 @@ impl Grant
 {
     /// The grant that the process's environment names: the jobserver of the
     /// first of `CARGO_MAKEFLAGS`, `MAKEFLAGS` and `MFLAGS` that names one.
+    /// With no jobserver named, the host's counter, while a hub owns it.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the tokens of the named jobserver, when it opens; else no
-    ///   grant, so the process runs as with no jobserver.
+    /// - ensures: the tokens of the named jobserver, when it opens; else the
+    ///   tokens of the hub's counter in the runtime directory; else no grant,
+    ///   so the process runs as with no jobserver. A jobserver that a parent
+    ///   names stands before the hub's counter, since the parent bounds the
+    ///   process.
     /// - panics: none.
     /// - executable: none — the answer is the environment's and the host's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the flags are read as the build tools write them, and
-    ///   a FIFO that a test makes opens as a jobserver.
+    /// - hypothesis: L3 — the flags are read as the build tools write them, a
+    ///   FIFO that a test makes opens as a jobserver, and a counter that a test
+    ///   hub owns takes a joiner.
     /// - witness: `pool::grant::tests::the_flags_name_the_last_jobserver`
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
     #[inline]
     #[must_use]
     pub fn of_process() -> Self
@@ -139,7 +149,7 @@ impl Grant
                 return Self(opened(named));
             }
         }
-        Self(Maybe::Absent(ungranted::Absent::Unnamed))
+        Self(hosted(&runtime_directory()))
     }
 
     /// The grant of the jobserver that a FIFO at `path` holds.
@@ -150,17 +160,31 @@ impl Grant
     /// # Errors
     /// Returns the host's error when the FIFO does not open, or the file at
     /// `path` is no FIFO.
-    #[cfg(test)]
-    pub(crate) fn fifo(path: &Path) -> std::io::Result<Self>
+    #[inline]
+    pub fn fifo(path: &Path) -> std::io::Result<Self>
     {
-        Tokens::fifo(path).map(|tokens| Self(Maybe::Present(tokens)))
+        Fifo::open(path).map(|fifo| Self(Maybe::Present(Tokens::Fifo(fifo))))
     }
 
-    /// The tokens of the grant, when a jobserver bounds the process.
+    /// The grant of the counter in `directory`, while a hub owns it; no grant
+    /// otherwise.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn into_tokens(self) -> Maybe<Tokens, ungranted::Absent>
+    #[inline]
+    #[must_use]
+    pub fn hosted(directory: &Path) -> Self
+    {
+        Self(hosted(directory))
+    }
+
+    /// The tokens of the grant, when a jobserver or a hub's counter bounds the
+    /// process.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn into_tokens(self) -> Maybe<Tokens, ungranted::Absent>
     {
         self.0
     }
@@ -179,6 +203,68 @@ impl Default for Grant
     }
 }
 
+/// The tokens of a grant: the jobserver's FIFO or pipe, or the host's counter.
+///
+/// # Specification
+/// - provides: a take with no wait, a take that waits, and a give, on the one
+///   source of the grant.
+/// - panics: none.
+/// - executable: none — other processes share the tokens.
+#[derive(Debug)]
+pub enum Tokens
+{
+    /// The jobserver of the build tools.
+    Fifo(Fifo),
+    /// The host's counter, which a hub owns.
+    Host(Host),
+}
+
+impl Tokens
+{
+    /// A token, when one is free, with no wait: as [`Fifo::take_now`] or
+    /// [`Host::take_now`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn take_now(&self) -> Maybe<Token, untaken::Absent>
+    {
+        match *self {
+            Self::Fifo(ref fifo) => fifo.take_now(),
+            Self::Host(ref host) => host.take_now(),
+        }
+    }
+
+    /// A token, after a wait for one: as [`Fifo::take`] or [`Host::take`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn take(&self) -> Maybe<Token, untaken::Absent>
+    {
+        match *self {
+            Self::Fifo(ref fifo) => fifo.take(),
+            Self::Host(ref host) => host.take(),
+        }
+    }
+
+    /// Give `token` back: as [`Fifo::give`] or [`Host::give`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn give(
+        &self,
+        token: Token,
+    )
+    {
+        match *self {
+            Self::Fifo(ref fifo) => fifo.give(token),
+            Self::Host(ref host) => host.give(token),
+        }
+    }
+}
+
 /// The ends of one jobserver.
 ///
 /// # Specification
@@ -187,7 +273,7 @@ impl Default for Grant
 /// - panics: none.
 /// - executable: none — the ends are the host's.
 #[derive(Debug)]
-pub struct Tokens
+pub struct Fifo
 {
     /// The read end, read without a wait.
     ready: File,
@@ -210,6 +296,9 @@ impl Token
     /// The token that a party lends while it parks: `+`, the byte that make
     /// writes for a token.
     pub const LENT: Self = Self(b'+');
+
+    /// A token of the host's counter, which carries no byte of its own.
+    pub const COUNTED: Self = Self(b'+');
 }
 
 /// The bit above a token's byte that marks a stored token, so a stored token
@@ -276,7 +365,7 @@ impl From<u16> for Right
     }
 }
 
-impl Tokens
+impl Fifo
 {
     /// The jobserver that a FIFO at `path` holds.
     ///
@@ -296,7 +385,7 @@ impl Tokens
     /// # Adequacy
     /// - hypothesis: L3 — as [`Grant`].
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-    fn fifo(path: &Path) -> std::io::Result<Self>
+    fn open(path: &Path) -> std::io::Result<Self>
     {
         Ok(Self {
             ready: end(path, Opening::Ready)?,
@@ -371,6 +460,7 @@ impl Tokens
     /// # Adequacy
     /// - hypothesis: L3 — as [`Grant`].
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    #[inline]
     pub fn take_now(&self) -> Maybe<Token, untaken::Absent>
     {
         token(&self.ready)
@@ -390,6 +480,7 @@ impl Tokens
     /// - hypothesis: L3 — a party that parks lends its token and takes one
     ///   again, and the jobserver holds each token once the fork ends.
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    #[inline]
     pub fn take(&self) -> Maybe<Token, untaken::Absent>
     {
         token(&self.waiting)
@@ -405,8 +496,9 @@ impl Tokens
     /// - executable: none — the tokens are the jobserver's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Tokens::take`].
+    /// - hypothesis: L3 — as [`Fifo::take`].
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    #[inline]
     pub fn give(
         &self,
         token: Token,
@@ -637,15 +729,35 @@ fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
 fn opened(named: Named<'_>) -> Maybe<Tokens, ungranted::Absent>
 {
     let opened = match named {
-        Named::Fifo(path) => Tokens::fifo(path),
-        Named::Descriptors(spelled) => Tokens::descriptors(spelled),
+        Named::Fifo(path) => Fifo::open(path),
+        Named::Descriptors(spelled) => Fifo::descriptors(spelled),
     };
     match opened {
-        Ok(tokens) => Maybe::Present(tokens),
+        Ok(fifo) => Maybe::Present(Tokens::Fifo(fifo)),
         Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {
             Maybe::Absent(ungranted::Absent::Shared)
         },
         Err(_) => Maybe::Absent(ungranted::Absent::Unopened),
+    }
+}
+
+/// The tokens of the counter in `directory`, while a hub owns it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the counter's tokens when the process joins it; else
+///   [`ungranted::Absent::Unnamed`], as with no jobserver.
+/// - panics: none.
+/// - executable: none — the hub is another process.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Host::join`].
+/// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
+fn hosted(directory: &Path) -> Maybe<Tokens, ungranted::Absent>
+{
+    match Host::join(directory) {
+        Maybe::Present(host) => Maybe::Present(Tokens::Host(host)),
+        Maybe::Absent(_) => Maybe::Absent(ungranted::Absent::Unnamed),
     }
 }
 
@@ -705,13 +817,13 @@ mod tests
     {
         use std::os::fd::AsRawFd as _;
 
-        use super::Tokens;
+        use super::Fifo;
         use super::untaken;
 
         let (read, write) = std::io::pipe().unwrap();
         let read = read.as_raw_fd().to_string();
         let write = write.as_raw_fd().to_string();
-        let tokens = Tokens::descriptors(Descriptors {
+        let tokens = Fifo::descriptors(Descriptors {
             read: &read,
             write: &write,
         })
@@ -728,7 +840,7 @@ mod tests
             "an empty pipe gives no token and does not wait"
         );
         assert_eq!(
-            Tokens::descriptors(Descriptors {
+            Fifo::descriptors(Descriptors {
                 read: "three",
                 write: &write,
             })

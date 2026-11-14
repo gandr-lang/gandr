@@ -1549,7 +1549,9 @@ default-features = false
 # record is in the emitter's crate docs.
 #
 # The pool's grant opens one end of a jobserver with `O_NONBLOCK`, a
-# constant that `std` does not name, and calls nothing of the bindings.
+# constant that `std` does not name. On macOS the host's counter waits and
+# wakes across processes through `os_sync_wait_on_address_with_timeout` and
+# `os_sync_wake_by_address_any`, the one such wait that the system names.
 # features:
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
@@ -1572,9 +1574,11 @@ default-features = false
 version = "0.2.16"
 default-features = false
 
-# Read-only file mappings: the dispatcher's reader maps a source at or above
-# its measured crossover. The choice, its alternatives and its reversal are in
-# the reader module's docs.
+# File mappings: the dispatcher's reader maps a source at or above its
+# measured crossover, read-only, and the host's counter maps its segment, a
+# shared file, for reads and writes through atomics alone. The reader's
+# choice, its alternatives and its reversal are in the reader module's docs;
+# the counter's are in the host module's docs.
 # features:
 # - none: `Mmap::map` needs no optional feature; `stable_deref_trait` is for
 #   owning references the reader does not make
@@ -1919,6 +1923,20 @@ default-features = false
 [workspace.dependencies.rtrb]
 version = "0.4.1"
 default-features = false
+
+# The futex of the host's counter on Linux: `thread::futex::wait` and `wake`
+# on a word in a shared map, with no `unsafe`. The build already carries
+# rustix 1.1 through crossterm. `libc` reaches the futex through a raw
+# `syscall` alone, and `atomic-wait` waits within one process. Reversal: a
+# futex across processes in `std`, or rustix dropping its futex.
+# features:
+# - thread: `thread::futex`
+# consumers:
+# - surface-dispatcher (Linux)
+[workspace.dependencies.rustix]
+version = "1.1.6"
+default-features = false
+features = ["thread"]
 
 # The line editor of the read-evaluate loop's terminal face: raw-mode input,
 # editing keys and in-memory history. Defaults off: `with-file-history` writes

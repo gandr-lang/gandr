@@ -85,6 +85,7 @@
 //! measurement that shows a class pays on a verb.
 
 mod grant;
+mod host;
 mod lane;
 #[cfg(feature = "instrument")]
 pub mod recording;
@@ -119,9 +120,13 @@ use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
 use quenchant_shape::shape::Maybe;
 
+pub use self::grant::Fifo;
 pub use self::grant::Grant;
-use self::grant::Tokens;
+pub use self::grant::Tokens;
 use self::grant::ungranted;
+pub use self::host::Host;
+pub use self::host::HostCounter;
+pub use self::host::runtime_directory;
 use self::lane::Attendance;
 use self::lane::DEPTH;
 use self::lane::Feed;
@@ -2802,6 +2807,71 @@ mod tests
             "the FIFO holds its one token again once the fork returns, and no more"
         );
         drop(pool);
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// A pool of sixteen threads under a hub's counter of one token, and the
+    /// calling thread's own, runs at most two leaves at once, though each part
+    /// forks again and a waiting party lends its token. A worker runs a leaf on
+    /// the counter's token. Once the forks end, the counter holds its one token
+    /// again: a second joiner takes it, and no other.
+    #[test]
+    fn a_hosted_pool_runs_as_many_parts_as_it_holds_tokens()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-hosted-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        std::fs::create_dir_all(&directory).unwrap();
+        let counter = super::HostCounter::with(&directory, Threads::ONE).unwrap();
+        let sixteen = Width::Threads(Threads::from(NonZeroUsize::new(16_usize).unwrap()));
+        let pool = Pool::new(sixteen).granted(super::Grant::hosted(&directory));
+        let running = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let caller = std::thread::current().id();
+        let elsewhere = AtomicBool::new(false);
+        let mut outer = [(); 8];
+        pool.each(
+            &mut outer,
+            || (),
+            |_state, _item| {
+                let mut inner = [(); 4];
+                pool.each(
+                    &mut inner,
+                    || (),
+                    |_state, _item| {
+                        let now = running.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                        most.fetch_max(now, Ordering::SeqCst);
+                        if std::thread::current().id() != caller {
+                            elsewhere.store(true, Ordering::Relaxed);
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                        running.fetch_sub(1, Ordering::SeqCst);
+                    },
+                );
+            },
+        );
+        let most = most.load(Ordering::SeqCst);
+        assert!(most <= 2, "{most} leaves ran at once under two tokens");
+        assert!(
+            elsewhere.load(Ordering::Relaxed),
+            "a worker ran a leaf on the counter's token"
+        );
+        let Maybe::Present(super::Tokens::Host(second)) =
+            super::Grant::hosted(&directory).into_tokens()
+        else {
+            panic!("a second process joins the hub's counter");
+        };
+        assert!(
+            matches!(second.take_now(), Maybe::Present(_)),
+            "the counter holds its one token again once the fork returns"
+        );
+        assert!(
+            matches!(second.take_now(), Maybe::Absent(_)),
+            "the counter holds no second token"
+        );
+        drop(second);
+        drop(pool);
+        drop(counter);
         drop(std::fs::remove_dir_all(&directory));
     }
 

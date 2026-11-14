@@ -27,6 +27,14 @@ harness = false
 name = "schedule"
 path = "benches/schedule.rs"
 
+# The measurement of the host's tokens: a free take and its give on the
+# hub's counter against the jobserver's FIFO, at each width that the run
+# names, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "tokens"
+path = "benches/tokens.rs"
+
 # The composition names every stage it runs: the grammar and the parser, the
 # lowering, the checker and the kernel bridge it carries, the settle
 # comparison the corpus library owns, and the tier's focusing and readback,
@@ -41,7 +49,8 @@ path = "benches/schedule.rs"
 # trait. The pool's dependence schedule hands its jobs over the wait-free rings
 # of rtrb, one ring of jobs and one ring of results for each task.
 # The reader maps a source above its crossover through memmap2, and rewrites
-# a mapped source through the one writer. A package's manifest
+# a mapped source through the one writer; the host's counter maps its segment
+# through memmap2 too. A package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
 # tells its own file from a hand edit; its address is the BLAKE3 digest of
 # its items' content keys, which the incremental checker's program states.
@@ -131,13 +140,18 @@ nix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# The host's counter waits on its word across processes through the futex.
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix.workspace = true
+
 # The default width counts the host's physical performance cores; Linux reads
 # them from sysfs with std alone.
 [target.'cfg(target_os = "macos")'.dependencies]
 sysctl.workspace = true
 
 # The pool's grant opens a jobserver's end with `O_NONBLOCK`, which `std` does
-# not name.
+# not name; on macOS the host's counter waits on its word across processes
+# through `os_sync_wait_on_address_with_timeout`.
 [target."cfg(unix)".dependencies]
 libc.workspace = true
 
