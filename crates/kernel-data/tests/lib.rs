@@ -7,4 +7,10 @@ extern crate alloc;
 mod region;
 
 #[cfg(test)]
+mod shared;
+
+#[cfg(test)]
 mod small_vec;
+
+#[cfg(test)]
+mod thin_shared;

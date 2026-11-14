@@ -1400,8 +1400,10 @@ dependencies = [
 name = "gandr-kernel-data"
 version = "0.0.0"
 dependencies = [
+ "loom",
  "proptest",
  "quenchant-anodized",
+ "quenchant-shape",
 ]
 
 [[package]]
