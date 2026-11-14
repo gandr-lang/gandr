@@ -222,7 +222,9 @@ use crate::region::Program;
 use crate::region::Reference;
 use crate::report::ReportContent;
 use crate::report::SeatedReport;
+use crate::report::TableContent;
 use crate::report::reported;
+use crate::report::tabled;
 use crate::session::Unobserved;
 use crate::typing::Projection;
 use crate::typing::Typing;
@@ -529,6 +531,9 @@ struct CheckpointParts
     /// What the judgement reported of the item: its elaboration and its
     /// suspension.
     report: Maybe<Arc<ReportContent>, reported::Absent>,
+    /// The entries the judgement added to the rows and the handlers, or why
+    /// the checkpoint keeps none.
+    tables: Tables,
 }
 
 impl ItemCheckpoint
@@ -581,6 +586,7 @@ impl ItemCheckpoint
                 failure: Maybe::Absent(failed::Absent::Unkept),
                 entry: Maybe::Absent(elaborated::Absent::AsWritten),
                 report: Maybe::Absent(reported::Absent::Unreported),
+                tables: Maybe::Absent(tabled::Absent::Unread),
             }),
         }
     }
@@ -761,6 +767,38 @@ impl ItemCheckpoint
     {
         match self.parts.report {
             Maybe::Present(ref report) => Maybe::Present(report),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// This checkpoint, keeping `tables` as the entries its item's judgement
+    /// added to the rows and the handlers, or the reason it keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub(crate) fn with_tables(
+        mut self,
+        tables: Maybe<TableContent, tabled::Absent>,
+    ) -> Self
+    {
+        Arc::make_mut(&mut self.parts).tables = match tables {
+            Maybe::Present(tables) => Maybe::Present(Arc::new(tables)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        self
+    }
+
+    /// The entries the item's judgement added to the rows and the handlers,
+    /// or why the checkpoint keeps none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn tables(&self) -> Maybe<&TableContent, tabled::Absent>
+    {
+        match self.parts.tables {
+            Maybe::Present(ref tables) => Maybe::Present(tables),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
@@ -2538,6 +2576,8 @@ struct Outcome
     entry: Maybe<Arc<EntryContent>, elaborated::Absent>,
     /// What the judgement reported of the item.
     report: Report,
+    /// The entries its judgement added to the rows and the handlers.
+    tables: Tables,
     /// Whether it was adopted.
     adoption: Adoption,
 }
@@ -2945,6 +2985,12 @@ impl<'judged> Judgement<'judged>
             ),
         )
         .map(Arc::new);
+        let tables = TableContent::of(
+            (self.arena, taking.layout),
+            (&taking.item.sites, None),
+            supported.tabled(),
+        )
+        .map(Arc::new);
         // An unsigned item's synthesised type is minted into the edited arena
         // from its content, as an adopted one's is.
         let minted = match (&typing, written) {
@@ -2972,7 +3018,7 @@ impl<'judged> Judgement<'judged>
         else {
             return Maybe::Absent(taken::Absent::Unseated);
         };
-        Maybe::Present((support, typing, answer, (failure, report)))
+        Maybe::Present((support, typing, answer, (failure, report, tables)))
     }
 }
 
@@ -3246,6 +3292,7 @@ where
                 failure: outcome.failure,
                 entry: outcome.entry,
                 report: outcome.report,
+                tables: outcome.tables,
             }),
         });
     }
@@ -3543,18 +3590,20 @@ where
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
-                let (entered, failure, entry, report) = match candidates.get(index) {
+                let (entered, failure, entry, report, tables) = match candidates.get(index) {
                     Some(&Maybe::Present(ref candidate)) => (
                         candidate.checkpoint.entered(),
                         candidate.checkpoint.parts.failure.clone(),
                         candidate.checkpoint.parts.entry.clone(),
                         candidate.checkpoint.parts.report.clone(),
+                        candidate.checkpoint.parts.tables.clone(),
                     ),
                     Some(&Maybe::Absent(_)) | None => (
                         Entered::AsWritten,
                         Maybe::Absent(failed::Absent::Unkept),
                         Maybe::Absent(elaborated::Absent::AsWritten),
                         Maybe::Absent(reported::Absent::Unreported),
+                        Maybe::Absent(tabled::Absent::Unread),
                     ),
                 };
                 wait_on(
@@ -3572,6 +3621,7 @@ where
                         failure,
                         entry,
                         report,
+                        tables,
                         adoption: Adoption::Adopted,
                     },
                     answer,
@@ -3603,48 +3653,49 @@ where
                     (Membership::Alone, None) => Maybe::Absent(taken::Absent::Unjudged),
                     (Membership::Member, _) => Maybe::Absent(taken::Absent::Unkept),
                 };
-                let (support, typing, answer, (entered, entry), (failure, report)) = match taken {
-                    Maybe::Present((support, typing, answer, (failure, report))) => {
-                        bump(&mut census.taken);
-                        #[cfg(feature = "instrument")]
-                        if let Some(judgement) = judgement {
-                            consulted = judgement.consulted(declaration.constant());
-                        }
-                        wait_on(
-                            &mut waiting,
-                            (&mut context, layout),
-                            (item, declaration.constant()),
-                            &report,
-                        );
-                        (
-                            support,
-                            typing,
-                            answer,
-                            (
-                                Entered::AsWritten,
-                                Maybe::Absent(elaborated::Absent::AsWritten),
-                            ),
-                            (failure, report),
-                        )
-                    },
-                    Maybe::Absent(_) => {
-                        let (decision, supported) = decided(
-                            &mut context,
-                            item,
-                            declaration,
-                            (layout, &types),
-                            &mut waiting,
-                        );
-                        if membership == Membership::Member {
-                            if let Maybe::Present(failure) = supported.failure() {
-                                let _earlier =
-                                    culprits.insert(declaration.constant(), failure.clone());
+                let (support, typing, answer, (entered, entry), (failure, report, tables)) =
+                    match taken {
+                        Maybe::Present((support, typing, answer, (failure, report, tables))) => {
+                            bump(&mut census.taken);
+                            #[cfg(feature = "instrument")]
+                            if let Some(judgement) = judgement {
+                                consulted = judgement.consulted(declaration.constant());
                             }
-                            members.push((index, declaration.constant(), supported.verdict()));
-                        }
-                        decision
-                    },
-                };
+                            wait_on(
+                                &mut waiting,
+                                (&mut context, layout),
+                                (item, declaration.constant()),
+                                &report,
+                            );
+                            (
+                                support,
+                                typing,
+                                answer,
+                                (
+                                    Entered::AsWritten,
+                                    Maybe::Absent(elaborated::Absent::AsWritten),
+                                ),
+                                (failure, report, tables),
+                            )
+                        },
+                        Maybe::Absent(_) => {
+                            let (decision, supported) = decided(
+                                &mut context,
+                                item,
+                                declaration,
+                                (layout, &types),
+                                &mut waiting,
+                            );
+                            if membership == Membership::Member {
+                                if let Maybe::Present(failure) = supported.failure() {
+                                    let _earlier =
+                                        culprits.insert(declaration.constant(), failure.clone());
+                                }
+                                members.push((index, declaration.constant(), supported.verdict()));
+                            }
+                            decision
+                        },
+                    };
                 (
                     Outcome {
                         footprint,
@@ -3654,6 +3705,7 @@ where
                         failure,
                         entry,
                         report,
+                        tables,
                         adoption: Adoption::Judged,
                     },
                     answer,
@@ -3789,12 +3841,24 @@ fn decided(
         )
         .map(Arc::new),
     };
+    let tables = TableContent::of(
+        (arena, layout),
+        (&item.sites, body.as_ref()),
+        supported.tabled(),
+    )
+    .map(Arc::new);
     if let Maybe::Present(suspension) = suspension {
         let _earlier = waiting.insert(declaration.constant(), suspension);
     }
     let entered = supported.entered();
     (
-        (support, typing, answer, (entered, entry), (failure, report)),
+        (
+            support,
+            typing,
+            answer,
+            (entered, entry),
+            (failure, report, tables),
+        ),
         supported,
     )
 }
@@ -3841,9 +3905,13 @@ type Entry = Maybe<Arc<EntryContent>, elaborated::Absent>;
 /// What the judgement reported of an item, or why a checkpoint keeps none.
 type Report = Maybe<Arc<ReportContent>, reported::Absent>;
 
+/// The entries a judgement added to the rows and the handlers, or why a
+/// checkpoint keeps none.
+type Tables = Maybe<Arc<TableContent>, tabled::Absent>;
+
 /// What a checkpoint keeps of a judgement beside its verdict: the failure of
-/// a refused item and the report.
-type Reported = (Failed, Report);
+/// a refused item, the report and the entries of the tables.
+type Reported = (Failed, Report, Tables);
 
 /// What a pass that decides an item gives its checkpoint: the answers that
 /// the item consulted, its typing, its answer, its entry and its report.

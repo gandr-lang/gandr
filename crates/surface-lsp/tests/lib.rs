@@ -11,3 +11,5 @@ mod editor;
 mod replay;
 #[cfg(test)]
 mod session;
+#[cfg(test)]
+mod taking;

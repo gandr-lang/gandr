@@ -142,6 +142,27 @@ pub(crate) enum Gained
     Level(CompTypeId),
 }
 
+/// One record of [`Rows`], with its value: what a checkpoint keeps of the
+/// records that one declaration's judgement added.
+///
+/// # Specification
+/// - executable: none — data declaration; [`Rows::records`] gives it and
+///   [`Rows::from_records`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Rows::from_records`].
+/// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum RowRecord
+{
+    /// The computation, checked at the returner.
+    Checked(ComputationId, CompTypeId),
+    /// The computation, which synthesised the returner.
+    Synthesised(ComputationId, CompTypeId),
+    /// The returner, whose result stands at the level.
+    Level(CompTypeId, Level),
+}
+
 impl Rows
 {
     /// The returner over a row of operations `at` was checked at, when the
@@ -352,6 +373,87 @@ impl Rows
         for (&ty, level) in &other.levels {
             let _first = self.levels.entry(ty).or_insert_with(|| level.clone());
         }
+    }
+
+    /// Each record, with its value: the checked computations, then the
+    /// synthesised ones, then the levels, each ascending by its key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn records(&self) -> impl Iterator<Item = RowRecord> + '_
+    {
+        self.checked
+            .iter()
+            .map(|(&at, &ty)| RowRecord::Checked(at, ty))
+            .chain(
+                self.synthesised
+                    .iter()
+                    .map(|(&at, &ty)| RowRecord::Synthesised(at, ty)),
+            )
+            .chain(
+                self.levels
+                    .iter()
+                    .map(|(&ty, level)| RowRecord::Level(ty, level.clone())),
+            )
+    }
+
+    /// The records that `records` names, the first record of each key kept.
+    ///
+    /// # Specification
+    /// - ensures: each key reads the value of the first record of it in
+    ///   `records`.
+    /// - panics: none.
+    /// - executable: none — the records are the statement; the witness crosses
+    ///   them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the records that a taken item's checkpoint keeps
+    ///   cross as the records of its judgement.
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
+    #[inline]
+    #[must_use]
+    pub fn from_records<Records>(records: Records) -> Self
+    where
+        Records: IntoIterator<Item = RowRecord>,
+    {
+        let mut rows = Self::default();
+        for record in records {
+            match record {
+                RowRecord::Checked(at, ty) => {
+                    let _first = rows.checked.entry(at).or_insert(ty);
+                },
+                RowRecord::Synthesised(at, ty) => {
+                    let _first = rows.synthesised.entry(at).or_insert(ty);
+                },
+                RowRecord::Level(ty, level) => {
+                    let _first = rows.levels.entry(ty).or_insert(level);
+                },
+            }
+        }
+        rows
+    }
+
+    /// The records of this record that `gained` names and that still read.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of_gained(
+        &self,
+        gained: &[Gained],
+    ) -> Self
+    {
+        Self::from_records(gained.iter().filter_map(|&record| {
+            match record {
+                Gained::Checked(at) => self.checked(at).map(|ty| RowRecord::Checked(at, ty)),
+                Gained::Synthesised(at) => self
+                    .synthesised(at)
+                    .map(|ty| RowRecord::Synthesised(at, ty)),
+                Gained::Level(ty) => self
+                    .level(ty)
+                    .map(|level| RowRecord::Level(ty, level.clone())),
+            }
+        }))
     }
 }
 
