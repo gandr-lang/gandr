@@ -2015,10 +2015,9 @@ impl Entries
     ///   walk the entries.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a walk that missed a vacancy, or stopped before the
-    ///   last one, moves each declaration past it to another place in an
-    ///   export.
-    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_export_past_a_vacancy_holds_each_admitted_declaration_7273`
+    /// - hypothesis: L3 — a walk that missed a vacancy, or named a live
+    ///   position, gives another list than the refused position alone.
+    /// - witness: `gandr-kernel-core::environment::tests::a_rejected_declaration_leaves_a_vacancy_at_its_position`
     #[inline]
     pub fn vacancies(&self) -> impl Iterator<Item = ConstantIndex> + '_
     {

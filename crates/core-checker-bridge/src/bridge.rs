@@ -1731,6 +1731,7 @@ impl Readmission
     ///   reference reads; a nominal declaration decoded under its own name.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    /// - witness: `bridge::tests::an_export_past_a_vacancy_holds_each_admitted_declaration_7273`
     /// - witness: `gandr-core-checker-base::tests::native_formers::data_declarations_and_refusals_agree_with_kernel`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -1896,6 +1897,7 @@ impl Readmission
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845`
+    /// - witness: `bridge::tests::an_export_past_a_vacancy_holds_each_admitted_declaration_7273`
     #[spec(ensures: |ret| matches!(*places, Maybe::Present(_)) || ret.len() == usize::from(self.admitted.len()).saturating_sub(usize::from(from)))]
     fn marked(
         &self,
