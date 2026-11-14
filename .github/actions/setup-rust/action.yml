@@ -13,11 +13,18 @@ inputs:
   install-toolchain:
     description: "Restore, install, and save the rustup toolchain in this job"
     default: "true"
+  # Off on a self-hosted runner, which keeps its own rustup home, Cargo home
+  # and work directory from one job to the next (#7352). There the action
+  # installs the pin into the runner's own home and restores and saves no
+  # cache.
+  cache:
+    description: "Restore and save the rustup toolchain and the dependency cache"
+    default: "true"
 runs:
   using: composite
   steps:
     - id: rustup-restore
-      if: ${{ inputs.install-toolchain == 'true' }}
+      if: ${{ inputs.install-toolchain == 'true' && inputs.cache == 'true' }}
       name: "restore rustup toolchain"
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -62,13 +69,14 @@ runs:
       run: printf 'MISE_DISABLE_TOOLS=%s,rust\n' "$MISE_DISABLE_TOOLS" >> "$GITHUB_ENV" # zizmor: ignore[github-env]
       shell: bash
     - name: "save rustup toolchain"
-      if: ${{ inputs.install-toolchain == 'true' && inputs.cache-save == 'true' && steps.rustup-restore.outputs.cache-hit != 'true' }}
+      if: ${{ inputs.install-toolchain == 'true' && inputs.cache == 'true' && inputs.cache-save == 'true' && steps.rustup-restore.outputs.cache-hit != 'true' }}
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.rustup/toolchains/*
         key: ${{ steps.rustup-restore.outputs.cache-primary-key }}
     - name: "cache Rust dependencies"
       id: rust-cache
+      if: ${{ inputs.cache == 'true' }}
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         # Profile changes rotate dependency state. Test jobs cache their
