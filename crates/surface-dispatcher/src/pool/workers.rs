@@ -1384,7 +1384,9 @@ impl Workers
     ///   Each part from `1` runs once on a worker, or else on the calling
     ///   thread: a part that found no idle worker, or that the calling thread
     ///   took back from its worker, runs after `own` when `back` is
-    ///   [`Back::Run`], and never runs when `back` is [`Back::Drop`]. Once the
+    ///   [`Back::Run`], and never runs when `back` is [`Back::Drop`]. Under a
+    ///   grant, the calling thread posts each part that found no worker again
+    ///   before it runs the part, so a token that came free takes it. Once the
     ///   call returns, no worker runs a part of `frame`. A waiting thread polls
     ///   up to `spin` times, then parks until the last part wakes it. The fork
     ///   allocates nothing for 64 parts or fewer.
@@ -1398,6 +1400,7 @@ impl Workers
     ///   resume each panic.
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
     /// - witness: `pool::tests::a_right_half_may_wait_for_the_left_one`
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
     pub fn fork<Frame, Own, Out>(
         &self,
         frame: &Frame,
@@ -1422,7 +1425,7 @@ impl Workers
             // SAFETY: this call waits below until each posted part ended or
             // came back, so `parted` outlives every post.
             match unsafe { self.post(JobRef::of(&parted, Part(next))) } {
-                Maybe::Present(posted) => posts.push(posted),
+                Maybe::Present(posted) => posts.push(posted, Part(next)),
                 Maybe::Absent(_) => {
                     parted.left.fetch_sub(1, Ordering::Relaxed);
                     break;
@@ -1432,15 +1435,29 @@ impl Workers
         }
         let ran = std::panic::catch_unwind(AssertUnwindSafe(|| own(posts.count())));
         if back == Back::Run {
+            // Under a grant, a token that came free since the posts above
+            // takes the next part. With no grant, a worker that found none
+            // idle above leaves the rest to this thread, as before.
+            let granted = self.shared.tokens.is_some();
             for part in next .. parts.get() {
+                if granted {
+                    parted.left.fetch_add(1, Ordering::Relaxed);
+                    // SAFETY: as above, this call waits for each post.
+                    let late = unsafe { self.post(JobRef::of(&parted, Part(part))) };
+                    if let Maybe::Present(posted) = late {
+                        posts.push(posted, Part(part));
+                        continue;
+                    }
+                    parted.left.fetch_sub(1, Ordering::Relaxed);
+                }
                 parted.run_here(Part(part));
             }
         }
-        for (at, held) in posts.iter().enumerate() {
+        for (held, part) in posts.iter() {
             if self.retract(held) == Retracted::Back {
                 parted.left.fetch_sub(1, Ordering::Relaxed);
                 if back == Back::Run {
-                    parted.run_here(Part(at.saturating_add(1)));
+                    parted.run_here(part);
                 }
             }
         }
@@ -1490,12 +1507,12 @@ const IN_PLACE: usize = 64;
 /// trivial.
 struct Held
 {
-    /// The first posts.
-    near: [Option<Posted>; IN_PLACE],
+    /// The first posts, each with its part.
+    near: [Option<(Posted, Part)>; IN_PLACE],
     /// How many of `near` hold a post.
     count: usize,
-    /// The posts past [`IN_PLACE`].
-    far: Vec<Posted>,
+    /// The posts past [`IN_PLACE`], each with its part.
+    far: Vec<(Posted, Part)>,
 }
 
 impl Default for Held
@@ -1516,21 +1533,22 @@ impl Default for Held
 
 impl Held
 {
-    /// Keep `posted`.
+    /// Keep `posted`, the post of `part`.
     ///
     /// # Specification
     /// trivial.
     fn push(
         &mut self,
         posted: Posted,
+        part: Part,
     )
     {
         match self.near.get_mut(self.count) {
             Some(slot) => {
-                *slot = Some(posted);
+                *slot = Some((posted, part));
                 self.count = self.count.saturating_add(1);
             },
-            None => self.far.push(posted),
+            None => self.far.push((posted, part)),
         }
     }
 
@@ -1543,11 +1561,11 @@ impl Held
         Posts(self.count.saturating_add(self.far.len()))
     }
 
-    /// The posts, in the order kept.
+    /// The posts with their parts, in the order kept.
     ///
     /// # Specification
     /// trivial.
-    fn iter(&self) -> impl Iterator<Item = Posted> + '_
+    fn iter(&self) -> impl Iterator<Item = (Posted, Part)> + '_
     {
         self.near
             .iter()
