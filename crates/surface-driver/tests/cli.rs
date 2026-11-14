@@ -1130,6 +1130,84 @@ fn check_measures_each_declaration_a_source_writes()
     }
 }
 
+/// #7341: a data type whose constructor reads the type takes one name from
+/// its staging on. A keyed check names `Scale` by its content key, and a
+/// rechecking one by its position. So `half`, which checks `Halved Whole`
+/// against the field of `Amp`, charges as many goals under either. A second
+/// name for `Scale`, by position in its own staged content, made the keyed
+/// check expand two goals more.
+#[test]
+fn a_data_type_that_reads_itself_charges_its_readers_keyed_as_rechecked_7341()
+{
+    let scratch = Scratch::new(Path::new("self-reading"));
+    let _scales = scratch.file(
+        Path::new("scales.gandr"),
+        Text::from(concat!(
+            "pub data Scale : Type where\n",
+            "  | Whole : Scale\n",
+            "  | Halved : (k : Scale) --> Scale\n",
+            "pub data Amplitude : Type where\n",
+            "  | Amp : (k : Scale) --> Amplitude\n",
+            "pub def whole : Amplitude = Amp Whole;\n",
+            "pub def half : Amplitude = Amp (Halved Whole);\n",
+        )),
+    );
+    // A key and a verdict cache of the test's own, so the keyed run is cold.
+    let home = scratch.0.join("configuration");
+    let cache = scratch.0.join("cache");
+    // Each declaration with the goals its check charged: expanded, recalled
+    // and kept.
+    let charged = |flags: &[&Path]| -> Vec<(String, String)> {
+        let mut arguments = vec![
+            Path::new("check"),
+            Path::new("--jobs"),
+            Path::new("1"),
+            Path::new("--measure"),
+        ];
+        arguments.extend_from_slice(flags);
+        arguments.push(&scratch.0);
+        let mut command = gandr(&arguments);
+        let _configured = command
+            .env("XDG_CONFIG_HOME", &home)
+            .env("XDG_CACHE_HOME", &cache);
+        let output = ran(command);
+        assert_eq!(
+            code(&output),
+            Code(0_i32),
+            "the source settles: {}",
+            stderr(&output)
+        );
+        stdout(&output)
+            .lines()
+            .filter_map(|line| line.strip_prefix("measure: "))
+            .map(|row| {
+                let (_source, rest) = row.split_once(": ").expect("a row names its source");
+                let (name, fields) = rest.split_once(": ").expect("a row names its declaration");
+                let goals =
+                    fields
+                        .split(", ")
+                        .skip(3)
+                        .take(3)
+                        .fold(String::new(), |mut joined, goal| {
+                            if !joined.is_empty() {
+                                joined.push_str(", ");
+                            }
+                            joined.push_str(goal);
+                            joined
+                        });
+                (name.to_owned(), goals)
+            })
+            .collect()
+    };
+    let keyed = charged(&[]);
+    assert_eq!(keyed.len(), 4, "each declaration is measured: {keyed:?}");
+    assert_eq!(
+        keyed,
+        charged(&[Path::new("--recheck")]),
+        "a keyed check charges each declaration as a rechecking one does"
+    );
+}
+
 /// #6298: `gandr check --activity --jobs 3` prints, to standard error, one
 /// `activity:` line for each of the pool's three threads, one for the calling
 /// thread and one for the run. Four sources that import nothing are four

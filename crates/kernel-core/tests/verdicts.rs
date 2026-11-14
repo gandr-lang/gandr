@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
@@ -773,6 +774,71 @@ fn offer_ranked(
         .get(usize::from(admitted.position()))
         .expect("it was appended")
         .admission()
+}
+
+/// Offer a definition of the point of the sort at `sort`; answer its check's
+/// census.
+///
+/// # Specification
+/// trivial.
+fn point_of(
+    environment: &mut Environment,
+    sort: ConstantIndex,
+) -> ExpansionCensus
+{
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let declared = arena.value_type_data(sort, alloc::vec![]);
+    let body =
+        arena.value_constructor(sort, declared, ConstructorTag::from(0_usize), alloc::vec![]);
+    let staged = staging.def(LevelSignature::monomorphic(), declared, body);
+    let admitted = environment
+        .add_decl(staged)
+        .expect("the point of a sort admits");
+    match environment
+        .entries()
+        .get(usize::from(admitted.position()))
+        .expect("it was appended")
+        .census()
+    {
+        Maybe::Present(census) => census,
+        Maybe::Absent(absent) => panic!("the point is checked here: {absent:?}"),
+    }
+}
+
+/// #7341: a plain definition that reads a data type keeps the names of its
+/// goals when an edit moves the data type. The edit retires the sort and its
+/// point, admits a unit definition before them, and admits them again two
+/// positions later. The session names the sort by its content key at both
+/// positions, so the outcomes that the first check of the point kept answer
+/// the second.
+#[test]
+fn the_point_of_a_moved_sort_stands_on_the_outcomes_of_its_first_check_7341()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let mut environment = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let sort = ConstantIndex::from(0_usize);
+    assert_eq!(offer(&mut environment, Offered::Sort), Admission::Checked);
+    let first = point_of(&mut environment, sort);
+    environment
+        .retire(&[sort, ConstantIndex::from(1_usize)])
+        .expect("the sort and its point retire");
+    assert_eq!(offer(&mut environment, Offered::Unit), Admission::Checked);
+    assert_eq!(offer(&mut environment, Offered::Sort), Admission::Checked);
+    let moved = point_of(&mut environment, ConstantIndex::from(3_usize));
+    assert!(
+        u64::from(first.expansions()) > 0,
+        "the first check of the point expands its goals: {first:?}"
+    );
+    assert!(
+        u64::from(moved.kept()) > 0,
+        "the point of the moved sort reads the outcomes that the first check kept: {moved:?}"
+    );
+    assert!(
+        u64::from(moved.expansions()) < u64::from(first.expansions()),
+        "the point of the moved sort expands fewer goals than its first check: {moved:?} \
+         against {first:?}"
+    );
 }
 
 /// The receipt `signer` gave over a cold run of `program`.
