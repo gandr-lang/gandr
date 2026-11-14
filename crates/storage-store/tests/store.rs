@@ -1336,6 +1336,62 @@ fn a_store_opens_from_the_trailers_its_root_names_7481()
     }
 }
 
+/// A store whose roots log line names its index opens from that line, and
+/// each value of a segment the index covers derefs through the index: the
+/// open neither reads the trailer of such a segment nor scans it (#7531).
+#[test]
+fn a_store_opens_from_its_index_and_reads_no_trailer_7531()
+{
+    let root = scratch(Path::new("root-index"));
+    let seal = gandr_storage_store::Seal::At(gandr_storage_store::SealBytes(
+        core::num::NonZeroU64::new(SEAL_BYTES).expect("the seal is above zero"),
+    ));
+    let values: Vec<Labels> = (8_u8 .. 24_u8).map(|count| labels(Count(count))).collect();
+    let pointers: Vec<ContentPtr> = {
+        let (store, mut register) = Store::open_with(&root, seal).expect("the store opens");
+        let pointers: Vec<ContentPtr> = values
+            .iter()
+            .map(|value| store.commit(value).expect("a value commits"))
+            .collect();
+        for (index, &pointer) in pointers.iter().enumerate() {
+            register
+                .name(RootName::new(format!("index/{index}")), pointer)
+                .expect("each value is named");
+        }
+        pointers
+    };
+    let log = std::fs::read_to_string(root.join("roots.log")).expect("the roots log reads");
+    let line = log.lines().last().expect("the log holds a line");
+    assert!(
+        line.contains(" chunks index:") && line.contains(" nodes"),
+        "the line names the value plane's index: {line}"
+    );
+    let named: BTreeSet<&str> = line
+        .split(' ')
+        .filter_map(|word| word.split(':').next())
+        .collect();
+    for segment in files(&root.join("chunks")) {
+        let bytes = std::fs::read(&segment).expect("the segment reads");
+        let id = segment
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("segment-"))
+            .expect("a segment's file names its identity");
+        assert!(
+            bytes.get(.. 4) != Some(b"gsg1".as_slice()) || named.contains(id),
+            "the close's line names each segment that holds records, {id}: {line}"
+        );
+    }
+    let (reopened, _register) = Store::open_with(&root, seal).expect("the store opens again");
+    for (pointer, value) in pointers.iter().zip(&values) {
+        assert_eq!(
+            reopened.deref::<Labels>(*pointer),
+            Ok(value.clone()),
+            "each value derefs through the index"
+        );
+    }
+}
+
 /// A sealed segment whose trailer is changed on disk leaves that segment to
 /// the scan, and every value of it still derefs (#7481).
 #[test]
