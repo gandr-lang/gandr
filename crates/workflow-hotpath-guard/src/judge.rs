@@ -851,6 +851,33 @@ struct Move
     growth: Share,
 }
 
+/// One judged metric of a row: the median of each side.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Measure
+{
+    /// The metric.
+    metric: Metric,
+    /// The median of the base's runs.
+    before: Amount,
+    /// The median of the commit's runs.
+    after: Amount,
+}
+
+/// A row that the judge read, whether it moved or not, so the pull request's
+/// comment shows each row and not only the rows past their margin.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Measured
+{
+    /// Its family.
+    family: Family,
+    /// Its profiled name.
+    name: RowName,
+    /// The policy's smallest change that counts in the family.
+    margin: Share,
+    /// Each judged metric's medians.
+    measures: Vec<Measure>,
+}
+
 /// A row that regressed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Finding
@@ -960,12 +987,15 @@ impl fmt::Display for Conclusion
     }
 }
 
-/// A judgement: each regressed row, and the wall time either side.
+/// A judgement: each regressed row, each row read, and the wall time either
+/// side.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Verdict
 {
     /// The rows that regressed, in family and name order.
     findings: Vec<Finding>,
+    /// Every row that the judge read, in family and name order.
+    measured: Vec<Measured>,
     /// The wall time of the base's runs and the commit's.
     wall: Option<(Spread, Spread)>,
     /// The runs a side, the fewer of the two.
@@ -1075,10 +1105,11 @@ fn rows_of<'runs>(
 /// - ensures: a row is judged in each family the policy fails the check on when
 ///   every run of both sides carries it, the policy does not ignore it, either
 ///   side's median calls reach `min_calls`, and the larger median share reaches
-///   [`SHARE_FLOOR`]. It regresses on each judged metric whose median grew by
-///   at least `min_percent_change`, and, under the floor, whose least run on
-///   the commit exceeds the greatest on the base.
-/// - provides: the check's verdict.
+///   [`SHARE_FLOOR`]. Each judged row is measured: each judged metric's median
+///   on either side, with the family's margin. It regresses on each judged
+///   metric whose median grew by at least `min_percent_change`, and, under the
+///   floor, whose least run on the commit exceeds the greatest on the base.
+/// - provides: the check's verdict and the rows of the pull request's table.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the verdict is the clause.
@@ -1090,6 +1121,7 @@ fn rows_of<'runs>(
 ///   disjointness, the floor, the ignore or the call floor changes a verdict.
 /// - witness: `judge::tests::a_sub_floor_row_regresses_only_over_disjoint_runs`
 /// - witness: `judge::tests::an_ignored_or_rare_row_is_not_judged`
+/// - witness: `judge::tests::a_table_rows_each_judged_row_with_its_state_7351`
 #[must_use]
 #[inline]
 pub fn judge(
@@ -1108,6 +1140,7 @@ pub fn judge(
         )
     };
     let mut findings = Vec::new();
+    let mut measured = Vec::new();
     let first = head.first().map(|run| &run.rows);
     for &(family, ref judged) in &policy.families {
         for key in first
@@ -1136,21 +1169,32 @@ pub fn judge(
             if share < SHARE_FLOOR {
                 continue;
             }
-            let moves: Vec<Move> = judged
-                .metrics
-                .iter()
-                .filter_map(|&metric| {
-                    let was = Spread::over(&before, Reading::Metric(metric))?;
-                    let is = Spread::over(&after, Reading::Metric(metric))?;
-                    let grew = growth(was.median, is.median)?;
-                    (grew >= judged.change && (!banded || is.low > was.high)).then_some(Move {
+            let mut moves = Vec::new();
+            let mut measures = Vec::new();
+            for &metric in &judged.metrics {
+                let (Some(was), Some(is)) = (
+                    Spread::over(&before, Reading::Metric(metric)),
+                    Spread::over(&after, Reading::Metric(metric)),
+                )
+                else {
+                    continue;
+                };
+                measures.push(Measure {
+                    metric,
+                    before: was.median,
+                    after: is.median,
+                });
+                if let Some(grew) = growth(was.median, is.median)
+                    .filter(|&grew| grew >= judged.change && (!banded || is.low > was.high))
+                {
+                    moves.push(Move {
                         metric,
                         before: was,
                         after: is,
                         growth: grew,
-                    })
-                })
-                .collect();
+                    });
+                }
+            }
             if !moves.is_empty() {
                 findings.push(Finding {
                     family,
@@ -1159,11 +1203,19 @@ pub fn judge(
                     moves,
                 });
             }
+            measured.push(Measured {
+                family,
+                name: key.1.clone(),
+                margin: judged.change,
+                measures,
+            });
         }
     }
     findings.sort_by(|left, right| (left.family, &left.name).cmp(&(right.family, &right.name)));
+    measured.sort_by(|left, right| (left.family, &left.name).cmp(&(right.family, &right.name)));
     Verdict {
         findings,
+        measured,
         wall: walls(base).zip(walls(head)),
         runs: base.len().min(head.len()),
     }
@@ -1451,6 +1503,143 @@ impl fmt::Display for Summary<'_>
     }
 }
 
+/// A margin as a table writes it: `7.5%`, `50%`.
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+struct Percent(Share);
+
+impl fmt::Display for Percent
+{
+    /// Writes the share in percent, to one decimal when it has one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: 750 hundredths is `7.5%`, 5 000 is `50%`.
+    /// - provides: the margin cell of a table row.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a margin of 5 % and one of 7.5 %; a scale off by ten
+    ///   or a lost decimal changes the cell.
+    /// - witness: `judge::tests::a_table_rows_each_judged_row_with_its_state_7351`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let Self(Share(hundredths)) = *self;
+        let whole = hundredths.checked_div(100).unwrap_or_default();
+        let tenth = hundredths
+            .checked_rem(100)
+            .and_then(|rest| rest.checked_div(10))
+            .unwrap_or_default();
+        match tenth {
+            0 => write!(f, "{whole}%"),
+            _ => write!(f, "{whole}.{tenth}%"),
+        }
+    }
+}
+
+/// How many sets of runs a verdict reads: one, or a second set that
+/// confirms the first. One set on a shared runner passes a margin by noise.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Sets
+{
+    /// One set: a row past its margin is a suspect.
+    One,
+    /// A second set: a row past its margin that the first set names fails.
+    Two,
+}
+
+/// A verdict written as one table of every row that the judge read, for the
+/// pull request's comment.
+#[derive(Clone, Copy, Debug)]
+pub struct Table<'verdict>
+{
+    /// What the table names.
+    pub subject: Subject<'verdict>,
+    /// The judgement.
+    pub verdict: &'verdict Verdict,
+    /// The sets of runs that the verdict reads.
+    pub sets: Sets,
+}
+
+impl fmt::Display for Table<'_>
+{
+    /// Writes the table, collapsed under a line that counts its rows.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a `<details>` block whose summary names the benchmark, the
+    ///   functions measured and the functions past their margin; then one table
+    ///   row for each judged metric of each measured row, in family and name
+    ///   order: the name, the metric, both medians, the change, the margin and
+    ///   the row's state. The state is `fails` for a finding of a second set,
+    ///   `suspect` for a finding of one set, and `within the noise` otherwise.
+    /// - provides: the part of the pull request's comment for one benchmark.
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a verdict with one row past its margin and one inside
+    ///   the noise, read with one set and with two; a lost row, a swapped state
+    ///   or a wrong count changes the table.
+    /// - witness: `judge::tests::a_table_rows_each_judged_row_with_its_state_7351`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        let benchmark = self.subject.benchmark;
+        let functions = self.verdict.measured.len();
+        let past = self.verdict.findings.len();
+        writeln!(
+            f,
+            "<details><summary><code>{benchmark}</code> · {functions} functions · {past} past the margin</summary>\n"
+        )?;
+        writeln!(f, "|Function|Metric|Base|Head|Change|Margin|State|")?;
+        writeln!(f, "|---|---|---|---|---|---|---|")?;
+        for row in &self.verdict.measured {
+            let found = self
+                .verdict
+                .findings
+                .binary_search_by(|finding| {
+                    (finding.family, &finding.name).cmp(&(row.family, &row.name))
+                })
+                .is_ok();
+            let state = match (found, self.sets) {
+                (false, _) => "within the noise",
+                (true, Sets::One) => "suspect: a second set decides",
+                (true, Sets::Two) => "fails: two sets find it",
+            };
+            for measure in &row.measures {
+                writeln!(
+                    f,
+                    "|`{}`|{}|{}|{}|{}|{}|{state}|",
+                    row.name,
+                    measure.metric,
+                    Shown(row.family, measure.before),
+                    Shown(row.family, measure.after),
+                    Delta::between(measure.before, measure.after),
+                    Percent(row.margin)
+                )?;
+            }
+        }
+        writeln!(f, "\n</details>")
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1462,10 +1651,12 @@ mod tests
     use super::Policy;
     use super::Run;
     use super::Scope;
+    use super::Sets;
     use super::Share;
     use super::Subject;
     use super::Summary;
     use super::Suspect;
+    use super::Table;
     use super::Verdict;
     use super::Written;
     use super::judge;
@@ -1864,6 +2055,68 @@ mod tests
         assert_eq!(
             read,
             Err("`runs/store-2.json`: `f` reads no amount from `4`".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_table_rows_each_judged_row_with_its_state_7351()
+    {
+        let (base, head) = measured();
+        let repository = "gandr-lang/gandr".parse().unwrap();
+        let commit = "17756fc17aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".parse().unwrap();
+        let below = "8d13f30c8bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".parse().unwrap();
+        let subject = Subject {
+            repository: &repository,
+            head: &commit,
+            base: &below,
+            benchmark: "store-timing-push",
+        };
+        let verdict = judge(&policy!(TIMING), Scope::All, &base, &head);
+        let delete = "|`gandr_storage_schema::store::edit::Store::delete_part`|avg|81.00 ns|89.00 ns|**+9.8%**|5%|";
+        let add = "|`gandr_storage_schema::store::edit::Store::add_part`|avg|189.00 ns|190.00 ns|**+0.5%**|5%|within the noise|";
+        let one = Table {
+            subject,
+            verdict: &verdict,
+            sets: Sets::One,
+        }
+        .to_string();
+        assert!(
+            one.starts_with("<details><summary><code>store-timing-push</code> · 3 functions · 1 past the margin</summary>\n"),
+            "{one}"
+        );
+        assert!(
+            one.contains(&format!("{delete}suspect: a second set decides|\n")),
+            "{one}"
+        );
+        assert!(
+            one.contains(&format!("{add}\n")),
+            "a row inside the noise reads so: {one}"
+        );
+        assert!(
+            one.contains("|`gandr_storage_schema::store::Store::preimage`|avg|25.00 ns|25.00 ns|**+0%**|5%|within the noise|"),
+            "{one}"
+        );
+        let two = Table {
+            subject,
+            verdict: &verdict,
+            sets: Sets::Two,
+        }
+        .to_string();
+        assert!(
+            two.contains(&format!("{delete}fails: two sets find it|\n")),
+            "{two}"
+        );
+        let cleared = verdict.confirmed(&BTreeSet::new());
+        let none = Table {
+            subject,
+            verdict: &cleared,
+            sets: Sets::Two,
+        }
+        .to_string();
+        assert!(none.contains("· 3 functions · 0 past the margin"), "{none}");
+        assert!(
+            none.contains(&format!("{delete}within the noise|\n")),
+            "{none}"
         );
     }
 }

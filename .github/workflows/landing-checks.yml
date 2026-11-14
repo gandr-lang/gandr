@@ -2308,6 +2308,43 @@ jobs:
                   + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "o\(.key)": .value.output}) | add))}' *.json \
             | gh api graphql --input - --silent
           gh workflow run report-hotpath-regressions.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
+      # The judged tables, collapsed one block for each benchmark, as the
+      # comment that `hotpath-comment` posts on each landed pull request
+      # (#7351).
+      - name: write the table comment
+        shell: bash
+        run: |
+          {
+            printf '<!-- hotpath-table -->\n### hotpath\n\n'
+            jq -r '.table // empty' *.json
+          } > comment.md
+      - name: keep the table comment
+        uses: *upload-artifact
+        with:
+          name: hotpath-comment
+          path: comment.md
+          if-no-files-found: error
+
+  # The judged tables on each pull request that the push lands (#7351), one
+  # comment that a rerun edits, posted as the obligations comment is. The
+  # comment decides no verdict.
+  hotpath-comment:
+    name: post the hotpath table comment
+    needs: hotpath-judged
+    if: ${{ !cancelled() && needs.hotpath-judged.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/landing' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      pull-requests: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      BEFORE: ${{ github.event.before }}
+      HEAD_SHA: ${{ github.sha }}
+      COMMENT_ARTIFACT: hotpath-comment
+      COMMENT_MARKER: <!-- hotpath-table -->
+      REPORT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps: *post-comment
 
   # A landing's hotpath verdicts become ledger rows (`mise run
   # ci:hotpath-landed`): each push to `landing` reads the `hotpath /
