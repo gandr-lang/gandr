@@ -1,12 +1,20 @@
-pub mod repr {
+pub mod repr
+{
     use ::std::os::fd::AsRawFd as _;
 
     use crate::fd::SlotDesc;
     use crate::sqe::repr::Sqe64;
 
-    impl<'op> Sqe64<'op> {
-        // #[expect(clippy::needless_pass_by_value, reason = "avoid indirection")]
-        pub unsafe fn prep_listen(&mut self, socket: SlotDesc<&'op ::socket2::Socket>, backlog: ::core::ffi::c_int) {
+    impl<'op> Sqe64<'op>
+    {
+        // #[expect(clippy::needless_pass_by_value, reason = "avoid
+        // indirection")]
+        pub unsafe fn prep_listen(
+            &mut self,
+            socket: SlotDesc<&'op ::socket2::Socket>,
+            backlog: ::core::ffi::c_int,
+        )
+        {
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
@@ -18,7 +26,8 @@ pub mod repr {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     use ::assert_fs::TempDir;
     use ::assert_fs::prelude::PathChild as _;
 
@@ -27,7 +36,8 @@ pub(crate) mod test {
     use crate::sys::SysResult as _;
 
     #[derive(::bon::Builder)]
-    pub struct Fixture<'op> {
+    pub struct Fixture<'op>
+    {
         #[builder(start_fn)]
         socket: SlotDesc<&'op ::socket2::Socket>,
         #[builder(default = ::libc::SOMAXCONN)]
@@ -38,8 +48,12 @@ pub(crate) mod test {
         cqe_skip: bool,
     }
 
-    impl Fixture<'_> {
-        fn submit<S, C>(self, ring: &mut IoUring<'_, S, C>) -> u32
+    impl Fixture<'_>
+    {
+        fn submit<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> u32
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -73,8 +87,10 @@ pub(crate) mod test {
             sq.submit().unwrap()
         }
 
-        fn submit_and_wait<S, C>(self, ring: &mut IoUring<'_, S, C>)
-        where
+        fn submit_and_wait<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
         {
@@ -93,8 +109,10 @@ pub(crate) mod test {
             cqe.cqe.res.sys_zero().unwrap();
         }
 
-        pub fn run<S, C>(self, ring: &mut IoUring<'_, S, C>)
-        where
+        pub fn run<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
         {
@@ -125,7 +143,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn listen() {
+    fn listen()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -137,7 +156,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
 
         let sqe_link = None;
@@ -147,7 +172,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn listen_direct() {
+    fn listen_direct()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -159,7 +185,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
 
         let sqe_link = None;
@@ -169,7 +201,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn listen_direct_cqe_skip() {
+    fn listen_direct_cqe_skip()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -181,7 +214,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = Some(true);
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
 
         let sqe_link = None;

@@ -1,7 +1,9 @@
-pub mod repr {
+pub mod repr
+{
     use crate::sqe::repr::Sqe64;
 
-    impl Sqe64<'_> {
+    impl Sqe64<'_>
+    {
         pub unsafe fn prep_socket(
             &mut self,
             domain: ::socket2::Domain,
@@ -9,7 +11,8 @@ pub mod repr {
             protocol: Option<::socket2::Protocol>,
             flags: ::rustix::net::SocketFlags,
             file_index: Option<::core::ffi::c_uint>,
-        ) {
+        )
+        {
             let sqe = &raw mut *self.sqe;
             let domain = domain.into();
             let r#type = r#type.into();
@@ -17,18 +20,25 @@ pub mod repr {
             let flags = flags.bits();
             if let Some(file_index) = file_index {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_socket_direct(sqe, domain, r#type, protocol, file_index, flags) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_socket_direct(
+                        sqe, domain, r#type, protocol, file_index, flags,
+                    )
+                };
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_socket(sqe, domain, r#type, protocol, flags) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_socket(sqe, domain, r#type, protocol, flags)
+                };
             }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     use ::std::os::fd::BorrowedFd;
     use ::std::os::fd::FromRawFd as _;
 
@@ -38,7 +48,8 @@ pub(crate) mod test {
 
     #[derive(::bon::Builder)]
     #[builder(finish_fn(vis = "", name = build_internal))]
-    pub struct Fixture<'fds> {
+    pub struct Fixture<'fds>
+    {
         #[builder(start_fn)]
         domain: ::socket2::Domain,
         #[builder(start_fn)]
@@ -58,8 +69,10 @@ pub(crate) mod test {
         cqe_skip: bool,
     }
 
-    impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S> {
-        pub fn build(self) -> Fixture<'fds> {
+    impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S>
+    {
+        pub fn build(self) -> Fixture<'fds>
+        {
             let this = self.build_internal();
 
             if let Some(slot) = this.socket_slot {
@@ -79,8 +92,12 @@ pub(crate) mod test {
         }
     }
 
-    impl Fixture<'_> {
-        fn submit<S, C>(self, ring: &mut IoUring<'_, S, C>) -> u32
+    impl Fixture<'_>
+    {
+        fn submit<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> u32
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -99,8 +116,11 @@ pub(crate) mod test {
 
             // configure sliced file registration
             if !files.is_empty() {
-                let slots = slots.map(usize::try_from).and_then(Result::ok).unwrap_or(files.len());
-                let files = &files[..slots];
+                let slots = slots
+                    .map(usize::try_from)
+                    .and_then(Result::ok)
+                    .unwrap_or(files.len());
+                let files = &files[.. slots];
                 let registrar = ring.registrar();
                 registrar.register_files(files).unwrap();
             }
@@ -132,7 +152,10 @@ pub(crate) mod test {
             sq.submit().unwrap()
         }
 
-        fn submit_and_wait<S, C>(self, ring: &mut IoUring<'_, S, C>) -> SlotDesc<::socket2::Socket>
+        fn submit_and_wait<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> SlotDesc<::socket2::Socket>
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -161,7 +184,10 @@ pub(crate) mod test {
         }
 
         #[must_use]
-        pub fn run<S, C>(self, ring: &mut IoUring<'_, S, C>) -> SlotDesc<::socket2::Socket>
+        pub fn run<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> SlotDesc<::socket2::Socket>
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -169,7 +195,11 @@ pub(crate) mod test {
             if self.cqe_skip {
                 let slot = self
                     .socket_slot
-                    .ok_or_else(|| ::std::io::Error::other("using `cqe_skip` requires specifying `socket_slot`"))
+                    .ok_or_else(|| {
+                        ::std::io::Error::other(
+                            "using `cqe_skip` requires specifying `socket_slot`",
+                        )
+                    })
                     .unwrap();
                 self.submit(ring);
                 SlotDesc::Slot(slot)
@@ -213,7 +243,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn socket() {
+    fn socket()
+    {
         let slots = None;
         let socket_slot = None;
 
@@ -226,7 +257,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn socket_direct() {
+    fn socket_direct()
+    {
         let slots = Some(1);
         let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
 
@@ -239,7 +271,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn socket_direct_cqe_skip() {
+    fn socket_direct_cqe_skip()
+    {
         let slots = Some(1);
         let socket_slot = Some(0);
 

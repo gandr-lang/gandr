@@ -1,10 +1,12 @@
-pub mod repr {
+pub mod repr
+{
     use ::std::os::fd::AsRawFd as _;
 
     use crate::fd::SlotDesc;
     use crate::sqe::repr::Sqe64;
 
-    impl Sqe64<'_> {
+    impl Sqe64<'_>
+    {
         pub unsafe fn prep_accept<'op>(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
@@ -12,7 +14,8 @@ pub mod repr {
             addrlen: &'op mut ::socket2::socklen_t,
             flags: ::rustix::net::SocketFlags,
             file_index: Option<::core::ffi::c_uint>,
-        ) {
+        )
+        {
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
@@ -22,7 +25,11 @@ pub mod repr {
 
             if let Some(file_index) = file_index {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_accept_direct(sqe, fd, addr, addrlen, flags, file_index) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_accept_direct(
+                        sqe, fd, addr, addrlen, flags, file_index,
+                    )
+                };
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
@@ -37,7 +44,8 @@ pub mod repr {
             addrlen: &'op mut ::socket2::socklen_t,
             flags: ::rustix::net::SocketFlags,
             direct: bool,
-        ) {
+        )
+        {
             let sqe = &raw mut *self.sqe;
 
             let fd = socket.as_raw_fd();
@@ -47,18 +55,25 @@ pub mod repr {
 
             if direct {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_multishot_accept_direct(sqe, fd, addr, addrlen, flags) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_multishot_accept_direct(
+                        sqe, fd, addr, addrlen, flags,
+                    )
+                };
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
-                unsafe { ::liburing_rs::io_uring_prep_multishot_accept(sqe, fd, addr, addrlen, flags) };
+                unsafe {
+                    ::liburing_rs::io_uring_prep_multishot_accept(sqe, fd, addr, addrlen, flags)
+                };
             }
         }
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     use ::assert_fs::TempDir;
     // use ::assert_fs::assert::PathAssert as _;
     use ::assert_fs::prelude::PathChild as _;
@@ -71,14 +86,20 @@ pub(crate) mod test {
     use crate::fd::SlotDesc;
     use crate::sys::SysResult as _;
 
-    pub enum FixtureOpMode {
+    pub enum FixtureOpMode
+    {
         Singleshot,
-        Multishot { clients: usize, direct: bool },
+        Multishot
+        {
+            clients: usize,
+            direct: bool,
+        },
     }
 
     #[derive(::bon::Builder)]
     #[builder(finish_fn(vis = "", name = build_internal))]
-    pub struct Fixture<'op> {
+    pub struct Fixture<'op>
+    {
         #[builder(start_fn)]
         socket: SlotDesc<&'op ::socket2::Socket>,
         #[builder(start_fn)]
@@ -96,8 +117,10 @@ pub(crate) mod test {
         cqe_skip: bool,
     }
 
-    impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S> {
-        pub fn build(self) -> Fixture<'fds> {
+    impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S>
+    {
+        pub fn build(self) -> Fixture<'fds>
+        {
             let this = self.build_internal();
 
             if matches!(this.mode, FixtureOpMode::Multishot { direct: true, .. }) {
@@ -111,8 +134,12 @@ pub(crate) mod test {
         }
     }
 
-    impl Fixture<'_> {
-        fn submit<S, C>(self, ring: &mut IoUring<'_, S, C>) -> u32
+    impl Fixture<'_>
+    {
+        fn submit<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> u32
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -135,10 +162,10 @@ pub(crate) mod test {
                 .unwrap();
 
             match mode {
-                | FixtureOpMode::Singleshot => {
+                FixtureOpMode::Singleshot => {
                     unsafe { sqe.prep_accept(socket, addr, addrlen, flags, client_slot) };
                 },
-                | FixtureOpMode::Multishot { direct, .. } => {
+                FixtureOpMode::Multishot { direct, .. } => {
                     unsafe { sqe.prep_multishot_accept(socket, addr, addrlen, flags, direct) };
                 },
             }
@@ -158,7 +185,10 @@ pub(crate) mod test {
             sq.submit().unwrap()
         }
 
-        fn submit_and_wait<S, C>(self, ring: &mut IoUring<'_, S, C>) -> Vec<SlotDesc<::socket2::Socket>>
+        fn submit_and_wait<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) -> Vec<SlotDesc<::socket2::Socket>>
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -178,7 +208,7 @@ pub(crate) mod test {
 
             let mut cq = ring.cqueue();
 
-            for i in 0..clients {
+            for i in 0 .. clients {
                 let cqe = cq
                     .wait(1)
                     .unwrap()
@@ -207,8 +237,10 @@ pub(crate) mod test {
             descs
         }
 
-        pub fn run<S, C>(self, ring: &mut IoUring<'_, S, C>)
-        where
+        pub fn run<S, C>(
+            self,
+            ring: &mut IoUring<'_, S, C>,
+        ) where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
         {
@@ -221,7 +253,8 @@ pub(crate) mod test {
         }
     }
 
-    pub(crate) fn connect(path: &Path) -> ::std::thread::JoinHandle<::std::io::Result<()>> {
+    pub(crate) fn connect(path: &Path) -> ::std::thread::JoinHandle<::std::io::Result<()>>
+    {
         ::std::thread::spawn({
             let path = path.to_path_buf();
             move || -> ::std::io::Result<()> {
@@ -259,7 +292,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn accept() {
+    fn accept()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -278,7 +312,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
 
@@ -306,7 +346,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn accept_direct() {
+    fn accept_direct()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -325,7 +366,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
 
@@ -353,7 +400,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn accept_direct_cqe_skip() {
+    fn accept_direct_cqe_skip()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -372,7 +420,13 @@ pub(crate) mod test {
         let sqe_link = Some(true);
         let cqe_skip = Some(true);
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
 
@@ -400,7 +454,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn accept_multishot() {
+    fn accept_multishot()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -412,14 +467,23 @@ pub(crate) mod test {
 
         let slots = None;
         let socket_slot = None;
-        let mode = FixtureOpMode::Multishot { clients, direct: false };
+        let mode = FixtureOpMode::Multishot {
+            clients,
+            direct: false,
+        };
 
         let mut ring = IoUring::new().unwrap();
 
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
 
@@ -447,7 +511,8 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn accept_multishot_direct() {
+    fn accept_multishot_direct()
+    {
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
@@ -459,14 +524,23 @@ pub(crate) mod test {
 
         let slots = Some(1 + u32::try_from(clients).unwrap());
         let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
-        let mode = FixtureOpMode::Multishot { clients, direct: true };
+        let mode = FixtureOpMode::Multishot {
+            clients,
+            direct: true,
+        };
 
         let mut ring = IoUring::new().unwrap();
 
         let sqe_link = Some(true);
         let cqe_skip = None;
 
-        let socket = crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+        let socket = crate::sqe::socket::test::socket_with(
+            &mut ring,
+            slots,
+            socket_slot,
+            sqe_link,
+            cqe_skip,
+        );
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
 

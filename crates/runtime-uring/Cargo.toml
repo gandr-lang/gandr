@@ -1,17 +1,10 @@
 [package]
 name = "gandr-runtime-uring"
 version.workspace = true
-license.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-
-[features]
-bindgen = []
-debug = []
-
-[build-dependencies]
-bindgen = { workspace = true, default-features = true, features = ["experimental"] }
+license.workspace = true
 
 [dependencies]
 axboe-liburing = { workspace = true }
@@ -27,6 +20,13 @@ notify = { workspace = true }
 num_cpus = { workspace = true }
 predicates = { workspace = true }
 static_assertions_next = { workspace = true }
+
+[build-dependencies]
+bindgen = { workspace = true, default-features = true, features = ["experimental"] }
+
+[features]
+bindgen = []
+debug = []
 
 [lints]
 workspace = true

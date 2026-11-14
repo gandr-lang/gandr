@@ -26,26 +26,32 @@ use crate::ring::io_uring_builder::SetFlagSetupTaskrunFlag;
 use crate::sys::SysResult as _;
 
 #[non_exhaustive]
-pub struct IoUring<'fd, S = crate::sqe::kind::Sqe64, C = crate::cqe::kind::Cqe16> {
+pub struct IoUring<'fd, S = crate::sqe::kind::Sqe64, C = crate::cqe::kind::Cqe16>
+{
     pub(crate) ring: ::liburing_rs::io_uring,
     marker: PhantomData<(&'fd ::liburing_rs::io_uring, S, C)>,
 }
 
-impl<S, C> Drop for IoUring<'_, S, C> {
-    fn drop(&mut self) {
+impl<S, C> Drop for IoUring<'_, S, C>
+{
+    fn drop(&mut self)
+    {
         let ring = &raw mut self.ring;
         // SAFETY: FIXME
         unsafe { ::liburing_rs::io_uring_queue_exit(ring) };
     }
 }
 
-impl<'fd> IoUring<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16> {
+impl<'fd> IoUring<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
+{
     /// # Errors
-    pub fn new() -> ::std::io::Result<Self> {
+    pub fn new() -> ::std::io::Result<Self>
+    {
         Self::builder().build()
     }
 
-    pub fn builder() -> IoUringBuilder<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16> {
+    pub fn builder() -> IoUringBuilder<'fd, crate::sqe::kind::Sqe64, crate::cqe::kind::Cqe16>
+    {
         Self::make()
     }
 }
@@ -81,7 +87,8 @@ where
         #[builder(default)] sq_thread_cpu: u32,
         #[builder(default)] sq_thread_idle: u32,
         #[builder(default)] dontfork: bool,
-    ) -> ::std::io::Result<Self> {
+    ) -> ::std::io::Result<Self>
+    {
         let mut ring = ::liburing_rs::io_uring::default();
 
         let mut params = ::liburing_rs::io_uring_params::default();
@@ -148,7 +155,10 @@ where
         params.sq_thread_idle = sq_thread_idle;
 
         // SAFETY: FIXME
-        unsafe { ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params) }.sys_zero()?;
+        unsafe {
+            ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params)
+        }
+        .sys_zero()?;
 
         if dontfork {
             // SAFETY: FIXME
@@ -161,27 +171,32 @@ where
         })
     }
 
-    pub fn cqueue(&mut self) -> CompletionQueue<'_, C> {
+    pub fn cqueue(&mut self) -> CompletionQueue<'_, C>
+    {
         CompletionQueue::new(self)
     }
 
-    pub fn squeue(&mut self) -> SubmissionQueue<'_, S> {
+    pub fn squeue(&mut self) -> SubmissionQueue<'_, S>
+    {
         SubmissionQueue::new(self)
     }
 
     #[must_use]
-    pub fn registrar(&self) -> Registrar<'_> {
+    pub fn registrar(&self) -> Registrar<'_>
+    {
         Registrar::new(self)
     }
 
     #[must_use]
-    pub const fn ring_fd(&self) -> BorrowedFd<'_> {
+    pub const fn ring_fd(&self) -> BorrowedFd<'_>
+    {
         // SAFETY:
         unsafe { BorrowedFd::borrow_raw(self.ring.ring_fd) }
     }
 
     #[must_use]
-    pub fn queues(&mut self) -> (SubmissionQueue<'_, S>, CompletionQueue<'_, C>) {
+    pub fn queues(&mut self) -> (SubmissionQueue<'_, S>, CompletionQueue<'_, C>)
+    {
         (SubmissionQueue::new(self), CompletionQueue::new(self))
     }
 }
@@ -202,7 +217,12 @@ where
     C: crate::cqe::Kind,
     S: crate::sqe::Kind,
 {
-    io_uring_flag_setup!(setup_iopoll, flag_setup_iopoll, SetFlagSetupIopoll, FlagSetupIopoll);
+    io_uring_flag_setup!(
+        setup_iopoll,
+        flag_setup_iopoll,
+        SetFlagSetupIopoll,
+        FlagSetupIopoll
+    );
 
     io_uring_flag_setup!(
         setup_hybrid_iopoll,
@@ -211,11 +231,26 @@ where
         FlagSetupHybridIopoll
     );
 
-    io_uring_flag_setup!(setup_sqpoll, flag_setup_sqpoll, SetFlagSetupSqpoll, FlagSetupSqpoll);
+    io_uring_flag_setup!(
+        setup_sqpoll,
+        flag_setup_sqpoll,
+        SetFlagSetupSqpoll,
+        FlagSetupSqpoll
+    );
 
-    io_uring_flag_setup!(setup_sq_aff, flag_setup_sq_aff, SetFlagSetupSqAff, FlagSetupSqAff);
+    io_uring_flag_setup!(
+        setup_sq_aff,
+        flag_setup_sq_aff,
+        SetFlagSetupSqAff,
+        FlagSetupSqAff
+    );
 
-    io_uring_flag_setup!(setup_clamp, flag_setup_clamp, SetFlagSetupClamp, FlagSetupClamp);
+    io_uring_flag_setup!(
+        setup_clamp,
+        flag_setup_clamp,
+        SetFlagSetupClamp,
+        FlagSetupClamp
+    );
 
     io_uring_flag_setup!(
         setup_r_disabled,
@@ -259,7 +294,12 @@ where
         FlagSetupDeferTaskrun
     );
 
-    io_uring_flag_setup!(setup_no_mmap, flag_setup_no_mmap, SetFlagSetupNoMmap, FlagSetupNoMmap);
+    io_uring_flag_setup!(
+        setup_no_mmap,
+        flag_setup_no_mmap,
+        SetFlagSetupNoMmap,
+        FlagSetupNoMmap
+    );
 
     io_uring_flag_setup!(
         setup_registered_fd_only,
@@ -275,54 +315,71 @@ where
         FlagSetupNoSqarray
     );
 
-    pub fn setup_cqe32(self) -> IoUringBuilder<'fd, S, crate::cqe::kind::Cqe32, SetFlagSetupCqe32<State>>
+    pub fn setup_cqe32(
+        self
+    ) -> IoUringBuilder<'fd, S, crate::cqe::kind::Cqe32, SetFlagSetupCqe32<State>>
     where
         State::FlagSetupCqe32: IsUnset,
     {
         // SAFETY:
-        let this: IoUringBuilder<S, crate::cqe::kind::Cqe32, State> = unsafe { ::core::mem::transmute(self) };
+        let this: IoUringBuilder<S, crate::cqe::kind::Cqe32, State> =
+            unsafe { ::core::mem::transmute(self) };
         this.flag_setup_cqe32(true) // tarpaulin
     }
 
-    pub fn setup_sqe128(self) -> IoUringBuilder<'fd, crate::sqe::kind::Sqe128, C, SetFlagSetupSqe128<State>>
+    pub fn setup_sqe128(
+        self
+    ) -> IoUringBuilder<'fd, crate::sqe::kind::Sqe128, C, SetFlagSetupSqe128<State>>
     where
         State::FlagSetupSqe128: IsUnset,
     {
         // SAFETY:
-        let this: IoUringBuilder<crate::sqe::kind::Sqe128, C, State> = unsafe { ::core::mem::transmute(self) };
+        let this: IoUringBuilder<crate::sqe::kind::Sqe128, C, State> =
+            unsafe { ::core::mem::transmute(self) };
         this.flag_setup_sqe128(true) // tarpaulin
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     use crate::ring::IoUring;
 
-    mod new {
+    mod new
+    {
         use super::*;
 
         #[test]
-        fn with_entries() {
+        fn with_entries()
+        {
             IoUring::builder().entries(1024).build().unwrap();
         }
 
         #[test]
-        fn with_setup_iopoll() {
+        fn with_setup_iopoll()
+        {
             IoUring::builder().setup_iopoll().build().unwrap();
         }
 
         #[test]
-        fn with_setup_hybrid_iopoll() {
-            IoUring::builder().setup_iopoll().setup_hybrid_iopoll().build().unwrap();
+        fn with_setup_hybrid_iopoll()
+        {
+            IoUring::builder()
+                .setup_iopoll()
+                .setup_hybrid_iopoll()
+                .build()
+                .unwrap();
         }
 
         #[test]
-        fn with_setup_sqpoll() {
+        fn with_setup_sqpoll()
+        {
             IoUring::builder().setup_sqpoll().build().unwrap();
         }
 
         #[test]
-        fn with_setup_sq_aff() {
+        fn with_setup_sq_aff()
+        {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
             let cpus = ::num_cpus::get_physical();
             let sq_thread_cpu = u32::try_from(cpus).unwrap() - 1;
@@ -335,39 +392,50 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_setup_cqsize() {
-            IoUring::builder().entries(128).setup_cqsize(256).build().unwrap();
+        fn with_setup_cqsize()
+        {
+            IoUring::builder()
+                .entries(128)
+                .setup_cqsize(256)
+                .build()
+                .unwrap();
         }
 
         #[test]
-        fn with_setup_clamp() {
+        fn with_setup_clamp()
+        {
             IoUring::builder().setup_clamp().build().unwrap();
         }
 
         #[test]
-        fn with_setup_attach_wq() {
+        fn with_setup_attach_wq()
+        {
             let ring = IoUring::builder().build().unwrap();
             let ring_fd = ring.ring_fd();
             IoUring::builder().setup_attach_wq(ring_fd).build().unwrap();
         }
 
         #[test]
-        fn with_setup_r_disabled() {
+        fn with_setup_r_disabled()
+        {
             IoUring::builder().setup_r_disabled().build().unwrap();
         }
 
         #[test]
-        fn with_setup_submit_all() {
+        fn with_setup_submit_all()
+        {
             IoUring::builder().setup_submit_all().build().unwrap();
         }
 
         #[test]
-        fn with_setup_coop_taskrun() {
+        fn with_setup_coop_taskrun()
+        {
             IoUring::builder().setup_coop_taskrun().build().unwrap();
         }
 
         #[test]
-        fn with_setup_taskrun_flag() {
+        fn with_setup_taskrun_flag()
+        {
             IoUring::builder()
                 .setup_coop_taskrun()
                 .setup_taskrun_flag()
@@ -376,22 +444,26 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_setup_sqe128() {
+        fn with_setup_sqe128()
+        {
             IoUring::builder().setup_sqe128().build().unwrap();
         }
 
         #[test]
-        fn with_setup_cqe32() {
+        fn with_setup_cqe32()
+        {
             IoUring::builder().setup_cqe32().build().unwrap();
         }
 
         #[test]
-        fn with_setup_single_issuer() {
+        fn with_setup_single_issuer()
+        {
             IoUring::builder().setup_single_issuer().build().unwrap();
         }
 
         #[test]
-        fn with_setup_defer_taskrun() {
+        fn with_setup_defer_taskrun()
+        {
             IoUring::builder()
                 .setup_single_issuer()
                 .setup_defer_taskrun()
@@ -400,12 +472,14 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_setup_no_mmap() {
+        fn with_setup_no_mmap()
+        {
             IoUring::builder().setup_no_mmap().build().unwrap();
         }
 
         #[test]
-        fn with_setup_registered_fd_only() {
+        fn with_setup_registered_fd_only()
+        {
             IoUring::builder()
                 .setup_no_mmap()
                 .setup_registered_fd_only()
@@ -414,12 +488,14 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_setup_no_sqarray() {
+        fn with_setup_no_sqarray()
+        {
             IoUring::builder().setup_no_sqarray().build().unwrap();
         }
 
         #[test]
-        fn with_sq_thread_cpu() {
+        fn with_sq_thread_cpu()
+        {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
             let cpus = ::num_cpus::get_physical();
             let sq_thread_cpu = u32::try_from(cpus).unwrap() - 1;
@@ -432,7 +508,8 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_sq_thread_idle() {
+        fn with_sq_thread_idle()
+        {
             let sq_thread_idle = 250u32;
             IoUring::builder()
                 .setup_sqpoll()
@@ -442,36 +519,42 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn with_dontfork() {
+        fn with_dontfork()
+        {
             IoUring::builder().dontfork(true).build().unwrap();
         }
     }
 
     #[test]
-    fn new() {
+    fn new()
+    {
         IoUring::new().unwrap();
     }
 
     #[test]
-    fn cqueue() {
+    fn cqueue()
+    {
         let mut ring = IoUring::new().unwrap();
         ring.cqueue();
     }
 
     #[test]
-    fn squeue() {
+    fn squeue()
+    {
         let mut ring = IoUring::new().unwrap();
         ring.squeue();
     }
 
     #[test]
-    fn queues() {
+    fn queues()
+    {
         let mut ring = IoUring::new().unwrap();
         drop(ring.queues());
     }
 
     #[test]
-    fn registrar() {
+    fn registrar()
+    {
         let ring = IoUring::new().unwrap();
         drop(ring.registrar());
     }

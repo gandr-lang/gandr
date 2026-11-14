@@ -1,13 +1,16 @@
-pub mod repr {
+pub mod repr
+{
     use crate::sqe::repr::Sqe64;
 
-    impl Sqe64<'_> {
+    impl Sqe64<'_>
+    {
         pub unsafe fn prep_files_update(
             &mut self,
             fds: *const ::core::ffi::c_int,
             nr_fds: ::core::ffi::c_uint,
             offset: ::core::ffi::c_int,
-        ) {
+        )
+        {
             let sqe = &raw mut *self.sqe;
             // FIXME: remove if upstream merges const changes
             let fds = fds.cast_mut();

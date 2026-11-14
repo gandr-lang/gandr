@@ -6,13 +6,16 @@ use crate::IoUring;
 use crate::sys::SysResult as _;
 
 #[non_exhaustive]
-pub struct Registrar<'ring> {
+pub struct Registrar<'ring>
+{
     pub(crate) ring: NonNull<::liburing_rs::io_uring>,
     marker: PhantomData<&'ring mut IoUring<'static>>,
 }
 
-impl<'ring> Registrar<'ring> {
-    pub(crate) fn new<S, C>(ring: &'ring IoUring<S, C>) -> Self {
+impl<'ring> Registrar<'ring>
+{
+    pub(crate) fn new<S, C>(ring: &'ring IoUring<S, C>) -> Self
+    {
         let ring = NonNull::from(&ring.ring);
         Self {
             ring,
@@ -21,7 +24,11 @@ impl<'ring> Registrar<'ring> {
     }
 
     /// # Errors
-    pub fn register_files(&self, files: &'ring [BorrowedFd<'ring>]) -> ::std::io::Result<()> {
+    pub fn register_files(
+        &self,
+        files: &'ring [BorrowedFd<'ring>],
+    ) -> ::std::io::Result<()>
+    {
         let ring = self.ring.as_ptr();
         let nr_files = u32::try_from(files.len()).map_err(::std::io::Error::other)?;
         let files = files.as_ptr().cast();
@@ -31,7 +38,11 @@ impl<'ring> Registrar<'ring> {
     }
 
     /// # Errors
-    pub fn register_files_sparse(&self, nr_files: usize) -> ::std::io::Result<()> {
+    pub fn register_files_sparse(
+        &self,
+        nr_files: usize,
+    ) -> ::std::io::Result<()>
+    {
         let ring = self.ring.as_ptr();
         let nr_files = u32::try_from(nr_files).map_err(::std::io::Error::other)?;
         // SAFETY:

@@ -9,7 +9,8 @@ use crate::sqe::kind::Sqe64;
 use crate::sys::SysResult as _;
 
 #[non_exhaustive]
-pub struct CompletionQueue<'ring, C = Cqe16> {
+pub struct CompletionQueue<'ring, C = Cqe16>
+{
     pub(crate) ring: NonNull<::liburing_rs::io_uring>,
     marker: PhantomData<&'ring mut IoUring<'static, Sqe64, C>>,
 }
@@ -17,7 +18,8 @@ impl<'ring, C> CompletionQueue<'ring, C>
 where
     C: crate::cqe::Kind,
 {
-    pub(crate) fn new<S>(ring: &'ring IoUring<S, C>) -> Self {
+    pub(crate) fn new<S>(ring: &'ring IoUring<S, C>) -> Self
+    {
         let ring = NonNull::from(&ring.ring);
         Self {
             ring,
@@ -25,12 +27,17 @@ where
         }
     }
 
-    pub fn ready(&mut self) -> CqesReady<'_, C> {
+    pub fn ready(&mut self) -> CqesReady<'_, C>
+    {
         CqesReady::new(self.ring)
     }
 
     /// # Errors
-    pub fn wait(&mut self, count: usize) -> ::std::io::Result<CqesWait<'_, C>> {
+    pub fn wait(
+        &mut self,
+        count: usize,
+    ) -> ::std::io::Result<CqesWait<'_, C>>
+    {
         let ring = self.ring;
         let mut cqe_ptr = NonNull::<::liburing_rs::io_uring_cqe>::dangling();
 
@@ -38,35 +45,47 @@ where
             return Ok(CqesWait::new(ring, cqe_ptr, count));
         }
 
-        #[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "WIP")]
+        #[expect(
+            clippy::as_conversions,
+            clippy::cast_possible_truncation,
+            reason = "WIP"
+        )]
         let wait_nr = count as u32;
 
         // SAFETY:
-        unsafe { ::liburing_rs::io_uring_wait_cqe_nr(ring.as_ptr(), (&raw mut cqe_ptr).cast(), wait_nr) }.sys_zero()?;
+        unsafe {
+            ::liburing_rs::io_uring_wait_cqe_nr(ring.as_ptr(), (&raw mut cqe_ptr).cast(), wait_nr)
+        }
+        .sys_zero()?;
 
         Ok(CqesWait::new(ring, cqe_ptr, count))
     }
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     use crate::cqueue::CompletionQueue;
     use crate::ring::IoUring;
 
     #[test]
-    fn new() {
+    fn new()
+    {
         let ring = IoUring::new().unwrap();
         CompletionQueue::new(&ring);
     }
 
-    mod cqes {
+    mod cqes
+    {
         use super::*;
 
-        mod ready {
+        mod ready
+        {
             use super::*;
 
             #[test]
-            fn zero() {
+            fn zero()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let mut cq = ring.cqueue();
 
@@ -75,7 +94,8 @@ pub(crate) mod test {
             }
 
             #[test]
-            fn one() {
+            fn one()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let (mut sq, mut cq) = ring.queues();
 
@@ -89,7 +109,8 @@ pub(crate) mod test {
             }
 
             #[test]
-            fn two() {
+            fn two()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let (mut sq, mut cq) = ring.queues();
 
@@ -106,11 +127,13 @@ pub(crate) mod test {
             }
         }
 
-        mod wait {
+        mod wait
+        {
             use super::*;
 
             #[test]
-            fn zero() {
+            fn zero()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let mut cq = ring.cqueue();
 
@@ -119,7 +142,8 @@ pub(crate) mod test {
             }
 
             #[test]
-            fn one() {
+            fn one()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let (mut sq, mut cq) = ring.queues();
 
@@ -133,7 +157,8 @@ pub(crate) mod test {
             }
 
             #[test]
-            fn two() {
+            fn two()
+            {
                 let mut ring = IoUring::new().unwrap();
                 let (mut sq, mut cq) = ring.queues();
 
