@@ -1025,21 +1025,40 @@ mod tests
     /// The variable that names the directory of a child that holds tokens.
     const CHILD: &str = "GANDR_HOST_TOKENS_CHILD";
 
+    /// The free tokens of a counter.
+    #[repr(transparent)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct Free(u64);
+
+    /// The name of one test's scratch directory.
+    #[repr(transparent)]
+    #[derive(Clone, Copy)]
+    struct Scratch(&'static str);
+
     /// The free tokens of `counter`.
-    fn free(counter: &HostCounter) -> u64
+    ///
+    /// # Specification
+    /// trivial.
+    fn free(counter: &HostCounter) -> Free
     {
-        counter
-            .mapping
-            .segment()
-            .counter
-            .word
-            .load(Ordering::SeqCst)
-            & FREE
+        Free(
+            counter
+                .mapping
+                .segment()
+                .counter
+                .word
+                .load(Ordering::SeqCst)
+                & FREE,
+        )
     }
 
-    /// A fresh directory for one test.
-    fn scratch(name: &str) -> PathBuf
+    /// A fresh directory for the test that `name` names.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scratch(name: Scratch) -> PathBuf
     {
+        let Scratch(name) = name;
         let directory =
             std::env::temp_dir().join(format!("gandr-host-{name}-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&directory));
@@ -1048,6 +1067,9 @@ mod tests
     }
 
     /// The child's part: join, take four tokens, say so, and wait to die.
+    ///
+    /// # Specification
+    /// trivial.
     fn hold_four(directory: &Path)
     {
         let Maybe::Present(host) = Host::join(directory)
@@ -1071,7 +1093,7 @@ mod tests
             hold_four(Path::new(&directory));
             return;
         }
-        let directory = scratch("dead");
+        let directory = scratch(Scratch("dead"));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(8).unwrap())).unwrap();
         let mut child = Command::new(std::env::current_exe().unwrap())
@@ -1094,13 +1116,13 @@ mod tests
         );
         assert_eq!(
             free(&counter),
-            4,
+            Free(4),
             "the child holds four of the eight tokens"
         );
         counter.reap();
         assert_eq!(
             free(&counter),
-            4,
+            Free(4),
             "a reap leaves a live holder's tokens alone"
         );
         child.kill().unwrap();
@@ -1108,7 +1130,7 @@ mod tests
         counter.reap();
         assert_eq!(
             free(&counter),
-            8,
+            Free(8),
             "the reap gives the dead child's four tokens back"
         );
         drop(counter);
@@ -1118,7 +1140,7 @@ mod tests
     #[test]
     fn a_move_cut_off_between_its_steps_loses_no_token()
     {
-        let directory = scratch("cut");
+        let directory = scratch(Scratch("cut"));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(4).unwrap())).unwrap();
         let segment = counter.mapping.segment();
@@ -1130,7 +1152,7 @@ mod tests
         counter.reap();
         assert_eq!(
             free(&counter),
-            4,
+            Free(4),
             "the audit gives the cut-off take's token back"
         );
         // A party that lent the process's own token and died while it parked.
@@ -1139,7 +1161,7 @@ mod tests
         counter.reap();
         assert_eq!(
             free(&counter),
-            4,
+            Free(4),
             "the audit takes the dead lender's token off"
         );
         drop(counter);
@@ -1149,7 +1171,7 @@ mod tests
     #[test]
     fn no_process_joins_a_counter_that_no_hub_owns()
     {
-        let directory = scratch("unowned");
+        let directory = scratch(Scratch("unowned"));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
         drop(counter);
