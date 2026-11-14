@@ -50,7 +50,10 @@ run() {
   local clone=$1 host=$2
   shift 2
   mkdir -p "$work/locks-$host" "$work/state-$host"
-  (cd "$work/$clone" && env PATH="$work/gh:$PATH" STUB_GH="$work/stub" STUB_SUBS="$subs" GH_BUDGET_TTL=0 \
+  # The stub reads no token. A host can put a `gh` wrapper first on `PATH`,
+  # and with no `GH_TOKEN` that wrapper asks the next `gh`, the stub, for one
+  # (#6632, #7521). So the case sets a token of its own.
+  (cd "$work/$clone" && env PATH="$work/gh:$PATH" GH_TOKEN=case STUB_GH="$work/stub" STUB_SUBS="$subs" GH_BUDGET_TTL=0 \
     MISE_DISABLE_TOOLS="$disabled" \
     MISE_CONFIG_DIR="$mise_config" MISE_TRUSTED_CONFIG_PATHS="$work/a:$work/b" \
     XDG_CONFIG_HOME="$work/config" GANDR_HOST_LOCK_DIR="$work/locks-$host" XDG_STATE_HOME="$work/state-$host" \
