@@ -29,12 +29,15 @@
 //! A shard seals its segment once the segment reaches the host's extent size
 //! ([`Seal`]), and at the close of the plane. The seal appends a trailer, a
 //! record that lists each record of the segment with its place, and a footer
-//! that points at the trailer; no shard appends to the segment after. The
-//! open of a plane reads the trailer of each sealed segment that the newest
-//! roots log line names, then the footer and the trailer of each other
-//! sealed segment, and scans the headers only of a segment with no trailer,
-//! which a crash left open. A later record of one identity takes the index
-//! from an earlier one.
+//! that points at the trailer; no shard appends to the segment after. Each
+//! fold of the roots folds the entries of each segment sealed since into the
+//! plane's index, a persistent trie whose pages are records of the plane
+//! (`index`). The roots log line names the trie's root and the segments it
+//! covers. The open of a plane reads that line and no page and no trailer,
+//! then the footer and the trailer of each other sealed segment, and scans the
+//! headers only of a segment with no trailer, which a crash left open. A
+//! load that the memory does not hold reads the pages on its path once. A
+//! later record of one identity takes the index from an earlier one.
 //!
 //! # Boundaries
 //!
@@ -47,9 +50,9 @@
 //! of one object that race both append, and the index keeps the later: the
 //! other record stays in its segment, dead.
 //!
-//! The open reads one entry of 44 bytes for each record of a sealed segment,
-//! so its cost still grows with the store. A persistent tree from identity to
-//! place, whose root alone the open reads, removes that cost.
+//! The open reads one line for the segments the index covers, and the
+//! trailer of each segment sealed after the last fold. The index keeps each
+//! page it read for the life of the plane.
 //!
 //! # References
 //!
@@ -64,6 +67,7 @@
 //!   is the fastest blocking form on each device measured.
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
@@ -100,6 +104,13 @@ use quenchant_shape::shape::Maybe;
 use crate::store::ImageBytes;
 use crate::store::StoreError;
 
+mod index;
+
+use self::index::Key;
+use self::index::PageName;
+use self::index::PageRef;
+use self::index::Placed;
+
 /// How many shards the producers of one store append to. A thread takes the
 /// shard of its ordinal modulo this, so the workers of a pool up to this width
 /// each own a shard.
@@ -123,6 +134,13 @@ const MAGIC: [u8; 4] = *b"gsg1";
 
 /// The bytes a trailer's header opens with, in place of a record's magic.
 const TRAILER_MAGIC: [u8; 4] = *b"gst1";
+
+/// The bytes a page of the index's header opens with, in place of a record's
+/// magic.
+const PAGE_MAGIC: [u8; 4] = *b"gsp1";
+
+/// The start of the word a roots log line names a plane's index by.
+const INDEX_PREFIX: &str = "index:";
 
 /// The domain a header's checksum is taken in, so it meets no other digest
 /// of the store.
@@ -348,8 +366,8 @@ struct Place
     length: Length,
 }
 
-/// What a header stands before: an object's record, or a sealed segment's
-/// trailer.
+/// What a header stands before: an object's record, a sealed segment's
+/// trailer, or a page of the plane's index.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Kind
 {
@@ -357,6 +375,8 @@ enum Kind
     Record,
     /// The list of the segment's records, under the digest of the list.
     Trailer,
+    /// A page of the plane's index, under the page's name.
+    Page,
 }
 
 /// A record's header, as it stands before the record's bytes.
@@ -510,6 +530,7 @@ where
         magic.copy_from_slice(match self.kind {
             Kind::Record => &MAGIC,
             Kind::Trailer => &TRAILER_MAGIC,
+            Kind::Page => &PAGE_MAGIC,
         });
         let (length, rest) = rest.split_at_mut(4);
         length.copy_from_slice(&self.length.0.to_le_bytes());
@@ -587,6 +608,7 @@ impl HeaderBytes
         let kind = match *magic {
             MAGIC => Kind::Record,
             TRAILER_MAGIC => Kind::Trailer,
+            PAGE_MAGIC => Kind::Page,
             _ => return unchecked,
         };
         let header = Header {
@@ -657,6 +679,49 @@ pub struct Sealed
     length: Length,
     /// The digest of the entries.
     digest: TrailerDigest,
+}
+
+/// What a roots log line names of one plane: its index's root, and the
+/// sealed segments with their trailers' places. When the line names an
+/// index, the index covers each segment it lists.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Named
+{
+    /// The sealed segments, in order of their identities.
+    sealed: Vec<Sealed>,
+    /// The root of the index that covers them.
+    index: Option<PageRef>,
+}
+
+/// The entries of the sealed segments that an index does not cover, and
+/// those segments.
+#[derive(Debug, Default)]
+struct Uncovered
+{
+    /// Each entry, with its segment's identity.
+    entries: Vec<(Key, Placed)>,
+    /// The segments.
+    since: Vec<Sealed>,
+}
+
+/// Whether a plane owes a close.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Closing
+{
+    /// No segment stands open, and the index covers each sealed segment.
+    Closed,
+    /// A segment stands open, or a sealed segment stands outside the index.
+    Owed,
+}
+
+/// The index's root, and the sealed segments whose records it maps.
+#[derive(Debug, Default)]
+struct Covered
+{
+    /// The root, or none before the first fold that wrote a page.
+    root: Option<PageRef>,
+    /// The segments the index covers, by their identities.
+    segments: BTreeMap<SegmentId, Sealed>,
 }
 
 /// One entry of a trailer: a record's identity and its place in the segment.
@@ -772,6 +837,15 @@ where
     /// The lock a scan of the other writers' tails holds, so one scan runs at
     /// a time.
     catching: Mutex<()>,
+    /// The index's root and the sealed segments it covers, as the folds
+    /// change them, one at a time.
+    covered: Mutex<Covered>,
+    /// The index's root as each load reads it, with no lock.
+    root: arc_swap::ArcSwapOption<PageRef>,
+    /// The slot of each page of the index read, by its name.
+    pages: papaya::HashMap<PageName, Slot>,
+    /// Each page of the index read, at a fixed slot.
+    paged: boxcar::Vec<Box<[u8]>>,
 }
 
 impl<Name> Directory<Name>
@@ -779,24 +853,27 @@ where
     Name: ObjectName,
 {
     /// The directory at `path`, made when missing, and every record its
-    /// segments hold indexed: from the trailer of each segment that `named`
-    /// lists, then from the footer and the trailer of each other sealed
+    /// segments hold indexed: under the index that `named` names for each
+    /// segment it covers, else from the trailer of each segment that `named`
+    /// lists; then from the footer and the trailer of each other sealed
     /// segment, then by a scan of each segment that has none.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a directory at `path`; each record of each segment indexed
-    ///   under its identity: a sealed segment's from its trailer when the
-    ///   trailer's digest holds, and any other segment's up to its first header
-    ///   that does not check or record that does not fit; every other file
-    ///   ignored. Each shard seals its segment as `seal` asks.
+    ///   under its identity: a segment that `named`'s index covers through the
+    ///   index, another sealed segment's from its trailer when the trailer's
+    ///   digest holds, and any other segment's up to its first header that does
+    ///   not check or record that does not fit; every other file ignored. Each
+    ///   shard seals its segment as `seal` asks.
     /// - provides: a plane's index as the store opens.
     /// - fails: [`StoreError::Io`] when the directory cannot be made or listed,
     ///   or a segment cannot be opened or read.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
-    /// - intension: the open reads one trailer for each sealed segment, and
-    ///   each header of a segment that has no trailer; no record's bytes.
+    /// - intension: the open reads no page of the index and no trailer of a
+    ///   segment it covers; one trailer for each other sealed segment, and each
+    ///   header of a segment that has no trailer; no record's bytes.
     ///
     /// # Errors
     /// [`StoreError::Io`], as above.
@@ -804,15 +881,17 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — a missing root is made, a committed value loads after
     ///   reopening, a torn tail is cut, and a store opens from its root's
-    ///   trailers.
+    ///   trailers, or from its index alone.
     /// - witness: `tests::store::a_missing_root_directory_is_made_on_opening`
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_torn_segment_tail_is_cut_on_opening_7462`
     /// - witness: `tests::store::a_store_opens_from_the_trailers_its_root_names_7481`
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    /// - witness: `plane::tests::a_plane_opens_from_its_index_and_reads_no_trailer`
     pub(crate) fn open(
         path: PathBuf,
         seal: Seal,
-        named: &[Sealed],
+        named: &Named,
     ) -> Result<Self, StoreError>
     {
         std::fs::create_dir_all(&path).map_err(|error| StoreError::io(&path, &error))?;
@@ -831,18 +910,41 @@ where
             seal,
             next: AtomicU64::new(0_u64),
             catching: Mutex::new(()),
+            covered: Mutex::new(Covered {
+                root: named.index,
+                segments: BTreeMap::new(),
+            }),
+            root: arc_swap::ArcSwapOption::from(named.index.map(Arc::new)),
+            pages: papaya::HashMap::new(),
+            paged: boxcar::Vec::new(),
         };
-        for sealed in named {
+        let mut covered = BTreeMap::new();
+        for sealed in &named.sealed {
             let file = plane.path.join(sealed.segment.file_name());
             let Ok(opened) = File::open(&file)
             else {
                 continue;
             };
             let slot = plane.known_segment(sealed.segment, opened);
-            if let Some(segment) = plane.segments.get(slot.0) {
+            let Some(segment) = plane.segments.get(slot.0)
+            else {
+                continue;
+            };
+            if named.index.is_some() {
+                // The index covers the segment: a load finds its records
+                // through the index, so the open reads nothing of it.
+                let _sealed = segment.sealed.set(*sealed);
+                let _covered = covered.insert(sealed.segment, *sealed);
+            }
+            else {
                 let _read = plane.trailer(slot, segment, *sealed)?;
             }
         }
+        plane
+            .covered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .segments = covered;
         plane.catch_up()?;
         Ok(plane)
     }
@@ -1002,13 +1104,16 @@ where
             reader
                 .seek_relative(i64::from(header.length.0))
                 .map_err(io)?;
-            let place = Place {
-                segment: slot,
-                offset: at,
-                length: header.length,
-            };
-            let filed = Slot(self.objects.push(Filed::at(header.name, place)));
-            let _indexed = index.insert(header.name, filed);
+            // A page of the index is no object: the scan passes over it.
+            if header.kind == Kind::Record {
+                let place = Place {
+                    segment: slot,
+                    offset: at,
+                    length: header.length,
+                };
+                let filed = Slot(self.objects.push(Filed::at(header.name, place)));
+                let _indexed = index.insert(header.name, filed);
+            }
             at = end;
         }
         segment.scanned.store(at.0, Ordering::Relaxed);
@@ -1048,6 +1153,59 @@ where
         sealed: Sealed,
     ) -> Result<Maybe<Sealed, unrecorded::Absent>, StoreError>
     {
+        let entries = match self.listing(segment, sealed)? {
+            Maybe::Present(entries) => entries,
+            Maybe::Absent(absent) => return Ok(Maybe::Absent(absent)),
+        };
+        let index = self.index.pin();
+        for entry in entries {
+            let place = Place {
+                segment: slot,
+                offset: entry.offset,
+                length: entry.length,
+            };
+            let name = Name::from(entry.name);
+            let filed = Slot(self.objects.push(Filed::at(name, place)));
+            let _indexed = index.insert(name, filed);
+        }
+        let _sealed = segment.sealed.set(sealed);
+        segment
+            .scanned
+            .store(sealed.offset.after(sealed.length).0, Ordering::Relaxed);
+        Ok(Maybe::Present(sealed))
+    }
+
+    /// The entries that the trailer `sealed` lists, when the trailer stands
+    /// where `sealed` says and its entries' digest holds.
+    ///
+    /// # Specification
+    /// - requires: `segment` is the segment that `sealed` names.
+    /// - ensures: the entries in order when the trailer's header checks at its
+    ///   place, names the length and the digest of `sealed`, and its entries
+    ///   hash to that digest; `Unchecked` otherwise.
+    /// - provides: the read of a trailer that the open and each fold of the
+    ///   index make.
+    /// - fails: [`StoreError::Io`] when the segment's size cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one positioned read of the trailer's header and entries.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from the trailers its root names, a
+    ///   torn trailer leaves the segment to the scan, and a store opens from
+    ///   its index.
+    /// - witness: `tests::store::a_store_opens_from_the_trailers_its_root_names_7481`
+    /// - witness: `tests::store::a_torn_trailer_leaves_its_segment_to_the_scan_7481`
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn listing(
+        &self,
+        segment: &Segment,
+        sealed: Sealed,
+    ) -> Result<Maybe<Vec<Entry>, unrecorded::Absent>, StoreError>
+    {
         let file = self.path.join(segment.id.file_name());
         let size = segment
             .file
@@ -1081,7 +1239,7 @@ where
         {
             return unchecked;
         }
-        let index = self.index.pin();
+        let mut listed = Vec::with_capacity(entries.len().checked_div(ENTRY).unwrap_or_default());
         for entry in entries.as_chunks::<ENTRY>().0 {
             let Some((name, rest)) = entry.split_first_chunk::<32>()
             else {
@@ -1095,18 +1253,13 @@ where
             else {
                 continue;
             };
-            let place = Place {
-                segment: slot,
+            listed.push(Entry {
+                name: *name,
                 offset: Offset(u64::from_le_bytes(*offset)),
                 length: Length(u32::from_le_bytes(*length)),
-            };
-            let name = Name::from(*name);
-            let filed = Slot(self.objects.push(Filed::at(name, place)));
-            let _indexed = index.insert(name, filed);
+            });
         }
-        let _sealed = segment.sealed.set(sealed);
-        segment.scanned.store(size, Ordering::Relaxed);
-        Ok(Maybe::Present(sealed))
+        Ok(Maybe::Present(listed))
     }
 
     /// The trailer that the footer of `segment` points at, with the digest
@@ -1251,13 +1404,17 @@ where
         name: Name,
     ) -> Maybe<&Filed<Name>, unheld::Absent>
     {
-        if let Maybe::Present(filed) = self.indexed(name) {
+        let first = self.resident(name);
+        if let Maybe::Present(filed) = first {
             return Maybe::Present(filed);
         }
         if self.catch_up().is_err() {
             return Maybe::Absent(unheld::Absent::Unreadable);
         }
-        self.indexed(name)
+        match self.indexed(name) {
+            Maybe::Present(filed) => Maybe::Present(filed),
+            Maybe::Absent(_) => first,
+        }
     }
 
     /// The record the index holds under `name`, with no scan.
@@ -1274,6 +1431,313 @@ where
             .get(&name)
             .and_then(|&slot| self.objects.get(slot.0))
             .map_or(Maybe::Absent(unheld::Absent::Unlisted), Maybe::Present)
+    }
+
+    /// The record that the memory or the index on disk holds under `name`,
+    /// with no scan. A record the index on disk gives is kept in the memory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the latest record the memory holds under `name`, else the
+    ///   record the index maps `name` to; `Unlisted` when neither holds one,
+    ///   and `Unreadable` when a page on the path cannot be read or does not
+    ///   check.
+    /// - provides: the lookup of every load and every insertion.
+    /// - fails: never; a missing object is the typed absence.
+    /// - panics: none.
+    /// - executable: none — the index is shared with the other threads.
+    /// - intension: a held name costs one probe of the memory; another costs a
+    ///   walk of the index, which reads each page on its path once for the life
+    ///   of the plane.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store reopened from its index loads each object and
+    ///   writes no object again.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn resident(
+        &self,
+        name: Name,
+    ) -> Maybe<&Filed<Name>, unheld::Absent>
+    {
+        if let Maybe::Present(filed) = self.indexed(name) {
+            return Maybe::Present(filed);
+        }
+        let root = self.root.load().as_deref().copied();
+        let Some(root) = root
+        else {
+            return Maybe::Absent(unheld::Absent::Unlisted);
+        };
+        let key = Key(name.as_ref().try_into().unwrap_or([0_u8; 32]));
+        let placed = match index::find(self, root, key) {
+            Ok(Maybe::Present(placed)) => placed,
+            Ok(Maybe::Absent(absent)) => return Maybe::Absent(absent),
+            Err(_) => return Maybe::Absent(unheld::Absent::Unreadable),
+        };
+        let Some(&segment) = self.known.pin().get(&placed.segment)
+        else {
+            return Maybe::Absent(unheld::Absent::Unreadable);
+        };
+        let filed = Slot(self.objects.push(Filed::at(name, Place {
+            segment,
+            offset: placed.offset,
+            length: placed.length,
+        })));
+        // A record that a batch indexed since stays: it is the later one.
+        let _kept = self.index.pin().try_insert(name, filed);
+        self.indexed(name)
+    }
+
+    /// The bytes of the page `at` refers to, read once and kept.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the page's bytes when its header checks at its place as a
+    ///   page of its name and length, and the bytes hash to its name.
+    /// - provides: each read of the index.
+    /// - fails: [`StoreError::Io`] when the page's segment is unknown after a
+    ///   scan of the other writers' segments, or the page cannot be read or
+    ///   does not check.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one positioned read for a page no load read before; none
+    ///   after.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store reopened from its index loads each object.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn page(
+        &self,
+        at: PageRef,
+    ) -> Result<Image<'_>, StoreError>
+    {
+        if let Some(page) = self
+            .pages
+            .pin()
+            .get(&at.name)
+            .and_then(|&slot| self.paged.get(slot.0))
+        {
+            return Ok(Image(page));
+        }
+        let refused = |kind: io::ErrorKind| {
+            StoreError::io(
+                &self.path.join(at.at.segment.file_name()),
+                &io::Error::from(kind),
+            )
+        };
+        if self.known.pin().get(&at.at.segment).is_none() {
+            self.catch_up()?;
+        }
+        let Some(segment) = self
+            .known
+            .pin()
+            .get(&at.at.segment)
+            .and_then(|&slot| self.segments.get(slot.0))
+        else {
+            return Err(refused(io::ErrorKind::NotFound));
+        };
+        let length = usize::try_from(at.at.length.0).unwrap_or(usize::MAX);
+        let mut bytes = vec![0_u8; length.saturating_add(HEADER)];
+        segment
+            .file
+            .read_exact_at(&mut bytes, at.at.offset.0)
+            .map_err(|error| refused(error.kind()))?;
+        let Some((head, body)) = bytes.split_first_chunk::<HEADER>()
+        else {
+            return Err(refused(io::ErrorKind::InvalidData));
+        };
+        match HeaderBytes(*head).header::<Name>(segment.id, at.at.offset) {
+            Maybe::Present(header)
+                if header.kind == Kind::Page
+                    && header.length == at.at.length
+                    && header.name.as_ref() == at.name.0.as_slice()
+                    && index::named(Image(body)) == at.name => {},
+            Maybe::Present(_) | Maybe::Absent(_) => {
+                return Err(refused(io::ErrorKind::InvalidData));
+            },
+        }
+        let slot = Slot(self.paged.push(Box::from(body)));
+        let _kept = self.pages.pin().try_insert(at.name, slot);
+        self.paged
+            .get(slot.0)
+            .map(|page| Image(page))
+            .ok_or_else(|| refused(io::ErrorKind::NotFound))
+    }
+
+    /// Fold the entries of each segment sealed since the last fold into the
+    /// index, and give what a roots log line names of the plane.
+    ///
+    /// # Specification
+    /// - requires: the caller is the one writer of the roots.
+    /// - ensures: on success the index maps every record of each segment it
+    ///   covers, and covers each segment the plane knows as sealed whose
+    ///   trailer checks; the names give the index's root and exactly the
+    ///   segments it covers. Each page the fold wrote waits for
+    ///   [`Directory::sync`].
+    /// - provides: the plane's half of each fold of the roots.
+    /// - fails: [`StoreError::Io`] when a trailer or a page cannot be read, no
+    ///   segment can be created, or the pages cannot be written.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one read of the trailer of each newly sealed segment, one
+    ///   positioned write of the new pages, and one page for each node on the
+    ///   path of a new entry.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from its index and reads no trailer,
+    ///   and a crash after each step of a fold leaves roots that load.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
+    pub(crate) fn fold_index(&self) -> Result<Named, StoreError>
+    {
+        let mut covered = self.covered.lock().unwrap_or_else(PoisonError::into_inner);
+        let Uncovered { mut entries, since } = self.uncovered(&covered)?;
+        if !entries.is_empty() {
+            covered.root = self.paged_into(covered.root, &mut entries)?;
+            self.root.store(covered.root.map(Arc::new));
+        }
+        for sealed in since {
+            let _covered = covered.segments.insert(sealed.segment, sealed);
+        }
+        Ok(Named {
+            sealed: covered.segments.values().copied().collect(),
+            index: covered.root,
+        })
+    }
+
+    /// The entries of each segment the plane knows as sealed that `covered`
+    /// does not cover, and those segments.
+    ///
+    /// # Specification
+    /// - requires: the caller holds the index's lock, as `covered`.
+    /// - ensures: each entry of each uncovered segment whose trailer checks,
+    ///   with the segment's identity, and each such segment; a trailer that
+    ///   does not check leaves its segment out, to the footer and the scan of
+    ///   the next open.
+    /// - provides: the read of [`Directory::fold_index`] and
+    ///   [`Directory::close_index`].
+    /// - fails: [`StoreError::Io`] when a segment's size cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from its index and reads no trailer.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn uncovered(
+        &self,
+        covered: &Covered,
+    ) -> Result<Uncovered, StoreError>
+    {
+        let mut entries = Vec::new();
+        let mut since = Vec::new();
+        for sealed in self.sealed() {
+            if covered.segments.contains_key(&sealed.segment) {
+                continue;
+            }
+            let Some(segment) = self
+                .known
+                .pin()
+                .get(&sealed.segment)
+                .and_then(|&slot| self.segments.get(slot.0))
+            else {
+                continue;
+            };
+            if let Maybe::Present(listed) = self.listing(segment, sealed)? {
+                entries.extend(listed.into_iter().map(|entry| {
+                    (Key(entry.name), Placed {
+                        segment: sealed.segment,
+                        offset: entry.offset,
+                        length: entry.length,
+                    })
+                }));
+                since.push(sealed);
+            }
+        }
+        Ok(Uncovered { entries, since })
+    }
+
+    /// Fold `entries` into the index whose root is `root`, and append the new
+    /// pages to the open segment of the calling thread's shard in one write.
+    ///
+    /// # Specification
+    /// trivial.
+    fn paged_into(
+        &self,
+        root: Option<PageRef>,
+        entries: &mut Vec<(Key, Placed)>,
+    ) -> Result<Option<PageRef>, StoreError>
+    {
+        let shard = SHARD.with(|shard| *shard);
+        let [ref first, ..] = self.shards;
+        let tail = self.shards.get(shard).unwrap_or(first);
+        let mut open = tail.lock().unwrap_or_else(PoisonError::into_inner);
+        self.paged_in(&mut open, root, entries)
+    }
+
+    /// Fold `entries` into the index whose root is `root`, and append the new
+    /// pages to the open segment of `open`, a new one when it has none, in
+    /// one write.
+    ///
+    /// # Specification
+    /// - requires: the caller holds the index's lock and the lock of `open`'s
+    ///   shard.
+    /// - ensures: on success the new root, its pages written to the file system
+    ///   and the segment marked for the next sync. On failure the shard's end
+    ///   stays where it was.
+    /// - provides: the write of [`Directory::fold_index`] and
+    ///   [`Directory::close_index`].
+    /// - fails: [`StoreError::Io`] when a page cannot be read, no segment can
+    ///   be created, or the write fails.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from its index and reads no trailer.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn paged_in(
+        &self,
+        open: &mut Tail,
+        root: Option<PageRef>,
+        entries: &mut Vec<(Key, Placed)>,
+    ) -> Result<Option<PageRef>, StoreError>
+    {
+        let at = self.tail(open.open)?;
+        open.open = Some(at);
+        let Some(segment) = self.segments.get(at.segment.0)
+        else {
+            return Err(StoreError::io(
+                &self.path,
+                &io::Error::from(io::ErrorKind::NotFound),
+            ));
+        };
+        let mut sink = PageSink {
+            segment: segment.id,
+            start: at.end,
+            bytes: Written::default(),
+        };
+        let root = index::fold(self, &mut sink, root, entries)?;
+        let file = self.path.join(segment.id.file_name());
+        segment
+            .file
+            .write_all_at(&sink.bytes.0, at.end.0)
+            .map_err(|error| StoreError::io(&file, &error))?;
+        segment.dirty.store(true, Ordering::Release);
+        open.open = Some(Open {
+            segment: at.segment,
+            end: sink.end(),
+        });
+        Ok(root)
     }
 
     /// The bytes of the record of `name` at `place`, its header first, as one
@@ -1389,7 +1853,7 @@ where
         name: Name,
     )
     {
-        if let Maybe::Present(filed) = self.indexed(name) {
+        if let Maybe::Present(filed) = self.resident(name) {
             filed.refused.store(true, Ordering::Relaxed);
         }
     }
@@ -1418,7 +1882,7 @@ where
         name: Name,
     ) -> Holding
     {
-        let Maybe::Present(filed) = self.indexed(name)
+        let Maybe::Present(filed) = self.resident(name)
         else {
             return Holding::Unlisted;
         };
@@ -1598,12 +2062,189 @@ impl Sealed
     }
 }
 
+impl Named
+{
+    /// The words a roots log line names the plane with: the index's word
+    /// first, then each sealed segment's, each word after a space.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn spelled(&self) -> String
+    {
+        let mut words = String::new();
+        if let Some(root) = self.index {
+            let _written = core::fmt::Write::write_fmt(
+                &mut words,
+                format_args!(
+                    " {INDEX_PREFIX}{}:{:016x}:{}:{}",
+                    ChunkDigest::from(root.name.0),
+                    root.at.segment.0,
+                    root.at.offset.0,
+                    root.at.length.0
+                ),
+            );
+        }
+        for sealed in &self.sealed {
+            words.push(' ');
+            words.push_str(&sealed.spelled());
+        }
+        words
+    }
+
+    /// Read `word` of a roots log line into the plane's names: the index's
+    /// root, or one more sealed segment; a word that spells neither changes
+    /// nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn read(
+        &mut self,
+        word: Word<'_>,
+    )
+    {
+        let Some(index) = word.0.strip_prefix(INDEX_PREFIX)
+        else {
+            if let Maybe::Present(sealed) = Sealed::parsed(word) {
+                self.sealed.push(sealed);
+            }
+            return;
+        };
+        let mut parts = index.split(':');
+        let (Some(name), Some(segment), Some(offset), Some(length), None) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        )
+        else {
+            return;
+        };
+        if let (Maybe::Present(name), Ok(segment), Ok(offset), Ok(length)) = (
+            hexadecimal::<ChunkDigest>(FileName(name)),
+            u64::from_str_radix(segment, 16),
+            offset.parse::<u64>(),
+            length.parse::<u32>(),
+        ) {
+            self.index = Some(PageRef {
+                name: PageName(name.as_ref().try_into().unwrap_or([0_u8; 32])),
+                at: Placed {
+                    segment: SegmentId(segment),
+                    offset: Offset(offset),
+                    length: Length(length),
+                },
+            });
+        }
+    }
+}
+
+/// The pages of one fold of the index, each placed after the one before in
+/// one shard's open segment.
+#[derive(Debug)]
+struct PageSink
+{
+    /// The segment the pages go to.
+    segment: SegmentId,
+    /// The offset of the first page's header: the shard's end.
+    start: Offset,
+    /// The headers and the bytes of the pages placed so far.
+    bytes: Written,
+}
+
+impl PageSink
+{
+    /// The offset past the last page placed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn end(&self) -> Offset
+    {
+        Offset(
+            self.start
+                .0
+                .saturating_add(u64::try_from(self.bytes.0.len()).unwrap_or(u64::MAX)),
+        )
+    }
+}
+
+impl index::Sink for PageSink
+{
+    /// Place `page` after the pages before it, under a header of its own.
+    ///
+    /// # Specification
+    /// trivial.
+    fn put(
+        &mut self,
+        page: Image<'_>,
+        name: PageName,
+    ) -> Result<PageRef, StoreError>
+    {
+        let length = Length::of(page)?;
+        let offset = self.end();
+        let header = Header {
+            kind: Kind::Page,
+            length,
+            name: ChunkDigest::from(name.0),
+            segment: self.segment,
+            offset,
+        };
+        self.bytes.0.extend_from_slice(&header.bytes().0);
+        self.bytes.0.extend_from_slice(page.0);
+        Ok(PageRef {
+            name,
+            at: Placed {
+                segment: self.segment,
+                offset,
+                length,
+            },
+        })
+    }
+}
+
+impl<Name> index::Pages for Directory<Name>
+where
+    Name: ObjectName,
+{
+    /// The page `at` refers to, as [`Directory::page`] reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn node(
+        &self,
+        at: PageRef,
+    ) -> Result<index::Node<'_>, StoreError>
+    {
+        match index::node(self.page(at)?) {
+            Maybe::Present(node) => Ok(node),
+            Maybe::Absent(_) => Err(StoreError::io(
+                &self.path.join(at.at.segment.file_name()),
+                &io::Error::from(io::ErrorKind::InvalidData),
+            )),
+        }
+    }
+}
+
 impl<Name> Drop for Directory<Name>
 where
     Name: ObjectName,
 {
-    /// The close of the plane: each shard seals its open segment with its
-    /// trailer and footer, and syncs it.
+    /// The close of the plane: each shard seals its open segment, as
+    /// [`Directory::seal_open`] seals it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn drop(&mut self)
+    {
+        self.seal_open();
+    }
+}
+
+impl<Name> Directory<Name>
+where
+    Name: ObjectName,
+{
+    /// Each shard seals its open segment with its trailer and footer, and
+    /// syncs it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1612,7 +2253,7 @@ where
     ///   open reads the trailer and scans no header. A seal that fails leaves
     ///   the segment as it stood, and the next open scans it.
     /// - provides: the seal at the close, which a host with no extent size
-    ///   relies on alone.
+    ///   relies on alone, and which the register's close folds into the index.
     /// - fails: never; a failed seal costs the next open a scan.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
@@ -1621,35 +2262,154 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a store closed with no extent size opens from its
-    ///   trailers.
+    ///   trailers, and a closed store's index covers each segment it sealed.
     /// - witness: `tests::store::a_store_with_no_roots_log_reads_its_trailers_7481`
-    fn drop(&mut self)
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    pub(crate) fn seal_open(&self)
     {
         let mut bytes = Written::default();
         for shard in &self.shards {
-            let (open, entries) = {
-                let mut tail = shard.lock().unwrap_or_else(PoisonError::into_inner);
-                (tail.open.take(), core::mem::take(&mut tail.entries))
-            };
-            let Some(open) = open
-            else {
-                continue;
-            };
-            let Some(segment) = self.segments.get(open.segment.0)
-            else {
-                continue;
-            };
-            bytes.0.clear();
-            let Ok(sealed) = Self::sealing(segment.id, open.end, &entries, &mut bytes)
-            else {
-                continue;
-            };
-            if segment.file.write_all_at(&bytes.0, open.end.0).is_ok()
-                && segment.file.sync_data().is_ok()
-            {
-                let _sealed = segment.sealed.set(sealed);
-            }
+            let mut tail = shard.lock().unwrap_or_else(PoisonError::into_inner);
+            let _sealed = self.sealed_tail(&mut tail, &mut bytes);
         }
+    }
+
+    /// Seal the open segment of `tail`, if it has one: append its trailer and
+    /// footer through `bytes`, and sync it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn sealed_tail(
+        &self,
+        tail: &mut Tail,
+        bytes: &mut Written,
+    ) -> Option<Sealed>
+    {
+        let open = tail.open.take()?;
+        let entries = core::mem::take(&mut tail.entries);
+        let segment = self.segments.get(open.segment.0)?;
+        bytes.0.clear();
+        let sealed = Self::sealing(segment.id, open.end, &entries, bytes).ok()?;
+        if segment.file.write_all_at(&bytes.0, open.end.0).is_err()
+            || segment.file.sync_data().is_err()
+        {
+            return None;
+        }
+        let _sealed = segment.sealed.set(sealed);
+        Some(sealed)
+    }
+
+    /// Whether the plane owes a close: an open segment, or a sealed segment
+    /// that its index does not cover.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn closing(&self) -> Closing
+    {
+        let open = self.shards.iter().any(|shard| {
+            shard
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .open
+                .is_some()
+        });
+        let covered = self.covered.lock().unwrap_or_else(PoisonError::into_inner);
+        let uncovered = self.segments.iter().any(|(_at, segment)| {
+            segment
+                .sealed
+                .get()
+                .is_some_and(|sealed| !covered.segments.contains_key(&sealed.segment))
+        });
+        if open || uncovered {
+            Closing::Owed
+        }
+        else {
+            Closing::Closed
+        }
+    }
+
+    /// The close of the index: fold the entries of each segment sealed since
+    /// the last fold and of each open segment into the index, write the new
+    /// pages into an open segment, then seal every open segment, all under
+    /// the shards' locks; and give what a roots log line names of the plane.
+    ///
+    /// # Specification
+    /// - requires: the caller is the one writer of the roots, at its close.
+    /// - ensures: on success the index maps every record of each segment the
+    ///   plane knows as sealed, and covers each such segment whose trailer
+    ///   checks and each segment this call sealed; no segment stays open. A
+    ///   batch that waits for a shard's lock appends after the call to a new
+    ///   segment, which the index does not cover.
+    /// - provides: the plane's half of the close of the roots.
+    /// - fails: as [`Directory::fold_index`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: as [`Directory::fold_index`], and one write and one data
+    ///   sync for each open segment.
+    ///
+    /// # Errors
+    /// As [`Directory::fold_index`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed store's last line names every segment that
+    ///   holds records, under its index.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    pub(crate) fn close_index(&self) -> Result<Named, StoreError>
+    {
+        let mut covered = self.covered.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut tails: Vec<std::sync::MutexGuard<'_, Tail>> = self
+            .shards
+            .iter()
+            .map(|shard| shard.lock().unwrap_or_else(PoisonError::into_inner))
+            .collect();
+        let Uncovered {
+            mut entries,
+            mut since,
+        } = self.uncovered(&covered)?;
+        for tail in &tails {
+            let Some(segment) = tail.open.and_then(|open| self.segments.get(open.segment.0))
+            else {
+                continue;
+            };
+            entries.extend(tail.entries.iter().map(|entry| {
+                (Key(entry.name), Placed {
+                    segment: segment.id,
+                    offset: entry.offset,
+                    length: entry.length,
+                })
+            }));
+        }
+        if !entries.is_empty() {
+            // The pages go to the calling thread's open segment, else to any
+            // open one, so the seal below covers them.
+            let shard = SHARD.with(|shard| *shard);
+            let target = tails
+                .get(shard)
+                .filter(|tail| tail.open.is_some())
+                .map(|_tail| shard)
+                .or_else(|| tails.iter().position(|tail| tail.open.is_some()))
+                .unwrap_or(shard);
+            let Some(tail) = tails.get_mut(target)
+            else {
+                return Err(StoreError::io(
+                    &self.path,
+                    &io::Error::from(io::ErrorKind::NotFound),
+                ));
+            };
+            covered.root = self.paged_in(tail, covered.root, &mut entries)?;
+            self.root.store(covered.root.map(Arc::new));
+        }
+        let mut bytes = Written::default();
+        for tail in &mut tails {
+            since.extend(self.sealed_tail(tail, &mut bytes));
+        }
+        for sealed in since {
+            let _covered = covered.segments.insert(sealed.segment, sealed);
+        }
+        Ok(Named {
+            sealed: covered.segments.values().copied().collect(),
+            index: covered.root,
+        })
     }
 }
 
@@ -1928,7 +2688,7 @@ impl ChunkDirectory
     pub(crate) fn open(
         path: PathBuf,
         seal: Seal,
-        named: &[Sealed],
+        named: &Named,
     ) -> Result<Self, StoreError>
     {
         Directory::open(path, seal, named).map(Self)
@@ -1943,13 +2703,34 @@ impl ChunkDirectory
         self.0.sync()
     }
 
-    /// The value plane's sealed segments, as [`Directory::sealed`] lists them.
+    /// Fold the value plane's newly sealed segments into its index, as
+    /// [`Directory::fold_index`] folds them.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn sealed(&self) -> Vec<Sealed>
+    pub(crate) fn fold_index(&self) -> Result<Named, StoreError>
     {
-        self.0.sealed()
+        self.0.fold_index()
+    }
+
+    /// Close the value plane's index, as [`Directory::close_index`] closes
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close_index(&self) -> Result<Named, StoreError>
+    {
+        self.0.close_index()
+    }
+
+    /// Whether the value plane owes a close, as [`Directory::closing`] reads
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn closing(&self) -> Closing
+    {
+        self.0.closing()
     }
 }
 
@@ -2078,7 +2859,7 @@ impl NodeDirectory
     pub(crate) fn open(
         path: PathBuf,
         seal: Seal,
-        named: &[Sealed],
+        named: &Named,
     ) -> Result<Self, StoreError>
     {
         Directory::open(path, seal, named).map(Self)
@@ -2093,14 +2874,34 @@ impl NodeDirectory
         self.0.sync()
     }
 
-    /// The record plane's sealed segments, as [`Directory::sealed`] lists
-    /// them.
+    /// Fold the record plane's newly sealed segments into its index, as
+    /// [`Directory::fold_index`] folds them.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn sealed(&self) -> Vec<Sealed>
+    pub(crate) fn fold_index(&self) -> Result<Named, StoreError>
     {
-        self.0.sealed()
+        self.0.fold_index()
+    }
+
+    /// Close the record plane's index, as [`Directory::close_index`] closes
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn close_index(&self) -> Result<Named, StoreError>
+    {
+        self.0.close_index()
+    }
+
+    /// Whether the record plane owes a close, as [`Directory::closing`]
+    /// reads it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn closing(&self) -> Closing
+    {
+        self.0.closing()
     }
 }
 
@@ -2197,5 +2998,87 @@ impl BlockStore for NodeBatch<'_>
         let node = StoredNode::new(hash, EncodedNode::from(bytes));
         verify_stored_node(node).inspect_err(|_refusal| self.0.plane.refuse(hash))?;
         Ok(node)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_storage_values::ChunkDigest;
+    use quenchant_shape::shape::Maybe;
+
+    use super::Batch;
+    use super::Directory;
+    use super::Image;
+    use super::Named;
+    use super::Seal;
+    use super::SealBytes;
+
+    /// A plane opened from its index reads no trailer and scans no segment
+    /// that the index covers. With each such trailer and each first header
+    /// changed on disk, neither a trailer nor a scan finds a record, and each
+    /// record past the first of its segment still loads through the index.
+    #[test]
+    fn a_plane_opens_from_its_index_and_reads_no_trailer()
+    {
+        let path = std::env::temp_dir().join(format!("gandr-plane-index-{}", std::process::id()));
+        let _gone = std::fs::remove_dir_all(&path);
+        // A seal at one byte seals each batch's segment.
+        let seal = Seal::At(SealBytes(core::num::NonZeroU64::MIN));
+        let names: Vec<ChunkDigest> = (0_u8 .. 8_u8)
+            .map(|at| ChunkDigest::from([at; 32]))
+            .collect();
+        let named = {
+            let plane = Directory::<ChunkDigest>::open(path.clone(), seal, &Named::default())
+                .expect("the plane opens");
+            for run in names.chunks(4_usize) {
+                let mut batch = Batch::over(&plane);
+                for &name in run {
+                    batch.take(name, Image(name.as_ref()));
+                }
+                batch.publish().expect("a batch appends");
+            }
+            let named = plane.fold_index().expect("the index folds");
+            plane.sync().expect("the plane syncs");
+            named
+        };
+        assert!(named.index.is_some(), "the fold names a root");
+        assert_eq!(
+            named.sealed.len(),
+            2_usize,
+            "the index covers both segments"
+        );
+        for sealed in &named.sealed {
+            let file = path.join(sealed.segment.file_name());
+            let mut bytes = std::fs::read(&file).expect("the segment reads");
+            // The trailer's last entry byte, then the first header's checksum.
+            for at in [bytes.len().checked_sub(25_usize), Some(60_usize)]
+                .into_iter()
+                .flatten()
+            {
+                let byte = bytes.get_mut(at).expect("the byte stands");
+                *byte ^= 0xFF_u8;
+            }
+            std::fs::write(&file, &bytes).expect("the segment is changed");
+        }
+        let plane = Directory::<ChunkDigest>::open(path.clone(), seal, &named)
+            .expect("the plane opens again");
+        for (at, &name) in names.iter().enumerate() {
+            let listed = plane.listed(name);
+            if at % 4_usize == 0_usize {
+                assert!(
+                    matches!(listed, Maybe::Absent(_)),
+                    "a changed first record is refused"
+                );
+                continue;
+            }
+            let Maybe::Present(image) = listed
+            else {
+                panic!("record {at} loads through the index: {listed:?}");
+            };
+            assert_eq!(image.0, name.as_ref(), "record {at} reads its bytes");
+        }
+        drop(plane);
+        let _gone = std::fs::remove_dir_all(&path);
     }
 }

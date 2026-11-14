@@ -62,10 +62,11 @@ use quenchant_shape::shape::Maybe;
 use crate::crash;
 use crate::crash::Point;
 use crate::plane::ChunkDirectory;
+use crate::plane::Closing;
 use crate::plane::FileName;
+use crate::plane::Named;
 use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
-use crate::plane::Sealed;
 use crate::plane::Word;
 use crate::plane::hexadecimal;
 use crate::store::RootsFault;
@@ -357,7 +358,8 @@ impl Roots
     ///   plane, and then the log's last line, durable after it, names its root
     ///   node, which is returned, so [`Roots::tree`] reads these roots back
     ///   from it.
-    /// - provides: the write every fold makes.
+    /// - provides: the write every fold makes, and the close's: a close seals
+    ///   each open segment of the planes, which `folding` asks.
     /// - fails: [`StoreError::Record`] when the tree cannot be built or
     ///   admitted, [`StoreError::Io`] when a file cannot be written or synced.
     /// - panics: none.
@@ -375,6 +377,7 @@ impl Roots
         &self,
         directory: &Path,
         (chunks, nodes): (&ChunkDirectory, &NodeDirectory),
+        folding: Folding,
     ) -> Result<NodeHash, StoreError>
     {
         let values: Vec<(&RootName, Recorded)> = self
@@ -391,20 +394,27 @@ impl Roots
         tree.write_to(&mut batch).map_err(StoreError::Record)?;
         crash::passed(Point::TreeBefore);
         batch.publish()?;
+        // Each plane folds the segments sealed since into its index. The line
+        // names each index's root and exactly the segments it covers, so the
+        // next open reads no trailer of theirs and no page.
+        let named = match folding {
+            Folding::Naming => [
+                (CHUNKS_WORD, chunks.fold_index()?),
+                (NODES_WORD, nodes.fold_index()?),
+            ],
+            Folding::Close => [
+                (CHUNKS_WORD, chunks.close_index()?),
+                (NODES_WORD, nodes.close_index()?),
+            ],
+        };
+        chunks.sync()?;
         nodes.sync()?;
         crash::passed(Point::TreeAfter);
-        // The line names each sealed segment with its trailer, so the next
-        // open reads the trailers and scans no header of theirs. Each segment
-        // sealed before this fold is durable: the naming synced every marked
-        // segment first.
         let mut line = tree.root_node_hash().to_string();
-        for (plane, sealed) in [(CHUNKS_WORD, chunks.sealed()), (NODES_WORD, nodes.sealed())] {
+        for (plane, words) in named {
             line.push(' ');
             line.push_str(plane);
-            for each in &sealed {
-                line.push(' ');
-                line.push_str(&each.spelled());
-            }
+            line.push_str(&words.spelled());
         }
         line.push('\n');
         let path = directory.join(ROOTS);
@@ -475,6 +485,17 @@ impl Roots
     }
 }
 
+/// Which write folds the roots: a naming's fold, or the close's, which also
+/// seals each open segment of the planes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Folding
+{
+    /// The fold of a naming: each plane folds the segments sealed since.
+    Naming,
+    /// The close: each plane folds and seals its open segments too.
+    Close,
+}
+
 /// Whether an open made its file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Made
@@ -528,33 +549,33 @@ struct Trees
     sealed: Manifest,
 }
 
-/// The sealed segments of each plane that a roots log line names, each with
-/// the place of its trailer.
+/// What a roots log line names of each plane: its index's root, and its
+/// sealed segments, each with the place of its trailer.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Manifest
 {
     /// The value plane's.
-    chunks: Vec<Sealed>,
+    chunks: Named,
     /// The record plane's.
-    nodes: Vec<Sealed>,
+    nodes: Named,
 }
 
 impl Manifest
 {
-    /// The value plane's sealed segments.
+    /// What the line names of the value plane.
     ///
     /// # Specification
     /// trivial.
-    pub fn chunks(&self) -> &[Sealed]
+    pub const fn chunks(&self) -> &Named
     {
         &self.chunks
     }
 
-    /// The record plane's sealed segments.
+    /// What the line names of the record plane.
     ///
     /// # Specification
     /// trivial.
-    pub fn nodes(&self) -> &[Sealed]
+    pub const fn nodes(&self) -> &Named
     {
         &self.nodes
     }
@@ -829,6 +850,53 @@ impl Kept
         named
     }
 
+    /// The close of the roots: when a plane holds a sealed segment that its
+    /// index does not cover, fold the journal with no new naming, so the
+    /// newest line names an index over every sealed segment.
+    ///
+    /// # Specification
+    /// - requires: the caller holds the store's lock alone, and each plane
+    ///   sealed its open segments.
+    /// - ensures: on success the newest roots log line names each plane's index
+    ///   over every segment the plane knows as sealed, and the journal over
+    ///   that line's tree is empty and durable; when no plane holds an
+    ///   uncovered segment, nothing changes.
+    /// - provides: the close that leaves the next open no trailer to read.
+    /// - fails: as [`Kept::name`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: no write when every sealed segment stands covered; one fold
+    ///   otherwise.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed store's last line names every segment that
+    ///   holds records, under its index.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    pub fn close(
+        &mut self,
+        directory: &Path,
+        (chunks, nodes): (&ChunkDirectory, &NodeDirectory),
+    ) -> Result<(), StoreError>
+    {
+        if chunks.closing() == Closing::Closed && nodes.closing() == Closing::Closed {
+            return Ok(());
+        }
+        let mut file = journal(directory)?;
+        let seen = self.catch_up(directory, nodes, &mut file)?;
+        // A tree of no roots is no tree: a store that names no root keeps
+        // no line, and its next open reads its trailers.
+        if self.roots.0.is_empty() {
+            return Ok(());
+        }
+        let tree = self
+            .roots
+            .write(directory, (chunks, nodes), Folding::Close)?;
+        self.cut(directory, tree, seen)
+    }
+
     /// As [`Kept::name`], with no fresh start on failure.
     ///
     /// # Specification
@@ -924,7 +992,10 @@ impl Kept
     ) -> Result<(), StoreError>
     {
         let previous = self.roots.0.insert(name.clone(), pointer);
-        let tree = match self.roots.write(directory, (chunks, nodes)) {
+        let tree = match self
+            .roots
+            .write(directory, (chunks, nodes), Folding::Naming)
+        {
             Ok(tree) => tree,
             Err(fault) => {
                 let _restored = match previous {
@@ -934,6 +1005,38 @@ impl Kept
                 return Err(fault);
             },
         };
+        self.cut(directory, tree, seen)
+    }
+
+    /// Cut the journal to a header over `tree` of the generation after
+    /// `seen`, and read it as current.
+    ///
+    /// # Specification
+    /// - requires: `tree` is the tree of the roots this reading holds, named by
+    ///   the newest line of [`ROOTS`].
+    /// - ensures: on success the journal over `tree` is current, empty and
+    ///   durable; on failure the reading is stale over `tree`, and the next
+    ///   naming folds again.
+    /// - provides: the last step of a fold and of a close.
+    /// - fails: [`StoreError::Io`] for a journal that cannot be cut, written or
+    ///   synced.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crash at each step of a fold leaves roots whose
+    ///   objects load.
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
+    fn cut(
+        &mut self,
+        directory: &Path,
+        tree: NodeHash,
+        seen: Generation,
+    ) -> Result<(), StoreError>
+    {
         let tree_roots = self.roots.0.len();
         self.reading = Reading::Stale { tree };
         let header = Header {
@@ -1149,10 +1252,8 @@ fn named_trees(directory: &Path) -> Result<Maybe<Trees, untreed::Absent>, StoreE
                 CHUNKS_WORD => plane = Some(&mut sealed.chunks),
                 NODES_WORD => plane = Some(&mut sealed.nodes),
                 _ => {
-                    if let (Some(ref mut listed), Maybe::Present(each)) =
-                        (plane.as_mut(), Sealed::parsed(Word(word)))
-                    {
-                        listed.push(each);
+                    if let Some(ref mut named) = plane {
+                        named.read(Word(word));
                     }
                 },
             }

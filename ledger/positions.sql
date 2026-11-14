@@ -290,6 +290,12 @@ INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Offset','storag
 INSERT INTO position VALUES('crates/storage-store/src/plane.rs','SegmentId','storage-store::roots','kept',NULL,'A sealed segment''s identity, which the roots log line writes beside the place and the digest of its trailer, and which each header writes for its own check.');
 INSERT INTO position VALUES('crates/storage-store/src/plane.rs','Slot','','local',NULL,'A place in one plane''s arena in memory, which no key, name or byte form writes.');
 INSERT INTO position VALUES('crates/storage-store/src/plane.rs','TrailerDigest','','none',NULL,'A digest of a trailer''s entries.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','Children','storage-store::plane::index','kept',NULL,'The map of an inner page''s children, which the page''s head writes, one bit for each child that stands.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','Depth','','local',NULL,'A level of the index in one walk, which no page writes.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','Key','storage-store::plane::index','kept',NULL,'An identity as a leaf of the index writes it, in the order of its bytes.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','Nibble','','local',NULL,'Four bits of an identity that pick one child of an inner page, which no page writes.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','PageName','storage-store::plane::index','kept',NULL,'A page''s name, which a parent page, the page''s header and the roots log line write.');
+INSERT INTO position VALUES('crates/storage-store/src/plane/index.rs','Rank','','local',NULL,'A child''s place among the slots of its inner page, read in one walk, which no page writes.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','EntryDigest','','none',NULL,'A digest of an entry.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','Generation','','none',NULL,'A journal''s generation, a version of a register that names no content.');
 INSERT INTO position VALUES('crates/storage-store/src/roots.rs','HeaderBytes','','none',NULL,'A carrier of the bytes of a header.');

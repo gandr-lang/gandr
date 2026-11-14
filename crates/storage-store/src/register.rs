@@ -318,3 +318,36 @@ impl Writer
         Ok(())
     }
 }
+
+impl Drop for Writer
+{
+    /// The close of the register: the roots fold each plane's open segments
+    /// into its index and seal them, so the next open reads the newest line
+    /// and no trailer.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each open segment of this process sealed, and the newest line
+    ///   names each plane's index over every segment the plane knows as sealed,
+    ///   as [`Kept::close`] writes it. A step that fails leaves the store as
+    ///   the steps before it left it, and the next open reads the trailers that
+    ///   no index covers.
+    /// - provides: the close of every store.
+    /// - fails: never; a failed close costs the next open the trailers.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed store's last line names every segment that
+    ///   holds records, under its index.
+    /// - witness: `tests::store::a_store_opens_from_its_index_and_reads_no_trailer_7531`
+    fn drop(&mut self)
+    {
+        let Ok(lock) = locked(&self.root, Hold::Alone)
+        else {
+            return;
+        };
+        let _closed = self.kept.close(&self.root, (&self.chunks, &self.nodes));
+        drop(lock);
+    }
+}

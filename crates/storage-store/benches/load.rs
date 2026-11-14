@@ -30,9 +30,11 @@
 //! load shares.
 //!
 //! After the load the bench opens the store again and times the open. The
-//! open scans each segment's headers into the index, so its wall grows with
-//! the records the store holds. Once the root carries the index, the open
-//! reads the root and no segment.
+//! open reads the root's line: the index's root and the segments it covers.
+//! It reads the trailer of each segment sealed after the last fold, and scans
+//! the headers of each segment with no trailer. The bench then reads in the
+//! first 1,000 files again and times each call: each piece is a first load,
+//! which the index answers, and the call writes nothing.
 //!
 //! # Boundaries
 //!
@@ -94,6 +96,9 @@ const FILE_BYTES: usize = 4_096;
 
 /// The widths a full run measures, when no `--widths` names others.
 const FULL_WIDTHS: [Count; 3] = [Count(1), Count(16), Count(64)];
+
+/// How many files the bench reads in again after the open.
+const FIRST_LOADS: Count = Count(1_000);
 
 /// The widths a test-mode pass loads at.
 const SMOKE_WIDTHS: [Count; 2] = [Count(1), Count(2)];
@@ -366,20 +371,42 @@ fn load(
     }
 }
 
-/// The wall of the open of the store at `store`, which scans its segments.
+/// The wall of the open of the store at `store`, and the 99th percentile of
+/// the calls that read in the first of `files` again after it.
 ///
 /// # Specification
 /// trivial.
 fn reopened(
     store: &Path,
     seal: Seal,
-) -> Duration
+    files: &[PathBuf],
+) -> (Duration, Duration)
 {
     let started = Instant::now();
-    let opened = Store::open_with(store, seal).expect("the loaded store opens again");
+    let (opened, register) = Store::open_with(store, seal).expect("the loaded store opens again");
     let wall = started.elapsed();
-    drop(opened);
-    wall
+    let mut calls: Vec<Duration> = files
+        .iter()
+        .take(FIRST_LOADS.0)
+        .map(|path| {
+            let call = Instant::now();
+            let _entry = opened.read_in(path).expect("a loaded file reads in again");
+            call.elapsed()
+        })
+        .collect();
+    calls.sort_unstable();
+    let first = calls
+        .get(
+            calls
+                .len()
+                .saturating_mul(99)
+                .checked_div(100)
+                .unwrap_or_default(),
+        )
+        .copied()
+        .unwrap_or_default();
+    drop((opened, register));
+    (wall, first)
 }
 
 /// The filesystem and the device that hold a directory.
@@ -500,21 +527,21 @@ impl Substrate
 }
 
 /// Print one row: `width`, the records and the wall of `pass`, its put rate,
-/// its latencies, its naming, the wall of the `open` after it, what the
-/// process spent during the load, and the filesystem and the device of
-/// `substrate`.
+/// its latencies, its naming, the wall of the `open` after it and the 99th
+/// percentile of the first loads, what the process spent during the load,
+/// and the filesystem and the device of `substrate`.
 ///
 /// # Specification
 /// trivial.
 fn row(
     width: Count,
     pass: &Pass,
-    open: Duration,
+    (open, first): (Duration, Duration),
     substrate: &Substrate,
 )
 {
     println!(
-        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
         width.0,
         pass.records.0,
         pass.wall.as_millis(),
@@ -523,6 +550,7 @@ fn row(
         pass.percentile(Count(99)).as_micros(),
         pass.naming.as_micros(),
         open.as_millis(),
+        first.as_micros(),
         pass.spent.user.as_millis(),
         pass.spent.system.as_millis(),
         pass.spent.switches,
@@ -655,11 +683,11 @@ fn main()
         );
         println!(
             "| width | records | wall (ms) | puts per second | p50 call (µs) | p99 call (µs) | \
-             naming (µs) | open (ms) | user CPU (ms) | system CPU (ms) | voluntary switches | \
-             filesystem | device |"
+             naming (µs) | open (ms) | p99 first load (µs) | user CPU (ms) | system CPU (ms) | \
+             voluntary switches | filesystem | device |"
         );
         println!(
-            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
         );
     }
     for width in widths {
@@ -669,7 +697,7 @@ fn main()
             pass.records.0 >= files.0,
             "each file puts at least its one piece"
         );
-        let open = reopened(&store, asked.seal);
+        let open = reopened(&store, asked.seal, &sources);
         if full {
             row(width, &pass, open, &substrate);
         }
