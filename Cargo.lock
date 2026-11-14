@@ -1708,6 +1708,7 @@ dependencies = [
  "quenchant-anodized",
  "quenchant-shape",
  "rtrb",
+ "rustix",
  "self_cell",
  "serde",
  "serde_json",

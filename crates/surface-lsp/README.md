@@ -8,6 +8,7 @@ The gandr language server: diagnostics, semantic tokens, completion, signature h
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -87,6 +88,10 @@ Mechanism and witnesses live in the rustdoc beside the code:
 | The families that the server's handlers call, which their READMEs tabulate | [`gandr-surface-lsp-core`](../surface-lsp-core/README.md), [`gandr-surface-lsp-navigation`](../surface-lsp-navigation/README.md), [`gandr-surface-lsp-diagnostics`](../surface-lsp-diagnostics/README.md) |
 | The parts that read neither the dispatcher nor the session, which the base's README tabulates | [`gandr-surface-lsp-base`](../surface-lsp-base/README.md) |
 | Specification coverage, editors and extensions, evidence, references | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: the shared pool page, § pool-tokens: the hub owns the host's counter of tokens, and it reaps the slot of each dead holder.
 
 ## License
 

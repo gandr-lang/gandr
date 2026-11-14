@@ -78,6 +78,14 @@
 //! does not linger out: an agent runtime opens no connection on the socket
 //! that would keep it alive.
 //!
+//! **The host's tokens.** The hub owns the host's counter of tokens in the
+//! directory of its socket, the dispatcher's `HostCounter`. It holds the
+//! counter's shared lock for its life, so each process of the host joins the
+//! counter while a hub runs. On its idle tick, every half second, the hub
+//! reaps the slot of each holder that died. A hub whose counter does not open
+//! logs the error and serves on: each process then takes its grant from a
+//! jobserver, or runs with none.
+//!
 //! **Alternatives.** A hub per document would keep a judgement per process
 //! that a face beside the editors could not read; one workspace per hub
 //! holds every copy where every face reads it. A lock file beside the socket
@@ -104,6 +112,12 @@
 //! its clients serving standalone until it does; a client that needs the hub's
 //! own judgement of its session's ending replaces the relay's reading of its
 //! input with one of the hub's answers.
+//!
+//! # References
+//!
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: § pool-tokens
+//!   places the counter's segment in the hub's runtime directory, beside its
+//!   socket, and gives the reap of a dead holder to the hub's idle tick.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -126,6 +140,8 @@ use std::thread;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_surface_dispatcher::HostCounter;
+use gandr_surface_dispatcher::runtime_directory;
 use gandr_surface_lsp_base::hub::NAME_DIGITS;
 use gandr_surface_lsp_base::hub::lock;
 use gandr_surface_lsp_base::quiet::Met;
@@ -153,6 +169,13 @@ use crate::transport::write_frame;
 /// economy: 20 ms. A connection waits at most this long to be accepted; an
 /// idle hub wakes fifty times a second, a cost no profile has found.
 const POLL: Duration = Duration::from_millis(20);
+
+/// How often an idle hub reaps the host's counter.
+///
+/// economy: 500 ms. A dead holder's tokens stay out for at most this long; a
+/// reap reads each slot's atomics and locks only the slots that hold a token.
+/// #7543 reaps a holder at its death, by an event, and the tick goes.
+const REAP: Duration = Duration::from_millis(500);
 
 /// Why no socket could be named for a workspace.
 #[derive(Debug)]
@@ -240,14 +263,7 @@ pub fn socket_for(root: &Path) -> Result<PathBuf, Unnamed>
         Maybe::Present(build) => build,
         Maybe::Absent(reason) => return Err(Unnamed::Unidentified(reason)),
     };
-    let directory = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(
-        || {
-            let mut name = std::ffi::OsString::from("gandr-");
-            name.push(std::env::var_os("USER").unwrap_or_default());
-            std::env::temp_dir().join(name)
-        },
-        |runtime| PathBuf::from(runtime).join("gandr"),
-    );
+    let directory = runtime_directory();
     Ok(directory.join(socket_name(build, &root)))
 }
 
@@ -382,6 +398,17 @@ where
         },
     };
     let disk = Arc::new(Mutex::new(disk));
+    // The hub owns the host's counter beside its socket, and reaps it on its
+    // idle tick.
+    let tokens = match socket.parent().map(HostCounter::open) {
+        Some(Ok(tokens)) => Some(tokens),
+        Some(Err(error)) => {
+            drop(writeln!(log, "the hub owns no host's counter: {error}"));
+            None
+        },
+        None => None,
+    };
+    let mut reaped = Instant::now();
     let log = Arc::new(Mutex::new(log));
     let open = Arc::new(AtomicU64::new(0));
     if let Some(beside) = beside {
@@ -421,6 +448,12 @@ where
                 }
                 else if quiet_since.elapsed() >= linger {
                     break;
+                }
+                if reaped.elapsed() >= REAP {
+                    if let Some(ref tokens) = tokens {
+                        tokens.reap();
+                    }
+                    reaped = Instant::now();
                 }
                 thread::sleep(POLL);
             },
