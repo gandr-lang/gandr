@@ -157,7 +157,11 @@ fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Erro
         Some(gandr_surface_grammar::Sort::Expression)
     );
     assert_eq!(descendant_tiles(tree, first_x), ["x"]);
-    assert!(descendant_grout_ends(tree, root).is_empty());
+    assert!(
+        descendant_grout_ends(tree, root).is_empty(),
+        "{:?}",
+        descendant_grout_ends(tree, root)
+    );
     let top = significant_children(tree, root);
     assert_eq!(top.len(), 2);
     assert_eq!(direct_tiles(tree, top[0]), ["def", "a", "=", ";"]);
@@ -181,11 +185,31 @@ fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Erro
             None
         );
     }
-    assert!(children(tree, absent).is_empty());
-    assert!(significant_children(tree, absent).is_empty());
-    assert!(direct_tiles(tree, absent).is_empty());
-    assert!(descendant_tiles(tree, absent).is_empty());
-    assert!(descendant_grout_ends(tree, absent).is_empty());
+    assert!(
+        children(tree, absent).is_empty(),
+        "{:?}",
+        children(tree, absent)
+    );
+    assert!(
+        significant_children(tree, absent).is_empty(),
+        "{:?}",
+        significant_children(tree, absent)
+    );
+    assert!(
+        direct_tiles(tree, absent).is_empty(),
+        "{:?}",
+        direct_tiles(tree, absent)
+    );
+    assert!(
+        descendant_tiles(tree, absent).is_empty(),
+        "{:?}",
+        descendant_tiles(tree, absent)
+    );
+    assert!(
+        descendant_grout_ends(tree, absent).is_empty(),
+        "{:?}",
+        descendant_grout_ends(tree, absent)
+    );
     assert_eq!(text(tree, absent), "");
     let unicode = parse(pbg, SourceText::from("\"é\""))?;
     assert_eq!(text(unicode.tree(), unicode.tree().root()), "\"é\"");
@@ -226,7 +250,11 @@ fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
             .windows(2)
             .all(|pair| matches!(pair, [left, right] if left.1 <= right.1))
     );
-    assert!(gandr_files(Path::new("strict/values.gandr/child")).is_empty());
+    assert!(
+        gandr_files(Path::new("strict/values.gandr/child")).is_empty(),
+        "{:?}",
+        gandr_files(Path::new("strict/values.gandr/child"))
+    );
     let strict = Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus/strict");
     assert_eq!(
         read_source(&strict.join("values.gandr"))?,

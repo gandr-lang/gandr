@@ -453,7 +453,7 @@ impl Flow
     let mut expected = alloc::vec![CausalDepth::default(); self.labels.len()];
     for thread in &self.threads {
         if let (FlowEnd::Vertex { vertex: up, .. }, FlowEnd::Vertex { vertex: lo, .. }) = (thread.up, thread.lo) {
-            let lifted = output.get(usize::from(up)).map(|depth| CausalDepth::from(usize::from(*depth).saturating_add(1_usize))).unwrap_or_default();
+            let lifted = output.get(usize::from(up)).map_or_default(|depth| CausalDepth::from(usize::from(*depth).saturating_add(1_usize)));
             if let Some(slot) = expected.get_mut(usize::from(lo)) { *slot = (*slot).max(lifted); }
         }
     }
@@ -1284,7 +1284,7 @@ mod tests
         let (empty, reached) =
             project_walk(&store, &peak, &[]).expect("the empty leg is a derivation");
         assert_eq!(ground, reached);
-        assert!(empty.labels.is_empty());
+        assert!(empty.labels.is_empty(), "{:?}", empty.labels);
         let boundary: Vec<FlowThread> = (0 .. 3_usize)
             .map(|index| FlowThread {
                 up: FlowEnd::Peak {

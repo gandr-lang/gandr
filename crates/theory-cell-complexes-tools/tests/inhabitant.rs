@@ -339,7 +339,7 @@ fn a_match_that_copies_nothing_reads_the_images_of_the_copying_match()
         &Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
         |var, _| visited.push(var.clone()),
     )));
-    assert!(visited.is_empty());
+    assert!(visited.is_empty(), "{visited:?}");
 }
 
 #[test]
@@ -461,10 +461,10 @@ fn singleton_and_zero_component_families_preserve_shape()
     let term = Toy::add(Toy::var("x"), Toy::succ(Toy::zero()));
     let singleton = generalization_reproduces::<ToyAlphabet>(&[core::slice::from_ref(&term)]);
     assert_eq!(vec![term], singleton.patterns);
-    assert!(singleton.points.is_empty());
+    assert!(singleton.points.is_empty(), "{:?}", singleton.points);
     let empty = generalization_reproduces::<ToyAlphabet>(&[&[], &[]]);
-    assert!(empty.patterns.is_empty());
-    assert!(empty.points.is_empty());
+    assert!(empty.patterns.is_empty(), "{:?}", empty.patterns);
+    assert!(empty.points.is_empty(), "{:?}", empty.points);
 }
 
 #[test]

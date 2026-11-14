@@ -1551,7 +1551,7 @@ fn recursive_blocks_are_admitted()
     let list = list(&mut environment);
     let tree = tree(&mut environment, nat.position());
     for admitted in [nat, list, tree] {
-        assert!(environment.audit(admitted).axioms().is_empty());
+        assert_eq!(environment.audit(admitted).axioms(), []);
     }
 }
 
@@ -1581,7 +1581,7 @@ fn dependent_fields_are_admitted()
         .add_decl(declaration)
         .expect("a field may name the one before it");
     assert_eq!(boxed.position(), position);
-    assert!(environment.audit(boxed).axioms().is_empty());
+    assert_eq!(environment.audit(boxed).axioms(), []);
     let put = |environment: &mut Environment, quoted: bool| {
         let mut staging = environment.stage();
         let arena = staging.arena();
@@ -2264,7 +2264,7 @@ fn a_recursion_descends_on_its_first_parameter()
         FixpointEvidence::StructuralDescent,
     )
     .expect("a call at the scrutinised constructor's field descends");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
     let root = Stage::At(StageId::from(0_usize));
     for fixture in [Claim::NotCase, Claim::AtScrutinee] {
         assert_eq!(
@@ -2418,7 +2418,7 @@ fn a_call_on_a_value_rebuilt_below_the_stage_is_admitted()
         FixpointEvidence::StructuralDescent,
     )
     .expect("succ q stands below x = succ (succ q)");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
     // `succ p` is `x` itself: its field `p` stands at the outer case's
     // stage, one below the fixpoint's, where two are wanted.
     let root = Stage::At(StageId::from(0_usize));
@@ -2448,7 +2448,7 @@ fn a_nullary_argument_needs_a_value_below_the_stage()
         FixpointEvidence::StructuralDescent,
     )
     .expect("the field p shows the stage holds a value");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
     // Under `zero` nothing in scope stands below the stage, which may be
     // the first: `rec zero` there need not terminate.
     let root = Stage::At(StageId::from(0_usize));
@@ -2659,7 +2659,7 @@ fn derived_eliminators_are_admitted()
     let length = length(&mut environment, list, nat, by_list.position());
     let by_tree = tree_eliminator(&mut environment, tree, nat);
     for admitted in [by_nat, plus, by_nat_value, by_list, length, by_tree] {
-        assert!(environment.audit(admitted).axioms().is_empty());
+        assert_eq!(environment.audit(admitted).axioms(), []);
     }
 }
 

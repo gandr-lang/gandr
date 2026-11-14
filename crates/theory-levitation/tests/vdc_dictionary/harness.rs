@@ -2213,7 +2213,11 @@ mod tests
                 .collect::<Vec<_>>(),
             [0, 1, 0, 1]
         );
-        assert!(check_morphism(&diagonal).is_empty());
+        assert!(
+            check_morphism(&diagonal).is_empty(),
+            "{:?}",
+            check_morphism(&diagonal)
+        );
         let projection = SigMorphism::projection(&product, DescriptorFactorIndex::from(1_usize));
         assert_eq!(projection.tgt, b);
         assert_eq!(

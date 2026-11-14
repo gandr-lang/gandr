@@ -4183,7 +4183,7 @@ mod tests
                     }),
                     "a numeric base is no identity of literals"
                 );
-                let mut third = image.clone();
+                let mut third = image;
                 if let Some(byte) = third.get_mut(polarity_at) {
                     *byte = 2;
                 }
@@ -4367,7 +4367,7 @@ mod tests
             .declarations()
             .first()
             .expect("one data declaration");
-        assert!(declaration.declaration().presentation().rules().is_empty());
+        assert_eq!(declaration.declaration().presentation().rules(), []);
         assert_eq!(
             declaration.declaration().presentation().cells(),
             Some(&cells)
@@ -4627,7 +4627,7 @@ mod tests
             // writes its kind. A held definition writes each block the plain
             // one leaves out as a count of none, and the segment closes with
             // the role's tag.
-            let mut expected = unmarked.clone();
+            let mut expected = unmarked;
             if let Some(byte) = expected.get_mut(9) {
                 *byte = u8::from(kind);
             }
@@ -4650,7 +4650,7 @@ mod tests
                 "and re-encodes to the same bytes"
             );
             // A role tag outside the alphabet refuses at its own site.
-            let mut unknown = marked.clone();
+            let mut unknown = marked;
             if let Some(byte) = unknown.last_mut() {
                 *byte = 9;
             }

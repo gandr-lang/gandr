@@ -590,7 +590,7 @@ fn a_recursive_family_names_itself_in_its_fields()
     else {
         panic!("two constructors");
     };
-    assert!(zero.is_empty());
+    assert_eq!(zero.as_slice(), []);
     let [predecessor] = **succ
     else {
         panic!("one field");
@@ -2582,7 +2582,7 @@ fn a_constructor_applies_to_its_fields()
         panic!("a bare constructor is a constructor value");
     };
     assert_eq!(tag, ConstructorTag::from(1_usize));
-    assert!(fields.is_empty());
+    assert_eq!(fields.as_slice(), []);
     assert_eq!(
         arena.value_type(datatype),
         Some(&ValueType::Data {

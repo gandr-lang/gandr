@@ -96,10 +96,7 @@ where
     else {
         panic!("the watch is reported as off: {transcript}");
     };
-    let session = watch
-        .split_once('\n')
-        .map(|(_, rest)| rest)
-        .unwrap_or_default();
+    let session = watch.split_once('\n').map_or_default(|(_, rest)| rest);
     String::from(
         session
             .split_once("\nok\n")

@@ -9539,7 +9539,7 @@ impl<'source> Collector<'_, 'source>
             .collected
             .structures
             .get(structure.0)
-            .map(|entry| {
+            .map_or_default(|entry| {
                 entry
                     .members
                     .iter()
@@ -9548,8 +9548,7 @@ impl<'source> Collector<'_, 'source>
                         Member::Slot(_) => None,
                     })
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         for nested in nested {
             let Some((name, named)) = self
                 .collected

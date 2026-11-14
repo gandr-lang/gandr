@@ -817,6 +817,7 @@ impl<'source> ImportDeclaration<'source>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn signature(&self) -> &Maybe<ImportSignature<'source>, unsigned::Absent>
     {
         &self.signature

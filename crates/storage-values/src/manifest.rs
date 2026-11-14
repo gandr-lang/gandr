@@ -1878,7 +1878,7 @@ mod tests
             cursor.take::<1>(ManifestField::DigestFamily),
             Ok(FieldBytes([3_u8]))
         );
-        assert!(cursor.0.is_empty());
+        assert!(cursor.0.is_empty(), "{:?}", cursor.0);
     }
 
     #[test]

@@ -163,6 +163,7 @@ impl MatchAnalysis
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn coverage(&self) -> &Result<Coverage, CoverageFault>
     {
         &self.coverage

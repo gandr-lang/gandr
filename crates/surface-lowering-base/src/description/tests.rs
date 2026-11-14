@@ -762,7 +762,7 @@ fn a_bare_parameter_head_declines_the_whole_declaration_with_its_respelling()
     let report = elaborated(SourceText::from(
         "data Maybe(a) where { | None : Maybe(a) }",
     ));
-    assert!(report.declarations.is_empty());
+    assert!(report.declarations.is_empty(), "{:?}", report.declarations);
     assert!(
         report
             .diagnostics
@@ -775,7 +775,7 @@ fn a_bare_parameter_head_declines_the_whole_declaration_with_its_respelling()
 fn a_missing_head_annotation_declines_the_whole_declaration_with_its_respelling()
 {
     let report = elaborated(SourceText::from("data Color  where { | Red : Color }"));
-    assert!(report.declarations.is_empty());
+    assert!(report.declarations.is_empty(), "{:?}", report.declarations);
     assert!(
         report
             .diagnostics

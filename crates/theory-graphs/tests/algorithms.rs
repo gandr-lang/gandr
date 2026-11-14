@@ -479,10 +479,19 @@ fn empty_graphs_have_no_invented_nodes_or_edges() -> Result<(), GraphValidationE
 {
     let graph = TestGraph::new::<_, (u32, u32)>(0_u32, &[]);
     assert_eq!(cycle_witness(&graph)?, None);
-    assert!(reachability(&graph)?.rows.is_empty());
+    assert_eq!(
+        reachability(&graph)?.rows,
+        Vec::<gandr_theory_graphs::ReachabilityRow>::new()
+    );
     let folded = condensation(&graph)?;
-    assert!(folded.components.is_empty());
-    assert!(folded.edges.is_empty());
+    assert_eq!(
+        folded.components,
+        Vec::<Vec<gandr_theory_graphs::NodeId>>::new()
+    );
+    assert_eq!(
+        folded.edges,
+        Vec::<gandr_theory_graphs::ComponentEdge>::new()
+    );
     Ok(())
 }
 

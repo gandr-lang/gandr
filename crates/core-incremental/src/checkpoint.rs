@@ -2482,7 +2482,8 @@ trait MemoChoice
 ///
 /// # Specification
 /// trivial.
-enum NullMemoChoice {}
+#[repr(transparent)]
+struct NullMemoChoice(!);
 
 impl MemoChoice for NullMemoChoice
 {
@@ -2502,7 +2503,8 @@ impl MemoChoice for NullMemoChoice
 ///
 /// # Specification
 /// trivial.
-enum HashedMemoChoice {}
+#[repr(transparent)]
+struct HashedMemoChoice(!);
 
 impl MemoChoice for HashedMemoChoice
 {
@@ -3106,7 +3108,8 @@ trait Keep
 ///
 /// # Specification
 /// trivial.
-enum KeepNothing {}
+#[repr(transparent)]
+struct KeepNothing(!);
 
 impl Keep for KeepNothing
 {
@@ -3125,7 +3128,8 @@ impl Keep for KeepNothing
 ///
 /// # Specification
 /// trivial.
-enum KeepContext {}
+#[repr(transparent)]
+struct KeepContext(!);
 
 impl Keep for KeepContext
 {

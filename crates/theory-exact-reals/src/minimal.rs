@@ -569,7 +569,7 @@ pub(crate) fn minimal(graph: &PlanGraph) -> MinimalForm
     for &node in &order {
         reached
             .labels
-            .push(graph.label_place(node).map(u32::from).unwrap_or_default());
+            .push(graph.label_place(node).map_or_default(u32::from));
         reached.unordered.push(
             graph
                 .label_of(node)

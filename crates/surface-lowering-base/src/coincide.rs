@@ -1918,7 +1918,7 @@ fn oriented_terms<G>(
 ///   reads as its occurrence inside the abstraction and is unknown beside it.
 /// - witness: `gandr-surface-lowering::tests::coincide::a_call_reads_its_normal_form_or_says_why_not`
 #[spec(ensures: |ret| ret.as_ref().is_err() || text.0.split_whitespace().collect::<String>()
-    == ret.as_ref().map(|term| term.to_string().split_whitespace().collect::<String>()).unwrap_or_default())]
+    == ret.as_ref().map_or_default(|term| term.to_string().split_whitespace().collect::<String>()))]
 fn read_call<G>(
     description: &TheoryDesc<G>,
     text: CallText<'_>,

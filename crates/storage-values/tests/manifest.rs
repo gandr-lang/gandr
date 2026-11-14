@@ -317,7 +317,7 @@ proptest! {
             let image = manifest.encode();
             let decoded = ValueManifest::decode(image.as_image());
             prop_assert_eq!(decoded, Ok(manifest));
-            prop_assert_eq!(manifest.encode(), image.clone());
+            prop_assert_eq!(&manifest.encode(), &image);
             prop_assert_eq!(
                 manifest.identity(),
                 ManifestDigest::from(*blake3::hash(image.as_ref()).as_bytes())

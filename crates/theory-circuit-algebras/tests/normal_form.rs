@@ -495,11 +495,11 @@ fn recipe_closes_open_wires_and_preserves_isolated_roles()
         .generators
         .first()
         .expect("the generating step exists");
-    assert!(first.sources().is_empty());
+    assert_eq!(first.sources(), []);
     assert_eq!(first.targets(), [Wire::from(2)]);
     let terminal = built.generators.last().expect("the closing exists");
     assert_eq!(terminal.sources(), [Wire::from(1)]);
-    assert!(terminal.targets().is_empty());
+    assert_eq!(terminal.targets(), []);
     let wiring = built.assemble();
     let canonical = canonicalize(&wiring);
     assert_eq!(

@@ -7218,19 +7218,19 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     ) -> Result<Test, LoweringRefusal<'source>>
     {
         let arities: Vec<usize> = match form {
-            Generators::Written(position) => self
-                .cx()
-                .collected
-                .data
-                .get(position)
-                .map(|written| {
-                    written
-                        .generators
-                        .iter()
-                        .map(|generator| generator.fields.len())
-                        .collect()
-                })
-                .unwrap_or_default(),
+            Generators::Written(position) => {
+                self.cx()
+                    .collected
+                    .data
+                    .get(position)
+                    .map_or_default(|written| {
+                        written
+                            .generators
+                            .iter()
+                            .map(|generator| generator.fields.len())
+                            .collect()
+                    })
+            },
             Generators::Presentation => match self.cx().collected.theory {
                 Maybe::Present(ref theory) => theory.arities.clone(),
                 Maybe::Absent(_) => Vec::new(),
@@ -7251,8 +7251,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                 .collected
                 .terms
                 .get(terms)
-                .map(|written| written.arities.clone())
-                .unwrap_or_default(),
+                .map_or_default(|written| written.arities.clone()),
         };
         let declared = match form {
             Generators::Written(position) => self
@@ -7329,8 +7328,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                         patterns
                             .parts
                             .get(fields.start .. fields.end)
-                            .map(<[PatternAt]>::to_vec)
-                            .unwrap_or_default()
+                            .map_or_default(<[PatternAt]>::to_vec)
                     },
                     Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
                         through(&mut next, held, switch.level);
@@ -7775,8 +7773,7 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
                     let parts = patterns
                         .parts
                         .get(fields.start .. fields.end)
-                        .map(<[PatternAt]>::to_vec)
-                        .unwrap_or_default();
+                        .map_or_default(<[PatternAt]>::to_vec);
                     for (component, part) in parts.iter().enumerate() {
                         if let Some(&(_, ref label)) =
                             patterns.unwritten.iter().find(|&&(held, _)| held == *part)

@@ -118,5 +118,11 @@ fn a_cell_past_the_count_has_no_faces_to_read()
         complex.faces(&past, &mut faces),
         Err(DualityError::ElementOutside(past))
     );
-    assert!(faces.is_empty());
+    assert_eq!(
+        faces,
+        Vec::<(
+            gandr_theory_stone_duality::Element,
+            gandr_theory_discrete_morse::Incidence
+        )>::new()
+    );
 }

@@ -874,7 +874,7 @@ fn recursive_blocks_are_admitted_in_both_checkers()
             readmitted.outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// Where a one-parameter block's one field places the family `T A`, `A`
@@ -1593,8 +1593,8 @@ fn derived_eliminators_are_admitted_and_readmitted()
             readmitted.outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
-    assert!(crossed.audit().unchecked_admissions().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
+    assert_eq!(crossed.audit().unchecked_admissions(), []);
     // A motive naming its scrutinee has no hypothesis at a function field.
     let [_, _, tree_signature, ..] = signatures(&mut arena);
     let scrutinee = var(&mut arena, DeBruijnIndex::from(0));
@@ -1887,7 +1887,7 @@ fn the_export_is_deterministic()
         encoded.as_image().as_ref().to_vec()
     };
     let first = image();
-    assert!(!first.is_empty());
+    assert!(!first.is_empty(), "{first:?}");
     assert_eq!(first, image());
 }
 
@@ -2374,9 +2374,9 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
     }
     // Nothing is owed and nothing is assumed: the integer comparison crosses
     // as a literal identity test, a kernel primitive and no axiom.
-    assert!(report.ledger().entries().is_empty());
-    assert!(crossed.audit().unchecked_admissions().is_empty());
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(report.ledger().entries(), []);
+    assert_eq!(crossed.audit().unchecked_admissions(), []);
+    assert_eq!(crossed.audit().axioms(), []);
 
     let unit = arena.value_unit();
     let truth = arena.value_injection(gandr_kernel_term::Summand::from(0_usize), unit);

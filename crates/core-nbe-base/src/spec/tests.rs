@@ -84,7 +84,11 @@ fn listed_reads_children_left_to_right()
     let mut overlay = Overlay::new();
     let (first, second, third) = three(&mut overlay);
     let read = |children: Children| listed(children).collect::<Vec<_>>();
-    assert!(read(Children::Leaf).is_empty());
+    assert!(
+        read(Children::Leaf).is_empty(),
+        "{:?}",
+        read(Children::Leaf)
+    );
     assert_eq!(read(Children::One(first)), [first]);
     assert_eq!(read(Children::Two(first, second)), [first, second]);
     assert_eq!(read(Children::Three(first, second, third)), [

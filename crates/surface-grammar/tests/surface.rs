@@ -552,7 +552,7 @@ fn sort_decode_contract()
 fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    assert!(!pbg.adaptations().is_empty());
+    assert_ne!(pbg.adaptations(), []);
     for adaptation in pbg.adaptations() {
         assert!(
             pbg.rule_names().contains(adaptation.rule),

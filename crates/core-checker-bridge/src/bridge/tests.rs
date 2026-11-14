@@ -35,7 +35,7 @@ fn native_operations_cross_as_audited_assumptions()
     assert_eq!(readmission.audit().axioms(), &[ConstantIndex::from(
         0_usize
     )]);
-    assert!(readmission.audit().unchecked_admissions().is_empty());
+    assert_eq!(readmission.audit().unchecked_admissions(), []);
     let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
     let native = artifact.declarations().first().unwrap().declaration();
     assert!(matches!(native.content(), DeclarationContent::Axiom { .. }));
@@ -1446,7 +1446,7 @@ fn checks_committed_in_reverse_readmit_as_the_serial_run_3476()
             Polled::Retired((), Maybe::Absent(absent)) => Maybe::Absent(absent),
             Polled::Whole(_) => continue,
         };
-        let mut resumed_arena = arena.clone();
+        let mut resumed_arena = arena;
         let (resumed, _) = readmit_resuming(
             &mut resumed_arena,
             &report,
@@ -4379,7 +4379,7 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
             &Outcome::Refused(Refusal::OutOfFragment { at, former })
         );
     }
-    assert!(readmission.audit().axioms().is_empty());
+    assert_eq!(readmission.audit().axioms(), []);
     let artifact = readmission.export(BTreeMap::new());
     let decoded = decode(artifact.as_image()).expect("the pure definitions export");
     assert_eq!(

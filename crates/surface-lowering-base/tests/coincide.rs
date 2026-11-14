@@ -95,7 +95,8 @@ fn an_overlap_that_joins_is_certified_and_runs_either_way()
                 .all(|certificate| bool::from(certificate.replay(&rewriting))),
             "every certificate replays over the rewriting it was decided over"
         );
-        assert!(module.cells().diagnostics.is_empty());
+        let diagnostics = &module.cells().diagnostics;
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
         let names: Vec<_> = module
             .declarations()
             .iter()

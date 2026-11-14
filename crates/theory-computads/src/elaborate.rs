@@ -2817,7 +2817,8 @@ mod tests
     /// The grade a test description's fields would carry; no field here is
     /// graded.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    enum Ungraded {}
+    #[repr(transparent)]
+    struct Ungraded(!);
 
     #[test]
     fn add_zero_elaborates_to_a_cut_against_the_operation_frame()

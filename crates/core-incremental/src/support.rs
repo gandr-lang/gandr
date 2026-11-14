@@ -171,7 +171,6 @@ impl SupportedNode
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn value_reads(&self) -> impl ExactSizeIterator<Item = &Reference>
     {
         self.value_reads.as_slice().iter()
@@ -182,7 +181,6 @@ impl SupportedNode
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn type_reads(&self) -> impl ExactSizeIterator<Item = &Reference>
     {
         self.type_reads.as_slice().iter()

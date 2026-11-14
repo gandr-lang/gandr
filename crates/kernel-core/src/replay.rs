@@ -6112,7 +6112,6 @@ where
                         .rev()
                         .map(|premise| Goal::premise(premise, Expect::Convertible, within)),
                 );
-                Ok(())
             },
             Expect::NotConvertible => {
                 let next = self.peek();
@@ -6128,9 +6127,9 @@ where
                 };
                 self.take();
                 goals.push(Goal::premise(premise, Expect::NotConvertible, within));
-                Ok(())
             },
         }
+        Ok(())
     }
 
     /// The structural rule two shapes force.
@@ -7086,15 +7085,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             ConversionGoal::Computation(one, other),
                             &mut inside,
                         ) {
-                            Convertibility::Convertible => {
-                                pending.append(&mut inside);
-                                Convertibility::Convertible
-                            },
-                            Convertibility::Distinct => {
-                                parted.push((one, other));
-                                Convertibility::Convertible
-                            },
+                            Convertibility::Convertible => pending.append(&mut inside),
+                            Convertibility::Distinct => parted.push((one, other)),
                         }
+                        Convertibility::Convertible
                     },
                     _ => Convertibility::Distinct,
                 }

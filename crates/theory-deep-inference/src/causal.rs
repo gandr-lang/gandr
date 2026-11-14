@@ -458,7 +458,7 @@ impl<A: CellAlphabet> EventOrder<A>
         && output.dependences.len() == original_events.len() && output.depths.len() == original_events.len() && output.keys.len() == original_events.len()
         && output.dependences.iter().zip(&output.depths).zip(&output.keys).zip(&original_events).enumerate().all(|(index, (((edges, depth), key), event))| {
             let expected = original_events.iter().enumerate().take(index).filter(|prior| !bool::from(step_independence_with_support(store, &prior.1.step, &event.step, convexity, &support))).map(|(earlier, _)| EventIndex::from(earlier));
-            let inherited: Vec<CausalPast> = edges.iter().map(|earlier| output.keys.get(usize::from(*earlier)).map(EventKey::past).unwrap_or_default()).collect();
+            let inherited: Vec<CausalPast> = edges.iter().map(|earlier| output.keys.get(usize::from(*earlier)).map_or_default(EventKey::past)).collect();
             edges.iter().copied().eq(expected)
                 && usize::from(*depth) == edges.iter().filter_map(|earlier| output.depths.get(usize::from(*earlier))).map(|prior| usize::from(*prior).saturating_add(1_usize)).max().unwrap_or_default()
                 && key.address == event.address && key.past == causal_past_address(event.address, &inherited)
@@ -496,8 +496,7 @@ impl<A: CellAlphabet> EventOrder<A>
             inherited.clear();
             inherited.extend(edges.iter().map(|earlier| {
                 keys.get(usize::from(*earlier))
-                    .map(EventKey::past)
-                    .unwrap_or_default()
+                    .map_or_default(EventKey::past)
             }));
             keys.push(EventKey {
                 address: current.address,
@@ -1718,9 +1717,13 @@ mod tests
             Vec::new(),
             ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
         );
-        assert!(order.events().is_empty());
-        assert!(order.canonical_order().is_empty());
-        assert!(order.layers().is_empty());
+        assert!(order.events().is_empty(), "{:?}", order.events());
+        assert!(
+            order.canonical_order().is_empty(),
+            "{:?}",
+            order.canonical_order()
+        );
+        assert!(order.layers().is_empty(), "{:?}", order.layers());
         assert_eq!(Ok(()), order.refuse_key_collisions());
         let absent = EventIndex::from(0_usize);
         assert_eq!(
@@ -1735,7 +1738,11 @@ mod tests
             Maybe::Absent(event_lookup::Absent::OutOfRange),
             order.key(absent)
         );
-        assert!(order.direct_dependences(absent).is_empty());
+        assert!(
+            order.direct_dependences(absent).is_empty(),
+            "{:?}",
+            order.direct_dependences(absent)
+        );
         let witness = order
             .exchange_to_canonical()
             .expect("the empty order is already canonical");

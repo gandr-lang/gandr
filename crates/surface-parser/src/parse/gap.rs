@@ -1815,8 +1815,7 @@ mod tests
         let source = "def returned : +U (Integer  -F Integer);\n";
         let at = source
             .find("(Integer")
-            .map(|start| start.saturating_add("(Integer".len()))
-            .unwrap_or_default();
+            .map_or_default(|start| start.saturating_add("(Integer".len()));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();
@@ -1864,8 +1863,7 @@ mod tests
         );
         let at = source
             .find("end))")
-            .map(|start| start.saturating_add("end))".len()))
-            .unwrap_or_default();
+            .map_or_default(|start| start.saturating_add("end))".len()));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
         let tree = parsed.tree();
@@ -1935,8 +1933,7 @@ mod tests
         );
         let at = source
             .find("Point.T(")
-            .map(|start| start.saturating_add("Point.T".len()))
-            .unwrap_or_default();
+            .map_or_default(|start| start.saturating_add("Point.T".len()));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
         assert_eq!(
@@ -1971,8 +1968,7 @@ mod tests
         );
         let at = source
             .find("Point.T]")
-            .map(|start| start.saturating_add("Point.T]".len()))
-            .unwrap_or_default();
+            .map_or_default(|start| start.saturating_add("Point.T]".len()));
         let pbg = built_in()?;
         let parsed = parse(&pbg, SourceText::from(source))?;
         assert_eq!(

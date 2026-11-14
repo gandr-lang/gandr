@@ -1938,8 +1938,7 @@ impl<'arena> Engine<'arena>
         let runs: Vec<ValueId> = self
             .regions
             .get(&region)
-            .map(|runs| runs.iter().map(|&(run, _)| run).collect())
-            .unwrap_or_default();
+            .map_or_default(|runs| runs.iter().map(|&(run, _)| run).collect());
         let mut bound = Self::computation(&mut self.results, region);
         let shifted: Vec<ComputationId> = runs
             .iter()

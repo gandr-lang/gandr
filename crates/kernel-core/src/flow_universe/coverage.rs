@@ -1045,7 +1045,7 @@ mod tests
             panic!("the empty list and one cell per boolean");
         };
         assert!(matches!(arena.value(empty.value), Some(&Value::ListNil)));
-        assert!(empty.leaves.is_empty());
+        assert!(empty.leaves.is_empty(), "{:?}", empty.leaves);
         for (cell, summand) in [(truth, 0_usize), (falsity, 1_usize)] {
             assert_eq!(vec![Leaf::Tail(booleans)], cell.leaves);
             let Some(&Value::ListCons(head, tail)) = arena.value(cell.value)

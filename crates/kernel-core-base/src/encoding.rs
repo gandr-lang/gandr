@@ -882,7 +882,8 @@ pub trait Identification: Clone + Copy + core::fmt::Debug + Eq + core::hash::Has
 /// tags, their payloads and their members' names agree, and the descent datum
 /// is empty.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Exact {}
+#[repr(transparent)]
+pub struct Exact(pub !);
 
 impl Identification for Exact
 {

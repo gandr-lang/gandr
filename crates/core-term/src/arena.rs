@@ -559,7 +559,6 @@ impl<'arena> ElementFields<'arena>
     /// - hypothesis: L3 — a record's fields, and a patched type's fields less
     ///   the one it fixes.
     /// - witness: `arena::tests::an_element_of_a_patched_type_holds_its_free_fields`
-    #[must_use]
     #[inline]
     pub fn iter(
         self
@@ -804,7 +803,6 @@ impl CoreArena
     ///   the others and from a stale mark.
     /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
     #[inline]
-    #[must_use]
     pub fn values_since(
         &self,
         after: ArenaWatermark,
@@ -828,7 +826,6 @@ impl CoreArena
     /// - hypothesis: L3 — as [`Self::values_since`].
     /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
     #[inline]
-    #[must_use]
     pub fn computations_since(
         &self,
         after: ArenaWatermark,
@@ -852,7 +849,6 @@ impl CoreArena
     /// - hypothesis: L3 — as [`Self::values_since`].
     /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
     #[inline]
-    #[must_use]
     pub fn value_types_since(
         &self,
         after: ArenaWatermark,
@@ -876,7 +872,6 @@ impl CoreArena
     /// - hypothesis: L3 — as [`Self::values_since`].
     /// - witness: `arena::tests::allocation_suffixes_keep_their_family`
     #[inline]
-    #[must_use]
     pub fn comp_types_since(
         &self,
         after: ArenaWatermark,

@@ -205,12 +205,14 @@ pub trait Restricts<Value>: Maps
 /// The kind of a sheaf whose maps are entry maps: its sections hold values of
 /// any kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EntryMaps {}
+#[repr(transparent)]
+pub struct EntryMaps(pub !);
 
 /// The kind of a sheaf whose maps are homomorphisms of modules over the
 /// rationals, each a matrix or an entry map: its sections hold rationals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LinearMaps {}
+#[repr(transparent)]
+pub struct LinearMaps(pub !);
 
 /// The map that a sheaf of linear maps holds from a cell to a cell above it.
 #[derive(Clone, Debug, Eq, PartialEq)]

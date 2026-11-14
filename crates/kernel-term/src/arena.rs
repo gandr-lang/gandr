@@ -1290,7 +1290,6 @@ impl<Node> Family<Node>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &Node>
     {
         self.chunks()

@@ -414,7 +414,6 @@ impl Layout
     ///
     /// # Specification
     /// trivial.
-    #[must_use]
     #[inline]
     pub fn fields(self) -> impl ExactSizeIterator<Item = SurfaceName<'static>>
     {

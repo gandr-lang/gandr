@@ -152,7 +152,7 @@ fn a_wide_poset_answers_as_its_naive_closure()
         )
         .expect("a random order along a chain");
         assert_eq!(poset.count(), count);
-        let reach = naive_closure(pairs.clone());
+        let reach = naive_closure(pairs);
         // The rank along the hidden chain, each cell after every cell below it.
         let mut ranks = vec![Rank::default(); cells];
         for &upper in &chain {

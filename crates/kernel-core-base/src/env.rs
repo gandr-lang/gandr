@@ -2149,7 +2149,6 @@ impl Entries
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = &AdmittedDeclaration>
     {
         self.family().iter().filter_map(Slot::admitted)
@@ -3993,7 +3992,7 @@ mod tests
         assert_eq!([low, high], marks.marks.as_slice());
         marks.resolve(low);
         marks.resolve(high);
-        assert!(marks.marks.is_empty());
+        assert!(marks.marks.is_empty(), "{:?}", marks.marks);
     }
 
     #[test]

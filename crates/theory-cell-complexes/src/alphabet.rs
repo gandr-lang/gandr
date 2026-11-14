@@ -1317,7 +1317,7 @@ mod tests
             panic!("a singleton has its exact generalization");
         };
         assert_eq!(singleton.as_slice(), unchanged.patterns.as_slice());
-        assert!(unchanged.points.is_empty());
+        assert!(unchanged.points.is_empty(), "{:?}", unchanged.points);
         let members = [[zero], [one]];
         let Maybe::Present(generalization) = A::anti_unify_cmd(&[&members[0], &members[1]])
         else {
@@ -1355,7 +1355,8 @@ mod tests
             ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("x")]),
             ConsPat::frame("F", ConsPat::meta("alpha")),
         );
-        assert!(A::metavariables(&ground).is_empty());
+        let metavariables = A::metavariables(&ground);
+        assert!(metavariables.is_empty(), "{metavariables:?}");
         assert_eq!(
             alloc::vec![
                 MetaVar::producer("x"),
@@ -1372,7 +1373,8 @@ mod tests
         let absent = A::position_at_path(&[PositionStep::from(2_usize)]);
         assert_eq!(root, A::position_at_path(&[]));
         let grandchild = [PositionStep::from(1_usize), PositionStep::from(0_usize)];
-        assert!(A::position_steps(&root).is_empty());
+        let steps = A::position_steps(&root);
+        assert!(steps.is_empty(), "{steps:?}");
         assert_eq!([PositionStep::from(0_usize)], A::position_steps(&prod));
         assert_eq!(
             grandchild,
@@ -1445,7 +1447,8 @@ mod tests
                 let meta = A::derive_meta(&term, &term, CellInvertibility::from(invertible));
                 assert_eq!(invertible, bool::from(meta.invertible()));
                 assert_eq!(expected, A::hole_flow(&meta, &HoleName::new("x")));
-                assert!(A::hole_flow(&meta, &HoleName::new("missing")).is_empty());
+                let missing = A::hole_flow(&meta, &HoleName::new("missing"));
+                assert!(missing.is_empty(), "{missing:?}");
             }
         }
     }

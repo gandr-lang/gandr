@@ -172,18 +172,34 @@ fn binders_lower_only_their_own_intuitionistic_occurrences()
         .of(&core, CoreTerm::Value(far))
         .expect("the shared answer remains");
     assert_eq!([DeBruijnIndex::from(2_u32)], free.intuitionistic.counts());
-    assert!(free.linear.counts().is_empty());
+    assert!(
+        free.linear.counts().is_empty(),
+        "{:?}",
+        free.linear.counts()
+    );
     let free = analysis
         .of(&core, CoreTerm::Value(linear))
         .expect("the linear leaf remains");
     assert_eq!([DeBruijnIndex::from(2_u32)], free.linear.counts());
-    assert!(free.intuitionistic.counts().is_empty());
+    assert!(
+        free.intuitionistic.counts().is_empty(),
+        "{:?}",
+        free.intuitionistic.counts()
+    );
     let unit = core.value_unit();
     let free = analysis
         .of(&core, CoreTerm::Value(unit))
         .expect("unit is closed");
-    assert!(free.intuitionistic.counts().is_empty());
-    assert!(free.linear.counts().is_empty());
+    assert!(
+        free.intuitionistic.counts().is_empty(),
+        "{:?}",
+        free.intuitionistic.counts()
+    );
+    assert!(
+        free.linear.counts().is_empty(),
+        "{:?}",
+        free.linear.counts()
+    );
 }
 
 #[test]
@@ -206,7 +222,11 @@ fn a_quoted_dependent_arrow_binds_only_its_codomain()
         [DeBruijnIndex::from(1_u32), DeBruijnIndex::from(2_u32)],
         free.intuitionistic.counts()
     );
-    assert!(free.linear.counts().is_empty());
+    assert!(
+        free.linear.counts().is_empty(),
+        "{:?}",
+        free.linear.counts()
+    );
 }
 
 #[test]
@@ -307,6 +327,10 @@ fn control_scopes_keep_only_ambient_indices()
                 .collect::<alloc::vec::Vec<_>>(),
             expected
         );
-        assert!(free.linear.counts().is_empty());
+        assert!(
+            free.linear.counts().is_empty(),
+            "{:?}",
+            free.linear.counts()
+        );
     }
 }

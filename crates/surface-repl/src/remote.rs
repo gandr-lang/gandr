@@ -256,7 +256,11 @@ mod tests
             parsed.obligations().is_empty(),
             "the corpus shape parses clean"
         );
-        assert!(repair_cards(parsed.obligations(), 0.into()).is_empty());
+        assert!(
+            repair_cards(parsed.obligations(), 0.into()).is_empty(),
+            "{:?}",
+            repair_cards(parsed.obligations(), 0.into())
+        );
         let broken = "def answer = ( ;";
         let parsed = parse(&grammar, SourceText::from(broken)).expect("the parser commits a tree");
         assert!(

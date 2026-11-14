@@ -1187,7 +1187,7 @@ fn publications(messages: &[Value]) -> Vec<Vec<Value>>
             message
                 .pointer("/params/diagnostics")
                 .and_then(Value::as_array)
-                .map(|diagnostics| {
+                .map_or_default(|diagnostics| {
                     diagnostics
                         .iter()
                         .map(|diagnostic| {
@@ -1198,7 +1198,6 @@ fn publications(messages: &[Value]) -> Vec<Vec<Value>>
                         })
                         .collect()
                 })
-                .unwrap_or_default()
         })
         .collect()
 }

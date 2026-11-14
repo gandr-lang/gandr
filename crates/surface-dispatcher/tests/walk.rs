@@ -990,8 +990,7 @@ fn importers_of_a_given_std_module_are_judged_apart_4856()
                     };
                     let name = path
                         .file_stem()
-                        .map(|stem| stem.to_string_lossy().into_owned())
-                        .unwrap_or_default();
+                        .map_or_default(|stem| stem.to_string_lossy().into_owned());
                     assert_eq!(standing, Standing::Settled, "{name} settles");
                     judged.push((name, <&str>::from(text).to_owned(), own));
                     ControlFlow::Continue(())
@@ -1293,8 +1292,7 @@ fn a_source_refused_whole_refuses_only_itself_and_its_importers_1027()
                 if let Step::Source { path, standing, .. } = step {
                     standings.push((
                         path.file_stem()
-                            .map(|stem| stem.to_string_lossy().into_owned())
-                            .unwrap_or_default(),
+                            .map_or_default(|stem| stem.to_string_lossy().into_owned()),
                         standing,
                     ));
                 }
@@ -1446,8 +1444,7 @@ fn an_import_its_parse_does_not_read_is_grouped_again()
                 };
                 walked.push((
                     path.file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                        .map_or_default(|name| name.to_string_lossy().into_owned()),
                     <&str>::from(text)
                         .get(usize::from(base) ..)
                         .unwrap_or_default()
@@ -1515,8 +1512,7 @@ fn one_form_in_two_members_keeps_its_own_expectation_596()
                 };
                 let name = path
                     .file_stem()
-                    .map(|stem| stem.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                    .map_or_default(|stem| stem.to_string_lossy().into_owned());
                 let settlements: Vec<(String, gandr_surface_corpus::Settlement)> = report
                     .declarations()
                     .iter()

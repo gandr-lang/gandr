@@ -348,7 +348,6 @@ impl<Node: Copy + Eq + Hash> Scopes<Node>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn binders(&self) -> impl ExactSizeIterator<Item = (BinderIndex, &Binder<Node>)>
     {
         self.binders
@@ -520,7 +519,11 @@ mod tests
             Some(chain.last().copied()),
             "the split stands under the lambda alone"
         );
-        assert!(scopes.around(body, Zone::Linear).is_empty());
+        assert!(
+            scopes.around(body, Zone::Linear).is_empty(),
+            "{:?}",
+            scopes.around(body, Zone::Linear)
+        );
     }
 
     /// One `return x` shared by a bind's bound computation and its body

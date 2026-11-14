@@ -1009,7 +1009,7 @@ fn result_stack_preserves_order_and_falls_back_only_when_empty()
     assert_eq!(results.as_slice(), &[first]);
     assert_eq!(super::popped(&mut results, original), first);
     assert_eq!(super::popped(&mut results, original), second);
-    assert!(results.is_empty());
+    assert!(results.is_empty(), "{results:?}");
 }
 
 #[test]

@@ -1151,8 +1151,7 @@ pub fn lay_out_written(
     let read = graph
         .read
         .get(importer.0)
-        .map(|read| read.written.clone())
-        .unwrap_or_default();
+        .map_or_default(|read| read.written.clone());
     match graph.read.get(importer.0) {
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
         Some(_) | None => return Laid::alone(path, text, (named, read)),
@@ -1499,11 +1498,7 @@ impl Graph
             // The importer's opened directory, so an import names its file as
             // the importer reads it; `locate` still keys it by its canonical
             // path.
-            let directory = source
-                .opened
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_default();
+            let directory = source.opened.parent().map_or_default(Path::to_path_buf);
             let root = source.root;
             let text = SourceText::from(source.text.as_str());
             let mut parsed = ParsedBytes::default();

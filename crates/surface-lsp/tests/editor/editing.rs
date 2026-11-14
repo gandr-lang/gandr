@@ -286,15 +286,12 @@ impl Session
     /// trivial.
     pub fn codes(&self) -> Vec<Value>
     {
-        self.published
-            .as_array()
-            .map(|diagnostics| {
-                diagnostics
-                    .iter()
-                    .map(|diagnostic| diagnostic.get("code").cloned().unwrap_or(Value::Null))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.published.as_array().map_or_default(|diagnostics| {
+            diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.get("code").cloned().unwrap_or(Value::Null))
+                .collect()
+        })
     }
 
     /// Type `typed`, one keystroke.

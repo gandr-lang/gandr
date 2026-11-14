@@ -5008,7 +5008,6 @@ fn step_spine(
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Projection(source));
-            Ok(())
         },
         // The fold holds the stuck argument; the fixpoint reads back as
         // itself applied to its leading arguments, `fix(M) a₀ … aₖ₋₁`, and is
@@ -5022,7 +5021,6 @@ fn step_spine(
                 comp: fixpoint,
                 binders,
             });
-            Ok(())
         },
         Elimination::DataCase(closure) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5090,7 +5088,6 @@ fn step_spine(
                 frame,
                 binders: deeper,
             });
-            Ok(())
         },
         Elimination::Split(closure) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5154,7 +5151,6 @@ fn step_spine(
                     ]);
                 },
             }
-            Ok(())
         },
         Elimination::ListFold {
             element,
@@ -5196,7 +5192,6 @@ fn step_spine(
                 frame,
                 binders,
             });
-            Ok(())
         },
         Elimination::ListCase { on_nil, on_cons } => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5219,14 +5214,12 @@ fn step_spine(
                 comp: empty,
                 binders,
             });
-            Ok(())
         },
         Elimination::Transport(value) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Transport);
             machine.tasks.push(Task::Value { value, binders });
-            Ok(())
         },
         Elimination::ProductTransport(path) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5236,7 +5229,6 @@ fn step_spine(
                 value: path,
                 binders,
             });
-            Ok(())
         },
         Elimination::PathTransport { motive, value } | Elimination::Ride { motive, value } => {
             let assemble = if matches!(elimination, Elimination::Ride { .. }) {
@@ -5251,7 +5243,6 @@ fn step_spine(
             machine.tasks.push(assemble);
             machine.tasks.push(Task::Value { value, binders });
             machine.tasks.push(family);
-            Ok(())
         },
         // The operand is the head; the path or flow is read above it.
         Elimination::OperandTransport {
@@ -5277,7 +5268,6 @@ fn step_spine(
                 binders,
             });
             machine.tasks.push(family);
-            Ok(())
         },
         // The motive's arrows bind the telescope, so it is read back at the
         // spine's own depth.
@@ -5309,13 +5299,11 @@ fn step_spine(
                 frame,
                 binders,
             });
-            Ok(())
         },
         Elimination::Force => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Force);
-            Ok(())
         },
         Elimination::Apply(argument) => {
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
@@ -5325,7 +5313,6 @@ fn step_spine(
                 value: argument,
                 binders,
             });
-            Ok(())
         },
         Elimination::StaticApply(argument) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5337,7 +5324,6 @@ fn step_spine(
                 value: argument,
                 binders,
             });
-            Ok(())
         },
         Elimination::Bind(body) => {
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
@@ -5349,7 +5335,6 @@ fn step_spine(
                 comp: whnf,
                 binders: deeper,
             });
-            Ok(())
         },
         Elimination::BindAll(body, arity) => {
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
@@ -5360,7 +5345,6 @@ fn step_spine(
                 comp: whnf,
                 binders: deeper,
             });
-            Ok(())
         },
         Elimination::Case(branches) => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -5392,9 +5376,9 @@ fn step_spine(
                     binders: under,
                 });
             }
-            Ok(())
         },
     }
+    Ok(())
 }
 
 #[cfg(test)]

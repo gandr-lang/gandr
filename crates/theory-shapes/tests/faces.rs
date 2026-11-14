@@ -732,7 +732,7 @@ fn input_boundaries_are_checked()
         NodeId::from(0_usize),
         NodeId::from(2_usize)
     ]);
-    assert!(problem.conclusion_atoms().is_empty());
+    assert_eq!(problem.conclusion_atoms(), []);
 }
 
 #[test]

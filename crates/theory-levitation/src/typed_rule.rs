@@ -410,7 +410,7 @@ mod tests
         })
         .expect("empty decoding succeeds");
         assert!(empty.vars.is_empty());
-        assert!(calls.is_empty());
+        assert!(calls.is_empty(), "{calls:?}");
         let bad = Code::bind(AtomSort::named("a"), Code::unit());
         let bindings = [
             (Name::from("x"), integer_field()),

@@ -240,6 +240,7 @@ impl SourceKeys
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub fn keys(&self) -> &[Maybe<SourceKey, unkeyed::Absent>]
     {
         &self.0

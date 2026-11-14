@@ -760,7 +760,7 @@ mod tests
         }
         let normal = normalize(&store, &Toy::zero(), NormalizationBudget::from(0_usize));
         assert_eq!(Toy::zero(), normal.normal);
-        assert!(normal.path.is_empty());
+        assert!(normal.path.is_empty(), "{:?}", normal.path);
         assert!(!bool::from(normal.exhausted));
         let root_rule = store.insert(toy_cell(
             Toy::add(Toy::var("x"), Toy::var("y")),
@@ -920,7 +920,7 @@ mod tests
         store.insert(cell);
         let result = normalize(&store, &redex, NormalizationBudget::from(2_usize));
         assert_eq!(redex, result.normal);
-        assert!(result.path.is_empty());
+        assert!(result.path.is_empty(), "{:?}", result.path);
         assert!(!bool::from(result.exhausted));
     }
 

@@ -568,15 +568,7 @@ fn a_recursive_system_keeps_its_cycle_in_the_core()
     let mut builder = GraphBuilder::new();
     let leaf = builder.node(label(Kind::Leaf), &[]).unwrap();
     let a = builder.node(label(Kind::Power), &[leaf]).unwrap();
-    assert!(
-        builder
-            .finish(a)
-            .unwrap()
-            .core()
-            .unwrap()
-            .nodes()
-            .is_empty()
-    );
+    assert_eq!(builder.finish(a).unwrap().core().unwrap().nodes(), []);
 }
 
 #[test]

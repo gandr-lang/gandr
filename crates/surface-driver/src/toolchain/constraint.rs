@@ -129,14 +129,13 @@ fn asked(working: &Path) -> Maybe<(PathBuf, Toolchain), unasked::Absent>
         toolchain
             .get(field)
             .and_then(toml::Value::as_array)
-            .map(|entries| {
+            .map_or_default(|entries| {
                 entries
                     .iter()
                     .filter_map(toml::Value::as_str)
                     .collect::<Vec<&str>>()
                     .join(",")
             })
-            .unwrap_or_default()
     };
     let gandr = toolchain
         .get("gandr")

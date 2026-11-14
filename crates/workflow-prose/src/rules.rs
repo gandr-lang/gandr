@@ -2060,7 +2060,7 @@ mod tests
     {
         for rule in RULES {
             assert_eq!(rule.to_string().parse::<Rule>(), Ok(rule));
-            assert!(!Fix(rule).to_string().is_empty());
+            assert!(!Fix(rule).to_string().is_empty(), "{rule:?}");
         }
         assert_eq!(
             Fix(Rule::Tense).to_string(),

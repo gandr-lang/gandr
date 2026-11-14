@@ -102,7 +102,6 @@ impl Footprint
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn reads(&self) -> impl ExactSizeIterator<Item = &Reference>
     {
         self.reads.iter()
@@ -113,7 +112,6 @@ impl Footprint
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn type_reads(&self) -> impl ExactSizeIterator<Item = &Reference>
     {
         self.type_reads.iter()

@@ -116,7 +116,8 @@ fn an_off_collector_never_defers()
     );
     deferrals.open(super::Collecting::Off);
     assert_eq!(deferrals.defer(&arena, flex, rigid), super::Deferred::No);
-    assert!(deferrals.take().equations.is_empty());
+    let taken = deferrals.take();
+    assert!(taken.equations.is_empty(), "{:?}", taken.equations);
     deferrals.open(super::Collecting::On);
     assert_eq!(deferrals.defer(&arena, flex, rigid), super::Deferred::Yes);
 }

@@ -1142,7 +1142,7 @@ fn the_circles_rules_fire_below_the_root()
             "{written} reaches a normal form"
         );
         assert_eq!(
-            Maybe::Present(normal.clone()),
+            Maybe::Present(normal),
             reached.normal.read(),
             "{written} normalizes"
         );

@@ -209,7 +209,7 @@ fn a_matched_map_that_is_not_invertible_is_refused_by_its_pair()
     let reduced = sheaf
         .reduce(&matching, oriented, Budget::from(cells.len()))
         .expect("the map is invertible");
-    assert!(reduced.cells().is_empty());
+    assert_eq!(reduced.cells(), []);
 }
 
 #[test]

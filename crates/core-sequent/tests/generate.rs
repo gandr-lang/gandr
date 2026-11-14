@@ -1047,10 +1047,14 @@ fn interning_and_shadowed_scopes_preserve_distinct_types()
         [DeBruijnIndex::from(0_u32)].as_slice(),
         generator.variables_of(outer, integer).as_slice()
     );
-    assert!(generator.variables_of(outer, unit).is_empty());
-    assert!(generator.variables_of(inner, pair).is_empty());
-    assert!(generator.variables_of(inner, TyId(usize::MAX)).is_empty());
-    assert!(generator.variables_of(Scope::Empty, integer).is_empty());
+    let variables = generator.variables_of(outer, unit);
+    assert!(variables.is_empty(), "{variables:?}");
+    let variables = generator.variables_of(inner, pair);
+    assert!(variables.is_empty(), "{variables:?}");
+    let variables = generator.variables_of(inner, TyId(usize::MAX));
+    assert!(variables.is_empty(), "{variables:?}");
+    let variables = generator.variables_of(Scope::Empty, integer);
+    assert!(variables.is_empty(), "{variables:?}");
 }
 
 /// The zero-fuel frontier respects product fields, sum labels and a function's

@@ -1485,7 +1485,6 @@ impl<'pattern> ConsRef<'pattern>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn heads(self) -> impl DoubleEndedIterator<Item = &'pattern ConsHead>
     {
         self.entries().map(|entry| &entry.head)

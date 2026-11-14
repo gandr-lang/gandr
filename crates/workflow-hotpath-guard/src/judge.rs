@@ -441,7 +441,7 @@ impl Run
             (Family::Timing, report.functions_timing),
             (Family::Alloc, report.functions_alloc),
         ] {
-            for raw in section.map(|section| section.data).unwrap_or_default() {
+            for raw in section.map_or_default(|section| section.data) {
                 let number = |text: &Written| {
                     family.amount(text).ok_or_else(|| {
                         input.refuse(format!("`{}` reads no amount from `{}`", raw.name, text.0))

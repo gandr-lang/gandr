@@ -478,7 +478,8 @@ fn session_flows_persist_and_refuse_by_family()
     let admitted = environment
         .add_decl(staged)
         .expect("a widening simulation admits at Flow_U");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    let axioms = environment.audit(admitted).axioms().to_vec();
+    assert!(axioms.is_empty(), "{axioms:?}");
 
     // The reverse request offers a label the narrower protocol never selects.
     let before = environment.arena().watermark();

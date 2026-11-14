@@ -6905,8 +6905,12 @@ mod tests
             Some(gandr_kernel_term::ValueType::Product(parts)) if parts.is_empty()
         ));
         let report = environment.audit(admitted);
-        assert!(report.axioms().is_empty());
-        assert!(report.unchecked_admissions().is_empty());
+        assert!(report.axioms().is_empty(), "{:?}", report.axioms());
+        assert!(
+            report.unchecked_admissions().is_empty(),
+            "{:?}",
+            report.unchecked_admissions()
+        );
     }
 
     /// The blocker's scenario: a rejection may not truncate through content a

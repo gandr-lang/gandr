@@ -5657,7 +5657,7 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        assert!(molder.candidates.is_empty());
+        assert!(molder.candidates.is_empty(), "{:?}", molder.candidates);
         let token = *label(SourceFragment::from("xyz")).first().unwrap();
         let expected: alloc::collections::BTreeSet<_> =
             ["xyz", "identifier", "type_variable", "hole_name"]

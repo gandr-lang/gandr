@@ -1915,7 +1915,7 @@ fn admission_drops_incomplete_generator_maps()
         SearchSteps::from(7),
     );
     assert_eq!(admitted.admitted(), core::slice::from_ref(embedding));
-    assert!(admitted.refused().is_empty());
+    assert_eq!(admitted.refused(), []);
     assert_eq!(admitted.steps(), SearchSteps::from(7));
 }
 

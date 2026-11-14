@@ -293,8 +293,7 @@ impl Files
             let members = match Workspace::discover(root) {
                 Maybe::Present(workspace) if workspace.root() == root => workspace
                     .members::<Evaluator>()
-                    .map(|(members, _gathered)| members)
-                    .unwrap_or_default(),
+                    .map_or_default(|(members, _gathered)| members),
                 Maybe::Present(_) | Maybe::Absent(workspace_root::Absent::Unworkspaced) => {
                     Vec::new()
                 },

@@ -888,7 +888,6 @@ impl<'starts> BlockStarts<'starts>
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn lengths(self) -> impl ExactSizeIterator<Item = NodeCount> + 'starts
     {
         (0 .. self.starts.len()).map(move |index| self.length(LayoutBlock::from(index)))
@@ -1354,7 +1353,6 @@ impl<'source> SyntaxTree<'source>
     /// - hypothesis: L3 — each form's block holds the count of its walk, and
     ///   the counts cover the layout once.
     /// - witness: `build::tests::each_form_s_descendants_are_one_range`
-    #[must_use]
     #[inline]
     pub fn blocks(&self) -> impl ExactSizeIterator<Item = NodeCount> + '_
     {
@@ -1822,7 +1820,7 @@ mod tests
         assert_eq!(tree.children(tree.root()).next(), None);
         assert_eq!(tree.fragment(tree.root()), None);
         assert_eq!(tree.digest(), None);
-        assert!(tree.forms().is_empty());
+        assert_eq!(tree.forms(), []);
         assert_eq!(tree.key(tree.root()), None);
     }
 

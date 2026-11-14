@@ -228,7 +228,6 @@ impl Signature
     ///
     /// # Specification
     /// trivial.
-    #[must_use]
     #[inline]
     pub fn parameters(
         &self
@@ -1233,9 +1232,7 @@ fn parameters(
     if own(1, ":")
         && let Some(&Piece::Operand(node, _)) = pieces.get(2)
     {
-        return domains(grammar, tree, node)
-            .map(|domains| label.parameters(domains))
-            .unwrap_or_default();
+        return domains(grammar, tree, node).map_or_default(|domains| label.parameters(domains));
     }
     Vec::new()
 }

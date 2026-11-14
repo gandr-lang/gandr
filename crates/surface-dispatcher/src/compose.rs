@@ -692,6 +692,7 @@ impl<'source> Judged<'source>
     /// # Specification
     /// trivial.
     #[inline]
+    #[must_use]
     pub const fn settled(&self) -> &Result<Composed<'source>, SettleFault>
     {
         &self.settled

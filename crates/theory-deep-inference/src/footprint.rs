@@ -701,7 +701,11 @@ mod tests
         let right = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
         let missing = ToyAlphabet::position_at_path(&[PositionStep::from(9_usize)]);
         let repeated = Toy::add(Toy::zero(), Toy::zero());
-        assert!(distinct_subterms::<ToyAlphabet>(&repeated, &[]).is_empty());
+        assert!(
+            distinct_subterms::<ToyAlphabet>(&repeated, &[]).is_empty(),
+            "{:?}",
+            distinct_subterms::<ToyAlphabet>(&repeated, &[])
+        );
         let probes = distinct_subterms::<ToyAlphabet>(&repeated, &[
             right.clone(),
             missing,
@@ -716,7 +720,11 @@ mod tests
             alloc::vec![left.clone(), right.clone()],
             immediate_children::<ToyAlphabet>(&positions, &root)
         );
-        assert!(immediate_children::<ToyAlphabet>(&positions, &right).is_empty());
+        assert!(
+            immediate_children::<ToyAlphabet>(&positions, &right).is_empty(),
+            "{:?}",
+            immediate_children::<ToyAlphabet>(&positions, &right)
+        );
         positions.reverse();
         assert_eq!(
             alloc::vec![right, left],

@@ -1533,7 +1533,8 @@ mod tests
 
     /// No grade: the descriptions here are ungraded.
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-    enum Ungraded {}
+    #[repr(transparent)]
+    struct Ungraded(!);
 
     /// A variable.
     ///

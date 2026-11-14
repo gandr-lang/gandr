@@ -950,11 +950,7 @@ where
         if let Some(slot) = self.next.get_mut(big_root) {
             *slot = small_next;
         }
-        let mut moved = self
-            .uses
-            .get_mut(small_root)
-            .map(mem::take)
-            .unwrap_or_default();
+        let mut moved = self.uses.get_mut(small_root).map_or_default(mem::take);
         if let Some(parents) = self.uses.get_mut(big_root) {
             if moved.len() > parents.len() {
                 mem::swap(parents, &mut moved);

@@ -1709,7 +1709,6 @@ impl OriginTable
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn eliminations(&self) -> impl ExactSizeIterator<Item = (ComputationId, ConstantIndex)>
     {
         self.eliminations
@@ -1855,7 +1854,6 @@ impl OriginTable
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub fn cases(&self) -> impl ExactSizeIterator<Item = (ComputationId, &CaseOrigin)>
     {
         self.cases.iter().map(|&(root, ref case)| (root, case))

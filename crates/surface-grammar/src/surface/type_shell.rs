@@ -1772,7 +1772,11 @@ mod tests
             };
             assert_eq!([mold], grammar.form_first());
             assert_eq!([mold], grammar.form_last());
-            assert!(grammar.adjacencies().is_empty());
+            assert!(
+                grammar.adjacencies().is_empty(),
+                "{:?}",
+                grammar.adjacencies()
+            );
             assert!(!bool::from(grammar.mold_has_required_tail(mold)));
             assert_eq!(
                 provenance,

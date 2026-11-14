@@ -1228,7 +1228,6 @@ impl ArtifactRecordSet
     /// - hypothesis: L2 — as [`reassemble`](Self::reassemble).
     /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     #[inline]
-    #[must_use]
     pub fn segments(&self) -> impl ExactSizeIterator<Item = SegmentBytes<'_>> + '_
     {
         self.places.iter().map(|place| {

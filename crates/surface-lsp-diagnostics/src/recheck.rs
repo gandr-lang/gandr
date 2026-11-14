@@ -2465,7 +2465,11 @@ mod tests
             ),
             "a warning at the shadowing name, never an error"
         );
-        assert!(diagnostic.related_information.is_empty());
+        assert!(
+            diagnostic.related_information.is_empty(),
+            "{:?}",
+            diagnostic.related_information
+        );
     }
 
     #[test]
@@ -2720,7 +2724,11 @@ mod tests
         assert_eq!(diagnostic.severity, Severity::ERROR);
         assert_eq!(diagnostic.source, "gandr");
         assert_eq!(diagnostic.code, None);
-        assert!(diagnostic.related_information.is_empty());
+        assert!(
+            diagnostic.related_information.is_empty(),
+            "{:?}",
+            diagnostic.related_information
+        );
     }
 
     /// A pending source refused as a whole publishes its refusal as the same
@@ -3092,7 +3100,11 @@ mod tests
                 "each candidate's diagnostics are a fresh recheck's: {text}"
             );
         }
-        assert!(tried[0_usize].diagnostics.is_empty());
+        assert!(
+            tried[0_usize].diagnostics.is_empty(),
+            "{:?}",
+            tried[0_usize].diagnostics
+        );
         assert_eq!(
             recheck(
                 &uri,

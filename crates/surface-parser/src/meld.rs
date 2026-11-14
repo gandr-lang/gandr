@@ -11505,7 +11505,7 @@ mod tests
         assert_eq!(reader.pos, 35);
         assert_eq!(reader.u8(), Err(super::CheckpointError::Truncated));
         assert_eq!(reader.pos, 35);
-        assert!(reader.take(super::ByteCount::from(0))?.as_ref().is_empty());
+        assert_eq!(reader.take(super::ByteCount::from(0))?.as_ref(), []);
         assert_eq!(reader.pos, 35);
         assert_eq!(
             reader.take(super::ByteCount::from(usize::MAX)),
@@ -11558,7 +11558,7 @@ mod tests
             bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
             pos: 0,
         };
-        assert!(reader.blob()?.as_ref().is_empty());
+        assert_eq!(reader.blob()?.as_ref(), []);
         assert_eq!(reader.pos, 8);
         assert_eq!(reader.blob()?.as_ref(), b"\xff\0");
         assert_eq!(reader.pos, 18);
@@ -13659,8 +13659,7 @@ mod tests
             let found_first = menu
                 .closings()
                 .first()
-                .map(|closing| written(closing.steps()))
-                .unwrap_or_default();
+                .map_or_default(|closing| written(closing.steps()));
             assert_eq!(
                 (pending.to_owned(), head.to_owned(), first.to_owned()),
                 (written(menu.pending()), found_head, found_first),

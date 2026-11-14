@@ -850,8 +850,7 @@ pub fn format_beside(
     });
     let refused = lowered
         .as_ref()
-        .map(|module| meaning::refused(module, base))
-        .unwrap_or_default();
+        .map_or_default(|module| meaning::refused(module, base));
     let mut withdrawn: Vec<NodeKey> = refused
         .iter()
         .flat_map(|declaration| declaration.keys.iter().copied())

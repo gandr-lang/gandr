@@ -1388,7 +1388,7 @@ fn memory_records_separate_addresses_backends_and_replacements()
         "records at another address do not occupy this range"
     );
     assert_eq!(observer.invalidated, [address, empty_address]);
-    assert!(observer.stored.is_empty());
+    assert!(observer.stored.is_empty(), "{:?}", observer.stored);
     let empty_set = checked(&mut empty);
     assert_eq!(store.store(empty_address, lower, &empty_set), Ok(()));
     assert_eq!(

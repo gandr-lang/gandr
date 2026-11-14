@@ -10114,8 +10114,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let types: Vec<ValueTypeId> = self
                     .native_types
                     .get(base ..)
-                    .map(<[ValueTypeId]>::to_vec)
-                    .unwrap_or_default();
+                    .map_or_default(<[ValueTypeId]>::to_vec);
                 self.native_types.truncate(base);
                 self.filled(at, &types)
             },
@@ -10155,8 +10154,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let types: Vec<ValueTypeId> = self
                     .native_types
                     .get(base ..)
-                    .map(<[ValueTypeId]>::to_vec)
-                    .unwrap_or_default();
+                    .map_or_default(<[ValueTypeId]>::to_vec);
                 self.native_types.truncate(base);
                 self.composed(at, &types)
             },

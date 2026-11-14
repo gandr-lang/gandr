@@ -2042,7 +2042,7 @@ fn family_boundaries_preserve_assignments_and_adversary_positions()
         Adversary::Diverged,
         &store,
     );
-    assert!(empty.is_empty());
+    assert!(empty.is_empty(), "{empty:?}");
     assert_eq!(NodeCount::from(0_usize), plain_size(&empty));
     assert_eq!(NodeCount::from(0_usize), plain_steps(&empty));
     let single = family(

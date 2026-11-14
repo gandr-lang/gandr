@@ -168,16 +168,13 @@ fn declarations_nest_as_symbols()
     // The wire tree: each held symbol under its holder's `children`.
     let wire = serde_json::to_value(&answered).expect("the symbols encode");
     let names = |value: &Value| -> Vec<String> {
-        value
-            .as_array()
-            .map(|symbols| {
-                symbols
-                    .iter()
-                    .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default()
+        value.as_array().map_or_default(|symbols| {
+            symbols
+                .iter()
+                .filter_map(|symbol| symbol.get("name").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect()
+        })
     };
     let outer = wire.get(3_usize);
     let nested = outer

@@ -1187,8 +1187,16 @@ mod tests
         }
         let empty_store = CellStore::<ToyAlphabet>::new();
         let empty_support = OverlapSupport::from_store(&empty_store);
-        assert!(enumerate_overlaps(&empty_store).is_empty());
-        assert!(empty_support.batches::<ToyAlphabet>(&[]).is_empty());
+        assert!(
+            enumerate_overlaps(&empty_store).is_empty(),
+            "{:?}",
+            enumerate_overlaps(&empty_store)
+        );
+        assert!(
+            empty_support.batches::<ToyAlphabet>(&[]).is_empty(),
+            "{:?}",
+            empty_support.batches::<ToyAlphabet>(&[])
+        );
         let a = BTreeSet::from([CellId::from(0_usize)]);
         let b = BTreeSet::from([CellId::from(1_usize)]);
         assert!(bool::from(

@@ -174,7 +174,7 @@ fn data_declarations_and_refusals_agree_with_kernel()
         "{:?}",
         crossed.readmitted()[3].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
     let family = gandr_kernel_term::StructuredName::from(vec![
         gandr_kernel_term::NameSegment::from_text(String::from("Unit1")).unwrap(),
     ]);
@@ -2098,7 +2098,7 @@ fn dependent_data_parameters_and_case_motives()
         Verdict::Refused(CheckRefusal::MachineInvariant),
         "a case whose arities misstate its constructors' fields is refused"
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -2261,7 +2261,7 @@ fn record_width_depth_and_projection()
             Outcome::Defined { .. }
         ));
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// A patched type forms over a record holding every label it fixes, each
@@ -3005,7 +3005,7 @@ fn an_arm_is_refined_by_its_index_equation_in_both_checkers_3483()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -3114,7 +3114,7 @@ fn an_arm_is_refined_through_the_injectivity_of_its_constructor_3403()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -3189,7 +3189,7 @@ fn a_binder_after_the_scrutinee_is_read_at_each_arm_in_both_checkers_3483()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// #5324: a case whose motive alone reads a binder after the scrutinee, the
@@ -3269,7 +3269,7 @@ fn a_binder_that_the_motive_alone_reads_is_generalised_in_both_checkers_5324()
         "the kernel admits the case generalised over that binder: {:?}",
         crossed.readmitted()[3].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// #5337: a case on a value of a family with a parameter, its motive keeping
@@ -3363,7 +3363,7 @@ fn a_goal_that_keeps_a_parameterised_scrutinee_reads_it_at_each_arm_5337()
         "the kernel admits the case at the kept scrutinee: {:?}",
         crossed.readmitted()[2].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// #5036: a joint fixpoint's goal at a summand is a decode of a case on an
@@ -3436,7 +3436,7 @@ fn a_member_reads_its_joint_goal_at_its_summand_in_both_checkers_5036()
         "a member at the other summand's type is refused: {:?}",
         report.judged()[2].verdict()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// #5036: a case on the innermost binder `y` of a sum checks each arm against
@@ -3503,7 +3503,7 @@ fn a_sum_arm_reads_its_goal_at_its_injection_in_both_checkers_5036()
         "an arm returning the other injection's tag is refused: {:?}",
         report.judged()[2].verdict()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// #6110: a case on a `Bool`, `Unit + Unit`, and a split of the unit read
@@ -3624,7 +3624,7 @@ fn a_case_on_an_outer_binder_reads_its_goal_at_each_form_in_both_checkers_6110()
         "an arm that meets the other injection's goal is refused: {:?}",
         report.judged()[2].verdict()
     );
-    assert!(crossed_kernel.audit().axioms().is_empty());
+    assert_eq!(crossed_kernel.audit().axioms(), []);
 }
 
 #[test]
@@ -3964,7 +3964,7 @@ fn a_returned_value_defines_the_binder_it_binds()
         "the kernel admits the refined body: {:?}",
         crossed.readmitted()[0].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -4166,7 +4166,7 @@ fn a_staged_field_keeps_its_stage_across_its_equation_in_both_checkers_3631()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// `fix f. λe. case e { Leaf ⇒ (); Wrap(t, e′) ⇒ f(e′); Off ⇒ () }` at `E(Yes)
@@ -4460,7 +4460,7 @@ fn empty_data_elimination_preserves_the_ambient_scope()
         "{:?}",
         crossed.readmitted()[1].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -4624,7 +4624,7 @@ fn tuple_projection_reads_each_component()
         report.judged()[5].verdict(),
         Verdict::Refused(CheckRefusal::ShapeMismatch { .. })
     ));
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 /// A split crosses as the projection binds the kernel judges: reading the
@@ -4681,7 +4681,7 @@ fn a_split_crosses_as_its_projection_binds()
             crossed.readmitted()[position].outcome()
         );
     }
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
 }
 
 #[test]
@@ -4810,7 +4810,7 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         "the kernel admits the value at its stated index: {:?}",
         crossed.readmitted()[2].outcome()
     );
-    assert!(crossed.audit().axioms().is_empty());
+    assert_eq!(crossed.audit().axioms(), []);
     assert!(
         matches!(report.judged()[6].verdict(), Verdict::Checked { .. }),
         "`Mk` stands at its family's parameter and both its indices: {:?}",

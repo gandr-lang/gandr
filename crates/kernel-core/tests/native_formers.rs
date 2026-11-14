@@ -140,7 +140,7 @@ fn nominal_identity_and_constructor_refusals()
     let admitted = environment
         .add_decl(declaration)
         .expect("matching nominal constructor");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -256,7 +256,7 @@ fn data_parameters_preserve_open_indices()
     let admitted = environment
         .add_decl(declaration)
         .expect("ambient type and term arguments retain their scopes");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 }
 
 #[test]
@@ -1216,7 +1216,7 @@ fn empty_nominal_case_eliminates_only_an_empty_declaration()
     let admitted = environment
         .add_decl(declaration)
         .expect("empty case checks under its impossible argument");
-    assert!(environment.audit(admitted).axioms().is_empty());
+    assert_eq!(environment.audit(admitted).axioms(), []);
 }
 
 #[test]
@@ -1748,7 +1748,7 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
     else {
         panic!("nominal signature was not decoded");
     };
-    assert!(parameters.is_empty());
+    assert_eq!(parameters.as_slice(), []);
     assert!(indices.is_empty() && results.is_empty());
     assert_eq!(constructors.len(), 1);
     assert_eq!(

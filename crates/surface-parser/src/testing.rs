@@ -190,12 +190,20 @@ mod tests
         let mut positions = tree.positions().skip(1);
         let (form, grout) = (positions.next().unwrap(), positions.next().unwrap());
         assert_eq!(super::tile_texts(&tree, form), ["b"]);
-        assert!(super::tile_texts(&tree, grout).is_empty());
+        assert!(
+            super::tile_texts(&tree, grout).is_empty(),
+            "{:?}",
+            super::tile_texts(&tree, grout)
+        );
         let past = NodeIndex::at(
             gandr_surface_syntax::LayoutBlock::from(tree.blocks().len()),
             gandr_surface_syntax::BlockOffset::default(),
         );
-        assert!(super::tile_texts(&tree, past).is_empty());
+        assert!(
+            super::tile_texts(&tree, past).is_empty(),
+            "{:?}",
+            super::tile_texts(&tree, past)
+        );
         assert_eq!(super::reconstruct(&tree), "a#b");
     }
 }

@@ -134,8 +134,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 let names: Vec<String> = rows.iter().map(|row| row.name().to_string()).collect();
                 let _replaced = written.insert(
                     path.file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                        .map_or_default(|name| name.to_string_lossy().into_owned()),
                     names,
                 );
                 ControlFlow::Continue(())

@@ -7200,7 +7200,7 @@ mod tests
                     .map(AsRef::as_ref)
                     .eq(parts.iter().copied())
             );
-            assert!(meta.name.segments().is_empty());
+            assert_eq!(meta.name.segments(), []);
             assert!(
                 meta.related.is_empty(),
                 "assembly consumes the related pairs"

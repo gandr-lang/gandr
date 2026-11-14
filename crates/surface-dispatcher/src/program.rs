@@ -938,6 +938,7 @@ impl<'source> Program<'source>
     /// trivial.
     #[cfg(any(test, feature = "fixture"))]
     #[inline]
+    #[must_use]
     pub const fn scheduled(&self) -> &Maybe<Definitions, concurrent::Absent>
     {
         &self.scheduled
@@ -1690,8 +1691,7 @@ fn reaches(
         .iter()
         .rfind(|lowered| lowered.constant() == constant)
         .and_then(|lowered| module.worlds(lowered).get(1 ..))
-        .map(<[ConstantIndex]>::to_vec)
-        .unwrap_or_default()
+        .map_or_default(<[ConstantIndex]>::to_vec)
 }
 
 /// The row each world of `module` declared with a requirement requires, by

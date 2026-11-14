@@ -852,8 +852,7 @@ impl<'hasse> Walk<'hasse>
             let below = usize::from(frame.top)
                 .checked_sub(1)
                 .and_then(|rank| self.by_rank.get(rank))
-                .map(Vec::as_slice)
-                .unwrap_or_default();
+                .map_or_default(Vec::as_slice);
             let mut found = Ok(None);
             while let Some(&face) = below.get(scan) {
                 let mut inside = self

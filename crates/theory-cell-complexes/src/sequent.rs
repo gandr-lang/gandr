@@ -1604,7 +1604,8 @@ mod tests
             ConsPat::top(),
         );
         let empty = CellMeta::derive(&ground, &ground, CellInvertibility::from(false));
-        assert!(empty.vars().is_empty());
+        let vars = empty.vars();
+        assert!(vars.is_empty(), "{vars:?}");
         assert_eq!(StepGrowth::StrictlyLinear, empty.step_growth());
         let lhs = CmdPat::cut(
             Polarity::Positive,

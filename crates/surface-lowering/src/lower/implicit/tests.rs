@@ -125,7 +125,7 @@ fn a_telescope_names_its_implicits_in_the_merged_order_2267()
         None,
         Some(SurfaceName::from("x"))
     ]);
-    assert!(module.implicits(constant("twin")).is_empty());
+    assert_eq!(module.implicits(constant("twin")), []);
 }
 
 #[test]

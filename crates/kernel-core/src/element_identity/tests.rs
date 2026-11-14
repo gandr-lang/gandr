@@ -1842,7 +1842,8 @@ fn a_certificate_with_identity_decodes_checks_and_replays()
         declaration.declaration().clone(),
     ));
     let reflexivity = environment.add_decl(declaration).expect("here(true)");
-    assert!(environment.audit(reflexivity).axioms().is_empty());
+    let axioms = environment.audit(reflexivity).axioms().to_vec();
+    assert!(axioms.is_empty(), "{axioms:?}");
 
     let mut staging = environment.stage();
     let arena = staging.arena();
@@ -1864,7 +1865,8 @@ fn a_certificate_with_identity_decodes_checks_and_replays()
     let transported = environment
         .add_decl(declaration)
         .expect("transport of here");
-    assert!(environment.audit(transported).axioms().is_empty());
+    let axioms = environment.audit(transported).axioms().to_vec();
+    assert!(axioms.is_empty(), "{axioms:?}");
 
     let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
     let decoded = gandr_kernel_term::decode(bytes.as_image()).expect("identity nodes decode");
@@ -2106,7 +2108,8 @@ fn a_certificate_with_a_returned_endpoint_decodes_checks_and_replays()
     let declaration = unit_law(&mut environment, &monoid, Unit::Left, &LEFT_UNIT);
     let law = admit(&mut environment, &mut declarations, declaration)
         .expect("the endpoint reads as `x` through both definitions");
-    assert!(environment.audit(law).axioms().is_empty());
+    let axioms = environment.audit(law).axioms().to_vec();
+    assert!(axioms.is_empty(), "{axioms:?}");
 
     let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
     let decoded =

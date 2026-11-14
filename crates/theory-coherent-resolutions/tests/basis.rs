@@ -614,14 +614,14 @@ fn cells_with_no_triple_keep_each_confluence()
     ));
     let certificates = certificates(&store);
     let mut basis = Basis::new(&store, &certificates, budget()).expect("the basis builds");
-    assert!(basis.triples().is_empty());
+    assert_eq!(basis.triples(), []);
     let cells = basis.cells();
     assert_eq!(cells, [confluence(CertificateIndex::from(0_usize))]);
     let matching = basis.matching();
     let mut scheme = matching.on(&mut basis);
     let equivalence = equivalence(&mut scheme, &cells, walk()).expect("nothing pairs");
     assert_eq!(equivalence.critical(), cells.as_slice());
-    assert!(equivalence.removals().is_empty());
+    assert_eq!(equivalence.removals(), []);
     equivalence
         .replay(&mut scheme, &cells, walk())
         .expect("the identity replays");

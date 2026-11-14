@@ -1213,9 +1213,7 @@ fn substituted(
     edits.sort_by_key(|&(span, _)| core::cmp::Reverse(span.start()));
     let mut out = String::from(<&str>::from(own));
     for (span, declaration) in edits {
-        let whole = declaration
-            .map(|declaration| declaration.written(form))
-            .unwrap_or_default();
+        let whole = declaration.map_or_default(|declaration| declaration.written(form));
         out.replace_range(usize::from(span.start()) .. usize::from(span.end()), &whole);
     }
     out

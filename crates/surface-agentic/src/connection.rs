@@ -1382,16 +1382,14 @@ mod tests
             &json!({ "jsonrpc": "2.0", "id": 2_i32, "method": "resources/unsubscribe",
             "params": { "uri": "gandr:///tmp/first.gandr/diagnostics" } }),
         ));
-        assert!(connection.changed(&first).is_empty());
-        assert!(
-            connection
-                .handle(
-                    &mut workspace,
-                    &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled",
-                        "params": { "requestId": 7_i32 } })
-                )
-                .is_empty()
+        let changed = connection.changed(&first);
+        assert!(changed.is_empty(), "{changed:?}");
+        let handled = connection.handle(
+            &mut workspace,
+            &json!({ "jsonrpc": "2.0", "method": "notifications/cancelled",
+                    "params": { "requestId": 7_i32 } }),
         );
+        assert!(handled.is_empty(), "{handled:?}");
         assert!(
             connection.changed(&second).is_empty(),
             "a cancelled stream hears nothing more"

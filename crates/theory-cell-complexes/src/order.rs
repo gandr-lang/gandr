@@ -1033,7 +1033,8 @@ mod tests
             first_child: FlatIndex(usize::MAX),
             child_count: ChildCount(1),
         };
-        assert!(layout.children_of(&invalid).is_empty());
+        let children = layout.children_of(&invalid);
+        assert!(children.is_empty(), "{children:?}");
         assert!(!strictly_greater(&FlatTerm::default(), &layout).0);
         assert!(!strictly_greater(&layout, &FlatTerm::default()).0);
         let variable_term = term(ProdPat::meta("x"));

@@ -1390,8 +1390,7 @@ fn a_copattern_block_orders_its_clauses_by_its_answer()
         tokens
             .iter()
             .position(|token| token.starts_with("with"))
-            .map(|start| tokens.get(start ..).unwrap_or_default().to_vec())
-            .unwrap_or_default()
+            .map_or_default(|start| tokens.get(start ..).unwrap_or_default().to_vec())
     };
 
     assert_eq!(
@@ -1529,8 +1528,7 @@ fn a_copattern_block_orders_its_clauses_by_its_codata_answer()
         tokens
             .iter()
             .position(|token| token.starts_with("with"))
-            .map(|start| tokens.get(start ..).unwrap_or_default().to_vec())
-            .unwrap_or_default()
+            .map_or_default(|start| tokens.get(start ..).unwrap_or_default().to_vec())
     };
 
     assert_eq!(
