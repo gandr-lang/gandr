@@ -723,6 +723,33 @@ use gandr_kernel_core_base::theory_rules;
 pub use gandr_kernel_core_base::verdict;
 use gandr_kernel_core_base::witness;
 mod words;
+/// Throwaway probe of #7284: the holds of a walk that keeps.
+#[allow(missing_docs, unused_results, clippy::all, clippy::pedantic, clippy::restriction)]
+pub mod probe_7284
+{
+    use core::sync::atomic::AtomicU64;
+    use core::sync::atomic::Ordering::Relaxed;
+    pub static COUNTS: [AtomicU64; 9] = [const { AtomicU64::new(0) }; 9];
+    pub const KEEP: usize = 0;
+    pub const BESIDE: usize = 1;
+    pub const KERNEL_HELD: usize = 2;
+    pub const RELEASES: usize = 3;
+    pub const ANSWERABLE_HELD: usize = 4;
+    pub const KEEP_HELD: usize = 5;
+    pub const RETIRE_HELD: usize = 6;
+    pub const KEPT: usize = 7;
+    pub const OFFER_HELD: usize = 8;
+    pub fn bump(at: usize)
+    {
+        if let Some(count) = COUNTS.get(at) {
+            count.fetch_add(1, Relaxed);
+        }
+    }
+    pub fn take() -> [u64; 9]
+    {
+        core::array::from_fn(|at| COUNTS.get(at).map_or(0, |count| count.swap(0, Relaxed)))
+    }
+}
 
 /// The kernel's build identity, which `build.rs` writes: one digest of every
 /// file of every kernel crate and of the workspace lock. Each derivation of a

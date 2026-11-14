@@ -3666,7 +3666,9 @@ where
         // chain refuses, so each of its places waits for the places before.
         let held = match self.keeping {
             Some(ref keeping) => {
+                gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::RELEASES);
                 if self.answerable && !caught_up {
+                    gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::ANSWERABLE_HELD);
                     return Releasing::Held(Answer::Waits);
                 }
                 self.environment.ranking_from(SourceRank::from(
@@ -3721,6 +3723,7 @@ where
                 }
                 for entry in held.iter().copied().flatten() {
                     if keep::retire_unit(&mut self.environment, entry).is_err() {
+                        gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::RETIRE_HELD);
                         return Releasing::Held(Answer::Waits);
                     }
                 }
@@ -3754,11 +3757,13 @@ where
                             // A running check reads into the key: the place
                             // waits for its commit.
                             Err(KernelError::UnsettledReleases { .. }) => {
+                                gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::KEEP_HELD);
                                 return Releasing::Held(Answer::Waits);
                             },
                             Err(_) => false,
                         };
                     if kept {
+                        gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::KEPT);
                         Some(Tail::Last)
                     }
                     else {
@@ -3767,6 +3772,7 @@ where
                             return Releasing::Settled(Answer::Skipped);
                         }
                         if keep::retire_unit(&mut self.environment, entry).is_err() {
+                            gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::RETIRE_HELD);
                             return Releasing::Held(Answer::Waits);
                         }
                         None
@@ -3926,6 +3932,9 @@ where
             // keeps in a module whose pair may stay undecided crosses each
             // declaration at the cursor, at the ranks of its place.
             if !caught_up {
+                if self.keeping.is_some() {
+                    gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::OFFER_HELD);
+                }
                 return Releasing::Held(Answer::Waits);
             }
         }
@@ -3969,6 +3978,9 @@ where
                         // The release reads a commit that has not come: the
                         // staging goes back, and the declaration waits.
                         Ok(Released::Held(declaration, _)) => {
+                            if self.keeping.is_some() {
+                                gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::OFFER_HELD);
+                            }
                             self.environment.abandon(declaration);
                             Releasing::Held(Answer::Waits)
                         },
@@ -3981,7 +3993,12 @@ where
                 },
                 // A seed, an assumption and a refusal each read the record of
                 // each declaration before this one.
-                Err(_) if !caught_up => return Releasing::Held(Answer::Waits),
+                Err(_) if !caught_up => {
+                    if self.keeping.is_some() {
+                        gandr_kernel_core::probe_7284::bump(gandr_kernel_core::probe_7284::OFFER_HELD);
+                    }
+                    return Releasing::Held(Answer::Waits);
+                },
                 Err(_) => {},
             }
         }

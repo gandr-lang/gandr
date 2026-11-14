@@ -3597,12 +3597,17 @@ impl Environment
         }
         // A held key answers by lookup only while no outstanding release
         // reads into it, as the check in place does.
+        crate::probe_7284::bump(crate::probe_7284::KEEP);
         let beside = if usize::from(self.releases.outstanding()) == 0 {
             None
         }
         else {
+            crate::probe_7284::bump(crate::probe_7284::BESIDE);
             let ranks = self.unit_ranks(unit);
-            self.keeps_beside((first, &ranks))?;
+            if let Err(held) = self.keeps_beside((first, &ranks)) {
+                crate::probe_7284::bump(crate::probe_7284::KERNEL_HELD);
+                return Err(held);
+            }
             Some(ranks)
         };
         if self.lookup(unit) == Lookup::Answers {

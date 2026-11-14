@@ -399,6 +399,7 @@ fn rows(
                 Ok(())
             },
         )?;
+        let mut probe = [0_u64; 9];
         let admitted = timed(
             repeats,
             &mut session,
@@ -412,10 +413,13 @@ fn rows(
                     .map_err(|fault| fault.to_string().into())
             },
             |session| {
-                session
+                let _reset = gandr_kernel_core::probe_7284::take();
+                let admitted = session
                     .admit()
                     .map(drop)
-                    .map_err(|fault| ComposeFault::Readmission(fault).to_string().into())
+                    .map_err(|fault| ComposeFault::Readmission(fault).to_string().into());
+                probe = gandr_kernel_core::probe_7284::take();
+                admitted
             },
         )?;
         let whole = whole(
@@ -452,6 +456,10 @@ fn rows(
             check.as_secs_f64() * 1_000.0_f64,
             judged.as_secs_f64() / whole.as_secs_f64() * 100.0_f64,
         )?;
+        std::eprintln!(
+            "PROBE root={root} threads={threads} edit={edit} keep={} beside={} kernel_held={} releases={} answerable_held={} keep_held={} retire_held={} kept={} offer_held={}",
+            probe[0], probe[1], probe[2], probe[3], probe[4], probe[5], probe[6], probe[7], probe[8]
+        );
         previous = edited;
     }
     Ok(())
@@ -613,6 +621,53 @@ fn main() -> Result<(), Failure>
     let Configured(repeats) = Setting::Repeats.read();
     let repeats = Repeats(repeats);
     let grammar = built_in()?;
+    if let Some(base) = std::env::var_os("PROBE_BASE") {
+        let text = std::fs::read_to_string(&base).map_err(|fault| fault.to_string())?;
+        let mut edited = String::from("def prepended = 1;\n");
+        edited.push_str(&text);
+        let root = if std::env::var_os("PROBE_FIXTURE").is_some() { SourceRoot::Fixture } else { SourceRoot::Strict };
+        for width in [
+            Width::Threads(Threads::from(NonZeroUsize::MIN)),
+            Width::PerformanceCores,
+        ] {
+            let pool = Arc::new(Pool::new(width));
+            pool.join(|| (), || ());
+            gandr_surface_dispatcher::install_session(&pool);
+            let threads = usize::from(NonZeroUsize::from(pool.width().threads()));
+            for round in 0 .. repeats.0.get() {
+                let mut session = fresh(&grammar, root, &pool);
+                let base = session
+                    .submit(SourceText::from(text.as_str()))
+                    .map_err(|fault| fault.to_string())?;
+                let state = match base.kernel() {
+                    quenchant_shape::shape::Maybe::Present(_) => String::from("present"),
+                    quenchant_shape::shape::Maybe::Absent(reason) => format!("{reason:?}"),
+                };
+                std::eprintln!(
+                    "PROBE base kernel={state} molded={} forms={}",
+                    usize::from(base.forms().molded()),
+                    usize::from(base.forms().forms())
+                );
+                drop(base);
+                let _judged = session
+                    .judge(SourceText::from(edited.as_str()))
+                    .map_err(|fault| fault.to_string())?;
+                let _reset = gandr_kernel_core::probe_7284::take();
+                let start = Instant::now();
+                let _admitted = session
+                    .admit()
+                    .map_err(|fault| ComposeFault::Readmission(fault).to_string())?;
+                let wall = start.elapsed();
+                let probe = gandr_kernel_core::probe_7284::take();
+                std::eprintln!(
+                    "PROBE base threads={threads} round={round} admit_ms={:.2} keep={} beside={} kernel_held={} releases={} answerable_held={} keep_held={} retire_held={} kept={} offer_held={}",
+                    wall.as_secs_f64() * 1_000.0_f64,
+                    probe[0], probe[1], probe[2], probe[3], probe[4], probe[5], probe[6], probe[7], probe[8]
+                );
+            }
+        }
+        return Ok(());
+    }
     let mut out = io::stdout().lock();
     writeln!(
         out,
