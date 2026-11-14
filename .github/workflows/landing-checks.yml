@@ -495,10 +495,14 @@ jobs:
         run: |
           zstd -dc "build-state-$CI_BUILD_STATE.tar.zst" | tar -xf -
           mise run --quiet ci:sources-restamp
-      # The dependency cache also holds Cargo's registry; this fills it.
+      # The dependency cache also holds Cargo's registry; this fills it with
+      # every package of the lock, for each target. It runs whether or not a
+      # state was restored: a cold build fetches only its host's packages,
+      # and a test that resolves another target offline reads every package
+      # of the lock (`wasi.rs`, #7402). With the registry restored, the fetch
+      # downloads only what it lacks.
       - &fetch-dependencies
         name: fetch locked dependencies
-        if: *state-found
         run: cargo fetch --locked
 
   # Every lookup the run decides on, in one job (#2045): a job's runner
