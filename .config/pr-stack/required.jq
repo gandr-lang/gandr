@@ -9,16 +9,28 @@
 # status says: GitHub has recorded a finished job as still in progress beside
 # its conclusion (#1858).
 #
+# With `--arg workflow <name>`, the head's own run of that workflow, its
+# newest, is read whole too (#7549): each of its jobs that ended `FAILURE`
+# fails the reading, required or not. A report, a job whose name starts
+# `report `, never fails it. A job of that run that has not ended is not
+# read, so nothing waits on a job that the rules do not require, and a
+# cancelled, timed-out or startup-failed job is the runner's, as `red.jq`
+# reads it. The required contexts stay the rules' own: a red job ends the
+# wait at once, and no other job holds it.
+#
 # Input: the head's status check rollup, each a `CheckRun` (`name`,
-# `status`, `conclusion`, `startedAt`, `checkSuite.workflowRun.databaseId`)
-# or a `StatusContext` (`context`, `state`, `startedAt`), which has no run.
+# `status`, `conclusion`, `startedAt`, `checkSuite.workflowRun.databaseId`,
+# and `checkSuite.workflowRun.workflow.name` for `$workflow`) or a
+# `StatusContext` (`context`, `state`, `startedAt`), which has no run.
 # Arguments: `$required`, the trunk's required contexts; optionally
 # `--argjson gated true` for a head the CI depth gate stopped (#5074), whose
-# cancelled checks wait for its promotion and are pending, not failed.
+# cancelled checks wait for its promotion and are pending, not failed;
+# optionally `--arg workflow`, the head's own workflow.
 # Output: `{failed, pending}`, the required contexts that concluded
-# otherwise than success, skipped or neutral, and those not yet concluded or
-# not yet reported, each in `$required`'s order. Both empty: the stack may
-# queue.
+# otherwise than success, skipped or neutral, then the jobs of the own run
+# that ended red, and the required contexts not yet concluded or not yet
+# reported, each in `$required`'s order and the run's jobs by name. Both
+# empty: the stack may queue.
 
 def verdict:
   if .__typename == "StatusContext" then
@@ -34,4 +46,9 @@ def verdict:
     | {name: $name,
        verdict: ([$rollup[] | select((.name // .context) == $name)] | sort_by(.checkSuite.workflowRun.databaseId // 0, .startedAt // "")
          | if length == 0 then "pending" else last | verdict end)}]
-| {failed: [.[] | select(.verdict == "fail") | .name], pending: [.[] | select(.verdict == "pending") | .name]}
+| ([$rollup[] | select(.__typename == "CheckRun" and .checkSuite.workflowRun.workflow.name? == ($ARGS.named.workflow // null))]) as $own
+| ($own | map(.checkSuite.workflowRun.databaseId // 0) | max // null) as $run
+| ([$own[] | select((.checkSuite.workflowRun.databaseId // 0) == $run)] | group_by(.name)
+  | map(sort_by(.startedAt // "") | last | select(.conclusion == "FAILURE") | .name
+      | select(startswith("report ") | not) | select(IN($required[]) | not))) as $red
+| {failed: ([.[] | select(.verdict == "fail") | .name] + $red), pending: [.[] | select(.verdict == "pending") | .name]}

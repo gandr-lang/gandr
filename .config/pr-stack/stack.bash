@@ -32,18 +32,25 @@ stacking_current() {
   fi
 }
 
+# The landing-checks workflow, a pull request's own run: the `name` of
+# `.github/workflows/landing-checks.yml`. `landing-queue.yml` runs on it, the
+# depth gate cancels it, and `required.jq` reads each job of its newest run
+# on a head (#7549).
+ci_workflow=landing-checks
+
 # What every reading of a pull request takes, one GraphQL selection: its
 # place in a stack, its holds, its merge and queue state, and its head's
-# check rollup in the shape `gh pr view --json statusCheckRollup` gives.
-# `pr:land` and `pr:await` poll through it (#5061), so it holds what their
-# polls read: the merge commit and the queue position among them.
+# check rollup in the shape `gh pr view --json statusCheckRollup` gives,
+# with the workflow of each check run. `pr:land` and `pr:await` poll through
+# it (#5061), so it holds what their polls read: the merge commit and the
+# queue position among them.
 pr_fields='number state headRefName baseRefName isDraft createdAt isInMergeQueue mergeStateStatus mergeable headRefOid
   autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename }
   mergeCommit { oid } mergeQueueEntry { state position headCommit { oid } }
   timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes { ... on RemovedFromMergeQueueEvent { reason } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes {
     __typename
-    ... on CheckRun { name status conclusion startedAt detailsUrl checkSuite { workflowRun { databaseId } } }
+    ... on CheckRun { name status conclusion startedAt detailsUrl checkSuite { workflowRun { databaseId workflow { name } } } }
     ... on StatusContext { context state startedAt: createdAt targetUrl } } } } } } }'
 
 # Every open pull request, as a JSON array of `pr_fields`: one paginated
@@ -1691,15 +1698,16 @@ queue_stack() {
 }
 
 # Pull request `$1`'s head read against the trunk's required contexts `$2`
-# (`required.jq`), from its reading `$3` or a fresh one. A head the CI depth
-# gate stopped (#5074) reads its cancelled checks as pending: they wait for
-# its promotion. The gate's mark is read only when a context failed.
+# and the jobs of its own run (`required.jq`, #7549), from its reading `$3`
+# or a fresh one. A head the CI depth gate stopped (#5074) reads its
+# cancelled checks as pending: they wait for its promotion. The gate's mark
+# is read only when a context failed.
 required_reading() {
   local view=${3:-} reading
   [[ -n $view ]] || view=$(pr_reading "$1") || return 1
-  reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq")
+  reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" --arg workflow "$ci_workflow" -f "$pr_stack_dir/required.jq")
   if [[ $(jq '.failed | length' <<< "$reading") != 0 ]] && depth_marked "$1" "$(jq -r .headRefOid <<< "$view")"; then
-    reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" --argjson gated true -f "$pr_stack_dir/required.jq")
+    reading=$(rollup_of <<< "$view" | jq -c --argjson required "$2" --argjson gated true --arg workflow "$ci_workflow" -f "$pr_stack_dir/required.jq")
   fi
   printf '%s\n' "$reading"
 }

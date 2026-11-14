@@ -25,9 +25,6 @@ source "$pr_stack_dir/sweep.bash"
 # shellcheck source=landed-heads.bash
 source "$pr_stack_dir/landed-heads.bash"
 token=${LANDING_TOKEN_HELD:-false}
-# The landing-checks workflow, which `landing-queue.yml` runs on and the depth gate cancels:
-# the `name` of `.github/workflows/landing-checks.yml`.
-ci_workflow=landing-checks
 
 # The open pull requests, held ones left out (a draft, or the owner's
 # `hold:owner`, #3253), as `landing.jq` reads them. The head and base of
@@ -87,7 +84,7 @@ read_prs() {
         # conflicts, nor for a base edit. A head pushed in the last 5 minutes
         # may only wait for its run to register, so it is not read as unrun.
         ran=$(jq --arg workflow "$ci_workflow" 'any(.[]; .checkSuite.workflowRun.workflow.name? == $workflow)' <<< "$rollup")
-        jq -c --argjson reading "$(jq -c --argjson required "$required" --argjson gated "$gated" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
+        jq -c --argjson reading "$(jq -c --argjson required "$required" --argjson gated "$gated" --arg workflow "$ci_workflow" -f "$pr_stack_dir/required.jq" <<< "$rollup")" \
           --argjson unstarted "$(jq -c --argjson required "$required" --arg workflow "$ci_workflow" -f "$pr_stack_dir/unstarted.jq" <<< "$rollup")" \
           --argjson upstream "$upstream" \
           --argjson ran "$ran" \
