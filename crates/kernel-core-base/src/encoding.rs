@@ -463,9 +463,8 @@ pub enum ConstantName
         /// before it compares the two exactly; no record holds it.
         digest: ContentDigest,
     },
-    /// By the content key that the kernel gave it at its admission. Only a
-    /// table that a caller renames gives this name: the kernel names such a
-    /// constant by its position.
+    /// By the content key that the kernel gave it at its admission: each
+    /// constant other than a plain definition that has a content key.
     Admitted
     {
         /// The content key, which reads no build.
@@ -476,6 +475,29 @@ pub enum ConstantName
     /// tag before its own tag and the position, so no record names it as a
     /// record names an admitted constant.
     Unadmitted,
+}
+
+impl ConstantName
+{
+    /// The name a table gives a constant whose admission named it
+    /// `key_name` and whose entry has the content key `content`: a plain
+    /// definition by its content, each other constant by its content key,
+    /// and the position only for a constant with no content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn table_name<Reason>(
+        key_name: Self,
+        content: Maybe<crate::verdict::EntryContentKey, Reason>,
+    ) -> Self
+    {
+        match (key_name, content) {
+            (Self::Position, Maybe::Present(key)) => Self::Admitted { key },
+            (named, Maybe::Present(_) | Maybe::Absent(_)) => named,
+        }
+    }
 }
 
 /// How many earlier plain definitions of one environment carry a definition's
@@ -2612,9 +2634,11 @@ impl ContentTable
         &self.stream
     }
 
-    /// Name the constants of `entries` past those already named: each plain
-    /// definition by its content, a vacancy and a retired entry as unadmitted,
-    /// and every other constant by its position.
+    /// Name the constants of `entries` past those already named, as
+    /// [`Entries::key_names`](crate::env::Entries::key_names) names each: a
+    /// plain definition by its content, each other constant by its content
+    /// key, a vacancy and a retired entry as unadmitted, and the position only
+    /// for a constant with no content key.
     ///
     /// # Specification
     /// - requires: `entries` extends the entries this table was told before,
@@ -3229,12 +3253,12 @@ impl ContentTable
         }
         write_parameters(
             &mut RecordSink::whole(&mut self.scratch),
-            parameters,
+            (parameters, &self.constants),
             &members,
         );
         let id = self.intern_scratch();
-        self.name_fresh(|_, named| {
-            write_parameters(named, parameters, &members);
+        self.name_fresh(|table, named| {
+            write_parameters(named, (parameters, &table.constants), &members);
         });
         self.members = members;
         id
@@ -3412,7 +3436,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 ref fields,
             } => {
                 put_constant(
-                    record,
+                    record.words,
                     &self.constants,
                     (gandr_kernel_term::NODE_V_CONSTRUCTOR, family),
                 );
@@ -3622,7 +3646,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 | ConstantName::Admitted { .. }
                 | ConstantName::Unadmitted => {
                     put_constant(
-                        record,
+                        record.words,
                         &self.constants,
                         (gandr_kernel_term::NODE_V_CONSTANT, index),
                     );
@@ -4074,7 +4098,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 ref arguments,
             } => {
                 put_constant(
-                    record,
+                    record.words,
                     &self.constants,
                     (gandr_kernel_term::NODE_VT_DATA, declaration),
                 );
@@ -4205,7 +4229,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             },
             ValueType::Abstract(atom) => {
                 put_constant(
-                    record,
+                    record.words,
                     &self.constants,
                     (gandr_kernel_term::NODE_VT_ABSTRACT, atom),
                 );
@@ -4278,7 +4302,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
             CompType::Pi { .. } => gandr_kernel_term::NODE_CT_PI,
             CompType::Element { .. } => gandr_kernel_term::NODE_CT_ELEMENT,
             CompType::With(..) => gandr_kernel_term::NODE_CT_WITH,
-            CompType::Codata { .. } => gandr_kernel_term::NODE_CT_CODATA,
+            CompType::Codata { declaration, .. } => lead_tag(&self.constants, (gandr_kernel_term::NODE_CT_CODATA, declaration)),
         })))
     )]
     fn put_comp_type<const NAMED: bool>(
@@ -4330,8 +4354,11 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 declaration,
                 ref arguments,
             } => {
-                record.put_tag(gandr_kernel_term::NODE_CT_CODATA);
-                record.put_count(ComponentCount(usize::from(declaration)));
+                put_constant(
+                    record.words,
+                    &self.constants,
+                    (gandr_kernel_term::NODE_CT_CODATA, declaration),
+                );
                 record.put_count(ComponentCount(arguments.len()));
                 for argument in arguments {
                     record.put_content(self.content_of(AnyNode::Value(*argument)));
@@ -4951,38 +4978,40 @@ fn lead_tag(
     }
 }
 
-/// Write the head of a node of `tag` that reads the constant at `index`: the
-/// admitted tag, `tag` and the content key when `constants` names the
-/// constant by its content key; the unadmitted tag, `tag` and the position
-/// when its position holds no declaration and never will; and `tag` and the
-/// position otherwise.
+/// Write the head of a node of `tag` that reads the constant at `index` into
+/// `words`: the admitted tag, `tag` and the content key when `constants`
+/// names the constant by its content key; the unadmitted tag, `tag` and the
+/// position when its position holds no declaration and never will; and `tag`
+/// and the position otherwise. Every site of the content encoding that reads
+/// a constant other than a plain definition writes it here, so the table
+/// alone decides its name.
 ///
 /// # Specification
 /// trivial.
-fn put_constant<const NAMED: bool>(
-    record: &mut RecordSink<'_, NAMED>,
+fn put_constant(
+    words: &mut ContentEncoding,
     constants: &gandr_kernel_term::Family<ConstantName>,
     (tag, index): (WireTag, ConstantIndex),
 )
 {
     match constant_name(constants, index) {
         ConstantName::Admitted { key } => {
-            record.put_tag(WireTag::from(ADMITTED_TAG));
-            record.put_tag(tag);
+            words.put_tag(WireTag::from(ADMITTED_TAG));
+            words.put_tag(tag);
             let bytes: [u8; 32] = key.into();
-            let (words, _) = bytes.as_chunks::<8>();
-            for &word in words {
-                record.put_word(EncodedWord(u64::from_le_bytes(word)));
+            let (chunks, _) = bytes.as_chunks::<8>();
+            for &chunk in chunks {
+                words.put_word(EncodedWord(u64::from_le_bytes(chunk)));
             }
         },
         ConstantName::Unadmitted => {
-            record.put_tag(WireTag::from(UNADMITTED_TAG));
-            record.put_tag(tag);
-            record.put_count(ComponentCount(usize::from(index)));
+            words.put_tag(WireTag::from(UNADMITTED_TAG));
+            words.put_tag(tag);
+            words.put_count(ComponentCount(usize::from(index)));
         },
         ConstantName::Position | ConstantName::Definition { .. } => {
-            record.put_tag(tag);
-            record.put_count(ComponentCount(usize::from(index)));
+            words.put_tag(tag);
+            words.put_count(ComponentCount(usize::from(index)));
         },
     }
 }
@@ -5753,9 +5782,10 @@ fn put_placed<const NAMED: bool>(
 
 /// Write the record of a declaration's parameters into `record`, replacing
 /// what it held. The record holds the level count, the constraints, the
-/// manifest and law positions, the block, the fixpoints and the partiality.
-/// Its members are `members`, in the order [`ContentTable::parameters`]
-/// placed them.
+/// manifest and the laws, the block, the fixpoints and the partiality. It
+/// writes each constant as `constants` names it ([`put_constant`]). Its
+/// members are `members`, in the order [`ContentTable::parameters`] placed
+/// them.
 ///
 /// # Specification
 /// - requires: `members` holds the ids the table placed for the block's kind,
@@ -5772,7 +5802,7 @@ fn put_placed<const NAMED: bool>(
 #[spec(ensures: record.words.0.first() == Some(&u32::from(u8::from(KeyRecord::Parameters.tag()))))]
 fn write_parameters<const NAMED: bool>(
     record: &mut RecordSink<'_, NAMED>,
-    parameters: &Parameters<'_>,
+    (parameters, constants): (&Parameters<'_>, &gandr_kernel_term::Family<ConstantName>),
     members: &[ContentId],
 )
 {
@@ -5789,10 +5819,14 @@ fn write_parameters<const NAMED: bool>(
         });
         put_level(record, constraint.right());
     }
-    for positions in [parameters.manifest, parameters.laws] {
-        record.put_count(ComponentCount(positions.len()));
-        for &position in positions {
-            record.put_count(ComponentCount(usize::from(position)));
+    for constants_read in [parameters.manifest, parameters.laws] {
+        record.put_count(ComponentCount(constants_read.len()));
+        for &constant in constants_read {
+            put_constant(
+                record.words,
+                constants,
+                (gandr_kernel_term::NODE_V_CONSTANT, constant),
+            );
         }
     }
     match parameters.block {
@@ -5805,8 +5839,7 @@ fn write_parameters<const NAMED: bool>(
             results,
             ..
         } => {
-            record.put_tag(WireTag::from(0x01_u8));
-            record.put_count(ComponentCount(usize::from(position)));
+            put_constant(record.words, constants, (WireTag::from(0x01_u8), position));
             put_placed(record, &mut placed, ComponentCount(1));
             put_placed(record, &mut placed, ComponentCount(classifiers.len()));
             put_placed(record, &mut placed, ComponentCount(indices.len()));
@@ -5825,8 +5858,7 @@ fn write_parameters<const NAMED: bool>(
             observations,
             ..
         } => {
-            record.put_tag(WireTag::from(0x02_u8));
-            record.put_count(ComponentCount(usize::from(position)));
+            put_constant(record.words, constants, (WireTag::from(0x02_u8), position));
             put_placed(record, &mut placed, ComponentCount(1));
             put_placed(record, &mut placed, ComponentCount(classifiers.len()));
             put_placed(record, &mut placed, ComponentCount(observations.len()));
@@ -6404,7 +6436,11 @@ pub fn encode_rewrite(
             ..
         } => {
             encoding.put_count(ComponentCount(usize::from(depth)));
-            encoding.put_count(ComponentCount(usize::from(constant)));
+            put_constant(
+                &mut encoding,
+                &table.constants,
+                (gandr_kernel_term::NODE_V_CONSTANT, constant),
+            );
             encoding.put_word(EncodedWord(u64::from(u32::from(index))));
         },
     }
@@ -8324,6 +8360,91 @@ mod tests
                 "{why} is named apart"
             );
         }
+    }
+
+    #[test]
+    fn a_constant_named_by_its_content_key_reads_alike_at_each_position_7341()
+    {
+        // A codata type, a parameters record whose manifest holds the
+        // constant, and a rewrite goal that abstracts the constant each read
+        // one constant. Two tables name it by one content key, at position 1
+        // and at position 3, as an edit that moves it leaves it. Each record
+        // takes one name in both tables. Two tables that name it by its
+        // position name each record apart.
+        use gandr_kernel_term::LevelParamCount;
+
+        use super::ConstantName;
+        use super::Parameters;
+        use super::ParametersBlock;
+        use crate::encoding::Partiality;
+        use crate::verdict::EntryContentKeyer;
+        use crate::verdict::EntryTag;
+
+        let names = |position: usize, name: ConstantName| {
+            let mut arena = TermArena::new();
+            let constant = ConstantIndex::from(position);
+            let codata = arena.comp_type_codata(constant, Vec::new());
+            let subject = arena.value_unit();
+            let mut table = ContentTable::named();
+            for _ in 0 .. position {
+                table.constants.push(ConstantName::Position);
+            }
+            table.constants.push(name);
+            let codata = table.place(&arena, AnyNode::CompType(codata));
+            let manifest = [constant];
+            let parameters = table.parameters(&arena, &Parameters {
+                level_params: LevelParamCount::from(0_u32),
+                constraints: &[],
+                manifest: &manifest,
+                laws: &[],
+                block: ParametersBlock::Outside,
+                own: None,
+                following: None,
+                partiality: Partiality::Refused,
+            });
+            let rewrite = encode_rewrite(&mut table, &arena, RewriteGoal::Abstract {
+                subject: AnyNode::Value(subject),
+                depth: BinderDepth::NONE,
+                constant,
+                index: DeBruijnIndex::from(0_u32),
+            });
+            (table.name(codata), table.name(parameters), rewrite)
+        };
+        let keyed = ConstantName::Admitted {
+            key: EntryContentKeyer::tagged(EntryTag::Content).finish(),
+        };
+        let (codata, parameters, rewrite) = names(1, keyed);
+        let (codata_moved, parameters_moved, rewrite_moved) = names(3, keyed);
+        assert!(
+            matches!(codata, Maybe::Present(_)) && matches!(parameters, Maybe::Present(_)),
+            "a named table names each record"
+        );
+        assert_eq!(
+            codata, codata_moved,
+            "a codata type reads its declaration's content key at each position"
+        );
+        assert_eq!(
+            parameters, parameters_moved,
+            "a manifest reads its atom's content key at each position"
+        );
+        assert_eq!(
+            rewrite, rewrite_moved,
+            "an abstraction reads its constant's content key at each position"
+        );
+        let (codata, parameters, rewrite) = names(1, ConstantName::Position);
+        let (codata_moved, parameters_moved, rewrite_moved) = names(3, ConstantName::Position);
+        assert_ne!(
+            codata, codata_moved,
+            "a codata type with no content key reads its position"
+        );
+        assert_ne!(
+            parameters, parameters_moved,
+            "a manifest with no content key reads its positions"
+        );
+        assert_ne!(
+            rewrite, rewrite_moved,
+            "an abstraction with no content key reads its position"
+        );
     }
 
     /// The digest `name_definition` gives a definition of `declared` and

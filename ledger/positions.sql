@@ -160,7 +160,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/support.rs','LooseDepth','',
 INSERT INTO position VALUES('crates/kernel-term/src/tags.rs','TokenCount','','none',NULL,'A count of tokens.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','Component','kernel-core-base::encoding','kept',NULL,'A component''s place inside one product.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','Component','kernel-term::encode','kept',NULL,'A component''s place inside one product.');
-INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-core-base::encoding','owed','#7341','The content encoding writes the position of a constant with no content key, and of the constant at four sites that read no name.');
+INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-core-base::encoding','kept',NULL,'The content encoding writes a constant as the table names it, and the position only for a constant with no content key.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-term::encode::Positions::Raw','owed','#7340','An artifact writes each constant and each abstract type that a node reads by its admission index.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstantIndex','kernel-term::encode::keyed_segment','kept',NULL,'A keyed segment writes each constant at its place in the segment''s named list or in its block.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ConstructorTag','kernel-core-base::encoding','kept',NULL,'A constructor''s place among the constructors of one datatype.');

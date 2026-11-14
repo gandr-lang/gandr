@@ -515,7 +515,8 @@ impl SupportContext
 
     /// Name the constants of `entries` in this session's keys, as
     /// [`ContentTable::name_constants`] does: each plain definition by its
-    /// content, every other constant by its position.
+    /// content, each other constant by its content key, and the position only
+    /// for a constant with no content key.
     ///
     /// # Specification
     /// trivial.

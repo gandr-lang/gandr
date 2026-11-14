@@ -6724,19 +6724,18 @@ fn formation_segment(
 /// The content table of the formation keys, which names each record by its
 /// content, for the length of one readmission and the records after it.
 ///
-/// The kernel names a constant other than a plain definition by its position.
-/// The table names each such constant by the entry key that the kernel gave
-/// it, when it has one. An entry key writes each constant it reads as that
-/// constant's key, so a record's name then reads no kernel position. Two
-/// constants of one entry key take one name. A formation's witnesses then read
-/// the constant that its first reader reads, in each readmission alike.
+/// The kernel's table names a constant other than a plain definition by the
+/// entry key that the kernel gave it, when it has one
+/// ([`gandr_kernel_core::encoding::ConstantName::table_name`]). An entry key
+/// writes each constant it reads as that constant's key, so a record's name
+/// then reads no kernel position. Two constants of one entry key take one
+/// name. A formation's witnesses then read the constant that its first reader
+/// reads, in each readmission alike.
 #[derive(Clone, Debug)]
 struct FormationTable
 {
     /// The table that places and names the records.
     table: gandr_kernel_core::ContentTable,
-    /// How many constants the table names.
-    named: usize,
 }
 
 impl Default for FormationTable
@@ -6750,53 +6749,23 @@ impl Default for FormationTable
     {
         Self {
             table: gandr_kernel_core::ContentTable::named(),
-            named: 0,
         }
     }
 }
 
 impl FormationTable
 {
-    /// Name the constants of `entries` past those the table names, each as
-    /// the kernel named it, and then each that the kernel names by its
-    /// position by its content key, when it has one.
+    /// Name the constants of `entries` past those the table names, as the
+    /// kernel's table names them.
     ///
     /// # Specification
-    /// - requires: `entries` extends the entries the table was told before, and
-    ///   no record the table placed reads a constant past them.
-    /// - ensures: the table names each constant of `entries`, and the names it
-    ///   held before are unchanged. Each new constant that the kernel names by
-    ///   its position and that has a content key takes that key as its name.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`formed`].
-    /// - witness: `bridge::tests::a_formation_takes_one_name_in_each_readmission_7245`
-    #[spec(captures: before = self.named, ensures: self.named == before.max(usize::from(entries.len())))]
+    /// trivial.
     fn name(
         &mut self,
         entries: &gandr_kernel_core::env::Entries,
     )
     {
         self.table.name_constants(entries);
-        let end = usize::from(entries.len());
-        for position in self.named .. end {
-            let constant = ConstantIndex::from(position);
-            if entries.get(position).is_some_and(|entry| {
-                matches!(
-                    entry.key_name(),
-                    gandr_kernel_core::encoding::ConstantName::Position
-                )
-            }) && let Maybe::Present(key) = entries.content(constant)
-            {
-                self.table.rename_constant(
-                    constant,
-                    gandr_kernel_core::encoding::ConstantName::Admitted { key },
-                );
-            }
-        }
-        self.named = self.named.max(end);
     }
 
     /// What the name of a record that reads the constants `roots` reads.

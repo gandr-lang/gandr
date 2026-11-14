@@ -1753,10 +1753,10 @@ impl Environment
                 }
                 // A later release named this position while it was reserved;
                 // no content named it then, so the name changes nothing read.
-                self.names
-                    .session_mut()
-                    .table_mut()
-                    .rename_constant(position, key_name);
+                self.names.session_mut().table_mut().rename_constant(
+                    position,
+                    crate::encoding::ConstantName::table_name(key_name, entry_content),
+                );
                 self.advance_seals(position);
                 self.fold();
                 Ok(CheckedId::new(position))

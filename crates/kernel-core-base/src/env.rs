@@ -2155,10 +2155,12 @@ impl Entries
     }
 
     /// How a memo key names a reference to each position from `from` on, in
-    /// admission order: as the admission of its entry named it; a vacancy or
-    /// a retired entry as unadmitted, since it holds no declaration and never
-    /// will; and a reservation by its position, since its commit comes. The
-    /// walk starts at `from`, so the positions below it cost nothing.
+    /// admission order: an admitted entry as [`ConstantName::table_name`]
+    /// names it from the admission's name and the entry's content key; a
+    /// vacancy or a retired entry as unadmitted, since it holds no declaration
+    /// and never will; and a reservation by its position, since its commit
+    /// comes. The walk starts at `from`, so the positions below it cost
+    /// nothing.
     ///
     /// # Specification
     /// trivial.
@@ -2170,7 +2172,9 @@ impl Entries
     {
         let family = self.family();
         (usize::from(from) .. usize::from(family.len())).map(move |at| match family.get(at) {
-            Some(&Slot::Admitted(ref entry)) => entry.key_name,
+            Some(&Slot::Admitted(ref entry)) => {
+                ConstantName::table_name(entry.key_name, entry.content_key())
+            },
             Some(&(Slot::Vacant | Slot::Retired)) => ConstantName::Unadmitted,
             Some(&Slot::Reserved) | None => ConstantName::Position,
         })
