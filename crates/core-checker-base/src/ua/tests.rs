@@ -53,8 +53,7 @@ fn level_two_is_kept_recalled_and_refused_by_the_store_4123()
     let chains = Arc::new(Catalogue::chains(at.bound).expect("the chains build"));
     let below = SegalStratum::certify(Arc::clone(&chains), chains.reach())
         .expect("level one is certified at the chains' reach");
-    let level: &Catalogue = &chains;
-    let wreath = Arc::new(Wreath::build(level, level, at.bound));
+    let wreath = Arc::new(Wreath::build(&chains, &chains, at.bound));
     let image = WreathStratum::certify(wreath, at.degree, below)
         .expect("level two is certified at degree four")
         .image();
@@ -201,8 +200,7 @@ fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
     let chains = Arc::new(Catalogue::chains(at.bound).expect("the chains build"));
     let one = SegalStratum::certify(Arc::clone(&chains), chains.reach())
         .expect("level one is certified at the chains' reach");
-    let level: &Catalogue = &chains;
-    let wreath = Arc::new(Wreath::build(level, level, at.bound));
+    let wreath = Arc::new(Wreath::build(&chains, &chains, at.bound));
     let top = wreath
         .objects()
         .iter()
@@ -210,7 +208,7 @@ fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
         .max()
         .expect("the wreath holds objects");
     let two = WreathStratum::certify(wreath, top, one).expect("level two is certified at its top");
-    let above = Arc::new(Wreath::build(level, two.wreath(), at.bound));
+    let above = Arc::new(Wreath::build(&chains, two.wreath(), at.bound));
     let image = WreathStratum::certify(above, at.degree, two)
         .expect("level three is certified at degree five")
         .image();
@@ -450,7 +448,7 @@ fn level_two_over_a_composite_s_faces_is_shared_and_refused_as_the_whole_7453()
     let chain = |cells: usize| Shape::chain(cells.into()).expect("the chain builds");
     let object = WreathShape::new(chain(1), alloc::vec![chain(2)]).expect("one column");
     let degree = <Wreath<Catalogue> as gandr_theory_sites::Level>::degree(&object);
-    let chains = Catalogue::chains(at.bound).expect("the chains build");
+    let chains = Arc::new(Catalogue::chains(at.bound).expect("the chains build"));
     let whole = Wreath::build(&chains, &chains, at.bound);
     let target = whole.find(&object);
     let faces = (0 .. whole.objects().len())

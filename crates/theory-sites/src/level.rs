@@ -13,11 +13,21 @@
 //! each column are jointly raising, which is why the level states the joint
 //! reading rather than the single one.
 //!
+//! A [`HomIndex`] names a map of a level by its hom set and its position
+//! there. A wreath map keeps an index for its outer map and for each inner
+//! map, never a copy, so a map lives once, in its hom set. The map operations
+//! of a level take the level, so they read each map from its set, and
+//! [`Level::then`] finds a composite by its index.
+//!
 //! [`Site`]: crate::Site
 //! [`Wreath`]: crate::Wreath
 
 use alloc::collections::BTreeMap;
+use core::cmp::Ordering;
 use core::fmt;
+use core::hash::Hash;
+use core::hash::Hasher;
+use core::marker::PhantomData;
 
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
@@ -35,6 +45,235 @@ use crate::map::VertexSet;
 use crate::shape::Shape;
 use crate::shape::ShapeKey;
 use crate::shape::ShapeSize;
+
+wrapper! {
+    /// A map's position in its hom set, which ascends.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MapPosition(usize);
+}
+
+/// A map of a level, named by the hom set that holds it and its position
+/// there.
+///
+/// # Specification
+/// - provides: the name a [`crate::WreathMap`] keeps for its outer map and for
+///   each inner map, in place of a copy; [`Level::map_at`] reads the map.
+/// - ensures: only a level mints an index, from a hom set it holds, so an index
+///   names one map of one set. Two indices into one set order as their maps do,
+///   because each set ascends.
+/// - executable: none — a type carries no runtime predicate; the minting
+///   methods check each position against its set.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the wreath's maps, built from indices, keep the counts
+///   and the conditions pinned at the bounds.
+/// - witness: `tests::wreath::the_wreath_holds_one_object_per_class`
+/// - witness: `tests::wreath::the_wreath_is_a_generalized_reedy_category`
+pub struct HomIndex<Map>
+{
+    /// The index of the source object.
+    source: ShapeIndex,
+    /// The index of the target object.
+    target: ShapeIndex,
+    /// The position in the hom set from the source to the target.
+    at: MapPosition,
+    /// The type of the maps the hom set holds.
+    map: PhantomData<fn() -> Map>,
+}
+
+impl<Map> HomIndex<Map>
+{
+    /// The index of the map's source object.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn source(&self) -> ShapeIndex
+    {
+        self.source
+    }
+
+    /// The index of the map's target object.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn target(&self) -> ShapeIndex
+    {
+        self.target
+    }
+
+    /// The map's position in its hom set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn at(&self) -> MapPosition
+    {
+        self.at
+    }
+
+    /// The index of the map at `at` in the hom set from `source` to `target`,
+    /// a position the caller has checked against the set.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn minted(
+        source: ShapeIndex,
+        target: ShapeIndex,
+        at: MapPosition,
+    ) -> Self
+    {
+        Self {
+            source,
+            target,
+            at,
+            map: PhantomData,
+        }
+    }
+
+    /// The two objects and the position, which order the index and tell it
+    /// apart.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn parts(&self) -> (ShapeIndex, ShapeIndex, MapPosition)
+    {
+        (self.source, self.target, self.at)
+    }
+}
+
+impl<Map> Clone for HomIndex<Map>
+{
+    /// A copy of the index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Map> Copy for HomIndex<Map>
+{
+}
+
+impl<Map> PartialEq for HomIndex<Map>
+{
+    /// Whether the two indices name one map of one hom set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        self.parts() == other.parts()
+    }
+}
+
+impl<Map> Eq for HomIndex<Map>
+{
+}
+
+impl<Map> PartialOrd for HomIndex<Map>
+{
+    /// The order of [`Ord`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn partial_cmp(
+        &self,
+        other: &Self,
+    ) -> Option<Ordering>
+    {
+        Some(self.cmp(other))
+    }
+}
+
+impl<Map> Ord for HomIndex<Map>
+{
+    /// By source, then target, then position: within one hom set, the order
+    /// of the maps.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmp(
+        &self,
+        other: &Self,
+    ) -> Ordering
+    {
+        self.parts().cmp(&other.parts())
+    }
+}
+
+impl<Map> Hash for HomIndex<Map>
+{
+    /// Hashes the two objects and the position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: Hasher,
+    {
+        self.parts().hash(state);
+    }
+}
+
+impl<Map> fmt::Debug for HomIndex<Map>
+{
+    /// Writes the two objects and the position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_struct("HomIndex")
+            .field("source", &self.source)
+            .field("target", &self.target)
+            .field("at", &self.at)
+            .finish()
+    }
+}
+
+impl<Map> fmt::Display for HomIndex<Map>
+{
+    /// Writes `source→target#position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "{}→{}#{}",
+            usize::from(self.source),
+            usize::from(self.target),
+            usize::from(self.at)
+        )
+    }
+}
 
 /// A finite site the conditions read: one object per isomorphism class at a
 /// bound, every map between two of them, and the operations on both.
@@ -66,19 +305,77 @@ pub trait Level
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one read of the hom set at its position among the pairs; no map
+    ///   is built.
     fn hom(
         &self,
         source: ShapeIndex,
         target: ShapeIndex,
     ) -> &[Self::Map];
 
-    /// The identity of `object`.
+    /// The index of the map at `at` in the hom set from `source` to `target`;
+    /// absent past the set.
     ///
     /// # Specification
     /// trivial.
-    fn identity(object: &Self::Object) -> Self::Map;
+    #[inline]
+    fn index_at(
+        &self,
+        source: ShapeIndex,
+        target: ShapeIndex,
+        at: MapPosition,
+    ) -> Option<HomIndex<Self::Map>>
+    {
+        (usize::from(at) < self.hom(source, target).len())
+            .then(|| HomIndex::minted(source, target, at))
+    }
 
-    /// `first`, then `next`.
+    /// The index of `map` in the hom set from `source` to `target`; absent
+    /// when the set holds no map equal to it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn index_of(
+        &self,
+        source: ShapeIndex,
+        target: ShapeIndex,
+        map: &Self::Map,
+    ) -> Option<HomIndex<Self::Map>>
+    {
+        self.hom(source, target)
+            .binary_search(map)
+            .ok()
+            .map(|at| HomIndex::minted(source, target, MapPosition::from(at)))
+    }
+
+    /// The map `index` names; absent past its hom set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn map_at(
+        &self,
+        index: HomIndex<Self::Map>,
+    ) -> Option<&Self::Map>
+    {
+        self.hom(index.source, index.target)
+            .get(usize::from(index.at))
+    }
+
+    /// The identity of the object at `at`; absent past the objects.
+    ///
+    /// # Specification
+    /// trivial.
+    fn identity(
+        &self,
+        at: ShapeIndex,
+    ) -> Option<Self::Map>;
+
+    /// `first`, then `next`. At a level whose maps keep indices, each part of
+    /// the composite is found in its hom set by its index.
     ///
     /// # Specification
     /// trivial.
@@ -86,7 +383,10 @@ pub trait Level
     /// # Errors
     /// - [`CompositionMismatch`]: `first`'s image names a vertex or wire `next`
     ///   has no image for.
+    /// - [`CompositionMismatch::Unheld`]: no hom set of the level holds a part
+    ///   of the composite.
     fn then(
+        &self,
         first: &Self::Map,
         next: &Self::Map,
     ) -> Result<Self::Map, CompositionMismatch>;
@@ -96,6 +396,7 @@ pub trait Level
     /// # Specification
     /// trivial.
     fn admits(
+        &self,
         map: &Self::Map,
         source: &Self::Object,
         target: &Self::Object,
@@ -107,7 +408,10 @@ pub trait Level
     ///
     /// # Specification
     /// trivial.
-    fn jointly_raising(family: &[&Self::Map]) -> Membership;
+    fn jointly_raising(
+        &self,
+        family: &[&Self::Map],
+    ) -> Membership;
 
     /// Whether `map` is raising: the family of `map` alone is jointly
     /// raising.
@@ -115,9 +419,12 @@ pub trait Level
     /// # Specification
     /// trivial.
     #[inline]
-    fn raising(map: &Self::Map) -> Membership
+    fn raising(
+        &self,
+        map: &Self::Map,
+    ) -> Membership
     {
-        Self::jointly_raising(&[map])
+        self.jointly_raising(&[map])
     }
 
     /// Whether `map`, into `target`, is lowering.
@@ -125,6 +432,7 @@ pub trait Level
     /// # Specification
     /// trivial.
     fn lowering(
+        &self,
         map: &Self::Map,
         target: &Self::Object,
     ) -> Membership;
@@ -134,6 +442,7 @@ pub trait Level
     /// # Specification
     /// trivial.
     fn invertibility(
+        &self,
         map: &Self::Map,
         target: &Self::Object,
     ) -> Invertibility;
@@ -277,14 +586,17 @@ impl Level for Catalogue
         }
     }
 
-    /// [`SiteMap::identity`].
+    /// [`SiteMap::identity`] of the shape at `at`.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn identity(object: &Shape) -> SiteMap
+    fn identity(
+        &self,
+        at: ShapeIndex,
+    ) -> Option<SiteMap>
     {
-        SiteMap::identity(object)
+        self.shapes().get(usize::from(at)).map(SiteMap::identity)
     }
 
     /// [`SiteMap::then`].
@@ -293,6 +605,7 @@ impl Level for Catalogue
     /// trivial.
     #[inline]
     fn then(
+        &self,
         first: &SiteMap,
         next: &SiteMap,
     ) -> Result<SiteMap, CompositionMismatch>
@@ -306,6 +619,7 @@ impl Level for Catalogue
     /// trivial.
     #[inline]
     fn admits(
+        &self,
         map: &SiteMap,
         source: &Shape,
         target: &Shape,
@@ -333,7 +647,10 @@ impl Level for Catalogue
     #[inline]
     #[spec(ensures: |answer| (answer == Membership::Inside) == (!family.is_empty()
         && family.iter().fold(None, |meet: Option<VertexSet>, map| Some(meet.map_or_else(|| map.kernel(), |meet| meet.intersection(map.kernel())))) == Some(VertexSet::EMPTY)))]
-    fn jointly_raising(family: &[&SiteMap]) -> Membership
+    fn jointly_raising(
+        &self,
+        family: &[&SiteMap],
+    ) -> Membership
     {
         let meet = family
             .iter()
@@ -353,6 +670,7 @@ impl Level for Catalogue
     /// trivial.
     #[inline]
     fn lowering(
+        &self,
         map: &SiteMap,
         target: &Shape,
     ) -> Membership
@@ -366,6 +684,7 @@ impl Level for Catalogue
     /// trivial.
     #[inline]
     fn invertibility(
+        &self,
         map: &SiteMap,
         target: &Shape,
     ) -> Invertibility

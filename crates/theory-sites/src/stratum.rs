@@ -1199,7 +1199,7 @@ impl SegalStratum
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn catalogue(&self) -> &Catalogue
+    pub const fn catalogue(&self) -> &Arc<Catalogue>
     {
         &self.catalogue
     }

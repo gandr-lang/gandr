@@ -615,8 +615,7 @@ fn the_whisker_and_both_composites_are_certified_at_level_two()
 {
     let bound = ShapeSize::from(13_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
-    let level: &Catalogue = &chains;
-    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let wreath = Arc::new(Wreath::build(&chains, &chains, bound));
     let below = level_one(&chains);
     assert_eq!(below.cocones().len(), 5);
     let stratum = WreathStratum::certify(Arc::clone(&wreath), Degree::from(5_usize), below)
@@ -690,7 +689,7 @@ fn level_two_is_direct_with_automorphisms_on_its_grounded_objects()
         cases: 766.into()
     });
     let small = ShapeSize::from(4_usize);
-    let wirings = Catalogue::build(small).expect("the catalogue builds");
+    let wirings = Arc::new(Catalogue::build(small).expect("the catalogue builds"));
     let wreath = Wreath::build(&wirings, &wirings, small);
     assert_eq!(direct_core(&Site::new(&wreath)), Outcome::Holds {
         cases: 109.into()
@@ -745,8 +744,7 @@ fn two_cells_each_the_others_source_are_refused_at_level_two()
     );
     let small = ShapeSize::from(5_usize);
     let wirings = Arc::new(Catalogue::build(small).expect("the catalogue builds"));
-    let level: &Catalogue = &wirings;
-    let wreath = Arc::new(Wreath::build(level, level, small));
+    let wreath = Arc::new(Wreath::build(&wirings, &wirings, small));
     let below = level_one(&wirings);
     assert_eq!(
         segal_above(&wreath, &below, Degree::from(5_usize)),
@@ -885,8 +883,7 @@ fn level_two_replays_its_image_and_refuses_a_damaged_one_4123()
 {
     let bound = ShapeSize::from(9_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
-    let level: &Catalogue = &chains;
-    let wreath = Arc::new(Wreath::build(level, level, bound));
+    let wreath = Arc::new(Wreath::build(&chains, &chains, bound));
     let degree = Degree::from(4_usize);
     let stratum = WreathStratum::certify(Arc::clone(&wreath), degree, level_one(&chains))
         .expect("level two is certified at degree four");

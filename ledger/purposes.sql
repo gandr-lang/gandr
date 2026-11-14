@@ -5658,7 +5658,9 @@ INSERT INTO purpose VALUES('theory-sites','degree::Degree','struct','A shape''s 
 INSERT INTO purpose VALUES('theory-sites','diagram::Boundary','struct','A cell''s boundary: the colour of each input leg and each output leg of the vertex it fills, each side in the shape''s wire order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','diagram::Unfilled','enum','Why a diagram does not fill a shape.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','diagram::fills','function','Whether cells, one per vertex of a shape, have their vertices'' profiles and meet along its inner wires, with the diagram''s boundary.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','level::HomIndex','struct','A map of a level, named by the hom set that holds it and its position there, which a wreath map keeps in place of a copy.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','level::Level','trait','A finite site the conditions read: one object per isomorphism class at a bound, every map between two of them, and the operations on both.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-sites','level::MapPosition','struct','A map''s position in its hom set, which ascends.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::CompositionMismatch','enum','Why two maps do not compose.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::ImageForm','enum','How a map''s vertex images are sized.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-sites','map::Invertibility','enum','Whether a map has an inverse in the class.',NULL,'fits','sound',NULL);

@@ -201,9 +201,9 @@ fn the_chain_restriction_holds_theta_two_at_the_bound()
 fn the_chain_restriction_is_the_full_sub_site_of_the_wreath()
 {
     let (level, total) = (ShapeSize::from(3_usize), ShapeSize::from(6_usize));
-    let wirings = Catalogue::build(level).expect("the catalogue builds");
+    let wirings = Arc::new(Catalogue::build(level).expect("the catalogue builds"));
     let full = Wreath::build(&wirings, &wirings, total);
-    let chains = Catalogue::chains(level).expect("the chain catalogue builds");
+    let chains = Arc::new(Catalogue::chains(level).expect("the chain catalogue builds"));
     let restricted = Wreath::build(&chains, &chains, total);
     assert_eq!(full.objects().len(), 209);
     let in_the_chains = full
@@ -282,7 +282,8 @@ fn a_cycle_at_the_outer_level_is_refused_by_name()
         restriction.find(&object(column(Length(1)), vec![bigon])),
         Maybe::Absent(shape_class::Absent::OutsideTheFamily)
     );
-    let wirings = Catalogue::build(ShapeSize::from(4_usize)).expect("the catalogue builds");
+    let wirings =
+        Arc::new(Catalogue::build(ShapeSize::from(4_usize)).expect("the catalogue builds"));
     let full = Wreath::build(&wirings, &wirings, ShapeSize::from(4_usize));
     assert!(matches!(full.find(&over_the_bigon), Maybe::Present(_)));
     assert_eq!(
@@ -310,7 +311,7 @@ fn a_cycle_at_the_outer_level_is_refused_by_name()
 fn the_faces_are_the_full_sub_wreath_on_the_objects_with_a_map_in_7453()
 {
     let bound = ShapeSize::from(9_usize);
-    let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+    let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let whole = Wreath::build(&chains, &chains, bound);
     for (at, object) in whole.objects().iter().enumerate() {
         let target = ShapeIndex::from(at);
@@ -366,7 +367,7 @@ fn the_top_degree_is_the_highest_degree_of_the_whole_wreath_7453()
 {
     for size in 1 ..= 9_usize {
         let bound = ShapeSize::from(size);
-        let chains = Catalogue::chains(bound).expect("the chain catalogue builds");
+        let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
         let highest = Wreath::build(&chains, &chains, bound)
             .objects()
             .iter()
@@ -374,7 +375,7 @@ fn the_top_degree_is_the_highest_degree_of_the_whole_wreath_7453()
             .max()
             .unwrap_or_else(|| Degree::from(0_usize));
         assert_eq!(
-            Wreath::top_degree(&chains, &chains, bound),
+            Wreath::<Catalogue>::top_degree(&chains, &chains, bound),
             highest,
             "at total size {size}"
         );
@@ -418,7 +419,7 @@ fn level_two_over_the_faces_agrees_with_the_whole_7453()
     let bound = ShapeSize::from(9_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
-    let whole = Arc::new(Wreath::build(level, level, bound));
+    let whole = Arc::new(Wreath::build(&chains, &chains, bound));
     let top = Wreath::top_degree(level, level, bound);
     let below = level_one(&chains);
     let certified = WreathStratum::certify(Arc::clone(&whole), top, below.clone())
@@ -429,7 +430,7 @@ fn level_two_over_the_faces_agrees_with_the_whole_7453()
         if degree < Degree::from(2_usize) {
             continue;
         }
-        let Maybe::Present(faces) = Wreath::faces(level, level, bound, object)
+        let Maybe::Present(faces) = Wreath::faces(&chains, &chains, bound, object)
         else {
             panic!("{object} is held at the bound");
         };

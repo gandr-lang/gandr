@@ -74,6 +74,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_theory_circuit_algebras::Edge;
+use quenchant_shape::shape::Maybe;
 
 use crate::catalogue::Catalogue;
 use crate::catalogue::ShapeIndex;
@@ -132,6 +133,8 @@ struct Arrow<'level, Map>
 #[derive(Clone, Debug)]
 pub struct Site<'level, L: Level = Catalogue>
 {
+    /// The level, whose map operations read its hom sets.
+    level: &'level L,
     /// The objects, in the level's order.
     nodes: Vec<&'level L::Object>,
     /// The maps, row-major by source and target node.
@@ -162,7 +165,7 @@ impl<'level, L: Level> Site<'level, L>
         site.nodes.len() == level.objects().len(),
         site.arrows.len() == site.nodes.len().saturating_mul(site.nodes.len()),
         site.pairs.len() == site.arrows.len(),
-        site.arrows.iter().flatten().all(|arrow| arrow.raising == L::raising(arrow.map)),
+        site.arrows.iter().flatten().all(|arrow| arrow.raising == level.raising(arrow.map)),
     ])]
     pub fn new(level: &'level L) -> Self
     {
@@ -177,9 +180,9 @@ impl<'level, L: Level> Site<'level, L>
                         .iter()
                         .map(|map| Arrow {
                             map,
-                            raising: L::raising(map),
-                            lowering: L::lowering(map, target),
-                            invertibility: L::invertibility(map, target),
+                            raising: level.raising(map),
+                            lowering: level.lowering(map, target),
+                            invertibility: level.invertibility(map, target),
                         })
                         .collect(),
                 );
@@ -200,6 +203,7 @@ impl<'level, L: Level> Site<'level, L>
             (size(pair.0).saturating_add(size(pair.1)), pair.0, pair.1)
         });
         Self {
+            level,
             nodes,
             arrows,
             pairs,
@@ -317,7 +321,23 @@ impl<'level, L: Level> Site<'level, L>
         node: Node,
     ) -> Option<L::Map>
     {
-        self.nodes.get(node.0).map(|object| L::identity(object))
+        self.level.identity(ShapeIndex::from(node.0))
+    }
+
+    /// The identity of `object`, read at its class; absent when the level
+    /// holds no class for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn identity_of(
+        &self,
+        object: &L::Object,
+    ) -> Option<L::Map>
+    {
+        match self.level.find(object) {
+            Maybe::Present(at) => self.level.identity(at),
+            Maybe::Absent(_) => None,
+        }
     }
 }
 
@@ -351,12 +371,13 @@ impl Part
         }
     }
 
-    /// Whether `map`, read against `target`, is in the part.
+    /// Whether `map`, read against `target` at `level`, is in the part.
     ///
     /// # Specification
     /// trivial.
     fn admits<L>(
         self,
+        level: &L,
         map: &L::Map,
         target: &L::Object,
     ) -> Membership
@@ -365,8 +386,8 @@ impl Part
     {
         match self {
             Self::Whole => Membership::Inside,
-            Self::Raising => L::raising(map),
-            Self::Lowering => L::lowering(map, target),
+            Self::Raising => level.raising(map),
+            Self::Lowering => level.lowering(map, target),
         }
     }
 }
@@ -391,9 +412,9 @@ impl Part
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(first), Some(second)) => L::then(first.map(), second.map()).map_or(true, |composite| {
-            L::admits(&composite, first.source(), second.target()) == Membership::Outside
-                || part.admits::<L>(&composite, second.target()) == Membership::Outside
+        (Some(first), Some(second)) => site.level.then(first.map(), second.map()).map_or(true, |composite| {
+            site.level.admits(&composite, first.source(), second.target()) == Membership::Outside
+                || part.admits(site.level, &composite, second.target()) == Membership::Outside
         }),
         _ => false,
     },
@@ -418,7 +439,9 @@ where
                 .filter(|arrow| part.holds(arrow) == Membership::Inside)
             {
                 tally.count();
-                let closed = L::then(left.map, right.map)
+                let closed = site
+                    .level
+                    .then(left.map, right.map)
                     .ok()
                     .and_then(|composite| site.find((first, third), &composite))
                     .is_some_and(|arrow| part.holds(arrow) == Membership::Inside);
@@ -453,13 +476,12 @@ where
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => usize::from(cases) == usize::from(site.node_count()).saturating_add(usize::from(site.map_count())),
-    Outcome::Fails { ref witness, .. } => {
-        let before = L::identity(witness.source());
-        let after = L::identity(witness.target());
-        L::then(&before, witness.map()).as_ref() != Ok(witness.map())
-            || L::then(witness.map(), &after).as_ref() != Ok(witness.map())
-            || (*witness.map() == before && (L::raising(witness.map()) == Membership::Outside
-                || L::lowering(witness.map(), witness.target()) == Membership::Outside))
+    Outcome::Fails { ref witness, .. } => match (site.identity_of(witness.source()), site.identity_of(witness.target())) {
+        (Some(before), Some(after)) => site.level.then(&before, witness.map()).as_ref() != Ok(witness.map())
+            || site.level.then(witness.map(), &after).as_ref() != Ok(witness.map())
+            || (*witness.map() == before && (site.level.raising(witness.map()) == Membership::Outside
+                || site.level.lowering(witness.map(), witness.target()) == Membership::Outside)),
+        (None, _) | (_, None) => false,
     },
 })]
 pub fn identities<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
@@ -485,8 +507,14 @@ where
         }
         for arrow in site.arrows(source, target) {
             tally.count();
-            let unit = L::then(&before, arrow.map).is_ok_and(|map| map == *arrow.map)
-                && L::then(arrow.map, &after).is_ok_and(|map| map == *arrow.map);
+            let unit = site
+                .level
+                .then(&before, arrow.map)
+                .is_ok_and(|map| map == *arrow.map)
+                && site
+                    .level
+                    .then(arrow.map, &after)
+                    .is_ok_and(|map| map == *arrow.map);
             if !unit {
                 return tally.fails(site.case((source, target), arrow.map));
             }
@@ -511,9 +539,9 @@ where
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => (L::raising(witness.map()) == Membership::Inside
-        && L::lowering(witness.map(), witness.target()) == Membership::Inside)
-        != (L::invertibility(witness.map(), witness.target()) == Invertibility::Invertible),
+    Outcome::Fails { ref witness, .. } => (site.level.raising(witness.map()) == Membership::Inside
+        && site.level.lowering(witness.map(), witness.target()) == Membership::Inside)
+        != (site.level.invertibility(witness.map(), witness.target()) == Invertibility::Invertible),
 })]
 pub fn intersection<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
 where
@@ -549,7 +577,7 @@ where
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => L::admits(witness.map(), witness.source(), witness.target()) == Membership::Inside,
+    Outcome::Fails { ref witness, .. } => site.level.admits(witness.map(), witness.source(), witness.target()) == Membership::Inside,
 })]
 pub fn invertibility<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
 where
@@ -564,8 +592,13 @@ where
         for arrow in site.arrows(source, target) {
             tally.count();
             let inverse = site.arrows(target, source).iter().any(|back| {
-                L::then(arrow.map, back.map).is_ok_and(|map| map == left_unit)
-                    && L::then(back.map, arrow.map).is_ok_and(|map| map == right_unit)
+                site.level
+                    .then(arrow.map, back.map)
+                    .is_ok_and(|map| map == left_unit)
+                    && site
+                        .level
+                        .then(back.map, arrow.map)
+                        .is_ok_and(|map| map == right_unit)
             });
             if inverse != (arrow.invertibility == Invertibility::Invertible) {
                 return tally.fails(site.case((source, target), arrow.map));
@@ -606,9 +639,9 @@ pub enum Scope
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => {
         let (low, high) = (L::degree(witness.source()), L::degree(witness.target()));
-        match L::invertibility(witness.map(), witness.target()) {
+        match site.level.invertibility(witness.map(), witness.target()) {
             Invertibility::Invertible => low != high,
-            Invertibility::NotInvertible if L::raising(witness.map()) == Membership::Inside => low >= high,
+            Invertibility::NotInvertible if site.level.raising(witness.map()) == Membership::Inside => low >= high,
             Invertibility::NotInvertible => scope == Scope::Both && high >= low,
         }
     },
@@ -686,8 +719,8 @@ where
         let (low, high) = (L::degree(witness.source()), L::degree(witness.target()));
         L::grounded(witness.source()) == Membership::Inside
             && L::grounded(witness.target()) == Membership::Inside
-            && (L::raising(witness.map()) == Membership::Outside
-                || match L::invertibility(witness.map(), witness.target()) {
+            && (site.level.raising(witness.map()) == Membership::Outside
+                || match site.level.invertibility(witness.map(), witness.target()) {
                     Invertibility::Invertible => low != high,
                     Invertibility::NotInvertible => low >= high,
                 })
@@ -864,7 +897,7 @@ type Factorization<'level, Map> = (Node, &'level Map, &'level Map);
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { cases } => cases == site.map_count(),
-    Outcome::Fails { ref witness, .. } => L::admits(witness.case.map(), witness.case.source(), witness.case.target()) == Membership::Inside,
+    Outcome::Fails { ref witness, .. } => site.level.admits(witness.case.map(), witness.case.source(), witness.case.target()) == Membership::Inside,
 })]
 pub fn factorization<L>(site: &Site<'_, L>) -> Outcome<FactorizationFailure<L::Object, L::Map>>
 where
@@ -911,7 +944,7 @@ where
                 .iter()
                 .filter(|arrow| arrow.raising == Membership::Inside)
             {
-                if let Ok(composite) = L::then(lower.map, raise.map) {
+                if let Ok(composite) = site.level.then(lower.map, raise.map) {
                     buckets
                         .entry(composite)
                         .or_default()
@@ -965,8 +998,13 @@ where
         let connecting = automorphisms
             .iter()
             .filter(|theta| {
-                L::then(first_lower, theta).is_ok_and(|map| map == *lower)
-                    && L::then(theta, raise).is_ok_and(|map| map == *first_raise)
+                site.level
+                    .then(first_lower, theta)
+                    .is_ok_and(|map| map == *lower)
+                    && site
+                        .level
+                        .then(theta, raise)
+                        .is_ok_and(|map| map == *first_raise)
             })
             .count();
         match connecting {
@@ -997,9 +1035,9 @@ where
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(lower), Some(theta)) => L::lowering(lower.map(), lower.target()) == Membership::Inside
-            && *theta.map() != L::identity(theta.source())
-            && L::then(lower.map(), theta.map()).as_ref() == Ok(lower.map()),
+        (Some(lower), Some(theta)) => site.level.lowering(lower.map(), lower.target()) == Membership::Inside
+            && site.identity_of(theta.source()).as_ref() != Some(theta.map())
+            && site.level.then(lower.map(), theta.map()).as_ref() == Ok(lower.map()),
         _ => false,
     },
 })]
@@ -1023,7 +1061,10 @@ where
                     continue;
                 }
                 tally.count();
-                let fixes = L::then(lower.map, theta.map).is_ok_and(|map| map == *lower.map);
+                let fixes = site
+                    .level
+                    .then(lower.map, theta.map)
+                    .is_ok_and(|map| map == *lower.map);
                 if fixes && *theta.map != unit {
                     return tally.fails(Chain::new(vec![
                         site.case((source, target), lower.map),
@@ -1056,9 +1097,9 @@ where
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
     Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-        (Some(theta), Some(raise)) => L::raising(raise.map()) == Membership::Inside
-            && *theta.map() != L::identity(theta.source())
-            && L::then(theta.map(), raise.map()).as_ref() == Ok(raise.map()),
+        (Some(theta), Some(raise)) => site.level.raising(raise.map()) == Membership::Inside
+            && site.identity_of(theta.source()).as_ref() != Some(theta.map())
+            && site.level.then(theta.map(), raise.map()).as_ref() == Ok(raise.map()),
         _ => false,
     },
 })]
@@ -1082,7 +1123,10 @@ where
                     continue;
                 }
                 tally.count();
-                let absorbed = L::then(theta.map, raise.map).is_ok_and(|map| map == *raise.map);
+                let absorbed = site
+                    .level
+                    .then(theta.map, raise.map)
+                    .is_ok_and(|map| map == *raise.map);
                 if absorbed && *theta.map != unit {
                     return tally.fails(Chain::new(vec![
                         site.case((source, source), theta.map),
@@ -1110,7 +1154,7 @@ where
 #[must_use]
 #[spec(ensures: |ref outcome| match *outcome {
     Outcome::Holds { .. } => true,
-    Outcome::Fails { ref witness, .. } => L::lowering(witness.map(), witness.target()) == Membership::Inside,
+    Outcome::Fails { ref witness, .. } => site.level.lowering(witness.map(), witness.target()) == Membership::Inside,
 })]
 pub fn split_lowering<L>(site: &Site<'_, L>) -> Outcome<MapCase<L::Object, L::Map>>
 where
@@ -1128,10 +1172,11 @@ where
             .filter(|arrow| arrow.lowering == Membership::Inside)
         {
             tally.count();
-            let split = site
-                .arrows(target, source)
-                .iter()
-                .any(|section| L::then(section.map, lower.map).is_ok_and(|map| map == unit));
+            let split = site.arrows(target, source).iter().any(|section| {
+                site.level
+                    .then(section.map, lower.map)
+                    .is_ok_and(|map| map == unit)
+            });
             if !split {
                 return tally.fails(site.case((source, target), lower.map));
             }
@@ -1174,16 +1219,16 @@ type Cocone<'level, Map> = (Node, &'level Map, &'level Map);
     match outcomes.existence {
         Outcome::Holds { .. } => true,
         Outcome::Fails { ref witness, .. } => match (witness.links().first(), witness.links().get(1)) {
-            (Some(raise), Some(deletion)) => L::raising(raise.map()) == Membership::Inside
-                && L::lowering(deletion.map(), deletion.target()) == Membership::Inside
-                && L::invertibility(deletion.map(), deletion.target()) == Invertibility::NotInvertible
+            (Some(raise), Some(deletion)) => site.level.raising(raise.map()) == Membership::Inside
+                && site.level.lowering(deletion.map(), deletion.target()) == Membership::Inside
+                && site.level.invertibility(deletion.map(), deletion.target()) == Invertibility::NotInvertible
                 && raise.source() == deletion.source(),
             _ => false,
         },
     },
     match outcomes.stability {
         Outcome::Holds { .. } => true,
-        Outcome::Fails { ref witness, .. } => witness.links().get(2).is_some_and(|pushed| L::raising(pushed.map()) == Membership::Outside),
+        Outcome::Fails { ref witness, .. } => witness.links().get(2).is_some_and(|pushed| site.level.raising(pushed.map()) == Membership::Outside),
     },
 ])]
 pub fn pushouts<L>(site: &Site<'_, L>) -> PushoutOutcomes<L::Object, L::Map>
@@ -1252,12 +1297,16 @@ where
     let mut found: Vec<Cocone<'level, L::Map>> = Vec::new();
     for vertex in (0 .. site.nodes.len()).map(Node) {
         for upper in site.arrows(left, vertex) {
-            let Ok(through_left) = L::then(raise, upper.map)
+            let Ok(through_left) = site.level.then(raise, upper.map)
             else {
                 continue;
             };
             for lower in site.arrows(right, vertex) {
-                if L::then(deletion, lower.map).is_ok_and(|map| map == through_left) {
+                if site
+                    .level
+                    .then(deletion, lower.map)
+                    .is_ok_and(|map| map == through_left)
+                {
                     found.push((vertex, upper.map, lower.map));
                 }
             }
@@ -1285,8 +1334,13 @@ where
                 .arrows(vertex, target)
                 .iter()
                 .filter(|arrow| {
-                    L::then(upper, arrow.map).is_ok_and(|map| map == *other_upper)
-                        && L::then(lower, arrow.map).is_ok_and(|map| map == *other_lower)
+                    site.level
+                        .then(upper, arrow.map)
+                        .is_ok_and(|map| map == *other_upper)
+                        && site
+                            .level
+                            .then(lower, arrow.map)
+                            .is_ok_and(|map| map == *other_lower)
                 })
                 .count();
             mediating == 1

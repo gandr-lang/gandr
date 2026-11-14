@@ -32,7 +32,7 @@ fn a_cover_without_its_outer_graft_leaves_a_family_unmediated()
     let bound = ShapeSize::from(13_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
-    let wreath = Wreath::build(level, level, bound);
+    let wreath = Wreath::build(&chains, &chains, bound);
     let top = level
         .shapes()
         .iter()
@@ -82,7 +82,7 @@ fn a_level_three_cover_without_its_column_glue_leaves_a_family_unmediated()
     let bound = ShapeSize::from(11_usize);
     let chains = Arc::new(Catalogue::chains(bound).expect("the chain catalogue builds"));
     let level: &Catalogue = &chains;
-    let two = Arc::new(Wreath::build(level, level, bound));
+    let two = Arc::new(Wreath::build(&chains, &chains, bound));
     let top = |degrees: &mut dyn Iterator<Item = Degree>| degrees.max().expect("objects");
     let one = SegalStratum::certify(
         Arc::clone(&chains),
@@ -92,7 +92,7 @@ fn a_level_three_cover_without_its_column_glue_leaves_a_family_unmediated()
     let degree = top(&mut two.objects().iter().map(Wreath::<Catalogue>::degree));
     let below =
         WreathStratum::certify(Arc::clone(&two), degree, one).expect("level two is certified");
-    let three = Wreath::build(level, &*two, bound);
+    let three = Wreath::build(&chains, &two, bound);
     let chain =
         |length: usize| Shape::chain(EdgeCount::from(length)).expect("the chain is admitted");
     let composite = WreathShape::new(chain(1), vec![chain(2)]).expect("one column");

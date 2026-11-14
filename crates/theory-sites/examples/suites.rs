@@ -230,7 +230,7 @@ fn every(wreath: &Wreath<Catalogue>) -> Vec<ShapeIndex>
 /// trivial.
 fn wreath_rows(
     out: &mut impl Write,
-    (single, paired): (&Catalogue, &Catalogue),
+    (single, paired): (&Arc<Catalogue>, &Arc<Catalogue>),
     (one, two): (ShapeSize, ShapeSize),
 ) -> std::io::Result<()>
 {
@@ -320,7 +320,7 @@ fn restriction_rows(out: &mut impl Write) -> Result<(), RunError>
     for total in [9_usize, 11, 13, 15] {
         let bound = ShapeSize::from(total);
         let start = Instant::now();
-        let chains = Catalogue::chains(bound)?;
+        let chains = Arc::new(Catalogue::chains(bound)?);
         let restriction = Wreath::build(&chains, &chains, bound);
         let built = start.elapsed();
         let all = every(&restriction);
@@ -548,7 +548,7 @@ fn main() -> Result<(), RunError>
         Degree::from(4_usize),
         Catalogue::build,
     )?;
-    wreath_rows(&mut out, (&single, &paired), (one, two))?;
+    wreath_rows(&mut out, (&Arc::new(single), &Arc::new(paired)), (one, two))?;
     restriction_rows(&mut out)?;
     Ok(())
 }

@@ -6,6 +6,8 @@
 //! pairs and spans over total size at most three. Every case count is pinned:
 //! a lost object, map or case changes one.
 
+use alloc::sync::Arc;
+
 use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_sites::CaseCount;
 use gandr_theory_sites::Catalogue;
@@ -44,7 +46,7 @@ use quenchant_shape::shape::Maybe;
 /// trivial.
 fn wreath(bound: ShapeSize) -> Wreath<Catalogue>
 {
-    let catalogue = Catalogue::build(bound).expect("the catalogue builds");
+    let catalogue = Arc::new(Catalogue::build(bound).expect("the catalogue builds"));
     Wreath::build(&catalogue, &catalogue, bound)
 }
 
@@ -145,7 +147,12 @@ fn a_column_raises_when_one_inner_map_keeps_it()
     let onto_both: Vec<_> = small
         .hom(source, target)
         .iter()
-        .filter(|map| map.outer().image(Edge::from(0)) == both)
+        .filter(|map| {
+            small
+                .outer()
+                .map_at(map.outer())
+                .is_some_and(|outer| outer.image(Edge::from(0)) == both)
+        })
         .collect();
     assert_eq!(
         onto_both.len(),
@@ -154,14 +161,19 @@ fn a_column_raises_when_one_inner_map_keeps_it()
     );
     let raising: Vec<_> = onto_both
         .iter()
-        .filter(|map| Wreath::<Catalogue>::raising(map) == Membership::Inside)
+        .filter(|map| small.raising(map) == Membership::Inside)
         .collect();
     assert_eq!(raising.len(), 1);
     let column = raising[0].column(Edge::from(0));
     assert_eq!(column.len(), 2, "one inner map per image vertex");
+    let inner = small.inner();
     let kept = column
         .iter()
-        .filter(|entry| Catalogue::raising(&entry.1) == Membership::Inside)
+        .filter(|entry| {
+            inner
+                .map_at(entry.1)
+                .is_some_and(|map| inner.raising(map) == Membership::Inside)
+        })
         .count();
     assert_eq!(
         kept, 1,
@@ -254,8 +266,8 @@ fn a_column_pushes_out_only_by_deleting_its_vertex()
         (empty.clone(), vec![]),
     ]);
     assert_eq!(outcomes.stability, Outcome::Holds { cases: 160.into() });
-    let points = Catalogue::build(ShapeSize::from(1)).expect("the catalogue builds");
-    let inner = Catalogue::build(ShapeSize::from(3)).expect("the catalogue builds");
+    let points = Arc::new(Catalogue::build(ShapeSize::from(1)).expect("the catalogue builds"));
+    let inner = Arc::new(Catalogue::build(ShapeSize::from(3)).expect("the catalogue builds"));
     let columns = Wreath::build(&points, &inner, ShapeSize::from(4));
     let outcomes = pushouts(&Site::new(&columns));
     assert_eq!(outcomes.existence, Outcome::Holds { cases: 181.into() });
