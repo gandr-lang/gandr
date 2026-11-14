@@ -220,12 +220,13 @@ INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','RecordPositio
 INSERT INTO position VALUES('crates/storage-chunker/src/units.rs','TokenCount','','none',NULL,'A count of tokens.');
 INSERT INTO position VALUES('crates/storage-io/src/record.rs','RecordDigest','','none',NULL,'A digest of a record''s bytes.');
 INSERT INTO position VALUES('crates/storage-io/src/record.rs','RecordLength','','none',NULL,'A count of a record''s bytes.');
+INSERT INTO position VALUES('crates/storage-io/src/record.rs','SegmentId','storage-io::buffer','owed','#7481','A segment''s number in the order that its shard mints it, which a record''s header writes as the expected place of its check and which names no identity; it stays local to the open segment once a sealed segment is named by the digest of its trailer.');
 INSERT INTO position VALUES('crates/storage-io/src/record.rs','Shard','','none',NULL,'A tag of the shard that writes a record.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Count','','none',NULL,'A count of entries or of completions.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Index','','local',NULL,'A position in one ring''s queue, which only the ring and its kernel read.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Key','','local',NULL,'A submission''s key, which only its ring carries back; no key, name or byte form writes it.');
 INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Moved','','none',NULL,'A count of bytes.');
-INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Position','','local',NULL,'A byte position in one file that the caller names; no key, name or byte form of this crate writes it.');
+INSERT INTO position VALUES('crates/storage-io/src/ring.rs','Position','storage-io::buffer','owed','#7481','A record''s offset in its segment, which the record''s header writes as the expected place of its check and which names no identity; it is kept once a sealed segment is named by the digest of its trailer.');
 INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Errno','','none',NULL,'An error number.');
 INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Number','','none',NULL,'A number of a system call.');
 INSERT INTO position VALUES('crates/storage-io/src/sys.rs','Word','','none',NULL,'A carrier of a machine word of a system call.');
