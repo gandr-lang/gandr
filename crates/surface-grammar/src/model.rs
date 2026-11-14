@@ -1474,6 +1474,13 @@ impl Error for PbgError
             Self::InvalidSort { .. } | Self::MissingPrec { .. } | Self::PrecedenceCycle { .. } | Self::InvalidPrec { .. } | Self::DuplicateRule { .. } | Self::AdjacentSorts { .. } | Self::DuplicateTile { .. } | Self::Assumption3Conflict { .. } | Self::MoldOverflow | Self::UnknownMold { .. } | Self::UnknownRCtx { .. } => ret.is_none(),
         })]
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {

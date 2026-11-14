@@ -9371,6 +9371,13 @@ impl Error for MeldError
     /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
     #[inline]
     #[spec(ensures: |ret| match *self { Self::Build(ref error) => ret.and_then(|cause| cause.downcast_ref::<SyntaxError>()).is_some_and(|actual| core::ptr::eq(&raw const *actual, &raw const *error)), Self::SourceMismatch | Self::Corrupt => ret.is_none() })]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {

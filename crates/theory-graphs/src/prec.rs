@@ -665,6 +665,13 @@ impl Error for PrecDagError
     /// # Specification
     /// trivial.
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {

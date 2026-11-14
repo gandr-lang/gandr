@@ -651,6 +651,13 @@ impl Error for HighlightError
     /// - witness: `highlight::tests::highlight_error_sources_preserve_the_range_cause`
     #[spec(ensures: |ret| match *self { Self::InvertedSpan(ref error) => ret.and_then(|source| source.downcast_ref::<InvertedRange>()) == Some(error), Self::GrammarMismatch { .. } | Self::UnknownMold { .. } => ret.is_none() })]
     #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            trait_object,
+            reason = "signature: `Error::source` returns the trait object that `core`'s own signature fixes"
+        )
+    )]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {

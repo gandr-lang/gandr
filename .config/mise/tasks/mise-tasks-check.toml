@@ -458,7 +458,9 @@ done
 # and the denied lints apply to it. Under `--no-deps` the driver loads no
 # library for it, so the compiler refuses each denied lint as unknown
 # (#6946). After its run the task runs the case of #6946
-# (`.config/policy/scope-cases.bash`) through the same command, `policy`.
+# (`.config/policy/scope-cases.bash`) and the case of #7384
+# (`.config/policy/trait-object-cases.bash`) through the same command,
+# `policy`.
 # The run turns on the features that the targets of the scope's packages
 # require (`.config/policy/required.bash`), as `check:clippy-enforcing`
 # does, so a target that builds only under a feature is linted too.
@@ -514,6 +516,11 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # file read with `include_str!`, so the format gate reads it (#491). It lists
 # every inline source that reaches the type, one line or more, under
 # `target/embedded-sources` for the migration's codemod.
+# `trait_object` (deny by default) refuses a trait object whose principal
+# trait is in a class of `trait_object_classes` (#7384). The errors' class
+# is the first; each later wave adds its class. A site that keeps its trait
+# object states why in an `expect` at the site, as each `Error::source`
+# does, since `core` fixes that signature.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -526,6 +533,7 @@ dishonest_spellings = [{ text = "?", crates = ["gandr_surface_pretty", "gandr_su
 presenters = [
   { enum = "gandr_surface_pretty::former::Former", functions = ["gandr_surface_pretty::walk::Walk::visit", "gandr_surface_pretty::walk::Walk::form"] },
 ]
+trait_object_classes = ["core::error::Error"]
 
 [quenchant-dylints.productions]
 marker = "gandr_surface_pretty::walk::Production"
@@ -662,6 +670,7 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features
 export toolchain
 export -f policy
 .config/policy/scope-cases.bash
+.config/policy/trait-object-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
