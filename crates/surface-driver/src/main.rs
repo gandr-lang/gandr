@@ -1443,9 +1443,11 @@ struct Opened
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the store and the register [`Store::open`] opens at the directory
-///   [`config::store`] names; when no directory is named, or the store does not
-///   open, `gandr: <why>` on standard error and the faulted exit.
+/// - ensures: the store and the register [`Store::open_with`] opens at the
+///   directory [`config::store`] names, sealing as the configuration's
+///   `[store]` table names; when no directory is named, the table faults or the
+///   store does not open, `gandr: <why>` on standard error and the faulted
+///   exit.
 /// - provides: the one store a `check` or a `lock` run opens.
 /// - fails: the faulted exit, as above.
 /// - panics: none.
@@ -1473,7 +1475,10 @@ fn opened() -> Result<Opened, ExitCode>
             &"no directory names the store: set `XDG_DATA_HOME` or `HOME`",
         ));
     };
-    Store::open(&root)
+    let seal = config::Configuration::default()
+        .seal()
+        .map_err(|error| fault(&error))?;
+    Store::open_with(&root, seal)
         .map(|(store, register)| Opened { store, register })
         .map_err(|error| fault(&error))
 }

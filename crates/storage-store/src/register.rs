@@ -311,7 +311,8 @@ impl Writer
         self.nodes.sync()?;
         crash::passed(Point::ObjectsAfter);
         let lock = locked(&self.root, Hold::Alone)?;
-        self.kept.name(&self.root, &self.nodes, namings)?;
+        self.kept
+            .name(&self.root, (&self.chunks, &self.nodes), namings)?;
         drop(lock);
         self.published.store(Arc::new(self.kept.roots().clone()));
         Ok(())

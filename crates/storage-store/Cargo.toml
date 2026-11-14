@@ -18,13 +18,21 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# The load of many files into one store at once, its rate of puts beside the
-# fold of one writer. `cargo bench` prints one row for each width; `cargo
-# test` runs one short pass.
+# The load of many files into one store at once: the rate and the latency of
+# its puts, its naming and the open after it. `cargo bench` prints one row for
+# each width; `cargo test` runs one short pass.
 [[bench]]
 harness = false
 name = "load"
 path = "benches/load.rs"
+
+# The extent size of a device, at which the store seals a segment.
+# `mise run store:profile` writes it into the user's configuration; `cargo
+# test` runs one short pass.
+[[bench]]
+harness = false
+name = "profile"
+path = "benches/profile.rs"
 
 # The pinned anodized facade supplies the specification attributes; arc-swap
 # holds the snapshot of the roots that readers load with no lock; blake3

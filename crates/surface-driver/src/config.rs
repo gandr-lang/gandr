@@ -136,10 +136,25 @@
 //! is, and the hub does not start. The table is the user's file's alone: how
 //! long a host waits on its runtimes is a decision of an installation, never
 //! of a project.
+//!
+//! # The seal of the store
+//!
+//! The store's shards seal each segment at the extent size of the device
+//! that holds the store, as the `[store]` table names it:
+//!
+//! ```toml
+//! [store]
+//! seal_bytes = 4194304 # as `mise run store:profile` measured it
+//! ```
+//!
+//! With no key, a segment seals at the close of the store alone. A value that
+//! is not a whole number of 1 at least is a fault. The size is a fact of the
+//! host, so the table is the user's file's alone.
 
 use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
 use core::fmt;
+use core::num::NonZeroU64;
 #[cfg(unix)]
 use core::time::Duration;
 use std::io;
@@ -148,6 +163,8 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_kernel_core::verdict::KernelIdentity;
+use gandr_storage_store::Seal;
+use gandr_storage_store::SealBytes;
 #[cfg(unix)]
 use gandr_surface_agentic::Policy;
 #[cfg(unix)]
@@ -837,6 +854,46 @@ impl Configuration
             }),
         }
     }
+
+    /// The seal of the store's segments, as the user's configuration file
+    /// names it: the extent size that `mise run store:profile` measured on
+    /// the host.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`seal_parsed`] reads the file's document; the seal at the
+    ///   close alone when no directory is named or no file is there.
+    /// - provides: the seal every open of the host's store takes.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`seal_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`TableFault`], naming the file.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a size, no table, no key, a zero, a word and a
+    ///   misshapen table are each read.
+    /// - witness: `config::tests::a_store_seal_is_read_and_a_bad_one_refused_7481`
+    pub fn seal(&self) -> Result<Seal, TableFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(Seal::AtClose),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => seal_parsed(path, document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(TableFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
+    }
 }
 
 /// The kernel policy `read`, the contents of `path` parsed as TOML, names.
@@ -1044,6 +1101,70 @@ fn deliveries_parsed(
     })
 }
 
+/// The seal of the store's segments that `read`, the contents of `path`
+/// parsed as TOML, names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `store.seal_bytes`, a whole number of 1 at least, as [`Seal::At`]
+///   that size; a document with no `store` table or no key as
+///   [`Seal::AtClose`]. Text that is not TOML, a `store` that is not a table
+///   and a size that is no whole number of 1 at least are each a
+///   [`TableFault`].
+/// - provides: the reading of the table, apart from reading the file.
+/// - fails: the faults the ensures clause names.
+/// - panics: none.
+/// - executable: none — the clauses relate the document's text to the seal it
+///   names, which the result alone does not carry.
+///
+/// # Errors
+/// [`TableFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a size, no table, no key, a zero, a word and a misshapen
+///   table are each read.
+/// - witness: `config::tests::a_store_seal_is_read_and_a_bad_one_refused_7481`
+fn seal_parsed(
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
+) -> Result<Seal, TableFault>
+{
+    let fault = |why: String| TableFault {
+        path: path.to_path_buf(),
+        why,
+    };
+    let table = match read {
+        Ok(table) => table,
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
+    };
+    let store = match table.get("store") {
+        None => return Ok(Seal::AtClose),
+        Some(&toml::Value::Table(ref store)) => store,
+        Some(other) => {
+            return Err(fault(format!(
+                "`store` is of type {}, not a table",
+                other.type_str()
+            )));
+        },
+    };
+    match store.get("seal_bytes") {
+        None => Ok(Seal::AtClose),
+        Some(&toml::Value::Integer(number)) => u64::try_from(number)
+            .ok()
+            .and_then(NonZeroU64::new)
+            .map(|bytes| Seal::At(SealBytes(bytes)))
+            .ok_or_else(|| {
+                fault(format!(
+                    "`store.seal_bytes` is {number}; it is a whole number of 1 at least"
+                ))
+            }),
+        Some(other) => Err(fault(format!(
+            "`store.seal_bytes` is {}; it is a whole number",
+            described(other)
+        ))),
+    }
+}
+
 /// What a setting holds, in words: a string as itself, quoted; any other
 /// value by its type.
 ///
@@ -1122,10 +1243,13 @@ fn identity(key: &toml::Value) -> Option<KernelIdentity>
 mod tests
 {
     use alloc::collections::BTreeSet;
+    use core::num::NonZeroU64;
     use std::path::Path;
     use std::path::PathBuf;
 
     use gandr_kernel_core::verdict::KernelIdentity;
+    use gandr_storage_store::Seal;
+    use gandr_storage_store::SealBytes;
     use gandr_surface_dispatcher::RealsProfile;
 
     use super::Kernel;
@@ -1135,6 +1259,7 @@ mod tests
     use super::kernel_parsed;
     use super::located;
     use super::reals_parsed;
+    use super::seal_parsed;
     use super::stored;
 
     #[test]
@@ -1355,6 +1480,47 @@ mod tests
         assert_eq!(
             refused("deliveries = 1\n"),
             "/c/gandr/config.toml: `deliveries` is of type integer, not a table"
+        );
+    }
+
+    /// #7481: the seal of the store reads as the `[store]` table names it,
+    /// the seal at the close with no key, and a bad size is refused by name.
+    #[test]
+    fn a_store_seal_is_read_and_a_bad_one_refused_7481()
+    {
+        let read = |text: &str| {
+            seal_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
+        let seal = |text: &str| match read(text) {
+            Ok(seal) => seal,
+            Err(fault) => panic!("{text:?} is read: {fault}"),
+        };
+        assert_eq!(seal(""), Seal::AtClose);
+        assert_eq!(seal("[store]\n"), Seal::AtClose);
+        assert_eq!(
+            seal("[store]\nseal_bytes = 4194304\n"),
+            Seal::At(SealBytes(
+                NonZeroU64::new(0x0040_0000).expect("the size is above zero")
+            ))
+        );
+        let refused = |text: &str| match read(text) {
+            Err(fault) => fault.to_string(),
+            Ok(seal) => panic!("{text:?} is refused: {seal:?}"),
+        };
+        assert_eq!(
+            refused("[store]\nseal_bytes = 0\n"),
+            "/c/gandr/config.toml: `store.seal_bytes` is 0; it is a whole number of 1 at least"
+        );
+        assert_eq!(
+            refused("[store]\nseal_bytes = \"big\"\n"),
+            "/c/gandr/config.toml: `store.seal_bytes` is `big`; it is a whole number"
+        );
+        assert_eq!(
+            refused("store = 1\n"),
+            "/c/gandr/config.toml: `store` is of type integer, not a table"
         );
     }
 

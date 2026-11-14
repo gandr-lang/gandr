@@ -47,10 +47,12 @@ use crate::plane::ChunkDirectory;
 use crate::plane::Image;
 use crate::plane::NodeBatch;
 use crate::plane::NodeDirectory;
+use crate::plane::Seal;
 use crate::register::Register;
 use crate::roots::Kept;
 use crate::roots::RootName;
 use crate::roots::Roots;
+use crate::roots::manifest;
 
 /// The directory of a store's value plane.
 const CHUNKS: &str = "chunks";
@@ -433,8 +435,43 @@ impl Store
     #[inline]
     pub fn open(root: &Path) -> Result<(Self, Register), StoreError>
     {
-        let chunks = Arc::new(ChunkDirectory::open(root.join(CHUNKS))?);
-        let nodes = Arc::new(NodeDirectory::open(root.join(NODES))?);
+        Self::open_with(root, Seal::AtClose)
+    }
+
+    /// The store rooted at `root`, as [`Store::open`] opens it, whose shards
+    /// seal their segments as `seal` asks.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Store::open`]. Each plane first reads the trailers of
+    ///   the sealed segments that the newest roots log line names, then the
+    ///   footers and the trailers of the other sealed segments, and scans only
+    ///   a segment that has none. A shard seals its segment once it reaches the
+    ///   size of `seal`, and at the close.
+    /// - provides: the open of a host that names its extent size.
+    /// - fails: as [`Store::open`].
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store opens from the trailers its root names.
+    /// - witness: `tests::store::a_store_opens_from_the_trailers_its_root_names_7481`
+    #[inline]
+    pub fn open_with(
+        root: &Path,
+        seal: Seal,
+    ) -> Result<(Self, Register), StoreError>
+    {
+        let named = manifest(root)?;
+        let chunks = Arc::new(ChunkDirectory::open(
+            root.join(CHUNKS),
+            seal,
+            named.chunks(),
+        )?);
+        let nodes = Arc::new(NodeDirectory::open(root.join(NODES), seal, named.nodes())?);
         let lock = locked(root, Hold::Shared)?;
         let kept = Kept::read(root, &nodes)?;
         drop(lock);

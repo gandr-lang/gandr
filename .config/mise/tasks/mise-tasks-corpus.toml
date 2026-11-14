@@ -197,6 +197,46 @@ cargo clean --quiet --package gandr-kernel-core --target-dir target/sizes
 .config/bench/small-device.bash "$gandr" "$counting" "$sizes" "${usage_limit:?}"
 '''
 
+# The extent size of the device that holds a directory (#7481), at which the
+# store's shards seal each segment. The `profile` bench of
+# `gandr-storage-store` appends extents of 64 KiB, doubling to 64 MiB, each
+# with one `fdatasync`, and names the smallest whose rate is nine tenths of the
+# best. The task writes that size as `seal_bytes` in the `[store]` table of
+# the user's configuration, `gandr/config.toml` under the XDG configuration
+# directory, which the driver reads when it opens the store. The size is a
+# fact of the host, so it never lands in the tree. A host with no line seals
+# each segment at the close of the store alone.
+["store:profile"]
+description = "Measure the extent size of the device under a directory and write it as the store's seal_bytes in the user's configuration"
+usage = 'arg "<directory>" help="a directory on the device that holds the store"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+rows=$(.config/mise/scope cargo bench --locked --quiet --package gandr-storage-store --bench profile -- \
+  --directory "${usage_directory:?}")
+printf '%s\n' "$rows"
+line=$(printf '%s\n' "$rows" | awk '/^seal_bytes = [0-9]+$/ { print; found = 1 } END { exit found ? 0 : 1 }') \
+  || { echo "store:profile: the bench named no extent size" >&2; exit 1; }
+home=${XDG_CONFIG_HOME:-}
+[[ $home == /* ]] || home=${HOME:?}/.config
+config=$home/gandr/config.toml
+mkdir -p "${config%/*}"
+touch "$config"
+written=$(mktemp "${config%/*}/config.toml.XXXXXX")
+trap 'rm -f "$written"' EXIT
+# Replace the key in the `[store]` table, or add it at the table's head, or
+# add the table at the file's end.
+awk -v line="$line" '
+  /^\[store\][[:space:]]*$/ { print; print line; table = 1; done = 1; next }
+  /^\[/ { table = 0 }
+  table && /^seal_bytes[[:space:]]*=/ { next }
+  { print }
+  END { if (!done) { print ""; print "[store]"; print line } }
+' "$config" > "$written"
+mv "$written" "$config"
+echo "store:profile: $config holds $line under [store]"
+'''
+
 # Catt's wall time on one example, the oracle the rows at dimension 3 are read
 # against (#3833). Catt is the repository `thibautbenjamin/catt` at the
 # revision below, built once into the user's cache with an opam root of its
