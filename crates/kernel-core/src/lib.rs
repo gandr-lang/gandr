@@ -785,6 +785,7 @@ pub use crate::environment::Pending;
 pub use crate::environment::Ran;
 pub use crate::environment::Released;
 pub use crate::environment::Twin;
+pub use crate::environment::held_on;
 pub use crate::environment::next_rank;
 pub use crate::environment::places;
 pub use crate::error::CompTypeHead;

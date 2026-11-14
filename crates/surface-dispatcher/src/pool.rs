@@ -99,6 +99,7 @@ use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
@@ -111,6 +112,7 @@ use anodized::spec;
 use gandr_core_fork::Dependence;
 use gandr_core_fork::Dependences;
 use gandr_core_fork::Fork;
+use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
@@ -130,6 +132,7 @@ use self::lane::Sleeper;
 use self::lane::Tending;
 use self::spawning::Scope;
 use self::workers::Back;
+use self::workers::Band;
 use self::workers::JobRef;
 use self::workers::Part;
 use self::workers::Parts;
@@ -137,6 +140,7 @@ use self::workers::Posted;
 use self::workers::Posts;
 use self::workers::Retracted;
 use self::workers::Runs;
+use self::workers::Tally;
 use self::workers::Workers;
 use crate::width::Threads;
 use crate::width::Width;
@@ -1341,7 +1345,7 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
                 Releasing::Run(job) => run(ItemIndex(index), job),
                 // No job runs at a release here, so a held release commits
                 // the result that it holds.
-                Releasing::Settled(out) | Releasing::Held(out) => out,
+                Releasing::Settled(out) | Releasing::Held(out, ..) => out,
             };
             commit(position, item, out);
         }
@@ -1357,15 +1361,82 @@ fn schedule_indexed<Item, Job, Out, Release, Run, Commit>(
     let tasks = NonZeroUsize::new(tasks).map_or(Threads::ONE, Threads::from);
     let (schedule, ledger) = Scheduled::new(pooled.workers, tasks, run, pooled.spin);
     let waiting = Waiting::new(after, items);
-    schedule.drive(ledger, items, waiting, (&mut release, &mut commit));
+    schedule.drive(
+        ledger,
+        items,
+        (waiting, after.sizes()),
+        (&mut release, &mut commit),
+    );
 }
 
-/// What a scheduled job hands back to the calling thread: its item's place
-/// and its result, or its panic.
-type Returned<Out> = Result<(ItemIndex, Out), Box<dyn Any + Send>>;
+/// What a scheduled job hands back to the calling thread: its item's place,
+/// its result and what its run took, or its panic.
+type Returned<Out> = Result<(ItemIndex, Out, Took), Box<dyn Any + Send>>;
 
 /// A job that may run: its item's place and the job that the release gave.
 type Ready<Job> = (ItemIndex, Job);
+
+/// Where a scheduled job ran, and the nanoseconds that its run took.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Took
+{
+    /// The nanoseconds of the run.
+    nanos: u64,
+    /// Where the job ran.
+    place: Place,
+}
+
+/// Where a scheduled job ran.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Place
+{
+    /// On the calling thread.
+    Calling,
+    /// On a lane's task.
+    Lane,
+}
+
+/// Add the run of a job of `size` nodes that `took` names to `tally`: the run
+/// prices a node where it ran on the calling thread, and it tells what a
+/// hand-off added where it ran on a lane. A job of no size measures nothing.
+///
+/// # Specification
+/// trivial.
+fn measured(
+    workers: &Workers,
+    tally: &mut Tally,
+    size: ItemSize,
+    took: Took,
+)
+{
+    let Ok(nodes) = u64::try_from(usize::from(size))
+    else {
+        return;
+    };
+    if nodes == 0 {
+        return;
+    }
+    match took.place {
+        Place::Calling => {
+            tally.home_nanos = tally.home_nanos.saturating_add(took.nanos);
+            tally.home_nodes = tally.home_nodes.saturating_add(nodes);
+        },
+        Place::Lane => {
+            let priced = workers.expected(size, tally).unwrap_or_default().as_nanos();
+            let added = u128::from(took.nanos).saturating_sub(priced);
+            tally.added_nanos = tally
+                .added_nanos
+                .saturating_add(u64::try_from(added).unwrap_or(u64::MAX));
+            tally.handed = tally.handed.saturating_add(1);
+        },
+    }
+}
 
 /// Whether the calling thread ran a job of a lane.
 ///
@@ -1382,14 +1453,6 @@ enum Taken
     /// No lane held a job that no task runs.
     Idle,
 }
-
-/// How many releases a chained schedule puts off for each release that it
-/// tries beside a running job. A schedule runs as a chain after a release
-/// holds while a job runs: the next release reads what that job commits, so
-/// the calling thread runs the job itself, and a hand-off would only cost a
-/// task's start. A try stages the item and gives the staging back when it
-/// holds, so a chain spends one try in 64 releases on finding parallel work.
-const CHAIN_PROBE: usize = 64;
 
 /// One schedule's state that its tasks share.
 ///
@@ -1419,6 +1482,8 @@ struct Scheduled<Job, Out, Run>
     ended: AtomicBool,
     /// How many posted tasks have not ended or come back.
     tasks: AtomicUsize,
+    /// The nanoseconds that the lanes' tasks spun on their empty rings.
+    spun: AtomicU64,
     /// The calling thread, which the last task wakes once the schedule ends.
     waiter: Thread,
 }
@@ -1447,6 +1512,8 @@ struct Ledger<'pool, Job, Out>
     turn: usize,
     /// The workers, and the posts of the lanes' tasks.
     tasks: Tasks<'pool>,
+    /// What the schedule measures of its jobs.
+    tally: Tally,
 }
 
 /// The tasks that the calling thread posted: the workers, and the last post
@@ -1478,22 +1545,26 @@ struct Ending<'schedule, 'pool, Job, Out, Run>
 
 impl<Job, Out, Run> Drop for Ending<'_, '_, Job, Out, Run>
 {
-    /// Close the schedule.
+    /// Close the schedule, then add its measures to the pool's.
     ///
     /// # Specification
     /// trivial.
     fn drop(&mut self)
     {
         self.schedule.close(&mut self.ledger.tasks);
+        self.ledger.tally.spun_nanos = self.schedule.spun.load(Ordering::Relaxed);
+        self.ledger.tasks.workers.add(&self.ledger.tally);
     }
 }
 
-/// What the calling thread alone holds of a schedule: each item's successors
-/// and its count of the items that it waits on and that are not committed.
+/// What the calling thread alone holds of a schedule: each item's successors,
+/// its count of the items that it waits on and that are not committed, and
+/// the one item that a held release parks on the commit of another.
 ///
 /// # Specification
 /// - provides: the edges within the slice, sorted by their earlier item, and
-///   where each item's edges start; a count for each item.
+///   where each item's edges start; a count for each item; the parked item and
+///   the item whose commit frees it.
 /// - panics: none.
 /// - executable: none — a type-level block; [`Pooled`]'s `schedule` carries the
 ///   obligations.
@@ -1506,6 +1577,10 @@ struct Waiting
     /// Each item's count of the items that it waits on and that are not
     /// committed.
     counts: Vec<usize>,
+    /// The item whose release held, and the item whose commit frees it. The
+    /// schedule releases in slice order, and a parked item waits, so at most
+    /// one item is parked.
+    parked: Option<(ItemIndex, ItemIndex)>,
 }
 
 impl Waiting
@@ -1555,6 +1630,7 @@ impl Waiting
             edges,
             starts,
             counts,
+            parked: None,
         }
     }
 
@@ -1575,10 +1651,12 @@ impl Waiting
         }
     }
 
-    /// Count down every item that waits on the item at `position`.
+    /// Count down every item that waits on the item at `position`, the parked
+    /// item among them when its hold names `position`.
     ///
     /// # Specification
-    /// - ensures: each successor's count falls by one.
+    /// - ensures: each successor's count falls by one, and so does the parked
+    ///   item's when its hold names `position`.
     /// - panics: none.
     /// - executable: none — a count of each successor, which a postcondition
     ///   over the whole vector would copy to compare.
@@ -1601,6 +1679,47 @@ impl Waiting
             if let Some(waits) = self.counts.get_mut(later) {
                 *waits = waits.saturating_sub(1);
             }
+        }
+        if self.parked.is_some_and(|(_, on)| on == position) {
+            self.unpark();
+        }
+    }
+
+    /// Park the item at `held` on the commit of the item at `on`: a release of
+    /// `held` held, and its hold names `on`.
+    ///
+    /// # Specification
+    /// - ensures: `held` counts one more item that it waits on, and the pair
+    ///   `(held, on)` is parked.
+    /// - panics: none.
+    /// - executable: none — a count of one item, which a postcondition over the
+    ///   whole vector would copy to compare.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
+    /// - witness: `pool::tests::a_held_release_waits_only_on_the_item_that_its_hold_names_7336`
+    fn park(
+        &mut self,
+        held: ItemIndex,
+        on: ItemIndex,
+    )
+    {
+        if let Some(waits) = self.counts.get_mut(held.0) {
+            *waits = waits.saturating_add(1);
+            self.parked = Some((held, on));
+        }
+    }
+
+    /// Free the parked item, when there is one: its count falls by one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unpark(&mut self)
+    {
+        if let Some((held, _)) = self.parked.take()
+            && let Some(waits) = self.counts.get_mut(held.0)
+        {
+            *waits = waits.saturating_sub(1);
         }
     }
 }
@@ -1758,6 +1877,7 @@ where
                 park: workers.park(),
                 ended: AtomicBool::new(false),
                 tasks: AtomicUsize::new(0),
+                spun: AtomicU64::new(0),
                 waiter: std::thread::current(),
             },
             Ledger {
@@ -1770,6 +1890,7 @@ where
                     workers,
                     posted: alloc::vec![None; lanes_count],
                 },
+                tally: Tally::default(),
             },
         )
     }
@@ -1782,15 +1903,24 @@ where
     /// - ensures: `release` ran on every item in slice order, each first time
     ///   once `waiting` counts no item that it waits on and no released job
     ///   waits for a slot. A release that answered [`Releasing::Held`] while a
-    ///   released job was not committed ran again once every released job was
-    ///   committed. `commit` ran once on every item, with its job's result as
-    ///   the job returned, or with the result of its release. Each commit
+    ///   released job was not committed ran again once the item that its hold
+    ///   names was committed, or once every released job was committed,
+    ///   whichever came first. A hold that names no item waits for every
+    ///   released job. `commit` ran once on every item, with its job's result
+    ///   as the job returned, or with the result of its release. Each commit
     ///   counts down the items that wait on the committed one. After a release
-    ///   holds while a job runs, the schedule runs as a chain: the calling
-    ///   thread keeps each job that a release gives and runs it, and it tries a
-    ///   release beside a running job once in [`CHAIN_PROBE`] releases. A
-    ///   release that gives a job beside a running job ends the chain. Out of a
-    ///   chain, after each release that gives a job, and after each result, the
+    ///   holds while a job runs, or once the next item waits on a job that is
+    ///   not committed, the schedule runs as a chain: the calling thread keeps
+    ///   each job that a release gives and runs it. The chain tries no release:
+    ///   a held item waits on the commit that its hold names, as on a
+    ///   dependence. While a lane has room, the chain releases the next item
+    ///   beside its kept job once `waiting` counts no item that the next item
+    ///   waits on, and once the next item passes the band: its size of `sizes`,
+    ///   priced by the pool's measure of the jobs that ran on their calling
+    ///   thread, costs more than the pool's measure of a whole hand-off. The
+    ///   kept job moves to the lane. The chain goes on after such a release, so
+    ///   the band decides each release beside a running job. Out of a chain,
+    ///   after each release that gives a job, and after each result, the
     ///   calling thread hands its kept job to a lane with room. A job that no
     ///   other job runs beside stays with the calling thread: the only one not
     ///   committed, while the next item waits on a commit. While it can neither
@@ -1810,11 +1940,12 @@ where
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
     /// - witness: `pool::tests::a_chained_schedule_runs_its_jobs_on_the_calling_thread`
     /// - witness: `pool::tests::a_schedule_releases_at_most_a_window_ahead_of_its_commits_7299`
+    /// - witness: `pool::tests::a_held_release_waits_only_on_the_item_that_its_hold_names_7336`
     fn drive<Item, Release, Commit>(
         &self,
         ledger: Ledger<'_, Job, Out>,
         items: &mut [Item],
-        mut waiting: Waiting,
+        (mut waiting, sizes): (Waiting, &[ItemSize]),
         (release, commit): (&mut Release, &mut Commit),
     ) where
         Release: FnMut(gandr_core_fork::ItemIndex, &mut Item) -> Releasing<Job, Out>,
@@ -1827,15 +1958,13 @@ where
         let ledger = &mut ending.ledger;
         let count = items.len();
         // The next item to release, the released jobs that are not committed,
-        // the items committed, whether a release holds, whether the schedule
-        // runs as a chain, and the releases that the chain put off since its
-        // last try.
+        // the items committed, whether a release holds on every released job,
+        // and whether the schedule runs as a chain.
         let mut next = ItemIndex(0);
         let mut outstanding = 0_usize;
         let mut committed = 0_usize;
         let mut holding = false;
         let mut chained = false;
-        let mut put_off = 0_usize;
         let mut commit_one =
             |position: ItemIndex, item: &mut Item, out: Out, waiting: &mut Waiting| {
                 let place = gandr_core_fork::ItemIndex::from(position.0);
@@ -1856,17 +1985,19 @@ where
             // and what they hold stays a bound of the width. The bound has no
             // number of its own. DEPTH is the one number left, and #7410 owes a
             // depth that the host measures.
-            while !holding && ledger.kept.is_none() && waiting.free(next) == Released::Free {
-                // A chain releases beside a running job only once in
-                // `CHAIN_PROBE` releases: each other try stages the item and
-                // then gives the staging back.
-                if chained && outstanding > 0 {
-                    put_off = put_off.saturating_add(1);
-                    if put_off < CHAIN_PROBE {
-                        break;
-                    }
-                    put_off = 0;
-                }
+            // A chain releases beside its kept job only an item that waits on
+            // no outstanding item, so the release does not hold on that job,
+            // and only an item that is expected to cost more than a hand-off.
+            while !holding
+                && (ledger.kept.is_none()
+                    || (chained
+                        && ledger.room > 0
+                        && ledger.tasks.workers.band(
+                            sizes.get(next.0).copied().unwrap_or_default(),
+                            &ledger.tally,
+                        ) == Band::Beside))
+                && waiting.free(next) == Released::Free
+            {
                 let Some(item) = items.get_mut(next.0)
                 else {
                     break;
@@ -1877,8 +2008,8 @@ where
                         .unwrap_or_else(|panic| self.stop(panic));
                 match released {
                     Releasing::Run(job) => {
-                        if outstanding > 0 {
-                            chained = false;
+                        if ledger.kept.is_some() {
+                            self.hand(ledger);
                         }
                         ledger.kept = Some((next, job));
                         outstanding = outstanding.saturating_add(1);
@@ -1887,11 +2018,17 @@ where
                             self.hand(ledger);
                         }
                     },
-                    Releasing::Held(_) if outstanding > 0 => {
+                    Releasing::Held(_, _, waited) if outstanding > 0 => {
                         chained = true;
-                        holding = true;
+                        // A hold that names an item parks the release on that
+                        // item's commit. One that names none waits for every
+                        // released job.
+                        match waited {
+                            Maybe::Present(on) => waiting.park(next, ItemIndex(usize::from(on))),
+                            Maybe::Absent(_) => holding = true,
+                        }
                     },
-                    Releasing::Settled(out) | Releasing::Held(out) => {
+                    Releasing::Settled(out) | Releasing::Held(out, ..) => {
                         commit_one(next, item, out, &mut waiting);
                         committed = committed.saturating_add(1);
                         next = ItemIndex(next.0.saturating_add(1));
@@ -1900,6 +2037,11 @@ where
             }
             if committed >= count {
                 break;
+            }
+            // The next item waits on a job that is not committed, as a held
+            // release does, so the schedule runs as a chain.
+            if outstanding > 0 && next.0 < count && waiting.free(next) == Released::Waiting {
+                chained = true;
             }
             // Commit each result that has come back, lane by lane.
             let mut returned = 0_usize;
@@ -1912,7 +2054,14 @@ where
                             ledger.room = ledger.room.saturating_add(1);
                         }
                         feed.held = feed.held.saturating_sub(1);
-                        let (position, out) = returning.unwrap_or_else(|panic| self.stop(panic));
+                        let (position, out, took) =
+                            returning.unwrap_or_else(|panic| self.stop(panic));
+                        measured(
+                            ledger.tasks.workers,
+                            &mut ledger.tally,
+                            sizes.get(position.0).copied().unwrap_or_default(),
+                            took,
+                        );
                         if let Some(item) = items.get_mut(position.0) {
                             commit_one(position, item, out, &mut waiting);
                         }
@@ -1932,6 +2081,7 @@ where
                 outstanding = outstanding.saturating_sub(returned);
                 if outstanding == 0 {
                     holding = false;
+                    waiting.unpark();
                 }
                 if !chained {
                     self.hand(ledger);
@@ -1941,9 +2091,15 @@ where
             // Neither a release nor a commit is possible: run a job here, or
             // wait for one to return.
             if let Some((position, job)) = ledger.kept.take() {
-                let (position, out) = self
-                    .run_job(position, job)
+                let (position, out, took) = self
+                    .run_job(position, job, Place::Calling)
                     .unwrap_or_else(|panic| self.stop(panic));
+                measured(
+                    ledger.tasks.workers,
+                    &mut ledger.tally,
+                    sizes.get(position.0).copied().unwrap_or_default(),
+                    took,
+                );
                 if let Some(item) = items.get_mut(position.0) {
                     commit_one(position, item, out, &mut waiting);
                 }
@@ -1951,6 +2107,7 @@ where
                 outstanding = outstanding.saturating_sub(1);
                 if outstanding == 0 {
                     holding = false;
+                    waiting.unpark();
                 }
             }
             else if self.take(ledger) == Taken::Idle {
@@ -2117,7 +2274,7 @@ where
         else {
             return Taken::Idle;
         };
-        let returning = self.run_job(position, job);
+        let returning = self.run_job(position, job, Place::Calling);
         let refused = runner.results.push(returning).is_err();
         debug_assert!(
             !refused,
@@ -2203,11 +2360,15 @@ where
                 let mut polls = 0_u32;
                 // When the task found the ring empty, until the next job.
                 let mut emptied: Option<Instant> = None;
+                // When the task's polls of the empty ring began, which the
+                // lanes' spin counts.
+                let mut idle: Option<Instant> = None;
                 while self.phase() == Phase::Running {
                     let runner = claim.runner();
                     if let Ok((position, job)) = runner.jobs.pop() {
+                        self.spun_since(idle.take());
                         emptied = None;
-                        let returning = self.run_job(position, job);
+                        let returning = self.run_job(position, job, Place::Lane);
                         let refused = runner.results.push(returning).is_err();
                         debug_assert!(
                             !refused,
@@ -2217,10 +2378,12 @@ where
                         polls = 0;
                     }
                     else if polls < self.spin.0 {
+                        idle.get_or_insert_with(Instant::now);
                         polls = polls.saturating_add(1);
                         core::hint::spin_loop();
                     }
                     else if emptied.get_or_insert_with(Instant::now).elapsed() < self.park {
+                        idle.get_or_insert_with(Instant::now);
                         // The task attends the lane while it polls, so it
                         // holds its core and never yields it.
                         core::hint::spin_loop();
@@ -2229,6 +2392,7 @@ where
                         break;
                     }
                 }
+                self.spun_since(idle);
             }
             lane.leave();
             // A job that the calling thread handed after the last poll shows
@@ -2267,11 +2431,29 @@ where
         std::panic::resume_unwind(panic)
     }
 
-    /// Run the job of the item at `position`.
+    /// Count the time since `emptied` among the lanes' spin.
     ///
     /// # Specification
-    /// - ensures: the item's place and the job's result, once the job has
-    ///   returned; or the panic of the job.
+    /// trivial.
+    fn spun_since(
+        &self,
+        emptied: Option<Instant>,
+    )
+    {
+        if let Some(emptied) = emptied {
+            self.spun.fetch_add(
+                u64::try_from(emptied.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    /// Run the job of the item at `position`, which runs at `place`, and time
+    /// the run.
+    ///
+    /// # Specification
+    /// - ensures: the item's place, the job's result and what its run took,
+    ///   once the job has returned; or the panic of the job.
     /// - panics: none; a panic of the job is returned.
     /// - executable: none — the result is the caller's closure's.
     ///
@@ -2283,10 +2465,13 @@ where
         &self,
         position: ItemIndex,
         job: Job,
+        place: Place,
     ) -> Returned<Out>
     {
+        let started = Instant::now();
         let out = std::panic::catch_unwind(AssertUnwindSafe(|| (self.run)(position, job)))?;
-        Ok((position, out))
+        let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        Ok((position, out, Took { nanos, place }))
     }
 }
 
@@ -2378,11 +2563,13 @@ mod tests
     use gandr_core_fork::Unwound;
     use quenchant_shape::shape::Maybe;
 
-    use super::CHAIN_PROBE;
     use super::DEPTH;
     use super::Forked;
+    use super::ItemIndex;
     use super::Pool;
+    use super::Released;
     use super::Spin;
+    use super::Waiting;
     use super::alone;
     use crate::width::Threads;
     use crate::width::Width;
@@ -3336,7 +3523,11 @@ mod tests
                 item.releases.push((tick(), std::thread::current().id()));
                 let held = (usize::MAX, usize::MAX);
                 match (usize::from(position), item.releases.len()) {
-                    (0 | 3, 1) => Releasing::<(), (usize, usize)>::Held(held),
+                    (0 | 3, 1) => Releasing::<(), (usize, usize)>::Held(
+                        held,
+                        gandr_kernel_core::Hold::Content,
+                        Maybe::Absent(gandr_kernel_core::held_on::Absent::Unnamed),
+                    ),
                     _ => Releasing::Run(()),
                 }
             },
@@ -3440,7 +3631,11 @@ mod tests
             |_position, _ran| {
                 releases.set(releases.get().saturating_add(1));
                 if pending.get() > 0 {
-                    return Releasing::<(), Option<ThreadId>>::Held(None);
+                    return Releasing::<(), Option<ThreadId>>::Held(
+                        None,
+                        gandr_kernel_core::Hold::Content,
+                        Maybe::Absent(gandr_kernel_core::held_on::Absent::Unnamed),
+                    );
                 }
                 pending.set(pending.get().saturating_add(1));
                 Releasing::Run(())
@@ -3456,13 +3651,41 @@ mod tests
             elsewhere <= 1,
             "only the job before the first hold leaves the calling thread, not {elsewhere}"
         );
+        // Only the chain frees a hold for the same content, so the chain tries
+        // no release beside its running job.
         assert!(
+            releases.get() <= count.saturating_add(1),
+            "a chain tries no release after a hold that only the chain frees, not {} releases for {count} items",
             releases.get()
-                <= count
-                    .saturating_add(1)
-                    .saturating_add(count.checked_div(CHAIN_PROBE).unwrap_or_default()),
-            "a chain tries one release beside a running job in {CHAIN_PROBE}, not {} releases for {count} items",
-            releases.get()
+        );
+    }
+
+    /// A held release that names the item whose commit frees it waits on that
+    /// commit alone, and not on the commit of another running job (#7336).
+    #[test]
+    fn a_held_release_waits_only_on_the_item_that_its_hold_names_7336()
+    {
+        let mut waiting = Waiting::new(&Dependences::default(), &[(); 4]);
+        waiting.park(ItemIndex(3), ItemIndex(0));
+        assert!(
+            waiting.free(ItemIndex(3)) == Released::Waiting,
+            "item 3 waits once its release holds"
+        );
+        waiting.commit(ItemIndex(1));
+        assert!(
+            waiting.free(ItemIndex(3)) == Released::Waiting,
+            "the commit of item 1, which the hold does not name, frees nothing"
+        );
+        waiting.commit(ItemIndex(0));
+        assert!(
+            waiting.free(ItemIndex(3)) == Released::Free,
+            "the commit of item 0, which the hold names, frees item 3"
+        );
+        waiting.park(ItemIndex(3), ItemIndex(2));
+        waiting.unpark();
+        assert!(
+            waiting.free(ItemIndex(3)) == Released::Free,
+            "once every released job is committed, the parked item is free"
         );
     }
 

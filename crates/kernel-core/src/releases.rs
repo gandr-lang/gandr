@@ -51,6 +51,7 @@ use quenchant_shape::shape::Maybe;
 use crate::encoding::ConstantName;
 use crate::env::UnsettledCount;
 use crate::environment::Hold;
+use crate::environment::held_on;
 use crate::verdict::EntryContentKey;
 
 /// Whether a declaration holds each release after it until its commit.
@@ -606,7 +607,8 @@ impl Releases
 
     /// Why the release of a generative declaration with the content key
     /// `content` at `rank` holds: an outstanding generative release ranked
-    /// below it carries the same content, which its entry key counts.
+    /// below it carries the same content, which its entry key counts. The
+    /// hold names the position of the highest such release.
     ///
     /// # Specification
     /// trivial.
@@ -615,20 +617,19 @@ impl Releases
         &self,
         content: EntryContentKey,
         rank: SourceRank,
-    ) -> Maybe<Hold, free::Absent>
+    ) -> Maybe<(Hold, Maybe<ConstantIndex, held_on::Absent>), free::Absent>
     {
-        if self
-            .generative
+        self.generative
             .get(&content)
-            .is_some_and(|ranks| ranks.iter().any(|&held| held < rank))
-        {
-            return Maybe::Present(Hold::Content);
-        }
-        Maybe::Absent(free::Absent::Unread)
+            .and_then(|ranks| ranks.iter().copied().filter(|&held| held < rank).max())
+            .map_or(Maybe::Absent(free::Absent::Unread), |held| {
+                Maybe::Present((Hold::Content, self.position(held)))
+            })
     }
 
     /// The names of the outstanding plain definitions ranked below `rank`
-    /// whose content digests to `digest`.
+    /// whose content digests to `digest`, each with the position of its
+    /// release.
     ///
     /// # Specification
     /// trivial.
@@ -637,13 +638,30 @@ impl Releases
         &self,
         digest: ContentDigest,
         rank: SourceRank,
-    ) -> impl Iterator<Item = ConstantName> + '_
+    ) -> impl Iterator<Item = (Maybe<ConstantIndex, held_on::Absent>, ConstantName)> + '_
     {
         self.definitions
             .get(&digest)
             .into_iter()
             .flatten()
             .filter(move |&&(held, _)| held < rank)
-            .map(|&(_, name)| name)
+            .map(|&(held, name)| (self.position(held), name))
+    }
+
+    /// The position of the outstanding release that reserves `rank`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn position(
+        &self,
+        rank: SourceRank,
+    ) -> Maybe<ConstantIndex, held_on::Absent>
+    {
+        self.ranks
+            .get(&rank)
+            .map_or(Maybe::Absent(held_on::Absent::Unnamed), |&position| {
+                Maybe::Present(position)
+            })
     }
 }

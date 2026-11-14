@@ -21,14 +21,16 @@ name = "activity"
 path = "benches/activity.rs"
 
 # The trait names no thread and no pool, so the crate depends on no runtime.
-# `anodized` checks the executable specifications. A driver implements the
-# trait over its own pool. The activity ring of the `instrument` feature
-# writes each event into a bounded lock-free queue, and states an event that
-# names no declaration in the workspace's absent shape.
+# `anodized` checks the executable specifications. A held release names the
+# kernel's `Hold` and, in the workspace's absent shape, the item whose commit
+# frees it, so the schedule reads why a release waits and on what. A driver
+# implements the trait over its own pool. The activity ring of the
+# `instrument` feature writes each event into a bounded lock-free queue.
 [dependencies]
 anodized.workspace = true
 crossbeam-queue = { workspace = true, optional = true }
-quenchant-shape = { workspace = true, optional = true }
+gandr-kernel-core.workspace = true
+quenchant-shape.workspace = true
 
 # The tests, the lints and the measurement read the activity ring, so the
 # crate's own targets turn its feature on.
@@ -41,7 +43,7 @@ default = []
 # The activity ring: each worker writes the start and the end of each task
 # into a ring of its own, and the hub folds the rings. Off, the crate carries
 # none of the ring's bytes.
-instrument = ["dep:crossbeam-queue", "dep:quenchant-shape"]
+instrument = ["dep:crossbeam-queue"]
 
 [lints]
 workspace = true

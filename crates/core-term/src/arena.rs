@@ -255,12 +255,15 @@ pub struct CompTypeId(u32);
 impl ValueId
 {
     /// The node's offset within its family: the row a dense side table keyed
-    /// by the family's nodes reads it at, as the arena's own rows read it.
+    /// by the family's nodes reads it at, as the arena's own rows read it. The
+    /// arena mints children before parents, so the distance between two roots'
+    /// offsets counts the nodes minted between them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn offset(self) -> ArenaLength
+    #[must_use]
+    pub fn offset(self) -> ArenaLength
     {
         id_offset(ArenaIndex(self.0))
     }
@@ -283,12 +286,15 @@ impl ComputationId
 impl ValueTypeId
 {
     /// The node's offset within its family: the row a dense side table keyed
-    /// by the family's nodes reads it at, as the arena's own rows read it.
+    /// by the family's nodes reads it at, as the arena's own rows read it. The
+    /// arena mints children before parents, so the distance between two roots'
+    /// offsets counts the nodes minted between them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn offset(self) -> ArenaLength
+    #[must_use]
+    pub fn offset(self) -> ArenaLength
     {
         id_offset(ArenaIndex(self.0))
     }
