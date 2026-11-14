@@ -47,6 +47,7 @@ pub enum Map
 /// The maps are data, so the groupoid operations join the lists and read no
 /// trait object.
 #[derive(Clone, Default)]
+#[repr(transparent)]
 pub struct Translate(Vec<Map>);
 
 impl Translate
@@ -689,7 +690,7 @@ mod tests
             fixtures::bool_two_ctor(),
             fixtures::bool_two_ctor(),
             Translate::identity(),
-            negation.backward.clone(),
+            negation.backward,
         );
         let source = fixtures::bool_two_ctor_values();
         let [zero, one] = <[DescValue; 2]>::try_from(source.clone()).expect("two Boolean values");

@@ -642,6 +642,7 @@ mod tests
 
     /// A wake that sends one unit on its channel.
     #[derive(Clone, Debug)]
+    #[repr(transparent)]
     struct Woke(mpsc::Sender<()>);
 
     impl Wake for Woke

@@ -262,7 +262,7 @@ pub fn holes(
             hovering,
             (uri, range.start),
             (printer, LabelsDetailed(false), TakesSnippets(false)),
-            Elsewhere {
+            &Elsewhere {
                 sources: &[],
                 import: &|_: &Path| Vec::new(),
             },

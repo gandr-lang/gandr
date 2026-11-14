@@ -208,13 +208,16 @@ struct Proving<'deriving, 'run, Table, Host>
 /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn law<'lookup>(
+pub fn law<'lookup, Table, Host>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &impl Signatures<'lookup>,
+    signatures: &Table,
     statement: Statement,
-    hosted: &impl Hosted,
+    hosted: &Host,
 ) -> Result<Derived, Uncovered>
+where
+    Table: Signatures<'lookup>,
+    Host: Hosted,
 {
     let (mut deriving, order) = Deriving::start(arena, signatures, position)?;
     let mut proving = Proving {

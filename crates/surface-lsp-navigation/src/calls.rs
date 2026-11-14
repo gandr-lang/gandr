@@ -165,11 +165,13 @@ fn item(
 #[spec(ensures: |ret| ret.len() <= 1_usize)]
 #[must_use]
 #[inline]
-pub fn items(
+pub fn items<Locate>(
     read: Read<'_>,
     position: Position,
-    locate: &impl Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<CallHierarchyItem>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let index = LineIndex::new(<&str>::from(read.text).into());
@@ -203,13 +205,15 @@ pub fn items(
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]
-pub fn callers(
+pub fn callers<Locate>(
     read: Read<'_>,
     path: &Path,
     named: ByteSpan,
     skipped: Option<Range>,
-    locate: &impl Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<IncomingCall>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let own = table.own_source();
@@ -278,11 +282,13 @@ pub fn callers(
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]
-pub fn callees(
+pub fn callees<Locate>(
     read: Read<'_>,
     position: Position,
-    locate: &impl Fn(&Path) -> Option<DocumentUri>,
+    locate: &Locate,
 ) -> Vec<OutgoingCall>
+where
+    Locate: Fn(&Path) -> Option<DocumentUri>,
 {
     let table = read.hovering.table();
     let index = LineIndex::new(<&str>::from(read.text).into());

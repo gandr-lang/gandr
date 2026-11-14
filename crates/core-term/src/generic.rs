@@ -217,11 +217,13 @@ impl<'lookup, Table> Signatures<'lookup> for Table where
 /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn equality<'lookup>(
+pub fn equality<'lookup, Table>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &impl Signatures<'lookup>,
+    signatures: &Table,
 ) -> Result<Derived, Uncovered>
+where
+    Table: Signatures<'lookup>,
 {
     let (mut deriving, _order) = Deriving::start(arena, signatures, position)?;
     let body = deriving

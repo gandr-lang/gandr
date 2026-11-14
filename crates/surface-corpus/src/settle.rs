@@ -1477,15 +1477,16 @@ impl Error for SettleFault
 },
 )]
 #[inline]
-pub fn settle<'source, Roots>(
+pub fn settle<'source, Roots, Run>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut impl Runner,
+    runner: &mut Run,
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
+    Run: Runner,
 {
     settle_after(roots, arena, module, verdicts, runner, &[])
 }
@@ -1525,16 +1526,17 @@ where
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]
-pub fn settle_after<'source, Roots>(
+pub fn settle_after<'source, Roots, Run>(
     roots: Roots,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut impl Runner,
+    runner: &mut Run,
     earlier: &[DeclarationReport<'source>],
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
+    Run: Runner,
 {
     // The declarations the earlier report settled lead the module's, the
     // closure's; the rest are settled here.

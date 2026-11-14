@@ -7537,7 +7537,7 @@ impl Workspace
             hovering,
             (uri, position),
             presented,
-            Elsewhere {
+            &Elsewhere {
                 sources: &sources,
                 import: &import,
             },
@@ -7611,7 +7611,7 @@ impl Workspace
             grammar,
             (published, text),
             (asked, diagnostics),
-            Elsewhere {
+            &Elsewhere {
                 sources: &sources,
                 import: &import,
             },

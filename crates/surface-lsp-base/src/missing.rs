@@ -73,13 +73,15 @@ pub const UNRESOLVED_NAME: &str = "UnresolvedName";
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]
 #[inline]
-pub fn additions(
+pub fn additions<Import>(
     uri: &DocumentUri,
     grammar: &Pbg,
     (published, text): (&[Diagnostic], SourceText<'_>),
     (asked, diagnostics): (Range, &[Value]),
-    elsewhere: Elsewhere<'_, impl ImportEdit>,
+    elsewhere: &Elsewhere<'_, Import>,
 ) -> Vec<CodeAction>
+where
+    Import: ImportEdit,
 {
     let meets = |range: Range, other: Range| range.start <= other.end && other.start <= range.end;
     let written = <&str>::from(text);

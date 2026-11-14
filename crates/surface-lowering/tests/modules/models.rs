@@ -1695,19 +1695,20 @@ fn a_manifest_sort_the_theory_cannot_fix_is_refused()
 {
     // The refusal a case expects, built from the source it lowers.
     type Expected = fn(&str) -> LoweringRefusal<'static>;
-    let theories = include_str!(
-        "models/unformatted/a-manifest-sort-the-theory-cannot-fix-is-refused-theories.gandr"
-    );
     /// The one byte opening the `nth` appearance of `needle` in `source`: a
     /// sort's name.
     ///
     /// # Specification
     /// trivial.
-    fn opening(
-        source: &str,
-        needle: &str,
-        nth: usize,
+    fn opening<Source, Needle, Occurrence>(
+        source: Source,
+        needle: Needle,
+        nth: Occurrence,
     ) -> super::ByteSpan
+    where
+        Source: AsRef<str>,
+        Needle: AsRef<str>,
+        Occurrence: Into<usize>,
     {
         let span = span_of(source, needle, nth);
         super::ByteSpan::new(
@@ -1716,6 +1717,9 @@ fn a_manifest_sort_the_theory_cannot_fix_is_refused()
         )
         .expect("the span is ordered")
     }
+    let theories = include_str!(
+        "models/unformatted/a-manifest-sort-the-theory-cannot-fix-is-refused-theories.gandr"
+    );
     let cases: [(&str, Expected, &str); 4] = [
         (
             "Model(Toggle) with sort Nope = Integer",

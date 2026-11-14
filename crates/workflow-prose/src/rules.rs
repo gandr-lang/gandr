@@ -530,7 +530,7 @@ fn clauses(
     if instructions(readings, sentence) == Agrees::Agrees {
         rules.push(Rule::Instructions);
     }
-    if after(readings, sentence, |token| token.text == ";", worded) {
+    if after(readings, sentence, |token| token.text == ";", worded) == Agrees::Agrees {
         rules.push(Rule::Semicolon);
     }
     if after(
@@ -538,14 +538,15 @@ fn clauses(
         sentence,
         |token| DASHES.contains(&token.text.as_str()),
         |token| token.pos == "VERB" || token.pos == "AUX",
-    ) {
+    ) == Agrees::Agrees
+    {
         rules.push(Rule::Dash);
     }
     rules
 }
 
-/// Whether a prose token that `follows` matches comes after the first prose
-/// token that `mark` matches in `sentence`.
+/// [`Agrees::Agrees`] when a prose token that `follows` matches comes after
+/// the first prose token that `mark` matches in `sentence`.
 ///
 /// # Specification
 /// trivial.
@@ -554,15 +555,21 @@ fn after(
     sentence: &Sentence,
     mark: impl Fn(&Token) -> bool,
     follows: impl Fn(&Token) -> bool,
-) -> bool
+) -> Agrees
 {
     let prose = |token: &Token| read(readings, token) == Reading::Prose;
-    sentence
+    let found = sentence
         .tokens
         .iter()
         .skip_while(|token| !(prose(token) && mark(token)))
         .skip(1)
-        .any(|token| prose(token) && follows(token))
+        .any(|token| prose(token) && follows(token));
+    if found {
+        Agrees::Agrees
+    }
+    else {
+        Agrees::Differs
+    }
 }
 
 /// The rules `sentence` breaks, each at most once.

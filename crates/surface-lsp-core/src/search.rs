@@ -384,7 +384,7 @@ mod tests
                 grammar().expect("the grammar builds"),
                 (&[refusal], SourceText::from(text)),
                 (asked, &[]),
-                Elsewhere {
+                &Elsewhere {
                     sources,
                     import: &import,
                 },

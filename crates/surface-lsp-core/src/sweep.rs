@@ -294,12 +294,14 @@ impl Sweep
     /// - witness: `sweep::tests::a_pass_looks_again_at_a_source_written_behind_it_1824`
     #[spec(ensures: |ret| ret.is_none() || matches!(self.pass, Pass::Running { .. }))]
     #[inline]
-    pub fn next(
+    pub fn next<List>(
         &mut self,
-        list: &impl Fn() -> Vec<PathBuf>,
+        list: &List,
         rendering: (Verbosity, Spelling),
         shadows: &dyn Shadows,
     ) -> Option<PathBuf>
+    where
+        List: Fn() -> Vec<PathBuf>,
     {
         let (sources, from) = match core::mem::replace(&mut self.pass, Pass::Idle) {
             Pass::Idle => (list(), 0_usize),

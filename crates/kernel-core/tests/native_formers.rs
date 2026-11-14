@@ -3710,7 +3710,6 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         /// call `⟨force inner⟩`, which returns reflexivity.
         HeldTransport,
     }
-    let mut environment = one_loop();
     /// Admit the definition whose body `body` builds at the path of `Base`
     /// to itself, returned, and answer its constant.
     ///
@@ -3735,6 +3734,7 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
             .map(CheckedId::position)
             .expect("the definition checks")
     }
+    let mut environment = one_loop();
     // `zero = thunk (return ε)` and `zero2 = thunk (force zero)`.
     let zero = define(&mut environment, |arena, _at_point| {
         let empty = build(arena, Built::Empty);
