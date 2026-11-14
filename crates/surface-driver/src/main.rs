@@ -342,8 +342,6 @@ use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
-#[cfg(unix)]
-use std::time::Instant;
 
 use anodized::spec;
 use gandr_kernel_core::tallied;
@@ -526,17 +524,6 @@ const UNFORMATTED: u8 = 1;
 /// The exit code of `gandr tokens` when no porter carries the host's tokens.
 #[cfg(unix)]
 const UNPORTED: u8 = 1;
-
-/// How long `gandr tokens` reads the porter's lock before it says that no
-/// porter carries the host's tokens.
-///
-/// economy: 1 s. A hub binds its socket before it makes its porter, so a
-/// client that starts the hub connects before the porter runs. The porter
-/// starts within milliseconds of the bind, and a gate that finds no porter
-/// names its own FIFO, so a hub that carries no tokens costs each gate this
-/// once.
-#[cfg(unix)]
-const PORTED: Duration = Duration::from_secs(1);
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -2941,12 +2928,13 @@ fn mcp(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the hub that [`reach_hub`] reaches holds the connection until
-///   standard input ends. While a porter holds the porter's lock in the
-///   directory of the hub's socket, read every 10 ms for at most [`PORTED`],
-///   the FIFO's path goes to standard output, and the verb exits `0` once
-///   standard input ends. With no porter it exits `1`, and with no hub or a
-///   stream that fails, `2`, the cause noted on standard error when writable.
-///   The verb takes no token.
+///   standard input ends. The verb asks the hub one `server/discover` and reads
+///   its answer: the hub answers once it runs its loop, after it makes its
+///   porter. While a porter then holds the porter's lock in the directory of
+///   the hub's socket, the FIFO's path goes to standard output, and the verb
+///   exits `0` once standard input ends. With no porter it exits `1`, and with
+///   no hub, no answer or a stream that fails, `2`, the cause noted on standard
+///   error when writable. The verb takes no token.
 /// - provides: `gandr tokens`, the hold of a build on the host's counter.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
@@ -2972,26 +2960,34 @@ fn tokens(
         Err(error) => return hub_fault(&error),
     };
     let directory = named.parent().unwrap_or_else(|| Path::new("."));
-    let since = Instant::now();
-    let fifo = loop {
-        match gandr_surface_dispatcher::Porter::carried(directory) {
-            Maybe::Present(fifo) => break fifo,
-            Maybe::Absent(_) if since.elapsed() < PORTED => {
-                std::thread::sleep(Duration::from_millis(10));
-            },
-            Maybe::Absent(_) => {
-                let noted = writeln!(
-                    std::io::stderr(),
-                    "gandr: no porter carries the host's tokens in {}",
-                    directory.display()
-                );
-                return match noted {
-                    // When standard error is unwritable too, the exit code is
-                    // the one channel left.
-                    Ok(()) | Err(_) => ExitCode::from(UNPORTED),
-                };
-            },
+    // A hub binds its socket before it makes its porter, and it accepts a
+    // connection only once it runs its loop. So its answer to one request
+    // comes after its porter starts.
+    let answered = held.try_clone().and_then(|reading| {
+        use std::io::BufRead as _;
+
+        (&held).write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\"}\n")?;
+        let mut answer = String::new();
+        match std::io::BufReader::new(reading).read_line(&mut answer)? {
+            0 => Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
+            _ => Ok(()),
         }
+    });
+    if let Err(error) = answered {
+        return hub_fault(&error);
+    }
+    let Maybe::Present(fifo) = gandr_surface_dispatcher::Porter::carried(directory)
+    else {
+        let noted = writeln!(
+            std::io::stderr(),
+            "gandr: no porter carries the host's tokens in {}",
+            directory.display()
+        );
+        return match noted {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            Ok(()) | Err(_) => ExitCode::from(UNPORTED),
+        };
     };
     let mut stdout = std::io::stdout().lock();
     let named = writeln!(stdout, "{}", fifo.display()).and_then(|()| stdout.flush());

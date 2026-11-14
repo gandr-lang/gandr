@@ -200,7 +200,7 @@ const PORTER: &str = "tokens.porter";
 /// the FIFO wakes no porter, so a tool that took the spare waits at most this
 /// long for the next one when no give wakes the porter. An idle porter reads
 /// the FIFO, writes its spare back and waits once each tick: three system
-/// calls.
+/// calls. #7627 wakes the porter on macOS by a kqueue event, and the tick goes.
 #[cfg(not(target_os = "linux"))]
 const TICK: Duration = Duration::from_millis(10);
 
@@ -208,7 +208,8 @@ const TICK: Duration = Duration::from_millis(10);
 ///
 /// economy: as [`WAIT`] on Linux. The porter's watch wakes the porter at each
 /// read and each write of the FIFO, and the tick only bounds a wake that the
-/// watch misses, as [`WAIT`] bounds one that the futex misses.
+/// watch misses, as [`WAIT`] bounds one that the futex misses. #7627 raises the
+/// porter's word at each wake that the watch could miss, and the tick goes.
 #[cfg(target_os = "linux")]
 const TICK: Duration = WAIT;
 
