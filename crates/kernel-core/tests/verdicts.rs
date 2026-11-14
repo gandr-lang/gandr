@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::Environment;
+use gandr_kernel_core::KernelError;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelSigner;
 use gandr_kernel_core::verdict::NoVerdicts;
@@ -26,18 +27,22 @@ use gandr_kernel_core::verdict::VerdictSource;
 use gandr_kernel_core::verdict::stored;
 use gandr_kernel_core::verdict::verdict_image;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::FreeCell;
 use gandr_kernel_term::FreeCells;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::Presentation;
 use gandr_kernel_term::RuleNode;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::decode;
+use gandr_kernel_term::encode;
 use quenchant_shape::shape::Maybe;
 
 /// A store holding receipts, each answered for every key it attests.
@@ -171,9 +176,9 @@ fn a_verdict_is_recalled_only_under_its_own_key()
     let receipt = recorded(&signer, first_unit);
     assert_eq!(
         receipt.records().len(),
-        5,
-        "the receipt holds every checked verdict under its chain key and its entry key, and \
-         the two definitions with one content under one entry key"
+        2,
+        "the receipt holds every checked verdict under its entry key, and the two definitions \
+         with one content under one entry key"
     );
 
     let mut again = Environment::recalling(trusting(&signer), Store::holding(&[&receipt]));
@@ -349,13 +354,13 @@ fn a_handed_on_environment_keys_on_and_signs_only_its_own()
     };
     assert_eq!(
         whole.records().len(),
-        5,
-        "the two equal units share one entry key"
+        2,
+        "the two equal units share one entry key, and the third takes its own"
     );
     assert_eq!(
         handed.records().len(),
-        2,
-        "the copy signs its one declaration alone, under its two keys"
+        1,
+        "the copy signs its one declaration alone, under its entry key"
     );
     // A receipt holds its records in key order, so each is found by key.
     for own in handed.records() {
@@ -436,11 +441,11 @@ fn reject_one(
     );
 }
 
-/// #6566: a rejected declaration enters no environment, so the chain keys
-/// the declarations after it as a run that never offered it keys them, and
-/// a receipt of either run recalls the other's.
+/// #6566: a rejected declaration enters no environment, so the declarations
+/// after it take the keys that a run that never offered it gives them, and a
+/// receipt of either run recalls the other's.
 #[test]
-fn a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566()
+fn a_rejected_declaration_leaves_the_keys_as_if_never_offered_6566()
 {
     let signer = KernelSigner::from([7_u8; 32]);
     let named = Some(ConstantIndex::from(0_usize));
@@ -461,15 +466,73 @@ fn a_rejected_declaration_leaves_the_chain_as_if_never_offered_6566()
         never.records(),
         "the run that offered a rejected declaration keys the rest as one that never did"
     );
-    let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&offered]));
+    let mut recalling = Environment::recalling(trusting(&signer), Store::holding(&[&never]));
+    let first = admit_one(&mut recalling, None);
     reject_one(&mut recalling, ConstantIndex::from(9_usize));
+    let second = admit_one(&mut recalling, named);
     assert_eq!(
-        [
-            admit_one(&mut recalling, None),
-            admit_one(&mut recalling, named)
-        ],
+        [first, second],
         [Admission::Recalled; 2],
-        "a rejection before them leaves both recalled"
+        "a rejection between them leaves both recalled from the run that never offered it"
+    );
+}
+
+/// #7426: a rejection keeps its position as a vacancy. A run that rejects a
+/// declaration first admits the unit at position 1, so a declaration whose
+/// body names constant 0 names the vacancy. That declaration has no entry key,
+/// so the kernel checks it and refuses it, though a receipt holds a
+/// declaration of the same segment that named an admitted unit. The export of
+/// the run then holds the unit alone, and its replay admits nothing that names
+/// the vacancy.
+#[test]
+fn a_declaration_that_names_the_vacancy_of_a_rejection_is_checked_7426()
+{
+    let signer = KernelSigner::from([7_u8; 32]);
+    let mut offered = Environment::recalling(trusting(&signer), Arc::new(NoVerdicts));
+    let _first = admit_one(&mut offered, None);
+    reject_one(&mut offered, ConstantIndex::from(9_usize));
+    let _second = admit_one(&mut offered, Some(ConstantIndex::from(0_usize)));
+    let Maybe::Present(offered) = offered.receipt(&signer)
+    else {
+        panic!("the run checked declarations under keys");
+    };
+    let mut vacated = Environment::recalling(trusting(&signer), Store::holding(&[&offered]));
+    reject_one(&mut vacated, ConstantIndex::from(9_usize));
+    assert_eq!(
+        admit_one(&mut vacated, None),
+        Admission::Recalled,
+        "the unit recalls at position 1"
+    );
+    let staged = {
+        let mut staging = vacated.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_constant(ConstantIndex::from(0_usize));
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    };
+    assert!(
+        matches!(
+            vacated.add_decl(staged),
+            Err(KernelError::UnboundConstant { index }) if index == ConstantIndex::from(0_usize)
+        ),
+        "the declaration that names the vacancy is checked and refused"
+    );
+    assert_eq!(
+        usize::from(vacated.recalls()),
+        1,
+        "no receipt recalls the declaration that names the vacancy"
+    );
+    let marked: Vec<_> = vacated
+        .entries()
+        .iter()
+        .map(|entry| MarkedDeclaration::new(AdmissionMark::Checked, entry.declaration().clone()))
+        .collect();
+    let artifact = decode(encode(vacated.arena(), &marked).as_image()).expect("the export decodes");
+    let replayed = Environment::replay(artifact.arena().clone(), artifact.declarations())
+        .expect("the export replays");
+    assert_eq!(
+        replayed.entries().iter().count(),
+        1,
+        "the export holds the unit alone, and no declaration that names the vacancy"
     );
 }
 

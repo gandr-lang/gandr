@@ -7,7 +7,7 @@
 //! check reads the commit as soon as it comes.
 //!
 //! Some state reads the order of every commit: the rows of the dependents,
-//! the order flag, the chain key and the records of the verdicts. The cursor
+//! the order flag and the records of the verdicts. The cursor
 //! folds that state. It reads the slots in position order, and it stops at the
 //! first slot that waits for its commit. So the folded state is the state of
 //! the serial run, in each order that the commits come in.
@@ -30,10 +30,6 @@
 //! and refusals alone. No admission past the release may be committed then.
 //!
 //! A keep in place and a retirement go ahead beside the outstanding releases.
-//! A retirement ends the chain of keys. The serial run ends it after the
-//! commits of the releases before it. So the end waits in the queue after the
-//! slot at its back, and the cursor ends the chain once it folds that slot
-//! ([`Releases::end_chain`]). A drop past that slot is refused.
 //!
 //! # References
 //!
@@ -56,48 +52,6 @@ use crate::encoding::ConstantName;
 use crate::env::UnsettledCount;
 use crate::environment::Hold;
 use crate::verdict::EntryContentKey;
-use crate::verdict::VerdictKey;
-use crate::verdict::keyed;
-
-/// How a release finds its chain key.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Debug)]
-pub enum Chained
-{
-    /// The cursor stood at the release, so the release took the chain key.
-    Taken(Maybe<VerdictKey, keyed::Absent>),
-    /// The cursor stood behind the release, so the fold takes the chain key.
-    Deferred,
-}
-
-/// When a retirement ends the chain of keys.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Ending
-{
-    /// No slot waits for the cursor: the chain ends now.
-    Now,
-    /// The chain ends once the cursor folds the slot at the back of the
-    /// queue, as the serial run ends it after that slot's commit.
-    Deferred,
-}
-
-/// What the chain of keys does past the slot at the cursor.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Past
-{
-    /// The chain goes on past the slot.
-    Goes,
-    /// A retirement ends the chain once the cursor folds the slot.
-    Ends,
-}
 
 /// Whether a declaration holds each release after it until its commit.
 ///
@@ -195,11 +149,11 @@ pub enum Unfolded
 {
     /// A release whose commit has not come.
     Reserved(Reservation),
-    /// An admission, how it finds its chain key, and the reading that a
-    /// record of its verdict keeps when the record is due.
-    Admitted(Chained, Option<crate::check::Accessibility>),
-    /// A refusal, and how it found its chain key.
-    Vacated(Chained),
+    /// An admission, and the reading that a record of its verdict keeps when
+    /// the record is due.
+    Admitted(Option<crate::check::Accessibility>),
+    /// A refusal.
+    Vacated,
 }
 
 quenchant_shape::reason_enum! {
@@ -258,9 +212,6 @@ quenchant_shape::reason_enum! {
             /// A slot past the position holds an admission, which entries and
             /// tables beside the queue hold too.
             Admitted,
-            /// The chain of keys ends after a slot past the position: a
-            /// release again would fold past the end.
-            Ended,
         }
     }
 }
@@ -289,9 +240,6 @@ pub struct Releases
     definitions: BTreeMap<ContentDigest, Vec<(SourceRank, ConstantName)>>,
     /// How many slots from the cursor on hold a predicted rank.
     predicting: usize,
-    /// The slot, as an offset from the cursor, after whose fold the chain of
-    /// keys ends.
-    ends: Option<usize>,
 }
 
 impl Releases
@@ -371,8 +319,7 @@ impl Releases
     #[inline]
     pub fn vacate(&mut self)
     {
-        self.unfolded
-            .push_back((Ranked::Serial, Unfolded::Vacated(Chained::Deferred)));
+        self.unfolded.push_back((Ranked::Serial, Unfolded::Vacated));
     }
 
     /// Fill the reserved slot at `offset` from the cursor with its commit, and
@@ -456,9 +403,8 @@ impl Releases
     /// # Specification
     /// - requires: nothing.
     /// - ensures: when `offset` holds a slot, no slot past it holds an
-    ///   admission and the chain of keys ends after no slot past it, the queue
-    ///   ends at that slot, and no index holds a dropped reservation. Nothing
-    ///   changes otherwise.
+    ///   admission, the queue ends at that slot, and no index holds a dropped
+    ///   reservation. Nothing changes otherwise.
     /// - provides: how many outstanding releases left the queue, or why no slot
     ///   left it ([`dropped::Absent`]).
     /// - fails: never.
@@ -467,11 +413,8 @@ impl Releases
     /// # Adequacy
     /// - hypothesis: L3 — a drop that keeps a reservation, or forgets one in an
     ///   index, holds a later release on a rank or a content that no release
-    ///   reserves, and the release again differs from the serial run. A drop
-    ///   past the end of the chain releases again after the end, and the
-    ///   release again takes no chain key that the serial run gives it.
+    ///   reserves, and the release again differs from the serial run.
     /// - witness: `environment::tests::a_drop_after_a_release_leaves_the_serial_run_3476`
-    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
     #[spec(captures: [queued = self.unfolded.len(), outstanding = self.outstanding], ensures: |ret| match ret {
         Maybe::Present(dropped) => self.unfolded.len() == usize::from(offset).saturating_add(1)
             && self.outstanding.saturating_add(usize::from(dropped)) == outstanding,
@@ -493,9 +436,6 @@ impl Releases
             .any(|&(_, ref slot)| matches!(*slot, Unfolded::Admitted(..)))
         {
             return Maybe::Absent(dropped::Absent::Admitted);
-        }
-        if self.ends.is_some_and(|at| at >= kept) {
-            return Maybe::Absent(dropped::Absent::Ended);
         }
         let mut dropped = 0_usize;
         while self.unfolded.len() > kept {
@@ -519,9 +459,8 @@ impl Releases
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on a slot that holds its commit, one slot less in the queue,
-    ///   and the end of the chain one slot nearer the cursor; nothing changes
-    ///   otherwise.
+    /// - ensures: on a slot that holds its commit, one slot less in the queue;
+    ///   nothing changes otherwise.
     /// - provides: the slot, or why the cursor reads none ([`cursor::Absent`]).
     /// - fails: never.
     /// - panics: none.
@@ -540,7 +479,7 @@ impl Releases
         match self.unfolded.front() {
             None => Maybe::Absent(cursor::Absent::Folded),
             Some(&(_, Unfolded::Reserved(_))) => Maybe::Absent(cursor::Absent::Waiting),
-            Some(&(_, Unfolded::Admitted(..) | Unfolded::Vacated(_))) => {
+            Some(&(_, Unfolded::Admitted(..) | Unfolded::Vacated)) => {
                 let Some(slot) = self.unfolded.pop_front()
                 else {
                     return Maybe::Absent(cursor::Absent::Folded);
@@ -548,53 +487,9 @@ impl Releases
                 if slot.0 == Ranked::Predicted {
                     self.predicting = self.predicting.saturating_sub(1);
                 }
-                self.ends = self.ends.and_then(|at| at.checked_sub(1));
                 Maybe::Present(slot)
             },
         }
-    }
-
-    /// End the chain of keys after the slot at the back of the queue: a
-    /// retirement beside the outstanding releases ends it there, as the serial
-    /// run ends it after their commits. An earlier end stands, since an ended
-    /// chain stays ended.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Ending::Now`], with nothing changed, exactly when the queue
-    ///   holds no slot; otherwise the chain ends after the slot at the back, or
-    ///   after an earlier slot that an earlier end marks.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a retirement beside a release that ends the chain at
-    ///   once takes the chain key from the release, which the serial run's
-    ///   commit takes before the retirement.
-    /// - witness: `environment::tests::a_keep_and_a_retirement_beside_a_release_fold_as_the_serial_run_7281`
-    #[spec(ensures: |ret| (ret == Ending::Now) == self.unfolded.is_empty())]
-    pub fn end_chain(&mut self) -> Ending
-    {
-        let Some(back) = self.unfolded.len().checked_sub(1)
-        else {
-            return Ending::Now;
-        };
-        let _marked = self.ends.get_or_insert(back);
-        Ending::Deferred
-    }
-
-    /// What the chain of keys does once the cursor folds the slot at its
-    /// front.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    pub const fn past_front(&self) -> Past
-    {
-        if matches!(self.ends, Some(0)) {
-            return Past::Ends;
-        }
-        Past::Goes
     }
 
     /// Why a write at `rank` beside the releases holds: an outstanding

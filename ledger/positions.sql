@@ -78,7 +78,6 @@ INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','RecordCoun
 INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','StratumKey','','none',NULL,'A digest of a stratum.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','VerdictCount','','none',NULL,'A carrier of the counts of a verdict''s image; the staged position it writes is a row of `StagedPosition`.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','VerdictKey','','none',NULL,'A digest: the entry key binds a content key to the build.');
-INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','VerdictKey','kernel-core-base::verdict::VerdictKey::after','owed','#7343','The chain key hashes the key before it, so it names a declaration''s place in the admission order.');
 INSERT INTO position VALUES('crates/kernel-core-base/src/verdict.rs','VerdictTag','','none',NULL,'A tag of a verdict''s image.');
 INSERT INTO position VALUES('crates/kernel-core/src/admission.rs','Guard','','local',NULL,'An arm in the dense guard order of one point.');
 INSERT INTO position VALUES('crates/kernel-core/src/admission.rs','Point','','local',NULL,'A point in the dense entry order of one check of a schema.');
@@ -173,7 +172,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/term.rs','EvidenceWord','','
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','FieldPosition','','local',NULL,'A field''s place that a check reads; the encodings write the field''s component.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ParameterPosition','','local',NULL,'A parameter''s place that a check reads.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','ResultCount','','none',NULL,'A count of results.');
-INSERT INTO position VALUES('crates/kernel-term/src/term.rs','SourceRank','kernel-core-base::verdict::VerdictKey::after','owed','#7343','The chain key writes each declaration''s rank, its place in the order of the source.');
+INSERT INTO position VALUES('crates/kernel-term/src/term.rs','SourceRank','','local',NULL,'A declaration''s place in the order of its source while one environment admits it; a key compares ranks and writes none.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','StageId','','local',NULL,'A stage that one judgement mints; no wire byte carries one.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','StagedPosition','kernel-core-base::encoding','kept',NULL,'A parameter''s place inside one fixpoint.');
 INSERT INTO position VALUES('crates/kernel-term/src/term.rs','StagedPosition','kernel-core-base::verdict','kept',NULL,'A parameter''s place inside one fixpoint.');

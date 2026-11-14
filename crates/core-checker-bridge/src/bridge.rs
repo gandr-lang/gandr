@@ -6807,8 +6807,8 @@ impl FormationTable
     /// # Specification
     /// - requires: the table names each constant of `entries` ([`Self::name`]).
     /// - ensures: [`NameReads::Position`] when `roots`, or a plain definition
-    ///   they reach, reads a constant that the table names by its position.
-    ///   [`NameReads::Content`] otherwise.
+    ///   they reach, reads a constant that the table names by its position or
+    ///   as unadmitted. [`NameReads::Content`] otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -6835,7 +6835,11 @@ impl FormationTable
                     }
                 },
                 Some(gandr_kernel_core::encoding::ConstantName::Admitted { .. }) => {},
-                Some(gandr_kernel_core::encoding::ConstantName::Position) | None => {
+                Some(
+                    gandr_kernel_core::encoding::ConstantName::Position
+                    | gandr_kernel_core::encoding::ConstantName::Unadmitted,
+                )
+                | None => {
                     return NameReads::Position;
                 },
             }
