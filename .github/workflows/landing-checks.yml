@@ -938,7 +938,8 @@ jobs:
       # named shard does, so a new crate is tested before anyone places it.
       # The mark dates the restored state: what the shard builds after it is
       # what it hands the join.
-      - name: select the shard's packages
+      - &select-shard
+        name: select the shard's packages
         if: ${{ env.CI_SHARD != '' }}
         shell: bash
         run: |
@@ -951,7 +952,8 @@ jobs:
           printf 'CI_SHARD_ARGS=%s\n' "${args[*]}" >> "$GITHUB_ENV"
           mkdir -p target/enforcing/debug
           touch target/shard-base
-      - name: build workspace targets
+      - &build-workspace
+        name: build workspace targets
         id: build-workspace
         env:
           CI_BUILD_TASK: ${{ env.CI_ENFORCING == 'true' && 'build:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'build:tests' || env.CI_DOCS == 'true' && 'check:doc' || env.CI_DOCTESTS == 'true' && 'check:doctests' || 'build:tests-plain-only' }}
@@ -963,7 +965,8 @@ jobs:
       # examples in one command, which cannot build without running.
       # Each check after the build runs whatever an earlier check gives, so
       # one run names every red and the fixer repairs them together (#5440).
-      - name: test workspace targets
+      - &test-workspace
+        name: test workspace targets
         if: ${{ !cancelled() && steps.build-workspace.outcome == 'success' && env.CI_DOCS != 'true' && env.CI_DOCTESTS != 'true' && env.CI_BUILD_ONLY != 'true' }}
         env:
           CI_TEST_TASK: ${{ env.CI_ENFORCING == 'true' && 'check:tests-enforcing' || env.CI_PLAIN_BASELINE == 'true' && 'ci:plain-baseline' || 'check:tests-plain-only' }}
@@ -1346,52 +1349,93 @@ jobs:
     steps: *workspace-test-steps
 
   # Windows and big-endian lanes have no local surface under act; macOS arm64
-  # remains the other hosted platform. Its enforcing run is the full test pass
-  # in the Linux lane's shards; the plain delta is platform-neutral and runs
-  # on Linux. It runs in the daily run and on a dispatch, never on a push, in
-  # the queue or on a pull request: a warm queue run's macOS surface shard
-  # built in 192 s where Linux's took 102 s, and no landing waits for it
-  # (#702, #1177). The daily run builds over main's newest macOS state and
-  # its join caches the result, so it needs no promotion.
+  # remains the other platform. Its enforcing run is the full test pass in
+  # the Linux lane's shards; the plain delta is platform-neutral and runs on
+  # Linux. It runs in the daily run and on a dispatch, never on a push, in
+  # the queue or on a pull request: no landing waits for it (#702, #1177).
+  #
+  # The shards run on our own macOS runners (#7352). Such a runner keeps its
+  # work directory, its rustup home and its mise home from one job to the
+  # next. So a shard builds warm in place: it restores, saves and hands on
+  # no state, and no join merges the shards. The checkout keeps the ignored
+  # `target/`, and a new toolchain pin starts it again, as a new pin starts
+  # a new generation of the cached states.
+  #
+  # A job's log is public. It may show the host's name, on the runner's
+  # `Machine name` line, and nothing of the user's home. So each runner lives
+  # outside that home, its work directory and its homes with it, which its
+  # registration sets. Each runner of a host installs into homes of its own:
+  # rustup takes no lock, and two runners that install one toolchain at one
+  # time collide in its downloads. The first step refuses a runner that
+  # lacks a tool, or whose workspace or a home lies in the user's home, by
+  # name.
   cargo-test-macos-enforcing-shard:
     name: test enforcing targets (macos-arm64, ${{ matrix.shard }})
     needs: *rust-needs
-    if: &main-lane ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
-    runs-on: macos-latest
+    if: ${{ !cancelled() && !failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
+    runs-on: [self-hosted, macos-arm64]
     permissions:
       contents: read
-      actions: read
     timeout-minutes: 45
     strategy: *enforcing-shards
     env:
-      CI_INSTALL_TOOLCHAIN: "true"
-      CI_ON_MAIN: ${{ github.event_name == 'schedule' }}
-      CI_BUILD_STATE: cargo-test-macos-enforcing
       CI_ENFORCING: "true"
-      CI_FETCH_DEPTH: "2"
       CI_SHARD: ${{ matrix.shard }}
       CI_SHARD_PACKAGES: ${{ matrix.packages }}
       CI_SHARD_EXCLUDES: ${{ join(matrix.excludes, ' ') }}
-    steps: *workspace-test-steps
-
-  # The macOS join hands the state on; witnesses resolve on Linux. The daily
-  # run caches the state in place of the one it supersedes.
-  cargo-test-macos-enforcing:
-    name: join the enforcing shards (macos-arm64)
-    needs: [prepare, cargo-test-macos-enforcing-shard]
-    if: *main-lane
-    runs-on: macos-latest
-    permissions:
-      contents: read
-      actions: write
-    timeout-minutes: 30
-    env:
-      CI_INSTALL_TOOLCHAIN: "true"
-      CI_ON_MAIN: ${{ github.event_name == 'schedule' }}
-      CI_BUILD_STATE: cargo-test-macos-enforcing
-      CI_SHARDS: cargo-test-macos-enforcing-shard
-      CI_ENFORCING: "true"
-    steps: *join-steps
+    steps:
+      - name: check the runner's tools and homes
+        shell: bash
+        run: |
+          for tool in git rustup xcode-select; do
+            command -v "$tool" > /dev/null || { echo "::error::the runner has no \`$tool\` on its PATH"; exit 1; }
+          done
+          xcode-select -p > /dev/null || { echo "::error::the runner's host has no Xcode command line tools: run \`xcode-select --install\` there"; exit 1; }
+          # A path in the user's home names the user, and the user's mise
+          # state lists the user's own checkouts, whose warnings print their
+          # paths. So the workspace and each home lie outside that home. The
+          # message names the variable and never its value.
+          for name in GITHUB_WORKSPACE RUSTUP_HOME CARGO_HOME MISE_DATA_DIR MISE_STATE_DIR MISE_CACHE_DIR MISE_CONFIG_DIR; do
+            value=${!name:-}
+            [[ -n $value && $value != "$HOME" && $value != "$HOME"/* ]] || { echo "::error::$name is unset or lies in the host user's home: register the runner again, or set it in the runner's .env to a directory outside that home (#7352)"; exit 1; }
+          done
+          # The runner names each step's shell by the path it finds on PATH.
+          case ":$PATH:" in
+            *":$HOME/"*) echo "::error::the runner's PATH holds a directory in the host user's home: register the runner again, or write its .path without one (#7352)"; exit 1 ;;
+          esac
+      - name: git checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          # The ignored `target/` is the shard's warm build, and a clean
+          # checkout would remove it.
+          clean: false
+      - name: remove the files that no commit tracks
+        run: git clean -ffd
+      - *trust-workspace
+      - name: start the build again on a new toolchain pin
+        shell: bash
+        env:
+          CI_PIN: ${{ hashFiles('rust-toolchain.toml') }}
+        run: |
+          if [[ -d target && $(cat target/pin 2> /dev/null) != "$CI_PIN" ]]; then rm -rf target; fi
+          mkdir -p target
+          printf '%s\n' "$CI_PIN" > target/pin
+      # The runner's own rustup home starts empty, and mise builds a tool
+      # with cargo, so the pin installs first.
+      - name: setup rust
+        uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - name: install mise-managed policy tools
+        uses: ./.github/actions/install-tools # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+      - *select-shard
+      - *build-workspace
+      - *test-workspace
+      - *upload-test-report
 
   # Preserve the required gate identities. These must run after a failed,
   # skipped or cancelled lane: accepting a partial result would weaken CI.
@@ -1429,20 +1473,20 @@ jobs:
         run: test "$PLAIN_RESULT:$RECOVERY_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT:$PROSE_RESULT" = success:success:success:success:success:success
 
   # Skipped on a pull request, in the queue and on a push, which a skipped
-  # job satisfies; in the daily run a failed macOS lane fails it there.
+  # job satisfies; in the daily run a failed macOS lane fails it there. It
+  # reads the shards' result alone, so it runs on Linux.
   cargo-test-macos:
     name: test the workspace (macos-arm64)
-    needs: [cargo-test-macos-enforcing-shard, cargo-test-macos-enforcing]
+    needs: [cargo-test-macos-enforcing-shard]
     if: ${{ always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && !inputs.cycle) }}
-    runs-on: macos-latest
+    runs-on: *linux
     permissions: {}
     timeout-minutes: 5
     env:
       SHARDS_RESULT: ${{ needs.cargo-test-macos-enforcing-shard.result }}
-      JOIN_RESULT: ${{ needs.cargo-test-macos-enforcing.result }}
     steps:
       - name: require the enforcing test pass
-        run: test "$SHARDS_RESULT:$JOIN_RESULT" = success:success
+        run: test "$SHARDS_RESULT" = success
 
   # Clippy writes check metadata, which a restored test build does not hold,
   # so the lane keeps its own state: main's newest, restored by prefix on the
