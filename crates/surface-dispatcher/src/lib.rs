@@ -424,6 +424,15 @@ pub use crate::pool::recording::ActivityFork;
 pub use crate::pool::recording::clock as activity_clock;
 #[cfg(feature = "instrument")]
 pub use crate::pool::recording::marked;
+#[cfg(all(
+    target_os = "linux",
+    any(
+        target_arch = "aarch64",
+        target_arch = "riscv64",
+        target_arch = "x86_64"
+    )
+))]
+pub use crate::pool::ring::with_ring;
 pub use crate::pool::runtime_directory;
 pub use crate::presentation::Presentation;
 pub use crate::presentation::PresentationFault;

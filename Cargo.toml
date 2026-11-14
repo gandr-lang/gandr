@@ -25,6 +25,7 @@ members = [
   "crates/runtime-stencils",
   "crates/storage-artifact",
   "crates/storage-chunker",
+  "crates/storage-io",
   "crates/storage-records",
   "crates/storage-schema",
   "crates/storage-store",
@@ -586,6 +587,13 @@ default-features = false
 [workspace.dependencies.gandr-kernel-core-base]
 path = "crates/kernel-core-base"
 
+# The region: values in buckets under a budget, whose ids carry its brand,
+# and an allocator under the same budget.
+# consumers:
+# - storage-io (dev)
+[workspace.dependencies.gandr-kernel-data]
+path = "crates/kernel-data"
+
 # The certified kernel's universe-level oracle.
 # consumers:
 # - core-checker
@@ -697,6 +705,13 @@ path = "crates/storage-artifact"
 # - storage-values
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
+
+# The IO layer: one io_uring for each worker on the kernel's own system
+# calls, and the blocking form beside it.
+# consumers:
+# - surface-dispatcher
+[workspace.dependencies.gandr-storage-io]
+path = "crates/storage-io"
 
 # The authenticated ordered-record plane.
 # consumers:
