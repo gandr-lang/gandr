@@ -1568,6 +1568,7 @@ dependencies = [
  "gandr-storage-chunker",
  "gandr-storage-records",
  "gandr-storage-values",
+ "nix",
  "quenchant-anodized",
  "quenchant-shape",
 ]

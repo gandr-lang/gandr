@@ -42,5 +42,10 @@ gandr-storage-records.workspace = true
 gandr-storage-values.workspace = true
 quenchant-shape.workspace = true
 
+# The load bench reads the filesystem of its directory and the CPU and the
+# voluntary switches of each row.
+[dev-dependencies]
+nix.workspace = true
+
 [lints]
 workspace = true

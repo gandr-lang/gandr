@@ -16,9 +16,20 @@
 //! put rate is above the fold rate outruns one writer.
 //!
 //! `cargo bench` runs the full measurement and prints one row for each width.
-//! The bench omits a width above the parallelism of the host. Under `cargo
+//! The full run measures the widths 1, 16 and 64, and it omits a width above
+//! the parallelism of the host. `--widths 1,8,96` measures the widths that it
+//! names, a width above the parallelism of the host among them. Under `cargo
 //! test`, the bench loads 64 files at widths 1 and 2 and prints nothing. So
 //! the gates run it, and they do not time it.
+//!
+//! `--directory <path>` puts the source tree and the stores under that
+//! directory, in place of the temporary directory of the host. Each row names
+//! the filesystem and the device that hold the directory: on Linux, from the
+//! mount table of the process; on macOS, from `statfs` and the node of the
+//! device under `/dev`. A row on tmpfs states that it measures the locks of
+//! the kernel and no device. The bench refuses a run whose directory names
+//! no filesystem or no device. Beside each row stand the user CPU, the system
+//! CPU and the voluntary context switches of the process during the load.
 //!
 //! # References
 //!
@@ -35,11 +46,18 @@
 use core::time::Duration;
 use std::fs;
 use std::fs::File;
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::FileTypeExt as _;
+#[cfg(target_os = "macos")]
+use std::os::unix::fs::MetadataExt as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use gandr_storage_store::Store;
+use nix::sys::resource::UsageWho;
+use nix::sys::resource::getrusage;
+use nix::sys::time::TimeVal;
 
 /// How many files a full run loads.
 const FULL: Count = Count(20_000);
@@ -51,8 +69,8 @@ const SMOKE: Count = Count(64);
 /// each file is one piece.
 const FILE_BYTES: usize = 4_096;
 
-/// The widths a full run measures.
-const FULL_WIDTHS: [Count; 5] = [Count(1), Count(8), Count(16), Count(32), Count(64)];
+/// The widths a full run measures, when no `--widths` names others.
+const FULL_WIDTHS: [Count; 3] = [Count(1), Count(16), Count(64)];
 
 /// The widths a test-mode pass loads at.
 const SMOKE_WIDTHS: [Count; 2] = [Count(1), Count(2)];
@@ -70,7 +88,65 @@ struct Count(usize);
 #[derive(Clone, Copy)]
 struct Rate(u128);
 
-/// The objects that one pass moves, and the wall time it takes.
+/// The CPU and the voluntary context switches of the process, up to a moment
+/// or over a pass.
+#[derive(Clone, Copy)]
+struct Spent
+{
+    /// The CPU time in user mode.
+    user: Duration,
+    /// The CPU time in the kernel.
+    system: Duration,
+    /// The context switches that the threads of the process gave up.
+    switches: nix::libc::c_long,
+}
+
+impl Spent
+{
+    /// What the process spent from its start to now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn now() -> Self
+    {
+        let usage = getrusage(UsageWho::RUSAGE_SELF).expect("the process reads its usage");
+        Self {
+            user: duration(usage.user_time()),
+            system: duration(usage.system_time()),
+            switches: usage.voluntary_context_switches(),
+        }
+    }
+
+    /// What the process spent from `before` to `self`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn since(
+        self,
+        before: Self,
+    ) -> Self
+    {
+        Self {
+            user: self.user.saturating_sub(before.user),
+            system: self.system.saturating_sub(before.system),
+            switches: self.switches.saturating_sub(before.switches),
+        }
+    }
+}
+
+/// The duration that `time` holds.
+///
+/// # Specification
+/// trivial.
+fn duration(time: TimeVal) -> Duration
+{
+    let seconds = u64::try_from(time.tv_sec()).unwrap_or_default();
+    let micros = u64::try_from(time.tv_usec()).unwrap_or_default();
+    Duration::from_secs(seconds).saturating_add(Duration::from_micros(micros))
+}
+
+/// The objects that one pass moves, its wall time, and what the process spent
+/// during it.
 #[derive(Clone, Copy)]
 struct Pass
 {
@@ -78,6 +154,8 @@ struct Pass
     objects: Count,
     /// The wall time of the pass.
     wall: Duration,
+    /// The CPU and the voluntary switches of the process during the pass.
+    spent: Spent,
 }
 
 impl Pass
@@ -98,13 +176,14 @@ impl Pass
     }
 }
 
-/// A fresh, empty directory for the run, removed first if a run left it.
+/// A fresh, empty directory for the run under `base`, removed first if a run
+/// left it.
 ///
 /// # Specification
 /// trivial.
-fn scratch() -> PathBuf
+fn scratch(base: &Path) -> PathBuf
 {
-    let directory = std::env::temp_dir().join(format!("gandr-storage-load-{}", std::process::id()));
+    let directory = base.join(format!("gandr-storage-load-{}", std::process::id()));
     if directory.exists() {
         fs::remove_dir_all(&directory).expect("a stale scratch directory is removed");
     }
@@ -182,6 +261,7 @@ fn load(
 ) -> Pass
 {
     let (opened, _register) = Store::open(store).expect("a fresh store opens");
+    let before = Spent::now();
     let started = Instant::now();
     std::thread::scope(|scope| {
         for first in 0 .. width.0 {
@@ -194,9 +274,11 @@ fn load(
         }
     });
     let wall = started.elapsed();
+    let spent = Spent::now().since(before);
     Pass {
         objects: Count(objects(store).len()),
         wall,
+        spent,
     }
 }
 
@@ -213,6 +295,7 @@ fn fold(
     let shard = objects(store);
     let plane = root.join("plane");
     fs::create_dir_all(&plane).expect("the plane directory is made");
+    let before = Spent::now();
     let started = Instant::now();
     for object in &shard {
         let name = object.file_name().expect("an object has a name");
@@ -225,11 +308,139 @@ fn fold(
     Pass {
         objects: Count(shard.len()),
         wall,
+        spent: Spent::now().since(before),
     }
 }
 
+/// The filesystem and the device that hold a directory.
+struct Substrate
+{
+    /// The type of the filesystem, as the kernel names it.
+    filesystem: String,
+    /// The device that holds the filesystem, or what the mount names in its
+    /// place.
+    device: String,
+}
+
+impl Substrate
+{
+    /// The filesystem and the device of `directory`: the mount of the process
+    /// whose mount point is the longest prefix of the canonical directory.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(target_os = "linux")]
+    fn of(directory: &Path) -> Self
+    {
+        let directory = directory.canonicalize().expect("the directory resolves");
+        let table = fs::read_to_string("/proc/self/mountinfo").expect("the mount table reads");
+        let mut found = None;
+        let mut longest = 0_usize;
+        for line in table.lines() {
+            let Some((left, right)) = line.split_once(" - ")
+            else {
+                continue;
+            };
+            let (Some(point), mut kinds) = (left.split(' ').nth(4), right.split(' '))
+            else {
+                continue;
+            };
+            let point = PathBuf::from(unescape(point));
+            let depth = point.components().count();
+            if directory.starts_with(&point) && depth >= longest {
+                longest = depth;
+                found = kinds
+                    .next()
+                    .zip(kinds.next())
+                    .map(|(filesystem, device)| Self {
+                        filesystem: String::from(filesystem),
+                        device: String::from(device),
+                    });
+            }
+        }
+        found.unwrap_or(Self {
+            filesystem: String::new(),
+            device: String::new(),
+        })
+    }
+
+    /// The filesystem and the device of `directory`: the type name that
+    /// `statfs` gives, and the node under `/dev` whose device number is the
+    /// directory's.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(target_os = "macos")]
+    fn of(directory: &Path) -> Self
+    {
+        let filesystem = nix::sys::statfs::statfs(directory)
+            .map(|stat| String::from(stat.filesystem_type_name()))
+            .unwrap_or_default();
+        let held = fs::metadata(directory).expect("the directory reads").dev();
+        let device = fs::read_dir("/dev")
+            .expect("the devices list")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("disk"))
+                    && fs::metadata(path)
+                        .is_ok_and(|node| node.file_type().is_block_device() && node.rdev() == held)
+            })
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        Self { filesystem, device }
+    }
+
+    /// No filesystem and no device: the bench names them on Linux and on
+    /// macOS alone, and refuses the run elsewhere.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn of(_directory: &Path) -> Self
+    {
+        Self {
+            filesystem: String::new(),
+            device: String::new(),
+        }
+    }
+
+    /// The device as a row names it: on tmpfs, the locks of the kernel, since
+    /// no device holds the filesystem.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(&self) -> String
+    {
+        if self.filesystem == "tmpfs" {
+            String::from("none — the locks of the kernel")
+        }
+        else {
+            self.device.clone()
+        }
+    }
+}
+
+/// A mount point of the mount table with its escapes undone: a space, a tab,
+/// a newline and a backslash each stand as three octal digits.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+fn unescape(point: &str) -> String
+{
+    point
+        .replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+}
+
 /// Print one row: `width`, the objects and the wall of `pass`, its put rate,
-/// and that rate over `fold`.
+/// that rate over `fold`, what the process spent during the pass, and the
+/// filesystem and the device of `substrate`.
 ///
 /// # Specification
 /// trivial.
@@ -237,11 +448,12 @@ fn row(
     width: Count,
     pass: Pass,
     fold: Rate,
+    substrate: &Substrate,
 )
 {
     let put = pass.rate();
     println!(
-        "| {} | {} | {} | {} | {} |",
+        "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
         width.0,
         pass.objects.0,
         pass.wall.as_millis(),
@@ -249,26 +461,105 @@ fn row(
         put.0
             .saturating_mul(100)
             .checked_div(fold.0.max(1))
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        pass.spent.user.as_millis(),
+        pass.spent.system.as_millis(),
+        pass.spent.switches,
+        substrate.filesystem,
+        substrate.named()
     );
 }
 
+/// What the command line asks of a run.
+struct Arguments
+{
+    /// A full run, which times and prints; otherwise one short pass.
+    full: bool,
+    /// The directory that holds the run, or the temporary one.
+    directory: PathBuf,
+    /// The widths that `--widths` names, if it names any.
+    widths: Option<Vec<Count>>,
+}
+
+/// The arguments of the process: `--bench`, `--directory <path>` and
+/// `--widths <list>`, each width of the list a count above zero.
+///
+/// # Specification
+/// trivial.
+fn arguments() -> Arguments
+{
+    let mut parsed = Arguments {
+        full: false,
+        directory: std::env::temp_dir(),
+        widths: None,
+    };
+    let mut words = std::env::args().skip(1);
+    while let Some(word) = words.next() {
+        match word.as_str() {
+            "--bench" => parsed.full = true,
+            "--directory" => {
+                parsed.directory = words
+                    .next()
+                    .map(PathBuf::from)
+                    .expect("--directory names a path");
+            },
+            "--widths" => {
+                let list = words.next().expect("--widths names a list");
+                parsed.widths = Some(
+                    list.split(',')
+                        .map(|width| {
+                            Count(
+                                width
+                                    .trim()
+                                    .parse::<usize>()
+                                    .ok()
+                                    .filter(|&width| width > 0)
+                                    .expect("each width is a count above zero"),
+                            )
+                        })
+                        .collect(),
+                );
+            },
+            _ => {},
+        }
+    }
+    parsed
+}
+
 /// Load the source tree at each width and print a row for each, beside the
-/// fold of one writer.
+/// fold of one writer, after a line that names the substrate.
 ///
 /// # Specification
 /// trivial.
 fn main()
 {
-    let full = std::env::args().any(|argument| argument == "--bench");
-    let (files, widths) = if full {
-        (FULL, FULL_WIDTHS.as_slice())
-    }
-    else {
-        (SMOKE, SMOKE_WIDTHS.as_slice())
-    };
+    let asked = arguments();
+    let full = asked.full;
     let parallelism = std::thread::available_parallelism().map_or(1, usize::from);
-    let root = scratch();
+    let (files, widths): (Count, Vec<Count>) = match (full, asked.widths) {
+        (true, Some(named)) => (FULL, named),
+        (true, None) => (
+            FULL,
+            FULL_WIDTHS
+                .into_iter()
+                .filter(|width| width.0 <= parallelism)
+                .collect(),
+        ),
+        (false, _) => (
+            SMOKE,
+            SMOKE_WIDTHS
+                .into_iter()
+                .filter(|width| width.0 <= parallelism)
+                .collect(),
+        ),
+    };
+    let substrate = Substrate::of(&asked.directory);
+    assert!(
+        !substrate.filesystem.is_empty() && !substrate.device.is_empty(),
+        "each row names the filesystem and the device of {}",
+        asked.directory.display()
+    );
+    let root = scratch(&asked.directory);
     let sources = source(&root, files);
 
     // Width 1 loads first and folds, so each row after it can state its rate
@@ -279,24 +570,27 @@ fn main()
     let fold_rate = folded.rate();
     if full {
         println!(
-            "store load of {} files of {FILE_BYTES} bytes; the fold of one writer renames {} \
-             objects in {} ms, {} objects per second",
+            "store load of {} files of {FILE_BYTES} bytes under {}, filesystem {}, device {}; \
+             the fold of one writer renames {} objects in {} ms, {} objects per second",
             files.0,
+            asked.directory.display(),
+            substrate.filesystem,
+            substrate.named(),
             folded.objects.0,
             folded.wall.as_millis(),
             fold_rate.0
         );
-        println!("| width | objects | wall (ms) | puts per second | puts over the fold (%) |");
-        println!("| ---: | ---: | ---: | ---: | ---: |");
-        row(Count(1), first, fold_rate);
+        println!(
+            "| width | objects | wall (ms) | puts per second | puts over the fold (%) | user CPU \
+             (ms) | system CPU (ms) | voluntary switches | filesystem | device |"
+        );
+        println!("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |");
+        row(Count(1), first, fold_rate, &substrate);
     }
     fs::remove_dir_all(&single).expect("the store of width 1 is removed");
     fs::remove_dir_all(root.join("plane")).expect("the folded plane is removed");
 
-    for &width in widths
-        .iter()
-        .filter(|width| width.0 > 1 && width.0 <= parallelism)
-    {
+    for width in widths.into_iter().filter(|width| width.0 > 1) {
         let store = root.join(format!("store-{}", width.0));
         let pass = load(&store, &sources, width);
         assert!(
@@ -304,7 +598,7 @@ fn main()
             "each file puts at least its one piece"
         );
         if full {
-            row(width, pass, fold_rate);
+            row(width, pass, fold_rate, &substrate);
         }
         fs::remove_dir_all(&store).expect("the store of a width is removed");
     }
