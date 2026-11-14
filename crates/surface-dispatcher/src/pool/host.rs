@@ -58,11 +58,13 @@
 //! token. The porter's slot counts each token in the FIFO or in the hands of a
 //! tool, so the reap gives them back when the hub dies. A give wakes a porter
 //! whose FIFO is empty, and a take of gandr that waits wakes a porter whose
-//! FIFO holds a spare. A tool's read or write of the FIFO wakes nothing, so
-//! the porter reads the FIFO again at its tick. It counts the FIFO's bytes by
-//! one read of two bytes at most, since `FIONREAD` reads a FIFO as empty on
-//! macOS, and it writes a lone spare back. Its slot counts the spare all the
-//! while, so that write moves no token.
+//! FIFO holds a spare. On Linux, an inotify watch of the FIFO wakes the porter
+//! at each read and each write of a tool, and `FIONREAD` counts the FIFO's
+//! bytes, so the porter reads only a byte that crosses. On macOS, a tool's
+//! read or write wakes nothing, so the porter reads the FIFO again at its
+//! tick. `FIONREAD` reads a FIFO as empty there, so the porter counts the
+//! bytes by one read of two bytes at most, and it writes a lone spare back.
+//! Its slot counts the spare all the while, so that write moves no token.
 //!
 //! **Alternatives.** The jobserver's FIFO costs two system calls for each
 //! token, and it keeps no record of the holder of a byte. A pid alone names a
@@ -184,8 +186,9 @@ const SETTER: &str = "tokens.set";
 const SLOT_FILES: &str = "tokens.d";
 
 /// The build tools' FIFO, in the runtime directory. A tool names it as
-/// `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`.
-const FIFO: &str = "tokens.fifo";
+/// `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`, and a process of gandr that
+/// the FIFO names takes the counter beside it.
+pub(super) const FIFO: &str = "tokens.fifo";
 
 /// The porter's file: the hub whose porter carries the tokens holds an
 /// exclusive lock on it.
@@ -193,12 +196,21 @@ const PORTER: &str = "tokens.porter";
 
 /// How long the porter waits before it reads the FIFO again.
 ///
-/// economy: 10 ms. A tool's read or write of the FIFO wakes no porter, so a
-/// tool that took the spare waits at most this long for the next one when no
-/// give wakes the porter. An idle porter reads the FIFO, writes its spare back
-/// and waits once each tick: three system calls. #7605 wakes the porter at a
-/// tool's read on Linux, and the tick goes there.
+/// economy: 10 ms on a host other than Linux. There a tool's read or write of
+/// the FIFO wakes no porter, so a tool that took the spare waits at most this
+/// long for the next one when no give wakes the porter. An idle porter reads
+/// the FIFO, writes its spare back and waits once each tick: three system
+/// calls.
+#[cfg(not(target_os = "linux"))]
 const TICK: Duration = Duration::from_millis(10);
+
+/// How long the porter waits before it reads the FIFO again.
+///
+/// economy: as [`WAIT`] on Linux. The porter's watch wakes the porter at each
+/// read and each write of the FIFO, and the tick only bounds a wake that the
+/// watch misses, as [`WAIT`] bounds one that the futex misses.
+#[cfg(target_os = "linux")]
+const TICK: Duration = WAIT;
 
 /// The porter's word: no event wakes the porter.
 const IDLE: u32 = 0;

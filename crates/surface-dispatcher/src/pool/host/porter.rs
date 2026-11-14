@@ -6,17 +6,23 @@
 
 use alloc::ffi::CString;
 use alloc::sync::Arc;
+#[cfg(target_os = "linux")]
+use core::mem::MaybeUninit;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::fs::TryLockError;
 use std::os::unix::ffi::OsStrExt as _;
+#[cfg(target_os = "linux")]
+use std::os::unix::io::OwnedFd;
 use std::path::Path;
 use std::path::PathBuf;
 use std::thread::JoinHandle;
 
 use quenchant_shape::shape::Maybe;
+#[cfg(target_os = "linux")]
+use rustix::fs::inotify;
 
 use super::Class;
 use super::Counter;
@@ -30,8 +36,27 @@ use super::STOCKED;
 use super::TICK;
 use super::left;
 use super::wait;
-use crate::pool::grant::Drawn;
+use crate::pool::grant::Counted;
 use crate::pool::grant::Fifo;
+
+/// The bytes of one read of the watch: sixteen events of a watch that names no
+/// file.
+#[cfg(target_os = "linux")]
+const EVENTS: usize = 256;
+
+quenchant_shape::reason_enum! {
+    /// Why a directory names no FIFO that a porter carries.
+    pub mod unported {
+        /// The reason a build names no host's FIFO.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No porter holds the porter's lock, or no hub made the file.
+            Unheld,
+            /// The porter's file does not open, or its lock fails.
+            Unopened,
+        }
+    }
+}
 
 /// Whether a take of gandr waits on the counter.
 ///
@@ -72,6 +97,9 @@ pub struct Porter
     path: PathBuf,
     /// The porter's thread, until the porter ends.
     thread: Option<JoinHandle<()>>,
+    /// The thread of the FIFO's watch, until the porter ends.
+    #[cfg(target_os = "linux")]
+    watcher: Option<JoinHandle<()>>,
 }
 
 /// What the porter's thread holds: its slot of the counter, the FIFO's ends,
@@ -89,6 +117,9 @@ struct Carrying
     fifo: Fifo,
     /// Set when the hub ends the porter.
     stop: AtomicBool,
+    /// The watch of each read and each write of the FIFO.
+    #[cfg(target_os = "linux")]
+    watch: Watch,
     /// The porter's file, which the porter holds an exclusive lock on.
     _lock: File,
 }
@@ -103,6 +134,58 @@ impl Carrying
     {
         &self.host.mapping.segment().counter
     }
+}
+
+/// The porter's watch of the FIFO on Linux: an inotify instance with one
+/// watch, which reports each read and each write of the FIFO.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct Watch
+{
+    /// The inotify instance.
+    instance: OwnedFd,
+    /// The FIFO's watch in the instance.
+    fifo: i32,
+}
+
+#[cfg(target_os = "linux")]
+impl Watch
+{
+    /// Watch each read and each write of the FIFO at `path`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// Returns the host's error for an instance or a watch that the host
+    /// refuses, and [`std::io::ErrorKind::InvalidInput`] for a path that holds
+    /// a NUL.
+    fn on(path: &Path) -> std::io::Result<Self>
+    {
+        let spelled = CString::new(path.as_os_str().as_bytes())
+            .map_err(|nul| std::io::Error::new(std::io::ErrorKind::InvalidInput, nul))?;
+        let instance = inotify::init(inotify::CreateFlags::CLOEXEC).map_err(refused)?;
+        let fifo = inotify::add_watch(
+            &instance,
+            spelled.as_c_str(),
+            inotify::WatchFlags::ACCESS | inotify::WatchFlags::MODIFY,
+        )
+        .map_err(refused)?;
+        Ok(Self { instance, fifo })
+    }
+}
+
+/// The host's error for a call that the host refuses with `errno`.
+///
+/// # Specification
+/// trivial.
+#[cfg(target_os = "linux")]
+fn refused(errno: rustix::io::Errno) -> std::io::Error
+{
+    std::io::Error::from_raw_os_error(errno.raw_os_error())
 }
 
 impl Porter
@@ -149,6 +232,8 @@ impl Porter
         let path = directory.join(FIFO);
         made(&path)?;
         let fifo = Fifo::open(&path)?;
+        #[cfg(target_os = "linux")]
+        let watch = Watch::on(&path)?;
         let Maybe::Present(host) = Host::join(directory, Class::Batch)
         else {
             return Err(std::io::ErrorKind::NotConnected.into());
@@ -157,6 +242,8 @@ impl Porter
             host,
             fifo,
             stop: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            watch,
             _lock: lock,
         });
         let thread = std::thread::Builder::new()
@@ -165,11 +252,64 @@ impl Porter
                 let carrying = Arc::clone(&carrying);
                 move || carry(&carrying)
             })?;
-        Ok(Self {
+        let porter = Self {
             carrying,
             path,
             thread: Some(thread),
-        })
+            #[cfg(target_os = "linux")]
+            watcher: None,
+        };
+        // A watch thread that does not start drops the porter, and the drop
+        // stops the porter's thread.
+        #[cfg(target_os = "linux")]
+        let porter = {
+            let mut porter = porter;
+            porter.watcher = Some(
+                std::thread::Builder::new()
+                    .name(String::from("gandr-porter-watch"))
+                    .spawn({
+                        let carrying = Arc::clone(&porter.carrying);
+                        move || watch(&carrying)
+                    })?,
+            );
+            porter
+        };
+        Ok(porter)
+    }
+
+    /// The FIFO that a hub's porter carries in `directory`, while a porter
+    /// holds the porter's lock there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the FIFO's path while a porter holds the lock;
+    ///   [`unported::Absent::Unheld`] when no hub made the porter's file or its
+    ///   lock is free, which the call takes and gives back at once;
+    ///   [`unported::Absent::Unopened`] when the file does not open or the lock
+    ///   fails. The call makes no file.
+    /// - panics: none.
+    /// - executable: none — the porter is another process's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a running porter's FIFO is named, and once the porter
+    ///   ends none is.
+    /// - witness: `pool::host::porter::tests::a_porter_s_fifo_is_named_while_it_carries`
+    #[inline]
+    pub fn carried(directory: &Path) -> Maybe<PathBuf, unported::Absent>
+    {
+        let lock = match File::open(directory.join(PORTER)) {
+            Ok(lock) => lock,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Maybe::Absent(unported::Absent::Unheld);
+            },
+            Err(_) => return Maybe::Absent(unported::Absent::Unopened),
+        };
+        match lock.try_lock() {
+            Err(TryLockError::WouldBlock) => Maybe::Present(directory.join(FIFO)),
+            // The lock goes back as the file closes.
+            Ok(()) => Maybe::Absent(unported::Absent::Unheld),
+            Err(TryLockError::Error(_)) => Maybe::Absent(unported::Absent::Unopened),
+        }
     }
 }
 
@@ -188,8 +328,19 @@ impl Drop for Porter
         self.carrying.stop.store(true, Ordering::Release);
         let counter = self.carrying.counter();
         counter.porter_wakes.raise();
+        // The watch's end reaches its thread as `IN_IGNORED`, and the thread
+        // returns.
+        #[cfg(target_os = "linux")]
+        drop(inotify::remove_watch(
+            &self.carrying.watch.instance,
+            self.carrying.watch.fifo,
+        ));
         if let Some(thread) = self.thread.take() {
             drop(thread.join());
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(watcher) = self.watcher.take() {
+            drop(watcher.join());
         }
     }
 }
@@ -209,7 +360,7 @@ fn wanted(counter: &Counter) -> Wanted
 }
 
 /// The porter's loop: make a crossing while one is due, else wait for a give,
-/// a waiting take or the tick.
+/// a waiting take, a tool's read or write of the FIFO on Linux, or the tick.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -232,29 +383,32 @@ fn carry(carrying: &Carrying)
     } = *carrying;
     let counter = carrying.counter();
     while !stop.load(Ordering::Acquire) {
+        // The porter reads the word before it counts the FIFO: a tool's read
+        // or write after the count raises the word past `seen`, and the wait
+        // returns at once.
+        let seen = counter.porter_wakes.seen();
         let wants = wanted(counter);
-        let porting = match fifo.draw() {
-            // The first crossing, past the one spare: the first byte goes to
-            // the counter, and the second goes back for the next round.
-            Drawn::Two(first, second) => {
-                host.give(first);
-                fifo.give(second);
-                continue;
-            },
-            // The first crossing: the spare goes to a take of gandr that waits.
-            Drawn::One(token) if wants == Wanted::Waits => {
+        let porting = match fifo.count() {
+            // The first crossing, past the one spare: the byte goes to the
+            // counter.
+            Counted::Past(token) => {
                 host.give(token);
                 continue;
             },
-            // The spare stays. It goes back into the FIFO, and the porter's
-            // slot counts it all the while, so no token crosses.
-            Drawn::One(token) => {
-                fifo.give(token);
-                STOCKED
+            // The first crossing: the spare goes to a take of gandr that waits.
+            // A tool that takes the spare first leaves the porter nothing.
+            Counted::Spare if wants == Wanted::Waits => {
+                if let Maybe::Present(token) = fifo.take_now() {
+                    host.give(token);
+                }
+                continue;
             },
+            // The spare stays, and the porter's slot counts it all the while,
+            // so no token crosses.
+            Counted::Spare => STOCKED,
             // The second crossing: a free token of the counter goes to the
             // empty FIFO as its spare, while no take of gandr waits.
-            Drawn::Empty => match wants {
+            Counted::Empty => match wants {
                 Wanted::Unwanted => match host.take_now() {
                     Maybe::Present(token) => {
                         fifo.give(token);
@@ -265,7 +419,6 @@ fn carry(carrying: &Carrying)
                 Wanted::Waits => HUNGRY,
             },
         };
-        let seen = counter.porter_wakes.seen();
         counter.porting.store(porting, Ordering::SeqCst);
         // A give or a waiting take before the store found no word to wake the
         // porter by, so the porter reads the counter again before it waits.
@@ -280,13 +433,44 @@ fn carry(carrying: &Carrying)
     }
     // The hub ends: each byte of the FIFO goes back to the counter.
     loop {
-        match fifo.draw() {
-            Drawn::Two(first, second) => {
-                host.give(first);
-                host.give(second);
+        match fifo.count() {
+            Counted::Past(token) => host.give(token),
+            Counted::Spare => match fifo.take_now() {
+                Maybe::Present(token) => host.give(token),
+                Maybe::Absent(_) => return,
             },
-            Drawn::One(token) => host.give(token),
-            Drawn::Empty => return,
+            Counted::Empty => return,
+        }
+    }
+}
+
+/// The thread of the porter's watch on Linux: it raises the porter's word at
+/// each read and each write of the FIFO, so a tool that takes the spare or
+/// gives a byte back wakes the porter.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: returns once the porter takes the watch away, or once a read of
+///   the instance fails; the porter then waits for the tick alone.
+/// - panics: none.
+/// - executable: none — the tools read and write the FIFO at once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tool's read of the spare wakes the porter, which stocks
+///   the next spare before the tick.
+/// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+#[cfg(target_os = "linux")]
+fn watch(carrying: &Carrying)
+{
+    let counter = carrying.counter();
+    let mut buffer = [MaybeUninit::<u8>::uninit(); EVENTS];
+    let mut events = inotify::Reader::new(&carrying.watch.instance, &mut buffer);
+    loop {
+        match events.next() {
+            Ok(event) if event.events().contains(inotify::ReadFlags::IGNORED) => return,
+            Ok(_) => counter.porter_wakes.raise(),
+            Err(rustix::io::Errno::INTR) => {},
+            Err(_) => return,
         }
     }
 }
@@ -452,6 +636,31 @@ mod tests
             settles(&counter, &Free(2)),
             Free(2),
             "the porter's end gives back the token in the tool's hands, and the keystroke's end its own"
+        );
+        drop(counter);
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    #[test]
+    fn a_porter_s_fifo_is_named_while_it_carries()
+    {
+        let directory =
+            fresh(std::env::temp_dir().join(format!("gandr-porter-named-{}", std::process::id())));
+        assert!(
+            matches!(Porter::carried(&directory), Maybe::Absent(_)),
+            "a directory that no hub used names no FIFO"
+        );
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(1).unwrap())).unwrap();
+        let porter = counter.carry().unwrap();
+        assert!(
+            matches!(Porter::carried(&directory), Maybe::Present(ref fifo) if *fifo == directory.join(FIFO)),
+            "a running porter's FIFO is named"
+        );
+        drop(porter);
+        assert!(
+            matches!(Porter::carried(&directory), Maybe::Absent(_)),
+            "once the porter ends, its free lock names no FIFO"
         );
         drop(counter);
         drop(std::fs::remove_dir_all(&directory));

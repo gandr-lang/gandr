@@ -82,9 +82,12 @@
 //! directory of its socket, the dispatcher's `HostCounter`. It holds the
 //! counter's shared lock for its life, so each process of the host joins the
 //! counter while a hub runs. On its idle tick, every half second, the hub
-//! reaps the slot of each holder that died. A hub whose counter does not open
-//! logs the error and serves on: each process then takes its grant from a
-//! jobserver, or runs with none.
+//! reaps the slot of each holder that died. One hub's porter carries the
+//! tokens to the build tools' FIFO. A hub that finds another hub's porter
+//! tries the porter's lock again on its idle tick, so the porter passes to it
+//! when that hub ends. A hub whose counter does not open logs the error and
+//! serves on: each process then takes its grant from a jobserver, or runs with
+//! none.
 //!
 //! **Alternatives.** A hub per document would keep a judgement per process
 //! that a face beside the editors could not read; one workspace per hub
@@ -141,6 +144,7 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_dispatcher::HostCounter;
+use gandr_surface_dispatcher::Porter;
 use gandr_surface_dispatcher::runtime_directory;
 use gandr_surface_lsp_base::hub::NAME_DIGITS;
 use gandr_surface_lsp_base::hub::lock;
@@ -176,6 +180,27 @@ const POLL: Duration = Duration::from_millis(20);
 /// reap reads each slot's atomics and locks only the slots that hold a token.
 /// #7543 reaps a holder at its death, by an event, and the tick goes.
 const REAP: Duration = Duration::from_millis(500);
+
+/// The hub's part in the porter of the host's tokens.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+enum Porting
+{
+    /// The hub's porter carries the tokens.
+    Carries
+    {
+        /// The porter, which stops as the hub ends.
+        _porter: Porter,
+    },
+    /// Another hub's porter carries them, and the hub tries the porter's lock
+    /// again on its idle tick.
+    Another,
+    /// The hub carries no tokens: it owns no counter, or the host refused its
+    /// porter.
+    Idle,
+}
 
 /// Why no socket could be named for a workspace.
 #[derive(Debug)]
@@ -411,16 +436,17 @@ where
     // The porter carries the host's tokens between the counter and the build
     // tools' FIFO beside it while the hub runs. Another hub's porter may carry
     // them already.
-    let _porter = match tokens.as_ref().map(HostCounter::carry) {
-        Some(Ok(porter)) => Some(porter),
+    let mut porting = match tokens.as_ref().map(HostCounter::carry) {
+        Some(Ok(porter)) => Porting::Carries { _porter: porter },
+        Some(Err(error)) if error.kind() == io::ErrorKind::WouldBlock => Porting::Another,
         Some(Err(error)) => {
             drop(writeln!(
                 log,
                 "the hub carries no tokens to the build tools: {error}"
             ));
-            None
+            Porting::Idle
         },
-        None => None,
+        None => Porting::Idle,
     };
     let mut reaped = Instant::now();
     let log = Arc::new(Mutex::new(log));
@@ -466,6 +492,23 @@ where
                 if reaped.elapsed() >= REAP {
                     if let Some(ref tokens) = tokens {
                         tokens.reap();
+                        // The hub whose porter carried the tokens may have
+                        // ended: this hub takes the porter's lock then.
+                        if matches!(porting, Porting::Another) {
+                            porting = match tokens.carry() {
+                                Ok(porter) => Porting::Carries { _porter: porter },
+                                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                    Porting::Another
+                                },
+                                Err(error) => {
+                                    drop(writeln!(
+                                        lock(&log),
+                                        "the hub carries no tokens to the build tools: {error}"
+                                    ));
+                                    Porting::Idle
+                                },
+                            };
+                        }
                     }
                     reaped = Instant::now();
                 }

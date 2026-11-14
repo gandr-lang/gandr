@@ -342,6 +342,8 @@ use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
+#[cfg(unix)]
+use std::time::Instant;
 
 use anodized::spec;
 use gandr_kernel_core::tallied;
@@ -520,6 +522,21 @@ const REFUSED: u8 = 1;
 
 /// The exit code of `fmt --check` over a source out of layout.
 const UNFORMATTED: u8 = 1;
+
+/// The exit code of `gandr tokens` when no porter carries the host's tokens.
+#[cfg(unix)]
+const UNPORTED: u8 = 1;
+
+/// How long `gandr tokens` reads the porter's lock before it says that no
+/// porter carries the host's tokens.
+///
+/// economy: 1 s. A hub binds its socket before it makes its porter, so a
+/// client that starts the hub connects before the porter runs. The porter
+/// starts within milliseconds of the bind, and a gate that finds no porter
+/// names its own FIFO, so a hub that carries no tokens costs each gate this
+/// once.
+#[cfg(unix)]
+const PORTED: Duration = Duration::from_secs(1);
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -725,6 +742,27 @@ enum Command
     /// no hub can be reached.
     #[cfg(unix)]
     Mcp
+    {
+        /// The hub's socket, rather than the one the current directory names.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+        /// How long a hub this client starts waits for a client, once its
+        /// last has left, before it exits. Defaults to a minute.
+        #[arg(long, value_name = "MILLISECONDS")]
+        linger_ms: Option<u64>,
+    },
+    /// Hold the engine hub for a build that runs beside it, and name the build
+    /// tools' FIFO that the hub's porter carries.
+    ///
+    /// The hub serving the current directory's workspace is reached, started
+    /// when none runs, and the path of the host's FIFO is printed on standard
+    /// output. The connection holds the hub until standard input ends. A build
+    /// names the path as `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`, so
+    /// make, cargo and gandr draw on the host's one counter. The verb takes no
+    /// token. Exits 0 when standard input ends, 1 when no porter carries the
+    /// host's tokens, and 2 when no hub can be reached or a stream fails.
+    #[cfg(unix)]
+    Tokens
     {
         /// The hub's socket, rather than the one the current directory names.
         #[arg(long, value_name = "PATH")]
@@ -2210,6 +2248,14 @@ fn main() -> ExitCode
                 spelling,
             );
         },
+        #[cfg(unix)]
+        Some(Command::Tokens { socket, linger_ms }) => {
+            return tokens(
+                socket,
+                linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
+                spelling,
+            );
+        },
         Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput }, spelling);
         },
@@ -2886,6 +2932,83 @@ fn mcp(
             Err(error) => Leg::Ended(hub_fault(&error)),
         },
     )
+}
+
+/// Hold the hub at `socket`, starting one lingering `linger` and configured
+/// with `spelling` when none answers, name the build tools' FIFO that its
+/// porter carries, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the hub that [`reach_hub`] reaches holds the connection until
+///   standard input ends. While a porter holds the porter's lock in the
+///   directory of the hub's socket, read every 10 ms for at most [`PORTED`],
+///   the FIFO's path goes to standard output, and the verb exits `0` once
+///   standard input ends. With no porter it exits `1`, and with no hub or a
+///   stream that fails, `2`, the cause noted on standard error when writable.
+///   The verb takes no token.
+/// - provides: `gandr tokens`, the hold of a build on the host's counter.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a client that starts the hub names the FIFO of the hub's
+///   porter, and exits once its input ends.
+/// - witness: `tests::cli::tokens_names_the_fifo_of_the_hub_s_porter_7605`
+#[cfg(unix)]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNPORTED) || ret == ExitCode::from(FAULTED))]
+fn tokens(
+    socket: Option<PathBuf>,
+    linger: Duration,
+    spelling: Spelling,
+) -> ExitCode
+{
+    let named = match hub_socket(socket) {
+        Ok(named) => named,
+        Err(error) => return hub_fault(&error),
+    };
+    let held = match reach_hub(Some(named.clone()), linger, spelling) {
+        Ok(held) => held,
+        Err(error) => return hub_fault(&error),
+    };
+    let directory = named.parent().unwrap_or_else(|| Path::new("."));
+    let since = Instant::now();
+    let fifo = loop {
+        match gandr_surface_dispatcher::Porter::carried(directory) {
+            Maybe::Present(fifo) => break fifo,
+            Maybe::Absent(_) if since.elapsed() < PORTED => {
+                std::thread::sleep(Duration::from_millis(10));
+            },
+            Maybe::Absent(_) => {
+                let noted = writeln!(
+                    std::io::stderr(),
+                    "gandr: no porter carries the host's tokens in {}",
+                    directory.display()
+                );
+                return match noted {
+                    // When standard error is unwritable too, the exit code is
+                    // the one channel left.
+                    Ok(()) | Err(_) => ExitCode::from(UNPORTED),
+                };
+            },
+        }
+    };
+    let mut stdout = std::io::stdout().lock();
+    let named = writeln!(stdout, "{}", fifo.display()).and_then(|()| stdout.flush());
+    drop(stdout);
+    // The build holds standard input open while it runs, and the connection
+    // holds the hub until then.
+    let held_for =
+        named.and_then(|()| std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink()));
+    drop(held);
+    match held_for {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => match writeln!(std::io::stderr(), "gandr: the hold of the hub: {error}") {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
+    }
 }
 
 /// Attach to the render bus of the hub at `socket`, starting one lingering
