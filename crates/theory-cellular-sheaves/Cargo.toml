@@ -18,6 +18,14 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+# The measurement: a `harness = false` bench that times a sheaf's
+# construction, its cochains, its cohomology and its gluing on the circle's
+# level of 32 points, with percentiles and allocations.
+[[bench]]
+harness = false
+name = "sheaf"
+path = "benches/sheaf.rs"
+
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled. The graded poset holds the cells and their
 # order, and finite Stone duality names the cells and holds the sets of them
@@ -28,6 +36,10 @@ anodized.workspace = true
 gandr-theory-discrete-morse.workspace = true
 gandr-theory-graded-posets.workspace = true
 gandr-theory-stone-duality.workspace = true
+
+# The measurement counts each operation's allocations.
+[dev-dependencies]
+allocation-counter.workspace = true
 
 [lints]
 workspace = true
