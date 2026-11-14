@@ -105,8 +105,38 @@ impl Errno
     /// The caller may not use the ring: a container's policy, or a kernel
     /// switch.
     pub const PERMISSION: Self = Self(1);
+    /// No such entry: a cancel found no submission of its key.
+    pub const NO_ENTRY: Self = Self(2);
+    /// A signal interrupted the call before it completed.
+    pub const INTERRUPTED: Self = Self(4);
+    /// An input or output error, the answer for an error with no number.
+    pub const INPUT_OUTPUT: Self = Self(5);
+    /// The argument is not valid, such as a depth of zero.
+    pub const INVALID: Self = Self(22);
     /// The kernel has no such system call.
     pub const NO_SYSTEM_CALL: Self = Self(38);
+    /// The kernel does not support what the call asks for, such as a ring
+    /// without stable submissions.
+    pub const NOT_SUPPORTED: Self = Self(95);
+    /// The operation runs already, so a cancel cannot stop it.
+    pub const ALREADY: Self = Self(114);
+    /// A cancel, or the failure of an entry linked before it, stopped the
+    /// operation.
+    pub const CANCELLED: Self = Self(125);
+}
+
+impl From<std::io::Error> for Errno
+{
+    /// The error number of an error of the standard library, or
+    /// [`Errno::INPUT_OUTPUT`] when it carries none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(error: std::io::Error) -> Self
+    {
+        error.raw_os_error().map_or(Self::INPUT_OUTPUT, Self::from)
+    }
 }
 
 impl From<Errno> for u16
@@ -153,7 +183,7 @@ const FIRST_ERROR: usize = usize::MAX.wrapping_sub(4_094);
 /// # Adequacy
 /// - hypothesis: L3 — a ring set up, mapped and entered through this call
 ///   completes a linked write, sync and read in order.
-/// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+/// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
 unsafe fn call(
     number: Number,
     words: [Word; 6],
@@ -224,7 +254,7 @@ const NONE: Word = Word(0);
 /// # Adequacy
 /// - hypothesis: L3 — a ring set up here completes a linked write, sync and
 ///   read in order.
-/// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+/// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
 pub fn setup(
     entries: Word,
     params: &mut io_uring_params,
@@ -258,7 +288,7 @@ pub fn setup(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — three linked entries complete in order after one enter.
-/// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+/// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
 pub unsafe fn enter(
     ring: BorrowedFd<'_>,
     submit: Word,
@@ -299,7 +329,7 @@ impl Mapped
     /// # Adequacy
     /// - hypothesis: L3 — the queues read at the kernel's offsets carry a
     ///   linked write, sync and read to their completions.
-    /// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+    /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
     #[inline]
     pub unsafe fn at<T>(
         self,
@@ -322,7 +352,7 @@ impl Mapped
 /// # Adequacy
 /// - hypothesis: L3 — the queues mapped here carry a linked write, sync and
 ///   read to their completions.
-/// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+/// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
 pub fn map(
     ring: BorrowedFd<'_>,
     length: Word,
@@ -360,7 +390,7 @@ pub fn map(
 /// # Adequacy
 /// - hypothesis: L3 — a ring dropped after its run leaves no mapping that Miri
 ///   or the kernel reports.
-/// - witness: `tests::ring::a_linked_write_sync_and_read_complete_in_order`
+/// - witness: `tests::io::dropping_an_io_completes_its_submitted_writes`
 pub unsafe fn unmap(
     start: Mapped,
     length: Word,
