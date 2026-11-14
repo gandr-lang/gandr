@@ -507,7 +507,6 @@ fn clauses(
     sentence: &Sentence,
 ) -> Vec<Rule>
 {
-    let prose = |token: &Token| read(readings, token) == Reading::Prose;
     let worded = |token: &Token| !UNWORDED.contains(&token.pos.as_str());
     let mut rules = Vec::new();
     let count = words(readings, sentence).0;
@@ -531,23 +530,39 @@ fn clauses(
     if instructions(readings, sentence) == Agrees::Agrees {
         rules.push(Rule::Instructions);
     }
-    let after = |mark: &dyn Fn(&Token) -> bool, follows: &dyn Fn(&Token) -> bool| {
-        sentence
-            .tokens
-            .iter()
-            .skip_while(|token| !(prose(token) && mark(token)))
-            .skip(1)
-            .any(|token| prose(token) && follows(token))
-    };
-    if after(&|token| token.text == ";", &worded) {
+    if after(readings, sentence, |token| token.text == ";", worded) {
         rules.push(Rule::Semicolon);
     }
-    if after(&|token| DASHES.contains(&token.text.as_str()), &|token| {
-        token.pos == "VERB" || token.pos == "AUX"
-    }) {
+    if after(
+        readings,
+        sentence,
+        |token| DASHES.contains(&token.text.as_str()),
+        |token| token.pos == "VERB" || token.pos == "AUX",
+    ) {
         rules.push(Rule::Dash);
     }
     rules
+}
+
+/// Whether a prose token that `follows` matches comes after the first prose
+/// token that `mark` matches in `sentence`.
+///
+/// # Specification
+/// trivial.
+fn after(
+    readings: &[Reading],
+    sentence: &Sentence,
+    mark: impl Fn(&Token) -> bool,
+    follows: impl Fn(&Token) -> bool,
+) -> bool
+{
+    let prose = |token: &Token| read(readings, token) == Reading::Prose;
+    sentence
+        .tokens
+        .iter()
+        .skip_while(|token| !(prose(token) && mark(token)))
+        .skip(1)
+        .any(|token| prose(token) && follows(token))
 }
 
 /// The rules `sentence` breaks, each at most once.

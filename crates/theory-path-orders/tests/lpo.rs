@@ -662,18 +662,19 @@ fn a_forged_derivation_is_refused()
         left: root,
         right: root,
     });
-    let without = |keep: &dyn Fn(&Step) -> bool| {
+    // The honest derivation without its step from the root to `dropped`.
+    let without = |dropped: Node| {
         Derivation::new(
             honest
                 .steps()
                 .iter()
                 .copied()
-                .filter(|step| keep(step))
+                .filter(|step| step.left() != root || step.right() != dropped)
                 .collect(),
             honest.covers().to_vec(),
         )
     };
-    let rootless = without(&|step| step.left() != root || step.right() != root);
+    let rootless = without(root);
     assert_eq!(
         check(&left, &right, &ranks, &rootless, buffers),
         Replay::Refused(Refusal::Root)
@@ -702,7 +703,7 @@ fn a_forged_derivation_is_refused()
         honest.covers().to_vec(),
     );
     assert_eq!(check(&left, &right, &ranks, &swapped, buffers), at_root);
-    let premiseless = without(&|step| step.left() != root || step.right() != Node::from(1_usize));
+    let premiseless = without(Node::from(1_usize));
     assert_eq!(check(&left, &right, &ranks, &premiseless, buffers), at_root);
     let unswapped = Side::new(&[op(ADD, Arity(2)), Spelled::Var(X), Spelled::Var(Y)]);
     let swapped_side = Side::new(&[op(ADD, Arity(2)), Spelled::Var(Y), Spelled::Var(X)]);

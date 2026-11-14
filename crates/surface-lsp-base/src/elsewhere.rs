@@ -53,16 +53,26 @@ pub struct Unimported<'held>
     pub names: &'held [Declared],
 }
 
+/// The edit importing the source at a path into the document, as the server's
+/// reading of the document writes it.
+pub trait ImportEdit: Fn(&Path) -> Vec<TextEdit>
+{
+}
+
+impl<Edit> ImportEdit for Edit where Edit: Fn(&Path) -> Vec<TextEdit>
+{
+}
+
 /// The sources of the opened folders' projects a document does not import, and
 /// how an import of one is written into it.
 #[derive(Clone, Copy)]
-pub struct Elsewhere<'held>
+pub struct Elsewhere<'held, Import>
 {
     /// The sources, each once.
     pub sources: &'held [Unimported<'held>],
-    /// The edit importing the source at a path into the document, as the
-    /// server's reading of the document writes it.
-    pub import: &'held dyn Fn(&Path) -> Vec<TextEdit>,
+    /// The edit importing the source at a path into the document, an
+    /// [`ImportEdit`].
+    pub import: &'held Import,
 }
 
 /// How a slot of `category` offers `declared`, a name of a source the document

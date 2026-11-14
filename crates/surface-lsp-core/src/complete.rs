@@ -77,6 +77,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::elsewhere::Elsewhere;
+use crate::elsewhere::ImportEdit;
 use crate::elsewhere::unimported_as;
 use crate::hover::Hovering;
 use crate::inline::Category;
@@ -392,7 +393,7 @@ pub fn completions(
     hovering: &Hovering,
     (uri, position): (&DocumentUri, Position),
     (printer, labels, snippets): (Style, LabelsDetailed, TakesSnippets),
-    elsewhere: Elsewhere<'_>,
+    elsewhere: Elsewhere<'_, impl ImportEdit>,
 ) -> CompletionList
 {
     let index = LineIndex::new(<&str>::from(text).into());
@@ -769,7 +770,7 @@ mod tests
             ),
             Elsewhere {
                 sources: &[],
-                import: &|_| Vec::new(),
+                import: &|_: &Path| Vec::new(),
             },
         )
         .items
@@ -980,7 +981,7 @@ mod tests
                         path: Path::new("/folder/far.gandr"),
                         names: &far,
                     }],
-                    import: &|_| import.to_vec(),
+                    import: &|_: &Path| import.to_vec(),
                 },
             )
             .items

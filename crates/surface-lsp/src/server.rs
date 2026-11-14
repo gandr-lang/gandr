@@ -88,6 +88,7 @@ use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::Retirement;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::TypeTable;
+use gandr_surface_dispatcher::Wake;
 use gandr_surface_dispatcher::forget;
 use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
@@ -1300,22 +1301,41 @@ impl fmt::Display for Logged
 pub struct Admissions
 {
     /// The running judgements, one generation per document.
-    judgements: Generations<DocumentUri, Submission, Rechecked>,
+    judgements: Generations<DocumentUri, Submission, Rechecked, Admitted>,
     /// The version each running judgement judges.
     judging: BTreeMap<DocumentUri, DocumentVersion>,
     /// Progress ends to write once no judgement they wait for runs.
     ending: Vec<(BTreeSet<DocumentUri>, Vec<Outgoing>)>,
     /// The running admissions, one generation per document.
-    generations: Generations<DocumentUri, Submission, Finished>,
+    generations: Generations<DocumentUri, Submission, Finished, Admitted>,
     /// The line of each document's synchronisation whose admission runs.
     waiting: BTreeMap<DocumentUri, Logged>,
     /// The running runs, one slot for each.
-    runs: Generations<Submission, (), Result<(MessageType, String), Unran>>,
+    runs: Generations<Submission, (), Result<(MessageType, String), Unran>, Admitted>,
     /// How many judgements, admissions and runs were submitted; the next is
     /// numbered after them.
     submitted: Submission,
     /// The source judged for the workspace's diagnostics, while one is.
     sweeping: Option<Sweeping>,
+}
+
+/// What the end of a judgement, an admission or a run wakes: the connection's
+/// loop hears that an admission it started ended.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+struct Admitted(Changes);
+
+impl Wake for Admitted
+{
+    /// Tell the loop that an admission ended.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn wake(&self)
+    {
+        self.0.admitted();
+    }
 }
 
 /// One judgement's, admission's or run's place among those a connection
@@ -1353,18 +1373,13 @@ impl Admissions
         waking: Changes,
     ) -> Self
     {
-        let judged = waking.clone();
-        let ran = waking.clone();
         Self {
-            judgements: Generations::waking(Arc::clone(&pool), Arc::new(move || judged.admitted())),
+            judgements: Generations::waking(Arc::clone(&pool), Admitted(waking.clone())),
             judging: BTreeMap::new(),
             ending: Vec::new(),
-            generations: Generations::waking(
-                Arc::clone(&pool),
-                Arc::new(move || waking.admitted()),
-            ),
+            generations: Generations::waking(Arc::clone(&pool), Admitted(waking.clone())),
             waiting: BTreeMap::new(),
-            runs: Generations::waking(pool, Arc::new(move || ran.admitted())),
+            runs: Generations::waking(pool, Admitted(waking)),
             submitted: Submission(0_u64),
             sweeping: None,
         }

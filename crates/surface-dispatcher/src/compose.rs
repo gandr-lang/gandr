@@ -245,7 +245,6 @@ use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Declined;
 use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::Rooted;
-use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
 use gandr_surface_corpus::settle;
@@ -3650,17 +3649,30 @@ where
         },
     );
     let laid = Laid { earlier, last };
-    let settle_with = |runner: &mut dyn Runner| match after {
-        Some(closure) => {
-            let earlier = closure.settled.as_ref().map_err(|&fault| fault)?;
-            settle_after(laid, &arena, &module, &verdicts, runner, earlier)
-        },
-        None => settle(laid, &arena, &module, &verdicts, runner),
-    };
-    let settled_report = match scheduling {
-        Scheduling::Sequential => settle_with(&mut E::runs(&mut program)),
-        Scheduling::Concurrent(pool) => settle_with(&mut E::scheduled(&mut program, pool)),
-    };
+    // The reports a closure settled lead the module's; without a closure, none
+    // lead. Each arm settles with its own runner, so the runner is a generic.
+    let settled_report = after
+        .map_or(Ok(&[][..]), |closure| {
+            closure.settled.as_deref().map_err(|&fault| fault)
+        })
+        .and_then(|earlier| match scheduling {
+            Scheduling::Sequential => settle_after(
+                laid,
+                &arena,
+                &module,
+                &verdicts,
+                &mut E::runs(&mut program),
+                earlier,
+            ),
+            Scheduling::Concurrent(pool) => settle_after(
+                laid,
+                &arena,
+                &module,
+                &verdicts,
+                &mut E::scheduled(&mut program, pool),
+                earlier,
+            ),
+        });
     let projected = match settled_report {
         Ok(report) => {
             let failures = Failures::of(&verdicts);

@@ -521,9 +521,10 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # `target/embedded-sources` for the migration's codemod.
 # `trait_object` (deny by default) refuses a trait object whose principal
 # trait is in a class of `trait_object_classes` (#7384). The errors' class
-# is the first; each later wave adds its class. A site that keeps its trait
-# object states why in an `expect` at the site, as each `Error::source`
-# does, since `core` fixes that signature.
+# is the first and the callbacks' `Fn` and `FnMut` the second (#7386); each
+# later wave adds its class. A site that keeps its trait object states why in
+# an `expect` at the site, as each `Error::source` does, since `core` fixes
+# that signature.
 # `allocation_free_region` (deny by default) holds a function to no
 # allocation unless its `# Cost` declares one, `- allocation: <what>, <why>`
 # (#7419). It holds each function of a crate in `allocation_default_crates`,
@@ -559,7 +560,7 @@ dishonest_spellings = [{ text = "?", crates = ["gandr_surface_pretty", "gandr_su
 presenters = [
   { enum = "gandr_surface_pretty::former::Former", functions = ["gandr_surface_pretty::walk::Walk::visit", "gandr_surface_pretty::walk::Walk::form"] },
 ]
-trait_object_classes = ["core::error::Error"]
+trait_object_classes = ["core::error::Error", "core::ops::Fn", "core::ops::FnMut"]
 allocation_default_crates = []
 allocation_base_records = "{{ config_root }}/target/allocation-base"
 std_container_crates = ["gandr_kernel_strata"]

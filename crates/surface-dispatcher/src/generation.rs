@@ -281,7 +281,7 @@ struct Current<Key>
 /// - witness: `generation::tests::a_retired_result_is_dropped_though_its_job_finished`
 /// - witness: `generation::tests::a_serial_pool_runs_each_job_on_the_caller`
 #[derive(Debug)]
-pub struct Generations<Slot, Key, Output>
+pub struct Generations<Slot, Key, Output, Waker = Unwoken>
 {
     /// The threads the jobs run on.
     pool: Arc<Pool>,
@@ -296,27 +296,34 @@ pub struct Generations<Slot, Key, Output>
     /// Where the ends arrive.
     receiver: mpsc::Receiver<Done<Slot, Output>>,
     /// What each job's end wakes, once it is sent.
-    wake: Wake,
+    wake: Waker,
 }
 
 /// What a job's end wakes once it is sent: the owner's loop, when it sleeps
-/// until something arrives.
-#[derive(Clone)]
-#[repr(transparent)]
-struct Wake(Option<Arc<dyn Fn() + Send + Sync>>);
-
-impl fmt::Debug for Wake
+/// until something arrives. Each owner names its wake as a type, so a job
+/// calls it with no dispatch through a table.
+pub trait Wake: Clone + Send + 'static
 {
-    /// Writes whether a wake is set.
+    /// Wake the owner; nothing once the owner ended.
     ///
     /// # Specification
     /// trivial.
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
+    fn wake(&self);
+}
+
+/// The wake of an owner that does not sleep until a job ends: nothing.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Unwoken;
+
+impl Wake for Unwoken
+{
+    /// Nothing wakes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn wake(&self)
     {
-        f.debug_tuple("Wake").field(&self.0.is_some()).finish()
     }
 }
 
@@ -334,25 +341,24 @@ where
     #[must_use]
     pub fn new(pool: Arc<Pool>) -> Self
     {
-        let (sender, receiver) = mpsc::channel();
-        Self {
-            pool,
-            current: BTreeMap::new(),
-            next: Generation(0),
-            running: 0,
-            sender,
-            receiver,
-            wake: Wake(None),
-        }
+        Self::waking(pool, Unwoken)
     }
+}
 
+impl<Slot, Key, Output, Waker> Generations<Slot, Key, Output, Waker>
+where
+    Slot: Ord + Clone + Send + 'static,
+    Key: Eq + Clone,
+    Output: Send + 'static,
+    Waker: Wake,
+{
     /// No slot, no job, on `pool`, each job's end waking `wake` once it can
     /// be received.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Generations::new`], holding `wake`; every job submitted
-    ///   later calls `wake` once after its end is sent, so a
+    ///   later calls [`Wake::wake`] of `wake` once after its end is sent, so a
     ///   [`Generations::ready`] the wake prompts receives it.
     /// - panics: none.
     ///
@@ -362,15 +368,21 @@ where
     /// - witness: `generation::tests::a_woken_owner_finds_the_end_ready`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.current.is_empty() && ret.running == 0 && ret.wake.0.is_some())]
+    #[spec(ensures: |ret| ret.current.is_empty() && ret.running == 0)]
     pub fn waking(
         pool: Arc<Pool>,
-        wake: Arc<dyn Fn() + Send + Sync>,
+        wake: Waker,
     ) -> Self
     {
+        let (sender, receiver) = mpsc::channel();
         Self {
-            wake: Wake(Some(wake)),
-            ..Self::new(pool)
+            pool,
+            current: BTreeMap::new(),
+            next: Generation(0),
+            running: 0,
+            sender,
+            receiver,
+            wake,
         }
     }
 
@@ -439,9 +451,7 @@ where
                 generation,
                 ended,
             }));
-            if let Wake(Some(ref wake)) = wake {
-                wake();
-            }
+            wake.wake();
         };
         self.running = self.running.saturating_add(1);
         match self.pool.standing() {
@@ -600,6 +610,7 @@ mod tests
     use super::Generations;
     use super::Retired;
     use super::Submitted;
+    use super::Wake;
     use super::Watch;
     use super::delivery;
     use crate::pool::Pool;
@@ -626,6 +637,22 @@ mod tests
         match answer {
             Maybe::Present(delivered) => delivered,
             Maybe::Absent(absent) => panic!("no delivery: {absent:?}"),
+        }
+    }
+
+    /// A wake that sends one unit on its channel.
+    #[derive(Clone, Debug)]
+    struct Woke(mpsc::Sender<()>);
+
+    impl Wake for Woke
+    {
+        /// Send one unit.
+        ///
+        /// # Specification
+        /// trivial.
+        fn wake(&self)
+        {
+            let _sent = self.0.send(());
         }
     }
 
@@ -778,12 +805,8 @@ mod tests
     {
         let pool = four();
         let (woke, woken) = mpsc::channel();
-        let mut generations: Generations<u32, u32, u32> = Generations::waking(
-            pool,
-            Arc::new(move || {
-                let _sent = woke.send(());
-            }),
-        );
+        let mut generations: Generations<u32, u32, u32, Woke> =
+            Generations::waking(pool, Woke(woke));
         for job in 0_u32 .. 64_u32 {
             let _started = generations.submit(job, job, move |_| Ok(job));
             woken.recv().unwrap();

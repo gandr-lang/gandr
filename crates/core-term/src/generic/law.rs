@@ -98,7 +98,13 @@ pub enum Statement
 /// The law the host asserts of its equality at an integer or a string field,
 /// as a value of the law's type: the prelude's admitted law, or none where it
 /// states none.
-pub type Hosted<'lookup> = dyn Fn(BaseType, Statement) -> Option<ValueId> + 'lookup;
+pub trait Hosted: Fn(BaseType, Statement) -> Option<ValueId>
+{
+}
+
+impl<Host> Hosted for Host where Host: Fn(BaseType, Statement) -> Option<ValueId>
+{
+}
 
 /// Which way a comparison reads its two sides.
 ///
@@ -157,12 +163,12 @@ enum Target
 
 /// One law's derivation: the equalities derived, each covered declaration's
 /// fields, and each proof derived so far.
-struct Proving<'deriving, 'run, 'lookup, 'hosted>
+struct Proving<'deriving, 'run, Table, Host>
 {
     /// The equalities the law is about, and the arena.
-    deriving: &'deriving mut Deriving<'run, 'lookup>,
+    deriving: &'deriving mut Deriving<'run, Table>,
     /// The host's laws.
-    hosted: &'deriving Hosted<'hosted>,
+    hosted: &'deriving Host,
     /// The law proved.
     statement: Statement,
     /// Each covered declaration's fields, constructor by constructor.
@@ -202,12 +208,12 @@ struct Proving<'deriving, 'run, 'lookup, 'hosted>
 /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn law(
+pub fn law<'lookup>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &Signatures<'_>,
+    signatures: &impl Signatures<'lookup>,
     statement: Statement,
-    hosted: &Hosted<'_>,
+    hosted: &impl Hosted,
 ) -> Result<Derived, Uncovered>
 {
     let (mut deriving, order) = Deriving::start(arena, signatures, position)?;
@@ -241,7 +247,10 @@ pub fn law(
     })
 }
 
-impl Proving<'_, '_, '_, '_>
+impl<'lookup, Table, Host> Proving<'_, '_, Table, Host>
+where
+    Table: Signatures<'lookup>,
+    Host: Hosted,
 {
     /// Read the fields of `position` and of every declaration they reach.
     ///

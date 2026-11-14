@@ -79,6 +79,7 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Retired;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Wake;
 use gandr_surface_dispatcher::Watch;
 use gandr_surface_lsp::DocumentUri;
 use gandr_surface_lsp::DocumentVersion;
@@ -302,7 +303,7 @@ struct Awaited
 struct Jobs
 {
     /// The jobs on the pool, one slot for each call.
-    generations: Generations<Row, (), Outcome>,
+    generations: Generations<Row, (), Outcome, Ended>,
     /// The hub's pool.
     pool: Arc<Pool>,
     /// The jobs on the pool, by the row of their call.
@@ -311,6 +312,25 @@ struct Jobs
     awaited: BTreeMap<Row, Awaited>,
     /// The rows that read each document, which a newer revision retires.
     documents: BTreeMap<DocumentUri, BTreeSet<Row>>,
+}
+
+/// What a job of the pool wakes when it ends: the thread of the jobs hears
+/// [`Command::Finished`].
+#[derive(Clone)]
+#[repr(transparent)]
+struct Ended(Sender<Command>);
+
+impl Wake for Ended
+{
+    /// Tell the thread of the jobs that a job ended; nothing once it stopped.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn wake(&self)
+    {
+        drop(self.0.send(Command::Finished));
+    }
 }
 
 /// Run each job that `commands` starts, and answer it when it ends, until
@@ -327,10 +347,7 @@ pub(super) fn run<Log>(
 {
     let pool = Arc::clone(lock(held.workspace).pool());
     let mut jobs = Jobs {
-        generations: Generations::waking(
-            Arc::clone(&pool),
-            Arc::new(move || drop(finished.send(Command::Finished))),
-        ),
+        generations: Generations::waking(Arc::clone(&pool), Ended(finished)),
         pool,
         running: BTreeMap::new(),
         awaited: BTreeMap::new(),

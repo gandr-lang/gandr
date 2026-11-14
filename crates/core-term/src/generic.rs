@@ -177,8 +177,15 @@ impl Derived
 /// The constructor table a derivation reads of each data declaration, by
 /// admission position: the signature the declaration's levitated code decodes
 /// to, or why it has none.
-pub type Signatures<'lookup> =
-    dyn Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered> + 'lookup;
+pub trait Signatures<'lookup>:
+    Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered>
+{
+}
+
+impl<'lookup, Table> Signatures<'lookup> for Table where
+    Table: Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered>
+{
+}
 
 /// Derive the equality of the closed, free data declaration at `position`.
 ///
@@ -210,10 +217,10 @@ pub type Signatures<'lookup> =
 /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
-pub fn equality(
+pub fn equality<'lookup>(
     arena: &mut CoreArena,
     position: ConstantIndex,
-    signatures: &Signatures<'_>,
+    signatures: &impl Signatures<'lookup>,
 ) -> Result<Derived, Uncovered>
 {
     let (mut deriving, _order) = Deriving::start(arena, signatures, position)?;
@@ -232,12 +239,12 @@ pub fn equality(
 
 /// One derivation's state: the arena it mints into, the signatures it reads,
 /// and the declarations read and derived so far.
-struct Deriving<'run, 'lookup>
+struct Deriving<'run, Table>
 {
     /// Where every node is minted.
     arena: &'run mut CoreArena,
     /// The signatures by position.
-    signatures: &'run Signatures<'lookup>,
+    signatures: &'run Table,
     /// Each reached declaration's fields, constructor by constructor, each
     /// read outside the fields before it.
     rows: BTreeMap<ConstantIndex, Vec<Vec<ValueTypeId>>>,
@@ -372,7 +379,9 @@ fn count<T>(items: &[T]) -> Result<Binders, Uncovered>
         .map_err(|_cause| Uncovered::BinderCeiling)
 }
 
-impl<'run, 'lookup> Deriving<'run, 'lookup>
+impl<'run, 'lookup, Table> Deriving<'run, Table>
+where
+    Table: Signatures<'lookup>,
 {
     /// The derivation of `position`'s equality over `signatures`, with every
     /// declaration it reaches derived, and the order they were derived in.
@@ -390,7 +399,7 @@ impl<'run, 'lookup> Deriving<'run, 'lookup>
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref deriving, ref order)| order.iter().all(|at| deriving.derived.contains_key(at))))]
     fn start(
         arena: &'run mut CoreArena,
-        signatures: &'run Signatures<'lookup>,
+        signatures: &'run Table,
         position: ConstantIndex,
     ) -> Result<(Self, Vec<ConstantIndex>), Uncovered>
     {
@@ -431,7 +440,9 @@ impl<'run, 'lookup> Deriving<'run, 'lookup>
     }
 }
 
-impl Deriving<'_, '_>
+impl<'lookup, Table> Deriving<'_, Table>
+where
+    Table: Signatures<'lookup>,
 {
     /// The variable at de Bruijn `level`, read `depth` binders deep.
     ///

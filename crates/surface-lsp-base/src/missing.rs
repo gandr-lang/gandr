@@ -25,6 +25,7 @@ use serde::Deserialize as _;
 use serde_json::Value;
 
 use crate::elsewhere::Elsewhere;
+use crate::elsewhere::ImportEdit;
 use crate::elsewhere::Unimported;
 use crate::elsewhere::unimported_as;
 use crate::inline::Labeled;
@@ -77,7 +78,7 @@ pub fn additions(
     grammar: &Pbg,
     (published, text): (&[Diagnostic], SourceText<'_>),
     (asked, diagnostics): (Range, &[Value]),
-    elsewhere: Elsewhere<'_>,
+    elsewhere: Elsewhere<'_, impl ImportEdit>,
 ) -> Vec<CodeAction>
 {
     let meets = |range: Range, other: Range| range.start <= other.end && other.start <= range.end;

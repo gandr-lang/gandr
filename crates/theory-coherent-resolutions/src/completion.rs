@@ -1987,18 +1987,16 @@ mod tests
             &Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
             &mut elsewhere,
         );
-        let refused = |change: &dyn Fn(&mut CompositePair<ToyAlphabet>)| {
-            let mut forged = composite.clone();
-            change(&mut forged);
-            forged.replay(&store)
-        };
+        let refused = |forged: CompositePair<ToyAlphabet>| forged.replay(&store);
         assert_eq!(
             [
-                refused(&|forged| forged.below.at = addition.clone()),
-                refused(&|forged| forged.below.cell = third),
-                refused(&|forged| forged.below.subst = elsewhere.clone()),
-                refused(&|forged| forged.overlap.left = third),
-                refused(&|forged| forged.overlap.kind = OverlapKind::Composition),
+                refused(changed(composite, |forged| forged.below.at = addition.clone())),
+                refused(changed(composite, |forged| forged.below.cell = third)),
+                refused(changed(composite, |forged| forged.below.subst = elsewhere.clone())),
+                refused(changed(composite, |forged| forged.overlap.left = third)),
+                refused(changed(composite, |forged| {
+                    forged.overlap.kind = OverlapKind::Composition;
+                })),
                 composite.replay(&CellStore::new()),
             ],
             [
@@ -2011,5 +2009,19 @@ mod tests
             ],
             "a forged witness is refused by name"
         );
+    }
+
+    /// `pair` after `change`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn changed(
+        pair: &CompositePair<ToyAlphabet>,
+        change: impl FnOnce(&mut CompositePair<ToyAlphabet>),
+    ) -> CompositePair<ToyAlphabet>
+    {
+        let mut changed = pair.clone();
+        change(&mut changed);
+        changed
     }
 }

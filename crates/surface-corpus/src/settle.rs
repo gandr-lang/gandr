@@ -1482,7 +1482,7 @@ pub fn settle<'source, Roots>(
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut dyn Runner,
+    runner: &mut impl Runner,
 ) -> Result<SettleReport<'source>, SettleFault>
 where
     Roots: Rooted + Copy,
@@ -1530,7 +1530,7 @@ pub fn settle_after<'source, Roots>(
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
-    runner: &mut dyn Runner,
+    runner: &mut impl Runner,
     earlier: &[DeclarationReport<'source>],
 ) -> Result<SettleReport<'source>, SettleFault>
 where

@@ -418,7 +418,7 @@ fn a_written_forgetting_map_names_only_its_theory_s_sorts_2130()
 fn a_model_binder_s_carrier_is_its_projected_sort_2131()
 {
     // The refusal a case expects, built from the source it lowers.
-    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+    type Expected = fn(&str) -> LoweringRefusal<'static>;
 
     let counter = include_str!(
         "models/fixtures/a-model-binder-s-carrier-is-its-projected-sort-2131-counter.gandr"
@@ -469,10 +469,10 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
         ],
     );
 
-    let cases: [(&str, Expected<'_>, &str); 2] = [
+    let cases: [(&str, Expected, &str); 2] = [
         (
             "E",
-            &|source| LoweringRefusal::OutOfFragment {
+            |source| LoweringRefusal::OutOfFragment {
                 span: span_of(source, "g.E", 0_usize),
                 form: FormName::from(NamedKind("type_path")),
                 sort: FragmentSort::ValueType,
@@ -482,7 +482,7 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
         ),
         (
             "Nope",
-            &|source| LoweringRefusal::UnknownMember {
+            |source| LoweringRefusal::UnknownMember {
                 span: span_of(source, "Nope", 0_usize),
                 module: name("g"),
                 member: name("Nope"),
@@ -1526,7 +1526,7 @@ fn a_written_model_type_is_recorded_as_written_2246()
 fn an_operation_is_selected_off_a_model_binder_2246()
 {
     // The refusal a case expects, built from the source it lowers.
-    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+    type Expected = fn(&str) -> LoweringRefusal<'static>;
 
     let counter = include_str!(
         "models/fixtures/a-model-binder-s-carrier-is-its-projected-sort-2131-counter.gandr"
@@ -1563,11 +1563,11 @@ fn an_operation_is_selected_off_a_model_binder_2246()
         "another counter's count is no count of `m`"
     );
 
-    let cases: [(&str, &str, Expected<'_>, &str); 2] = [
+    let cases: [(&str, &str, Expected, &str); 2] = [
         (
             "Model(Counter) with sort C = Integer",
             "C",
-            &|source| LoweringRefusal::OutOfFragment {
+            |source| LoweringRefusal::OutOfFragment {
                 span: span_of(source, "m.C", 0_usize),
                 form: FormName::from(NamedKind("projection_expression")),
                 sort: FragmentSort::Value,
@@ -1578,7 +1578,7 @@ fn an_operation_is_selected_off_a_model_binder_2246()
         (
             "Model(Counter)",
             "nothing",
-            &|source| LoweringRefusal::UnknownMember {
+            |source| LoweringRefusal::UnknownMember {
                 span: span_of(source, "nothing", 0_usize),
                 module: name("m"),
                 member: name("nothing"),
@@ -1694,23 +1694,32 @@ fn an_operation_selected_off_a_model_binder_calls_in_place_4818()
 fn a_manifest_sort_the_theory_cannot_fix_is_refused()
 {
     // The refusal a case expects, built from the source it lowers.
-    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+    type Expected = fn(&str) -> LoweringRefusal<'static>;
     let theories = include_str!(
         "models/unformatted/a-manifest-sort-the-theory-cannot-fix-is-refused-theories.gandr"
     );
-    // The one byte opening the `nth` appearance of `needle`: a sort's name.
-    let opening = |source: &str, needle: &str, nth: usize| {
+    /// The one byte opening the `nth` appearance of `needle` in `source`: a
+    /// sort's name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn opening(
+        source: &str,
+        needle: &str,
+        nth: usize,
+    ) -> super::ByteSpan
+    {
         let span = span_of(source, needle, nth);
         super::ByteSpan::new(
             span.start(),
             super::ByteOffset::from(usize::from(span.start()).saturating_add(1)),
         )
         .expect("the span is ordered")
-    };
-    let cases: [(&str, Expected<'_>, &str); 4] = [
+    }
+    let cases: [(&str, Expected, &str); 4] = [
         (
             "Model(Toggle) with sort Nope = Integer",
-            &|source| LoweringRefusal::UnknownMember {
+            |source| LoweringRefusal::UnknownMember {
                 span: span_of(source, "Nope", 0_usize),
                 module: name("Toggle"),
                 member: name("Nope"),
@@ -1719,7 +1728,7 @@ fn a_manifest_sort_the_theory_cannot_fix_is_refused()
         ),
         (
             "Model(Graph) with sort E = Integer",
-            &|source| LoweringRefusal::UnreadAscription {
+            |source| LoweringRefusal::UnreadAscription {
                 span: opening(source, "E = ", 0_usize),
                 name: name("E"),
                 form: AscriptionForm::Parameterized,
@@ -1728,7 +1737,7 @@ fn a_manifest_sort_the_theory_cannot_fix_is_refused()
         ),
         (
             "Model(Toggle) with sort T = Integer with sort T = Integer",
-            &|source| LoweringRefusal::DuplicateDefinition {
+            |source| LoweringRefusal::DuplicateDefinition {
                 span: opening(source, "T = ", 1_usize),
                 name: name("T"),
                 first: opening(source, "T = ", 0_usize),
@@ -1737,7 +1746,7 @@ fn a_manifest_sort_the_theory_cannot_fix_is_refused()
         ),
         (
             "Model(Toggle) with Integer",
-            &|source| LoweringRefusal::MalformedForm {
+            |source| LoweringRefusal::MalformedForm {
                 span: span_of(source, "Integer", 0_usize),
                 form: FormName::from(NamedKind("manifest_type")),
                 fault: FormFault::ExtraOperand,

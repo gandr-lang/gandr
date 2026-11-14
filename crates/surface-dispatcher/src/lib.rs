@@ -337,6 +337,8 @@ pub use crate::generation::Delivered;
 pub use crate::generation::Generations;
 pub use crate::generation::Retired;
 pub use crate::generation::Submitted;
+pub use crate::generation::Unwoken;
+pub use crate::generation::Wake;
 pub use crate::generation::Watch;
 pub use crate::generation::delivery;
 pub use crate::manifold::Manifold;

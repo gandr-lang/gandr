@@ -157,6 +157,20 @@ fn first_reason(
     &mut forged.proofs[usize::from(proof)].steps[0].reason
 }
 
+/// `explanation` after `change`.
+///
+/// # Specification
+/// trivial.
+fn changed(
+    explanation: &Explanation,
+    change: impl FnOnce(&mut Explanation),
+) -> Explanation
+{
+    let mut changed = explanation.clone();
+    change(&mut changed);
+    changed
+}
+
 #[test]
 fn a_forged_step_is_refused_by_name()
 {
@@ -167,11 +181,7 @@ fn a_forged_step_is_refused_by_name()
     assert_eq!(truth.replay(table, equations, ends), Ok(()));
     let (input, congruence) = (usize::from(input_proof), usize::from(congruence_proof));
     let first = StepPlace::from(0_usize);
-    let forge = |change: &dyn Fn(&mut Explanation)| {
-        let mut forged = truth.clone();
-        change(&mut forged);
-        forged.replay(table, equations, ends)
-    };
+    let forge = |forged: Explanation| forged.replay(table, equations, ends);
     assert_eq!(
         Explanation::default().replay(table, equations, ends),
         Err(Refusal::Empty)
@@ -181,28 +191,28 @@ fn a_forged_step_is_refused_by_name()
         Err(Refusal::Ends)
     );
     assert_eq!(
-        forge(&|forged| {
+        forge(changed(&truth, |forged| {
             if let &mut StepReason::Input {
                 ref mut equation, ..
             } = first_reason(forged, input_proof)
             {
                 *equation = EquationPlace::from(9_usize);
             }
-        }),
+        })),
         Err(Refusal::UnknownEquation {
             proof: input_proof,
             step: first,
         })
     );
     assert_eq!(
-        forge(&|forged| {
+        forge(changed(&truth, |forged| {
             if let &mut StepReason::Input {
                 ref mut direction, ..
             } = first_reason(forged, input_proof)
             {
                 *direction = direction.flipped();
             }
-        }),
+        })),
         Err(Refusal::NotAnInstance {
             proof: input_proof,
             step: first,
@@ -210,14 +220,14 @@ fn a_forged_step_is_refused_by_name()
         "a step read from the wrong side"
     );
     assert_eq!(
-        forge(&|forged| {
+        forge(changed(&truth, |forged| {
             if let &mut StepReason::Input {
                 ref mut equation, ..
             } = first_reason(forged, input_proof)
             {
                 *equation = EquationPlace::from(1_usize - usize::from(*equation));
             }
-        }),
+        })),
         Err(Refusal::NotAnInstance {
             proof: input_proof,
             step: first,
@@ -225,24 +235,26 @@ fn a_forged_step_is_refused_by_name()
         "a step that cites the other equation"
     );
     assert_eq!(
-        forge(&|forged| forged.proofs[input].to = terms.alone),
+        forge(changed(&truth, |forged| forged.proofs[input].to = terms.alone)),
         Err(Refusal::Broken { proof: input_proof })
     );
     assert_eq!(
-        forge(&|forged| forged.proofs[congruence].steps[0].to = terms.alone),
+        forge(changed(&truth, |forged| {
+            forged.proofs[congruence].steps[0].to = terms.alone;
+        })),
         Err(Refusal::Incongruent {
             proof: congruence_proof,
             step: first,
         })
     );
     assert_eq!(
-        forge(&|forged| {
+        forge(changed(&truth, |forged| {
             if let &mut StepReason::Congruence { ref mut children } =
                 first_reason(forged, congruence_proof)
             {
                 children[0] = ProofPlace::from(congruence);
             }
-        }),
+        })),
         Err(Refusal::Forward {
             proof: congruence_proof,
             step: first,
@@ -250,13 +262,13 @@ fn a_forged_step_is_refused_by_name()
         })
     );
     assert_eq!(
-        forge(&|forged| {
+        forge(changed(&truth, |forged| {
             if let &mut StepReason::Congruence { ref mut children } =
                 first_reason(forged, congruence_proof)
             {
                 children[0] = ProofPlace::from(input);
             }
-        }),
+        })),
         Err(Refusal::ChildUnexplained {
             proof: congruence_proof,
             step: first,

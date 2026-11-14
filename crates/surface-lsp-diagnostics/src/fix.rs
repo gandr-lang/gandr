@@ -28,6 +28,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::iter;
+use std::path::Path;
 
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
@@ -263,7 +264,7 @@ pub fn holes(
             (printer, LabelsDetailed(false), TakesSnippets(false)),
             Elsewhere {
                 sources: &[],
-                import: &|_| Vec::new(),
+                import: &|_: &Path| Vec::new(),
             },
         )
         .items
