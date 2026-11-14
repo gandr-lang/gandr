@@ -339,6 +339,8 @@ enum Tabling
     Payload(ComputationId),
     /// The forward or function flow at this node.
     Directed(ValueId),
+    /// The native path at this node.
+    Native(ValueId),
 }
 
 /// How many rows records the gained log held: where [`CheckingContext`]
@@ -4567,8 +4569,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
     /// How many entries the tables hold that no checkpoint keeps yet: the
     /// lifts, the function extensionalities, the coercions, the
-    /// equivalences, the session statements, the motives and the native
-    /// paths by node, and the relations and the restatements by position.
+    /// equivalences, the session statements and the motives by node, and the
+    /// relations and the restatements by position.
     ///
     /// # Specification
     /// trivial.
@@ -4582,7 +4584,6 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 self.equivalences.len(),
                 self.flows.len(),
                 self.motives.len(),
-                self.natives.len(),
                 self.relations.len(),
                 self.restatements.len(),
             ]
@@ -4610,8 +4611,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
 
     /// Stop the log of [`Self::start_tables`], and give the entries that the
     /// declaration added to the rows, the handlers, the reflexivities, the
-    /// payloads and the directed flows, each as it reads now, beside whether
-    /// it added an entry to another table since `before`.
+    /// payloads, the directed flows and the native paths, each as it reads
+    /// now, beside whether it added an entry to another table since `before`.
     ///
     /// # Specification
     /// - requires: `before` is the census of the matching
@@ -4642,7 +4643,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
-                | Tabling::Directed(_) => None,
+                | Tabling::Directed(_)
+                | Tabling::Native(_) => None,
             })
             .collect();
         let handled = log
@@ -4652,7 +4654,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 Tabling::Row(_)
                 | Tabling::Reflexivity(_)
                 | Tabling::Payload(_)
-                | Tabling::Directed(_) => None,
+                | Tabling::Directed(_)
+                | Tabling::Native(_) => None,
             })
             .collect();
         let reflexivities = log
@@ -4665,7 +4668,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 Tabling::Row(_)
                 | Tabling::Handled(_)
                 | Tabling::Payload(_)
-                | Tabling::Directed(_) => None,
+                | Tabling::Directed(_)
+                | Tabling::Native(_) => None,
             })
             .collect();
         let payloads = log
@@ -4675,7 +4679,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 Tabling::Row(_)
                 | Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
-                | Tabling::Directed(_) => None,
+                | Tabling::Directed(_)
+                | Tabling::Native(_) => None,
             })
             .collect();
         let directed = log
@@ -4688,7 +4693,19 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 Tabling::Row(_)
                 | Tabling::Handled(_)
                 | Tabling::Reflexivity(_)
-                | Tabling::Payload(_) => None,
+                | Tabling::Payload(_)
+                | Tabling::Native(_) => None,
+            })
+            .collect();
+        let natives = log
+            .iter()
+            .filter_map(|&record| match record {
+                Tabling::Native(at) => self.natives.get(&at).map(|&path| (at, path)),
+                Tabling::Row(_)
+                | Tabling::Handled(_)
+                | Tabling::Reflexivity(_)
+                | Tabling::Payload(_)
+                | Tabling::Directed(_) => None,
             })
             .collect();
         let others = if self.table_census().0 > before.0 {
@@ -4704,22 +4721,23 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 reflexivities,
                 payloads,
                 directed,
+                natives,
             ),
             others,
         )
     }
 
-    /// Enter the rows records, the handlers, the reflexivities, the payloads
-    /// and the directed flows of an adopted declaration, as its judgement
-    /// added them.
+    /// Enter the rows records, the handlers, the reflexivities, the payloads,
+    /// the directed flows and the native paths of an adopted declaration, as
+    /// its judgement added them.
     ///
     /// # Specification
     /// - requires: each node and type is minted in this context's arena, at the
     ///   place that the declaration's judgement read it.
     /// - ensures: each record, each handler and each payload reads here, the
-    ///   first one where a key already reads; each reflexivity and each
-    ///   directed flow reads here, as [`Self::record_reflexivity`] and
-    ///   [`Self::record_directed`] record it.
+    ///   first one where a key already reads; each reflexivity, each directed
+    ///   flow and each native path reads here, as [`Self::record_reflexivity`],
+    ///   [`Self::record_directed`] and [`Self::record_native`] record it.
     /// - panics: none.
     /// - executable: none — the witness compares a taken item's report with a
     ///   fresh judgement's.
@@ -4731,16 +4749,24 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_reflexivity_keeps_its_dialogues_7399`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_payload_keeps_its_type_7428`
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_forward_flow_keeps_its_images_7433`
+    /// - witness: `gandr-surface-lsp::tests::taking::a_taken_native_path_reads_as_derived_7452`
     #[inline]
-    pub fn adopt_tabled<Entries, Reflexivities, Payloads, Flows>(
+    pub fn adopt_tabled<Entries, Reflexivities, Payloads, Flows, Natives>(
         &mut self,
         rows: &crate::program::Rows,
-        (handled, reflexivities, payloads, directed): (Entries, Reflexivities, Payloads, Flows),
+        (handled, reflexivities, payloads, directed, natives): (
+            Entries,
+            Reflexivities,
+            Payloads,
+            Flows,
+            Natives,
+        ),
     ) where
         Entries: IntoIterator<Item = (ComputationId, crate::handler::Handled)>,
         Reflexivities: IntoIterator<Item = (ValueId, crate::code::Reflexivity)>,
         Payloads: IntoIterator<Item = (ComputationId, ValueTypeId)>,
         Flows: IntoIterator<Item = (ValueId, crate::forward::Directed)>,
+        Natives: IntoIterator<Item = (ValueId, ValueId)>,
     {
         self.rows.absorb(rows);
         for (at, types) in handled {
@@ -4754,6 +4780,9 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         }
         for (at, statement) in directed {
             let _replaced = self.directed.insert(at, statement);
+        }
+        for (at, path) in natives {
+            let _replaced = self.natives.insert(at, path);
         }
     }
 
@@ -5575,7 +5604,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         path: ValueId,
     )
     {
-        self.natives.insert(at, path);
+        let _replaced = self.natives.insert(at, path);
+        if let Some(ref mut log) = self.tabling {
+            log.push(Tabling::Native(at));
+        }
     }
 
     /// Record the induction `realised` the judgement built for the fill at
@@ -5607,7 +5639,10 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.record_nesting(at, crate::nested::Nesting::Filled(realised));
         self.definitions.realise(at, realised);
         let returned = self.arena.value_returned(realised);
-        self.natives.insert(at, returned);
+        let _replaced = self.natives.insert(at, returned);
+        if let Some(ref mut log) = self.tabling {
+            log.push(Tabling::Native(at));
+        }
     }
 
     /// Trace the conversion of two computations as

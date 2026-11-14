@@ -412,9 +412,9 @@ pub enum OtherTables
 /// The entries one declaration's judgement added to the tables that the
 /// bridge reads.
 ///
-/// It holds the rows records, the handlers, the reflexivities, the payloads
-/// and the directed flows, each with its value, and whether the judgement
-/// added an entry to another table.
+/// It holds the rows records, the handlers, the reflexivities, the payloads,
+/// the directed flows and the native paths, each with its value, and whether
+/// the judgement added an entry to another table.
 ///
 /// # Specification
 /// - executable: none — data declaration; the judgement writes it and a
@@ -438,29 +438,33 @@ pub struct Tabled
         alloc::collections::BTreeMap<gandr_core_term::ComputationId, gandr_core_term::ValueTypeId>,
     /// The forward and function flows, by node.
     directed: alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>,
+    /// The native path at each `ua` statement, product of paths and fill, by
+    /// node.
+    natives: alloc::collections::BTreeMap<gandr_core_term::ValueId, gandr_core_term::ValueId>,
     /// Whether the judgement added an entry to another table.
     others: OtherTables,
 }
 
-/// The rows records, the handlers, the reflexivities, the payloads and the
-/// directed flows of a [`Tabled`], each with its value.
+/// The rows records, the handlers, the reflexivities, the payloads, the
+/// directed flows and the native paths of a [`Tabled`], each with its value.
 pub type TabledEntries = (
     crate::program::Rows,
     alloc::collections::BTreeMap<gandr_core_term::ComputationId, crate::handler::Handled>,
     alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::code::Reflexivity>,
     alloc::collections::BTreeMap<gandr_core_term::ComputationId, gandr_core_term::ValueTypeId>,
     alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>,
+    alloc::collections::BTreeMap<gandr_core_term::ValueId, gandr_core_term::ValueId>,
 );
 
 impl Tabled
 {
-    /// The entries `rows`, `handled`, `reflexivities`, `payloads` and
-    /// `directed`, beside `others`.
+    /// The entries `rows`, `handled`, `reflexivities`, `payloads`,
+    /// `directed` and `natives`, beside `others`.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn new(
-        (rows, handled, reflexivities, payloads, directed): TabledEntries,
+        (rows, handled, reflexivities, payloads, directed, natives): TabledEntries,
         others: OtherTables,
     ) -> Self
     {
@@ -470,6 +474,7 @@ impl Tabled
             reflexivities,
             payloads,
             directed,
+            natives,
             others,
         }
     }
@@ -535,6 +540,20 @@ impl Tabled
     ) -> &alloc::collections::BTreeMap<gandr_core_term::ValueId, crate::forward::Directed>
     {
         &self.directed
+    }
+
+    /// The native path at each `ua` statement, product of paths and fill, by
+    /// node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn natives(
+        &self
+    ) -> &alloc::collections::BTreeMap<gandr_core_term::ValueId, gandr_core_term::ValueId>
+    {
+        &self.natives
     }
 
     /// Whether the judgement added an entry to another table.
