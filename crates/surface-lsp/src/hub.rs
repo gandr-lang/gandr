@@ -393,6 +393,11 @@ pub type Beside = Box<dyn FnOnce(Arc<Mutex<Workspace>>, Peer) + Send>;
 /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
 /// - witness: `hub::tests::a_hub_whose_connection_faults_exits_after_its_linger_4497`
 /// - witness: `hub::tests::a_face_beside_keeps_the_hub_open`
+///
+/// # Cost
+/// - allocation: the hub's shared state and its porter, setup
+/// - allocation: a thread for each connection, growth within its clients
+/// - allocation: the lines of the log, diagnostic
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
