@@ -5,7 +5,8 @@
 # passes the locked install. A lock whose rust entry is another nightly is
 # refused, and mise names the pin. The install that `toolchain:bump` runs
 # after it writes the pin writes the pin's entry, and the locked install of
-# that tree then passes.
+# that tree then passes. Where mise takes no rust pin, the check installs no
+# rust and runs no case.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -16,6 +17,9 @@ fail() {
   printf 'check:lockfile case FAILED: %s\n  wanted: %s\n  got:    %s\n' "$1" "$2" "$3" >&2
   failed=1
 }
+# Each scratch tree takes its pin from `rust-toolchain.toml`, whatever the
+# caller's mise takes: the variable replaces the setting of `mise.toml`.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=rust
 channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' "$root/rust-toolchain.toml")
 # A tree that pins the tree's toolchain. Its lock holds the tree's rust entry,
 # with the version `$2`.
@@ -56,5 +60,12 @@ got=$(outcome "$stale")
 [[ $got == "exit 0" ]] \
   || fail "#7541: the install of the bump writes the entry of the pin, so the locked install passes" "exit 0" "$got: $(< "$scratch/out")"
 
+# The CI image gives the variable the empty value and leaves rust to rustup.
+# There the check installs no rust and runs no case (#7548).
+status=0
+got=$(cd "$root" && MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS='' mise run --quiet check:lockfile 2>&1) || status=$?
+[[ $status == 0 && $got != *"rust@"* ]] \
+  || fail "#7548: where mise takes no rust pin, check:lockfile installs no rust" "exit 0, no rust install" "exit $status: $got"
+
 (( failed == 0 )) || exit 1
-echo "check:lockfile cases OK: the pin's entry passes, another nightly's entry is refused and the pin named, and the bump's install writes the pin's entry"
+echo "check:lockfile cases OK: the pin's entry passes, another nightly's entry is refused and the pin named, the bump's install writes the pin's entry, and the check installs no rust where mise takes no rust pin"
