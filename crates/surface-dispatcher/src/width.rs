@@ -143,17 +143,69 @@ impl Width
         match self {
             Self::Threads(threads) => threads,
             Self::PerformanceCores => {
-                let available =
-                    Threads(std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN));
-                let host = match physical_performance_cores() {
-                    Maybe::Present(cores) => cores.min(available),
-                    Maybe::Absent(topology::Absent::Unsupported | topology::Absent::Unreadable) => {
-                        available
-                    },
-                };
-                share(host, bounds(available))
+                let available = available();
+                share(host(available), bounds(available))
             },
         }
+    }
+
+    /// The threads this width runs on under a grant: the host's count capped
+    /// by the operator's budget, and no share of it for each test that runs
+    /// at once, since the grant's tokens bound the parts that run.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Self::Threads`] answers its count unchanged;
+    ///   [`Self::PerformanceCores`] answers the host's physical performance
+    ///   cores, capped by the parallelism the process may use and by
+    ///   `GANDR_JOBS`, and at least [`Self::threads`].
+    /// - panics: none.
+    /// - intension: asks the host and the environment once per call, and only
+    ///   for [`Self::PerformanceCores`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an explicit count is returned exactly, and a share
+    ///   with no count of tests is the host's count under the budget.
+    /// - witness: `width::tests::an_explicit_width_is_exact`
+    /// - witness: `width::tests::a_test_process_takes_its_share_of_the_host`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match self {
+        Self::Threads(threads) => ret == threads,
+        Self::PerformanceCores => ret >= self.threads(),
+    })]
+    pub(crate) fn whole(self) -> Threads
+    {
+        match self {
+            Self::Threads(threads) => threads,
+            Self::PerformanceCores => {
+                let available = available();
+                let (_tests, budget) = bounds(available);
+                share(host(available), (None, budget))
+            },
+        }
+    }
+}
+
+/// The parallelism the process may use, at least one thread.
+///
+/// # Specification
+/// trivial.
+fn available() -> Threads
+{
+    Threads(std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN))
+}
+
+/// The host's physical performance cores, never more than `available`, or
+/// `available` when the host reports no topology.
+///
+/// # Specification
+/// trivial.
+fn host(available: Threads) -> Threads
+{
+    match physical_performance_cores() {
+        Maybe::Present(cores) => cores.min(available),
+        Maybe::Absent(topology::Absent::Unsupported | topology::Absent::Unreadable) => available,
     }
 }
 
@@ -176,8 +228,8 @@ fn count(name: &std::ffi::OsStr) -> Option<Threads>
 /// the host's width takes the host's cores once for each test that runs
 /// beside it, so the count divides the budget (#7447). Without the count,
 /// nextest runs as many tests as `available` at once. `GANDR_JOBS` is the
-/// budget of the run, as the driver's `--jobs` reads it. The grant of #7448
-/// replaces this derived share.
+/// budget of the run, as the driver's `--jobs` reads it. Under a grant the
+/// pool takes no share ([`Width::whole`]): the grant's tokens bound its parts.
 ///
 /// # Specification
 /// trivial.
@@ -548,6 +600,11 @@ mod tests
     {
         let three = Threads(NonZeroUsize::new(3).expect("three is not zero"));
         assert_eq!(Width::Threads(three).threads(), three);
+        assert_eq!(
+            Width::Threads(three).whole(),
+            three,
+            "a grant keeps a count it is given"
+        );
         assert_eq!(Width::SERIAL.threads(), Threads::ONE);
     }
 

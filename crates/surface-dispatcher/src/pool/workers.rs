@@ -45,6 +45,7 @@ use core::mem::MaybeUninit;
 use core::num::NonZeroUsize;
 use core::panic::AssertUnwindSafe;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU16;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -59,6 +60,8 @@ use std::time::Instant;
 use quenchant_shape::shape::Maybe;
 
 use super::Spin;
+use super::grant::Token;
+use super::grant::Tokens;
 use super::lane::Sleeper;
 use crate::width::Threads;
 
@@ -72,6 +75,8 @@ quenchant_shape::reason_enum! {
             Busy,
             /// The current thread is not one of the workers.
             Outside,
+            /// No token of the host's grant is free.
+            Ungranted,
         }
     }
 }
@@ -413,6 +418,9 @@ struct Seat
     /// The part, written while the seat holds nothing and read once it is
     /// running.
     job: UnsafeCell<MaybeUninit<JobRef>>,
+    /// The token of the host's grant that the posted part runs on, as
+    /// [`Token::stored`] writes it, or zero under no grant.
+    token: AtomicU16,
     /// The worker's park.
     sleeper: Sleeper,
 }
@@ -434,20 +442,26 @@ unsafe impl Sync for Seat
 
 impl Seat
 {
-    /// Take the posted part and run it, if the seat holds one.
+    /// Take the posted part and run it, if the seat holds one, then give its
+    /// token back to `tokens`.
     ///
     /// # Specification
     /// - ensures: [`Helped::Ran`] exactly when the call moved a post to
-    ///   running, ran the part and left the seat holding nothing.
+    ///   running, ran the part and left the seat holding nothing. The token
+    ///   that came with the post goes back once the part ends.
     /// - panics: none; a part that unwinds still leaves the seat holding
-    ///   nothing.
+    ///   nothing and gives its token back.
     /// - executable: none — a party may post again as soon as the seat holds
     ///   nothing.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Workers`].
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
-    fn run_posted(&self) -> Helped
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    fn run_posted(
+        &self,
+        tokens: Option<&Tokens>,
+    ) -> Helped
     {
         let state = SeatState(self.state.load(Ordering::Acquire));
         if state.holding() != Holding::Posted
@@ -463,6 +477,8 @@ impl Seat
         {
             return Helped::Idle;
         }
+        // The poster stored the token before it stored the post with release.
+        let token = Token::of_stored(self.token.swap(0, Ordering::Relaxed));
         // SAFETY: the exchange moved this post to running, and the poster
         // wrote the part before it stored the post with release.
         let slot = unsafe { self.job.get().read() };
@@ -474,6 +490,9 @@ impl Seat
         drop(unwound);
         self.state
             .store(state.holds(Holding::Nothing).0, Ordering::Release);
+        if let (Some(token), Some(tokens)) = (token, tokens) {
+            tokens.give(token);
+        }
         Helped::Ran
     }
 
@@ -831,7 +850,15 @@ struct Shared
     /// The host's park-to-wake cost in nanoseconds: zero until the pool has
     /// measured or read it, so each worker parks at once meanwhile.
     park: AtomicU64,
+    /// The tokens of the host's grant, when a jobserver bounds the process.
+    tokens: Option<Arc<Tokens>>,
 }
+
+/// How long a worker waits before it reads the grant again for a queued job,
+/// while no token is free. A token that another process frees wakes no
+/// worker of this one, so the wait bounds how late the job starts after the
+/// free, at one read a millisecond for each worker that waits.
+const UNGRANTED: Duration = Duration::from_millis(1);
 
 impl Shared
 {
@@ -853,6 +880,38 @@ impl Shared
         match (self.spawned.holding(), self.standing.holding()) {
             (Holding::Nothing, Holding::Nothing) => Holding::Nothing,
             _ => Holding::Posted,
+        }
+    }
+
+    /// The right to run one part beside the calling thread: a token of the
+    /// grant, or none under no grant.
+    ///
+    /// # Specification
+    /// - ensures: `None` under no grant; a token when one is free.
+    /// - fails: as [`Tokens::take_now`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Workers`].
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    fn hold(&self) -> Maybe<Option<Token>, super::grant::untaken::Absent>
+    {
+        self.tokens
+            .as_deref()
+            .map_or(Maybe::Present(None), |tokens| tokens.take_now().map(Some))
+    }
+
+    /// Give back the right that [`Shared::hold`] gave.
+    ///
+    /// # Specification
+    /// trivial.
+    fn give(
+        &self,
+        held: Option<Token>,
+    )
+    {
+        if let (Some(token), Some(tokens)) = (held, self.tokens.as_deref()) {
+            tokens.give(token);
         }
     }
 
@@ -966,6 +1025,7 @@ impl Workers
     pub fn start(
         threads: Threads,
         kept: Option<&Path>,
+        tokens: Option<Arc<Tokens>>,
     ) -> Result<Self, std::io::Error>
     {
         let count = NonZeroUsize::from(threads);
@@ -989,6 +1049,7 @@ impl Workers
                 .map(|thread| Seat {
                     state: AtomicU64::new(0),
                     job: UnsafeCell::new(MaybeUninit::uninit()),
+                    token: AtomicU16::new(0),
                     sleeper: Sleeper::of(thread),
                 })
                 .collect(),
@@ -998,6 +1059,7 @@ impl Workers
             standing: Queue::new(),
             ended: AtomicBool::new(false),
             park: AtomicU64::new(0),
+            tokens,
         });
         for sender in senders {
             // A worker that cannot receive has ended, and no party posts to a
@@ -1150,7 +1212,16 @@ impl Workers
         else {
             return Maybe::Absent(unseated::Absent::Busy);
         };
+        // The worker is claimed before the token is read, so a fork that finds
+        // no idle worker costs no read of the grant.
+        let Maybe::Present(held) = self.shared.hold()
+        else {
+            self.shared.idle.release(worker);
+            return Maybe::Absent(unseated::Absent::Ungranted);
+        };
         let state = SeatState(seat.state.load(Ordering::Relaxed)).next_post();
+        seat.token
+            .store(held.map_or(0, Token::stored), Ordering::Relaxed);
         // SAFETY: this party holds the worker's idle bit and the seat holds
         // nothing, so the worker reads no part until the store below.
         unsafe {
@@ -1190,6 +1261,10 @@ impl Workers
             Ordering::Relaxed,
         ) {
             Ok(_) => {
+                // The worker never started the part, so its token is still in
+                // the seat, as this party stored it.
+                self.shared
+                    .give(Token::of_stored(seat.token.swap(0, Ordering::Relaxed)));
                 self.shared.idle.release(posted.worker);
                 Retracted::Back
             },
@@ -1265,6 +1340,38 @@ impl Workers
             }
             Helped::Ran
         })
+    }
+
+    /// Park the calling party once, its token lent back to the host's grant
+    /// while it parks.
+    ///
+    /// # Specification
+    /// - requires: the caller waits for parts that run elsewhere, and loops
+    ///   until they end, since a park may return with no wake.
+    /// - ensures: under a grant, the jobserver holds one more token while the
+    ///   party parks, and the party holds a token again once the call returns,
+    ///   unless the jobserver refused the read. Under no grant, one park.
+    /// - panics: none.
+    /// - executable: none — the tokens are the jobserver's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a granted pool whose parts fork again runs at most as
+    ///   many parts as it holds tokens, and the jobserver holds each token once
+    ///   the forks end.
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    pub fn park_lent(&self)
+    {
+        let Some(tokens) = self.shared.tokens.as_deref()
+        else {
+            std::thread::park();
+            return;
+        };
+        tokens.give(Token::LENT);
+        std::thread::park();
+        // The party runs on only with a token, so it waits for one. The token
+        // stands for the one it lent, and nothing gives it back later. A read
+        // that the jobserver refuses leaves the party to run on all the same.
+        let _taken = tokens.take();
     }
 
     /// Run the parts of `frame`: `own` first on the calling thread, then each
@@ -1344,7 +1451,7 @@ impl Workers
                 core::hint::spin_loop();
             }
             else {
-                std::thread::park();
+                self.park_lent();
             }
         }
         let out = ran.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
@@ -1543,7 +1650,7 @@ fn serve(
         return;
     };
     loop {
-        if seat.run_posted() == Helped::Ran {
+        if seat.run_posted(shared.tokens.as_deref()) == Helped::Ran {
             shared.idle.release(worker);
             continue;
         }
@@ -1551,6 +1658,16 @@ fn serve(
             // Hold the worker's own bit while it runs a queued job, so no
             // party posts to it meanwhile; a lost bit means a post came.
             if shared.idle.claim(worker) == Claimed::Took {
+                let Maybe::Present(held) = shared.hold()
+                else {
+                    // No token is free. A token that another process frees
+                    // wakes no worker here, so wait for a post or the retry,
+                    // and read the grant again.
+                    shared.idle.release(worker);
+                    seat.sleeper
+                        .sleep_for(|| seat.holding() == Holding::Posted, UNGRANTED);
+                    continue;
+                };
                 let spawn = shared.spawned.pop();
                 let standing = match spawn {
                     Some(_) => None,
@@ -1573,6 +1690,7 @@ fn serve(
                     drop(std::panic::catch_unwind(AssertUnwindSafe(job)));
                 }
                 shared.idle.release(worker);
+                shared.give(held);
             }
             continue;
         }

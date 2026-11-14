@@ -116,7 +116,8 @@ tracing = { workspace = true, optional = true }
 # stage's engine, and reads the items it needs through the crate's own
 # `fixture` feature. Cargo admits the cycle of a dev-dependency, and the test
 # links one copy of this crate. The schedule bench counts the allocations of
-# one schedule through allocation-counter.
+# one schedule through allocation-counter. The pool's grant test makes its
+# jobserver as a FIFO through nix.
 [dev-dependencies]
 allocation-counter.workspace = true
 gandr-surface-dispatcher = { workspace = true, features = ["fixture", "instrument"] }
@@ -126,6 +127,7 @@ gandr-theory-circuit-algebras.workspace = true
 gandr-theory-levitation.workspace = true
 gandr-theory-probability.workspace = true
 gandr-workflow-sweep.workspace = true
+nix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -133,6 +135,11 @@ serde_json.workspace = true
 # them from sysfs with std alone.
 [target.'cfg(target_os = "macos")'.dependencies]
 sysctl.workspace = true
+
+# The pool's grant opens a jobserver's end with `O_NONBLOCK`, which `std` does
+# not name.
+[target."cfg(unix)".dependencies]
+libc.workspace = true
 
 [features]
 default = []

@@ -51,7 +51,9 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::fence;
+use core::time::Duration;
 use std::thread::Thread;
+use std::time::Instant;
 
 /// The most jobs that a lane holds: the job that its task runs and seven
 /// behind it. The jobs behind it keep the task busy while the calling thread
@@ -177,6 +179,51 @@ impl Sleeper
         // clears, ends the wait.
         while self.sleeping.load(Ordering::Acquire) {
             std::thread::park();
+        }
+    }
+
+    /// Park the calling thread until a wake or until `timeout` passes, unless
+    /// `ready` answers `true` once the flag is set.
+    ///
+    /// # Specification
+    /// - requires: the calling thread is the sleeper's thread.
+    /// - ensures: as [`Sleeper::sleep`], and returns too once `timeout` has
+    ///   passed. A wait that times out clears the flag itself, so a later wake
+    ///   finds the thread awake.
+    /// - panics: a panic of `ready`.
+    /// - executable: none — the answer is a later party's wake or the clock.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a worker that finds a queued job and no token waits
+    ///   with a timeout and reads the grant again, so the job runs once a token
+    ///   is free.
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    #[inline]
+    pub fn sleep_for<Ready>(
+        &self,
+        ready: Ready,
+        timeout: Duration,
+    ) where
+        Ready: FnOnce() -> bool,
+    {
+        self.sleeping.store(true, Ordering::Release);
+        fence(Ordering::SeqCst);
+        if ready() {
+            self.sleeping.store(false, Ordering::Relaxed);
+            return;
+        }
+        let started = Instant::now();
+        while self.sleeping.load(Ordering::Acquire) {
+            let Some(left) = timeout
+                .checked_sub(started.elapsed())
+                .filter(|left| !left.is_zero())
+            else {
+                // A wake that clears the flag first also unparks the thread,
+                // and the next park returns at once: a spurious wake.
+                self.sleeping.store(false, Ordering::Release);
+                return;
+            };
+            std::thread::park_timeout(left);
         }
     }
 

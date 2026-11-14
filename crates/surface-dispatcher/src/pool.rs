@@ -72,11 +72,19 @@
 //!   carries it. Reversal: a scope and a release history in it, and a measured
 //!   gain on a verb.
 //!
+//! **The host's grant bounds the parts that run.** A pool that the driver
+//! builds under a jobserver runs a part on a worker only while the worker
+//! holds one of its tokens, and a party lends its token while it parks, as
+//! the `grant` module states. The pool then starts at its whole width, since
+//! the tokens bound the parts that run. A pool under no jobserver runs as
+//! before.
+//!
 //! **No scheduling class.** Raising every pool thread to the user-interactive
 //! quality-of-service class changed no admission cell over three runs, so the
 //! pool's threads keep the host's default. The choice reverses on a
 //! measurement that shows a class pays on a verb.
 
+mod grant;
 mod lane;
 #[cfg(feature = "instrument")]
 pub mod recording;
@@ -111,6 +119,8 @@ use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
 use quenchant_shape::shape::Maybe;
 
+pub use self::grant::Grant;
+use self::grant::Tokens;
 use self::lane::Attendance;
 use self::lane::DEPTH;
 use self::lane::Feed;
@@ -169,6 +179,9 @@ pub struct Pool
     /// The directory that keeps the host's park-to-wake cost, when the driver
     /// names one.
     kept: Option<PathBuf>,
+    /// The tokens of the host's grant, when the driver names one: each worker
+    /// runs a part only while it holds one of them.
+    tokens: Option<Arc<Tokens>>,
     /// The threads, once a fork asked for them.
     started: OnceLock<Result<Started, PoolFault>>,
 }
@@ -235,6 +248,7 @@ impl Pool
             width,
             spin: Spin::PARK,
             kept: None,
+            tokens: None,
             started: OnceLock::new(),
         }
     }
@@ -272,6 +286,31 @@ impl Pool
         self
     }
 
+    /// The pool, whose workers run each part on a token of `grant`.
+    ///
+    /// # Specification
+    /// - requires: no fork has started the pool's threads yet.
+    /// - ensures: under a jobserver, each worker runs a part only while it
+    ///   holds one of its tokens, a party lends its token while it parks, and
+    ///   the pool starts at its whole width, since the tokens bound the parts
+    ///   that run. Under no jobserver, the pool is as before.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pool of 16 threads under a jobserver of two tokens
+    ///   runs at most two parts at once, and gives each token back.
+    /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
+    #[inline]
+    #[must_use]
+    pub fn granted(
+        mut self,
+        grant: Grant,
+    ) -> Self
+    {
+        self.tokens = grant.into_tokens().map(Arc::new);
+        self
+    }
+
     /// The width the pool was made at.
     ///
     /// # Specification
@@ -281,6 +320,20 @@ impl Pool
     pub const fn width(&self) -> Width
     {
         self.width
+    }
+
+    /// The threads the width resolves to on the host: under a grant, the
+    /// whole width, since the grant's tokens bound the parts that run; else
+    /// the width's own share.
+    ///
+    /// # Specification
+    /// trivial.
+    fn threads(&self) -> Threads
+    {
+        match self.tokens {
+            Some(_) => self.width.whole(),
+            None => self.width.threads(),
+        }
     }
 
     /// The pool's threads, started on the first call.
@@ -307,14 +360,14 @@ impl Pool
     fn started(&self) -> &Result<Started, PoolFault>
     {
         self.started.get_or_init(|| {
-            let threads = self.width.threads();
+            let threads = self.threads();
             if threads == Threads::ONE {
                 return Ok(Started {
                     threads,
                     pool: Maybe::Absent(alone::Absent::Serial),
                 });
             }
-            Workers::start(threads, self.kept.as_deref())
+            Workers::start(threads, self.kept.as_deref(), self.tokens.clone())
                 .map(|pool| Started {
                     threads,
                     pool: Maybe::Present(pool),
@@ -390,7 +443,7 @@ impl Pool
     /// # Adequacy
     /// - hypothesis: L2 — as [`Pool`].
     /// - witness: `stage::tests::every_width_stages_the_serial_run`
-    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|forked| matches!(*forked, Forked::Serial) == (self.width.threads() == Threads::ONE)))]
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|forked| matches!(*forked, Forked::Serial) == (self.threads() == Threads::ONE)))]
     pub(crate) fn forked(&self) -> Result<Forked<'_>, PoolFault>
     {
         match *self.started() {
@@ -426,7 +479,7 @@ impl Pool
     ///   one on four threads runs beside it.
     /// - witness: `generation::tests::a_serial_pool_runs_each_job_on_the_caller`
     /// - witness: `generation::tests::a_conflicting_submission_retires_the_older_generation`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(alone::Absent::Serial)) == (self.width.threads() == Threads::ONE))]
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(alone::Absent::Serial)) == (self.threads() == Threads::ONE))]
     pub(crate) fn standing(&self) -> Maybe<&Workers, alone::Absent>
     {
         match *self.started() {
@@ -1641,7 +1694,7 @@ impl<Job, Out, Run> Scheduled<Job, Out, Run>
                 core::hint::spin_loop();
             }
             else {
-                std::thread::park();
+                tasks.workers.park_lent();
             }
         }
     }
@@ -2668,6 +2721,89 @@ mod tests
             Duration::from_nanos(123_456),
             "a later pool at the width starts with the number kept"
         );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// A pool of 16 threads under a jobserver of two tokens, one in the FIFO
+    /// and the calling thread's own, runs at most two leaves at once, though
+    /// each part forks again and a waiting party lends its token. A worker
+    /// runs a leaf on the FIFO's token. Once the forks end, the FIFO holds its
+    /// one token again: the pool loses no token and makes none.
+    #[cfg(unix)]
+    #[test]
+    fn a_granted_pool_runs_as_many_parts_as_it_holds_tokens()
+    {
+        use std::io::Read as _;
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+
+        let directory =
+            std::env::temp_dir().join(format!("gandr-dispatcher-grant-{}", std::process::id()));
+        drop(std::fs::remove_dir_all(&directory));
+        std::fs::create_dir_all(&directory).unwrap();
+        let fifo = directory.join("jobs");
+        let owner = nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR;
+        nix::unistd::mkfifo(&fifo, owner).unwrap();
+        // A FIFO keeps its bytes while one of its ends is open, as the parent's
+        // end is.
+        let mut parent = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&fifo)
+            .unwrap();
+        parent.write_all(b"+").unwrap();
+        let sixteen = Width::Threads(Threads::from(NonZeroUsize::new(16_usize).unwrap()));
+        let pool = Pool::new(sixteen).granted(super::Grant::fifo(&fifo).unwrap());
+        let running = AtomicUsize::new(0);
+        let most = AtomicUsize::new(0);
+        let caller = std::thread::current().id();
+        let elsewhere = AtomicBool::new(false);
+        let mut outer = [(); 8];
+        pool.each(
+            &mut outer,
+            || (),
+            |_state, _item| {
+                let mut inner = [(); 4];
+                pool.each(
+                    &mut inner,
+                    || (),
+                    |_state, _item| {
+                        let now = running.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+                        most.fetch_max(now, Ordering::SeqCst);
+                        if std::thread::current().id() != caller {
+                            elsewhere.store(true, Ordering::Relaxed);
+                        }
+                        std::thread::sleep(Duration::from_millis(2));
+                        running.fetch_sub(1, Ordering::SeqCst);
+                    },
+                );
+            },
+        );
+        let most = most.load(Ordering::SeqCst);
+        assert!(most <= 2, "{most} leaves ran at once under two tokens");
+        assert!(
+            elsewhere.load(Ordering::Relaxed),
+            "a worker ran a leaf on the FIFO's token"
+        );
+        // A worker gives its token back just after its part wakes the party,
+        // so the token may reach the FIFO a moment after the fork returns.
+        let mut held = [0_u8; 4];
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let read = loop {
+            match parent.read(&mut held) {
+                Ok(read) => break read,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(1));
+                },
+                Err(error) => panic!("the FIFO holds no token: {error}"),
+            }
+        };
+        assert_eq!(read, 1, "the FIFO holds its one token again, and no more");
+        drop(pool);
         drop(std::fs::remove_dir_all(&directory));
     }
 

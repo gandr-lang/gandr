@@ -129,7 +129,7 @@ impl Scope
                 hint::spin_loop();
             }
             else {
-                std::thread::park();
+                workers.park_lent();
             }
         }
         let out = ran.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
@@ -490,7 +490,7 @@ impl<'borrow, 'scope> Spawn<'scope> for Spawning<'borrow, 'scope>
                 hint::spin_loop();
             }
             else {
-                std::thread::park();
+                self.workers.park_lent();
             }
         }
         match mem::replace(&mut *slot.state(), State::Taken) {
