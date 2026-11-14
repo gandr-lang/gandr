@@ -2488,8 +2488,9 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # listing with `.config/pr-stack/sweep-tree.bash` after one listed worktree
 # goes away: the judgement passes and prunes it as a prunable one (#7490).
 # `.config/pr-stack/held-cases.bash` runs `held.bash` over live processes: a
-# process that works below a scratch tree holds it, a tree that no process
-# works in is free, and the caller's own directory is free (#6837). The
+# process that works below a scratch tree holds it, and a tree that no
+# process works in is free (#6837). The caller holds its own directory, and
+# a shell that moves out leaves the directory held by its parent (#7502). The
 # sweep and `remove_landed_worktree` keep a held tree.
 # `.config/pr-stack/landed-heads-cases.bash` reads a scratch remote's heads
 # as the landing watcher reads them and deletes the decided ones in one push:

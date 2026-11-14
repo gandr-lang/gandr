@@ -1964,9 +1964,10 @@ jq -r '"the known-red list #\(.number) (\(.state | ascii_downcase)):\n\n\(.body)
 # worktree whose git directory holds the mark of a live `pr:watch`
 # (`gandr-watch-<pid>`, #3798): the watch runs its merge steps there once
 # the branch lands, and removes the tree itself after them. A worktree that
-# a live process other than the sweep works in stays too, landed or not, and
-# keeps its caches: a gate there would lose its files (`held.bash`, #6837). A
-# scratch worktree (`restack`'s and the mutation lanes', named
+# a live process works in stays too, landed or not, and keeps its caches: a
+# gate there would lose its files (`held.bash`, #6837). The shell that calls
+# the sweep and each of its ancestors count, as any other process does
+# (#7502). A scratch worktree (`restack`'s and the mutation lanes', named
 # `gandr-scratch-<pid>.`) goes once its process is gone, and an unnamed
 # detached one under a temporary directory once unchanged for 4 hours. A
 # kept worktree no build touched within the 4-hour claim window loses its

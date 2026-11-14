@@ -2,7 +2,9 @@
 # The cases of `held.bash` (#6837), over live processes. A process that runs
 # in a scratch tree, or below it, holds that tree, and `tree_held` names its
 # pid. A tree that no process works in is free. The caller works in a third
-# tree, which reads free, since the caller and its ancestors hold no tree.
+# tree, which it holds. A shell that moves to `/` before it reads, as a
+# landing moves to the primary worktree, leaves its parent in that tree, and
+# the parent holds it.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$here/held.bash"
@@ -35,6 +37,14 @@ case_held() {
 }
 case_held "a tree that a process works below is held by that process" "$scratch/held" "held $holder"
 case_held "a tree that no process works in is free" "$scratch/free" free
-case_held "the caller's own directory is free" "$scratch/caller" free
+case_held "the caller's own directory is held by the caller" "$scratch/caller" "held $$"
+# The landing's shell moves out of the landed tree before it reads, and the
+# shell that called it stays there.
+moved=$(cd / && held_read && { tree_held "$scratch/caller" || echo free; })
+if [[ $moved != "$$" ]]; then
+  printf 'held case FAILED: %s\n  wanted: %s\n  got:    %s\n' \
+    "a shell that moves out leaves its tree held by its parent" "$$" "$moved" >&2
+  failed=1
+fi
 (( failed == 0 )) || exit 1
-echo "held cases OK: 3 trees read as their processes hold them"
+echo "held cases OK: 4 trees read as their processes hold them, the caller and its parent among them"
