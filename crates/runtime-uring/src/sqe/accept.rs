@@ -523,6 +523,15 @@ pub mod test
             .take(clients)
             .collect::<Vec<_>>();
 
+        // The listen posts no completion, so the test waits for it through
+        // the clients: a connect to a Unix socket succeeds only once the
+        // socket listens, and the kernel keeps each connection in the backlog
+        // for the accept. Without this wait the accept can reach the socket
+        // before its listen and fail with `EINVAL`.
+        for thread in threads {
+            thread.join().unwrap().unwrap();
+        }
+
         crate::sqe::accept::test::accept_with(
             &mut ring,
             &socket,
@@ -533,10 +542,6 @@ pub mod test
             sqe_link,
             cqe_skip,
         );
-
-        for thread in threads {
-            thread.join().unwrap().unwrap();
-        }
     }
 
     #[test]
