@@ -329,12 +329,11 @@ impl Drop for Porter
         let counter = self.carrying.counter();
         counter.porter_wakes.raise();
         // The watch's end reaches its thread as `IN_IGNORED`, and the thread
-        // returns.
+        // returns. A watch that the host already took away leaves nothing to
+        // do.
         #[cfg(target_os = "linux")]
-        drop(inotify::remove_watch(
-            &self.carrying.watch.instance,
-            self.carrying.watch.fifo,
-        ));
+        let _removed =
+            inotify::remove_watch(&self.carrying.watch.instance, self.carrying.watch.fifo);
         if let Some(thread) = self.thread.take() {
             drop(thread.join());
         }
