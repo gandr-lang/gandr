@@ -21,6 +21,14 @@
 //! budget, and frees them all when the region ends. So the vectors, tables and
 //! strings of one check live inside the region.
 //!
+//! # Items
+//!
+//! | Crossing | Where | Form |
+//! | -------- | ----- | ---- |
+//! | [`Adopt::adopt`] | a fork | the parent's id, read as the child's: the id itself |
+//! | [`Translation::translate`] | a join | the child's id, read as the parent's: below the mark the same offset, past it the offset that the glue moved its value to |
+//! | [`Id::key`] and [`Region::seat`] | the end of a scope | the durable key's export, and its checked import |
+//!
 //! # References
 //!
 //! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: §
@@ -1435,6 +1443,11 @@ where
     /// answer through it. A fork whose children only drop takes the family
     /// [`Infallible`]. The one-child fork is the width [`Width::ONE`], and its
     /// one answer is [`Siblings::into_first`].
+    ///
+    /// A rollback is a fork of [`Width::ONE`], where the shift moves nothing. A
+    /// transaction keeps its suffix when its body answers `Ok`. A speculation
+    /// drops its suffix always: its family is [`Infallible`], and its verdict
+    /// is the reason of the drop.
     ///
     /// No id of a child leaves the fork but through the glue. Neither a cell
     /// nor a reason can hold one:

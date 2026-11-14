@@ -13,6 +13,10 @@
 //! long text can live in the caller's region, and a refused block is an `Err`
 //! of the operation, never an abort.
 //!
+//! The string takes and gives its text as a [`Text`], and gives its length as
+//! a [`ByteLength`]. A [`Fits`] is a text of at most 23 bytes, and a string
+//! builds from it with no refusal to answer.
+//!
 //! # Safety
 //!
 //! - unsafe invariants: the bytes of the inline and the heap forms are valid
