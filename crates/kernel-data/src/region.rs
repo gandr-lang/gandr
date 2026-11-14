@@ -15,6 +15,17 @@
 //! allocator: it draws chunks of bytes from the allocator below under the same
 //! budget, and frees them all when the region ends. So the vectors, tables and
 //! strings of one check live inside the region.
+//!
+//! # References
+//!
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: §
+//!   storage-programme-region-is-an-allocator. The frozen prefix and a child's
+//!   suffix are two regions, and the join folds or drops the suffix. One
+//!   allocator with a budget refuses and never aborts. Its handle is one
+//!   pointer, with `Global` as the default.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: lines 1 to 3 of the
+//!   performance picture. A worker owns its region, what is shared is frozen,
+//!   and each crossing is explicit.
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
