@@ -1,0 +1,9 @@
+{
+  "crates": [
+    {
+      "package": "gandr-kernel-data",
+      "path": "crates/kernel-data",
+      "skips": []
+    }
+  ]
+}
