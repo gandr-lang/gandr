@@ -67,9 +67,9 @@ impl Scratch
     ///
     /// # Specification
     /// trivial.
-    fn bytes(&self) -> Vec<u8>
+    fn bytes(&self) -> Buffer
     {
-        std::fs::read(&self.path).expect("the scratch file reads")
+        Buffer::from(std::fs::read(&self.path).expect("the scratch file reads"))
     }
 }
 
@@ -229,7 +229,7 @@ fn a_cancel_before_submission_completes_the_target_cancelled()
             "the cancelled write gives its buffer back under {form:?}"
         );
         assert!(
-            scratch.bytes().is_empty(),
+            scratch.bytes() == Buffer::from(Vec::new()),
             "the cancelled write writes nothing under {form:?}"
         );
     }
@@ -305,7 +305,7 @@ fn an_append_owns_the_end_of_its_segment()
         );
         assert_eq!(
             scratch.bytes(),
-            [vec![1_u8; BLOCK], vec![2_u8; BLOCK]].concat(),
+            Buffer::from([vec![1_u8; BLOCK], vec![2_u8; BLOCK]].concat()),
             "the file holds both under {form:?}"
         );
     }
@@ -392,7 +392,7 @@ fn dropping_an_io_completes_its_submitted_writes()
         drop(io);
         assert_eq!(
             scratch.bytes(),
-            vec![7_u8; BLOCK],
+            Buffer::from(vec![7_u8; BLOCK]),
             "the submitted write lands under {form:?}"
         );
     }

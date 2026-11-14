@@ -110,6 +110,13 @@ impl Blocking
     /// - hypothesis: L3 — the blocking form completes a linked write, sync and
     ///   read in order.
     /// - witness: `tests::io::a_linked_write_sync_and_read_complete_in_order`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            pool_only_threads,
+            reason = "io: the blocking form's thread blocks on each read, write and sync of its files for the Io's life; a pool thread would block on the disk"
+        )
+    )]
     #[inline]
     pub fn new(depth: Count) -> Result<Self, Errno>
     {
