@@ -111,3 +111,8 @@ sites = [
 sites = [
   { file = "crates/core-checker-base/src/occurrence.rs", pattern = '\.map_err\(\|later\| CheckRefusal::CrossBlockReference \{ site, index: later \}\)\?;' },
 ]
+
+[refusal.InertRead]
+sites = [
+  { file = "crates/surface-lowering-expression/src/lower/inert.rs", pattern = '^\s*Err\(LoweringRefusal::InertRead \{$' },
+]
