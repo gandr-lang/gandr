@@ -31,6 +31,9 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
 //!   strata persist in the store, and certification runs over the sub-site a
 //!   use demands.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 2 of the
+//!   performance picture — what is shared is frozen. A context shares a value
+//!   once it is built, and no context writes it again.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;

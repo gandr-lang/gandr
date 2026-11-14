@@ -95,6 +95,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 - `vault:01a178aa-a2df-7df1-b34d-3a0211d0b6cb` — exemplar: one transport per solved equation.
 - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — a certified stratum persists in the store.
 - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — lineage: § kernel-verdict-reuse — a recalled stratum is believed only once it is replayed.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: line 2 of the performance picture — a value that the contexts of a process share is frozen.
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — exemplar: `t ↑ X`'s square.
 - `vault:01a178aa-5f59-7323-a77d-6f8114cedbba` — lineage: § The filler ban — a fill computes to its induction, and nothing adjoins a cell.
 - `vault:01a183fc-63df-77a0-9df0-1c3f0b02ddf6` — anchor: Kovács, _POPL_, 2026, `doi:10.1145/3776685` — the signature type of § 2.2.
