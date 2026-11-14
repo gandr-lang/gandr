@@ -7,3 +7,5 @@
 mod finite;
 #[cfg(test)]
 mod free;
+#[cfg(test)]
+mod pushout;

@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use crate::finite::ElementSet;
 use crate::free::Vertex;
 use crate::index::Budget;
 use crate::index::Element;
@@ -50,6 +51,15 @@ pub enum DualityError
     NotHomomorphism(Element),
     /// An enumeration passes its budget.
     PastBudget(Budget),
+    /// A set is no member of its lattice.
+    NotMember(ElementSet),
+    /// Two opens hold another number of points each, so no bijection of
+    /// points identifies them.
+    OpenSizes(ElementCount, ElementCount),
+    /// The localisation at one open holds this member and the localisation
+    /// at the other does not. The member is a set of the open's own points,
+    /// numbered by their rank in the open.
+    LocalisationsDiffer(ElementSet),
 }
 
 impl fmt::Display for DualityError
@@ -127,6 +137,20 @@ impl fmt::Display for DualityError
             Self::PastBudget(budget) => {
                 write!(f, "enumeration past its budget of {}", usize::from(budget))
             },
+            Self::NotMember(set) => {
+                write!(f, "set {:#b} is no member of its lattice", u64::from(set))
+            },
+            Self::OpenSizes(left, right) => write!(
+                f,
+                "opens of {} and {} points",
+                usize::from(left),
+                usize::from(right)
+            ),
+            Self::LocalisationsDiffer(set) => write!(
+                f,
+                "localisations differ at {:#b} of the open's points",
+                u64::from(set)
+            ),
         }
     }
 }

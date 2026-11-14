@@ -14,10 +14,12 @@
 //! generators. Its spectrum is the cube on `n` axes, and a polynomial reads as
 //! a monotone truth table on the cube.
 //!
+//! Two lattices of sets glue along an open of each to their pullback over
+//! the shared localisation, whose spectrum is the pushout of the spectra.
+//!
 //! Every set is one machine word. A term is a set of at most 64 generators,
 //! and a finite poset or lattice of sets has at most 64 elements or points.
-//! An enumeration that can grow past its input takes a budget, and it refuses
-//! the input when the count passes the budget.
+//! An enumeration that can grow past its input refuses it past a budget.
 //!
 //! Its results hold for finite posets and finite lattices alone. Berger and
 //! Gehrke state the duality for spectral spaces and all bounded distributive
@@ -34,6 +36,7 @@
 //! | [`ElementSet`], [`FinitePoset`] | a finite poset with its principal down-sets, and the enumeration of its down-sets |
 //! | [`SetRing`], [`Spectrum`] | a finite distributive lattice of sets, its join-irreducible members and its representation by down-sets |
 //! | [`MonotoneMap`] | a monotone map of finite posets, its preimage homomorphism, and the map read back from it |
+//! | [`Glued`] | the pullback of two lattices of sets over a shared localisation, and its two restriction homomorphisms |
 //! | [`DualityError`] | every refusal, by the index it concerns |
 //!
 //! # References
@@ -115,6 +118,7 @@ mod error;
 mod finite;
 mod free;
 mod index;
+mod pushout;
 
 pub use error::DualityError;
 pub use finite::ElementSet;
@@ -137,3 +141,4 @@ pub use index::GeneratorCount;
 pub use index::Membership;
 pub use index::WIDEST;
 pub use index::WIDEST_CUBE;
+pub use pushout::Glued;

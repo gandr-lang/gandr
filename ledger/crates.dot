@@ -563,6 +563,7 @@ digraph crates {
   "theory-graphs" -> "theory-spec-combinators";
   "theory-levitation" -> "theory-path-orders";
   "theory-ordered-algebras" -> "theory-exact-reals";
+  "theory-ordered-algebras" -> "theory-stone-duality";
   "theory-probability" -> "theory-cellular-sheaves";
   "theory-probability" -> "theory-ordered-algebras";
   "theory-shapes" -> "theory-nominal-automata";
@@ -631,6 +632,7 @@ digraph crates {
   "theory-deep-inference" -> "theory-discrete-morse" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "theory-discrete-morse" -> "theory-e-graphs" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "theory-e-graphs" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
+  "theory-exact-reals" -> "theory-ordered-algebras" [style = "dashed", dir = "none", constraint = false, color = "brown", label = "oracle"];
   "core-checker" -> "core-checker-bridge" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-checker-bridge" -> "core-incremental" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "core-incremental" -> "core-nbe" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
@@ -657,5 +659,6 @@ digraph crates {
   "theory-cellular-sheaves" -> "theory-deep-inference" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "theory-deep-inference" -> "theory-e-graphs" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
   "theory-e-graphs" -> "theory-exact-reals" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
-  "theory-exact-reals" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "theory-exact-reals" -> "theory-ordered-algebras" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
+  "theory-ordered-algebras" -> "theory-probability" [style = "dashed", dir = "none", constraint = false, color = "deeppink", label = "sharing"];
 }

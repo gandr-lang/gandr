@@ -39,6 +39,8 @@ macro_rules! real {
 #[cfg(test)]
 mod amplitudes;
 #[cfg(test)]
+mod cover;
+#[cfg(test)]
 mod gates;
 #[cfg(test)]
 mod laws;

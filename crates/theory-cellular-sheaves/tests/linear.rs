@@ -17,9 +17,14 @@ use gandr_theory_cellular_sheaves::SheafError;
 use gandr_theory_cellular_sheaves::Width;
 use gandr_theory_graded_posets::GradedPoset;
 use gandr_theory_graded_posets::Rank;
+use gandr_theory_ordered_algebras::Cover;
+use gandr_theory_ordered_algebras::CoverRefusal;
+use gandr_theory_stone_duality::Budget;
 use gandr_theory_stone_duality::Comparison;
 use gandr_theory_stone_duality::Element;
 use gandr_theory_stone_duality::ElementCount;
+use gandr_theory_stone_duality::ElementSet;
+use gandr_theory_stone_duality::SetRing;
 
 /// A cell of the projective line's cover: one of its two charts, or their
 /// overlap.
@@ -270,6 +275,70 @@ fn the_projective_line_s_twist_by_minus_two_has_one_class_in_degree_one()
         (inverse.rank(), unit.rank()),
         (Ok(Dimension::from(5_usize)), Ok(Dimension::from(4_usize)))
     );
+}
+
+#[test]
+fn the_projective_line_s_two_charts_cover_it_and_its_twist_by_minus_two_keeps_one_class_6513()
+{
+    // The lattice of opens that the two charts generate: point 0 is the first
+    // chart outside the overlap, point 1 the second, and point 2 the overlap.
+    let (first, second) = (ElementSet::from(0b101_u64), ElementSet::from(0b110_u64));
+    let opens = SetRing::generated(
+        ElementCount::from(3_usize),
+        &[first, second],
+        Budget::from(8_usize),
+    )
+    .expect("the charts generate a lattice of opens");
+    // The cover is the certificate: the join of the two charts is the line.
+    let cover = Cover::of_lattice(&opens, vec![first, second]).expect("the charts cover the line");
+    assert_eq!(cover.charts(), &[first, second]);
+    // One chart alone generates the ideal below it, and covers no more.
+    assert_eq!(
+        Cover::of_lattice(&opens, vec![first]),
+        Err(CoverRefusal::NotUnimodular(first))
+    );
+    // The Čech nerve of the cover: each chart a cell, and the overlap of the
+    // two charts, which is not empty, the cell above both.
+    assert_eq!(first.meet(second), ElementSet::from(0b100_u64));
+    let nerve = charts();
+    assert_eq!(nerve.cells(), &[
+        Chart::First,
+        Chart::Second,
+        Chart::Overlap
+    ]);
+    // Over the nerve, `O(−2)` keeps one class in degree one.
+    let complex = twisted()
+        .cochains(|face, _| across(*face))
+        .expect("the cover is a complex");
+    let cohomology = complex.cohomology().expect("the cohomology");
+    assert_eq!(
+        [0_usize, 1].map(|degree| cohomology.dimension(Rank::from(degree))),
+        [0_usize, 1].map(Dimension::from)
+    );
+    // Each chart is affine: its own cover by itself has no class in degree
+    // one, and its sections are its two monomials.
+    for chart in [Chart::First, Chart::Second] {
+        let alone = GradedPoset::new(
+            vec![chart],
+            |_, _| Comparison::NotBelow,
+            ElementCount::from(1_usize),
+        )
+        .expect("one cell");
+        let sheaf = Sheaf::linear(
+            alone,
+            |cell| cut(*cell),
+            |_, _| Restriction::<Vec<Entry>>::Entries(vec![Entry::from(0_usize)]),
+        )
+        .expect("one cell has no maps");
+        let cohomology = sheaf
+            .cochains(|face, _| across(*face))
+            .and_then(|complex| complex.cohomology())
+            .expect("the cohomology of one chart");
+        assert_eq!(
+            [0_usize, 1].map(|degree| cohomology.dimension(Rank::from(degree))),
+            [2_usize, 0].map(Dimension::from)
+        );
+    }
 }
 
 #[test]
