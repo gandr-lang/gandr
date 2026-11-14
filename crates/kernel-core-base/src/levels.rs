@@ -29,10 +29,11 @@
 //!   Grodin, Ethan Chu, Runming Li, Jan Hoffmann and Robert Harper, "Potential
 //!   Functions as Types", 2026, `arXiv:2607.08547`.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::AdmissionOutcome;
 use gandr_kernel_strata::ConsistencyValue;
 use gandr_kernel_strata::ConsistencyWitness;
@@ -91,6 +92,10 @@ impl LevelContext
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the poset's clauses and certificate, or the loop's
+    ///   witness, growth within the constraints
+    ///
     /// # Adequacy
     /// - hypothesis: L1 validates returned consistency and looping evidence; L3
     ///   at the parameter boundary and on an out-of-scope constraint after a
@@ -123,7 +128,7 @@ impl LevelContext
     #[inline]
     pub fn admit(
         params: LevelParamCount,
-        constraints: Vec<LandmarkConstraint>,
+        constraints: SmallVec<LandmarkConstraint, 0, Global>,
     ) -> Result<Self, KernelError>
     {
         for constraint in &constraints {
@@ -529,9 +534,9 @@ fn check_scope(
 mod tests
 {
     use alloc::vec;
-    use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::LandmarkConstraint;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -623,7 +628,7 @@ mod tests
     #[spec(ensures: |ret| ret.params == params && ret.poset.constraints().is_empty())]
     fn empty_context(params: LevelParamCount) -> LevelContext
     {
-        LevelContext::admit(params, Vec::new()).expect("an unconstrained context admits")
+        LevelContext::admit(params, SmallVec::new()).expect("an unconstrained context admits")
     }
 
     #[test]
@@ -669,8 +674,11 @@ mod tests
         let high = level_var(LevelVarIndex::from(1_u32));
         let constraint = LandmarkConstraint::leq(succ(&low), high.clone())
             .expect("a variable-only constraint is well formed");
-        let context = LevelContext::admit(LevelParamCount::from(2_u32), vec![constraint])
-            .expect("a single ordering constraint has a model");
+        let context = LevelContext::admit(
+            LevelParamCount::from(2_u32),
+            SmallVec::from_iter([constraint]),
+        )
+        .expect("a single ordering constraint has a model");
         assert_eq!(
             Ok(()),
             context.check_universe_below(&low, &high),
@@ -704,7 +712,10 @@ mod tests
         let constraint = LandmarkConstraint::leq(succ(&variable), variable)
             .expect("a variable-only constraint is well formed");
         let constraints = vec![constraint];
-        let refused = LevelContext::admit(LevelParamCount::from(1_u32), constraints.clone());
+        let refused = LevelContext::admit(
+            LevelParamCount::from(1_u32),
+            SmallVec::from_iter(constraints.iter().cloned()),
+        );
         let Err(KernelError::InconsistentLevelConstraints(witness)) = refused
         else {
             panic!("expected a replayable looping refusal");
@@ -723,8 +734,11 @@ mod tests
             level_var(LevelVarIndex::from(1_u32)),
         )
         .expect("a variable-only constraint is well formed");
-        let refused = LevelContext::admit(LevelParamCount::from(1_u32), vec![constraint])
-            .expect_err("an out-of-scope constraint variable is refused");
+        let refused = LevelContext::admit(
+            LevelParamCount::from(1_u32),
+            SmallVec::from_iter([constraint]),
+        )
+        .expect_err("an out-of-scope constraint variable is refused");
         assert_eq!(
             KernelError::LevelVariableOutOfScope {
                 variable: var(LevelVarIndex::from(1_u32))
@@ -762,9 +776,11 @@ mod tests
         let second = var(LevelVarIndex::from(2_u32));
         let out_of_scope = LandmarkConstraint::leq(Level::var(first), Level::var(second))
             .expect("a variable-only constraint is well formed");
-        let refused =
-            LevelContext::admit(LevelParamCount::from(1_u32), vec![looping, out_of_scope])
-                .expect_err("scope is checked before the oracle runs");
+        let refused = LevelContext::admit(
+            LevelParamCount::from(1_u32),
+            SmallVec::from_iter([looping, out_of_scope]),
+        )
+        .expect_err("scope is checked before the oracle runs");
         assert_eq!(refused, KernelError::LevelVariableOutOfScope {
             variable: first
         });
@@ -792,8 +808,11 @@ mod tests
         let high = level_var(LevelVarIndex::from(1_u32));
         let constraint = LandmarkConstraint::leq(low.clone(), high.clone())
             .expect("a variable-only constraint is well formed");
-        let context = LevelContext::admit(LevelParamCount::from(2_u32), vec![constraint])
-            .expect("a non-strict ordering has a model");
+        let context = LevelContext::admit(
+            LevelParamCount::from(2_u32),
+            SmallVec::from_iter([constraint]),
+        )
+        .expect("a non-strict ordering has a model");
         let refused = context
             .check_universe_below(&high, &low)
             .expect_err("the reverse strict order is not entailed");

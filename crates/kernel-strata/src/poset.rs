@@ -64,13 +64,14 @@
 //!   Harrison Grodin, Ethan Chu, Runming Li, Jan Hoffmann and Robert Harper,
 //!   "Potential Functions as Types", 2026, `arXiv:2607.08547`.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::horn;
 use crate::horn::ClauseIndex;
@@ -580,7 +581,7 @@ impl DerivationStep
 pub struct Derivation
 {
     /// The steps, in application order.
-    steps: Vec<DerivationStep>,
+    steps: SmallVec<DerivationStep, 0, Global>,
 }
 
 impl Derivation
@@ -609,6 +610,9 @@ impl Derivation
     /// - provides: the engine-to-evidence boundary, across which a validator
     ///   recomputes what it would otherwise have to trust.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the derivation's steps, growth within the log
     ///
     /// # Adequacy
     /// - hypothesis: L2 — oracle-produced derivations replay against
@@ -952,7 +956,7 @@ pub enum AdmissionOutcome
 pub struct ModelRefusal
 {
     /// The declared constraints, in declaration order.
-    constraints: Vec<LandmarkConstraint>,
+    constraints: SmallVec<LandmarkConstraint, 0, Global>,
     /// The first failure the validator reports.
     error: PosetEvidenceError,
 }
@@ -976,7 +980,7 @@ impl ModelRefusal
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn into_constraints(self) -> Vec<LandmarkConstraint>
+    pub fn into_constraints(self) -> SmallVec<LandmarkConstraint, 0, Global>
     {
         self.constraints
     }
@@ -1006,11 +1010,11 @@ impl ModelRefusal
 pub struct LandmarkPoset
 {
     /// The declared constraints, in declaration order.
-    constraints: Vec<LandmarkConstraint>,
+    constraints: SmallVec<LandmarkConstraint, 0, Global>,
     /// The declared variables, ascending.
     variables: BTreeSet<LevelVar>,
     /// The compiled base clauses, in the documented deterministic order.
-    clauses: Vec<HornClause>,
+    clauses: SmallVec<HornClause, 0, Global>,
     /// The consistency certificate.
     consistency: ConsistencyWitness,
 }
@@ -1048,6 +1052,10 @@ impl LandmarkPoset
     /// [`PosetError::Overflow`] and [`PosetError::EvidenceIncomplete`], the
     /// latter excluded by the theory.
     ///
+    /// # Cost
+    /// - allocation: the poset's variables, clauses, model and evidence, growth
+    ///   within the constraints
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the worked example of the loop-checking paper pins
     ///   both dichotomy arms end to end, with an exact certificate on admission
@@ -1070,7 +1078,9 @@ impl LandmarkPoset
             !witness.members().is_empty() && !witness.derivation().steps().is_empty(),
     }))]
     #[inline]
-    pub fn admit(constraints: Vec<LandmarkConstraint>) -> Result<AdmissionOutcome, PosetError>
+    pub fn admit(
+        constraints: SmallVec<LandmarkConstraint, 0, Global>
+    ) -> Result<AdmissionOutcome, PosetError>
     {
         let variables: BTreeSet<LevelVar> = constraints
             .iter()
@@ -1155,6 +1165,10 @@ impl LandmarkPoset
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the constraints' variables and compiled clauses, growth
+    ///   within the constraints
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a model that satisfies the constraints admits with
     ///   the compiled clauses and the restricted certificate, and a model that
@@ -1165,7 +1179,7 @@ impl LandmarkPoset
         validate_consistency(poset.constraints(), poset.consistency()).is_ok()))]
     #[inline]
     pub fn admit_modelled(
-        constraints: Vec<LandmarkConstraint>,
+        constraints: SmallVec<LandmarkConstraint, 0, Global>,
         model: ConsistencyWitness,
     ) -> Result<Self, ModelRefusal>
     {
@@ -1342,6 +1356,10 @@ fn consistency_certificate(
 /// # Errors
 /// [`PosetError::Overflow`] or [`PosetError::EvidenceIncomplete`].
 ///
+/// # Cost
+/// - allocation: the loop's seed, derivation and members, growth within the
+///   members and the system's clauses
+///
 /// # Adequacy
 /// - hypothesis: L2 — total and partial loops replay their pumping derivations
 ///   in the full compiled system; exact member sets and shifts distinguish bad
@@ -1373,8 +1391,8 @@ fn extract_loop_witness(
         HVar::Var(level_var) => members.contains(&level_var),
         HVar::Bottom => false,
     };
-    let mut filtered = Vec::new();
-    let mut indices = Vec::new();
+    let mut filtered = SmallVec::<_, 0, Global>::new();
+    let mut indices = SmallVec::<_, 0, Global>::new();
     for (index, clause) in system.clauses.iter().enumerate() {
         let head_inside = inside(clause.head().variable());
         let body_inside = clause.body().iter().all(|atom| inside(atom.variable()));
@@ -1418,7 +1436,7 @@ fn extract_loop_witness(
         .offset_from_zero()
         .checked_add(HornOffset::ONE)
         .map_err(|_error| PosetError::Overflow)?;
-    let targets: Vec<HornAtom> = members
+    let targets: SmallVec<HornAtom, 0, Global> = members
         .iter()
         .map(|&variable| HornAtom::new(HVar::Var(variable), target_offset))
         .collect();
@@ -1430,7 +1448,7 @@ fn extract_loop_witness(
     )
     .map_err(|_error| PosetError::Overflow)?;
     let log = log.ok_or(PosetError::EvidenceIncomplete)?;
-    let remapped: Vec<FiringLogStep> = log
+    let remapped: SmallVec<FiringLogStep, 0, Global> = log
         .into_iter()
         .filter_map(|step| {
             indices.get(usize::from(step.clause())).map(|&original| {
@@ -1464,6 +1482,10 @@ fn extract_loop_witness(
 /// # Errors
 /// [`PosetEvidenceError::EmptyLoop`], the replay errors, and
 /// [`PosetEvidenceError::TargetUncovered`].
+///
+/// # Cost
+/// - allocation: the compiled clauses and the replay's seed and maxima, growth
+///   within the constraints and the derivation
 ///
 /// # Adequacy
 /// - hypothesis: L3 — rejection arms pinned by hand-perturbed witnesses
@@ -1542,9 +1564,9 @@ pub fn validate_loop_witness(
 #[spec(requires: constraints.iter().all(|constraint| {
     constraint.left().atoms().next().is_some() && constraint.right().atoms().next().is_some()
 }))]
-fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
+fn compile(constraints: &[LandmarkConstraint]) -> SmallVec<HornClause, 0, Global>
 {
-    let mut clauses = Vec::new();
+    let mut clauses = SmallVec::<_, 0, Global>::new();
     for constraint in constraints {
         let left_atoms = level_atoms(constraint.left());
         let right_atoms = level_atoms(constraint.right());
@@ -1571,6 +1593,9 @@ fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
 /// - provides: the atom-level half of the documented compilation.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the Horn atoms, growth within the level's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — multiple variables with unequal offsets occur in an
 ///   inequality and an equality; the exact compiled bodies and heads expose
@@ -1578,7 +1603,7 @@ fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
 /// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
 #[spec(ensures: |ret| ret.iter().map(|atom| (atom.variable(), atom.offset()))
     .eq(level.atoms().map(|(variable, offset)| (HVar::Var(variable), HornOffset::from(offset)))))]
-fn level_atoms(level: &Level) -> Vec<HornAtom>
+fn level_atoms(level: &Level) -> SmallVec<HornAtom, 0, Global>
 {
     level
         .atoms()
@@ -1599,6 +1624,9 @@ fn level_atoms(level: &Level) -> Vec<HornAtom>
 ///   invariant excludes.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: each new clause and its body, growth within the head atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — compilation appends families to an existing prefix and
 ///   omits a head already covered by its body. Exact emitted clauses expose
@@ -1606,7 +1634,7 @@ fn level_atoms(level: &Level) -> Vec<HornAtom>
 /// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
 #[spec(requires: !body.is_empty())]
 fn push_family(
-    clauses: &mut Vec<HornClause>,
+    clauses: &mut SmallVec<HornClause, 0, Global>,
     body: &[HornAtom],
     heads: &[HornAtom],
 )
@@ -1824,6 +1852,7 @@ mod tests
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
 
     use super::AdmissionOutcome;
     use super::ConsistencyValue;
@@ -2022,10 +2051,10 @@ mod tests
     {
         let seed = BTreeMap::from([(HVar::Var(x()), HornOffset::from(u128::MAX))]);
         let derivation = Derivation {
-            steps: vec![DerivationStep::new(
+            steps: SmallVec::from_iter([DerivationStep::new(
                 ClauseIndex::from(0_usize),
                 HornShift::from(u128::MAX),
-            )],
+            )]),
         };
         for (body, head) in [(1_u128, 0_u128), (0, 1)] {
             let clauses = [HornClause::new(
@@ -2203,10 +2232,10 @@ mod tests
             members: genuine.members().clone(),
             shift: genuine.shift(),
             derivation: Derivation {
-                steps: vec![DerivationStep::new(
+                steps: SmallVec::from_iter([DerivationStep::new(
                     ClauseIndex::from(7_usize),
                     HornShift::ZERO,
-                )],
+                )]),
             },
         };
         assert_eq!(
@@ -2221,10 +2250,10 @@ mod tests
             members: genuine.members().clone(),
             shift: genuine.shift(),
             derivation: Derivation {
-                steps: vec![DerivationStep::new(
+                steps: SmallVec::from_iter([DerivationStep::new(
                     ClauseIndex::from(0_usize),
                     HornShift::from(5_u128),
-                )],
+                )]),
             },
         };
         assert_eq!(
@@ -2238,7 +2267,9 @@ mod tests
         let uncovered = LoopWitness {
             members: genuine.members().clone(),
             shift: genuine.shift(),
-            derivation: Derivation { steps: vec![] },
+            derivation: Derivation {
+                steps: SmallVec::new(),
+            },
         };
         assert_eq!(
             validate_loop_witness(&constraints, &uncovered),
@@ -2365,8 +2396,11 @@ mod tests
             (y(), value(1)),
             (var2(), value(7)),
         ]));
-        let poset = LandmarkPoset::admit_modelled(constraints.clone(), satisfying)
-            .expect("x + 1 ≤ y holds at x = 0, y = 1");
+        let poset = LandmarkPoset::admit_modelled(
+            SmallVec::from_iter(constraints.iter().cloned()),
+            satisfying,
+        )
+        .expect("x + 1 ≤ y holds at x = 0, y = 1");
         assert_eq!(poset.constraints(), constraints.as_slice());
         assert_eq!(
             poset.consistency().assignments().collect::<Vec<_>>(),
@@ -2380,7 +2414,7 @@ mod tests
         );
         let violating = ConsistencyWitness::new(BTreeMap::from([(x(), value(1)), (y(), value(1))]));
         assert_eq!(
-            LandmarkPoset::admit_modelled(constraints, violating)
+            LandmarkPoset::admit_modelled(SmallVec::from_iter(constraints), violating)
                 .map(|_poset| ())
                 .map_err(|refusal| refusal.error()),
             Err(PosetEvidenceError::ConstraintViolated {
@@ -2550,7 +2584,9 @@ mod tests
     #[spec(ensures: |ret| validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
-        match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
+        match LandmarkPoset::admit(SmallVec::from_iter(constraints))
+            .expect("admission does not overflow")
+        {
             AdmissionOutcome::Admitted(poset) => poset,
             AdmissionOutcome::Loop(witness) => {
                 panic!(
@@ -2581,7 +2617,9 @@ mod tests
     #[spec(ensures: |ret| validate_loop_witness(constraints, &ret).is_ok())]
     fn looped(constraints: &[LandmarkConstraint]) -> LoopWitness
     {
-        match LandmarkPoset::admit(constraints.to_vec()).expect("admission does not overflow") {
+        match LandmarkPoset::admit(SmallVec::from_iter(constraints.iter().cloned()))
+            .expect("admission does not overflow")
+        {
             AdmissionOutcome::Loop(witness) => witness,
             AdmissionOutcome::Admitted(_poset) => panic!("expected a loop, got admission"),
         }

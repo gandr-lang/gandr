@@ -10,13 +10,15 @@
 //! comparison with the left side shifted up by one: `l < m` iff `l + 1 ≤ m`
 //! over the naturals.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 use core::error::Error;
 use core::fmt;
 use core::ops::Not;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 
 use crate::level::Level;
 use crate::level::LevelOffset;
@@ -277,7 +279,7 @@ pub struct LeqWitness
     /// Whether this witnesses the strict order (`left + 1 ≤ right`).
     strict: Strictness,
     /// Per-atom domination bounds, in ascending variable order.
-    atoms: Vec<AtomBound>,
+    atoms: SmallVec<AtomBound, 0, Global>,
     /// The bound on the left constant part.
     constant: ConstantBound,
 }
@@ -666,6 +668,10 @@ impl Level
 /// - fails: never; the `Err` branch carries the counter-valuation.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the matched atoms and the refutation's valuation, growth
+///   within the left level's atoms
+///
 /// # Adequacy
 /// - hypothesis: L3 — the pointwise domination test is the decision surface,
 ///   and it is carried by the public faces' witnesses, since this is their
@@ -692,7 +698,7 @@ fn compare(
 ) -> Result<LeqWitness, LeqRefutation>
 {
     let shift = u128::from(strict.shift());
-    let mut atoms = Vec::with_capacity(left.atoms_map().len());
+    let mut atoms = SmallVec::<_, 0, Global>::with_capacity(Count::from(left.atoms_map().len()));
     for (&variable, &left_offset) in left.atoms_map() {
         let Some(shifted_left) = u128::from(left_offset).checked_add(shift)
         else {
@@ -968,9 +974,9 @@ pub fn validate_refutation(
 mod tests
 {
     use alloc::collections::BTreeMap;
-    use alloc::vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
 
     use super::AtomBound;
     use super::ConstantBound;
@@ -1184,11 +1190,11 @@ mod tests
         let left = var_plus(x(), LevelOffset::from(1_u64));
         let right = var_plus(x(), LevelOffset::from(4_u64));
         let mut witness = left.leq_with_evidence(&right).expect("x+1 <= x+4");
-        witness.atoms = vec![AtomBound {
+        witness.atoms = SmallVec::from_iter([AtomBound {
             variable: x(),
             left_offset: LevelOffset::from(0_u64),
             right_offset: LevelOffset::from(4_u64),
-        }];
+        }]);
         assert_eq!(
             validate_witness(&left, &right, &witness),
             Err(EvidenceError::AtomOffsetMismatch { variable: x() }),
@@ -1203,11 +1209,11 @@ mod tests
         let right = Level::var(x());
         let forged = LeqWitness {
             strict: Strictness::NON_STRICT,
-            atoms: vec![AtomBound {
+            atoms: SmallVec::from_iter([AtomBound {
                 variable: x(),
                 left_offset: LevelOffset::from(1_u64),
                 right_offset: LevelOffset::from(0_u64),
-            }],
+            }]),
             constant: ConstantBound::Atom(x()),
         };
         assert_eq!(
@@ -1224,7 +1230,7 @@ mod tests
         let right = Level::var(x());
         let forged = LeqWitness {
             strict: Strictness::NON_STRICT,
-            atoms: vec![],
+            atoms: SmallVec::new(),
             constant: ConstantBound::Constant,
         };
         assert_eq!(
@@ -1241,11 +1247,11 @@ mod tests
         let right = Level::var(x());
         let forged = LeqWitness {
             strict: Strictness::NON_STRICT,
-            atoms: vec![AtomBound {
+            atoms: SmallVec::from_iter([AtomBound {
                 variable: x(),
                 left_offset: LevelOffset::from(0_u64),
                 right_offset: LevelOffset::from(0_u64),
-            }],
+            }]),
             constant: ConstantBound::Atom(x()),
         };
         assert_eq!(
@@ -1274,7 +1280,7 @@ mod tests
         ] {
             let forged = LeqWitness {
                 strict: Strictness::NON_STRICT,
-                atoms: vec![bound(written)],
+                atoms: SmallVec::from_iter([bound(written)]),
                 constant: ConstantBound::Constant,
             };
             assert_eq!(validate_witness(&left, &both, &forged), Err(expected));
@@ -1355,7 +1361,7 @@ mod tests
         let ceiling = Level::constant(LevelConstant::from(u64::MAX));
         let forged = LeqWitness {
             strict: Strictness::STRICT,
-            atoms: vec![],
+            atoms: SmallVec::new(),
             constant: ConstantBound::Constant,
         };
         assert_eq!(
@@ -1371,7 +1377,7 @@ mod tests
         let right = Level::constant(LevelConstant::from(3_u64));
         let forged = LeqWitness {
             strict: Strictness::NON_STRICT,
-            atoms: vec![],
+            atoms: SmallVec::new(),
             constant: ConstantBound::Constant,
         };
         assert_eq!(

@@ -2351,7 +2351,7 @@ private_intra_doc_links = "allow"
 # from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "9f6f513feea51761bbbb9b537adae1588ea3db77"
+rev = "02186aac99ad57147079cd83f3eb0c347d0498ae"
 pattern = "crates/quenchant-dylints"
 
 # The everyday unoptimized build keeps full debuginfo, which lldb reads. It

@@ -1,5 +1,6 @@
 //! The region: its values under a budget, and each of its three crossings.
 
+use alloc::alloc::Global;
 use core::convert::Infallible;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicUsize;
@@ -248,7 +249,7 @@ fn a_child_that_the_run_leaves_runs_once_on_the_calling_thread()
     let caller = std::thread::current().id();
     let read = scoped(
         Budget::from(LARGE),
-        |region: &Region<'_, Value>, mut mint| {
+        |region: &Region<'_, Value, Global>, mut mint| {
             region
                 .forks::<Infallible, (usize, bool), _, _>(
                     &mut mint,

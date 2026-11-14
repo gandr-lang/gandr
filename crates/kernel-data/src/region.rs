@@ -1255,7 +1255,7 @@ where
 /// - hypothesis: L3 — values minted in order read back at their ids, and a
 ///   budget that holds one bucket refuses the value past it.
 /// - witness: `tests::region::a_region_reads_each_value_at_its_id_and_refuses_past_its_budget`
-pub struct Region<'region, Value, Below = Global>
+pub struct Region<'region, Value, Below>
 where
     Below: Allocator + Clone,
 {
@@ -1295,7 +1295,7 @@ pub fn scoped<Value, Answer, Body>(
     body: Body,
 ) -> Answer
 where
-    Body: for<'region> FnOnce(&'region Region<'region, Value>, Mint<'region>) -> Answer,
+    Body: for<'region> FnOnce(&'region Region<'region, Value, Global>, Mint<'region>) -> Answer,
 {
     scoped_in(budget, Global, body)
 }

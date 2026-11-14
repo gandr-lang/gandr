@@ -376,7 +376,7 @@ impl<A: Allocator> Repr<A>
 /// [`SmallString::try_clone`] answers a refusal instead.
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct SmallString<A: Allocator = Global>(Repr<A>);
+pub struct SmallString<A: Allocator>(Repr<A>);
 
 impl SmallString<Global>
 {

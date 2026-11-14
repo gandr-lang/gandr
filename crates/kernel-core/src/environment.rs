@@ -1202,6 +1202,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the declaration's entry, name and commit records, and the
+    ///   frames of its check, growth within the declaration
     fn release_as(
         &mut self,
         staged: StagedDeclaration,
@@ -1279,7 +1283,9 @@ impl Environment
         }
         let levels = match LevelContext::admit(
             declaration.levels().params(),
-            declaration.levels().constraints().to_vec(),
+            gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::from_iter(
+                declaration.levels().constraints().iter().cloned(),
+            ),
         ) {
             Ok(levels) => levels,
             Err(error) => {
@@ -2560,6 +2566,10 @@ impl Environment
     /// # Errors
     /// Any [`KernelError`].
     ///
+    /// # Cost
+    /// - allocation: one entry and one checked id for each member, and the
+    ///   frames of their checks, growth within the block's members
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_block`].
     /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
@@ -2637,7 +2647,9 @@ impl Environment
         for (member, census) in members.iter().zip(censuses.iter_mut()).skip(families) {
             let levels = LevelContext::admit(
                 member.levels().params(),
-                member.levels().constraints().to_vec(),
+                gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::from_iter(
+                    member.levels().constraints().iter().cloned(),
+                ),
             )?;
             self.within_view(
                 (&named, first_rank),
@@ -2665,7 +2677,9 @@ impl Environment
             let position = ConstantIndex::from(base.saturating_add(offset));
             let levels = LevelContext::admit(
                 member.levels().params(),
-                member.levels().constraints().to_vec(),
+                gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::from_iter(
+                    member.levels().constraints().iter().cloned(),
+                ),
             )?;
             // A family forms with the block in scope; a definition is checked
             // as a lone one is, every family and definition before it
@@ -10475,7 +10489,7 @@ mod tests
         let reading = unit_definition(&mut environment, Some(named));
         let levels = crate::levels::LevelContext::admit(
             gandr_kernel_term::LevelParamCount::from(0_u32),
-            Vec::new(),
+            gandr_kernel_data::SmallVec::new(),
         )
         .expect("no level parameter admits");
         let check = |environment: &mut Environment, roots: &[ConstantIndex]| {

@@ -294,8 +294,11 @@ fn edit_locality(depth: CompositeDepth) -> GoalCount
 #[spec(ensures: |ret| u32::from(ret.params()) == 0)]
 fn levels() -> LevelContext
 {
-    LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
-        .expect("an unconstrained context admits")
+    LevelContext::admit(
+        LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::new(),
+    )
+    .expect("an unconstrained context admits")
 }
 
 /// The constant level `value`.

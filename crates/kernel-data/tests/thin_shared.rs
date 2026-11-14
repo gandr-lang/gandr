@@ -8,6 +8,7 @@
     )
 )]
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::cell::Cell;
@@ -132,7 +133,10 @@ fn a_thin_block_holds_the_count_the_length_the_header_and_the_items()
     assert_eq!((last.get().size(), last.get().align()), (24, 8));
     drop((thin, empty));
     assert_eq!((drawn.get(), returned.get()), (2, 2));
-    assert_eq!(size_of::<ThinShared<u32, u16>>(), size_of::<usize>());
+    assert_eq!(
+        size_of::<ThinShared<u32, u16, Global>>(),
+        size_of::<usize>()
+    );
 
     let refused = ThinShared::from_header_and_iter_in(
         0_u32,

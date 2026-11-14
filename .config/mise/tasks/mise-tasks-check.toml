@@ -540,6 +540,13 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # leaves the lint's check targets first, and cargo lints it again
 # (`.config/policy/fresh.bash`). After the run, the task names the base and
 # counts the functions that the lint holds (`.config/policy/held.bash`).
+# `std_container` (deny by default) refuses a `Vec`, a `String` or an `Arc`
+# of `alloc` in a crate of `std_container_crates` (#7378). Each crate of the
+# list takes the containers of `gandr-kernel-data`, with the allocator named
+# at each site. Each wave of the containers adds its crates. A site that
+# keeps its container states why in an `expect` at the site.
+# `.config/policy/container-cases.bash` builds a crate of the list's first
+# name with one `Vec` left, and the gate must refuse it by name.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -555,6 +562,7 @@ presenters = [
 trait_object_classes = ["core::error::Error"]
 allocation_default_crates = []
 allocation_base_records = "{{ config_root }}/target/allocation-base"
+std_container_crates = ["gandr_kernel_strata"]
 
 [quenchant-dylints.productions]
 marker = "gandr_surface_pretty::walk::Production"
@@ -706,6 +714,7 @@ export -f policy
 .config/policy/held-cases.bash
 .config/policy/fresh-cases.bash
 .config/policy/cost-cases.bash
+.config/policy/container-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for

@@ -206,7 +206,7 @@ fn short() -> !
 ///
 /// # Specification
 /// - ensures: the module's unsafe invariants hold between each two calls.
-pub struct ThinShared<H, T, A = Global>
+pub struct ThinShared<H, T, A>
 where
     A: Allocator,
 {
@@ -219,7 +219,7 @@ where
     contents: PhantomData<(H, T)>,
 }
 
-impl<H, T> ThinShared<H, T>
+impl<H, T> ThinShared<H, T, Global>
 {
     /// A block of `header` and the items of `items` over the global
     /// allocator, with one holder.
