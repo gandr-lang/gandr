@@ -32,6 +32,7 @@ The lane that the claim names repairs `{{check}}` on `landing`, never with a rev
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
 | Cost | `zero-cost` | no — a red check adds nothing at run time |
+| Cost | `bounded` | no — a red check runs on a host of the workflow, under no device's bound |
 | Names | `nominal` | no — a red check binds, allocates and releases no name |
 | Level | `general` | no — a red check states no result of the language |
 

@@ -64,7 +64,7 @@
 #
 # The body answers every reading axis (#2522, #2955): when an issue it works
 # carries a `## Readings`, or the body has one, its `## Readings` table,
-# `Family · Axis · Status`, gives each of the nine axes one of four forms,
+# `Family · Axis · Status`, gives each of the ten axes one of four forms,
 # each with its clause: `answered: <exemplar or site>`, `trivial: <what it
 # reduces to>`, `not applicable: <what the change lacks that the axis asks
 # about>` or `deferred: #n`. `not selected`, a blank and a bare form are
@@ -73,7 +73,9 @@
 # axis in `## Sources read`. An issue it works whose reading is still the
 # migration's `unstated` placeholder, or bare, is refused until the seat
 # restates the row on the issue: `claim:next` claims such a unit and prints
-# the questions, and the landing is where the restating is required.
+# the questions, and the landing is where the restating is required. A
+# `bounded` row answered `answered:` reports the path's peak memory and its
+# time at the device's bound (#7350).
 #
 # The body names each concern it touches (#2523): an item of its
 # `## Concerns`, `` - `<id>` — <verdict> ``, names a concern of the ledger
@@ -286,6 +288,10 @@ def readings:
       | if length == 0 then empty
         else "the body's `## Readings` leaves an axis unanswered: give each one \(statuses), the clause naming what the axis asks (never `not selected`, a blank or a bare form), then run `pr:open` again:\n" + join("\n")
         end),
+    ($rows[]
+      | select(.cells[1] == "bounded" and (.cells[2] // "" | test("^answered:")))
+      | select(.cells[2] | test("[0-9][0-9.,]*\\s*(?:B|KiB|MiB|GiB|kB|KB|MB|GB)\\b") and test("[0-9][0-9.,]*\\s*(?:ns|µs|us|ms|s|sec|seconds?|min|minutes?)\\b") | not)
+      | "the body's `## Readings` answers `bounded` with no peak memory or no time: report the path's peak memory and its time at the device's bound, on the riscv64 host at one core (`units.md` § units-readings), then run `pr:open` again"),
     (select($unit)
       | [axes[]
           | . as $axis
