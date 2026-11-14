@@ -32,6 +32,9 @@
 //!   kernel-verdict-reuse — tests and audits run under the full re-check, so
 //!   only a cache a driver installs recalls; a recalled verdict is the kernel's
 //!   own, under its whole input.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
+//!   hub — one pool bounds each consumer of a host, so a session installs the
+//!   pool that `check` installs.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;

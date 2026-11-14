@@ -232,6 +232,9 @@
 //! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
 //!   — newest: `gandr cells` prints a row's bound as the semiring product of
 //!   its steps' weights.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
+//!   hub — the sessions of a face readmit on the host's one pool, which
+//!   `host_pool` installs.
 //!
 //! # Output the driver cannot write is a fault
 //!
