@@ -1338,6 +1338,14 @@ run = ".config/doc/check.bash"
 description = "check:doc passes a link that resolves under each set of features and refuses one that resolves under one set alone"
 run = ".config/doc/features-cases.bash"
 
+# `check:doc` reads the host's own system alone, so a crate whose items stand
+# on Linux targets alone can document on Linux and fail on a macOS host
+# (#7606). `.config/doc/targets-cases.bash` documents each such crate for a
+# target of the other system, with the flags of `check:doc`.
+["check:doc-targets"]
+description = "Each crate whose items stand on one system's targets alone documents for a target of the other system"
+run = ".config/doc/targets-cases.bash"
+
 # Nextest runs no documentation example, so a stale example compiled nowhere
 # until this gate (#707).
 ["check:doctests"]
