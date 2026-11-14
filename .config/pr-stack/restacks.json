@@ -84,5 +84,21 @@
       }
     ],
     "output": "refused: leaves generated artifacts stale"
+  },
+  {
+    "name": "#7485: a row's check reads the toolchain that the replayed tree pins, not the one that the seat's environment carries, so a check that needs the tree's pin passes and the upper moves",
+    "lower": "rewritten",
+    "held": true,
+    "artifacts": [
+      {
+        "name": "the upper's file",
+        "paths": ["u.txt"],
+        "inputs": ["a.txt"],
+        "check": "[ \"$RUSTUP_TOOLCHAIN\" = nightly-case ] || exit 101",
+        "stale": [100],
+        "record": "write u.txt again"
+      }
+    ],
+    "output": "moved: upper's own, lower 3 again, lower 2, lower 1"
   }
 ]

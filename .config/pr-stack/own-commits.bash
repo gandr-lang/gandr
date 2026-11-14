@@ -14,7 +14,9 @@
 # restack reads before its push (#6144, `REPLAY_ARTIFACTS`): a row whose check
 # fails refuses the restack with nothing pushed. A check that fails with a
 # status outside the row's `stale` is its own error, and the refusal says the
-# replay cannot read the artifacts (#6786).
+# replay cannot read the artifacts (#6786). The base pins the toolchain
+# `nightly-case`, and the seat's environment carries `nightly-seat`, so a
+# row's check reads which of the two the replay gives it (#7485).
 # The restack's result is one line compared with the case's `output`:
 # `moved: <the subjects main..upper holds>`, or `refused: <the refusal up to
 # its first semicolon>` and `, moved` should the refused restack have moved
@@ -28,6 +30,7 @@ trap 'rm -rf "$work"' EXIT
 repo=case/case
 trunk=main
 failed=0
+export RUSTUP_TOOLCHAIN=nightly-seat
 
 source "$here/../cases/scratch.bash"
 
@@ -39,6 +42,7 @@ scenario() {
   cd "$1/clone"
   identity
   commit a.txt base base
+  commit rust-toolchain.toml $'[toolchain]\nchannel = "nightly-case"' pin
   git push --quiet origin main
   git switch --quiet --create lower
   commit a.txt one 'lower 1'
