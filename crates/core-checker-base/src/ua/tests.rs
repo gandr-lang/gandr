@@ -1,8 +1,11 @@
 //! The strata store: a level kept, recalled and refused by the store that
 //! answers it.
 
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use gandr_core_term::CoreArena;
 use gandr_theory_sites::Catalogue;
@@ -10,6 +13,7 @@ use gandr_theory_sites::Degree;
 use gandr_theory_sites::Family;
 use gandr_theory_sites::Level as _;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::ShapeBudget;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Unreplayed;
@@ -17,11 +21,14 @@ use gandr_theory_sites::Wreath;
 use gandr_theory_sites::WreathStratum;
 use quenchant_shape::shape::Maybe;
 
+use super::Built;
+use super::BuiltKey;
 use super::StratumAt;
 use super::StratumDefect;
 use super::StratumLevel;
 use super::StratumStore;
 use super::recalled;
+use super::shared;
 use crate::context::CheckBudget;
 use crate::context::CheckingContext;
 use crate::fixture::ua::Answering;
@@ -270,5 +277,154 @@ fn level_three_is_kept_recalled_and_refused_by_the_store_4437()
             Err(StratumDefect::Allowance { bound }) if bound == past.bound
         ),
         "a bound past the allowance"
+    );
+}
+
+/// A store that shares each built value under its key, as the store of a
+/// process does. It recalls and keeps no stratum, and it counts each value
+/// that it is handed to share.
+#[derive(Debug, Default)]
+struct Sharing
+{
+    /// Each value shared, by its key.
+    built: std::sync::Mutex<BTreeMap<BuiltKey, Built>>,
+    /// The values handed to share.
+    shares: AtomicUsize,
+}
+
+impl StratumStore for Sharing
+{
+    /// None.
+    ///
+    /// # Specification
+    /// trivial.
+    fn recall(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+    ) -> Maybe<StratumImage, recalled::Absent>
+    {
+        Maybe::Absent(recalled::Absent::Unkept)
+    }
+
+    /// Nothing is kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+        _image: &StratumImage,
+    )
+    {
+    }
+
+    /// Nothing is heard.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuse(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+        _why: Unreplayed,
+    )
+    {
+    }
+
+    /// The value shared under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn built(
+        &self,
+        key: &BuiltKey,
+    ) -> Maybe<Built, shared::Absent>
+    {
+        self.built
+            .lock()
+            .expect("the shelf's lock holds")
+            .get(key)
+            .cloned()
+            .map_or(Maybe::Absent(shared::Absent::Unshared), Maybe::Present)
+    }
+
+    /// Share `built` under `key` unless a value is shared there, and answer
+    /// the value shared there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn share(
+        &self,
+        key: BuiltKey,
+        built: Built,
+    ) -> Built
+    {
+        let _before = self.shares.fetch_add(1, Ordering::Relaxed);
+        self.built
+            .lock()
+            .expect("the shelf's lock holds")
+            .entry(key)
+            .or_insert(built)
+            .clone()
+    }
+}
+
+/// #7413: level two over the chains at total size nine and degree four, asked
+/// of two contexts handed one sharing store. The first context shares four
+/// values: the chain catalogue, its wreath, level one at the catalogue's
+/// reach, and level two. The second context reads the first's level two from
+/// the store and shares nothing. A third context asks for a chain stratum
+/// under a budget that the chains at total size nine exceed. The catalogue
+/// shared under every budget does not answer it, so the budget refuses it.
+#[test]
+fn a_second_context_builds_nothing_a_first_shared_7413()
+{
+    let at = StratumAt {
+        bound: ShapeSize::from(9),
+        degree: Degree::from(4),
+    };
+    let store = Arc::new(Sharing::default());
+    let mut first_arena = CoreArena::new();
+    let mut first = CheckingContext::new(&mut first_arena, CheckBudget::DEFAULT);
+    first.keep_strata_in(Arc::<Sharing>::clone(&store));
+    let level = first.level_two(at).expect("level two is certified");
+    assert_eq!(
+        store.shares.load(Ordering::Relaxed),
+        4,
+        "the first context shares the catalogue, the wreath and two strata"
+    );
+    let mut second_arena = CoreArena::new();
+    let mut second = CheckingContext::new(&mut second_arena, CheckBudget::DEFAULT);
+    second.keep_strata_in(Arc::<Sharing>::clone(&store));
+    let again = second.level_two(at).expect("level two is read");
+    assert!(
+        Arc::ptr_eq(&level, &again),
+        "the second context reads the first's level two"
+    );
+    assert_eq!(
+        store.shares.load(Ordering::Relaxed),
+        4,
+        "the second context shares nothing"
+    );
+    let mut third_arena = CoreArena::new();
+    let mut third = CheckingContext::new(&mut third_arena, CheckBudget::DEFAULT);
+    third.keep_strata_in(Arc::<Sharing>::clone(&store));
+    let below = StratumAt {
+        bound: at.bound,
+        degree: Degree::from(2),
+    };
+    assert!(
+        matches!(
+            third
+                .strata_mut()
+                .certified(&Family::Chains, below, ShapeBudget::from(1)),
+            Err(StratumDefect::Budget { bound, .. }) if bound == at.bound
+        ),
+        "a budget that the chains exceed refuses them, whatever is shared"
     );
 }

@@ -33,9 +33,9 @@
 #![no_std]
 
 extern crate alloc;
-// The profiler's instrumentation names `std`; it links only into the
-// benchmark build.
-#[cfg(feature = "hotpath")]
+// The profiler's instrumentation and the unit tests name `std`; it links only
+// into the benchmark build and the tests.
+#[cfg(any(test, feature = "hotpath"))]
 extern crate std;
 
 pub mod access;

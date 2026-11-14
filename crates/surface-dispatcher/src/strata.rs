@@ -9,8 +9,14 @@
 //! its level and the site's build. Its record carries a receipt the
 //! installation's key signs. A later read believes the record only under the
 //! policy, and the checker replays the image's structure before it uses
-//! it. A process that installs none, `check --recheck` among them, certifies
-//! each stratum in each context that names it.
+//! it. A process that installs none, `check --recheck` among them, recalls
+//! and keeps no stratum.
+//!
+//! Each store shares the values that the contexts of its process build of
+//! the site: the catalogues, the wreaths and the strata ([`BuiltKey`]). A
+//! process that installs no store hands each context one store that shares
+//! them and keeps nothing. So the programs of one process build each value
+//! once.
 //!
 //! The store opens with the stratum store, and its register goes to the
 //! thread that installs it. A keep commits the stratum on the caller's thread
@@ -27,6 +33,7 @@
 //! - `vault:01a1897b-d199-7d10-a325-587b76db2508` — lineage: § The design — the
 //!   strata persist in the store.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -37,11 +44,13 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use gandr_core_checker::ua::NoStratumStore;
+use gandr_core_checker::ua::Built;
+use gandr_core_checker::ua::BuiltKey;
 use gandr_core_checker::ua::StratumAt;
 use gandr_core_checker::ua::StratumLevel;
 use gandr_core_checker::ua::StratumStore;
 use gandr_core_checker::ua::recalled;
+use gandr_core_checker::ua::shared;
 use gandr_kernel_core::verdict::Attestation;
 use gandr_kernel_core::verdict::KernelIdentity;
 use gandr_kernel_core::verdict::KernelSigner;
@@ -85,6 +94,9 @@ const KEY_CONTEXT: &str = "gandr checker stratum key 2026-10-30";
 // economy: one store per process, as the verdict cache; a host that needs
 // two hands each context its own instead.
 static INSTALLED: OnceLock<Arc<StoredStrata>> = OnceLock::new();
+
+/// The store each context of a process that installs none is handed.
+static UNSTORED: OnceLock<Arc<Unstored>> = OnceLock::new();
 
 /// A stratum's key: the site's build, the bound, the catalogue family with a
 /// sub-site's profiles in order, the degree and the level, digested.
@@ -227,6 +239,150 @@ impl Stored for Kept
     }
 }
 
+/// The values that the contexts of one process build of the site, each under
+/// its key, frozen once shared.
+///
+/// One lock guards one ordered map. A context asks the shelf only for a value
+/// that its own strata miss, a few times in each program, and no context
+/// holds the lock across a build. The corpus shares at most 40 keys.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+struct Shelf
+{
+    /// Each value shared, by its key.
+    built: Mutex<BTreeMap<BuiltKey, Built>>,
+}
+
+impl Shelf
+{
+    /// The value shared under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn built(
+        &self,
+        key: &BuiltKey,
+    ) -> Maybe<Built, shared::Absent>
+    {
+        let held = match self.built.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.get(key)
+            .cloned()
+            .map_or(Maybe::Absent(shared::Absent::Unshared), Maybe::Present)
+    }
+
+    /// Share `built` under `key` unless a value is shared there, and answer
+    /// the value shared there.
+    ///
+    /// # Specification
+    /// trivial.
+    fn share(
+        &self,
+        key: BuiltKey,
+        built: Built,
+    ) -> Built
+    {
+        let mut held = match self.built.lock() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.entry(key).or_insert(built).clone()
+    }
+}
+
+/// The store of a process that installs none: it shares the values that the
+/// contexts of the process build, and it recalls and keeps no stratum.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+#[repr(transparent)]
+struct Unstored
+{
+    /// The values shared.
+    shelf: Shelf,
+}
+
+impl StratumStore for Unstored
+{
+    /// None: the process keeps no stratum.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn recall(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+    ) -> Maybe<StratumImage, recalled::Absent>
+    {
+        Maybe::Absent(recalled::Absent::Unkept)
+    }
+
+    /// Nothing is kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn keep(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+        _image: &StratumImage,
+    )
+    {
+    }
+
+    /// Nothing is heard.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn refuse(
+        &self,
+        _family: &Family,
+        _at: StratumAt,
+        _level: StratumLevel,
+        _why: Unreplayed,
+    )
+    {
+    }
+
+    /// The value shared under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn built(
+        &self,
+        key: &BuiltKey,
+    ) -> Maybe<Built, shared::Absent>
+    {
+        self.shelf.built(key)
+    }
+
+    /// Share `built` under `key`, and answer the first value shared there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn share(
+        &self,
+        key: BuiltKey,
+        built: Built,
+    ) -> Built
+    {
+        self.shelf.share(key, built)
+    }
+}
+
 /// Where a process's certified strata are recalled from and kept to.
 ///
 /// # Specification
@@ -264,6 +420,8 @@ pub struct StoredStrata
     unwritten: AtomicUsize,
     /// Each answered image that did not replay, and why.
     refused: Mutex<Vec<(StratumAt, StratumLevel, Unreplayed)>>,
+    /// The values that the contexts of this process built of the site.
+    shelf: Shelf,
 }
 
 impl StoredStrata
@@ -305,6 +463,7 @@ impl StoredStrata
                 unattested: AtomicUsize::new(0),
                 unwritten: AtomicUsize::new(0),
                 refused: Mutex::new(Vec::new()),
+                shelf: Shelf::default(),
             },
             register,
         ))
@@ -549,6 +708,33 @@ impl StratumStore for StoredStrata
             Err(poisoned) => poisoned.into_inner().push((at, level, why)),
         }
     }
+
+    /// The value shared under `key`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn built(
+        &self,
+        key: &BuiltKey,
+    ) -> Maybe<Built, shared::Absent>
+    {
+        self.shelf.built(key)
+    }
+
+    /// Share `built` under `key`, and answer the first value shared there.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn share(
+        &self,
+        key: BuiltKey,
+        built: Built,
+    ) -> Built
+    {
+        self.shelf.share(key, built)
+    }
 }
 
 /// Install `strata` for every context this process's compositions make
@@ -567,8 +753,8 @@ pub fn install_stratum_store(strata: StoredStrata) -> Result<(), AlreadyInstalle
         .map_err(|_refused| AlreadyInstalled)
 }
 
-/// The store each context is handed: the one installed, or one holding
-/// nothing.
+/// The store each context is handed: the one installed, or else the one store
+/// of the process, which shares the values built and keeps no stratum.
 ///
 /// # Specification
 /// trivial.
@@ -576,7 +762,7 @@ pub fn stratum_store() -> Arc<dyn StratumStore>
 {
     match INSTALLED.get() {
         Some(installed) => Arc::<StoredStrata>::clone(installed),
-        None => Arc::new(NoStratumStore),
+        None => Arc::<Unstored>::clone(UNSTORED.get_or_init(Arc::default)),
     }
 }
 
@@ -702,10 +888,13 @@ mod tests
     use alloc::sync::Arc;
     use std::path::Path;
 
+    use gandr_core_checker::ua::Built;
+    use gandr_core_checker::ua::BuiltKey;
     use gandr_core_checker::ua::StratumAt;
     use gandr_core_checker::ua::StratumLevel;
     use gandr_core_checker::ua::StratumStore as _;
     use gandr_core_checker::ua::recalled;
+    use gandr_core_checker::ua::shared;
     use gandr_kernel_core::verdict::KernelSigner;
     use gandr_kernel_core::verdict::TrustPolicy;
     use gandr_theory_sites::Catalogue;
@@ -914,5 +1103,52 @@ mod tests
             );
         }
         let _cleared = std::fs::remove_dir_all(&directory);
+    }
+
+    /// #7413: two contexts of one process share each built value. The store
+    /// that each context is handed answers the value that the first shared,
+    /// and a later share under the key keeps the first. A key under another
+    /// budget answers nothing.
+    #[test]
+    fn the_contexts_of_a_process_share_each_built_value_7413()
+    {
+        let bound = ShapeSize::from(3_usize);
+        let budget = ShapeBudget::from(7_413_usize);
+        let key = BuiltKey::Catalogue(Family::Chains, bound, budget);
+        let build = || {
+            Arc::new(
+                Catalogue::chains_within(bound, budget)
+                    .expect("the chains at three fit the budget"),
+            )
+        };
+        let first = super::stratum_store();
+        let second = super::stratum_store();
+        let built = build();
+        assert!(
+            matches!(
+                first.share(key.clone(), Built::Catalogue(Arc::clone(&built))),
+                Built::Catalogue(ref kept) if Arc::ptr_eq(kept, &built)
+            ),
+            "the first share keeps its value"
+        );
+        assert!(
+            matches!(
+                second.built(&key),
+                Maybe::Present(Built::Catalogue(ref read)) if Arc::ptr_eq(read, &built)
+            ),
+            "a second context reads the value that the first shared"
+        );
+        assert!(
+            matches!(
+                second.share(key, Built::Catalogue(build())),
+                Built::Catalogue(ref kept) if Arc::ptr_eq(kept, &built)
+            ),
+            "a later share under the key answers the first value"
+        );
+        let other = BuiltKey::Catalogue(Family::Chains, bound, ShapeBudget::from(7_414_usize));
+        assert!(
+            matches!(first.built(&other), Maybe::Absent(shared::Absent::Unshared)),
+            "a key under another budget answers nothing"
+        );
     }
 }
