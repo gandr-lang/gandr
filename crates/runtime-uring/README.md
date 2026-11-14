@@ -32,13 +32,13 @@ A Rust crate for the Linux Userspace API.
 
 The crate runs on Linux alone. On another system it compiles empty. A kernel that refuses `io_uring` refuses `IoUring::new` with its error number.
 
-The build compiles liburing from the liburing crate, so it needs a C compiler. With the `bindgen` feature on, the build script also makes the kernel's declarations for the target. Then it needs a `libclang` and the target's kernel headers, named by a variable such as `x86_64_LINUX_HEADERS`. With the feature off, which is the ordinary build, it needs neither.
+The liburing crate makes its C library and its bindings in each build. So each build needs `make`, a C compiler and a `libclang`. With the `bindgen` feature on, this crate's build script also makes the kernel's declarations for the target. It reads the target's kernel headers from a variable such as `x86_64_LINUX_HEADERS`. Without that variable it makes nothing.
 
 Each preparer is `unsafe`. The caller keeps each pointer of an entry valid until the kernel posts its completion, and each descriptor open. Each preparer's `# Safety` names what it reads.
 
 ## Examples
 
-The example sets up a ring and submits one operation that does nothing. Then it waits for the completion:
+The example opens a ring and submits one operation that does nothing. Then it waits for the completion:
 
 ```rust,no_run
 use gandr_runtime_uring::IoUring;
