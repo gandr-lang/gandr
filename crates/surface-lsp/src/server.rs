@@ -1331,6 +1331,9 @@ impl Wake for Admitted
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     #[inline]
     fn wake(&self)
     {
@@ -1366,6 +1369,9 @@ impl Admissions
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the generations' channels, setup
     #[inline]
     #[must_use]
     pub fn new(
@@ -3997,6 +4003,9 @@ impl Server
     /// - hypothesis: L3 — as [`Server::pulled_workspace`]; a source an editor
     ///   opens while it is swept is judged as the copy.
     /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    ///
+    /// # Cost
+    /// - allocation: the source's text and its job, growth within the sources
     #[spec(ensures: admissions.sweeping.is_none() || !self.sweep.waiting().is_empty())]
     fn sweep_next(
         &mut self,
@@ -4197,6 +4206,9 @@ impl Server
     ///   during an admission retires it, its line logged as retired.
     /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
     /// - witness: `server::tests::a_change_during_an_admission_retires_it_1547`
+    ///
+    /// # Cost
+    /// - allocation: the logged lines and the jobs, growth within the copies
     #[spec(
         captures: copies = workspace.documents.len(),
         ensures: |ret| ret.len() <= copies && self.runs.due.is_empty(),
@@ -4361,6 +4373,9 @@ impl Server
     /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
     /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
     /// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+    ///
+    /// # Cost
+    /// - allocation: the settled messages, growth within the ended jobs
     #[spec(ensures: |ret| (self.pulled.0 || !self.notebooks.is_empty()
             || ret.judged.len() <= ret.messages.len())
         && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
@@ -7497,6 +7512,9 @@ impl Workspace
     ///   `null`.
     /// - witness: `server::tests::completion_answers_the_names_a_word_may_complete_to_806`
     /// - witness: `server::tests::completion_offers_a_folder_name_with_its_import`
+    ///
+    /// # Cost
+    /// - allocation: the completion list, growth within the names
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Completions(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn completion(
@@ -7565,6 +7583,9 @@ impl Workspace
     /// - hypothesis: L3 — as [`additions`], through the request, the edit
     ///   leaving a document that checks.
     /// - witness: `server::tests::an_unresolved_name_is_offered_the_import_declaring_it_1116`
+    ///
+    /// # Cost
+    /// - allocation: the actions, growth within the refusals
     #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
     fn import_additions(
         &self,
@@ -8249,6 +8270,9 @@ impl Workspace
     /// - hypothesis: L3 — as [`Self::references`].
     /// - witness: `server::tests::references_find_a_name_s_uses_in_every_open_document`
     /// - witness: `server::tests::a_references_lens_counts_a_name_s_uses_in_every_open_document`
+    ///
+    /// # Cost
+    /// - allocation: the locations, growth within the open documents
     #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_none())]
     fn referring(
         &self,
@@ -8324,6 +8348,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`items`]; an unknown document answers `null`.
     /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    ///
+    /// # Cost
+    /// - allocation: the shadows and the item, growth within the text
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
         || matches!(ret, Answer::Callables(ref items) if items.len() == 1_usize))]
     fn prepare_calls(
@@ -8476,6 +8503,9 @@ impl Workspace
     /// - hypothesis: L3 — an open document and a sibling no editor holds are
     ///   each read.
     /// - witness: `server::tests::the_call_hierarchy_follows_a_corpus_closure`
+    ///
+    /// # Cost
+    /// - allocation: the path and the file's text, growth within the file
     fn reading<Out>(
         &self,
         uri: &DocumentUri,
@@ -8753,6 +8783,9 @@ impl Workspace
     ///   an unopened importer are each visited once, and a source importing
     ///   nothing is not.
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the copies, paths and text, growth within the importers
     fn writers<Failure>(
         &self,
         written: &Written,
@@ -8929,6 +8962,9 @@ impl Workspace
     ///   binder renames in its document alone; a keyword, a name already
     ///   declared and a position on nothing are refused.
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the changes and the refusal, growth within the writers
     fn rename(
         &self,
         uri: &DocumentUri,

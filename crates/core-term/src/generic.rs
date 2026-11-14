@@ -398,6 +398,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`equality`].
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
+    ///
+    /// # Cost
+    /// - allocation: the derivation's tables and its order, setup
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref deriving, ref order)| order.iter().all(|at| deriving.derived.contains_key(at))))]
     fn start(
         arena: &'run mut CoreArena,
@@ -529,6 +532,9 @@ where
     /// - hypothesis: L3 — a point's two fields are compared in order, each
     ///   against its own counterpart.
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
+    ///
+    /// # Cost
+    /// - allocation: the comparisons, growth within the types
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |comparisons| comparisons.len() == types.len()))]
     fn pairwise(
         site: impl Fn(FieldPosition) -> OccurrenceSite,
@@ -565,6 +571,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — each refusal names its declaration and field.
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the declaration's rows, growth within its constructors
     #[spec(ensures: |ret| ret.is_err() || self.rows.contains_key(&position))]
     fn read(
         &mut self,
@@ -616,6 +625,9 @@ where
     ///   declarations is.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the reached declarations, growth within the fields
     #[spec(ensures: |ret| ret.iter().all(|reached| reached.0 != position))]
     fn reached(
         &self,
@@ -672,6 +684,9 @@ where
     ///   declarations refuses at the second's field.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the order and its stacks, growth within the declarations
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |order| order.last() == Some(&position)))]
     fn order(
         &mut self,
@@ -721,6 +736,9 @@ where
     /// - hypothesis: L3 — as [`equality`].
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
     /// - witness: `generic::tests::a_recursive_declaration_derives_a_structural_fixpoint`
+    ///
+    /// # Cost
+    /// - allocation: the case tables, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&body| self.arena.value(body).is_some()))]
     fn derive(
         &mut self,
@@ -803,6 +821,9 @@ where
     /// - hypothesis: L3 — a point's two fields conjoin and a constructor with
     ///   none answers true.
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
+    ///
+    /// # Cost
+    /// - allocation: the steps and the terms, growth within the comparisons
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&term| self.arena.computation(term).is_some()))]
     fn conjunction(
         &mut self,
@@ -974,6 +995,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — a line's flag is compared by its injections.
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
+    ///
+    /// # Cost
+    /// - allocation: the summands' case tables, growth within the summands
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -1021,6 +1045,9 @@ where
     /// - witness: `generic::tests::a_point_derives_a_closed_equality_of_two_points`
     /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
     /// - witness: `generic::tests::each_uncovered_declaration_refuses_at_its_site`
+    ///
+    /// # Cost
+    /// - allocation: the components and the steps, growth within the type
     #[spec(
         captures: [ready = built.len(), pending = steps.len()],
         ensures: |ret| ret.is_err() || built.len() == ready.saturating_add(1) || steps.len() > pending,

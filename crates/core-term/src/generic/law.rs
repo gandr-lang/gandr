@@ -206,6 +206,9 @@ struct Proving<'deriving, 'run, Table, Host>
 ///   recursive-data tests.
 /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
 /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
+///
+/// # Cost
+/// - allocation: the derivation and the proofs' tables, setup
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |derived| arena.value_type(derived.declared).is_some() && arena.value(derived.body).is_some()))]
 #[inline]
 pub fn law<'lookup, Table, Host>(
@@ -273,6 +276,9 @@ where
     /// - hypothesis: L3 — a line files its point, and a flag refuses.
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
     /// - witness: `generic::law::tests::an_uncovered_field_refuses_its_law_at_its_site_2302`
+    ///
+    /// # Cost
+    /// - allocation: the filed fields, growth within the reached declarations
     #[spec(ensures: |ret| ret.is_err() || self.fields.contains_key(&position))]
     fn cover(
         &mut self,
@@ -760,6 +766,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the comparisons, growth within the fields
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |compared| compared.len() == fields.len()))]
     fn compared(
         fields: &[Field],
@@ -791,6 +800,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the case's branches, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(body, declared)| self.deriving.arena.value(body).is_some() && self.deriving.arena.value_type(declared).is_some()))]
     fn reflexivity(
         &mut self,
@@ -847,6 +859,9 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — as [`law`].
     /// - witness: `generic::law::tests::a_point_and_a_line_derive_closed_laws_2302`
+    ///
+    /// # Cost
+    /// - allocation: the case's branches, growth within the constructors
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(body, declared)| self.deriving.arena.value(body).is_some() && self.deriving.arena.value_type(declared).is_some()))]
     fn symmetry(
         &mut self,

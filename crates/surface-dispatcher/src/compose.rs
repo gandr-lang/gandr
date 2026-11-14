@@ -3501,6 +3501,9 @@ type JudgedUnit<'source> = (
 /// - witness: `tests::compose::each_source_of_a_component_reports_its_own_share`
 /// - witness: `tests::compose::a_retired_member_judgement_keeps_nothing_1663`
 /// - witness: `tests::compose::a_revision_moving_no_lowered_node_is_not_judged_again_2102`
+///
+/// # Cost
+/// - allocation: the unit's tables and reports, growth within its declarations
 #[spec(ensures: |ref ret| if let Polled::Whole(ref whole) = *ret {
     whole.0.earlier.len() == earlier.len()
 } else {

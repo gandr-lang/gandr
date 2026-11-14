@@ -229,6 +229,9 @@ pub struct Hole
 ///   the parameter and the declared names, and a range meeting no hole is
 ///   offered no fill.
 /// - witness: `gandr-surface-lsp::server::tests::a_hole_is_offered_the_names_that_settle_it`
+///
+/// # Cost
+/// - allocation: the holes and their names, growth within the spans
 #[spec(ensures: |ret| ret.iter().all(|hole| (1 ..= MOST_FILLS).contains(&hole.names.len())))]
 #[must_use]
 #[inline]

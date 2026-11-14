@@ -1523,6 +1523,9 @@ where
 /// - witness: `settle::tests::a_function_that_checks_keeps_the_default_beside_its_refused_witness_3840`
 /// - witness: `settle::tests::a_declaration_refused_at_refused_terms_states_their_cause_4143`
 /// - witness: `settle::tests::a_data_refusal_covers_its_rules_6063`
+///
+/// # Cost
+/// - allocation: the reports and refusals, growth within the declarations
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|report|
     report.declarations().get(.. earlier.len()) == Some(earlier)))]
 #[inline]

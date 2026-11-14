@@ -326,6 +326,9 @@ impl Wake for Ended
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     #[inline]
     fn wake(&self)
     {
@@ -338,6 +341,9 @@ impl Wake for Ended
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the jobs' tables and channel, setup
 pub(super) fn run<Log>(
     commands: Receiver<Command>,
     finished: Sender<Command>,
@@ -372,6 +378,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the row and the running entry, growth within the calls
     fn start<Log>(
         &mut self,
         pending: Pending,
@@ -434,6 +443,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the running entry and the job, growth within the calls
     fn walk<Log>(
         &mut self,
         row: Row,
@@ -636,6 +648,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     fn finished<Log>(
         &mut self,
         held: &Held<'_, Log>,
@@ -652,6 +667,9 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the call's document list, growth within its documents
     fn close<Log>(
         &mut self,
         row: &Row,

@@ -292,6 +292,9 @@ impl Sweep
     ///   answered as stated.
     /// - witness: `gandr-surface-lsp::server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
     /// - witness: `sweep::tests::a_pass_looks_again_at_a_source_written_behind_it_1824`
+    ///
+    /// # Cost
+    /// - allocation: the answered path, growth within the listed sources
     #[spec(ensures: |ret| ret.is_none() || matches!(self.pass, Pass::Running { .. }))]
     #[inline]
     pub fn next<List>(

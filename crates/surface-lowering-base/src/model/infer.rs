@@ -1180,6 +1180,9 @@ impl Engine
     ///   `assoc` binds the objects before the morphisms over them.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
+    ///
+    /// # Cost
+    /// - allocation: the walk's steps and the order, growth within the items
     fn emit(
         &self,
         roots: &[Item],
@@ -1491,6 +1494,9 @@ fn head_of<'heads>(
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
+///
+/// # Cost
+/// - allocation: the head's telescope and its sorts, growth within the ports
 pub(super) fn derive_head(
     heads: &Heads,
     kind: HeadKind,
@@ -1598,6 +1604,9 @@ pub(super) fn derive_head(
 ///   a law over a faulted operation keeps the inherited fault.
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+///
+/// # Cost
+/// - allocation: the law's telescope and terms, growth within the variables
 pub(super) fn derive_law(
     heads: &Heads,
     law: &PresentedLaw,
@@ -1701,6 +1710,9 @@ pub(super) fn derive_law(
 /// - hypothesis: L3 — `refl`, `sym` and `trans` derive their components, and a
 ///   side naming a variable no binder binds keeps its fault.
 /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
+///
+/// # Cost
+/// - allocation: the law's telescope and terms, growth within the binders
 pub(super) fn derive_stated(
     heads: &Heads,
     law: &StatedLaw,

@@ -117,6 +117,9 @@ pub fn callable(
 /// - hypothesis: L3 — an item of the document and one of a sibling are each
 ///   placed in their own text.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the item's name and its line index, growth within the text
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|placed| placed.kind == SymbolKind::FUNCTION
     && (site.source() != read.hovering.table().own_source() || placed.uri == *read.uri)))]
 fn item(
@@ -162,6 +165,9 @@ fn item(
 /// - hypothesis: L3 — a call of a sibling's function and a function's own name
 ///   each prepare it; a constructor prepares nothing.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the line index and the item, growth within the text
 #[spec(ensures: |ret| ret.len() <= 1_usize)]
 #[must_use]
 #[inline]
@@ -202,6 +208,9 @@ where
 /// - hypothesis: L3 — an importer's calls of a sibling's function are grouped
 ///   by the definition making them, a recursive call by its own definition.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the holders, groups and calls, growth within the uses
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]
@@ -279,6 +288,9 @@ where
 /// - hypothesis: L3 — a definition calling a sibling's function and itself
 ///   answers both, each with its uses; a constructor it applies is no call.
 /// - witness: `gandr-surface-lsp::server::tests::the_call_hierarchy_follows_a_corpus_closure`
+///
+/// # Cost
+/// - allocation: the groups and calls, growth within the uses
 #[spec(ensures: |ret| ret.iter().all(|call| !call.from_ranges.is_empty()))]
 #[must_use]
 #[inline]

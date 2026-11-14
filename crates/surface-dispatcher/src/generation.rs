@@ -366,6 +366,9 @@ where
     /// - hypothesis: L3 — an owner that sleeps until woken receives every
     ///   delivery it is woken for.
     /// - witness: `generation::tests::a_woken_owner_finds_the_end_ready`
+    ///
+    /// # Cost
+    /// - allocation: the channel, setup
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.current.is_empty() && ret.running == 0)]
@@ -404,6 +407,9 @@ where
     ///   one under another key retires the running job.
     /// - witness: `generation::tests::a_submission_under_the_current_key_is_held`
     /// - witness: `generation::tests::a_conflicting_submission_retires_the_older_generation`
+    ///
+    /// # Cost
+    /// - allocation: the job's box and flag, growth within the submissions
     #[inline]
     #[spec(
         captures: [held = self.current.get(&slot).is_some_and(|current| current.key == key)],
@@ -501,6 +507,9 @@ where
     /// - hypothesis: L3 — as [`Generations`].
     /// - witness: `generation::tests::a_retired_result_is_dropped_though_its_job_finished`
     /// - witness: `generation::tests::a_panicking_job_resumes_at_its_delivery`
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     #[inline]
     #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) || (self.running == 0 && matches!(ret, Maybe::Absent(delivery::Absent::Idle))))]
     pub fn wait(&mut self) -> Maybe<Delivered<Slot, Key, Output>, delivery::Absent>
@@ -534,6 +543,9 @@ where
     ///   ready at once.
     /// - witness: `generation::tests::a_retired_result_is_dropped_though_its_job_finished`
     /// - witness: `generation::tests::a_serial_pool_runs_each_job_on_the_caller`
+    ///
+    /// # Cost
+    /// - allocation: the channel's internals, growth within the ended jobs
     #[inline]
     #[spec(ensures: |ret| match ret {
         Maybe::Present(_) => true,

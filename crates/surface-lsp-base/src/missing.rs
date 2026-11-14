@@ -69,6 +69,9 @@ pub const UNRESOLVED_NAME: &str = "UnresolvedName";
 ///   type is not offered a source declaring it only as a value; a range
 ///   elsewhere is offered none.
 /// - witness: `gandr-surface-lsp-core::search::tests::an_unresolved_name_is_offered_the_import_declaring_it`
+///
+/// # Cost
+/// - allocation: the actions and the line index, growth within the refusals
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
 #[must_use]

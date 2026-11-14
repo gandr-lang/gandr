@@ -376,6 +376,9 @@ const fn declared_as(kind: CompletionItemKind) -> Option<NameKind>
 /// - witness: `gandr-surface-lsp::tests::session::a_completion_offers_what_a_sibling_declares_806`
 /// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 ///
+/// # Cost
+/// - allocation: the offers and the line index, growth within the names
+///
 /// [`Signatures`]: crate::signature::Signatures
 /// [`KeywordForm::snippet`]: crate::inline::KeywordForm::snippet
 /// [`Signature::called`]: gandr_surface_lsp_base::signature::Signature::called
