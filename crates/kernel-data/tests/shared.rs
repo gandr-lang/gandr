@@ -1,13 +1,6 @@
 //! The shared pointer: its block, its count, its mutable borrows, each
 //! value's one drop and each block's one free, and the `loom` model of its
 //! orderings.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        primitive_signature,
-        reason = "the fixtures count blocks and drops, and the value under test is a number"
-    )
-)]
 
 use alloc::alloc::Global;
 use alloc::vec;
@@ -108,6 +101,7 @@ impl Drop for Bomb<'_>
 }
 
 /// A value that counts its drops on any thread.
+#[repr(transparent)]
 struct Tally<'count>(&'count AtomicUsize);
 
 impl Drop for Tally<'_>
@@ -403,6 +397,7 @@ mod model
     use super::Shared;
 
     /// A value whose reads and writes `loom` checks for a race.
+    #[repr(transparent)]
     struct Tracked(UnsafeCell<usize>);
 
     /// # Safety
