@@ -1,12 +1,16 @@
 //! The region: its values under a budget, and each of its three crossings.
 
+use core::convert::Infallible;
 use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use gandr_kernel_data::Budget;
 use gandr_kernel_data::Child;
 use gandr_kernel_data::Id;
 use gandr_kernel_data::Key;
 use gandr_kernel_data::Rebase;
+use gandr_kernel_data::Region;
 use gandr_kernel_data::Shift;
 use gandr_kernel_data::Width;
 use gandr_kernel_data::scoped;
@@ -90,31 +94,33 @@ fn a_child_reads_a_value_of_its_parent_through_adopt()
             .mint(&mut mint, Value::Word(7))
             .expect("the budget holds it");
         region
-            .forks::<(), _, _>(
+            .forks::<(), (), _, _>(
                 &mut mint,
                 Width::ONE,
                 &|_sibling, child, mut own, adopt| {
                     let adopted = adopt.adopt(parent);
-                    let first = child.mint(&mut own, Value::Word(9)).ok()?;
+                    let first = child.mint(&mut own, Value::Word(9)).ok().ok_or(())?;
                     (adopted != first
                         && child.get(adopted) == Some(&Value::Word(7))
                         && child.get(first) == Some(&Value::Word(9)))
                     .then_some(())
+                    .ok_or(())
                 },
                 |children| children.iter_mut().for_each(Child::enter),
             )
             .expect("the join holds no suffix past the budget")
+            .into_first()
     });
     assert_eq!(
         read,
-        vec![Some(())],
+        Ok(()),
         "the child reads the parent's value and its own"
     );
 }
 
-/// A child that agrees folds its values into the parent at the offsets it
-/// minted them at; the parent reads them at the ids the join gives, and its
-/// next id follows them.
+/// A child that keeps its answer folds its values into the parent at the
+/// offsets it minted them at; the parent reads them at the ids the join
+/// gives, and its next id follows them.
 #[test]
 fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
 {
@@ -123,20 +129,18 @@ fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
             .mint(&mut mint, Value::Word(1))
             .expect("the budget holds it");
         let joined = region
-            .forks::<Option<Id<'static>>, _, _>(
+            .forks::<Id<'static>, (), _, _>(
                 &mut mint,
                 Width::ONE,
                 &|_sibling, child, mut own, _adopt| {
-                    let _second = child.mint::<()>(&mut own, Value::Word(2)).ok()?;
-                    Some(Some(child.mint(&mut own, Value::Word(3)).ok()?))
+                    let _second = child.mint::<()>(&mut own, Value::Word(2)).ok().ok_or(())?;
+                    child.mint(&mut own, Value::Word(3)).ok().ok_or(())
                 },
                 |children| children.iter_mut().for_each(Child::enter),
             )
             .expect("the budget holds the suffix")
-            .pop()
-            .flatten()
-            .flatten()
-            .expect("the child agrees");
+            .into_first()
+            .expect("the child keeps its answer");
         let after: Id<'_> = region
             .mint(&mut mint, Value::Word(4))
             .expect("the budget holds it");
@@ -154,7 +158,7 @@ fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
     );
 }
 
-/// A child that disagrees drops its suffix whole: the parent's next id stands
+/// A child that drops its suffix drops it whole: the parent's next id stands
 /// at the mark, and no value of the child reads in the parent.
 #[test]
 fn a_fork_that_disagrees_drops_its_suffix_whole()
@@ -164,16 +168,17 @@ fn a_fork_that_disagrees_drops_its_suffix_whole()
             .mint::<()>(&mut mint, Value::Word(1))
             .expect("the budget holds it");
         let joined = region
-            .forks::<(), _, _>(
+            .forks::<(), (), _, _>(
                 &mut mint,
                 Width::ONE,
                 &|_sibling, child, mut own, _adopt| {
-                    let _dropped = child.mint::<()>(&mut own, Value::Word(2)).ok()?;
-                    None
+                    let _dropped = child.mint::<()>(&mut own, Value::Word(2)).ok().ok_or(())?;
+                    Err(())
                 },
                 |children| children.iter_mut().for_each(Child::enter),
             )
-            .expect("a dropped suffix draws nothing");
+            .expect("a dropped suffix draws nothing")
+            .into_first();
         let after: Id<'_> = region
             .mint(&mut mint, Value::Word(5))
             .expect("the budget holds it");
@@ -181,16 +186,108 @@ fn a_fork_that_disagrees_drops_its_suffix_whole()
     });
     assert_eq!(
         read,
-        (vec![None], 1_u32, Some(Value::Word(5))),
+        (Err(()), 1_u32, Some(Value::Word(5))),
         "the parent's next value takes the mark, offset 1"
     );
 }
 
+/// A speculation keeps nothing: its child mints, reads its own values and a
+/// value of the parent, and hands back the verdict that it reads as the
+/// reason of its drop. The parent's next id stands at the mark.
+#[test]
+fn a_speculation_hands_back_its_verdict_and_drops_its_suffix()
+{
+    let read = scoped(Budget::from(LARGE), |region, mut mint| {
+        let parent: Id<'_> = region
+            .mint(&mut mint, Value::Word(5))
+            .expect("the budget holds it");
+        let Err(verdict) = region
+            .forks::<Infallible, Option<u64>, _, _>(
+                &mut mint,
+                Width::ONE,
+                &|_sibling, child, mut own, adopt| {
+                    let Some(Value::Word(base)) = child.get(adopt.adopt(parent)).copied()
+                    else {
+                        return Err(None);
+                    };
+                    let ids = [1_u64, 2_u64, 3_u64]
+                        .map(|word| child.mint::<()>(&mut own, Value::Word(word)).ok());
+                    let sum = ids.iter().try_fold(base, |sum, id| {
+                        let Some(Value::Word(word)) = id.and_then(|id| child.get(id)).copied()
+                        else {
+                            return None;
+                        };
+                        sum.checked_add(word)
+                    });
+                    Err(sum)
+                },
+                |children| children.iter_mut().for_each(Child::enter),
+            )
+            .expect("a dropped suffix draws nothing")
+            .into_first();
+        let after: Id<'_> = region
+            .mint(&mut mint, Value::Word(9))
+            .expect("the budget holds it");
+        (verdict, u32::from(after.key()))
+    });
+    assert_eq!(
+        read,
+        (Some(11_u64), 1_u32),
+        "the verdict sums the parent's word and the child's three, and the parent goes on at \
+         the mark"
+    );
+}
+
+/// A run that enters one child of three leaves two, and the glue runs each of
+/// them once on the calling thread.
+#[test]
+fn a_child_that_the_run_leaves_runs_once_on_the_calling_thread()
+{
+    let width = Width::from(NonZeroUsize::new(3).expect("three is not zero"));
+    let runs = AtomicUsize::new(0);
+    let caller = std::thread::current().id();
+    let read = scoped(
+        Budget::from(LARGE),
+        |region: &Region<'_, Value>, mut mint| {
+            region
+                .forks::<Infallible, (usize, bool), _, _>(
+                    &mut mint,
+                    width,
+                    &|sibling, _child, _own, _adopt| {
+                        let _before = runs.fetch_add(1, Ordering::Relaxed);
+                        Err((usize::from(sibling), std::thread::current().id() == caller))
+                    },
+                    |children| {
+                        std::thread::scope(|threads| {
+                            if let Some(child) = children.iter_mut().nth(1) {
+                                let _running = threads.spawn(|| child.enter());
+                            }
+                        });
+                    },
+                )
+                .expect("a dropped suffix draws nothing")
+                .into_iter()
+                .map(|answer| match answer {
+                    Err(dropped) => dropped,
+                })
+                .collect::<Vec<_>>()
+        },
+    );
+    assert_eq!(
+        (read, runs.load(Ordering::Relaxed)),
+        (
+            vec![(0_usize, true), (1_usize, false), (2_usize, true)],
+            3_usize
+        ),
+        "the run's child runs on its thread, and each child it leaves runs once on the caller"
+    );
+}
+
 /// Four children on four threads read one frozen value at one address, and
-/// the two that agree glue in the order of the siblings. The second agreeing
-/// child's values move past the first one's suffix, the key that one of them
-/// names moves with them, and the id that the child answers reads its value
-/// there.
+/// the two that keep their answers glue in the order of the siblings. The
+/// second keeping child's values move past the first one's suffix, the key
+/// that one of them names moves with them, and the id that the child answers
+/// reads its value there. Each child that drops hands back its place.
 #[test]
 fn siblings_over_one_frozen_prefix_glue_their_suffixes_in_order()
 {
@@ -203,22 +300,30 @@ fn siblings_over_one_frozen_prefix_glue_their_suffixes_in_order()
             .get(frozen)
             .map(|value| core::ptr::from_ref(value).addr());
         let answers = region
-            .forks::<Option<Id<'static>>, _, _>(
+            .forks::<Id<'static>, Option<u64>, _, _>(
                 &mut mint,
                 width,
                 &|sibling, child, mut own, adopt| {
-                    let index = u64::try_from(usize::from(sibling)).ok()?;
+                    let index = u64::try_from(usize::from(sibling)).ok().ok_or(None)?;
                     // Each child reads the frozen value where the parent
                     // holds it, with no copy.
                     let seen = child
                         .get(adopt.adopt(frozen))
                         .map(|value| core::ptr::from_ref(value).addr());
-                    (seen == address).then_some(())?;
-                    let word: Id<'_> = child.mint(&mut own, Value::Word(index)).ok()?;
-                    let names: Id<'_> = child.mint(&mut own, Value::Names(word.key())).ok()?;
-                    // The children at 1 and 3 agree, and those at 0 and 2 do
-                    // not.
-                    (index & 1_u64 == 1_u64).then_some(Some(names))
+                    (seen == address).then_some(()).ok_or(None)?;
+                    let word: Id<'_> = child.mint(&mut own, Value::Word(index)).ok().ok_or(None)?;
+                    let names: Id<'_> = child
+                        .mint(&mut own, Value::Names(word.key()))
+                        .ok()
+                        .ok_or(None)?;
+                    // The children at 1 and 3 keep, and those at 0 and 2
+                    // drop with their places.
+                    if index & 1_u64 == 1_u64 {
+                        Ok(names)
+                    }
+                    else {
+                        Err(Some(index))
+                    }
                 },
                 |children| {
                     std::thread::scope(|threads| {
@@ -232,14 +337,10 @@ fn siblings_over_one_frozen_prefix_glue_their_suffixes_in_order()
         let after: Id<'_> = region
             .mint(&mut mint, Value::Word(9))
             .expect("the budget holds it");
-        let glued: Vec<Option<(u32, Option<Value>)>> = answers
+        let glued = answers
             .into_iter()
-            .map(|answer| {
-                answer
-                    .flatten()
-                    .map(|names| (u32::from(names.key()), region.get(names).copied()))
-            })
-            .collect();
+            .map(|answer| answer.map(|names| (u32::from(names.key()), region.get(names).copied())))
+            .collect::<Vec<_>>();
         let moved = region
             .seat::<()>(Key::from(3_u32))
             .and_then(|id| region.get(id))
@@ -250,16 +351,16 @@ fn siblings_over_one_frozen_prefix_glue_their_suffixes_in_order()
         read,
         (
             vec![
-                None,
-                Some((2_u32, Some(Value::Names(Key::from(1_u32))))),
-                None,
-                Some((4_u32, Some(Value::Names(Key::from(3_u32))))),
+                Err(Some(0_u64)),
+                Ok((2_u32, Some(Value::Names(Key::from(1_u32))))),
+                Err(Some(2_u64)),
+                Ok((4_u32, Some(Value::Names(Key::from(3_u32))))),
             ],
             Some(Value::Word(3)),
             5_u32,
         ),
-        "the first agreeing suffix stays at 1 and 2, the second moves to 3 and 4 with its key, \
-         and the parent goes on at 5"
+        "the first kept suffix stays at 1 and 2, the second moves to 3 and 4 with its key, and \
+         the parent goes on at 5"
     );
 }
 

@@ -6459,15 +6459,15 @@ where
                     let evidence = alloc::sync::Arc::clone(evidence);
                     let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
-                    let source = crate::path_universe::coverage::round_trip(
+                    let result = crate::path_universe::coverage::round_trip(
                         arena,
                         (&unfoldings, judgement.entries),
                         (endpoints.source, crate::path_universe::Direction::Source),
                         (forward, backward),
                         &evidence.source,
                         crate::replay::ReplayBudget::DEFAULT,
-                    );
-                    let result = source.and_then(|()| {
+                    )
+                    .and_then(|()| {
                         crate::path_universe::coverage::round_trip(
                             arena,
                             (&unfoldings, judgement.entries),

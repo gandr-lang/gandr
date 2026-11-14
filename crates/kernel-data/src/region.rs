@@ -35,6 +35,7 @@
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::alloc::AllocError;
 use core::alloc::Allocator;
@@ -43,14 +44,19 @@ use core::cell::Cell;
 use core::cell::OnceCell;
 use core::cell::RefCell;
 use core::cmp::Ordering;
+use core::convert::Infallible;
 use core::fmt;
 use core::hash::Hash;
 use core::hash::Hasher;
+use core::iter::Chain;
+use core::iter::Once;
+use core::iter::once;
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::num::NonZero;
 use core::num::NonZeroUsize;
 use core::ptr::NonNull;
+use core::slice;
 
 use anodized::spec;
 
@@ -747,6 +753,22 @@ where
     }
 }
 
+impl Branded for Infallible
+{
+    type Of<'region> = Self;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rebrand<'from, 'to>(
+        value: Self::Of<'from>,
+        _translation: Translation<'from, 'to>,
+    ) -> Self::Of<'to>
+    {
+        match value {}
+    }
+}
+
 /// A block that the allocator face hands out: an address range inside one
 /// chunk of a layer.
 ///
@@ -1393,24 +1415,29 @@ where
     }
 
     /// Fork `width` children over this region's frozen prefix, and glue the
-    /// suffixes of the children that agree.
+    /// suffixes of the children that keep their answers.
     ///
     /// The fork borrows `mint` for its whole life, so this region makes no id
     /// while a child lives, and each value below the mark stays as it is: the
     /// children's frozen prefix. Each child holds a suffix of its own, an equal
     /// share of this region's remaining budget, its own mint and an [`Adopt`].
-    /// `run` enters each child on the threads that it chooses. A child reads
-    /// the frozen prefix by reference and writes only its own suffix, so no
-    /// child takes a lock. A child that `run` does not enter answers `None`.
+    /// `run` enters each child on the threads that it chooses. The glue enters
+    /// on the calling thread each child that `run` leaves. A child reads the
+    /// frozen prefix by reference and writes only its own suffix, so no child
+    /// takes a lock.
     ///
-    /// A body that answers `None` disagrees, and its child's suffix drops
-    /// whole. The glue appends the suffix of each child that agrees, in the
-    /// order of the siblings. Each suffix moves past the suffixes before it by
-    /// a [`Shift`]: [`Rebase`] reads each value through it, and
-    /// [`Branded::rebrand`] reads the answer through it. The one-child fork is
-    /// the width [`Width::ONE`].
+    /// A body that answers `Err` drops its child's suffix whole and hands back
+    /// its reason. `Dropped` is fixed outside the child's brand, so a reason
+    /// names no id of the child. A body that answers `Ok` keeps its answer, and
+    /// the glue appends its child's suffix, in the order of the siblings. Each
+    /// suffix moves past the suffixes before it by a [`Shift`]: [`Rebase`]
+    /// reads each value through it, and [`Branded::rebrand`] reads the kept
+    /// answer through it. A fork whose children only drop takes the family
+    /// [`Infallible`]. The one-child fork is the width [`Width::ONE`], and its
+    /// one answer is [`Siblings::into_first`].
     ///
-    /// No id of a child leaves the fork but through the glue:
+    /// No id of a child leaves the fork but through the glue. Neither a cell
+    /// nor a reason can hold one:
     ///
     /// ```compile_fail
     /// use core::cell::Cell;
@@ -1422,51 +1449,73 @@ where
     ///
     /// scoped(Budget::from(4096_usize), |region, mut mint| {
     ///     let leaked = Cell::new(None);
-    ///     let _ = region.forks::<(), _, _>(
+    ///     let _ = region.forks::<(), (), _, _>(
     ///         &mut mint,
     ///         Width::ONE,
     ///         &|_sibling, child, mut own, _adopt| {
     ///             leaked.set(child.mint::<()>(&mut own, ()).ok());
-    ///             Some(())
+    ///             Ok(())
     ///         },
     ///         |children| children.iter_mut().for_each(Child::enter),
     ///     );
     /// });
     /// ```
     ///
+    /// ```compile_fail
+    /// use core::convert::Infallible;
+    ///
+    /// use gandr_kernel_data::Budget;
+    /// use gandr_kernel_data::Child;
+    /// use gandr_kernel_data::Id;
+    /// use gandr_kernel_data::Width;
+    /// use gandr_kernel_data::scoped;
+    ///
+    /// scoped(Budget::from(4096_usize), |region, mut mint| {
+    ///     let _ = region.forks::<Infallible, Option<Id<'_>>, _, _>(
+    ///         &mut mint,
+    ///         Width::ONE,
+    ///         &|_sibling, child, mut own, _adopt| Err(child.mint::<()>(&mut own, ()).ok()),
+    ///         |children| children.iter_mut().for_each(Child::enter),
+    ///     );
+    /// });
+    /// ```
+    ///
     /// # Specification
-    /// - ensures: one answer for each child, in the order of the siblings:
-    ///   `None` for a child that disagrees or that `run` does not enter, and
-    ///   `Some` for a child that agrees. Each value of an agreeing child then
-    ///   reads in this region past the suffixes of the agreeing children before
-    ///   it, and each id of its answer reads the value that the child minted at
-    ///   it.
+    /// - ensures: one answer for each child, in the order of the siblings: the
+    ///   reason of a child that drops, and the kept answer of a child that
+    ///   keeps. Each value of a keeping child then reads in this region past
+    ///   the suffixes of the keeping children before it, and each id of its
+    ///   answer reads the value that the child minted at it.
     /// - fails: [`Exhausted`] when this region's budget cannot draw the buckets
-    ///   that the agreeing suffixes need; the suffixes then drop whole.
+    ///   that the kept suffixes need, or the list of the children; the suffixes
+    ///   then drop whole.
     /// - panics: none.
     /// - executable: none — the answers are generic, and the children's values
     ///   have no equality that a predicate could compare them by.
     ///
     /// # Errors
-    /// [`Exhausted`] when the glue cannot hold the agreeing suffixes.
+    /// [`Exhausted`] when the glue cannot hold the kept suffixes.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an agreeing child's values read in the parent at the
-    ///   ids the glue gives, and the parent's next id follows them; a
-    ///   disagreeing child leaves the parent's next id at the mark; four
-    ///   children on four threads read one frozen value at one address, and the
-    ///   two that agree glue in the order of the siblings.
+    /// - hypothesis: L3 — a keeping child's values read in the parent at the
+    ///   ids the glue gives, and the parent's next id follows them; a dropping
+    ///   child leaves the parent's next id at the mark and hands back its
+    ///   reason; a child that `run` leaves runs once on the calling thread;
+    ///   four children on four threads read one frozen value at one address,
+    ///   and the two that keep glue in the order of the siblings.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     /// - witness: `tests::region::a_fork_that_disagrees_drops_its_suffix_whole`
+    /// - witness: `tests::region::a_speculation_hands_back_its_verdict_and_drops_its_suffix`
+    /// - witness: `tests::region::a_child_that_the_run_leaves_runs_once_on_the_calling_thread`
     /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
     #[inline]
-    pub fn forks<'body, Family, Body, Run>(
+    pub fn forks<'body, Family, Dropped, Body, Run>(
         &self,
         _mint: &mut Mint<'region>,
         width: Width,
         body: &'body Body,
         run: Run,
-    ) -> Result<Vec<Option<Family::Of<'region>>>, Exhausted>
+    ) -> Result<Siblings<Result<Family::Of<'region>, Dropped>>, Exhausted>
     where
         Value: Rebase,
         Family: Branded,
@@ -1475,8 +1524,8 @@ where
             &'child Region<'child, Value, Below>,
             Mint<'child>,
             Adopt<'region, 'child>,
-        ) -> Option<Family::Of<'child>>,
-        Run: FnOnce(&mut [Child<'region, 'body, Value, Below, Family, Body>]),
+        ) -> Result<Family::Of<'child>, Dropped>,
+        Run: FnOnce(&mut Siblings<Child<'region, 'body, Value, Below, Family, Dropped, Body>>),
     {
         let mark = self.layer.extent()?;
         let count = NonZeroUsize::from(width).get();
@@ -1487,12 +1536,7 @@ where
                 .checked_div(count)
                 .unwrap_or(0_usize),
         );
-        let mut children = Vec::new();
-        children
-            .try_reserve_exact(count)
-            .ok()
-            .ok_or_else(|| self.layer.exhausted())?;
-        children.extend((0 .. count).map(|sibling| Child {
+        let child = |sibling| Child {
             layer: Layer::new(
                 Some(self.layer),
                 mark,
@@ -1501,24 +1545,34 @@ where
             ),
             sibling: Sibling(sibling),
             body,
-            answer: Entry::Waiting,
-        }));
+            answer: None,
+        };
+        let mut rest = Vec::new();
+        rest.try_reserve_exact(count.saturating_sub(1))
+            .ok()
+            .ok_or_else(|| self.layer.exhausted())?;
+        rest.extend((1 .. count).map(child));
+        let mut children = Siblings {
+            first: child(0),
+            rest,
+        };
         run(&mut children);
         self.glue(mark, children)
     }
 
-    /// Append the suffix of each child that agrees, in the order of the
-    /// siblings, and read each answer through the move of its suffix.
+    /// Append the suffix of each child that keeps its answer, in the order of
+    /// the siblings, and read each kept answer through the move of its suffix.
+    /// A child that the run left runs first, on the calling thread.
     ///
     /// # Specification
-    /// - ensures: on `Ok`, one answer for each child in order: `None` for a
-    ///   child that disagrees or that the run did not enter, and for an
-    ///   agreeing child its answer, with its values past the suffixes of the
-    ///   agreeing children before it. On a refusal of the budget, this region
-    ///   is unchanged.
+    /// - ensures: on `Ok`, one answer for each child in order: the reason of a
+    ///   child that drops, and for a keeping child its answer, with its values
+    ///   past the suffixes of the keeping children before it. On a refusal of
+    ///   the budget, this region is unchanged.
     /// - fails: [`Exhausted`] when this region's remaining budget cannot draw
-    ///   the buckets of the agreeing suffixes, or their values pass the last
-    ///   offset. The check comes before the first value moves.
+    ///   the buckets of the kept suffixes, their values pass the last offset,
+    ///   or the lists of the answers cannot be drawn. The check comes before
+    ///   the first value moves.
     /// - panics: none.
     /// - executable: none — the values move, and `Value` has no equality that a
     ///   predicate could compare them by.
@@ -1526,46 +1580,47 @@ where
     /// # Adequacy
     /// - hypothesis: L3 — a child's values read in the parent at the offsets
     ///   the glue gives them, and the parent's next id follows them; the second
-    ///   agreeing child reads past the first child's suffix.
+    ///   keeping child reads past the first child's suffix.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
-    fn glue<Family, Body>(
+    fn glue<Family, Dropped, Body>(
         &self,
         mark: Offset,
-        children: Vec<Child<'region, '_, Value, Below, Family, Body>>,
-    ) -> Result<Vec<Option<Family::Of<'region>>>, Exhausted>
+        children: Siblings<Child<'region, '_, Value, Below, Family, Dropped, Body>>,
+    ) -> Result<Siblings<Result<Family::Of<'region>, Dropped>>, Exhausted>
     where
         Value: Rebase,
         Family: Branded,
+        Body: for<'child> Fn(
+            Sibling,
+            &'child Region<'child, Value, Below>,
+            Mint<'child>,
+            Adopt<'region, 'child>,
+        ) -> Result<Family::Of<'child>, Dropped>,
     {
-        let agreeing = children
+        let ended = children.try_map(self.layer.exhausted(), |child| Ok(child.ended()))?;
+        let kept = ended
             .iter()
-            .filter(|child| matches!(child.answer, Entry::Agrees(_)))
+            .filter(|child| child.answer.is_ok())
             .try_fold(Count(0_u32), |sum, child| {
                 sum.0.checked_add(child.layer.len.get().0).map(Count)
             })
             .ok_or_else(|| self.layer.exhausted())?;
-        if agreeing != Count(0_u32) {
+        if kept != Count(0_u32) {
             let bytes = self
                 .layer
-                .draw_for(agreeing)
+                .draw_for(kept)
                 .ok_or_else(|| self.layer.exhausted())?;
-            let fits = mark.0.checked_add(agreeing.0).is_some();
+            let fits = mark.0.checked_add(kept.0).is_some();
             if !fits || bytes > self.layer.remaining() {
                 return Err(self.layer.exhausted());
             }
         }
-        let mut answers = Vec::new();
-        answers
-            .try_reserve_exact(children.len())
-            .ok()
-            .ok_or_else(|| self.layer.exhausted())?;
-        for child in children {
-            let Child { layer, answer, .. } = child;
-            let Entry::Agrees(answer) = answer
-            else {
-                answers.push(None);
-                continue;
+        ended.try_map(self.layer.exhausted(), |child| {
+            let Ended { layer, answer } = child;
+            let kept = match answer {
+                Ok(kept) => kept,
+                Err(dropped) => return Ok(Err(dropped)),
             };
             let by = self
                 .layer
@@ -1578,12 +1633,137 @@ where
             for value in layer.into_values() {
                 let _offset: Offset = self.layer.push(value.rebase(shift))?;
             }
-            answers.push(Some(Family::rebrand(answer, Translation {
+            Ok(Ok(Family::rebrand(kept, Translation {
                 shift,
                 brands: PhantomData,
-            })));
+            })))
+        })
+    }
+}
+
+/// The children of one fork, or their answers, in the order of the siblings.
+///
+/// A fork has at least one child, so the first always stands, and a fork of
+/// [`Width::ONE`] draws no list for the siblings after it.
+///
+/// # Specification
+/// trivial.
+pub struct Siblings<Item>
+{
+    /// The first sibling's item.
+    first: Item,
+    /// The item of each sibling after the first, in order.
+    rest: Vec<Item>,
+}
+
+impl<Item> Siblings<Item>
+{
+    /// The first sibling's item: the one item of a fork of [`Width::ONE`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_first(self) -> Item
+    {
+        self.first
+    }
+
+    /// Each sibling's item, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter(&self) -> Chain<Once<&Item>, slice::Iter<'_, Item>>
+    {
+        once(&self.first).chain(self.rest.iter())
+    }
+
+    /// Each sibling's item, in order, to change.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter_mut(&mut self) -> Chain<Once<&mut Item>, slice::IterMut<'_, Item>>
+    {
+        once(&mut self.first).chain(self.rest.iter_mut())
+    }
+
+    /// Each item read through `read`, in order. The list after the first takes
+    /// one block, drawn before the first read.
+    ///
+    /// # Specification
+    /// - ensures: on `Ok`, the item of each sibling read in order.
+    /// - fails: `refused` when the list cannot be drawn, or the first error of
+    ///   `read`.
+    /// - panics: none.
+    /// - executable: none — `read` is generic and may move what it reads.
+    ///
+    /// # Errors
+    /// `refused`, or the first error of `read`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the glue reads each child once and in order.
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    fn try_map<Mapped, Read>(
+        self,
+        refused: Exhausted,
+        mut read: Read,
+    ) -> Result<Siblings<Mapped>, Exhausted>
+    where
+        Read: FnMut(Item) -> Result<Mapped, Exhausted>,
+    {
+        let mut rest = Vec::new();
+        rest.try_reserve_exact(self.rest.len())
+            .ok()
+            .ok_or(refused)?;
+        let first = read(self.first)?;
+        for item in self.rest {
+            rest.push(read(item)?);
         }
-        Ok(answers)
+        Ok(Siblings { first, rest })
+    }
+}
+
+impl<Item> IntoIterator for Siblings<Item>
+{
+    type IntoIter = Chain<Once<Item>, vec::IntoIter<Item>>;
+    type Item = Item;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        once(self.first).chain(self.rest)
+    }
+}
+
+impl<'siblings, Item> IntoIterator for &'siblings Siblings<Item>
+{
+    type IntoIter = Chain<Once<&'siblings Item>, slice::Iter<'siblings, Item>>;
+    type Item = &'siblings Item;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.iter()
+    }
+}
+
+impl<'siblings, Item> IntoIterator for &'siblings mut Siblings<Item>
+{
+    type IntoIter = Chain<Once<&'siblings mut Item>, slice::IterMut<'siblings, Item>>;
+    type Item = &'siblings mut Item;
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter
+    {
+        self.iter_mut()
     }
 }
 
@@ -1593,7 +1773,7 @@ where
 ///
 /// # Specification
 /// trivial.
-pub struct Child<'region, 'body, Value, Below, Family, Body>
+pub struct Child<'region, 'body, Value, Below, Family, Dropped, Body>
 where
     Below: Allocator + Clone,
     Family: Branded,
@@ -1604,27 +1784,28 @@ where
     sibling: Sibling,
     /// The body that each child of the fork runs.
     body: &'body Body,
-    /// Where the child stands: not entered yet, or entered with the body's
-    /// answer.
-    answer: Entry<Family::Of<'region>>,
+    /// `None` until the child runs. Then the body's answer: a kept answer
+    /// under the parent's brand at the offsets that the child minted, which
+    /// the glue moves, or the reason of a drop.
+    answer: Option<Result<Family::Of<'region>, Dropped>>,
 }
 
-/// Where a child of a fork stands, once the run ends.
+/// A child of a fork once it runs: its suffix, and its answer.
 ///
 /// # Specification
 /// trivial.
-enum Entry<Answer>
+struct Ended<'region, Value, Below, Answer>
+where
+    Below: Allocator + Clone,
 {
-    /// The run did not enter the child.
-    Waiting,
-    /// The body disagreed, so the child's suffix drops.
-    Disagrees,
-    /// The body agreed with this answer, under the parent's brand at the
-    /// offsets that the child minted; the glue moves them.
-    Agrees(Answer),
+    /// The child's suffix.
+    layer: Layer<'region, Value, Below>,
+    /// The child's answer.
+    answer: Answer,
 }
 
-impl<'region, Value, Below, Family, Body> Child<'region, '_, Value, Below, Family, Body>
+impl<'region, Value, Below, Family, Dropped, Body>
+    Child<'region, '_, Value, Below, Family, Dropped, Body>
 where
     Below: Allocator + Clone,
     Family: Branded,
@@ -1633,7 +1814,7 @@ where
         &'child Region<'child, Value, Below>,
         Mint<'child>,
         Adopt<'region, 'child>,
-    ) -> Option<Family::Of<'child>>,
+    ) -> Result<Family::Of<'child>, Dropped>,
 {
     /// Run the body on this child, under a brand of its own, and keep its
     /// answer for the glue. A child runs once: a second entry does nothing.
@@ -1645,15 +1826,24 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — four children on four threads each write a suffix of
-    ///   their own, and the glue reads the two that agree.
+    ///   their own, and the glue reads the two that keep.
     /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
-    #[spec(ensures: !matches!(self.answer, Entry::Waiting))]
+    #[spec(ensures: self.answer.is_some())]
     #[inline]
     pub fn enter(&mut self)
     {
-        if !matches!(self.answer, Entry::Waiting) {
-            return;
+        if self.answer.is_none() {
+            self.answer = Some(self.answered());
         }
+    }
+
+    /// The body's answer over this child's suffix, with a kept answer read
+    /// under the parent's brand at the offsets that the child minted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answered(&self) -> Result<Family::Of<'region>, Dropped>
+    {
         let region = Region {
             layer: &self.layer,
             brand: PhantomData,
@@ -1665,12 +1855,28 @@ where
             mark: self.layer.base,
             by: Count(0_u32),
         };
-        self.answer = answer.map_or(Entry::Disagrees, |value| {
-            Entry::Agrees(Family::rebrand(value, Translation {
+        answer.map(|kept| {
+            Family::rebrand(kept, Translation {
                 shift,
                 brands: PhantomData,
-            }))
-        });
+            })
+        })
+    }
+
+    /// This child with its answer. A child that no run entered runs now.
+    ///
+    /// # Specification
+    /// trivial.
+    fn ended(self) -> Ended<'region, Value, Below, Result<Family::Of<'region>, Dropped>>
+    {
+        let answer = match self.answer {
+            Some(answer) => answer,
+            None => self.answered(),
+        };
+        Ended {
+            layer: self.layer,
+            answer,
+        }
     }
 }
 
@@ -1694,13 +1900,14 @@ where
 )]
 // SAFETY: the invariants above hold: `Child` exposes its layer only to the
 // body through `Child::enter`, and `Layer::get` writes nothing.
-unsafe impl<'region, Value, Below, Family, Body> Send
-    for Child<'region, '_, Value, Below, Family, Body>
+unsafe impl<'region, Value, Below, Family, Dropped, Body> Send
+    for Child<'region, '_, Value, Below, Family, Dropped, Body>
 where
     Value: Send + Sync,
     Below: Allocator + Clone + Send + Sync,
     Family: Branded,
     Family::Of<'region>: Send,
+    Dropped: Send,
     Body: Sync,
 {
 }
