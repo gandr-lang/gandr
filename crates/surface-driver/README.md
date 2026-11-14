@@ -106,6 +106,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local artifact, the endpoint of a one-role choreography.
 - `vault:01a18572-6e13-7412-bc74-aa6a24d157c4` — background: Catt's artifact sizes, beside `check --measure`.
 - `vault:01a051fd-25fd-7f24-a5d4-a72eca18a687` — lineage: the shared and unshared sizes of one table.
+- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the shared pool's local hub — the sessions of a face readmit on the host's one pool, which `host_pool` installs.
 - `vault:01a178aa-655f-72f2-97ee-298c0647e1e5` — background: the sharing ratio of iterated composites.
 - `vault:01a1c68b-1e9e-7942-aa36-b8d9096dec0e` — anchor: § engine-surface-activity.
 - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each allocation of the process, in `allocator`.

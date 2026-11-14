@@ -32,6 +32,9 @@
 //!   kernel-verdict-reuse — tests and audits run under the full re-check, so
 //!   only a cache a driver installs recalls; a recalled verdict is the kernel's
 //!   own, under its whole input.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
+//!   hub — one pool bounds each consumer of a host, so a session installs the
+//!   pool that `check` installs.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -444,8 +447,9 @@ fn speculation() -> Speculation
 /// run installs nothing and predicts nothing, as the release in serial order
 /// does. What a process installed first stays.
 ///
-/// The driver and the benchmark series both install through this call, so a
-/// series measures the policy that a run of the driver takes.
+/// The driver's `check` and the benchmark series both install through this
+/// call, so a series measures the policy that a run of the driver takes. A
+/// session installs the same policy through [`install_session`].
 ///
 /// # Specification
 /// trivial.
@@ -455,6 +459,38 @@ pub fn install_width(
     walk: &Walk,
 )
 {
+    install(pool, |spare| walk.sources_up_to(spare));
+}
+
+/// Install what a session at `pool`'s width spends its width on, as
+/// [`install_width`] installs it for a walk of one source.
+///
+/// A session readmits the one source that each revision edits. So wider than
+/// one thread, the checks of each readmission run on `pool` under the
+/// speculation group on, and the last drain of each kernel check forks its
+/// obligations on `pool`. A pool of one thread installs nothing, which is the
+/// serial session. What a process installed first stays.
+///
+/// # Specification
+/// trivial.
+#[inline]
+pub fn install_session(pool: &Arc<Pool>)
+{
+    install(pool, |_spare| SourceCount::from(1_usize));
+}
+
+/// Install the readmission pool and the speculation group of a run at
+/// `pool`'s width, and the fork of the obligations when `sources`, counted up
+/// to the threads, falls short of them.
+///
+/// # Specification
+/// trivial.
+fn install<Sources>(
+    pool: &Arc<Pool>,
+    sources: Sources,
+) where
+    Sources: FnOnce(SourceCount) -> SourceCount,
+{
     let threads = pool.width().threads();
     if threads == Threads::ONE {
         return;
@@ -462,7 +498,7 @@ pub fn install_width(
     let _pool = SCHEDULING.set(Arc::clone(pool));
     let _speculation = SPECULATION.set(Speculation::ON);
     let spare = SourceCount::from(NonZeroUsize::from(threads).get());
-    if walk.sources_up_to(spare) < spare {
+    if sources(spare) < spare {
         let _fork = FORKING.set(SharedFork::through(Arc::<Pool>::clone(pool)));
     }
 }

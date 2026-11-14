@@ -232,6 +232,9 @@
 //! - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems`
 //!   — newest: `gandr cells` prints a row's bound as the semiring product of
 //!   its steps' weights.
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — lineage: the lead's local
+//!   hub — the sessions of a face readmit on the host's one pool, which
+//!   `host_pool` installs.
 //!
 //! # Output the driver cannot write is a fault
 //!
@@ -2374,13 +2377,17 @@ fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
 }
 
 /// The pool at the host's performance cores that a face's sessions mold on
-/// and its judgements run on.
+/// and its judgements run on. The process installs the pool for its
+/// readmissions too, as `check` installs its own: the sessions readmit at the
+/// host's width, under the speculation group, with the obligations forked.
 ///
 /// # Specification
 /// trivial.
 fn host_pool() -> Arc<Pool>
 {
-    Arc::new(pooled(Width::PerformanceCores))
+    let pool = Arc::new(pooled(Width::PerformanceCores));
+    gandr_surface_dispatcher::install_session(&pool);
+    pool
 }
 
 /// A pool of `width` threads that keeps the host's measured park-to-wake
