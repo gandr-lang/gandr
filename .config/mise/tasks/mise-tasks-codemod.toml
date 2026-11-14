@@ -1,0 +1,22 @@
+# The codemod of the region's adoption (`.config/mise/codemod-region.bash`):
+# a wave runs it over its crates, the ids of an arena take the region's brand
+# with each holder, impl and function, and the compiler's errors that stay
+# are the wave's second phase. The rules live in `.config/ast-grep/region`.
+["codemod:region"]
+description = "Give the ids of an arena the region's brand, with each holder, impl and function"
+tools."github:ast-grep/ast-grep" = "0.51.1"
+tools.jq = "1.8.1"
+usage = '''
+flag "--path <path>" help="a directory or a file that the codemod rewrites; crates when none is named" var=#true
+arg "<crate>" help="the library name of the crate that defines the arena's ids"
+arg "<name>..." help="the names of the arena's ids" var=#true
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+read -ra names <<< "$usage_name"
+read -ra named_paths <<< "${usage_path:-}"
+flags=()
+for path in "${named_paths[@]}"; do flags+=(--path "$path"); done
+exec .config/mise/codemod-region.bash "${flags[@]}" "$usage_crate" "${names[@]}"
+'''
