@@ -100,6 +100,15 @@ pub struct WorkerIndex(pub usize);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Posts(pub usize);
 
+/// How many parts a fork holds: the calling thread's share and one for each
+/// worker that may take a share.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Parts(pub NonZeroUsize);
+
 /// A frame whose parts a worker or the waiting party runs.
 ///
 /// # Specification
@@ -262,8 +271,8 @@ impl JobRef
     /// trivial.
     ///
     /// # Safety
-    /// - requires: `run` may run `part` of `frame` on any thread, once, while
-    ///   the reference is in a seat or a queue.
+    /// - unsafe invariants: `run` may run `part` of `frame` on any thread,
+    ///   once, while the reference is in a seat or a queue.
     #[inline]
     #[must_use]
     pub const unsafe fn new(
@@ -281,7 +290,7 @@ impl JobRef
     /// trivial.
     ///
     /// # Safety
-    /// - requires: the frame lives until the call returns.
+    /// - unsafe invariants: the frame lives until the call returns.
     #[inline]
     unsafe fn execute(self)
     {
@@ -297,7 +306,7 @@ impl JobRef
 /// trivial.
 ///
 /// # Safety
-/// - requires: `frame` points at a live `Frame`.
+/// - unsafe invariants: `frame` points at a live `Frame`.
 unsafe fn run_frame<Frame>(
     frame: *const (),
     part: Part,
@@ -456,7 +465,9 @@ impl Seat
         }
         // SAFETY: the exchange moved this post to running, and the poster
         // wrote the part before it stored the post with release.
-        let job = unsafe { self.job.get().read().assume_init() };
+        let slot = unsafe { self.job.get().read() };
+        // SAFETY: as above, the slot holds the part that the poster wrote.
+        let job = unsafe { slot.assume_init() };
         // SAFETY: the poster keeps the frame alive until the part ends, since
         // its wait sees the part running and cannot take it back.
         let unwound = std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
@@ -492,6 +503,18 @@ struct Idle(Box<[AtomicU64]>);
 #[derive(Clone, Copy, Debug)]
 struct Mask(u64);
 
+/// The word that holds one worker's idle bit, and the mask of the bit.
+///
+/// # Specification
+/// trivial.
+struct Bit<'idle>
+{
+    /// The word.
+    word: &'idle AtomicU64,
+    /// The mask of the bit in the word.
+    mask: Mask,
+}
+
 /// Whether a party took a worker's idle bit.
 ///
 /// # Specification
@@ -511,9 +534,9 @@ impl Idle
     ///
     /// # Specification
     /// trivial.
-    fn full(count: NonZeroUsize) -> Self
+    fn full(count: Threads) -> Self
     {
-        let count = count.get();
+        let count = NonZeroUsize::from(count).get();
         Self(
             (0 .. count.div_ceil(64))
                 .map(|word| {
@@ -532,11 +555,11 @@ impl Idle
     ///
     /// # Specification
     /// trivial.
-    fn empty(count: NonZeroUsize) -> Self
+    fn empty(count: Threads) -> Self
     {
         Self(
-            (0 .. count.get().div_ceil(64))
-                .map(|_| AtomicU64::new(0))
+            core::iter::repeat_with(|| AtomicU64::new(0))
+                .take(NonZeroUsize::from(count).get().div_ceil(64))
                 .collect(),
         )
     }
@@ -556,7 +579,7 @@ impl Idle
     /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
     fn claim_any(
         &self,
-        spinning: &Idle,
+        spinning: &Self,
     ) -> Maybe<WorkerIndex, unseated::Absent>
     {
         let awake = self.claim_within(|at| {
@@ -619,8 +642,12 @@ impl Idle
         worker: WorkerIndex,
     )
     {
-        if let Some((bits, Mask(mask))) = self.word(worker) {
-            bits.fetch_and(!mask, Ordering::Relaxed);
+        if let Some(Bit {
+            word,
+            mask: Mask(mask),
+        }) = self.word(worker)
+        {
+            word.fetch_and(!mask, Ordering::Relaxed);
         }
     }
 
@@ -634,9 +661,10 @@ impl Idle
     ) -> Claimed
     {
         match self.word(worker) {
-            Some((bits, Mask(mask))) if bits.fetch_and(!mask, Ordering::Acquire) & mask != 0 => {
-                Claimed::Took
-            },
+            Some(Bit {
+                word,
+                mask: Mask(mask),
+            }) if word.fetch_and(!mask, Ordering::Acquire) & mask != 0 => Claimed::Took,
             Some(_) | None => Claimed::Taken,
         }
     }
@@ -650,8 +678,12 @@ impl Idle
         worker: WorkerIndex,
     )
     {
-        if let Some((bits, Mask(mask))) = self.word(worker) {
-            bits.fetch_or(mask, Ordering::SeqCst);
+        if let Some(Bit {
+            word,
+            mask: Mask(mask),
+        }) = self.word(worker)
+        {
+            word.fetch_or(mask, Ordering::SeqCst);
         }
     }
 
@@ -681,11 +713,14 @@ impl Idle
     fn word(
         &self,
         worker: WorkerIndex,
-    ) -> Option<(&AtomicU64, Mask)>
+    ) -> Option<Bit<'_>>
     {
         let word = worker.0.checked_div(64)?;
         let bit = u32::try_from(worker.0.checked_rem(64)?).ok()?;
-        Some((self.0.get(word)?, Mask(1_u64.checked_shl(bit)?)))
+        Some(Bit {
+            word: self.0.get(word)?,
+            mask: Mask(1_u64.checked_shl(bit)?),
+        })
     }
 }
 
@@ -840,7 +875,6 @@ thread_local! {
 /// - hypothesis: L3 — a recorded fork marks each job on the ring of its thread.
 /// - witness: `pool::recording::tests::a_recorded_fork_marks_each_item_with_its_declaration`
 #[cfg(feature = "instrument")]
-#[must_use]
 pub fn current_worker() -> Maybe<WorkerIndex, unseated::Absent>
 {
     match CURRENT.with(Cell::get) {
@@ -866,6 +900,7 @@ pub fn current_worker() -> Maybe<WorkerIndex, unseated::Absent>
 /// - witness: `pool::tests::a_pool_visits_each_item_once_from_a_state_per_busy_worker`
 /// - witness: `pool::tests::a_schedule_whose_jobs_fork_again_ends`
 /// - witness: `pool::tests::nested_spawns_sum_the_leaves_at_every_width`
+#[repr(transparent)]
 pub struct Workers
 {
     /// What the workers share.
@@ -899,6 +934,8 @@ impl Workers
     /// - fails: the host's error when it refuses a thread; the threads that
     ///   started end at once.
     /// - panics: none.
+    /// - executable: none — the threads are the host's, and each starts after
+    ///   the call reads it.
     ///
     /// # Errors
     /// Returns the host's error for the first thread that it refused.
@@ -942,8 +979,8 @@ impl Workers
                     sleeper: Sleeper::of(thread),
                 })
                 .collect(),
-            idle: Idle::full(count),
-            spinning: Idle::empty(count),
+            idle: Idle::full(threads),
+            spinning: Idle::empty(threads),
             spawned: Queue::new(),
             standing: Queue::new(),
             ended: AtomicBool::new(false),
@@ -1061,7 +1098,6 @@ impl Workers
     /// # Adequacy
     /// - hypothesis: L3 — a fork records where each item ran.
     /// - witness: `pool::tests::a_pool_forks_on_its_own_threads`
-    #[must_use]
     pub fn current(&self) -> Maybe<WorkerIndex, unseated::Absent>
     {
         let pool = Arc::as_ptr(&self.shared).addr();
@@ -1082,8 +1118,8 @@ impl Workers
     ///   returns.
     ///
     /// # Safety
-    /// - requires: the job's frame lives until [`Workers::retract`] answers
-    ///   [`Retracted::Back`] for the post, or until the part ends.
+    /// - unsafe invariants: the job's frame lives until [`Workers::retract`]
+    ///   answers [`Retracted::Back`] for the post, or until the part ends.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Workers`].
@@ -1104,7 +1140,9 @@ impl Workers
         let state = SeatState(seat.state.load(Ordering::Relaxed)).next_post();
         // SAFETY: this party holds the worker's idle bit and the seat holds
         // nothing, so the worker reads no part until the store below.
-        unsafe { seat.job.get().write(MaybeUninit::new(job)) };
+        unsafe {
+            seat.job.get().write(MaybeUninit::new(job));
+        }
         seat.state.store(state.0, Ordering::Release);
         seat.sleeper.wake();
         Maybe::Present(Posted { worker, state })
@@ -1156,7 +1194,7 @@ impl Workers
     /// - executable: none — a worker may take the job before the call returns.
     ///
     /// # Safety
-    /// - requires: the job's frame lives until its part ends.
+    /// - unsafe invariants: the job's frame lives until its part ends.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Workers`].
@@ -1220,14 +1258,13 @@ impl Workers
     /// - witness: `pool::tests::a_wait_runs_its_job_here_or_helps_until_it_ends`
     pub fn help(&self) -> Helped
     {
-        match self.shared.spawned.pop() {
-            Some(job) => {
-                // SAFETY: a spawn's frame lives until its part ends.
-                unsafe { job.execute() };
-                Helped::Ran
-            },
-            None => Helped::Idle,
-        }
+        self.shared.spawned.pop().map_or(Helped::Idle, |job| {
+            // SAFETY: a spawn's frame lives until its part ends.
+            unsafe {
+                job.execute();
+            }
+            Helped::Ran
+        })
     }
 
     /// Run the parts of `frame`: `own` first on the calling thread, then each
@@ -1257,7 +1294,7 @@ impl Workers
     pub fn fork<Frame, Own, Out>(
         &self,
         frame: &Frame,
-        parts: NonZeroUsize,
+        Parts(parts): Parts,
         (own, back): (Own, Back),
         spin: Spin,
     ) -> Out

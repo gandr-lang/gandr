@@ -1179,8 +1179,8 @@ struct Stopping<'channel, Job>(&'channel std::sync::mpsc::Sender<Arrival<Job>>);
 
 impl<Job> Drop for Stopping<'_, Job>
 {
-    /// Send the helper's stop. A send fails only once the calling thread no
-    /// longer reads, when no stop is needed.
+    /// Send the helper's stop. A send fails only once the calling thread has
+    /// dropped its receiver, when no stop is needed.
     ///
     /// # Specification
     /// trivial.

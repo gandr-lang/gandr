@@ -378,8 +378,8 @@ where
 /// trivial.
 ///
 /// # Safety
-/// - requires: `frame` came from [`Arc::into_raw`] on an `Arc<Counted>`, and no
-///   other call takes that reference back.
+/// - unsafe invariants: `frame` came from [`Arc::into_raw`] on an
+///   `Arc<Counted>`, and no other call takes that reference back.
 unsafe fn run_spawned<Counted>(
     frame: *const (),
     _part: Part,
@@ -444,7 +444,9 @@ impl<'borrow, 'scope> Spawn<'scope> for Spawning<'borrow, 'scope>
         };
         // SAFETY: the count that `frame` holds keeps the slot alive until its
         // runner ends.
-        unsafe { self.workers.spawn(runner) };
+        unsafe {
+            self.workers.spawn(runner);
+        }
         Pending(slot, PhantomData)
     }
 

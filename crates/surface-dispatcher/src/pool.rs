@@ -122,8 +122,9 @@ use self::spawning::Scope;
 use self::workers::Back;
 use self::workers::JobRef;
 use self::workers::Part;
+use self::workers::Parts;
 use self::workers::Posted;
-pub(crate) use self::workers::Posts;
+use self::workers::Posts;
 use self::workers::Retracted;
 use self::workers::Runs;
 use self::workers::Workers;
@@ -454,7 +455,7 @@ impl Pool
 /// - executable: none — a type-level block; [`Helpers::help`] carries the
 ///   obligations.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Helpers<'pool>
+pub struct Helpers<'pool>
 {
     /// The workers that the helpers run on.
     workers: &'pool Workers,
@@ -505,7 +506,7 @@ impl Helpers<'_>
     {
         self.workers.fork(
             &Helping(work),
-            NonZeroUsize::from(self.count).saturating_add(1),
+            Parts(NonZeroUsize::from(self.count).saturating_add(1)),
             (own, Back::Drop),
             self.spin,
         )
@@ -929,16 +930,16 @@ impl Fork for Pooled<'_>
         };
         let left = self.workers.fork(
             &halves,
-            NonZeroUsize::MIN.saturating_add(1),
+            Parts(NonZeroUsize::MIN.saturating_add(1)),
             (|_posts| left(), Back::Run),
             self.spin,
         );
-        match halves.out.into_inner() {
-            Some(right) => (left, right),
-            // The fork runs the right half once and resumes its panic, so a
-            // fork that returned holds the right half's result.
-            None => std::panic::resume_unwind(Box::new("the right half of a join left no result")),
-        }
+        // The fork runs the right half once and resumes its panic, so a fork
+        // that returned holds the right half's result.
+        halves.out.into_inner().map_or_else(
+            || std::panic::resume_unwind(Box::new("the right half of a join left no result")),
+            |right| (left, right),
+        )
     }
 
     /// Run `body` on the calling thread in a scope over the pool's workers,
@@ -1110,7 +1111,7 @@ fn each_indexed<Item, State, Start, Job>(
     };
     pooled.workers.fork(
         &sliced,
-        shares,
+        Parts(shares),
         (|_posts| sliced.run(Part(0)), Back::Run),
         pooled.spin,
     );
@@ -1170,10 +1171,13 @@ where
             .saturating_mul(self.whole)
             .saturating_add(part.0.min(self.longer));
         let length = self.whole.saturating_add(usize::from(part.0 < self.longer));
+        // SAFETY: share `part` starts at `first`, inside the borrowed items,
+        // since the shares cover the slice.
+        let start = unsafe { self.items.add(first) };
         // SAFETY: share `part` is the slice from `first` of `length` items of
         // the borrowed items. The shares are disjoint and cover the slice, and
         // the fork runs each share once.
-        let slice = unsafe { core::slice::from_raw_parts_mut(self.items.add(first), length) };
+        let slice = unsafe { core::slice::from_raw_parts_mut(start, length) };
         (self.share)(first, slice);
     }
 }
@@ -1225,7 +1229,9 @@ where
         if let Some(right) = right {
             let out = right();
             // SAFETY: as above.
-            unsafe { *self.out.get() = Some(out) };
+            unsafe {
+                *self.out.get() = Some(out);
+            }
         }
     }
 }
@@ -1880,7 +1886,7 @@ where
             // wait for one to return.
             if let Some((position, job)) = ledger.kept.pop_front() {
                 let (position, out) = self
-                    .run(position, job)
+                    .run_job(position, job)
                     .unwrap_or_else(|panic| self.stop(panic));
                 if let Some(item) = items.get_mut(position.0) {
                     commit_one(position, item, out, &mut waiting);
@@ -2055,7 +2061,7 @@ where
         else {
             return Taken::Idle;
         };
-        let returning = self.run(position, job);
+        let returning = self.run_job(position, job);
         let refused = runner.results.push(returning).is_err();
         debug_assert!(
             !refused,
@@ -2145,7 +2151,7 @@ where
                     let runner = claim.runner();
                     if let Ok((position, job)) = runner.jobs.pop() {
                         emptied = None;
-                        let returning = self.run(position, job);
+                        let returning = self.run_job(position, job);
                         let refused = runner.results.push(returning).is_err();
                         debug_assert!(
                             !refused,
@@ -2159,7 +2165,9 @@ where
                         core::hint::spin_loop();
                     }
                     else if emptied.get_or_insert_with(Instant::now).elapsed() < self.park {
-                        std::thread::yield_now();
+                        // The task attends the lane while it polls, so it
+                        // holds its core and never yields it.
+                        core::hint::spin_loop();
                     }
                     else {
                         break;
@@ -2215,7 +2223,7 @@ where
     /// - hypothesis: L3 — as [`Pooled`]'s `schedule`.
     /// - witness: `pool::tests::a_schedule_releases_in_order_and_commits_each_job_as_it_returns`
     /// - witness: `pool::tests::a_scheduled_job_s_panic_resumes_on_the_calling_thread`
-    fn run(
+    fn run_job(
         &self,
         position: ItemIndex,
         job: Job,
