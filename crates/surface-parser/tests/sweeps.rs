@@ -13,7 +13,6 @@
 //! its rows by its multiple of the span, so it costs about its length times
 //! the span rather than its length squared.
 
-use core::error::Error;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -53,6 +52,7 @@ use gandr_workflow_sweep::corpus;
 use crate::common::built;
 use crate::common::label_of;
 use crate::common::text;
+use crate::failure::Failure;
 
 /// The recovery sweep's sample: forty-eight sources, and the rows of every
 /// sixteenth significant token of each, widened past [`SAMPLED_SPAN`].
@@ -179,14 +179,14 @@ struct TokenCount(usize);
 /// Every source's record is still required to exist, and every record to have
 /// a source, under every profile.
 #[test]
-fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
+fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Failure>
 {
     recovers(Portion::Fixed)
 }
 
 /// The change's sources beside the fixed set (#4654).
 #[test]
-fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Box<dyn Error>>
+fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Failure>
 {
     recovers(Portion::Changed)
 }
@@ -201,7 +201,7 @@ fn dropped_tokens_recover_no_worse_than_the_record_changed() -> Result<(), Box<d
 /// # Errors
 /// A source or record that cannot be read or written, or a row that does not
 /// parse.
-fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
+fn recovers(portion: Portion) -> Result<(), Failure>
 {
     use core::fmt::Write as _;
 
@@ -306,7 +306,7 @@ fn recovers(portion: Portion) -> Result<(), Box<dyn Error>>
             let issue = fields.next().ok_or("an owed line names no issue")?;
             Ok((source, drop, owed, issue))
         })
-        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+        .collect::<Result<Vec<_>, Failure>>()?;
     let update = std::env::var_os("UPDATE_EXPECT").is_some();
     let only: Option<HashSet<String>> = std::env::var("GANDR_RECOVERY_SOURCE").ok().map(|names| {
         names
@@ -586,7 +586,7 @@ fn observed_in_parallel<T, J>(
     jobs: &[T],
     path: impl Fn(&T) -> &Path,
     observe: impl Fn(&T) -> Result<J, String> + Sync,
-) -> Result<Vec<J>, Box<dyn Error>>
+) -> Result<Vec<J>, Failure>
 where
     T: Sync,
     J: Send,
@@ -631,7 +631,7 @@ where
     });
     done.sort_unstable_by_key(|&(at, _)| at);
     done.into_iter()
-        .map(|(_, observed)| observed.map_err(Box::<dyn Error>::from))
+        .map(|(_, observed)| observed.map_err(Failure::from))
         .collect()
 }
 
@@ -698,14 +698,14 @@ fn sampled_step(
 /// The whole sweep molds every source at every row, every sixteenth under
 /// `anodized_panic`.
 #[test]
-fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Box<dyn Error>>
+fn table_verdicts_equal_dry_run_verdicts() -> Result<(), Failure>
 {
     tables_agree(&Sweep::asked()?)
 }
 
 /// The change's sources beside the fixed set (#4654).
 #[test]
-fn table_verdicts_equal_dry_run_verdicts_changed() -> Result<(), Box<dyn Error>>
+fn table_verdicts_equal_dry_run_verdicts_changed() -> Result<(), Failure>
 {
     tables_agree(&Sweep::asked()?.changed())
 }
@@ -744,7 +744,7 @@ fn a_closer_that_reaches_its_partner_decides_as_its_dry_run_7032()
 ///
 /// # Errors
 /// A source that cannot be read, or a token offset past `usize`.
-fn tables_agree(sweep: &Sweep) -> Result<(), Box<dyn Error>>
+fn tables_agree(sweep: &Sweep) -> Result<(), Failure>
 {
     /// The strays the molder's cost was measured on, each a one-token edit of
     /// a corpus-shaped definition.

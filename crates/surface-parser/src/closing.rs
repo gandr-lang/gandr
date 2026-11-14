@@ -1133,7 +1133,6 @@ mod tests
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::error::Error;
 
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::Sort;
@@ -1157,6 +1156,7 @@ mod tests
     use crate::Molder;
     use crate::TokenText;
     use crate::candidate_labels;
+    use crate::failure::Failure;
     use crate::label;
 
     /// The open frontier molding `source` leaves nearest the slope head.
@@ -1193,7 +1193,7 @@ mod tests
     }
 
     #[test]
-    fn each_form_closes_at_its_cheapest_material() -> Result<(), Box<dyn Error>>
+    fn each_form_closes_at_its_cheapest_material() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let hole = Expected::Hole;
@@ -1229,7 +1229,7 @@ mod tests
     }
 
     #[test]
-    fn an_unknown_mold_is_unreachable() -> Result<(), Box<dyn Error>>
+    fn an_unknown_mold_is_unreachable() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         assert_eq!(
@@ -1273,7 +1273,7 @@ mod tests
     }
 
     #[test]
-    fn closings_offer_each_path_cheapest_first() -> Result<(), Box<dyn Error>>
+    fn closings_offer_each_path_cheapest_first() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         for (source, leading, limit, want) in [

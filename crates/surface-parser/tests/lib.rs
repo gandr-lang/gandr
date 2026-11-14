@@ -9,6 +9,8 @@ mod common;
 #[cfg(test)]
 mod contracts;
 #[cfg(test)]
+mod failure;
+#[cfg(test)]
 mod grammar;
 #[cfg(test)]
 mod sweeps;

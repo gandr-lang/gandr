@@ -1687,7 +1687,6 @@ mod tests
 {
     use alloc::boxed::Box;
     use alloc::string::String;
-    use core::error::Error;
 
     use gandr_surface_grammar::built_in;
     use gandr_surface_syntax::ByteOffset;
@@ -1696,6 +1695,7 @@ mod tests
 
     use super::Separation;
     use super::juxtaposed;
+    use crate::failure::Failure;
     use crate::oblig::Oblig;
     use crate::parse;
 
@@ -1710,8 +1710,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn record_owes(typed: SourceText<'_>)
-    -> Result<alloc::vec::Vec<(Oblig, Line)>, Box<dyn Error>>
+    fn record_owes(typed: SourceText<'_>) -> Result<alloc::vec::Vec<(Oblig, Line)>, Failure>
     {
         let typed = <&str>::from(typed);
         let source = alloc::format!(
@@ -1726,7 +1725,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn owed(source: SourceText<'_>) -> Result<alloc::vec::Vec<(Oblig, Line)>, Box<dyn Error>>
+    fn owed(source: SourceText<'_>) -> Result<alloc::vec::Vec<(Oblig, Line)>, Failure>
     {
         let pbg = built_in()?;
         let parsed = parse(&pbg, source)?;
@@ -1754,8 +1753,7 @@ mod tests
     }
 
     #[test]
-    fn a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433()
-    -> Result<(), Box<dyn Error>>
+    fn a_separator_left_out_before_a_line_at_its_items_column_is_minted_5433() -> Result<(), Failure>
     {
         assert_eq!(
             record_owes(SourceText::from("  subTm :"))?,
@@ -1771,7 +1769,7 @@ mod tests
     }
 
     #[test]
-    fn a_separator_left_out_between_siblings_is_minted_5433() -> Result<(), Box<dyn Error>>
+    fn a_separator_left_out_between_siblings_is_minted_5433() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         for (source, after) in [
@@ -1808,7 +1806,7 @@ mod tests
     }
 
     #[test]
-    fn an_arrow_left_out_before_a_returner_is_minted_5501() -> Result<(), Box<dyn Error>>
+    fn an_arrow_left_out_before_a_returner_is_minted_5501() -> Result<(), Failure>
     {
         // Row 19 of `fragment/shape-refusal.gandr`'s recovery record: the
         // signature with its `->` dropped.
@@ -1853,7 +1851,7 @@ mod tests
     }
 
     #[test]
-    fn an_arrow_left_out_after_a_parameter_list_is_minted_6323() -> Result<(), Box<dyn Error>>
+    fn an_arrow_left_out_after_a_parameter_list_is_minted_6323() -> Result<(), Failure>
     {
         // Row 217 of `model/sessions/type-quote.gandr`'s recovery record: a
         // declaration's head with the `->` before its result type dropped,
@@ -1889,7 +1887,7 @@ mod tests
     }
 
     #[test]
-    fn an_equals_left_out_before_a_record_body_is_minted_6364() -> Result<(), Box<dyn Error>>
+    fn an_equals_left_out_before_a_record_body_is_minted_6364() -> Result<(), Failure>
     {
         // Row 410 of `model/modules/model-manifest-type.gandr`'s recovery
         // record: the `=` between a head's sort equation and its record body
@@ -1922,8 +1920,7 @@ mod tests
     }
 
     #[test]
-    fn a_bracket_left_open_before_a_call_of_its_type_is_closed_there_6364()
-    -> Result<(), Box<dyn Error>>
+    fn a_bracket_left_open_before_a_call_of_its_type_is_closed_there_6364() -> Result<(), Failure>
     {
         // Row 199 of `model/identity/atom-identity.gandr`'s recovery record:
         // the `]` of `Path[.A = Point.T](Point.origin, y)` dropped, so that
@@ -1958,7 +1955,7 @@ mod tests
     }
 
     #[test]
-    fn an_opener_left_out_after_a_labelled_bracket_is_minted_6364() -> Result<(), Box<dyn Error>>
+    fn an_opener_left_out_after_a_labelled_bracket_is_minted_6364() -> Result<(), Failure>
     {
         // Row 200 of `model/identity/atom-identity.gandr`'s recovery record:
         // the `(` after `Path[.A = Point.T]` dropped, so that the first
@@ -1993,7 +1990,7 @@ mod tests
     }
 
     #[test]
-    fn a_misspelt_keyword_owes_its_word_5433() -> Result<(), Box<dyn Error>>
+    fn a_misspelt_keyword_owes_its_word_5433() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         assert_eq!(
@@ -2054,7 +2051,7 @@ mod tests
     }
 
     #[test]
-    fn a_source_that_owes_nothing_keeps_its_parse_5433() -> Result<(), Box<dyn Error>>
+    fn a_source_that_owes_nothing_keeps_its_parse_5433() -> Result<(), Failure>
     {
         assert_eq!(
             record_owes(SourceText::from("  subTm : (g : con) -> con,"))?,
@@ -2072,7 +2069,7 @@ mod tests
     }
 
     #[test]
-    fn a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433() -> Result<(), Box<dyn Error>>
+    fn a_closer_deleted_inside_a_line_is_not_minted_at_its_end_5433() -> Result<(), Failure>
     {
         let source = include_str!(
             "gap/unformatted/a-closer-deleted-inside-a-line-is-not-minted-at-its-end-5433.gandr"
@@ -2093,7 +2090,7 @@ mod tests
 
     #[test]
     fn a_bracket_left_open_before_a_closer_of_another_family_is_closed_there_6103()
-    -> Result<(), Box<dyn Error>>
+    -> Result<(), Failure>
     {
         let pbg = built_in()?;
         for (source, before, left) in [
@@ -2132,8 +2129,7 @@ mod tests
     }
 
     #[test]
-    fn a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434()
-    -> Result<(), Box<dyn Error>>
+    fn a_line_at_column_zero_inside_nested_blocks_stays_in_a_block_5434() -> Result<(), Failure>
     {
         // `pick` of `corpus/model/specification/niche-realizability.gandr`,
         // its arms in two nested arm blocks.
@@ -2197,12 +2193,11 @@ mod tests
     }
 
     #[test]
-    fn a_head_that_is_no_function_names_what_separates_its_operand_5474()
-    -> Result<(), Box<dyn Error>>
+    fn a_head_that_is_no_function_names_what_separates_its_operand_5474() -> Result<(), Failure>
     {
         // The head is the first byte of the first place `context` is written.
         let repaired =
-            |source: &str, context: &str| -> Result<Option<(Separation, String)>, Box<dyn Error>> {
+            |source: &str, context: &str| -> Result<Option<(Separation, String)>, Failure> {
                 let start = source.find(context).ok_or("the head is written")?;
                 let head = ByteSpan::new(
                     ByteOffset::from(start),
@@ -2269,7 +2264,7 @@ mod tests
     }
 
     #[test]
-    fn a_semicolon_after_a_missing_left_operand_ends_the_member_5502() -> Result<(), Box<dyn Error>>
+    fn a_semicolon_after_a_missing_left_operand_ends_the_member_5502() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         for source in [
@@ -2303,7 +2298,7 @@ mod tests
     }
 
     #[test]
-    fn an_attribute_opener_left_out_is_minted_4398() -> Result<(), Box<dyn Error>>
+    fn an_attribute_opener_left_out_is_minted_4398() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         // Row 4 of `pathological/module-duplicate-member.gandr`'s recovery

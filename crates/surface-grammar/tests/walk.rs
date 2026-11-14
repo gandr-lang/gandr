@@ -5,7 +5,6 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use core::error::Error;
 
 use anodized::spec;
 use gandr_surface_grammar::Comparison;
@@ -43,6 +42,8 @@ use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecSpec;
 use gandr_theory_graphs::SeenKeyVerdict;
 use gandr_theory_graphs::WalkChainLength;
+
+use crate::failure::Failure;
 
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
@@ -320,7 +321,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
 /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
 /// - witness: `tests::walk::comparison_table_coheres_with_precedence`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref pbg, base)| pbg.dag().groups().count() == 1 && pbg.dag().name(base).is_some_and(|name| name == group.0) && pbg.dag().assoc(base) == Some(Assoc::Non) && pbg.rules().len() == 2 && pbg.rules().iter().all(|rule| rule.sort() == Sort::Expression && rule.prec() == base) && pbg.mold_count() == MoldCount(2) && pbg.candidates(TileLabel("+")).len() == 1 && pbg.candidates(TileLabel("x")).len() == 1))]
-fn synthetic_pbg(group: PrecName) -> Result<(Pbg, Prec), Box<dyn Error>>
+fn synthetic_pbg(group: PrecName) -> Result<(Pbg, Prec), Failure>
 {
     let mut spec = PrecSpec::new();
     let base = spec.insert(group.0, Assoc::Non)?;
@@ -362,7 +363,7 @@ fn synthetic_pbg(group: PrecName) -> Result<(Pbg, Prec), Box<dyn Error>>
 /// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
 /// - witness: `tests::walk::same_form_adjacency_is_the_eq_relation`
 #[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.rules().len() == 2 && pbg.mold_count() == MoldCount(3) && ["(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1) && pbg.adjacencies().len() == 1 && pbg.adjacencies().first().is_some_and(|&(left, right)| pbg.mold(left).is_ok_and(|mold| mold.label == "(") && pbg.mold(right).is_ok_and(|mold| mold.label == ")"))))]
-fn paren_pbg() -> Result<Pbg, Box<dyn Error>>
+fn paren_pbg() -> Result<Pbg, Failure>
 {
     let mut spec = PrecSpec::new();
     let base = spec.insert("base", Assoc::Non)?;
@@ -440,7 +441,7 @@ fn group_reps(pbg: &Pbg) -> BTreeMap<(Sort, Prec), MoldId>
 }
 
 #[test]
-fn declared_mold_candidate_inventory_is_exact() -> Result<(), Box<dyn Error>>
+fn declared_mold_candidate_inventory_is_exact() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let counts = pbg.candidate_counts();
@@ -476,7 +477,7 @@ fn declared_mold_candidate_inventory_is_exact() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn pbg_fingerprint_is_stable_and_folds_precdag() -> Result<(), Box<dyn Error>>
+fn pbg_fingerprint_is_stable_and_folds_precdag() -> Result<(), Failure>
 {
     let first = built_in()?;
     let second = built_in()?;
@@ -502,7 +503,7 @@ fn pbg_fingerprint_is_stable_and_folds_precdag() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Box<dyn Error>>
+fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Failure>
 {
     // `None : Maybe(a)` is a generator without a telescope; the declined
     // Haskell-style tail annotates a result only after its field tuple, so no
@@ -539,7 +540,7 @@ fn a_data_member_colon_after_a_constructor_name_reads_one_way() -> Result<(), Bo
 }
 
 #[test]
-fn mold_lookup_checks_bounds() -> Result<(), Box<dyn Error>>
+fn mold_lookup_checks_bounds() -> Result<(), Failure>
 {
     let (pbg, base) = synthetic_pbg(PrecName("base"))?;
     let plus = only_mold(&pbg, TileLabel("+"));
@@ -557,7 +558,7 @@ fn mold_lookup_checks_bounds() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn mold_bounds_follow_context_nullability() -> Result<(), Box<dyn Error>>
+fn mold_bounds_follow_context_nullability() -> Result<(), Failure>
 {
     let (pbg, base) = synthetic_pbg(PrecName("base"))?;
     assert_eq!(
@@ -594,7 +595,7 @@ fn mold_bounds_follow_context_nullability() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn rctx_steps_cross_adjacent_symbols() -> Result<(), Box<dyn Error>>
+fn rctx_steps_cross_adjacent_symbols() -> Result<(), Failure>
 {
     let (pbg, _base) = synthetic_pbg(PrecName("base"))?;
     let plus = pbg.mold(only_mold(&pbg, TileLabel("+")))?;
@@ -626,7 +627,7 @@ fn rctx_steps_cross_adjacent_symbols() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn same_form_adjacency_is_the_eq_relation() -> Result<(), Box<dyn Error>>
+fn same_form_adjacency_is_the_eq_relation() -> Result<(), Failure>
 {
     // A bracket form yields exactly `( ≐ )`, across the hole.
     let paren = paren_pbg()?;
@@ -651,7 +652,7 @@ fn same_form_adjacency_is_the_eq_relation() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
+fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let mut dropped = 0_usize;
@@ -685,7 +686,7 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
 /// number is the one read by the spelling, no two labels share a number, and
 /// each mold's label number is its label's.
 #[test]
-fn a_label_reads_its_menus_by_its_number() -> Result<(), Box<dyn Error>>
+fn a_label_reads_its_menus_by_its_number() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let sorts = [
@@ -735,8 +736,7 @@ fn a_label_reads_its_menus_by_its_number() -> Result<(), Box<dyn Error>>
 /// sort, or of any sort after an item. The walk over every candidate's left
 /// steps is the reading; the grammar answers it off one index per label.
 #[test]
-fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213()
--> Result<(), Box<dyn Error>>
+fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let sorts = [
@@ -780,7 +780,7 @@ fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213()
 }
 
 #[test]
-fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
+fn form_membership_flags_agree_with_their_lists() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     // The grammar is immutable; borrow each full-table view once.
@@ -862,7 +862,7 @@ fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
 /// component a pushed tile is read by, and the lowercase parameter-name molds
 /// of a definition (`identifier`, `type_variable`) fall in one class.
 #[test]
-fn interchangeable_molds_differ_only_in_label() -> Result<(), Box<dyn Error>>
+fn interchangeable_molds_differ_only_in_label() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let adjacencies = pbg.adjacencies();
@@ -925,7 +925,7 @@ fn interchangeable_molds_differ_only_in_label() -> Result<(), Box<dyn Error>>
 /// The first id past the table has no kind and no class, and its word is
 /// empty.
 #[test]
-fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn Error>>
+fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let sorts = [
@@ -1054,7 +1054,7 @@ fn tile_kinds_observations_and_sets_agree_with_the_table() -> Result<(), Box<dyn
 }
 
 #[test]
-fn walk_index_projects_every_mold_once() -> Result<(), Box<dyn Error>>
+fn walk_index_projects_every_mold_once() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let index = walk_index(&pbg)?;
@@ -1084,7 +1084,7 @@ fn walk_index_projects_every_mold_once() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn seen_key_verdict_is_recorded() -> Result<(), Box<dyn Error>>
+fn seen_key_verdict_is_recorded() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     assert_eq!(SeenKeyVerdict::Equivalent, seen_key_verdict(&pbg)?);
@@ -1092,7 +1092,7 @@ fn seen_key_verdict_is_recorded() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn comparison_table_coheres_with_precedence() -> Result<(), Box<dyn Error>>
+fn comparison_table_coheres_with_precedence() -> Result<(), Failure>
 {
     // Annotation-comparison coherence (Moon, Blinn, Porter and Omar 2025,
     // Theorem 3.1), comparable-pair form: `t_L ⋖ t_R ⟺ p_L <_s p_R` and
@@ -1159,7 +1159,7 @@ fn comparison_table_coheres_with_precedence() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn comparison_table_is_conflict_free() -> Result<(), Box<dyn Error>>
+fn comparison_table_is_conflict_free() -> Result<(), Failure>
 {
     // At most one comparison per ordered pair: a `≐` conflict (the
     // dangling-else family) would show as a second, different relation.
@@ -1185,7 +1185,7 @@ fn comparison_table_is_conflict_free() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn walk_lengths_respect_the_chain_cap() -> Result<(), Box<dyn Error>>
+fn walk_lengths_respect_the_chain_cap() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let index = walk_index(&pbg)?;
@@ -1207,7 +1207,7 @@ fn walk_lengths_respect_the_chain_cap() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
-fn unknown_context_preserves_its_identity() -> Result<(), Box<dyn Error>>
+fn unknown_context_preserves_its_identity() -> Result<(), Failure>
 {
     let (pbg, _) = synthetic_pbg(PrecName("base"))?;
     let rctx = RCtxId::from(u32::MAX);

@@ -2,8 +2,6 @@
 //! of the tile that carries it, computed per rule on the condensation of the
 //! rule's tile graph.
 
-use core::error::Error;
-
 use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Regex;
@@ -16,6 +14,8 @@ use gandr_surface_syntax::ClosingClass;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::PrecDag;
 use gandr_theory_graphs::PrecSpec;
+
+use crate::failure::Failure;
 
 /// A grammar of one item rule with form `regex`.
 ///
@@ -33,7 +33,7 @@ use gandr_theory_graphs::PrecSpec;
 /// - witness: `tests::closing_class::closing_class_is_form_level`
 /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
 #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some(), |pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item && pbg.dag().name(rule.prec()).is_some_and(|name| name == "atom"))))]
-fn one_rule(regex: Regex) -> Result<Pbg, Box<dyn Error>>
+fn one_rule(regex: Regex) -> Result<Pbg, Failure>
 {
     let mut spec = PrecSpec::new();
     let atom = spec.insert("atom", Assoc::Non)?;
@@ -56,7 +56,7 @@ fn one_rule(regex: Regex) -> Result<Pbg, Box<dyn Error>>
 /// T { M } with N`, and a renaming ends before the rest of its import or its
 /// offer, so neither closes anything.
 #[test]
-fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
+fn closing_class_is_form_level() -> Result<(), Failure>
 {
     let pbg = built_in()?;
     let braces = pbg.candidates(TileLabel("{"));
@@ -156,7 +156,7 @@ fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
 /// later query from `b` reads the incomplete entry. Every tile of the
 /// bracketed repeat must derive the bracket's family.
 #[test]
-fn closing_class_repeat_with_exit_shares_its_component_answer() -> Result<(), Box<dyn Error>>
+fn closing_class_repeat_with_exit_shares_its_component_answer() -> Result<(), Failure>
 {
     let pbg = one_rule(Regex::seq([
         Regex::tile(TileLabel("(")),

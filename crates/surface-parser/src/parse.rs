@@ -1196,7 +1196,6 @@ mod tests
     use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
-    use core::error::Error;
     use core::fmt;
     use std::path::Path;
     use std::path::PathBuf;
@@ -1220,6 +1219,7 @@ mod tests
     use crate::ParkedUnit;
     use crate::SeamBreak;
     use crate::UnitSeam;
+    use crate::failure::Failure;
     use crate::label::label;
     use crate::testing::reconstruct;
     use crate::testing::root_digest;
@@ -1538,7 +1538,7 @@ mod tests
     }
 
     #[test]
-    fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
+    fn corpus_parses_totally() -> Result<(), Failure>
     {
         // Every corpus source parses totally — no panic, a well-formed tree
         // recording the grammar fingerprint, and its leaves reconstruct the
@@ -1635,7 +1635,7 @@ mod tests
     }
 
     #[test]
-    fn parse_is_lossless_and_hash_stable() -> Result<(), Box<dyn Error>>
+    fn parse_is_lossless_and_hash_stable() -> Result<(), Failure>
     {
         // Losslessness: the committed tree's tile and layout leaves
         // reconstruct the exact source, including interleaved comments.
@@ -1655,7 +1655,7 @@ mod tests
     }
 
     #[test]
-    fn form_split_parses_as_the_whole_source() -> Result<(), Box<dyn Error>>
+    fn form_split_parses_as_the_whole_source() -> Result<(), Failure>
     {
         // Every corpus source, molded form by form and joined, parses exactly
         // as it parses whole: the same tree and the same obligations, whether
@@ -1686,7 +1686,7 @@ mod tests
     }
 
     #[test]
-    fn a_source_splits_before_each_declaration_head() -> Result<(), Box<dyn Error>>
+    fn a_source_splits_before_each_declaration_head() -> Result<(), Failure>
     {
         // Five declarations: a plain one, an attributed one, a module whose
         // members sit inside its braces, a data declaration followed by an
@@ -1727,7 +1727,7 @@ mod tests
     }
 
     #[test]
-    fn a_pub_declaration_starts_its_run_4667() -> Result<(), Box<dyn Error>>
+    fn a_pub_declaration_starts_its_run_4667() -> Result<(), Failure>
     {
         // A floor source: an import, then `pub` declarations laid out by
         // column, documented, attributed and terminated. Each top-level `pub`
@@ -1759,7 +1759,7 @@ mod tests
     }
 
     #[test]
-    fn a_parked_unit_joins_as_the_unit_it_parked() -> Result<(), Box<dyn Error>>
+    fn a_parked_unit_joins_as_the_unit_it_parked() -> Result<(), Failure>
     {
         // Every corpus source's units, parked and taken up again, meet the
         // seams the fresh units met and join into the whole parse.
@@ -1828,7 +1828,7 @@ mod tests
         molder: &mut Molder<'_>,
         after: &FormSplit<'source>,
         parked: &BTreeMap<FormIdentity, ParkedUnit>,
-    ) -> Result<(ParseResult<'source>, Reused), Box<dyn Error>>
+    ) -> Result<(ParseResult<'source>, Reused), Failure>
     {
         let pbg = molder.pbg();
         let mut units = Vec::with_capacity(after.runs().len());
@@ -1877,7 +1877,7 @@ mod tests
     }
 
     #[test]
-    fn an_equal_identity_molds_an_equal_unit() -> Result<(), Box<dyn Error>>
+    fn an_equal_identity_molds_an_equal_unit() -> Result<(), Failure>
     {
         // Each corpus source of three forms or more, a declaration inserted
         // at its middle boundary: every run of the edited source whose
@@ -1975,7 +1975,7 @@ mod tests
         molder: &mut Molder<'_>,
         before: &FormSplit<'first>,
         after: &FormSplit<'second>,
-    ) -> Result<(ParseResult<'first>, ParseResult<'second>, Kept), Box<dyn Error>>
+    ) -> Result<(ParseResult<'first>, ParseResult<'second>, Kept), Failure>
     {
         let units: Vec<FormUnit<'_>> = before
             .runs()
@@ -2048,7 +2048,7 @@ mod tests
     }
 
     #[test]
-    fn a_laid_join_parses_as_the_whole_source() -> Result<(), Box<dyn Error>>
+    fn a_laid_join_parses_as_the_whole_source() -> Result<(), Failure>
     {
         // Every corpus source, joined from fresh units and joined again from
         // the regions that join laid, parses whole both times; so does each
@@ -2107,7 +2107,7 @@ mod tests
     }
 
     #[test]
-    fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Box<dyn Error>>
+    fn declaration_prefix_round_trips_and_snapshots_model_state() -> Result<(), Failure>
     {
         let pbg = built_in()?;
         let src = include_str!(
