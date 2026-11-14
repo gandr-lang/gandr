@@ -2577,7 +2577,7 @@ mod tests
         let pair = |first: u64| Pair(leaf(first, 0), leaf(first, 1));
         let quad = |first: u64| Pair(pair(first), pair(first.checked_add(2).unwrap()));
         let octet = |first: u64| Pair(quad(first), quad(first.checked_add(4).unwrap()));
-        for threads in [1_usize, 2, 4] {
+        for threads in [1_usize, 2, 4, 16, 64] {
             let pool = Pool::new(Width::Threads(Threads::from(
                 NonZeroUsize::new(threads).unwrap(),
             )));
@@ -3002,73 +3002,75 @@ mod tests
         }
     }
 
+    /// Two standing jobs submitted at once on a pool of two threads: one wake
+    /// may reach the first worker twice, and that worker wakes the second for
+    /// the job it leaves queued. So each job finds a worker though both wait.
+    #[test]
+    fn two_standing_jobs_at_once_each_find_a_worker()
+    {
+        let patience = Duration::from_secs(5);
+        for _round in 0 .. 50_usize {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::MIN.saturating_add(1),
+            )));
+            let Maybe::Present(workers) = pool.standing()
+            else {
+                panic!("a pool of two threads starts its workers");
+            };
+            let (started, began) = std::sync::mpsc::channel();
+            let mut gates = Vec::new();
+            for _job in 0 .. 2_usize {
+                let (gate, opened) = std::sync::mpsc::channel::<()>();
+                let started = started.clone();
+                workers.stand(Box::new(move || {
+                    let _sent = started.send(());
+                    let _opened = opened.recv();
+                }));
+                gates.push(gate);
+            }
+            for _job in 0 .. 2_usize {
+                assert!(
+                    began.recv_timeout(patience).is_ok(),
+                    "each standing job starts while the other waits"
+                );
+            }
+            drop(gates);
+        }
+    }
+
     /// A scheduled job that schedules again on the same pool: the tasks of
     /// the inner schedule wait behind the tasks that the outer schedule
     /// holds, so the inner calling thread runs their jobs, and both schedules
-    /// end.
+    /// end at every width.
     #[test]
     fn a_schedule_inside_a_scheduled_job_ends()
     {
-        let pool = Pool::new(Width::Threads(Threads::from(
-            NonZeroUsize::new(4_usize).unwrap(),
-        )));
-        let Ok(Forked::Pooled(fork)) = pool.forked()
-        else {
-            panic!("a pool of four threads starts");
-        };
         let release = |position: gandr_core_fork::ItemIndex, _item: &mut usize| {
             Releasing::<usize, usize>::Run(usize::from(position))
         };
-        let mut outer = [0_usize; 8];
-        pool.schedule(
-            &mut outer,
-            &Dependences::default(),
-            release,
-            |job| {
-                let mut inner = [0_usize; 16];
-                fork.schedule(
-                    &mut inner,
-                    &Dependences::default(),
-                    release,
-                    |inner_job| inner_job,
-                    |_position, item, out| *item = out,
-                );
-                inner.iter().sum::<usize>().checked_add(job).unwrap()
-            },
-            |_position, item, out| *item = out,
-        );
         let inner = (0 .. 16_usize).sum::<usize>();
         let expected: [usize; 8] = core::array::from_fn(|job| inner.checked_add(job).unwrap());
-        assert_eq!(
-            outer, expected,
-            "each outer job runs its inner schedule to its end"
-        );
-    }
-
-    /// A scheduled job that forks again on the same pool: no task parks on its
-    /// worker, so the share of the inner fork finds a worker, and every round
-    /// ends.
-    #[test]
-    fn a_schedule_whose_jobs_fork_again_ends()
-    {
-        let pool = Pool::new(Width::Threads(Threads::from(
-            NonZeroUsize::new(4_usize).unwrap(),
-        )));
-        let expected: [usize; 16] = core::array::from_fn(|job| job.checked_add(8).unwrap());
-        for _round in 0 .. 200_usize {
-            let mut outer = [0_usize; 16];
+        for threads in [2_usize, 4, 16, 64] {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::new(threads).unwrap(),
+            )));
+            let Ok(Forked::Pooled(fork)) = pool.forked()
+            else {
+                panic!("a pool of {threads} threads starts");
+            };
+            let mut outer = [0_usize; 8];
             pool.schedule(
                 &mut outer,
                 &Dependences::default(),
-                |position: gandr_core_fork::ItemIndex, _item: &mut usize| {
-                    Releasing::<usize, usize>::Run(usize::from(position))
-                },
+                release,
                 |job| {
-                    let mut inner = [0_usize; 8];
-                    pool.each(
+                    let mut inner = [0_usize; 16];
+                    fork.schedule(
                         &mut inner,
-                        || (),
-                        |_state: &mut (), item: &mut usize| *item = 1,
+                        &Dependences::default(),
+                        release,
+                        |inner_job| inner_job,
+                        |_position, item, out| *item = out,
                     );
                     inner.iter().sum::<usize>().checked_add(job).unwrap()
                 },
@@ -3076,8 +3078,46 @@ mod tests
             );
             assert_eq!(
                 outer, expected,
-                "each job's inner fork visits each of its items once"
+                "each outer job runs its inner schedule to its end at {threads} threads"
             );
+        }
+    }
+
+    /// A scheduled job that forks again on the same pool: no task parks on its
+    /// worker, so the share of the inner fork finds a worker, and every round
+    /// ends at every width.
+    #[test]
+    fn a_schedule_whose_jobs_fork_again_ends()
+    {
+        let expected: [usize; 16] = core::array::from_fn(|job| job.checked_add(8).unwrap());
+        for threads in [2_usize, 4, 16, 64] {
+            let pool = Pool::new(Width::Threads(Threads::from(
+                NonZeroUsize::new(threads).unwrap(),
+            )));
+            for _round in 0 .. 200_usize {
+                let mut outer = [0_usize; 16];
+                pool.schedule(
+                    &mut outer,
+                    &Dependences::default(),
+                    |position: gandr_core_fork::ItemIndex, _item: &mut usize| {
+                        Releasing::<usize, usize>::Run(usize::from(position))
+                    },
+                    |job| {
+                        let mut inner = [0_usize; 8];
+                        pool.each(
+                            &mut inner,
+                            || (),
+                            |_state: &mut (), item: &mut usize| *item = 1,
+                        );
+                        inner.iter().sum::<usize>().checked_add(job).unwrap()
+                    },
+                    |_position, item, out| *item = out,
+                );
+                assert_eq!(
+                    outer, expected,
+                    "each job's inner fork visits each of its items once at {threads} threads"
+                );
+            }
         }
     }
 

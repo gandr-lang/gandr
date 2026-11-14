@@ -855,6 +855,19 @@ impl Shared
             _ => Holding::Posted,
         }
     }
+
+    /// Wake an idle worker, read after the caller's last write.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rouse(&self)
+    {
+        if let Maybe::Present(worker) = self.idle.any()
+            && let Some(seat) = self.seats.get(worker.0)
+        {
+            seat.sleeper.wake();
+        }
+    }
 }
 
 thread_local! {
@@ -1210,7 +1223,7 @@ impl Workers
             return;
         }
         self.shared.spawned.push(job);
-        self.rouse();
+        self.shared.rouse();
     }
 
     /// Queue `job` as standing work, which only a worker runs.
@@ -1229,20 +1242,7 @@ impl Workers
     )
     {
         self.shared.standing.push(job);
-        self.rouse();
-    }
-
-    /// Wake an idle worker, read after the caller's last write.
-    ///
-    /// # Specification
-    /// trivial.
-    fn rouse(&self)
-    {
-        if let Maybe::Present(worker) = self.shared.idle.any()
-            && let Some(seat) = self.shared.seats.get(worker.0)
-        {
-            seat.sleeper.wake();
-        }
+        self.shared.rouse();
     }
 
     /// Run one queued spawn on the calling thread.
@@ -1551,13 +1551,25 @@ fn serve(
             // Hold the worker's own bit while it runs a queued job, so no
             // party posts to it meanwhile; a lost bit means a post came.
             if shared.idle.claim(worker) == Claimed::Took {
-                if let Some(job) = shared.spawned.pop() {
+                let spawn = shared.spawned.pop();
+                let standing = match spawn {
+                    Some(_) => None,
+                    None => shared.standing.pop(),
+                };
+                // One wake may stand for more than one queued job, so wake
+                // another idle worker for the rest. This worker's claimed bit
+                // keeps it out of that read.
+                fence(Ordering::SeqCst);
+                if shared.queued() == Holding::Posted {
+                    shared.rouse();
+                }
+                if let Some(job) = spawn {
                     // SAFETY: a spawn's frame lives until its part ends.
                     let unwound =
                         std::panic::catch_unwind(AssertUnwindSafe(|| unsafe { job.execute() }));
                     drop(unwound);
                 }
-                else if let Some(job) = shared.standing.pop() {
+                else if let Some(job) = standing {
                     drop(std::panic::catch_unwind(AssertUnwindSafe(job)));
                 }
                 shared.idle.release(worker);
