@@ -1933,6 +1933,29 @@ const MAX_CODE_OBLIGATIONS: TableEntryCount = gandr_kernel_term::MAX_TABLE_ENTRI
 #[cfg(feature = "counts")]
 static POPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// How many frames the checks of the process popped, on both machines.
+#[cfg(feature = "counts")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct PoppedFrames(u64);
+
+#[cfg(feature = "counts")]
+impl core::fmt::Display for PoppedFrames
+{
+    /// The count, in decimal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// How many frames the checks of the process popped so far, on both machines.
 /// A check that passes pops each frame that it pushes once, so for such checks
 /// the count is the frames that they push.
@@ -1942,9 +1965,9 @@ static POPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::ne
 #[cfg(feature = "counts")]
 #[inline]
 #[must_use]
-pub fn popped() -> u64
+pub fn popped() -> PoppedFrames
 {
-    POPPED.load(Ordering::Relaxed)
+    PoppedFrames(POPPED.load(Ordering::Relaxed))
 }
 
 /// A continuation of the type-formation walk.

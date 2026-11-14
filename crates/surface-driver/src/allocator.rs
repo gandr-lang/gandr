@@ -499,6 +499,30 @@ pub mod counting
     #[cfg(feature = "counts")]
     static ALLOCATIONS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+    /// How many allocations every thread of the process made, the workers of
+    /// the pool among them.
+    #[cfg(feature = "counts")]
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    #[repr(transparent)]
+    pub struct ProcessAllocations(u64);
+
+    #[cfg(feature = "counts")]
+    impl core::fmt::Display for ProcessAllocations
+    {
+        /// The count, in decimal.
+        ///
+        /// # Specification
+        /// trivial.
+        #[inline]
+        fn fmt(
+            &self,
+            f: &mut core::fmt::Formatter<'_>,
+        ) -> core::fmt::Result
+        {
+            write!(f, "{}", self.0)
+        }
+    }
+
     /// How many allocations every thread of the process made so far: each
     /// allocation, cleared allocation and resize that [`Counting`] served.
     ///
@@ -507,9 +531,9 @@ pub mod counting
     #[cfg(feature = "counts")]
     #[inline]
     #[must_use]
-    pub fn allocations() -> u64
+    pub fn allocations() -> ProcessAllocations
     {
-        ALLOCATIONS.load(core::sync::atomic::Ordering::Relaxed)
+        ProcessAllocations(ALLOCATIONS.load(core::sync::atomic::Ordering::Relaxed))
     }
 
     /// Count one allocation on the calling thread, and under `counts` in the
