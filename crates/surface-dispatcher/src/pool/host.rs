@@ -647,7 +647,7 @@ impl Host
             let seen = Wakes(counter.wakes.load(Ordering::Acquire));
             counter.waiters.fetch_add(1, Ordering::SeqCst);
             if counter.word.load(Ordering::SeqCst) & FREE == 0 {
-                wait(&counter.wakes, seen, WAIT);
+                wait(counter, seen, WAIT);
             }
             counter.waiters.fetch_sub(1, Ordering::SeqCst);
             if since.elapsed() >= STARVED {
@@ -831,7 +831,7 @@ fn rouse(counter: &Counter)
 {
     if counter.waiters.load(Ordering::SeqCst) > 0 {
         counter.wakes.fetch_add(1, Ordering::Release);
-        wake(&counter.wakes);
+        wake(counter);
     }
 }
 
@@ -896,13 +896,14 @@ fn audit(segment: &Segment)
     }
 }
 
-/// Wait on `word` while it holds `seen`, for at most `timeout`.
+/// Wait on the count of wakes of `counter` while it holds `seen`, for at most
+/// `timeout`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "linux")]
 fn wait(
-    word: &AtomicU32,
+    counter: &Counter,
     seen: Wakes,
     timeout: Duration,
 )
@@ -913,40 +914,42 @@ fn wait(
     };
     // A wait that a signal or a changed word ends reads the counter again.
     let _ended = rustix::thread::futex::wait(
-        word,
+        &counter.wakes,
         rustix::thread::futex::Flags::empty(),
         seen.0,
         Some(&timeout),
     );
 }
 
-/// Wake one waiter on `word`.
+/// Wake one waiter on the count of wakes of `counter`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "linux")]
-fn wake(word: &AtomicU32)
+fn wake(counter: &Counter)
 {
-    let _woken = rustix::thread::futex::wake(word, rustix::thread::futex::Flags::empty(), 1);
+    let _woken =
+        rustix::thread::futex::wake(&counter.wakes, rustix::thread::futex::Flags::empty(), 1);
 }
 
-/// Wait on `word` while it holds `seen`, for at most `timeout`.
+/// Wait on the count of wakes of `counter` while it holds `seen`, for at most
+/// `timeout`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "macos")]
 fn wait(
-    word: &AtomicU32,
+    counter: &Counter,
     seen: Wakes,
     timeout: Duration,
 )
 {
     let timeout = u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX);
-    // SAFETY: `word` is an aligned atomic of four bytes in a shared map that
-    // outlives the call, and the call reads it and writes nothing.
+    // SAFETY: the count of wakes is an aligned atomic of four bytes in a shared
+    // map that outlives the call, and the call reads it and writes nothing.
     let _ended = unsafe {
         libc::os_sync_wait_on_address_with_timeout(
-            word.as_ptr().cast(),
+            counter.wakes.as_ptr().cast(),
             u64::from(seen.0),
             size_of::<AtomicU32>(),
             libc::OS_SYNC_WAIT_ON_ADDRESS_SHARED,
@@ -956,18 +959,18 @@ fn wait(
     };
 }
 
-/// Wake one waiter on `word`.
+/// Wake one waiter on the count of wakes of `counter`.
 ///
 /// # Specification
 /// trivial.
 #[cfg(target_os = "macos")]
-fn wake(word: &AtomicU32)
+fn wake(counter: &Counter)
 {
-    // SAFETY: `word` is an aligned atomic of four bytes in a shared map that
-    // outlives the call, and the call writes nothing.
+    // SAFETY: the count of wakes is an aligned atomic of four bytes in a shared
+    // map that outlives the call, and the call writes nothing.
     let _woken = unsafe {
         libc::os_sync_wake_by_address_any(
-            word.as_ptr().cast(),
+            counter.wakes.as_ptr().cast(),
             size_of::<AtomicU32>(),
             libc::OS_SYNC_WAKE_BY_ADDRESS_SHARED,
         )
@@ -981,7 +984,7 @@ fn wake(word: &AtomicU32)
 /// trivial.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn wait(
-    _word: &AtomicU32,
+    _counter: &Counter,
     _seen: Wakes,
     timeout: Duration,
 )
@@ -995,7 +998,7 @@ fn wait(
 /// # Specification
 /// trivial.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn wake(_word: &AtomicU32)
+fn wake(_counter: &Counter)
 {
 }
 
