@@ -369,8 +369,8 @@ mod tests
     use gandr_storage_store::Store;
     use quenchant_shape::shape::Maybe;
 
-    use super::RECEIPT_ROOTS;
     use super::StoredVerdicts;
+    use crate::fixture::Damage;
 
     /// The receipt `signer` gives over a cold admission of two unit
     /// definitions.
@@ -488,23 +488,16 @@ mod tests
         let (opened, _register) = Store::open(&directory).expect("the store reopens");
         let roots = opened.roots();
         let name = roots.names().next().expect("the receipt is named");
-        let written = directory.join("chunks").join(
-            name.as_ref()
-                .strip_prefix(RECEIPT_ROOTS)
-                .expect("a receipt's root"),
-        );
-        let bytes = std::fs::read(&written).expect("the receipt's chunk reads");
-        let truncated = bytes.get(.. bytes.len() - 1).expect("in range").to_vec();
-        let mut changed = bytes;
-        if let Some(last) = changed.last_mut() {
-            *last ^= 0x01_u8;
-        }
+        let Maybe::Present(pointer) = roots.root(name)
+        else {
+            panic!("the receipt's root names its pointer");
+        };
         let held = [Arc::new(receipt.clone())];
-        for (damaged, what) in [
-            (truncated, "a truncated chunk"),
-            (changed, "a changed chunk byte"),
+        for (damage, what) in [
+            (Damage::Truncate, "a truncated chunk"),
+            (Damage::Flip, "a changed chunk byte"),
         ] {
-            std::fs::write(&written, &damaged).expect("the damage is written");
+            crate::fixture::damage(&directory, pointer, damage);
             let (reopened, mut register) =
                 StoredVerdicts::open(&directory).expect("the store reopens");
             assert_eq!(usize::from(reopened.damaged()), 1, "{what}");

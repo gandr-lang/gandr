@@ -23,7 +23,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use arc_swap::ArcSwap;
-use gandr_core_publish::Unpublished;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
 use gandr_storage_chunker::TypedChunkerParams;
@@ -305,6 +304,12 @@ pub enum StoreError
     /// The register that owns the roots is gone, so a naming reaches no
     /// owner.
     Unowned,
+    /// An object of 4 GiB or more, longer than a record's length can state.
+    Oversized
+    {
+        /// The object's bytes.
+        bytes: ImageBytes,
+    },
     /// An entry of a built output, or the tree it names, is refused.
     #[cfg(unix)]
     Entry(crate::entries::EntryFault),
@@ -324,23 +329,6 @@ impl StoreError
         Self::Io {
             path: path.to_path_buf(),
             kind: error.kind(),
-        }
-    }
-}
-
-impl From<Unpublished> for StoreError
-{
-    /// A file the store could not publish: the file and what the file system
-    /// said.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(fault: Unpublished) -> Self
-    {
-        Self::Io {
-            path: fault.path,
-            kind: fault.kind,
         }
     }
 }
@@ -371,6 +359,11 @@ impl core::fmt::Display for StoreError
                 f,
                 "the store's register is gone: keep it open while a namer names roots"
             ),
+            Self::Oversized { bytes } => write!(
+                f,
+                "the store holds no object of {} bytes: cut it into chunks under 4 GiB",
+                u64::from(bytes)
+            ),
             #[cfg(unix)]
             Self::Entry(ref fault) => write!(f, "the store refuses an entry: {fault}"),
         }
@@ -389,8 +382,8 @@ pub struct Store
 {
     /// The directory the store is rooted at.
     root: PathBuf,
-    /// The value plane.
-    chunks: ChunkDirectory,
+    /// The value plane, which the register shares.
+    chunks: Arc<ChunkDirectory>,
     /// The record plane, which the register shares.
     nodes: Arc<NodeDirectory>,
     /// The snapshot of the roots that the register last published.
@@ -440,7 +433,7 @@ impl Store
     #[inline]
     pub fn open(root: &Path) -> Result<(Self, Register), StoreError>
     {
-        let chunks = ChunkDirectory::open(root.join(CHUNKS))?;
+        let chunks = Arc::new(ChunkDirectory::open(root.join(CHUNKS))?);
         let nodes = Arc::new(NodeDirectory::open(root.join(NODES))?);
         let lock = locked(root, Hold::Shared)?;
         let kept = Kept::read(root, &nodes)?;
@@ -448,7 +441,7 @@ impl Store
         let roots = Arc::new(ArcSwap::from_pointee(kept.roots().clone()));
         let register = Register::new(
             root.to_path_buf(),
-            Arc::clone(&nodes),
+            (Arc::clone(&chunks), Arc::clone(&nodes)),
             kept,
             Arc::clone(&roots),
         );

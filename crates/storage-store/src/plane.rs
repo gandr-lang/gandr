@@ -1,66 +1,77 @@
-//! The two planes on disk: a directory of objects each, one file per object,
-//! named by its identity in lowercase hexadecimal.
+//! The two planes on disk: a directory of segments each, every segment a log
+//! of records that one writer appends to.
 //!
-//! A plane lists its directory when the store opens and never lists it again,
-//! so a store shares its planes between threads with no lock. Each object
-//! listed holds its bytes under a [`OnceLock`]: the first load in the process
-//! reads its file, and each later load borrows those bytes, as both plane
-//! traits ask.
+//! A plane wants three things at once. Many threads put objects at the same
+//! time. An object must be durable before a root names it. A reader
+//! must find each object by its identity. A file for each object gives the
+//! third, but each put then makes a directory entry and a rename, and the
+//! kernel orders every such entry of one directory behind one lock. So the
+//! plane makes no entry for a put. Each thread appends its puts to a segment
+//! of its own shard, and the plane keeps an index from each identity to the
+//! place of its record.
 //!
-//! Each call that reads or writes a plane holds a [`Batch`] over it: the
-//! section of the plane that the call owns. A load that the listing does not
-//! answer reads the object's file by its name, once in the call, and the batch
-//! keeps the bytes for the call's life. An insertion goes into the batch, and
-//! [`Batch::publish`] writes each object that the batch took when the call
-//! ends: neither plane trait can name a file system's failure, and the facade
-//! can. A publication writes a temporary file in the shard of the calling
-//! thread and renames it onto its name in the plane, so a reader never meets
-//! half an object. Two batches that take one object write the same bytes, so
-//! the rename publishes one object. Every load verifies what it read, so bytes
-//! changed on disk are refused by the plane's own fault. A listed object that
-//! a load refused stands refused, and the next batch that takes its name
-//! writes the object over the file.
+//! # Items
+//!
+//! A record is a header and the object's bytes. The header holds a magic
+//! number, the length of the bytes, the identity, the record's own place
+//! (its segment and its offset) and a checksum over the header. A reader
+//! checks the header against the place it read from before it trusts the
+//! length, so a read of the wrong place is refused before the digest is
+//! checked. Each load then verifies the bytes by the identity, as both plane
+//! traits ask, so bytes changed on disk are refused by the plane's own fault.
+//!
+//! [`Batch::publish`] appends the records of one call in one positioned write
+//! and marks the segment. A put syncs nothing. Before a naming, the register
+//! syncs each marked segment once, so one sync covers every put since the
+//! last naming. A write that
+//! fails leaves the shard's end where it was, and the next batch writes over
+//! the torn tail. The open of a plane reads every segment's headers in order
+//! of the segments' identities, and stops each segment at its first header
+//! that does not check. A later record of one identity takes the index from
+//! an earlier one.
 //!
 //! # Boundaries
 //!
-//! An object that a batch publishes after the store opened is not listed, so
-//! each call that loads it reads its file again. A batch takes an unlisted
-//! object only when no file stands under its name: one existence probe by its
-//! digest. So a file that changes on disk after the store opened stays as it
-//! is until a store that lists it refuses it.
-//!
 //! A thread takes its shard by its ordinal in the process modulo 64, so two
-//! threads past that width share a shard, and two processes over one store
-//! share each shard. Each temporary takes its name by exclusive creation, so a
-//! shared shard costs contention and never a collision. A crash between a
-//! temporary's creation and its rename leaves the temporary in its shard, and
-//! no listing reads it.
+//! threads past that width share a shard and take turns at its lock. Each
+//! writer creates its segments exclusively, so two processes over one store
+//! never append to one segment. A load of an identity that the index does
+//! not hold reads the tails of the other writers' segments first, so an
+//! object that another process put after this one opened is found. Two puts
+//! of one object that race both append, and the index keeps the later: the
+//! other record stays in its segment, dead.
+//!
+//! The open reads the header of every record, so its cost grows with the
+//! store. A root that carries the index removes that cost.
 //!
 //! # References
 //!
-//! - `vault:01a178aa-4bbc-7842-9a60-d11551c41e06` — background: § The real leak
-//!   was in the filesystem — an object's temporary has one owner, the guard of
-//!   the writer it publishes through.
+//! - `vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160` — anchor: the IO layer (§
+//!   io-layer-extents): a shard is a log of its own, and a put appends with no
+//!   directory entry.
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the store's single
-//!   writer plan (§ Refinements) — the shard is per producer, the batch that a
-//!   call holds given an owner, and the union of shards is renames by digest,
-//!   one an object, before any reader that the call orders after it.
+//!   writer plan (§ Refinements): the shard is per producer, and the union of
+//!   the shards is the index over their segments.
+//! - `vault:01a1d90b-b64a-7248-8f6e-e792b6e8cb9f` — background: the IO layer's
+//!   probe (§ the grid): a segment for each shard, whose sync covers many puts,
+//!   is the fastest blocking form on each device measured.
 
 use alloc::collections::BTreeMap;
-use core::cell::Cell;
-use core::cell::OnceCell;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
+use std::fs::File;
 use std::io;
-use std::path::Path;
+use std::io::Read as _;
+use std::io::Seek as _;
+use std::os::unix::fs::FileExt as _;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::PoisonError;
 
 use anodized::spec;
-use gandr_core_publish::Contents;
-use gandr_core_publish::Step;
-use gandr_core_publish::publish_staged;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::EncodedNode;
 use gandr_storage_records::NodeHash;
@@ -79,21 +90,36 @@ use quenchant_shape::shape::Maybe;
 use crate::store::ImageBytes;
 use crate::store::StoreError;
 
-/// The most tables of reads by name that one call holds. Table `n` holds
-/// [`FIRST_SLOTS`] times two to the `n` slots, so the last table holds far
-/// more objects than a plane does.
-const TABLES: usize = 40_usize;
-
-/// The slots of a call's first table of reads by name.
-const FIRST_SLOTS: usize = 16_usize;
-
-/// How many shards the producers of one store stage their objects in. A
-/// thread takes the shard of its ordinal modulo this, so the workers of a pool
-/// up to this width each own a shard.
+/// How many shards the producers of one store append to. A thread takes the
+/// shard of its ordinal modulo this, so the workers of a pool up to this width
+/// each own a shard.
 const SHARDS: usize = 64_usize;
 
-/// The directory beside a store's planes that holds its shards.
-const SHARD_ROOT: &str = "shards";
+/// The size past which a shard opens a new segment for its next batch.
+const SEGMENT_LIMIT: u64 = 64_u64 << 20_u32;
+
+/// How many identities a writer tries for a new segment before it gives up.
+const SEGMENT_ATTEMPTS: usize = 64_usize;
+
+/// The start of each segment's file name. The segment's identity follows as
+/// 16 lowercase hexadecimal digits.
+const SEGMENT_PREFIX: &str = "segment-";
+
+/// The bytes of a record's header.
+const HEADER: usize = 64_usize;
+
+/// The bytes of a header that its checksum covers: all but the checksum.
+const CHECKED: usize = 56_usize;
+
+/// The bytes a record's header opens with.
+const MAGIC: [u8; 4] = *b"gsg1";
+
+/// The domain a header's checksum is taken in, so it meets no other digest
+/// of the store.
+const HEADER_DOMAIN: &[u8] = b"gandr storage-store segment record header\0";
+
+/// The bytes the open reads ahead of each header.
+const SCAN_BUFFER: usize = 64_usize << 10_u32;
 
 /// The ordinal that the next thread to publish in the process takes.
 static ORDINALS: AtomicUsize = AtomicUsize::new(0_usize);
@@ -106,7 +132,8 @@ std::thread_local! {
 
 /// The identity a plane names its objects by: 32 bytes, spelled as 64
 /// lowercase hexadecimal digits.
-pub trait ObjectName: Copy + Ord + core::fmt::Display + From<[u8; 32]> + AsRef<[u8]>
+pub trait ObjectName:
+    Copy + Ord + core::hash::Hash + core::fmt::Display + From<[u8; 32]> + AsRef<[u8]> + Send + Sync
 {
 }
 
@@ -124,10 +151,10 @@ quenchant_shape::reason_enum! {
         /// The plane's bytes for an identity are missing.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The plane lists no object of that identity, and no file stands
-            /// under its name.
+            /// No segment of the plane holds a record of that identity.
             Unlisted,
-            /// The object's file cannot be read.
+            /// The object's record cannot be read, or its header does not name
+            /// the place it was read from.
             Unreadable,
             /// The text spells no identity: it is not exactly 64 lowercase
             /// hexadecimal digits.
@@ -137,17 +164,17 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a table of a call's reads by name gives no slot for a name.
-    mod probed {
-        /// The table gives no slot for the name.
+    /// Why the bytes at a place hold no record.
+    mod unrecorded {
+        /// The bytes at a place are no record of the plane.
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
         pub enum Absent {
-            /// The probe met an empty slot, or went through the whole table,
-            /// before the name.
-            Vacant,
-            /// The table holds three objects in four slots, so it takes no
-            /// more.
-            Full,
+            /// The header does not open with the magic, or its checksum does
+            /// not hold.
+            Unchecked,
+            /// The header names another segment or another offset than the
+            /// place it was read from.
+            Misplaced,
         }
     }
 }
@@ -162,93 +189,439 @@ pub struct Image<'bytes>(pub &'bytes [u8]);
 #[derive(Clone, Copy, Debug)]
 pub struct FileName<'text>(pub &'text str);
 
-/// What a plane holds under a name, for an insertion to read.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Holding
+/// A segment's identity: unique in its plane, and ordered as the writers
+/// created the segments.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SegmentId(u64);
+
+impl SegmentId
 {
-    /// The plane lists the object, and no load refused it or failed to read
-    /// it.
-    Held,
-    /// The plane lists the object, and a load refused it or could not read
-    /// it, so an insertion writes it afresh.
-    Refused,
-    /// The plane does not list the object.
-    Unlisted,
+    /// The name of the segment's file.
+    ///
+    /// # Specification
+    /// trivial.
+    fn file_name(self) -> String
+    {
+        format!("{SEGMENT_PREFIX}{:016x}", self.0)
+    }
+
+    /// The identity a file's name spells, or why it spells none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn named(file: &std::ffi::OsStr) -> Maybe<Self, unheld::Absent>
+    {
+        file.to_str()
+            .and_then(|text| text.strip_prefix(SEGMENT_PREFIX))
+            .filter(|digits| {
+                digits.len() == 16
+                    && digits
+                        .bytes()
+                        .all(|digit| matches!(digit, b'0' ..= b'9' | b'a' ..= b'f'))
+            })
+            .and_then(|digits| u64::from_str_radix(digits, 16).ok())
+            .map_or(Maybe::Absent(unheld::Absent::Unspelled), |id| {
+                Maybe::Present(Self(id))
+            })
+    }
 }
 
-/// The bytes of a file as a read gave them, or the kind of the failure.
+/// A byte offset into a segment.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Offset(u64);
+
+impl Offset
+{
+    /// The offset just past a record of `length` bytes at `self`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn after(
+        self,
+        length: Length,
+    ) -> Self
+    {
+        Self(
+            self.0
+                .saturating_add(u64::try_from(HEADER).unwrap_or(u64::MAX))
+                .saturating_add(u64::from(length.0)),
+        )
+    }
+}
+
+/// The length of a record's bytes.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Length(u32);
+
+impl Length
+{
+    /// The length of `image`, or the fault for an object of 4 GiB or more.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(image: Image<'_>) -> Result<Self, StoreError>
+    {
+        u32::try_from(image.0.len())
+            .map(Self)
+            .map_err(|_long| StoreError::Oversized {
+                bytes: ImageBytes::of(image),
+            })
+    }
+}
+
+/// A slot of one of a plane's arenas.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Slot(usize);
+
+/// Where a record stands: its segment's slot, its offset there, and the
+/// length of its bytes.
+#[derive(Clone, Copy, Debug)]
+struct Place
+{
+    /// The slot of the record's segment in the plane's segments.
+    segment: Slot,
+    /// The offset of the record's header in the segment.
+    offset: Offset,
+    /// The length of the record's bytes.
+    length: Length,
+}
+
+/// A record's header, as it stands before the record's bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Header<Name>
+{
+    /// The length of the record's bytes.
+    length: Length,
+    /// The identity of the object the record holds.
+    name: Name,
+    /// The segment the record stands in.
+    segment: SegmentId,
+    /// The record's offset in its segment.
+    offset: Offset,
+}
+
+/// A header's bytes: the magic, the length as four little-endian bytes, the
+/// identity, the segment and the offset as eight little-endian bytes each,
+/// and the first eight bytes of the checksum over them.
+#[repr(transparent)]
+struct HeaderBytes([u8; HEADER]);
+
+/// A header's first [`CHECKED`] bytes, the bytes its checksum covers.
+#[repr(transparent)]
+struct Checked([u8; CHECKED]);
+
+/// The first eight bytes of the checksum over a header's checked bytes.
+#[repr(transparent)]
+struct Checksum([u8; 8]);
+
+/// The checksum over a header's checked bytes.
+///
+/// # Specification
+/// trivial.
+fn checksum(checked: &Checked) -> Checksum
+{
+    let mut hasher = blake3::Hasher::new();
+    let _domain = hasher.update(HEADER_DOMAIN);
+    let _checked = hasher.update(&checked.0);
+    let mut sum = [0_u8; 8];
+    hasher.finalize_xof().fill(&mut sum);
+    Checksum(sum)
+}
+
+impl<Name> Header<Name>
+where
+    Name: ObjectName,
+{
+    /// The bytes the header is written as.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bytes(self) -> HeaderBytes
+    {
+        let mut checked = Checked([0_u8; CHECKED]);
+        let (magic, rest) = checked.0.split_at_mut(MAGIC.len());
+        magic.copy_from_slice(&MAGIC);
+        let (length, rest) = rest.split_at_mut(4);
+        length.copy_from_slice(&self.length.0.to_le_bytes());
+        let (name, rest) = rest.split_at_mut(32);
+        name.copy_from_slice(self.name.as_ref());
+        let (segment, offset) = rest.split_at_mut(8);
+        segment.copy_from_slice(&self.segment.0.to_le_bytes());
+        offset.copy_from_slice(&self.offset.0.to_le_bytes());
+        let mut bytes = [0_u8; HEADER];
+        let (head, check) = bytes.split_at_mut(CHECKED);
+        head.copy_from_slice(&checked.0);
+        check.copy_from_slice(&checksum(&checked).0);
+        HeaderBytes(bytes)
+    }
+}
+
+impl HeaderBytes
+{
+    /// The header these bytes spell, read at `segment` and `offset`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the header the bytes spell, when they open with the magic,
+    ///   their checksum holds and they name `segment` and `offset`; `Unchecked`
+    ///   for bytes that fail the magic or the checksum, and `Misplaced` for a
+    ///   header of another place.
+    /// - provides: the one check every read and every scan makes before it
+    ///   trusts a length.
+    /// - fails: never; bytes that are no header are the typed absence.
+    /// - panics: none.
+    /// - executable: none — the outcome is a pure function of the bytes, and
+    ///   its witness is the record that a scan or a load refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a torn tail is cut at its first bad header, and a
+    ///   record changed on disk is refused.
+    /// - witness: `tests::store::a_torn_segment_tail_is_cut_on_opening_7462`
+    /// - witness: `tests::store::a_chunk_changed_on_disk_is_refused_by_its_digest`
+    fn header<Name>(
+        &self,
+        segment: SegmentId,
+        offset: Offset,
+    ) -> Maybe<Header<Name>, unrecorded::Absent>
+    where
+        Name: ObjectName,
+    {
+        let unchecked = Maybe::Absent(unrecorded::Absent::Unchecked);
+        let Some((checked, check)) = self.0.split_first_chunk::<CHECKED>()
+        else {
+            return unchecked;
+        };
+        if check != checksum(&Checked(*checked)).0.as_slice() {
+            return unchecked;
+        }
+        let Some((magic, rest)) = checked.split_first_chunk::<4>()
+        else {
+            return unchecked;
+        };
+        let Some((length, rest)) = rest.split_first_chunk::<4>()
+        else {
+            return unchecked;
+        };
+        let Some((name, rest)) = rest.split_first_chunk::<32>()
+        else {
+            return unchecked;
+        };
+        let Some((at_segment, rest)) = rest.split_first_chunk::<8>()
+        else {
+            return unchecked;
+        };
+        let Some((at_offset, _rest)) = rest.split_first_chunk::<8>()
+        else {
+            return unchecked;
+        };
+        if *magic != MAGIC {
+            return unchecked;
+        }
+        let header = Header {
+            length: Length(u32::from_le_bytes(*length)),
+            name: Name::from(*name),
+            segment: SegmentId(u64::from_le_bytes(*at_segment)),
+            offset: Offset(u64::from_le_bytes(*at_offset)),
+        };
+        if header.segment != segment || header.offset != offset {
+            return Maybe::Absent(unrecorded::Absent::Misplaced);
+        }
+        Maybe::Present(header)
+    }
+}
+
+/// The bytes of a record as a read gave them, its header first, or the kind
+/// of the failure.
 #[repr(transparent)]
 #[derive(Debug)]
 struct Read(Result<Box<[u8]>, io::ErrorKind>);
 
-/// The bytes of the file at `file`, or the kind of the failure that stopped
-/// the read.
-///
-/// # Specification
-/// trivial.
-fn read(file: &Path) -> Read
+/// Who appends to a segment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Writer
 {
-    Read(
-        std::fs::read(file)
-            .map(Vec::into_boxed_slice)
-            .map_err(|error| error.kind()),
-    )
+    /// A shard of this process, which indexes each record as it appends it.
+    Own,
+    /// Another writer, whose records a scan indexes.
+    Other,
 }
 
-/// One object a plane listed at open.
+/// One segment a plane knows: its identity, its file and how far the plane
+/// has indexed it.
 #[derive(Debug)]
-struct Filed
+struct Segment
 {
-    /// The file's bytes as the first load read them.
+    /// The segment's identity.
+    id: SegmentId,
+    /// The file, open to read, and to write for a segment of this writer.
+    file: File,
+    /// Whose appends the segment takes.
+    writer: Writer,
+    /// The offset up to which the plane indexed the segment's records, for
+    /// another writer's segment.
+    scanned: AtomicU64,
+    /// Whether a batch wrote to the segment since its last sync.
+    dirty: AtomicBool,
+}
+
+/// One record a plane indexed.
+#[derive(Debug)]
+struct Filed<Name>
+{
+    /// The identity of the object the record holds.
+    name: Name,
+    /// Where the record stands.
+    place: Place,
+    /// The record's bytes as the first load read them.
     read: OnceLock<Read>,
     /// Whether a load refused the bytes: `true` once one did.
     refused: AtomicBool,
 }
 
-impl Filed
+impl<Name> Filed<Name>
 {
-    /// An object listed and not read yet.
+    /// The record of `name` at `place`, not read yet.
     ///
     /// # Specification
     /// trivial.
-    const fn unread() -> Self
+    const fn at(
+        name: Name,
+        place: Place,
+    ) -> Self
     {
         Self {
+            name,
+            place,
             read: OnceLock::new(),
             refused: AtomicBool::new(false),
         }
     }
 }
 
-/// A directory of objects, each a file named by its identity, listed once.
+/// The open segment of a shard and the offset of its end.
+#[derive(Clone, Copy, Debug)]
+struct Open
+{
+    /// The slot of the segment in the plane's segments.
+    segment: Slot,
+    /// The offset past the last record the shard appended.
+    end: Offset,
+}
+
+/// A shard's open segment, or none before its first batch.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Tail(Option<Open>);
+
+/// What a plane holds under a name, for an insertion to read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holding
+{
+    /// The plane indexes the object, and no load refused it or failed to read
+    /// it.
+    Held,
+    /// The plane indexes the object, and a load refused it or could not read
+    /// it, so an insertion writes it afresh.
+    Refused,
+    /// The plane does not index the object.
+    Unlisted,
+}
+
+/// A directory of segments, each a log of records, and the index from each
+/// identity to its record.
+///
+/// The arenas grow by buckets and never move an element, so a record's bytes
+/// stay at their address for the life of the plane, and a load lends them
+/// from there. A writer pushes a record into the arena and then publishes
+/// its slot in the index. So a reader that finds a slot finds the whole
+/// record.
 #[derive(Debug)]
 pub struct Directory<Name>
+where
+    Name: ObjectName,
 {
     /// The directory.
     path: PathBuf,
-    /// The directory of the store's shards, beside the plane's.
-    shards: PathBuf,
-    /// The directory of each shard, made by the first publication through
-    /// it, so a later batch allocates no path for it.
-    staged: [OnceLock<PathBuf>; SHARDS],
-    /// Every object the directory held when the plane opened, by identity.
-    objects: BTreeMap<Name, Filed>,
+    /// Each segment the plane knows, at a fixed slot.
+    segments: boxcar::Vec<Segment>,
+    /// The slot of each segment, by its identity.
+    known: papaya::HashMap<SegmentId, Slot>,
+    /// Each record the plane indexed, at a fixed slot.
+    objects: boxcar::Vec<Filed<Name>>,
+    /// The slot of the latest record of each identity.
+    index: papaya::HashMap<Name, Slot>,
+    /// The open segment of each shard.
+    shards: [Mutex<Tail>; SHARDS],
+    /// The identity the next new segment tries first.
+    next: AtomicU64,
+    /// The lock a scan of the other writers' tails holds, so one scan runs at
+    /// a time.
+    catching: Mutex<()>,
 }
 
 impl<Name> Directory<Name>
 where
     Name: ObjectName,
 {
-    /// The directory at `path`, made when missing, and every object it holds
-    /// listed.
+    /// The directory at `path`, made when missing, and every record its
+    /// segments hold indexed.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a directory at `path`; each file named by 64 lowercase
-    ///   hexadecimal digits listed as the object of that identity, unread and
-    ///   unrefused; every other file ignored.
-    /// - provides: a plane's listing as the store opens.
-    /// - fails: [`StoreError::Io`] when the directory cannot be made or listed.
+    /// - ensures: a directory at `path`; each record of each segment indexed
+    ///   under its identity, up to the segment's first header that does not
+    ///   check or record that does not fit, the segments read in order of their
+    ///   identities; every other file ignored.
+    /// - provides: a plane's index as the store opens.
+    /// - fails: [`StoreError::Io`] when the directory cannot be made or listed,
+    ///   or a segment cannot be opened or read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: the open reads each record's header and no record's bytes.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing root is made, a committed value loads after
+    ///   reopening, and a torn tail is cut.
+    /// - witness: `tests::store::a_missing_root_directory_is_made_on_opening`
+    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::a_torn_segment_tail_is_cut_on_opening_7462`
+    pub fn open(path: PathBuf) -> Result<Self, StoreError>
+    {
+        std::fs::create_dir_all(&path).map_err(|error| StoreError::io(&path, &error))?;
+        let plane = Self {
+            path,
+            segments: boxcar::Vec::new(),
+            known: papaya::HashMap::new(),
+            objects: boxcar::Vec::new(),
+            index: papaya::HashMap::new(),
+            shards: [const { Mutex::new(Tail(None)) }; SHARDS],
+            next: AtomicU64::new(0_u64),
+            catching: Mutex::new(()),
+        };
+        plane.catch_up()?;
+        Ok(plane)
+    }
+
+    /// Index every record of the other writers' segments that the plane has
+    /// not indexed: each new segment of the directory whole, and the tail of
+    /// each segment it knows past the last record it indexed there.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success every record that another writer's segment holds
+    ///   up to its first header that does not check is indexed, and the next
+    ///   new segment takes an identity past every segment's.
+    /// - provides: the open's index, and a load's view of what another process
+    ///   put since.
+    /// - fails: [`StoreError::Io`] when the directory cannot be listed or a
+    ///   segment cannot be opened or read.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
     ///
@@ -256,53 +629,223 @@ where
     /// [`StoreError::Io`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a missing root is made, and a committed value loads
-    ///   after reopening.
-    /// - witness: `tests::store::a_missing_root_directory_is_made_on_opening`
-    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
-    pub fn open(path: PathBuf) -> Result<Self, StoreError>
+    /// - hypothesis: L3 — a value one store commits derefs from a second store
+    ///   that opened before the commit.
+    /// - witness: `tests::store::a_store_finds_what_another_put_after_it_opened_7462`
+    fn catch_up(&self) -> Result<(), StoreError>
     {
-        std::fs::create_dir_all(&path).map_err(|error| StoreError::io(&path, &error))?;
-        let entries = std::fs::read_dir(&path).map_err(|error| StoreError::io(&path, &error))?;
-        let mut objects = BTreeMap::new();
+        let _one = self.catching.lock().unwrap_or_else(PoisonError::into_inner);
+        let path = &self.path;
+        let entries = std::fs::read_dir(path).map_err(|error| StoreError::io(path, &error))?;
+        let mut found = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|error| StoreError::io(&path, &error))?;
-            let Maybe::Present(name) = named::<Name>(&entry.file_name())
-            else {
-                continue;
-            };
-            let _listed = objects.insert(name, Filed::unread());
+            let entry = entry.map_err(|error| StoreError::io(path, &error))?;
+            if let Maybe::Present(id) = SegmentId::named(&entry.file_name()) {
+                found.push(id);
+            }
         }
-        let shards = path.with_file_name(SHARD_ROOT);
-        Ok(Self {
-            path,
-            shards,
-            staged: [const { OnceLock::new() }; SHARDS],
-            objects,
-        })
+        found.sort_unstable();
+        let known = self.known.pin();
+        for id in found {
+            let _past = self
+                .next
+                .fetch_max(id.0.saturating_add(1_u64), Ordering::Relaxed);
+            if known.contains_key(&id) {
+                continue;
+            }
+            let file = path.join(id.file_name());
+            let opened = File::open(&file).map_err(|error| StoreError::io(&file, &error))?;
+            let slot = Slot(self.segments.push(Segment {
+                id,
+                file: opened,
+                writer: Writer::Other,
+                scanned: AtomicU64::new(0_u64),
+                dirty: AtomicBool::new(false),
+            }));
+            let _known = known.insert(id, slot);
+        }
+        for (at, segment) in &self.segments {
+            if segment.writer == Writer::Other {
+                self.scan(Slot(at), segment)?;
+            }
+        }
+        Ok(())
     }
 
-    /// The file an object of identity `name` stands in.
+    /// Index each record of `segment` past the last one the plane indexed
+    /// there, up to its first header that does not check or record that does
+    /// not fit in the file.
     ///
     /// # Specification
-    /// trivial.
-    fn file(
+    /// - requires: `segment` stands at `slot` of the plane's segments, and the
+    ///   caller holds the scan's lock.
+    /// - ensures: on success each record read is indexed under its identity, a
+    ///   later one replacing an earlier, and the segment's scanned offset is
+    ///   past the last.
+    /// - provides: the read of one segment's new records.
+    /// - fails: [`StoreError::Io`] when the segment cannot be read.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: the scan reads each header through one buffer and skips
+    ///   each record's bytes.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a committed value derefs after reopening, and a torn
+    ///   tail is cut at its first bad header.
+    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::a_torn_segment_tail_is_cut_on_opening_7462`
+    fn scan(
         &self,
-        name: Name,
-    ) -> PathBuf
+        slot: Slot,
+        segment: &Segment,
+    ) -> Result<(), StoreError>
     {
-        self.path.join(name.to_string())
+        let file = self.path.join(segment.id.file_name());
+        let io = |error: io::Error| StoreError::io(&file, &error);
+        let size = segment.file.metadata().map_err(io)?.len();
+        let mut at = Offset(segment.scanned.load(Ordering::Relaxed));
+        let mut reader = io::BufReader::with_capacity(SCAN_BUFFER, &segment.file);
+        let _start = reader.seek(io::SeekFrom::Start(at.0)).map_err(io)?;
+        let index = self.index.pin();
+        loop {
+            let mut bytes = [0_u8; HEADER];
+            match reader.read_exact(&mut bytes) {
+                Ok(()) => {},
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(error) => return Err(io(error)),
+            }
+            let Maybe::Present(header) = HeaderBytes(bytes).header::<Name>(segment.id, at)
+            else {
+                break;
+            };
+            let end = at.after(header.length);
+            if end.0 > size {
+                break;
+            }
+            reader
+                .seek_relative(i64::from(header.length.0))
+                .map_err(io)?;
+            let place = Place {
+                segment: slot,
+                offset: at,
+                length: header.length,
+            };
+            let filed = Slot(self.objects.push(Filed::at(header.name, place)));
+            let _indexed = index.insert(header.name, filed);
+            at = end;
+        }
+        segment.scanned.store(at.0, Ordering::Relaxed);
+        Ok(())
     }
 
-    /// The bytes of the listed object `name`, read from its file the first
-    /// time a load asks for them.
+    /// The record the plane indexes under `name`, after a scan of the other
+    /// writers' tails when the index holds none.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the file's bytes as the first load in the process read them;
-    ///   `Unlisted` for a name the plane does not list, `Unreadable` for a file
-    ///   that could not be read when first asked for.
-    /// - provides: the listing's half of the one read both planes verify.
+    /// - ensures: the latest record indexed under `name`; `Unlisted` when no
+    ///   segment holds one after the scan, `Unreadable` when the scan fails.
+    /// - provides: the lookup every load makes.
+    /// - fails: never; a missing object is the typed absence.
+    /// - panics: none.
+    /// - executable: none — the index is shared with the other threads.
+    /// - intension: a held name costs one probe of the index and no system
+    ///   call.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value derefs in the store that committed it, after
+    ///   reopening, and in a second store that opened before the commit.
+    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::a_store_finds_what_another_put_after_it_opened_7462`
+    fn found(
+        &self,
+        name: Name,
+    ) -> Maybe<&Filed<Name>, unheld::Absent>
+    {
+        if let Maybe::Present(filed) = self.indexed(name) {
+            return Maybe::Present(filed);
+        }
+        if self.catch_up().is_err() {
+            return Maybe::Absent(unheld::Absent::Unreadable);
+        }
+        self.indexed(name)
+    }
+
+    /// The record the index holds under `name`, with no scan.
+    ///
+    /// # Specification
+    /// trivial.
+    fn indexed(
+        &self,
+        name: Name,
+    ) -> Maybe<&Filed<Name>, unheld::Absent>
+    {
+        self.index
+            .pin()
+            .get(&name)
+            .and_then(|&slot| self.objects.get(slot.0))
+            .map_or(Maybe::Absent(unheld::Absent::Unlisted), Maybe::Present)
+    }
+
+    /// The bytes of the record of `name` at `place`, its header first, as one
+    /// positioned read gives them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the record's bytes when its header checks and names `name`,
+    ///   its length and `place`; `InvalidData` otherwise, and the read's own
+    ///   failure when the file cannot be read.
+    /// - provides: the one read of a record's bytes.
+    /// - fails: never; a failure is the kind the read gives.
+    /// - panics: none.
+    /// - executable: none — the bytes are the file system's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a committed value derefs after reopening, and a
+    ///   record changed on disk is refused.
+    /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
+    /// - witness: `tests::store::a_chunk_changed_on_disk_is_refused_by_its_digest`
+    fn read(
+        &self,
+        name: Name,
+        place: Place,
+    ) -> Read
+    {
+        let Some(segment) = self.segments.get(place.segment.0)
+        else {
+            return Read(Err(io::ErrorKind::NotFound));
+        };
+        let record = usize::try_from(place.length.0)
+            .unwrap_or(usize::MAX)
+            .saturating_add(HEADER);
+        let mut bytes = vec![0_u8; record].into_boxed_slice();
+        if let Err(error) = segment.file.read_exact_at(&mut bytes, place.offset.0) {
+            return Read(Err(error.kind()));
+        }
+        let Some(head) = bytes.first_chunk::<HEADER>()
+        else {
+            return Read(Err(io::ErrorKind::InvalidData));
+        };
+        match HeaderBytes(*head).header::<Name>(segment.id, place.offset) {
+            Maybe::Present(header) if header.name == name && header.length == place.length => {
+                Read(Ok(bytes))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Read(Err(io::ErrorKind::InvalidData)),
+        }
+    }
+
+    /// The bytes of the object `name`, read from its record the first time a
+    /// load asks for them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the object's bytes as the first load in the process read
+    ///   them; `Unlisted` for a name no segment holds, `Unreadable` for a
+    ///   record that could not be read when first asked for.
+    /// - provides: the plane's half of the one read both planes verify.
     /// - fails: never; a missing object is the typed absence.
     /// - panics: none.
     /// - executable: none — the bytes are the file system's.
@@ -317,28 +860,30 @@ where
         name: Name,
     ) -> Maybe<Image<'_>, unheld::Absent>
     {
-        let Some(filed) = self.objects.get(&name)
-        else {
-            return Maybe::Absent(unheld::Absent::Unlisted);
+        let filed = match self.found(name) {
+            Maybe::Present(filed) => filed,
+            Maybe::Absent(absent) => return Maybe::Absent(absent),
         };
         filed
             .read
-            .get_or_init(|| read(&self.file(name)))
+            .get_or_init(|| self.read(filed.name, filed.place))
             .0
             .as_ref()
+            .ok()
+            .and_then(|bytes| bytes.get(HEADER ..))
             .map_or(Maybe::Absent(unheld::Absent::Unreadable), |bytes| {
                 Maybe::Present(Image(bytes))
             })
     }
 
-    /// Mark the listed object `name` refused, so the next batch that takes
+    /// Mark the indexed object `name` refused, so the next batch that takes
     /// `name` writes it afresh.
     ///
     /// # Specification
     /// - requires: a load refused the bytes the plane gave for `name` as not
     ///   the object `name` names.
-    /// - ensures: a listed object under `name` stands refused; an unlisted name
-    ///   changes nothing.
+    /// - ensures: the latest record of `name` stands refused; a name the index
+    ///   does not hold changes nothing.
     /// - provides: the refusal a later insertion reads.
     /// - fails: never.
     /// - panics: none.
@@ -354,7 +899,7 @@ where
         name: Name,
     )
     {
-        if let Some(filed) = self.objects.get(&name) {
+        if let Maybe::Present(filed) = self.indexed(name) {
             filed.refused.store(true, Ordering::Relaxed);
         }
     }
@@ -363,18 +908,19 @@ where
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `Held` for a listed object that no load refused and that no
-    ///   load failed to read, `Refused` for another listed object, `Unlisted`
-    ///   for a name the plane does not list.
+    /// - ensures: `Held` for an indexed object that no load refused and that no
+    ///   load failed to read, `Refused` for another indexed object, `Unlisted`
+    ///   for a name the index does not hold.
     /// - provides: whether an insertion of `name` writes its bytes.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the standing is an atomic flag and a cell that
     ///   loads on other threads set.
+    /// - intension: one probe of the index and no system call.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a value committed again writes no file, and a refused
-    ///   chunk is written afresh.
+    /// - hypothesis: L3 — a value committed again writes no record, and a
+    ///   refused chunk is written afresh.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074`
     fn holding(
@@ -382,7 +928,7 @@ where
         name: Name,
     ) -> Holding
     {
-        let Some(filed) = self.objects.get(&name)
+        let Maybe::Present(filed) = self.indexed(name)
         else {
             return Holding::Unlisted;
         };
@@ -393,297 +939,125 @@ where
         }
         Holding::Held
     }
-}
 
-/// One object a call read by its name.
-#[derive(Debug)]
-struct Learned<Name>
-{
-    /// The object's identity.
-    name: Name,
-    /// The file's bytes, or the kind of the failure that stopped the read.
-    read: Read,
-}
-
-/// How many slots a table of reads by name holds.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Slots(usize);
-
-/// Where the probe of a name starts in a table: the first eight bytes of its
-/// identity, which a digest spreads evenly.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Start(usize);
-
-impl Start
-{
-    /// Where the probe of `name` starts.
+    /// The open segment of a shard, a new one when the shard has none or its
+    /// segment is past [`SEGMENT_LIMIT`].
     ///
     /// # Specification
-    /// trivial.
-    fn of<Name>(name: Name) -> Self
-    where
-        Name: ObjectName,
-    {
-        Self(
-            name.as_ref()
-                .iter()
-                .take(8_usize)
-                .fold(0_usize, |start, &byte| {
-                    start.wrapping_shl(8_u32) | usize::from(byte)
-                }),
-        )
-    }
-}
-
-/// A table of a call's reads by name: open addressing, probed in order, and
-/// filled to three objects in four slots at most.
-#[derive(Debug)]
-struct Table<Name>
-{
-    /// The slots, a power of two of them.
-    slots: Box<[OnceCell<Learned<Name>>]>,
-    /// How many slots hold an object.
-    filled: Cell<usize>,
-}
-
-impl<Name> Table<Name>
-where
-    Name: ObjectName,
-{
-    /// An empty table of `slots` slots.
-    ///
-    /// # Specification
-    /// trivial.
-    fn sized(slots: Slots) -> Self
-    {
-        Self {
-            slots: core::iter::repeat_with(OnceCell::new)
-                .take(slots.0)
-                .collect(),
-            filled: Cell::new(0_usize),
-        }
-    }
-
-    /// The slot of `name` in the table: the one that holds it, else the empty
-    /// one its probe from `start` meets first.
-    ///
-    /// # Specification
-    /// - requires: the table's slots are a power of two.
-    /// - ensures: the slot holding `name`, or the first empty slot the probe
-    ///   meets; `Vacant` when the probe goes through every slot and meets
-    ///   neither.
-    /// - provides: the one probe that finding and taking share.
-    /// - fails: never.
+    /// - requires: `open` is the shard's tail, read under the shard's lock.
+    /// - ensures: on success a segment of this process with its end below the
+    ///   limit, or a new empty one; a new segment's file and its directory
+    ///   entry are durable.
+    /// - provides: where a batch appends.
+    /// - fails: [`StoreError::Io`] when no new segment can be created or its
+    ///   directory cannot be synced.
     /// - panics: none.
-    /// - executable: none — the slots are cells that an earlier probe filled.
+    /// - executable: none — the outcome is the file system's.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a call that reads more objects by name than the first
-    ///   table holds reads each of them back, verified, so each probe finds the
-    ///   slot of its own name and no other.
-    /// - witness: `tests::store::a_written_tree_opens_from_the_store_that_wrote_it_6899`
-    fn slot(
-        &self,
-        name: Name,
-        start: Start,
-    ) -> Maybe<&OnceCell<Learned<Name>>, probed::Absent>
-    {
-        let mask = self.slots.len().saturating_sub(1_usize);
-        for offset in 0_usize .. self.slots.len() {
-            let Some(slot) = self.slots.get(start.0.wrapping_add(offset) & mask)
-            else {
-                break;
-            };
-            match slot.get() {
-                None => return Maybe::Present(slot),
-                Some(learned) if learned.name == name => return Maybe::Present(slot),
-                Some(_) => {},
-            }
-        }
-        Maybe::Absent(probed::Absent::Vacant)
-    }
-
-    /// The object `name` that the table holds.
-    ///
-    /// # Specification
-    /// - requires: as [`Table::slot`].
-    /// - ensures: the object under `name`; `Vacant` when the table holds none.
-    /// - provides: a lookup of a read by name.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — as [`Table::slot`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Table::slot`].
-    /// - witness: `tests::store::a_written_tree_opens_from_the_store_that_wrote_it_6899`
-    fn found(
-        &self,
-        name: Name,
-        start: Start,
-    ) -> Maybe<&Learned<Name>, probed::Absent>
-    {
-        match self.slot(name, start) {
-            Maybe::Present(slot) => slot
-                .get()
-                .map_or(Maybe::Absent(probed::Absent::Vacant), Maybe::Present),
-            Maybe::Absent(absent) => Maybe::Absent(absent),
-        }
-    }
-
-    /// The empty slot that takes `name`, counted as filled.
-    ///
-    /// # Specification
-    /// - requires: as [`Table::slot`], and the table holds no object under
-    ///   `name`.
-    /// - ensures: an empty slot, with one more slot counted filled; `Full` when
-    ///   three slots in four hold an object, `Vacant` when the probe meets no
-    ///   empty slot.
-    /// - provides: the slot a new read by name goes into.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — as [`Table::slot`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a call that reads more objects by name than three
-    ///   slots in four of the first table reads the rest into the next table,
-    ///   and reads each back.
-    /// - witness: `tests::store::a_written_tree_opens_from_the_store_that_wrote_it_6899`
-    fn vacant(
-        &self,
-        name: Name,
-        start: Start,
-    ) -> Maybe<&OnceCell<Learned<Name>>, probed::Absent>
-    {
-        let filled = self.filled.get();
-        if filled.saturating_mul(4_usize) >= self.slots.len().saturating_mul(3_usize) {
-            return Maybe::Absent(probed::Absent::Full);
-        }
-        match self.slot(name, start) {
-            Maybe::Present(slot) if slot.get().is_none() => {
-                self.filled.set(filled.saturating_add(1_usize));
-                Maybe::Present(slot)
-            },
-            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(probed::Absent::Vacant),
-        }
-    }
-}
-
-/// The objects one call read by their names: tables of open addressing, each
-/// twice the size of the one before, in the order they filled.
-#[repr(transparent)]
-#[derive(Debug)]
-struct Reads<Name>
-{
-    /// The tables, each made when the ones before it are full.
-    tables: [OnceCell<Table<Name>>; TABLES],
-}
-
-impl<Name> Reads<Name>
-where
-    Name: ObjectName,
-{
-    /// No object read.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn new() -> Self
-    {
-        Self {
-            tables: [const { OnceCell::new() }; TABLES],
-        }
-    }
-
-    /// The bytes of the object `name` in `plane`'s directory, read from its
-    /// file the first time the call asks for them.
-    ///
-    /// # Specification
-    /// - requires: `plane` does not list `name`.
-    /// - ensures: the bytes of the file under `name` as the call's first read
-    ///   of it gave them; `Unlisted` when no file stands under the name,
-    ///   `Unreadable` when it cannot be read.
-    /// - provides: a load of an object that a batch published after the store
-    ///   opened.
-    /// - fails: never; a missing object is the typed absence.
-    /// - panics: none.
-    /// - executable: none — the bytes are the file system's.
-    /// - intension: the call reads each file once. A lookup probes one table
-    ///   for each table the call made, and each table is twice the size of the
-    ///   one before it.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a value derefs back in the store that committed it,
-    ///   and a record tree that a store wrote opens from the same store.
+    /// - hypothesis: L3 — sixteen writers append to their own segments, and a
+    ///   committed value derefs after reopening.
+    /// - witness: `tests::store::sixteen_writers_append_to_their_own_segments_7462`
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
-    /// - witness: `tests::store::a_written_tree_opens_from_the_store_that_wrote_it_6899`
-    fn image<'call>(
-        &'call self,
-        plane: &Directory<Name>,
-        name: Name,
-    ) -> Maybe<Image<'call>, unheld::Absent>
+    fn tail(
+        &self,
+        open: Tail,
+    ) -> Result<Open, StoreError>
     {
-        let start = Start::of(name);
-        for table in self.tables.iter().map_while(OnceCell::get) {
-            if let Maybe::Present(learned) = table.found(name, start) {
-                return image(&learned.read);
+        if let Tail(Some(open)) = open
+            && open.end.0 < SEGMENT_LIMIT
+        {
+            return Ok(open);
+        }
+        let path = &self.path;
+        for _attempt in 0_usize .. SEGMENT_ATTEMPTS {
+            let id = SegmentId(self.next.fetch_add(1_u64, Ordering::Relaxed));
+            let file = path.join(id.file_name());
+            let created = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(&file);
+            let opened = match created {
+                Ok(opened) => opened,
+                Err(ref error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(ref error) => return Err(StoreError::io(&file, error)),
+            };
+            File::open(path)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|error| StoreError::io(path, &error))?;
+            let slot = Slot(self.segments.push(Segment {
+                id,
+                file: opened,
+                writer: Writer::Own,
+                scanned: AtomicU64::new(0_u64),
+                dirty: AtomicBool::new(false),
+            }));
+            let _known = self.known.pin().insert(id, slot);
+            return Ok(Open {
+                segment: slot,
+                end: Offset(0_u64),
+            });
+        }
+        Err(StoreError::io(
+            path,
+            &io::Error::from(io::ErrorKind::AlreadyExists),
+        ))
+    }
+
+    /// Sync each segment of this writer that a batch wrote to since its last
+    /// sync.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success every record that a batch of this process wrote
+    ///   before the call is durable on the device. A segment whose sync fails
+    ///   stays marked, so the next sync tries it again.
+    /// - provides: the step a naming takes before it names what the batches
+    ///   wrote, so a root never names an object a crash can lose.
+    /// - fails: [`StoreError::Io`] when a segment cannot be synced.
+    /// - panics: none.
+    /// - executable: none — the outcome is the file system's.
+    /// - intension: one data sync for each marked segment, at most one for each
+    ///   shard's open segment and each segment sealed since.
+    ///
+    /// # Errors
+    /// [`StoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crash at each point of a naming and a fold leaves
+    ///   roots whose objects load.
+    /// - witness: `tests::store::a_crash_after_each_step_of_a_fold_leaves_roots_that_load_7459`
+    pub(crate) fn sync(&self) -> Result<(), StoreError>
+    {
+        for (_at, segment) in &self.segments {
+            if segment.writer != Writer::Own || !segment.dirty.swap(false, Ordering::AcqRel) {
+                continue;
+            }
+            if let Err(error) = segment.file.sync_data() {
+                segment.dirty.store(true, Ordering::Release);
+                return Err(StoreError::io(
+                    &self.path.join(segment.id.file_name()),
+                    &error,
+                ));
             }
         }
-        let mut pending = Some(read(&plane.file(name)));
-        let mut slots = FIRST_SLOTS;
-        for table in &self.tables {
-            let table = table.get_or_init(|| Table::sized(Slots(slots)));
-            slots = slots.saturating_mul(2_usize);
-            let Maybe::Present(slot) = table.vacant(name, start)
-            else {
-                continue;
-            };
-            let Some(bytes) = pending.take()
-            else {
-                break;
-            };
-            return image(&slot.get_or_init(|| Learned { name, read: bytes }).read);
-        }
-        Maybe::Absent(unheld::Absent::Unreadable)
+        Ok(())
     }
-}
-
-/// Why a read by name gave no bytes: no file under the name, or a file that
-/// cannot be read.
-///
-/// # Specification
-/// trivial.
-fn absent(kind: io::ErrorKind) -> unheld::Absent
-{
-    if kind == io::ErrorKind::NotFound {
-        unheld::Absent::Unlisted
-    }
-    else {
-        unheld::Absent::Unreadable
-    }
-}
-
-/// The bytes a read by name gave, or why it gave none.
-///
-/// # Specification
-/// trivial.
-fn image(read: &Read) -> Maybe<Image<'_>, unheld::Absent>
-{
-    read.0.as_ref().map_or_else(
-        |&kind| Maybe::Absent(absent(kind)),
-        |bytes| Maybe::Present(Image(bytes)),
-    )
 }
 
 /// One call's section over a plane: the objects it took, to publish when the
-/// call ends, and the objects it read by name.
+/// call ends.
 #[derive(Debug)]
 pub struct Batch<'plane, Name>
+where
+    Name: ObjectName,
 {
     /// The plane the call reads and writes.
     plane: &'plane Directory<Name>,
-    /// The objects the call read by name.
-    reads: Reads<Name>,
     /// The objects the call took and did not publish yet.
     taken: BTreeMap<Name, Box<[u8]>>,
 }
@@ -700,19 +1074,18 @@ where
     {
         Self {
             plane,
-            reads: Reads::new(),
             taken: BTreeMap::new(),
         }
     }
 
-    /// The bytes under `name`: taken by the call, listed by the plane, or
-    /// read from the file by name.
+    /// The bytes under `name`: taken by the call, or read from the plane's
+    /// record.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the bytes the call took under `name`, else the listed
-    ///   object's, else the bytes of the file under `name` as the call first
-    ///   read them; the reason when none of the three gives bytes.
+    /// - ensures: the bytes the call took under `name`, else the bytes of the
+    ///   latest record of `name` as the process first read them; the reason
+    ///   when neither gives bytes.
     /// - provides: the one read both planes verify.
     /// - fails: never; a missing object is the typed absence.
     /// - panics: none.
@@ -731,13 +1104,7 @@ where
         if let Some(bytes) = self.taken.get(&name) {
             return Maybe::Present(Image(bytes));
         }
-        match self.plane.listed(name) {
-            Maybe::Present(image) => Maybe::Present(image),
-            Maybe::Absent(unheld::Absent::Unlisted) => self.reads.image(self.plane, name),
-            Maybe::Absent(absent @ (unheld::Absent::Unreadable | unheld::Absent::Unspelled)) => {
-                Maybe::Absent(absent)
-            },
-        }
+        self.plane.listed(name)
     }
 
     /// Take `bytes` under `name`, to be written when the batch publishes,
@@ -745,20 +1112,20 @@ where
     ///
     /// # Specification
     /// - requires: `bytes` are verified as the object `name` names.
-    /// - ensures: a name the call took, or the plane lists unrefused and
-    ///   readable, or that has a file though the plane does not list it, keeps
-    ///   what it holds; another name, or one a load refused or could not read,
-    ///   is taken as `bytes`.
+    /// - ensures: a name the call took, or the plane holds unrefused and
+    ///   readable, keeps what it holds; another name, or one a load refused or
+    ///   could not read, is taken as `bytes`.
     /// - provides: the insertion both plane traits make.
-    /// - fails: never; a failed existence probe takes the bytes.
+    /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the existence probe is the file system's.
-    /// - intension: a name the plane lists costs no system call; an unlisted
-    ///   name costs one existence probe.
+    /// - executable: none — the standing is the index's, which other threads
+    ///   share.
+    /// - intension: an insertion costs one probe of the index and no system
+    ///   call.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a committed value derefs before and after reopening,
-    ///   committing it again writes no file, and a refused chunk is written
+    ///   committing it again writes no record, and a refused chunk is written
     ///   afresh by the next commit.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074`
@@ -773,97 +1140,105 @@ where
         }
         match self.plane.holding(name) {
             Holding::Held => return,
-            Holding::Unlisted
-                if std::fs::exists(self.plane.file(name)).is_ok_and(|exists| exists) =>
-            {
-                return;
-            },
             Holding::Refused | Holding::Unlisted => {},
         }
         let _taken = self.taken.insert(name, Box::from(bytes.0));
     }
 
-    /// Write each object the batch took to its file, through the shard of the
-    /// calling thread.
-    ///
-    /// A shard is a directory of the calling thread's own beside the planes,
-    /// and each publication goes through `gandr_core_publish` with its
-    /// temporary there. So the plane's directory sees one rename for each
-    /// object, and the creation of each temporary touches only the thread's
-    /// shard. The producers of a pool contend on no directory to create a
-    /// temporary. The union of the shards is set union by digest, and that one
-    /// rename is all of it. An object is in the plane before the call that put
-    /// it returns, so a read after that call finds the object in the plane.
+    /// Append each object the batch took to the open segment of the calling
+    /// thread's shard, in one write, and mark the segment for the next sync.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: on success each object the batch took is a file of the
-    ///   plane's directory under its name, and no temporary of it stays in the
-    ///   shard of the calling thread. A batch that took nothing touches no
-    ///   directory.
+    /// - ensures: on success each object the batch took is a record of a
+    ///   segment of the shard, written to the file system and indexed under its
+    ///   name, so a read after the call finds it, and the segment waits for
+    ///   [`Directory::sync`]. A batch that took nothing touches no file. On
+    ///   failure the shard's end stays where it was, so the next batch writes
+    ///   over what this one tore.
     /// - provides: the end of every facade operation that inserts, and the
-    ///   union of the thread's shard into the plane: one rename an object.
-    /// - fails: [`StoreError::Io`] for the first file that cannot be written,
-    ///   or for a shard directory that cannot be made; the objects after it are
-    ///   not written.
+    ///   union of the thread's shard into the plane: one index entry an object.
+    /// - fails: [`StoreError::Io`] when no segment can be created or the write
+    ///   fails; [`StoreError::Oversized`] for an object of 4 GiB or more.
     /// - panics: none.
     /// - executable: none — the outcome is the file system's.
+    /// - intension: one positioned write for the batch, and a directory sync
+    ///   for each new segment. A put syncs nothing: the naming that names it
+    ///   syncs each segment marked since the last naming.
     ///
     /// # Errors
-    /// [`StoreError::Io`], as above.
+    /// As above.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a committed value derefs after reopening, which reads
-    ///   only what was written; sixteen writers of one value leave one file per
-    ///   chunk; and sixteen writers of distinct values leave every object in
-    ///   the plane and each shard empty.
+    ///   only what was written; sixteen writers of one value leave each digest
+    ///   readable; sixteen writers of distinct values append to their own
+    ///   segments and make no other entry.
     /// - witness: `tests::store::a_committed_value_derefs_back_after_reopening`
     /// - witness: `tests::store::sixteen_writers_of_one_value_leave_one_object_per_digest_6899`
-    /// - witness: `tests::store::sixteen_writers_stage_in_their_shards_and_leave_each_empty_7204`
+    /// - witness: `tests::store::sixteen_writers_append_to_their_own_segments_7462`
     fn publish(self) -> Result<(), StoreError>
     {
         if self.taken.is_empty() {
             return Ok(());
         }
         let shard = SHARD.with(|shard| *shard);
-        // The ordinal is taken modulo the table's length, so the table holds
-        // the slot; the shards' root stands in only to keep the call total.
-        let staging: &Path = self
-            .plane
-            .staged
-            .get(shard)
-            .map_or(&self.plane.shards, |slot| {
-                slot.get_or_init(|| self.plane.shards.join(shard.to_string()))
-            });
-        for (name, bytes) in &self.taken {
-            match publish_staged(staging, &self.plane.path, name, Contents(bytes)) {
-                Err(ref fault)
-                    if fault.step == Step::Create && fault.kind == io::ErrorKind::NotFound =>
-                {
-                    std::fs::create_dir_all(staging)
-                        .map_err(|error| StoreError::io(staging, &error))?;
-                    publish_staged(staging, &self.plane.path, name, Contents(bytes))
-                        .map_err(StoreError::from)?;
-                },
-                published => published.map_err(StoreError::from)?,
-            }
+        let [ref first, ..] = self.plane.shards;
+        let tail = self.plane.shards.get(shard).unwrap_or(first);
+        let mut open = tail.lock().unwrap_or_else(PoisonError::into_inner);
+        let at = self.plane.tail(*open)?;
+        // A new segment stays the shard's, so a failed write leaves no
+        // segment behind that no shard appends to.
+        *open = Tail(Some(at));
+        let Some(segment) = self.plane.segments.get(at.segment.0)
+        else {
+            return Err(StoreError::io(
+                &self.plane.path,
+                &io::Error::from(io::ErrorKind::NotFound),
+            ));
+        };
+        let mut bytes = Vec::with_capacity(self.taken.values().fold(0_usize, |sum, image| {
+            sum.saturating_add(image.len()).saturating_add(HEADER)
+        }));
+        let mut places = Vec::with_capacity(self.taken.len());
+        let mut end = at.end;
+        for (&name, image) in &self.taken {
+            let length = Length::of(Image(image))?;
+            let header = Header {
+                length,
+                name,
+                segment: segment.id,
+                offset: end,
+            };
+            bytes.extend_from_slice(&header.bytes().0);
+            bytes.extend_from_slice(image);
+            places.push((name, Place {
+                segment: at.segment,
+                offset: end,
+                length,
+            }));
+            end = end.after(length);
+        }
+        let file = self.plane.path.join(segment.id.file_name());
+        segment
+            .file
+            .write_all_at(&bytes, at.end.0)
+            .map_err(|error| StoreError::io(&file, &error))?;
+        // Set after the write, so a sync that clears the mark first still
+        // covers the bytes, or the mark stands for the next sync.
+        segment.dirty.store(true, Ordering::Release);
+        *open = Tail(Some(Open {
+            segment: at.segment,
+            end,
+        }));
+        drop(open);
+        let index = self.plane.index.pin();
+        for (name, place) in places {
+            let slot = Slot(self.plane.objects.push(Filed::at(name, place)));
+            let _indexed = index.insert(name, slot);
         }
         Ok(())
     }
-}
-
-/// The identity a file's name spells, or none for any other name.
-///
-/// # Specification
-/// trivial.
-fn named<Name>(file: &std::ffi::OsStr) -> Maybe<Name, unheld::Absent>
-where
-    Name: ObjectName,
-{
-    file.to_str()
-        .map_or(Maybe::Absent(unheld::Absent::Unspelled), |text| {
-            hexadecimal(FileName(text))
-        })
 }
 
 /// The identity exactly 64 lowercase hexadecimal digits spell, or none for
@@ -898,7 +1273,8 @@ where
     })
 }
 
-/// The value plane on disk: each chunk image a file named by its digest.
+/// The value plane on disk: each chunk image a record of a segment, indexed
+/// by its digest.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct ChunkDirectory(Directory<ChunkDigest>);
@@ -912,6 +1288,15 @@ impl ChunkDirectory
     pub(crate) fn open(path: PathBuf) -> Result<Self, StoreError>
     {
         Directory::open(path).map(Self)
+    }
+
+    /// Sync the value plane's segments, as [`Directory::sync`] syncs them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn sync(&self) -> Result<(), StoreError>
+    {
+        self.0.sync()
     }
 }
 
@@ -992,8 +1377,8 @@ impl ChunkStore for ChunkBatch<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`ChunkStore::load`]; an image that the batch did not
-    ///   take, that the directory does not list and that no file holds, or
-    ///   whose file cannot be read, is unknown.
+    ///   take, that no segment holds after a scan of the other writers' tails,
+    ///   or whose record cannot be read, is unknown.
     /// - provides: the value plane's read half on disk.
     /// - fails: [`ValueError::UnknownChunk`], and [`verify_chunk_image`]'s
     ///   refusals for bytes changed on disk, which mark a listed chunk refused
@@ -1025,7 +1410,8 @@ impl ChunkStore for ChunkBatch<'_>
     }
 }
 
-/// The record plane on disk: each node a file named by its identity.
+/// The record plane on disk: each node a record of a segment, indexed by its
+/// identity.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct NodeDirectory(Directory<NodeHash>);
@@ -1039,6 +1425,15 @@ impl NodeDirectory
     pub(crate) fn open(path: PathBuf) -> Result<Self, StoreError>
     {
         Directory::open(path).map(Self)
+    }
+
+    /// Sync the record plane's segments, as [`Directory::sync`] syncs them.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn sync(&self) -> Result<(), StoreError>
+    {
+        self.0.sync()
     }
 }
 
@@ -1105,8 +1500,8 @@ impl BlockStore for NodeBatch<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`BlockStore::load`]; a node that the batch did not take,
-    ///   that the directory does not list and that no file holds, or whose file
-    ///   cannot be read, is unknown.
+    ///   that no segment holds after a scan of the other writers' tails, or
+    ///   whose record cannot be read, is unknown.
     /// - provides: the record plane's verified load on disk.
     /// - fails: [`RecordTreeError::UnknownNode`], and [`verify_stored_node`]'s
     ///   refusals for bytes changed on disk, which mark a listed node refused

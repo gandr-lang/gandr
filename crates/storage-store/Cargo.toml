@@ -28,18 +28,20 @@ path = "benches/load.rs"
 
 # The pinned anodized facade supplies the specification attributes; arc-swap
 # holds the snapshot of the roots that readers load with no lock; blake3
-# digests each roots journal entry; the publisher writes each file through a
-# temporary renamed onto its name; the chunker supplies the committed cut
+# digests each roots journal entry and each segment record's header; boxcar
+# holds each plane's segments and records at fixed slots, and papaya indexes
+# them by identity with no lock; the chunker supplies the committed cut
 # parameters; the value plane and the record plane are the two stores the
 # facade holds; the shape library supplies the typed absence a read names.
 [dependencies]
 anodized.workspace = true
 arc-swap.workspace = true
 blake3.workspace = true
-gandr-core-publish.workspace = true
+boxcar.workspace = true
 gandr-storage-chunker.workspace = true
 gandr-storage-records.workspace = true
 gandr-storage-values.workspace = true
+papaya.workspace = true
 quenchant-shape.workspace = true
 
 # The load bench reads the filesystem of its directory and the CPU and the

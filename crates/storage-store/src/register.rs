@@ -6,7 +6,9 @@
 //! two writers of the roots stand in one process. A thread that shares the
 //! store hands its naming to the owner through a [`Namer`], a sender on a
 //! channel: the send takes `&self`, no lock and no system call. The owner
-//! drains the channel at its next naming and at [`Register::drain`]. It holds
+//! drains the channel at its next naming and at [`Register::drain`]. It first
+//! syncs each segment of the two planes that a batch wrote to since the last
+//! naming, so a root never names an object a crash can lose. It then holds
 //! the roots lock alone once for each drain, appends each naming to the roots
 //! journal in order, and then publishes one snapshot of the roots. A reader
 //! loads that snapshot through [`Store::roots`](crate::Store::roots) with no
@@ -34,6 +36,9 @@
 //! - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — lineage: the store's single
 //!   writer plan, whose register is the one owner of the roots, and whose
 //!   readers load a snapshot through `arc-swap`.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: the performance
+//!   programme (§ performance-picture) — the writer syncs the marked segments
+//!   before it names a root, so no root names an object a crash can lose.
 
 use alloc::sync::Arc;
 use std::path::PathBuf;
@@ -43,6 +48,9 @@ use std::sync::mpsc::Sender;
 use arc_swap::ArcSwap;
 use gandr_storage_values::ContentPtr;
 
+use crate::crash;
+use crate::crash::Point;
+use crate::plane::ChunkDirectory;
 use crate::plane::NodeDirectory;
 use crate::roots::Kept;
 use crate::roots::Naming;
@@ -107,14 +115,15 @@ pub struct Register
 
 impl Register
 {
-    /// The register of the store at `root`: its record plane `nodes`, its
-    /// roots `kept`, and the snapshot `published` that its readers load.
+    /// The register of the store at `root`: its value plane `chunks`, its
+    /// record plane `nodes`, its roots `kept`, and the snapshot `published`
+    /// that its readers load.
     ///
     /// # Specification
     /// trivial.
     pub(crate) fn new(
         root: PathBuf,
-        nodes: Arc<NodeDirectory>,
+        (chunks, nodes): (Arc<ChunkDirectory>, Arc<NodeDirectory>),
         kept: Kept,
         published: Arc<ArcSwap<Roots>>,
     ) -> Self
@@ -123,6 +132,7 @@ impl Register
         Self {
             writer: Writer {
                 root,
+                chunks,
                 nodes,
                 kept,
                 published,
@@ -249,13 +259,15 @@ impl Register
     }
 }
 
-/// What writes a store's roots: the store's directory, its record plane, the
+/// What writes a store's roots: the store's directory, its two planes, the
 /// roots as last read or written, and the snapshot its readers load.
 #[derive(Debug)]
 struct Writer
 {
     /// The directory the store is rooted at.
     root: PathBuf,
+    /// The store's value plane, whose marked segments a naming syncs first.
+    chunks: Arc<ChunkDirectory>,
     /// The store's record plane, which holds the roots tree.
     nodes: Arc<NodeDirectory>,
     /// The roots, as last read or written, and where the reading stands.
@@ -293,6 +305,11 @@ impl Writer
         if namings.peek().is_none() {
             return Ok(());
         }
+        // Every object a naming names stands durable before the naming.
+        crash::passed(Point::ObjectsBefore);
+        self.chunks.sync()?;
+        self.nodes.sync()?;
+        crash::passed(Point::ObjectsAfter);
         let lock = locked(&self.root, Hold::Alone)?;
         self.kept.name(&self.root, &self.nodes, namings)?;
         drop(lock);

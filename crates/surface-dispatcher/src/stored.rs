@@ -709,11 +709,7 @@ mod tests
             .count();
         assert_eq!(shared, 13, "B shares a run of A's chunks");
 
-        let file = directory.join("chunks").join(d.digest().to_string());
-        let mut bytes = std::fs::read(&file).expect("D's chunk reads");
-        let last = bytes.last_mut().expect("a chunk has bytes");
-        *last ^= 0xFF_u8;
-        std::fs::write(&file, &bytes).expect("D's chunk is changed");
+        crate::fixture::damage(&directory, d, crate::fixture::Damage::Flip);
         let mut fresh = StoreAccount::default();
         fresh
             .read(&directory, &identities)

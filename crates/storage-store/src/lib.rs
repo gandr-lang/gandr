@@ -6,9 +6,9 @@
 //!
 //! [`Store::open`] roots a store at a directory, the user's data directory's
 //! `gandr/store` for the driver. The value plane, the content-addressable
-//! memory of `storage-values`, holds its chunks in `chunks/`, each a file
-//! named by its digest; the record plane of `storage-records` holds its nodes
-//! in `nodes/`, each named by its identity; the two never share a name space.
+//! memory of `storage-values`, holds its chunks in `chunks/`; the record plane
+//! of `storage-records` holds its nodes in `nodes/`; the two never share a
+//! name space. Each plane is a log of records in segment files.
 //! [`Store::commit`] and [`Store::deref`] move a [`Stored`] value in and out
 //! by [`ContentPtr`], [`Store::closure`] reads the chunks it resides in and
 //! their bytes, and [`Store::write_tree`] and [`Store::records`] a record
@@ -51,6 +51,7 @@
 
 extern crate alloc;
 
+mod crash;
 #[cfg(unix)]
 mod entries;
 mod plane;
