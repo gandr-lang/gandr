@@ -35,10 +35,12 @@
 #   first step; its payload stays what most jobs run (ci.Dockerfile).
 # - A merge group on `landing` runs the blocking set alone (#5438, #5439).
 #   The set is the run's setup, the formatting of the change, Clippy, the
-#   compiler policy and the brake. `landing-title-and-deletes.yml` lints the title and each
+#   compiler policy, the treefmt job and the brake. `landing-title-and-deletes.yml` lints the title and each
 #   entry's authored commits, and checks the ledger against the issues the
-#   group closes (#6883). The Clippy job runs the formatting first, and it
-#   and the compiler policy run the tasks of `check:landing`. The two lints
+#   group closes (#6883). The Clippy job runs the formatting first, and it,
+#   the compiler policy and the treefmt job run the tasks of `check:landing`.
+#   The treefmt job runs its whole set of checks, the ledgers among them, as
+#   on a pull request (the owner's word of 2026-11-14). The two lints
 #   read the packages that the group's change reaches against its base,
 #   over the newest state that a group on `landing` handed on, and a group
 #   that reaches no package runs neither lint (#6894). The brake
@@ -2575,11 +2577,14 @@ jobs:
   # Formatting and workflow security lint share the treefmt pass. It runs
   # over a failed image build and fails pulling the missing image (`ci-image`),
   # skips GitHub's rebase of an unchanged change (`rebased`, #2070), and runs
-  # on a push only when no merge group built its head (`unbuilt`, #2084).
+  # on a push only when no merge group built its head (`unbuilt`, #2084). A
+  # merge group on `landing` runs it as a pull request does, so the ruleset
+  # can require it (the owner's word of 2026-11-14): on a pull request it
+  # takes 208 s on average, beside the compiler policy's 295 s in a group.
   format-gate:
     name: check formatting and lint gates (treefmt)
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event.merge_group.base_ref != 'refs/heads/landing' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && (github.event_name != 'push' || needs.prepare.outputs.unbuilt == 'true') && github.event_name != 'schedule' && github.actor != 'renovate[bot]' }}
     runs-on: *linux
     permissions:
       contents: read

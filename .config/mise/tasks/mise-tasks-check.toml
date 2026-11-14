@@ -724,18 +724,40 @@ env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = ".config/mise/enforcing quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
 # The blocking set of the queue on `landing` (#5439) is Clippy's two passes
-# and the compiler policy with its specification gates, and the shared
-# formatters over the paths the group changes (#6883). The queue runs these
-# tasks in two jobs of `landing-checks.yml`: `check Clippy wall`, which runs the
-# formatters first, and `check quenchant compiler policy`. The gate runs
-# them over the change's packages and paths before `pr:open`.
-# `check:landing-queue` holds the two jobs to this list. Thus the two sets
-# stay one. The integration cycle runs the tests, the sweeps and the other
-# gates (#5438).
+# and the compiler policy with its specification gates, the shared
+# formatters over the paths the group changes (#6883), and the checks of the
+# treefmt job, the ledgers among them (the owner's word of 2026-11-14). The
+# queue runs these tasks in three jobs of `landing-checks.yml`: `check Clippy
+# wall`, which runs the formatters first, `check quenchant compiler policy`
+# and `check formatting and lint gates (treefmt)`. The gate runs them over
+# the change's packages and paths before `pr:open`. `check:landing-queue`
+# holds the three jobs to this list. Thus the two sets stay one. The
+# integration cycle runs the tests, the sweeps and the other gates (#5438).
 ["check:landing"]
-description = "The checks a merge group on landing runs: the formatting of the change, Clippy and the compiler policy"
-depends = ["check:format", "check:clippy-plain-only", "check:clippy-enforcing", "check:dylint", "check:anodized", "check:anodized-enforcing"]
-run = "echo 'landing check OK: the formatting of the change, Clippy and the compiler policy hold'"
+description = "The checks a merge group on landing runs: the formatting of the change, Clippy, the compiler policy and the treefmt job's checks"
+depends = [
+  "check:format",
+  "check:clippy-plain-only",
+  "check:clippy-enforcing",
+  "check:dylint",
+  "check:anodized",
+  "check:anodized-enforcing",
+  "check:markdown",
+  "check:readme-pin",
+  "check:merge-residue",
+  "check:workflow-hashing",
+  "check:lockfile",
+  "check:publish",
+  "check:crate-map",
+  "check:crate-lead",
+  "check:purposes",
+  "check:positions",
+  "check:shared",
+  "check:references",
+  "check:tracking",
+  "check:ledger",
+]
+run = "echo 'landing check OK: the formatting of the change, Clippy, the compiler policy and the checks of the treefmt job hold'"
 
 # CI separates compilation from execution so failed tests retain built state.
 # The plain build still covers every workspace target before test execution.
