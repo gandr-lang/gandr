@@ -44,6 +44,9 @@ impl<'ring> Registrar<'ring>
     ///
     /// - fails: the count does not fit, or the kernel refuses the table.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Cost
+    /// - allocation: the boxed error of a count past 32 bits, error path
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -77,6 +80,9 @@ impl<'ring> Registrar<'ring>
     ///
     /// - fails: the count does not fit, or the kernel refuses the table.
     /// - executable: none — the outcome is the kernel's.
+    ///
+    /// # Cost
+    /// - allocation: the boxed error of a count past 32 bits, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a sparse table of slots takes a direct socket in its
