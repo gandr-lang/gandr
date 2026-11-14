@@ -2735,12 +2735,13 @@ impl ContentTable
     #[spec(captures: named_before = usize::from(self.constants.len()),
         ensures: usize::from(self.constants.len()) >= named_before)]
     #[inline]
-    pub fn name_ahead(
+    pub fn name_ahead<Names>(
         &mut self,
         first: ConstantIndex,
-        names: impl IntoIterator<Item = ConstantName>,
+        names: Names,
         reading: Option<ArenaWatermark>,
-    )
+    ) where
+        Names: IntoIterator<Item = ConstantName>,
     {
         let mut renamed = false;
         for (index, name) in (usize::from(first) ..).zip(names) {
