@@ -23,8 +23,9 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Provided features
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon`, `seal`, `replay` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration`, `ArtifactRefusal` and `AxiomReport`.
-- **The record.** `Environment` reads and writes the record of [`gandr-kernel-core-base`](../kernel-core-base/README.md): its verdicts, admitted results, forked drain, seals, content key, rewrites, census and errors.
+- **The record.** `Environment` reads and writes the record of [`gandr-kernel-core-base`](../kernel-core-base/README.md): its verdicts, admitted results, seals, content key, rewrites, census and errors.
 - **The checking machine.** `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`; only `Environment` admits.
+- **The fork.** `Environment::forking`: a check's long last drain and the sibling goals of a frame past the grain run apart through a `SharedFork`. The fork holds the `WalkShells` of each worker between two forks ([`fork`](src/fork.rs)).
 - **Type formation.** An iterative walk computing a type's universe level; [`check`](src/check.rs) tables its gates.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms over `Convertibility`; [`conv`](src/conv.rs) states the comparison.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, answering a `KernelVerdict` (the classes are in [`replay`](src/replay.rs)); `read_step`: an open returned code's step re-derived by the kernel's own reading, with no trace.
@@ -58,6 +59,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 | ----- | ------ |
 | The four decisions, the memo's binding conditions and collapse law, arithmetic and absence, specification boundaries | [`src/lib.rs`](src/lib.rs) |
 | The checking machine, its correspondence table, universes and the lift, static operators, the native List | [`src/check.rs`](src/check.rs) |
+| The fork of a check's drain and of a frame's sibling goals, and the shells of a worker | [`src/fork.rs`](src/fork.rs), [`src/check.rs`](src/check.rs) |
 | Nominal data and records; accessibility under the stage order; the structural fixpoint typed by stages | [`src/check/former.rs`](src/check/former.rs), [`src/check/occurrence.rs`](src/check/occurrence.rs), [`src/check/recursion.rs`](src/check/recursion.rs), [`src/stage_order.rs`](src/stage_order.rs) |
 | Admission, the audit, replay; each role's holder | [`src/environment.rs`](src/environment.rs), [`src/builtin.rs`](src/builtin.rs) |
 | Conversion and its discharged set | [`src/conv.rs`](src/conv.rs) |
@@ -90,6 +92,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
 - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — anchor: the loops design (§ loops-shapes) — productivity as a guard on observations, in `check::guard`.
 - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each frame that the machines pop, in `check`.
+- `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance programme (§ performance-picture) — a worker's steady state allocates nothing from the global allocator, so a worker of a frame fork keeps its shells, in `fork` and `check`.
 
 ## License
 

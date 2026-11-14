@@ -201,6 +201,23 @@ enum Accrual
     Barrier,
 }
 
+/// The stacks of a goal's child session that a worker keeps between forks.
+///
+/// They are the read binders of the goal being keyed and the open accruals.
+/// [`SupportContext::fork_goal`] takes them, and [`SupportContext::join_goal`]
+/// gives them back empty, each list with its place.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub struct SessionStacks
+{
+    /// The read binders.
+    read: Vec<(DeBruijnIndex, ValueTypeId)>,
+    /// The open accruals.
+    open: Vec<Accrual>,
+}
+
 /// Where an open accrual sits on its session's stack.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -702,7 +719,8 @@ impl SupportContext
     /// [`Self::fork`], with a mirror of the innermost open goal under the
     /// child's own accruals. What the child reads and owes joins the mirror,
     /// and [`Self::join_goal`] joins the mirror into that goal, as a serial
-    /// walk joins a closed subgoal into it.
+    /// walk joins a closed subgoal into it. The child keeps its read binders
+    /// and its accruals in the lists of `stacks`.
     ///
     /// The mirror is the innermost open goal, empty, and each barrier above
     /// it. A read past a barrier joins nothing on either walk, and an owed key
@@ -710,7 +728,8 @@ impl SupportContext
     ///
     /// # Specification
     /// - requires: as [`Self::fork`].
-    /// - ensures: as [`Self::fork`]; the child's open accruals are the mirror.
+    /// - ensures: as [`Self::fork`]; the child's open accruals are the mirror,
+    ///   whatever `stacks` held.
     /// - provides: the session a goal's forked child checks in.
     /// - fails: never.
     /// - panics: none.
@@ -719,25 +738,32 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::join_goal`].
     /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    ///
+    /// # Cost
+    /// - allocation: the child's open stack, growth within the mirror
     #[must_use]
     #[inline]
     pub fn fork_goal(
         &mut self,
         arena: &TermArena,
+        stacks: SessionStacks,
     ) -> Self
     {
         let mut child = self.fork(arena);
+        let SessionStacks { mut read, mut open } = stacks;
+        read.clear();
+        open.clear();
         let mirrored = self.open.get(self.mirrored().0 ..).unwrap_or_default();
-        child
-            .open
-            .extend(mirrored.iter().map(|accrual| match *accrual {
-                Accrual::Goal { depth, .. } => Accrual::Goal {
-                    depth,
-                    reads: Reads::closed(),
-                    owed: Vec::new(),
-                },
-                Accrual::Barrier => Accrual::Barrier,
-            }));
+        open.extend(mirrored.iter().map(|accrual| match *accrual {
+            Accrual::Goal { depth, .. } => Accrual::Goal {
+                depth,
+                reads: Reads::closed(),
+                owed: Vec::new(),
+            },
+            Accrual::Barrier => Accrual::Barrier,
+        }));
+        child.read = read;
+        child.open = open;
         child
     }
 
@@ -755,7 +781,8 @@ impl SupportContext
     ///   session's arena.
     /// - ensures: as [`Self::join`]. The innermost open goal gains the binders
     ///   and the keys that the child's subgoals give it on a serial walk, and
-    ///   [`Self::owes`] holds for each obligation the child owes.
+    ///   [`Self::owes`] holds for each obligation the child owes. The child's
+    ///   stacks come back empty, for the next child to take.
     /// - provides: the fold of a goal's child at its join.
     /// - fails: as [`Self::join`].
     /// - panics: none.
@@ -766,14 +793,18 @@ impl SupportContext
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a child's reads and owed keys under a goal, under a
-    ///   barrier and with no goal open, against the serial walk.
+    ///   barrier and with no goal open, against the serial walk, each child on
+    ///   the stacks that the join of the one before gave back.
     /// - witness: `support::tests::a_child_goal_joins_what_it_read_and_owed_as_a_serial_walk_does`
+    ///
+    /// # Cost
+    /// - allocation: this check's owed keys, growth within the child's keys
     #[inline]
     pub fn join_goal(
         &mut self,
         arena: &TermArena,
         mut child: Self,
-    ) -> Result<(), crate::KernelError>
+    ) -> Result<SessionStacks, crate::KernelError>
     {
         let mirror = self.open.len().saturating_sub(self.mirrored().0);
         while child.open.len() > mirror {
@@ -781,17 +812,23 @@ impl SupportContext
         }
         let owing = core::mem::take(&mut child.owing);
         let drained = core::mem::take(&mut child.drained);
-        let mirrored = core::mem::take(&mut child.open);
+        let mut open = core::mem::take(&mut child.open);
+        let mut read = core::mem::take(&mut child.read);
         self.join(arena, child)?;
         // A barrier of the mirror stopped each read, as the barrier above
         // this session's goal stops it.
-        if let Some(Accrual::Goal { depth, reads, owed }) = mirrored.into_iter().next() {
+        let innermost = open
+            .first_mut()
+            .map(|first| core::mem::replace(first, Accrual::Barrier));
+        open.clear();
+        if let Some(Accrual::Goal { depth, reads, owed }) = innermost {
             accrue(&mut self.open, &reads, depth);
             owe_into(&mut self.open, &owed);
         }
         self.owing.extend(owing);
         self.drained.absorb(drained);
-        Ok(())
+        read.clear();
+        Ok(SessionStacks { read, open })
     }
 
     /// The order of `self`'s own records against `other`'s, as
@@ -2685,6 +2722,9 @@ mod tests
                 let _reads = session.close(subgoal);
             }
         };
+        // Each child takes the stacks that the join of the one before gave
+        // back, so a stack that keeps a child's accruals shows in the next.
+        let mut stacks = super::SessionStacks::default();
         for (barred, closes) in [(false, true), (false, false), (true, true)] {
             let mut walks = [keyed.carried(), keyed.carried()].map(|mut session| {
                 let goal = session.open(&binders[.. 2]);
@@ -2694,9 +2734,9 @@ mod tests
             });
             let [(ref mut serial, ..), (ref mut forked, ..)] = walks;
             child_walk(serial, closes);
-            let mut child = forked.fork_goal(&arena);
+            let mut child = forked.fork_goal(&arena, stacks);
             child_walk(&mut child, closes);
-            forked
+            stacks = forked
                 .join_goal(&arena, child)
                 .expect("a serial child's join glues");
             let [serial, forked] = walks.map(|(mut session, goal, barrier)| {

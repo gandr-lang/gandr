@@ -723,8 +723,40 @@ struct Floor
 /// family reached since, and the stack holds one floor per length still
 /// standing above a lower one.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct Floors(Vec<Floor>);
+
+impl Clone for Floors
+{
+    /// A copy of the floors.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the list of floors, setup
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self(self.0.clone())
+    }
+
+    /// The floors of `source`, written into this list's place.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the list of floors, growth within the floors of `source`
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.0.clone_from(&source.0);
+    }
+}
 
 impl Floors
 {
@@ -771,7 +803,7 @@ impl Floors
 ///
 /// Not part of the arena's content: two arenas holding the same nodes are
 /// equal whatever truncations brought each there.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct Truncations
 {
     /// How many truncations dropped a node.
@@ -784,6 +816,42 @@ struct Truncations
     value_types: Floors,
     /// The [`CompType`] family's floors.
     comp_types: Floors,
+}
+
+impl Clone for Truncations
+{
+    /// A copy of the record.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            stamp: self.stamp,
+            values: self.values.clone(),
+            computations: self.computations.clone(),
+            value_types: self.value_types.clone(),
+            comp_types: self.comp_types.clone(),
+        }
+    }
+
+    /// The record of `source`, written into the places of this one's floors.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.stamp = source.stamp;
+        self.values.clone_from(&source.values);
+        self.computations.clone_from(&source.computations);
+        self.value_types.clone_from(&source.value_types);
+        self.comp_types.clone_from(&source.comp_types);
+    }
 }
 
 impl PartialEq for Truncations
@@ -902,7 +970,7 @@ impl Truncations
 ///   ceiling is not exercised; its conversion is checked separately.
 /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct TermArena
 {
     /// The value nodes, in allocation order, which is child-before-parent.
@@ -927,6 +995,58 @@ pub struct TermArena
     /// The truncations that dropped a node, for the readers that name nodes
     /// by position; not part of the arena's content.
     truncations: Truncations,
+}
+
+impl Clone for TermArena
+{
+    /// A copy of the arena that shares its frozen nodes and copies the nodes
+    /// minted after them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            values: self.values.clone(),
+            value_supports: self.value_supports.clone(),
+            computations: self.computations.clone(),
+            computation_supports: self.computation_supports.clone(),
+            value_types: self.value_types.clone(),
+            value_type_supports: self.value_type_supports.clone(),
+            comp_types: self.comp_types.clone(),
+            comp_type_supports: self.comp_type_supports.clone(),
+            unrelated: alloc::sync::Arc::clone(&self.unrelated),
+            truncations: self.truncations.clone(),
+        }
+    }
+
+    /// A copy of `source`, written into this arena's lists: each list keeps
+    /// its place, so a worker that keeps an arena between two forks clones the
+    /// frozen arena of the next one with no allocation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.values.clone_from(&source.values);
+        self.value_supports.clone_from(&source.value_supports);
+        self.computations.clone_from(&source.computations);
+        self.computation_supports
+            .clone_from(&source.computation_supports);
+        self.value_types.clone_from(&source.value_types);
+        self.value_type_supports
+            .clone_from(&source.value_type_supports);
+        self.comp_types.clone_from(&source.comp_types);
+        self.comp_type_supports
+            .clone_from(&source.comp_type_supports);
+        self.unrelated.clone_from(&source.unrelated);
+        self.truncations.clone_from(&source.truncations);
+    }
 }
 
 /// One family's nodes in allocation order.
@@ -956,7 +1076,7 @@ pub struct TermArena
 /// - witness: `arena::tests::a_family_frozen_many_times_reads_each_node_where_it_was_minted_3476`
 /// - witness: `arena::tests::a_write_to_a_frozen_node_copies_its_chunk_alone_7243`
 /// - witness: `arena::tests::a_family_frozen_beside_its_clones_copies_each_node_a_few_times_7335`
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Family<Node>
 {
     /// The whole chunks of the frozen nodes, [`CHUNK`] nodes each, oldest
@@ -1084,6 +1204,44 @@ impl<Node: Eq> Eq for Family<Node>
 {
 }
 
+impl<Node: Clone> Clone for Family<Node>
+{
+    /// A copy of the family that shares its chunks and its tail, and copies
+    /// the nodes minted after them.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            frozen: self.frozen.clone(),
+            tail: self.tail.clone(),
+            ends: self.ends,
+            frozen_len: self.frozen_len,
+            own: self.own.clone(),
+        }
+    }
+
+    /// A copy of `source`, written into this family's list of segments and
+    /// its own nodes, each of which keeps its place.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.frozen.clone_from(&source.frozen);
+        self.tail.clone_from(&source.tail);
+        self.ends = source.ends;
+        self.frozen_len = source.frozen_len;
+        self.own.clone_from(&source.own);
+    }
+}
+
 impl<Node> Family<Node>
 {
     /// The empty family, for a constant or a static.
@@ -1101,6 +1259,21 @@ impl<Node> Family<Node>
             frozen_len: 0,
             own: Vec::new(),
         }
+    }
+
+    /// Drop each node and each reference to a chunk or a segment, and keep
+    /// the place of the list of segments and of the own nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clear(&mut self)
+    {
+        self.frozen = None;
+        self.tail.clear();
+        self.ends = [u8::MAX; SEGMENTS];
+        self.frozen_len = 0;
+        self.own.clear();
     }
 
     /// How many of this family's frozen nodes `other` holds by the same
@@ -1559,6 +1732,38 @@ impl TermArena
         self.value_type_supports.freeze();
         self.comp_types.freeze();
         self.comp_type_supports.freeze();
+    }
+
+    /// Drop every node and each reference to a chunk that another arena
+    /// shares, and keep the place of each list. A worker keeps its arena so
+    /// between two forks: it holds no node of the arena it was a clone of, and
+    /// a freeze of that arena extends its newest segment in place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the arena holds no node.
+    /// - provides: the arena that a worker keeps between two forks.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena that holds nodes, a freeze and a truncation
+    ///   of its own, cloned into from another, then cleared, against a fresh
+    ///   clone of that other.
+    /// - witness: `arena::tests::a_clone_into_a_used_arena_answers_as_a_fresh_clone_7358`
+    #[spec(ensures: self.watermark() == ArenaWatermark::default())]
+    #[inline]
+    pub fn clear(&mut self)
+    {
+        self.values.clear();
+        self.value_supports.clear();
+        self.computations.clear();
+        self.computation_supports.clear();
+        self.value_types.clear();
+        self.value_type_supports.clear();
+        self.comp_types.clear();
+        self.comp_type_supports.clear();
+        self.truncations.clone_from(&Truncations::default());
     }
 }
 
@@ -5744,6 +5949,52 @@ mod tests
             "a truncated index is minted again"
         );
         assert_eq!(plain, copy);
+    }
+
+    /// An arena cloned into one that holds nodes, a freeze and a truncation
+    /// of its own answers as a fresh clone of the source does, and shares the
+    /// source's frozen nodes. Once cleared, it holds no node and shares no
+    /// chunk.
+    #[test]
+    fn a_clone_into_a_used_arena_answers_as_a_fresh_clone_7358()
+    {
+        let mut source = TermArena::new();
+        let first = source.value_unit();
+        source.freeze();
+        let second = source.value_variable(super::DeBruijnIndex::from(0_u32));
+        let mut used = TermArena::new();
+        for constant in 0 .. 3_usize {
+            let _minted = used.value_constant(super::ConstantIndex::from(constant));
+        }
+        used.freeze();
+        let _later = used.value_type_unit();
+        used.truncate_to(ArenaWatermark::default());
+        let _again = used.value_type_unit();
+        used.clone_from(&source);
+        assert_eq!(
+            used,
+            source.clone(),
+            "a clone into a used arena holds the source's nodes alone"
+        );
+        assert_eq!(used.watermark(), source.watermark());
+        assert_eq!(used.value(first), source.value(first));
+        assert_eq!(used.value(second), source.value(second));
+        assert_ne!(
+            used.values.shared_frozen(&source.values),
+            0_usize,
+            "and shares its frozen nodes"
+        );
+        used.clear();
+        assert_eq!(
+            used.watermark(),
+            ArenaWatermark::default(),
+            "a cleared arena holds no node"
+        );
+        assert_eq!(
+            used.values.shared_frozen(&source.values),
+            0_usize,
+            "and shares no chunk"
+        );
     }
 
     #[test]

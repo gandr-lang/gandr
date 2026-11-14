@@ -135,11 +135,40 @@ enum Unjoined
 /// The stages one judgement minted, each with the stage it lies directly
 /// below.
 #[repr(transparent)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct StageOrder
 {
     /// Each stage's parent, indexed by [`StageId`].
     parents: Vec<Parent>,
+}
+
+impl Clone for StageOrder
+{
+    /// A copy of the order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            parents: self.parents.clone(),
+        }
+    }
+
+    /// The order of `source`, written into this order's list, which keeps its
+    /// place: a worker's walk takes the stages of each goal so.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone_from(
+        &mut self,
+        source: &Self,
+    )
+    {
+        self.parents.clone_from(&source.parents);
+    }
 }
 
 impl StageOrder

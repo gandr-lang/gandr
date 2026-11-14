@@ -35,7 +35,6 @@ pub mod env;
 pub mod error;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
-pub mod fork;
 #[cfg(any(test, feature = "fixture"))]
 pub mod generated;
 pub mod hashed;

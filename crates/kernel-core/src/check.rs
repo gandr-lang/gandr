@@ -278,6 +278,7 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use anodized::spec;
@@ -360,6 +361,7 @@ use crate::support::NodeSupport;
 use crate::support::Opened;
 use crate::support::Owed;
 use crate::support::Question;
+use crate::support::SessionStacks;
 use crate::support::SupportContext;
 use crate::support::SupportPlane;
 use crate::witness::comp_type_witness;
@@ -3176,6 +3178,25 @@ struct Continuation
     questions: Vec<Question>,
 }
 
+impl Continuation
+{
+    /// Empty each stack and keep its place, as a run takes the continuation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clear(&mut self)
+    {
+        self.frames.clear();
+        self.goals.clear();
+        self.values.clear();
+        self.types.clear();
+        self.comp_types.clear();
+        self.components.clear();
+        self.questions.clear();
+    }
+}
+
 /// One component of a higher evaluation on the machine's stacks: the
 /// telescope its checks stand in, outermost first, and its checks, the next
 /// last.
@@ -4239,7 +4260,7 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 fn machine<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
-    mut context: Vec<ValueTypeId>,
+    context: &mut Vec<ValueTypeId>,
     initial: Goal,
     walk: &mut Walk,
     recording: Recording<'_, M>,
@@ -4305,7 +4326,7 @@ where
             {
                 // The recalled goal's binders are read here, as if its
                 // subgoals had run.
-                session.read(hit.support().reads(), &context);
+                session.read(hit.support().reads(), context);
                 recalled = Some(outcome);
                 answered = ExpansionKind::Recalled;
             }
@@ -4320,7 +4341,7 @@ where
                 answered = ExpansionKind::Kept;
             }
             else {
-                let opened = session.open(&context);
+                let opened = session.open(context);
                 frames.push(Frame::Memoize(
                     Slice::pushed(question_stack, [question]),
                     opened,
@@ -4414,7 +4435,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: path_type,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4457,7 +4478,7 @@ where
                         }
                         frames.push(Frame::SessionPayload {
                             classifier: flow_type,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(payload_paths, expected);
                         continue 'expand;
@@ -4504,7 +4525,7 @@ where
                         frames.push(Frame::FlowForward {
                             flow: id,
                             endpoints,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(translator, expected);
                         continue 'expand;
@@ -4595,7 +4616,7 @@ where
                         frames.push(Frame::PathForward {
                             path: id,
                             endpoints,
-                            context: Slice::saved(type_stack, &mut context),
+                            context: Slice::saved(type_stack, context),
                         });
                         goal = Goal::CheckValue(forward, translator);
                         continue 'expand;
@@ -4928,7 +4949,7 @@ where
                     // The stage witness scans the context for a value at a
                     // stage, so every binder is read.
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
-                        session.read(&WIDEST, &context);
+                        session.read(&WIDEST, context);
                     }
                     recursion::constructor_fields(
                         arena,
@@ -5219,7 +5240,7 @@ where
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        let outer = Slice::saved(type_stack, &mut context);
+                        let outer = Slice::saved(type_stack, context);
                         let remaining = ComponentChecks::pushed(
                             (component_stack, type_stack, goal_stack),
                             &remaining,
@@ -5252,7 +5273,7 @@ where
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             barriers.push(session.open_barrier());
                         }
-                        let outer = Slice::saved(type_stack, &mut context);
+                        let outer = Slice::saved(type_stack, context);
                         let remaining = ComponentChecks::pushed(
                             (component_stack, type_stack, goal_stack),
                             &remaining,
@@ -5399,7 +5420,7 @@ where
                         // variables, which their carried supports cover.
                         if matches!(M::ACTIVITY, MemoActivity::Active) {
                             for &applied in &arguments {
-                                session.read(arena.value_support(applied), &context);
+                                session.read(arena.value_support(applied), context);
                             }
                         }
                         let at = quantified::instantiation(
@@ -5858,7 +5879,7 @@ where
             match frame {
                 Frame::Pending(slice, result) => {
                     let siblings = Siblings {
-                        context: &context,
+                        context,
                         goals: slice.items(goal_stack),
                         field: None,
                         stages: &stages,
@@ -5896,7 +5917,7 @@ where
                     begun,
                 } => {
                     let siblings = Siblings {
-                        context: &context,
+                        context,
                         goals: remaining.items(goal_stack),
                         field: Some((holder, begun)),
                         stages: &stages,
@@ -6099,7 +6120,7 @@ where
                                 .checked_sub(slot.saturating_add(1))
                                 .and_then(|index| u32::try_from(index).ok())
                         {
-                            session.read(&Reads::variable(DeBruijnIndex::from(index)), &context);
+                            session.read(&Reads::variable(DeBruijnIndex::from(index)), context);
                         }
                         // Inside the declaration's own fixpoint, its constant
                         // in a field type reads as the self binder, at the
@@ -6202,7 +6223,7 @@ where
                     // The loops read the slots of the variables nested cases
                     // are over, which the case's carried support covers.
                     if matches!(M::ACTIVITY, MemoActivity::Active) {
-                        session.read(arena.computation_support(case), &context);
+                        session.read(arena.computation_support(case), context);
                     }
                     let unfoldings = admitted_unfoldings(judgement);
                     loops::respected(arena, &unfoldings, context.as_slice(), (case, datatype))?;
@@ -6479,7 +6500,7 @@ where
                     });
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Path)?;
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -6569,14 +6590,14 @@ where
                     let Some((component, rest)) = remaining.next(component_stack)
                     else {
                         remaining.release(component_stack);
-                        outer.restored(type_stack, &mut context);
+                        outer.restored(type_stack, context);
                         if let Some(barrier) = barriers.pop() {
                             let _closed = session.close(barrier);
                         }
                         produced = Produced::Checked;
                         continue;
                     };
-                    component.context.restored(type_stack, &mut context);
+                    component.context.restored(type_stack, context);
                     frames.push(Frame::Components {
                         outer,
                         remaining: rest,
@@ -6620,8 +6641,7 @@ where
                     let (table, rewrites) = session.rewrite_parts();
                     let source = substitute_value_type(arena, table, rewrites, motive, left);
                     let target = substitute_value_type(arena, table, rewrites, motive, right);
-                    let target =
-                        carried_stage(arena, judgement, &context, (value, domain, target))?;
+                    let target = carried_stage(arena, judgement, context, (value, domain, target))?;
                     frames.push(Frame::ProduceComp(arena.comp_type_returner(target)));
                     // A path motive's endpoints check first, under the binder
                     // at the path's carrier, and the value after them. A tower
@@ -6854,7 +6874,7 @@ where
                     );
                     arena.truncate_to(watermark);
                     result.map_err(KernelError::Flow)?;
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -7493,7 +7513,7 @@ where
                     classifier,
                     context: outer,
                 } => {
-                    outer.restored(type_stack, &mut context);
+                    outer.restored(type_stack, context);
                     if let Some(barrier) = barriers.pop() {
                         let _closed = session.close(barrier);
                     }
@@ -7673,8 +7693,7 @@ where
                     next,
                     first,
                 } => {
-                    let branch_type =
-                        strengthened(arena, session, &context, produced.comp_type()?)?;
+                    let branch_type = strengthened(arena, session, context, produced.comp_type()?)?;
                     let first_type = match first {
                         None => branch_type,
                         Some(first_type) => {
@@ -7852,7 +7871,7 @@ where
                 Frame::Strengthen => {
                     let synthesized = produced.comp_type()?;
                     produced =
-                        Produced::CompType(strengthened(arena, session, &context, synthesized)?);
+                        Produced::CompType(strengthened(arena, session, context, synthesized)?);
                 },
             }
         }
@@ -7884,7 +7903,7 @@ where
 fn run<M>(
     arena: &mut TermArena,
     judgement: Judgement<'_>,
-    context: Vec<ValueTypeId>,
+    mut context: Vec<ValueTypeId>,
     initial: Goal,
     stages: StageOrder,
     recording: Recording<'_, M>,
@@ -7893,17 +7912,11 @@ fn run<M>(
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
-    continuation.frames.clear();
-    continuation.goals.clear();
-    continuation.values.clear();
-    continuation.types.clear();
-    continuation.comp_types.clear();
-    continuation.components.clear();
-    continuation.questions.clear();
+    continuation.clear();
     machine(
         arena,
         judgement,
-        context,
+        &mut context,
         initial,
         &mut Walk::starting(stages),
         recording,
@@ -8931,7 +8944,7 @@ fn drain_code_obligations<M>(
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
-    owed: Vec<CodeObligation>,
+    mut owed: Vec<CodeObligation>,
     continuation: &mut Continuation,
 ) -> Result<(), KernelError>
 where
@@ -8956,7 +8969,7 @@ where
         memo,
         session,
         census,
-        owed,
+        &mut owed,
         (&mut ledger, continuation),
     )?;
     ledger.record(memo, session);
@@ -9011,7 +9024,7 @@ fn drain_into<M>(
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
-    mut owed: Vec<CodeObligation>,
+    owed: &mut Vec<CodeObligation>,
     (ledger, continuation): (&mut DrainLedger, &mut Continuation),
 ) -> Result<(), KernelError>
 where
@@ -9052,7 +9065,7 @@ where
                         memo,
                         session,
                         census,
-                        owed: &mut owed,
+                        owed: &mut *owed,
                     },
                     continuation,
                 )?;
@@ -9077,7 +9090,7 @@ where
                             memo,
                             session,
                             census,
-                            owed: &mut owed,
+                            owed: &mut *owed,
                         },
                         continuation,
                     )?;
@@ -9138,7 +9151,7 @@ where
                             memo,
                             session,
                             census,
-                            owed: &mut owed,
+                            owed: &mut *owed,
                         },
                         continuation,
                     )?;
@@ -9173,7 +9186,7 @@ where
                             memo,
                             session,
                             census,
-                            owed: &mut owed,
+                            owed: &mut *owed,
                         },
                         continuation,
                     )?;
@@ -9224,14 +9237,13 @@ impl crate::fork::Job for DrainPart<'_>
         if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
             return;
         }
-        let owed = core::mem::take(&mut self.owed);
         let answer = drain_into(
             &mut self.arena,
             self.judgement,
             &mut self.memo,
             &mut self.session,
             &mut self.census,
-            owed,
+            &mut self.owed,
             (&mut self.ledger, &mut Continuation::default()),
         );
         if answer.is_err() {
@@ -9433,6 +9445,7 @@ enum FrameFork
 
 /// The sibling goals of one frame, as [`sibling_fork`] and [`siblings_forked`]
 /// read them, and the walk the frame stands in.
+#[derive(Clone, Copy)]
 struct Siblings<'frame>
 {
     /// The context the goals are checked in.
@@ -9454,53 +9467,112 @@ struct Siblings<'frame>
     parameters: KeptParameters,
 }
 
-/// One sibling goal of a frame, checked apart from its siblings: on a clone
+/// The structures that one worker of a frame fork checks its goals on.
+///
+/// They are the lists of an arena's chunks and own nodes, the stacks of a
+/// session, the context, the frame stack, the run of owed obligations and the
+/// stages of the walk. The fork holds them between two forks, so each fork
+/// after the first lends them warm, and a part's hand-off allocates none of
+/// their lists. Between two forks they hold no node and no reference into the
+/// arena of the fork before.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+pub struct WalkShells
+{
+    /// The arena's lists, which a part clones the frame's frozen arena into.
+    arena: TermArena,
+    /// The stacks of the part's session.
+    stacks: SessionStacks,
+    /// The context of a goal, a copy of the frame's.
+    context: Vec<ValueTypeId>,
+    /// The frame stack and its slices.
+    continuation: Continuation,
+    /// The obligations a goal owes, which the part drains.
+    owed: Vec<CodeObligation>,
+    /// The stages of a goal's walk, a copy of the frame's.
+    stages: StageOrder,
+}
+
+impl WalkShells
+{
+    /// Drop each node and each reference into the arena of the fork, and
+    /// keep the place of each list, so the fork keeps the shells until the
+    /// next one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn release(&mut self)
+    {
+        self.arena.clear();
+        self.context.clear();
+        self.continuation.clear();
+        self.owed.clear();
+    }
+}
+
+/// One worker's part of a frame fork. It takes the frame's goals from a
+/// shared cursor, last first, and checks each on its own shells: on a clone
 /// of the frame's frozen arena, through overlays of the frame's memo and
-/// session, from a copy of the frame's walk. It drains the obligations it
-/// owes on its own clone, so none of them names a node the join leaves out.
+/// session, from a copy of the frame's walk. It drains the obligations each
+/// goal owes on its own clone, so none of them names a node the join leaves
+/// out.
 struct SiblingPart<'part>
 {
     /// The judgement of the frame.
     judgement: Judgement<'part>,
-    /// Set by the first part that refuses: a part that has not started then
-    /// does not start, since the frame checks its goals inline after.
+    /// Set by the first part that refuses: a part then takes no other goal,
+    /// since the frame checks its goals inline after.
     refused: &'part AtomicBool,
-    /// A clone of the frame's frozen arena, which the part mints into.
-    arena: TermArena,
+    /// How many of the frame's goals the parts took, last first.
+    cursor: &'part AtomicUsize,
+    /// The frame's goals and the walk it stands in.
+    frame: Siblings<'part>,
+    /// The worker's shells, its arena a clone of the frame's frozen arena.
+    shells: WalkShells,
     /// An overlay of the frame's memo.
     memo: DefaultMemo,
     /// The frame's session, forked at its innermost open goal.
     session: SupportContext,
     /// The goals the part expanded and recalled.
     census: ExpansionCensus,
-    /// The context the goal is checked in, until the part runs.
-    context: Vec<ValueTypeId>,
-    /// The goal.
-    goal: Goal,
-    /// The part's walk, a copy of the frame's.
-    walk: Walk,
-    /// The holder of the field the goal checks, and how many of its fields
-    /// began with this one, so a refusal names the field.
-    field: Option<(ValueId, usize)>,
     /// The part's answer, once it ran.
     answer: Option<Result<(), KernelError>>,
 }
 
 impl crate::fork::Job for SiblingPart<'_>
 {
-    /// Check the part's goal, then drain the obligations it owes.
+    /// Take the frame's goals from the cursor, last first, and check each,
+    /// until no goal is left or a part refused.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn run(&mut self)
     {
-        if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
+        if self.answer.is_some() {
             return;
         }
-        let answer = self.check();
-        if answer.is_err() {
-            self.refused.store(true, Ordering::Relaxed);
+        let goals = self.frame.goals;
+        let mut answer = Ok(());
+        while !self.refused.load(Ordering::Relaxed) {
+            // The serial run checks the goals last first, as the frame pops
+            // them, so the first goal taken is the last.
+            let taken = self.cursor.fetch_add(1, Ordering::Relaxed);
+            let Some(&goal) = goals
+                .len()
+                .checked_sub(taken.saturating_add(1))
+                .and_then(|at| goals.get(at))
+            else {
+                break;
+            };
+            if let Err(refusal) = self.check(goal, taken.saturating_add(1)) {
+                self.refused.store(true, Ordering::Relaxed);
+                answer = Err(refusal);
+                break;
+            }
         }
         self.answer = Some(answer);
     }
@@ -9508,59 +9580,96 @@ impl crate::fork::Job for SiblingPart<'_>
 
 impl SiblingPart<'_>
 {
-    /// Check the part's goal on a frame stack of its own, with its field's
-    /// frame at the bottom, and drain what the goal owes into the session's
-    /// ledger.
+    /// Check `goal`, the frame's goal popped at `position`, on the part's
+    /// frame stack, with its field's frame at the bottom, and drain what the
+    /// goal owes into the session's ledger.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn check(&mut self) -> Result<(), KernelError>
+    fn check(
+        &mut self,
+        goal: Goal,
+        position: usize,
+    ) -> Result<(), KernelError>
     {
-        let mut continuation = Continuation::default();
-        if let Some((holder, begun)) = self.field {
+        let Siblings {
+            context,
+            field,
+            stages,
+            root,
+            staged_bodies,
+            own_fixpoint,
+            parameters,
+            ..
+        } = self.frame;
+        let WalkShells {
+            ref mut arena,
+            context: ref mut goal_context,
+            ref mut continuation,
+            ref mut owed,
+            stages: ref mut goal_stages,
+            ..
+        } = self.shells;
+        continuation.clear();
+        if let Some((holder, begun)) = field {
             continuation.frames.push(Frame::Fields {
                 remaining: Slice::mark(&continuation.goals),
                 holder,
-                begun,
+                begun: begun.saturating_add(position),
             });
         }
-        let mut owed = Vec::new();
-        let _produced = machine(
-            &mut self.arena,
+        goal_context.clear();
+        goal_context.extend_from_slice(context);
+        goal_stages.clone_from(stages);
+        owed.clear();
+        let mut walk = Walk {
+            stages: core::mem::take(goal_stages),
+            root,
+            staged_bodies,
+            own_fixpoint,
+            parameters,
+        };
+        let produced = machine(
+            arena,
             self.judgement,
-            core::mem::take(&mut self.context),
-            self.goal,
-            &mut self.walk,
+            goal_context,
+            goal,
+            &mut walk,
             Recording {
                 memo: &mut self.memo,
                 session: &mut self.session,
                 census: &mut self.census,
-                owed: &mut owed,
+                owed: &mut *owed,
             },
-            &mut continuation,
-        )
-        .map_err(|refusal| field_refused(&self.arena, &continuation.frames, refusal))?;
+            continuation,
+        );
+        *goal_stages = walk.stages;
+        let _produced =
+            produced.map_err(|refusal| field_refused(arena, &continuation.frames, refusal))?;
         if owed.is_empty() {
             return Ok(());
         }
         let mut ledger = DrainLedger::default();
         drain_into(
-            &mut self.arena,
+            arena,
             self.judgement,
             &mut self.memo,
             &mut self.session,
             &mut self.census,
             owed,
-            (&mut ledger, &mut continuation),
+            (&mut ledger, continuation),
         )?;
         self.session.fold_drained(ledger);
         Ok(())
     }
 }
 
-/// Check the sibling goals of one frame apart, one part for each goal,
-/// through `fork`, and fold the parts in the serial order of the goals.
+/// Check the sibling goals of one frame apart through `fork`: one part for
+/// each worker of the fork, and no more parts than goals. Each part takes
+/// the goals from a shared cursor, last first, on the shells that the fork
+/// lends it. The join folds the parts in their order, and gives each part's
+/// shells back to the fork.
 ///
 /// # Specification
 /// - requires: `frame` holds the goals of a frame and the walk it stands in, at
@@ -9572,7 +9681,8 @@ impl SiblingPart<'_>
 ///   drained. [`FrameFork::Inline`] when the memo cannot fork, or when a part
 ///   refused or did not run. The arena's nodes, the memo's answers, the
 ///   session's accruals and the census are then as the call found them, and the
-///   frame checks its goals inline, so a refusal is the serial run's.
+///   frame checks its goals inline, so a refusal is the serial run's. Each
+///   part's shells go back to `fork` whatever the join gives.
 /// - provides: the fork of a frame's sibling goals.
 /// - fails: two parts that keep two outcomes under one key, which do not agree
 ///   and so do not glue.
@@ -9587,7 +9697,8 @@ impl SiblingPart<'_>
 /// # Adequacy
 /// - hypothesis: L3 — declarations whose frames pass and refuse, checked at
 ///   width one, in the reverse order and on threads of their own, against the
-///   unforked check.
+///   unforked check; the forks on threads lend each fork the shells of the
+///   forks before.
 /// - witness: `check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
 #[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
 fn siblings_forked<M>(
@@ -9606,53 +9717,37 @@ where
         census,
         ..
     } = recording;
-    let &Siblings {
-        context,
-        goals,
-        field,
-        stages,
-        root,
-        staged_bodies,
-        own_fixpoint,
-        parameters,
-    } = frame;
-    let mut memos = Vec::with_capacity(goals.len());
-    for _goal in goals {
-        let Some(child) = memo.fork_child()
-        else {
-            return Ok(FrameFork::Inline);
-        };
-        memos.push(child);
-    }
+    let Some(first) = memo.fork_child()
+    else {
+        return Ok(FrameFork::Inline);
+    };
     let taken = judgement.taking.taken();
     arena.freeze();
     let refused = AtomicBool::new(false);
-    // The serial run checks the goals last first, as the frame pops them.
-    let mut parts: Vec<SiblingPart<'_>> = goals
-        .iter()
-        .rev()
-        .zip(memos)
-        .zip(1_usize ..)
-        .map(|((&goal, part_memo), position)| SiblingPart {
+    let cursor = AtomicUsize::new(0);
+    let workers = NonZeroUsize::from(fork.workers())
+        .get()
+        .min(frame.goals.len());
+    let mut parts: Vec<SiblingPart<'_>> = Vec::with_capacity(workers);
+    for part_memo in core::iter::once(first)
+        .chain(core::iter::from_fn(|| memo.fork_child()))
+        .take(workers)
+    {
+        let mut shells = fork.lend();
+        shells.arena.clone_from(arena);
+        let part_session = session.fork_goal(arena, core::mem::take(&mut shells.stacks));
+        parts.push(SiblingPart {
             judgement,
             refused: &refused,
-            arena: arena.clone(),
+            cursor: &cursor,
+            frame: *frame,
+            shells,
             memo: part_memo,
-            session: session.fork_goal(arena),
+            session: part_session,
             census: ExpansionCensus::new(),
-            context: context.to_vec(),
-            goal,
-            walk: Walk {
-                stages: stages.clone(),
-                root,
-                staged_bodies,
-                own_fixpoint,
-                parameters,
-            },
-            field: field.map(|(holder, begun)| (holder, begun.saturating_add(position))),
             answer: None,
-        })
-        .collect();
+        });
+    }
     {
         let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
             .iter_mut()
@@ -9667,7 +9762,7 @@ where
     // A reader that names nodes by their positions forgets each part's own
     // before any fold, so a refused fold leaves none of them behind.
     for part in &parts {
-        arena.dropped(&part.arena);
+        arena.dropped(&part.shells.arena);
     }
     // The table folds first the part that holds the most own records, before
     // any agreement places a type: the fold appends them as they stand, and
@@ -9684,45 +9779,60 @@ where
     {
         session.join_table(arena, &mut lead.session);
     }
+    let mut folded = Ok(());
     for part in parts {
         let SiblingPart {
             memo: part_memo,
             session: part_session,
             census: part_census,
+            mut shells,
             ..
         } = part;
         // A refused fork folds no entry: the join drops each entry of the part
         // and links no layer. An outcome that names a node of the part's own
         // names a node that the join leaves out, so the memo does not keep it.
         // Two parts can name one type by two nodes, and the two outcomes agree.
-        memo.join_child(
-            part_memo,
-            |_, outcome| {
-                passed
-                    && match *outcome {
-                        NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
-                        NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
-                        NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
-                    }
-            },
-            |held, offered| {
-                matches!(
-                    held.agrees(offered, arena, session),
-                    ContentAgreement::Agree
+        if folded.is_ok() {
+            folded = memo
+                .join_child(
+                    part_memo,
+                    |_, outcome| {
+                        passed
+                            && match *outcome {
+                                NodeOutcome::ValueType(id) => arena.value_type(id).is_some(),
+                                NodeOutcome::CompType(id) => arena.comp_type(id).is_some(),
+                                NodeOutcome::Checked | NodeOutcome::Formed(..) => true,
+                            }
+                    },
+                    |held, offered| {
+                        matches!(
+                            held.agrees(offered, arena, session),
+                            ContentAgreement::Agree
+                        )
+                    },
                 )
-            },
-        )
-        .map_err(|disagreement| {
-            let (key, held, offered) = disagreement.into_parts();
-            KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
-                crate::error::KeptOutcomes::new(key.digest(), held, offered),
-            ))
-        })?;
-        if passed {
-            session.join_goal(arena, part_session)?;
-            census.absorb(&part_census);
+                .map_err(|disagreement| {
+                    let (key, held, offered) = disagreement.into_parts();
+                    KernelError::KeptOutcomesDisagree(alloc::boxed::Box::new(
+                        crate::error::KeptOutcomes::new(key.digest(), held, offered),
+                    ))
+                });
         }
+        if passed && folded.is_ok() {
+            match session.join_goal(arena, part_session) {
+                Ok(stacks) => {
+                    shells.stacks = stacks;
+                    census.absorb(&part_census);
+                },
+                Err(refusal) => folded = Err(refusal),
+            }
+        }
+        // The shells go back to the fork whatever the join gives, so a later
+        // fork lends them warm.
+        shells.release();
+        fork.keep(shells);
     }
+    folded?;
     Ok(if passed {
         FrameFork::Joined
     }
@@ -12612,11 +12722,16 @@ mod tests
         }
     }
 
-    /// Runs each part of a drain on a thread of its own, all at once.
+    extern crate std;
+
+    /// Runs each part of a drain on a thread of its own, all at once, and
+    /// holds the shells that each frame fork gives back, so a later fork,
+    /// in a later check too, lends them as the pool lends a worker's own.
     ///
     /// # Specification
     /// trivial.
-    struct Threads;
+    #[derive(Default)]
+    struct Threads(std::sync::Mutex<Vec<super::WalkShells>>);
 
     impl crate::fork::ObligationFork for Threads
     {
@@ -12629,7 +12744,6 @@ mod tests
             jobs: &mut [&mut dyn crate::fork::Job],
         )
         {
-            extern crate std;
             std::thread::scope(|scope| {
                 for job in jobs.iter_mut() {
                     let _running = scope.spawn(move || job.run());
@@ -12644,6 +12758,33 @@ mod tests
         fn workers(&self) -> crate::fork::ForkWidth
         {
             four()
+        }
+
+        /// The shells that a fork gave back, or new ones.
+        ///
+        /// # Specification
+        /// trivial.
+        fn lend(&self) -> super::WalkShells
+        {
+            self.0
+                .lock()
+                .ok()
+                .and_then(|mut held| held.pop())
+                .unwrap_or_default()
+        }
+
+        /// Hold `shells` for a later fork.
+        ///
+        /// # Specification
+        /// trivial.
+        fn keep(
+            &self,
+            shells: super::WalkShells,
+        )
+        {
+            if let Ok(mut held) = self.0.lock() {
+                held.push(shells);
+            }
         }
     }
 
@@ -12790,6 +12931,7 @@ mod tests
                 .sum::<u64>();
             (verdict, goals)
         };
+        let threads = Threads::default();
         for (declaration, parts, passes) in [
             (&passing, 4_usize, true),
             (&refusing, 4, false),
@@ -12799,7 +12941,7 @@ mod tests
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
             let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
             let forks: [&dyn crate::fork::ObligationFork; 5] =
-                [&InOrder, &Backwards, &Threads, &Idle, &counting];
+                [&InOrder, &Backwards, &threads, &Idle, &counting];
             for fork in forks {
                 let (forked, forked_goals) = check(declaration, Some(fork));
                 assert_eq!(forked, serial, "a fork gives the serial verdict");
@@ -12865,7 +13007,8 @@ mod tests
     /// answer one key by two nodes of one content, and the join glues them. A
     /// refusing field sends the check back to the serial walk, a passing fork
     /// expands no less than the serial check, and a check below the grain
-    /// forks no frame.
+    /// forks no frame. The fork on threads of their own lends each fork the
+    /// shells that the forks before gave back, a refused one among them.
     #[test]
     fn a_forked_frame_gives_the_serial_verdict_at_each_order()
     {
@@ -12922,6 +13065,7 @@ mod tests
                 .sum::<u64>();
             (verdict, goals)
         };
+        let threads = Threads::default();
         for (declaration, forks, passes) in [
             (&passing, true, true),
             (&refusing, true, false),
@@ -12931,7 +13075,7 @@ mod tests
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
             let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
             let orders: [&dyn crate::fork::ObligationFork; 5] =
-                [&InOrder, &Backwards, &Threads, &Idle, &counting];
+                [&InOrder, &Backwards, &threads, &Idle, &counting];
             for fork in orders {
                 let (forked, forked_goals) = check(declaration, Some(fork));
                 assert_eq!(forked, serial, "a fork gives the serial verdict");

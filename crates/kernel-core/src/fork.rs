@@ -15,6 +15,12 @@
 //! them. The runs read the size of the drain and the [`ForkWidth`] alone, so
 //! a check at one width forks the same jobs each time.
 //!
+//! A frame of the walk forks its sibling goals on the same seam: one part for
+//! each worker, and each part takes goals from a shared cursor. A part checks
+//! on the [`WalkShells`] that the fork lends it, and gives them back at the
+//! join. A fork that holds the shells between two forks lends them warm, so
+//! the hand-off of a part allocates none of their lists.
+//!
 //! The seam is object-safe, so a `Judgement` carries it
 //! without a type parameter. The kernel sits below the core crates, so it
 //! states the seam itself. The driver's pool implements it.
@@ -24,10 +30,15 @@
 //! - `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` — newest: §
 //!   kernel-reassessment-design item 11 — the independent obligations of one
 //!   check fork under one seam, and the serial check is the reference.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — newest: the performance
+//!   programme (§ performance-picture) — a worker's steady state allocates
+//!   nothing from the global allocator, so a worker keeps its shells.
 
 use alloc::sync::Arc;
 use core::fmt;
 use core::num::NonZeroUsize;
+
+use crate::check::WalkShells;
 
 /// One part of a declaration's check that a fork runs apart.
 ///
@@ -55,7 +66,7 @@ pub trait Job: Send
 }
 
 /// Runs the parts of one declaration's check on the workers that the driver
-/// provides.
+/// provides, and holds the shells of a frame fork's workers between forks.
 ///
 /// # Specification
 /// - provides: each job run one time, on any worker, in any order, possibly at
@@ -96,6 +107,45 @@ pub trait ObligationFork: Sync
     ///   width of their fork, and count the jobs.
     /// - declaration-only: the obligation is each implementation's.
     fn workers(&self) -> ForkWidth;
+
+    /// The shells of one worker of a frame fork: shells that an earlier fork
+    /// gave back, or new ones. The default holds none, so it gives new ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: shells whose arena holds no node.
+    /// - panics: none.
+    /// - executable: none — the holder is the implementation's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the forked frame's witness checks through a fork that
+    ///   lends the shells of each fork before, against the serial check.
+    /// - declaration-only: the obligation is each implementation's holder.
+    #[inline]
+    fn lend(&self) -> WalkShells
+    {
+        WalkShells::default()
+    }
+
+    /// Hold `shells`, which the join of a frame fork gave back, for a later
+    /// fork. The default holds nothing, so it drops them.
+    ///
+    /// # Specification
+    /// - requires: `shells` came back from a join, its arena cleared.
+    /// - ensures: a later [`Self::lend`] may lend `shells`.
+    /// - panics: none.
+    /// - executable: none — the holder is the implementation's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::lend`].
+    /// - declaration-only: the obligation is each implementation's holder.
+    #[inline]
+    fn keep(
+        &self,
+        _shells: WalkShells,
+    )
+    {
+    }
 }
 
 /// How many jobs a fork runs at once: the workers it has, the calling thread

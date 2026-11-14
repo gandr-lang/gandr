@@ -113,6 +113,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::thread::Thread;
 use std::time::Instant;
@@ -125,6 +126,7 @@ use gandr_core_fork::ItemSize;
 use gandr_core_fork::Releasing;
 use gandr_core_fork::Scoped;
 use gandr_core_fork::Serial;
+use gandr_kernel_core::check::WalkShells;
 use gandr_kernel_core::fork::ForkWidth;
 use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
@@ -208,6 +210,9 @@ pub struct Pool
     tokens: Maybe<Arc<Tokens>, ungranted::Absent>,
     /// The threads, once a fork asked for them.
     started: OnceLock<Result<Started, PoolFault>>,
+    /// The shells that each frame fork's join gave back, which the next fork
+    /// lends its workers, so a part's hand-off allocates none of their lists.
+    shells: Mutex<Vec<WalkShells>>,
 }
 
 /// How many empty polls a waiting party of a schedule makes before it stops:
@@ -274,6 +279,7 @@ impl Pool
             kept: None,
             tokens: Maybe::Absent(ungranted::Absent::Unnamed),
             started: OnceLock::new(),
+            shells: Mutex::new(Vec::new()),
         }
     }
 
@@ -847,7 +853,8 @@ impl Fork for Pool
 }
 
 /// The pool as the fork of a kernel check's obligations: the parts of a
-/// declaration's last drain run as [`Fork::each`] runs its items.
+/// declaration's last drain run as [`Fork::each`] runs its items, and the
+/// pool holds the shells of a frame fork's workers between forks.
 impl ObligationFork for Pool
 {
     /// Run each part once, as [`Fork::each`] runs an item, with no state for
@@ -894,6 +901,36 @@ impl ObligationFork for Pool
             .as_ref()
             .map_or(Threads::ONE, |started| started.threads);
         ForkWidth::from(NonZeroUsize::from(threads))
+    }
+
+    /// The shells that a frame fork's join gave back, or new ones when the
+    /// pool holds none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn lend(&self) -> WalkShells
+    {
+        self.shells
+            .lock()
+            .ok()
+            .and_then(|mut held| held.pop())
+            .unwrap_or_default()
+    }
+
+    /// Hold `shells` for the next frame fork.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn keep(
+        &self,
+        shells: WalkShells,
+    )
+    {
+        if let Ok(mut held) = self.shells.lock() {
+            held.push(shells);
+        }
     }
 }
 

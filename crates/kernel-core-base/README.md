@@ -24,7 +24,6 @@ The record of the kernel. It keeps the admitted entries and the staged declarati
 - **The record.** `Entries`, `AdmittedDeclaration`, `Staging`, `StagedDeclaration` and the counts of outstanding content.
 - **Recorded verdicts.** `Environment::recalling` admits a declaration whose entry key a trusted signer's verified `Receipt` attests, without the check; `Environment::receipt` signs only what this kernel checked itself ([`verdict`](src/verdict.rs)).
 - **Admitted results.** `Environment::admitting` states an `AdmissionPolicy`; `Environment::admitted` counts what it took ([`admitted`](src/admitted.rs)).
-- **The forked drain.** `Environment::forking`: a check's long last drain runs apart through a `SharedFork` ([`fork`](src/fork.rs)).
 - **Sealing.** An abstract type carries its representation and the extent of its minting admission; [`seal`](src/seal.rs) states what reads the atom as its representation.
 - **The content key.** `ContentTable`, `MintNames`, `support_key`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, mint names, memo keys and content digests ([`encoding`](src/encoding.rs)).
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
@@ -48,7 +47,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | ----- | ------ |
 | The admitted record and its staging | [`env`](src/env.rs), [`admitted`](src/admitted.rs), [`weakening`](src/weakening.rs) |
 | Content names and keys | [`encoding`](src/encoding.rs), [`hashed`](src/hashed.rs) |
-| What a check reads and owes | [`support`](src/support.rs), [`census`](src/census.rs), [`fork`](src/fork.rs) |
+| What a check reads and owes | [`support`](src/support.rs), [`census`](src/census.rs) |
 | Rewriting | [`rewrite`](src/rewrite.rs) |
 | Refusals and their witnesses | [`error`](src/error.rs), [`witness`](src/witness.rs), [`occurrence`](src/occurrence.rs) |
 | Verdict keys and receipts | [`verdict`](src/verdict.rs) |

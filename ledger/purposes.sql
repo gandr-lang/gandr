@@ -1289,6 +1289,7 @@ INSERT INTO purpose VALUES('kernel-core','admission::Substitution','struct','An 
 INSERT INTO purpose VALUES('kernel-core','admission::Work','struct','Observed node operations, independent of elapsed time.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::DefaultMemo','type_alias','The memo an unsupplied check builds for itself: the default path.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::Judgement','struct','The read-only inputs every judgement of one declaration stands on.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','check::WalkShells','struct','The structures one worker of a frame fork checks its goals on and keeps between forks: the lists of an arena, the stacks of a session, the context, the frame stack, the owed obligations and the stages.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','check::check_declaration_with_memo','function','Check a declaration against a caller-supplied memo — the opt-in entry.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','conv::Convertibility','enum','Whether two types are convertible.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','conv::convert_comp_type','function','Convert a synthesized computation type against an expected one, building the mismatch on divergence.',NULL,'fits','sound',NULL);
@@ -1315,6 +1316,11 @@ INSERT INTO purpose VALUES('kernel-core','flow_universe::motive::check_motive','
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::CertificateType','enum','A formed classifier retaining its independent certificate family.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::form_certificate','function','Check a native certificate against its expected family, without coercion.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','flow_universe::rules::replay_ride','function','Check a closed ride and an expected result, then replay their conversion.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::ForkWidth','struct','How many jobs a fork runs at once, which the forked drain splits its obligations by.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::Forking','struct','Whether one check forks its independent obligations, and through which fork.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::Job','trait','One part of a declaration''s check that a fork runs apart, which keeps its answer in itself.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::ObligationFork','trait','Runs the parts of one declaration''s check on the workers the driver provides, and holds the shells of a frame fork''s workers between forks: the object-safe seam a judgement carries.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core','fork::SharedFork','struct','The fork that an environment''s checks run their obligations through, shared with each copy of the environment.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','higher_field::Cell','struct','An untrusted native identity boundary and its fibre inhabitant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','higher_field::Codata','struct','Finite syntax for potentially infinite higher evidence; no stored verdict.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core','higher_field::Depth','struct','Number of constructor layers requested, starting at identity of identities.',NULL,'fits','sound',NULL);
@@ -1499,11 +1505,6 @@ INSERT INTO purpose VALUES('kernel-core-base','error::replay::ReplayRefusal','en
 INSERT INTO purpose VALUES('kernel-core-base','error::replay::TracePosition','struct','Where a decision stands in a trace, counted from zero.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','error::ruled::OperationBodyFault','enum','Why a ruled definition''s body is not its rules'' decision tree.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','error::session::SessionError','enum','A finite session formation or replay refusal.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::ForkWidth','struct','How many jobs a fork runs at once, which the forked drain splits its obligations by.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::Forking','struct','Whether one check forks its independent obligations, and through which fork.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::Job','trait','One part of a declaration''s check that a fork runs apart, which keeps its answer in itself.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::ObligationFork','trait','Runs the parts of one declaration''s check on the workers the driver provides: the object-safe seam a judgement carries.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::SharedFork','struct','The fork that an environment''s checks run their obligations through, shared with each copy of the environment.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','hashed::HashedMap','struct','A map from `Key` to `Value`, filed by the key''s hash.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','levels::LevelContext','struct','The admitted level context of one declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','occurrence::Accessibility','struct','What a declaration''s recursion was read to be.',NULL,'fits','sound',NULL);
@@ -1553,6 +1554,7 @@ INSERT INTO purpose VALUES('kernel-core-base','support::NodeSupport','struct','T
 INSERT INTO purpose VALUES('kernel-core-base','support::Opened','struct','Where an open accrual sits on its session''s stack.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Owed','struct','The keys of the obligations that a formation owes the checker, each one time.','sharing','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::Question','struct','A goal''s question: what it asks of which content against which expected type, before its judgement has read a binder.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','support::SessionStacks','struct','The stacks of a goal''s child session that a worker keeps between forks: the read binders and the open accruals.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::SupportContext','struct','The state one checking session derives its memo keys against: the canonical content numbering, the buffer one goal''s read binders are gathered in, and the open goals'' accruals of the binders their judgements read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::SupportPlane','enum','Which of the two machines a support belongs to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','support::innermost','function','Whether `reads` reads the innermost binder, index zero.',NULL,'fits','sound',NULL);

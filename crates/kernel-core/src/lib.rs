@@ -701,7 +701,7 @@ pub use gandr_kernel_core_base::env;
 mod environment;
 pub use gandr_kernel_core_base::error;
 pub mod flow_universe;
-pub use gandr_kernel_core_base::fork;
+pub mod fork;
 #[cfg(test)]
 use gandr_kernel_core_base::generated;
 pub mod higher_field;
