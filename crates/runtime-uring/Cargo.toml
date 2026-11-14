@@ -1,0 +1,32 @@
+[package]
+name = "gandr-runtime-uring"
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+bindgen = []
+debug = []
+
+[build-dependencies]
+bindgen = { workspace = true, default-features = true, features = ["experimental"] }
+
+[dependencies]
+axboe-liburing = { workspace = true }
+bevy_ptr = { workspace = true }
+bon = { workspace = true, features = ["implied-bounds"] }
+libc = { workspace = true }
+rustix = { workspace = true, features = ["net"] }
+socket2 = { workspace = true }
+
+[dev-dependencies]
+assert_fs = { workspace = true }
+notify = { workspace = true }
+num_cpus = { workspace = true }
+predicates = { workspace = true }
+static_assertions_next = { workspace = true }
+
+[lints]
+workspace = true

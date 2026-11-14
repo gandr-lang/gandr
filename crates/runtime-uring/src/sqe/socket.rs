@@ -1,0 +1,253 @@
+pub mod repr {
+    use crate::sqe::repr::Sqe64;
+
+    impl Sqe64<'_> {
+        pub unsafe fn prep_socket(
+            &mut self,
+            domain: ::socket2::Domain,
+            r#type: ::socket2::Type,
+            protocol: Option<::socket2::Protocol>,
+            flags: ::rustix::net::SocketFlags,
+            file_index: Option<::core::ffi::c_uint>,
+        ) {
+            let sqe = &raw mut *self.sqe;
+            let domain = domain.into();
+            let r#type = r#type.into();
+            let protocol = protocol.map(Into::into).unwrap_or_default();
+            let flags = flags.bits();
+            if let Some(file_index) = file_index {
+                // SAFETY: The enclosing method preserves the safety interface.
+                unsafe { ::liburing_rs::io_uring_prep_socket_direct(sqe, domain, r#type, protocol, file_index, flags) };
+            }
+            else {
+                // SAFETY: The enclosing method preserves the safety interface.
+                unsafe { ::liburing_rs::io_uring_prep_socket(sqe, domain, r#type, protocol, flags) };
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test {
+    use ::std::os::fd::BorrowedFd;
+    use ::std::os::fd::FromRawFd as _;
+
+    use crate::IoUring;
+    use crate::fd::SlotDesc;
+    use crate::sys::SysResult as _;
+
+    #[derive(::bon::Builder)]
+    #[builder(finish_fn(vis = "", name = build_internal))]
+    pub struct Fixture<'fds> {
+        #[builder(start_fn)]
+        domain: ::socket2::Domain,
+        #[builder(start_fn)]
+        r#type: ::socket2::Type,
+        protocol: Option<::socket2::Protocol>,
+        #[builder(default = ::rustix::net::SocketFlags::empty())]
+        flags: ::rustix::net::SocketFlags,
+
+        #[builder(default)]
+        files: &'fds [BorrowedFd<'fds>],
+        slots: Option<::core::ffi::c_uint>,
+        socket_slot: Option<::core::ffi::c_uint>,
+
+        #[builder(default = false)]
+        sqe_link: bool,
+        #[builder(default = false)]
+        cqe_skip: bool,
+    }
+
+    impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S> {
+        pub fn build(self) -> Fixture<'fds> {
+            let this = self.build_internal();
+
+            if let Some(slot) = this.socket_slot {
+                assert!(
+                    this.slots.is_some() || !this.files.is_empty(),
+                    "file registration must be configured if using slots"
+                );
+                if slot == ::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned() {
+                    assert!(
+                        !this.cqe_skip,
+                        "cqe skipping unsupported when using auto slot allocation"
+                    );
+                }
+            }
+
+            this
+        }
+    }
+
+    impl Fixture<'_> {
+        fn submit<S, C>(self, ring: &mut IoUring<'_, S, C>) -> u32
+        where
+            C: crate::cqe::Kind,
+            S: crate::sqe::Kind,
+        {
+            let Self {
+                domain,
+                r#type,
+                protocol,
+                flags,
+                socket_slot,
+                sqe_link,
+                cqe_skip,
+                files,
+                slots,
+            } = self;
+
+            // configure sliced file registration
+            if !files.is_empty() {
+                let slots = slots.map(usize::try_from).and_then(Result::ok).unwrap_or(files.len());
+                let files = &files[..slots];
+                let registrar = ring.registrar();
+                registrar.register_files(files).unwrap();
+            }
+            // configure sparse file registration
+            else if let Some(slots) = slots {
+                let slots = usize::try_from(slots).unwrap_or(files.len());
+                let registrar = ring.registrar();
+                registrar.register_files_sparse(slots).unwrap();
+            }
+
+            // prepare sqe op
+            let mut sq = ring.squeue();
+            let mut sqe = sq
+                .get_sqe()
+                .ok_or_else(|| ::std::io::Error::other("failed to get sqe"))
+                .unwrap();
+            unsafe { sqe.prep_socket(domain, r#type, protocol, flags, socket_slot) };
+
+            // prepare sqe flags
+            let mut flags = ::core::ffi::c_uint::default();
+            if sqe_link {
+                flags |= ::liburing_rs::IOSQE_IO_LINK;
+            }
+            if cqe_skip {
+                flags |= ::liburing_rs::IOSQE_CQE_SKIP_SUCCESS;
+            }
+            unsafe { sqe.set_flags(flags) };
+
+            sq.submit().unwrap()
+        }
+
+        fn submit_and_wait<S, C>(self, ring: &mut IoUring<'_, S, C>) -> SlotDesc<::socket2::Socket>
+        where
+            C: crate::cqe::Kind,
+            S: crate::sqe::Kind,
+        {
+            let uses_slot = self.socket_slot.is_some();
+
+            let num = self.submit(ring);
+            assert_eq!(1, num);
+
+            let mut cq = ring.cqueue();
+
+            let cqe = cq.wait(1).unwrap().next();
+            let cqe = cqe
+                .map(Into::<crate::Cqe16>::into)
+                .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
+                .unwrap();
+            let desc = cqe.cqe.res.sys_uint().unwrap();
+
+            if uses_slot {
+                SlotDesc::Slot(desc)
+            }
+            else {
+                let fd = desc.cast_signed();
+                unsafe { ::socket2::Socket::from_raw_fd(fd) }.into()
+            }
+        }
+
+        #[must_use]
+        pub fn run<S, C>(self, ring: &mut IoUring<'_, S, C>) -> SlotDesc<::socket2::Socket>
+        where
+            C: crate::cqe::Kind,
+            S: crate::sqe::Kind,
+        {
+            if self.cqe_skip {
+                let slot = self
+                    .socket_slot
+                    .ok_or_else(|| ::std::io::Error::other("using `cqe_skip` requires specifying `socket_slot`"))
+                    .unwrap();
+                self.submit(ring);
+                SlotDesc::Slot(slot)
+            }
+            else {
+                self.submit_and_wait(ring)
+            }
+        }
+    }
+
+    pub(crate) fn socket_with<S, C>(
+        ring: &mut IoUring<'_, S, C>,
+        slots: Option<::core::ffi::c_uint>,
+        socket_slot: Option<::core::ffi::c_uint>,
+        sqe_link: Option<bool>,
+        cqe_skip: Option<bool>,
+    ) -> SlotDesc<::socket2::Socket>
+    where
+        C: crate::cqe::Kind,
+        S: crate::sqe::Kind,
+    {
+        let domain = ::socket2::Domain::UNIX;
+        let r#type = ::socket2::Type::STREAM;
+
+        let desc = crate::sqe::socket::test::Fixture::builder(domain, r#type)
+            .maybe_slots(slots)
+            .maybe_socket_slot(socket_slot)
+            .maybe_sqe_link(sqe_link)
+            .maybe_cqe_skip(cqe_skip)
+            .build()
+            .run(ring);
+
+        if socket_slot.is_some() {
+            assert!(desc.is_slot());
+        }
+        else {
+            assert!(desc.is_desc());
+        }
+
+        desc
+    }
+
+    #[test]
+    fn socket() {
+        let slots = None;
+        let socket_slot = None;
+
+        let mut ring = IoUring::new().unwrap();
+
+        let sqe_link = None;
+        let cqe_skip = None;
+
+        crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+    }
+
+    #[test]
+    fn socket_direct() {
+        let slots = Some(1);
+        let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
+
+        let mut ring = IoUring::new().unwrap();
+
+        let sqe_link = None;
+        let cqe_skip = None;
+
+        crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+    }
+
+    #[test]
+    fn socket_direct_cqe_skip() {
+        let slots = Some(1);
+        let socket_slot = Some(0);
+
+        let mut ring = IoUring::new().unwrap();
+
+        let sqe_link = None;
+        let cqe_skip = Some(true);
+
+        crate::sqe::socket::test::socket_with(&mut ring, slots, socket_slot, sqe_link, cqe_skip);
+    }
+}
