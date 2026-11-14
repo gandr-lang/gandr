@@ -121,10 +121,22 @@ if [ -f .github/docker/rust-clippy.bash ]; then
 fi
 
 echo "pinned channel $channel; workflow revision ${revision:-local-library}; rust-clippy $clippy_source at $clippy_rev"
-echo 'clear ~/.dylint_drivers and target/dylint, then rerun the full gate wall'
+echo 'clear ~/.dylint_drivers; each worktree cleans its target at its first gate under the new pin (target:pin); then rerun the full gate wall'
 echo 'external consumers: mise run check'
 {% endraw %}
 '''
+
+# A build directory remembers the compiler that filled it (#7497,
+# `.config/mise/target-pin.bash`). Cargo's own record, `.rustc_info.json` at
+# the root of the target, names it. The step compares that compiler with the
+# tree's pin, keeps the target on one compiler and runs `cargo clean` on a
+# difference. A target with no record has nothing to clean. `check`,
+# `gate:all` and `wt:warm` run it before their first build, so no host fills
+# when the pin moves.
+["target:pin"]
+description = "Clean the build directory when the compiler that cargo's record names is not the tree's, before the first build under a new pin"
+tools.jq = "1.8.1"
+run = ".config/mise/target-pin.bash"
 
 # Every project pin but the compiler and the Dylint driver moves to its newest
 # release, and the lockfile with it. `mise upgrade --bump` would also rewrite

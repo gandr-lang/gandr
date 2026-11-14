@@ -2225,9 +2225,12 @@ list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading"
 # `.config/pr-stack/warm.jq` names each such unit from the dep-info lines
 # that name the primary, and the step removes it. Cargo then builds it again
 # in this worktree. The removal is safe to re-run, and a run that stops
-# half-way leaves a unit cargo builds again. The step first records the
-# commit the worktree starts from as its stack base (`record_start`, #5990),
-# inside the command `wt` already runs, so no host approves a new one.
+# half-way leaves a unit cargo builds again. Last, the step cleans the copy
+# when the primary's compiler is not the tree's (`target:pin`, #7497): a copy
+# under the same pin stays warm, and a copy across a move goes, which is the
+# cold build the move costs anyway. The step first records the commit the
+# worktree starts from as its stack base (`record_start`, #5990), inside the
+# command `wt` already runs, so no host approves a new one.
 ["wt:warm"]
 description = "Clone the primary worktree's gitignored artifacts into this one, or skip where the filesystem cannot clone, and remove each copied unit that reads the primary's sources"
 tools.jq = "1.8.1"
@@ -2266,6 +2269,7 @@ if [[ -n $listed ]]; then
   done <<< "$listed"
 fi
 echo "wt:warm: removed $removed copied units that read $primary's sources"
+(cd "$here" && .config/mise/target-pin.bash)
 '''
 
 # A unit issue is the brief, and work starts only on one that carries its

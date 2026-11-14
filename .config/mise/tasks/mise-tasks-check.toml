@@ -67,6 +67,11 @@
 # holds no claim of that lane is refused before any check runs, and the
 # refusal names `claim:take <n>`. A branch that works no unit reads nothing,
 # and a failed read of the issue leaves the gate to run and says so.
+#
+# Then, before any cargo command, it cleans a target that another compiler
+# filled (`target:pin`, `.config/mise/target-pin.bash`, #7497): cargo's own
+# record names the compiler, and one that differs from the tree's pin leaves
+# dead units. The first gate under a new pin builds cold anyway.
 [check]
 description = "The landing's gate: the light checks, and Clippy with the compiler policy, the rustdoc and the adequacy witnesses over the packages the change reaches, and the enforcing suites of the packages it touches and of the dispatcher, or of the whole workspace in the head watcher, in one of the host's gate slots"
 tools.jq = "1.8.1"
@@ -81,6 +86,7 @@ source .config/mise/gate.bash
 gate_open check
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
+.config/mise/target-pin.bash
 tree=$(.config/gate-scope/passed.bash tree)
 gate_tree=$tree
 selected=$(.config/gate-scope/select.bash --landing)
@@ -191,6 +197,7 @@ source .config/mise/gate.bash
 gate_open gate:all
 if [[ ${usage_no_wait:-false} == true ]]; then export GATE_NO_WAIT=1; fi
 .config/claims/taken.bash
+.config/mise/target-pin.bash
 hold_gate_slot "mise run gate:all"
 gate_bound
 # The git sources, fetched once before the checks fork, as in `check` (#7492).
@@ -441,8 +448,10 @@ done
 # only under `quenchant_compiler_policy`, which must reach every crate in the
 # graph, hence the encoded rustflags rather than Dylint's own cfg. Incremental
 # compilation is off because the driver reads whole-crate HIR. A toolchain bump
-# invalidates the driver: `rm -rf ~/.dylint_drivers target/dylint` before the
-# wall runs again. The run reads `GATE_SCOPE` as the Clippy passes do, and
+# invalidates the driver. `target/dylint` goes with the rest of the target at
+# the first gate under the new pin (`target:pin`, #7497), and
+# `~/.dylint_drivers` keeps one driver for each toolchain. The run reads
+# `GATE_SCOPE` as the Clippy passes do, and
 # unifies the features over the whole workspace, so a scoped run builds the
 # units of a whole one (#6894). A scoped run also lints each workspace
 # package that its packages depend on. The driver builds that package too,
@@ -2618,6 +2627,16 @@ echo "gh-direct check OK"
 ["check:host-lock"]
 description = "A host lock's slots refuse or wait while held, free when their holder and its children are gone, a gate's slot frees when the gate exits, and a lane holds one slot"
 run = ".config/mise/host-lock-cases.bash"
+
+# A target that another compiler filled (#7497):
+# `.config/mise/target-pin-cases.bash` builds a scratch package on the tree's
+# toolchain and reads cargo's record. The step keeps the target of the tree's
+# compiler, cleans the target of another and names it, and keeps a target with
+# no record or an empty one.
+["check:target-pin"]
+description = "A build directory that another compiler filled is cleaned before the first build, and one of the tree's compiler, or with no record, is kept"
+tools.jq = "1.8.1"
+run = ".config/mise/target-pin-cases.bash"
 
 # The rows of the gates (#7021): `.config/gate-rows/cases.bash` runs the trap
 # of a gate in scratch directories. It reads the row of a pass, a failure, a

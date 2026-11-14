@@ -328,6 +328,14 @@
         "crates/",
         "ledger/"
       ],
+      "check:target-pin": [
+        ".cargo/",
+        ".config/mise/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/",
+        "rust-toolchain.toml"
+      ],
       "check:tracking": [
         ".config/bodies/",
         ".config/cases/",
