@@ -296,6 +296,7 @@
         ".config/toolchain/",
         "crates/"
       ],
+      "check:reserved-width": [".config/nextest.toml", ".config/reserved/", "crates/"],
       "check:rust-clippy": [".config/rust-clippy/", "rust-toolchain.toml"],
       "check:service": [".config/cases/", ".config/service/"],
       "check:shared": [

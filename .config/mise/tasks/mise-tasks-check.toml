@@ -2801,6 +2801,19 @@ description = "A replay onto a moved base runs the check of each generated artif
 tools.jq = "1.8.1"
 run = [".config/replay/cases.bash", ".config/replay/replays.bash", ".config/replay/environments.bash"]
 
+# The tests that are wide by design (#7539). Such a test asks for
+# `Width::Reserved` in its own body and takes the host's width, and a
+# `threads-required` override of `.config/nextest.toml` names it, so nextest
+# runs nothing beside it. nextest passes no `threads-required` to a test, so
+# each side states the fact once. `.config/reserved/check.bash` reads both
+# sides and refuses a test on one side alone, and `.config/reserved/cases.bash`
+# holds its cases.
+["check:reserved-width"]
+description = "Each test that asks for Width::Reserved is named by a threads-required override of .config/nextest.toml, and each test that such an override names asks for it"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = [".config/reserved/cases.bash", ".config/reserved/check.bash .config/nextest.toml crates"]
+
 # The nightly's container jobs (#3208): `.config/nightly/jobs.jq` refuses a
 # job that starts the CI image, restores no build state and so is a step of
 # `reports`, a `reports` step a failure before it would hide, a step after
