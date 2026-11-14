@@ -5354,13 +5354,13 @@ impl TypeTable
     ///   x : … ;` with no repair is [`RoundTrip::Unparsed`]. Every other is
     ///   appended to the source as a signature of a fresh name — a computation
     ///   type `C` as `+U (C)` — the whole lowered once in the unit the table
-    ///   was built in, an import of each `std` module whose head the source
-    ///   writes after the module's path appended after them and bound to the
-    ///   unit's source of that module. A host interface a printed row names
-    ///   imports its home the same way when the source neither is nor imports
-    ///   that home; where the unit lays no source of the home, the import binds
-    ///   a stand-in of one newline before the source ([`Unit::standing_in`]).
-    ///   The probes are judged after the source's declarations, each of which
+    ///   was built in. For each `std` module whose head a printed type writes
+    ///   after the module's path, and for each home of a host interface that a
+    ///   printed row names when the source neither is nor imports that home, an
+    ///   import of the module is appended after them. The import binds the
+    ///   unit's source of that module; where the unit lays none, it binds a
+    ///   stand-in of one newline before the source ([`Unit::standing_in`]). The
+    ///   probes are judged after the source's declarations, each of which
     ///   enters by its stated type alone, so the read-back judges no body of
     ///   the source. The read back is [`RoundTrip::Equal`] when the type read,
     ///   as written or as the checker enters it, is the table's node, `U C` for
@@ -5388,8 +5388,9 @@ impl TypeTable
     ///   types disagree reads back at both; a type inside a recursive
     ///   definition that names the declaration reads back equal, and one that
     ///   names the definition's own binder spells its claim; a type of a source
-    ///   that imports a sibling reads back beside it; a row naming a host
-    ///   interface reads back through its home's source or a stand-in; a
+    ///   that imports a sibling reads back beside it; a list type and a row
+    ///   naming a host interface read back through the home's source or a
+    ///   stand-in, the stand-in where nothing the unit lays is homed there; a
     ///   comparison whose model its operands resolve reads back equal as the
     ///   checker enters it; and the corpus census reads back every printed type
     ///   of every source, failing on a class the findings do not pin.
@@ -5399,6 +5400,7 @@ impl TypeTable
     /// - witness: `typed::tests::a_mismatched_term_reads_back_at_both_its_types`
     /// - witness: `typed::tests::a_recursive_definitions_own_binder_reads_apart_from_its_declaration_3584`
     /// - witness: `typed::tests::a_list_type_reads_back_through_its_home_4835`
+    /// - witness: `typed::tests::a_list_type_reads_back_where_the_unit_lays_no_home_7146`
     /// - witness: `typed::tests::a_printed_row_reads_back_through_its_interface_s_home_5209`
     /// - witness: `tests::census::a_comparison_in_a_decoded_type_reads_back_6229`
     /// - witness: `tests::census::sweeps::every_printed_type_reads_back_to_its_certificate`
@@ -5606,11 +5608,15 @@ impl TypeTable
             }
         }
         // A homed head the source does not import prints after its home's
-        // path, `std.list.List(A)`, which reads back with the import of that
-        // home appended, bound to the unit's source of that module. So does a
-        // host interface a printed row names, `std.io.Console.Eff` (#5209).
-        // A host interface is native, so where the unit lays no source of its
-        // home, a stand-in of one newline before the source takes the import.
+        // path, `std.list.List(A)`, and so does a host interface a printed row
+        // names, `std.io.Console.Eff` (#5209). Each such print reads back with
+        // the import of that home appended, bound to the unit's source of that
+        // module. Both are native: the reader takes a homed head from its
+        // table and an interface from the host, never from a declaration of
+        // the home. So where the unit lays no source of the home, a stand-in
+        // of one newline before the source takes the import. A list that a
+        // native operation answers needs no import of `std.list`, so its unit
+        // can lay none.
         let mut unit = self.unit.clone();
         let start = unit
             .sources()
@@ -5621,24 +5627,21 @@ impl TypeTable
         let mut imports = String::new();
         let mut stood = 0_usize;
         let mut homes: BTreeSet<&str> = BTreeSet::new();
-        let hosted = self
-            .hosts
-            .iter()
-            .copied()
-            .filter(|&home| {
-                HOMES.iter().any(|&(interface, held)| {
-                    held == home
-                        && printed
-                            .iter()
-                            .any(|read| read.settled.is_none() && read.spelled.contains(interface))
-                })
-            })
-            .map(|home| (home, true));
-        for (home, native) in self
+        let spelled = |written: &str| {
+            printed
+                .iter()
+                .any(|read| read.settled.is_none() && read.spelled.contains(written))
+        };
+        let hosted = self.hosts.iter().copied().filter(|&home| {
+            HOMES
+                .iter()
+                .any(|&(interface, held)| held == home && spelled(interface))
+        });
+        for home in self
             .homes
             .iter()
-            .filter(|homed| !homed.imported)
-            .map(|homed| (homed.home.as_str(), false))
+            .filter(|homed| !homed.imported && spelled(homed.written.as_str()))
+            .map(|homed| homed.home.as_str())
             .chain(hosted)
         {
             if !homes.insert(home) {
@@ -5647,13 +5650,12 @@ impl TypeTable
             let laid = unit.sources().iter().position(
                 |source| matches!(source.home(), Maybe::Present(module) if module.as_ref() == home),
             );
-            match laid {
-                Some(at) => unit = unit.importing(ImportTarget::Source(SourceIndex::from(at))),
-                None if native => {
-                    stood = stood.saturating_add(1);
-                    unit = unit.standing_in(SurfaceName::from(home));
-                },
-                None => continue,
+            if let Some(at) = laid {
+                unit = unit.importing(ImportTarget::Source(SourceIndex::from(at)));
+            }
+            else {
+                stood = stood.saturating_add(1);
+                unit = unit.standing_in(SurfaceName::from(home));
             }
             for part in [
                 include_str!("typed/unformatted/read-back-2.gandr"),
@@ -8579,6 +8581,34 @@ mod tests
                 "{import:?}: every printed type reads back: {trips:?}"
             );
         }
+    }
+
+    /// #7146: the list a native host operation answers, in a source that
+    /// imports nothing of `std.list` and in a unit that lays no source homed
+    /// there, prints after its home's path. It reads back to its certificate
+    /// through the stand-in for `std.list` that the read-back lays.
+    #[test]
+    fn a_list_type_reads_back_where_the_unit_lays_no_home_7146()
+    {
+        let grammar = built_in().expect("the built-in grammar builds");
+        let table = hosted_table(SourceText::from(include_str!(
+            "typed/unformatted/a-list-type-reads-back-where-the-unit-lays-no-home-7146.gandr"
+        )));
+        let trips: Vec<(String, RoundTrip)> = table
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips
+                .iter()
+                .any(|&(ref written, _)| written == "std.list.List(Integer)"),
+            "the list type prints after its home's path: {trips:?}"
+        );
+        assert!(
+            trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type reads back: {trips:?}"
+        );
     }
 
     /// #5209: a row naming a host interface prints after its home's path,

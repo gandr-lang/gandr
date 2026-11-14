@@ -92,7 +92,8 @@ sites = [
 
 [refusal.UnresolvedTypeHead]
 sites = [
-  { file = "crates/surface-lowering/src/lower.rs", pattern = '^\s*return Err\(unresolved\(HeadArity::' },
+  { file = "crates/surface-lowering-expression/src/lower.rs", pattern = '^\s*return Err\(unresolved\(HeadArity::' },
+  { file = "crates/surface-lowering-expression/src/lower.rs", pattern = '^\s*PathResolution::Ungoverned => Err\(LoweringRefusal::UnresolvedTypeHead \{$' },
 ]
 
 [refusal.IllFormedDescription]
