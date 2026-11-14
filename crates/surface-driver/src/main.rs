@@ -1820,6 +1820,9 @@ enum Screen
 /// - witness: `tests::cli::a_verb_with_no_path_checks_the_package_it_runs_in_2687`
 /// - witness: `tests::cli::check_admit_takes_the_tier_s_answer_and_says_so_3558`
 /// - witness: `tests::net::two_processes_exchange_a_ping_3186`
+///
+/// # Cost
+/// - allocation: the parsed command line and each verb's arguments, setup
 fn main() -> ExitCode
 {
     match toolchain::proxy() {
