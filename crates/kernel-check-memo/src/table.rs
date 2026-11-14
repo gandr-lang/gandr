@@ -302,6 +302,125 @@ pub struct HashIndex
     len: usize,
 }
 
+/// How many bits a [`HashFilter`] holds for each hash that it files.
+const FILTER_BITS_PER_HASH: usize = 8;
+
+/// The fewest bits a [`HashFilter`] holds: one word.
+const FILTER_MINIMUM_BITS: usize = 64;
+
+/// An odd constant that spreads a hash for the second bit of a filter.
+const FILTER_SPREAD: u32 = 0x9E37_79B9;
+
+/// A filter of the hashes that one [`HashIndex`] filed at the build of the
+/// filter: a set of bits that admits each of them and refuses most others.
+///
+/// A read of a memo's layer that carries a filter goes into the layer only for
+/// a hash that the filter admits. The filter holds 8 bits for each filed hash,
+/// at least 64, rounded up to a power of two, and each hash sets two bits. So
+/// about one hash in twenty that the index does not file reads the layer all
+/// the same, and the filter refuses no filed hash.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the bit count is a power of two, at least 64 and at least 8 for
+///   each hash filed at the build.
+/// - provides: the test that lets a read pass a layer that cannot hold a hash.
+/// - panics: none.
+/// - executable: none — a data declaration; [`HashIndex::filter`] and
+///   [`HashFilter::admits`] carry the laws.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a thousand filed hashes, each admitted, and ten thousand
+///   others, most refused, distinguish a filter that drops a bit, one of a
+///   constant size and one that admits each hash.
+/// - witness: `table::tests::a_filter_admits_each_filed_hash_and_refuses_most_others`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HashFilter
+{
+    /// The bits, 64 to a word.
+    words: Vec<u64>,
+}
+
+/// Whether a [`HashFilter`] lets a read go into its layer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Admission
+{
+    /// The layer can hold a key under the hash, so the read goes into it.
+    Admitted,
+    /// The layer holds no key under the hash, so the read passes it.
+    Refused,
+}
+
+/// One bit of a [`HashFilter`]: its word and its mask in that word.
+#[derive(Clone, Copy, Debug)]
+struct FilterBit
+{
+    /// The index of the word.
+    word: usize,
+    /// The mask of the bit in the word.
+    mask: u64,
+}
+
+impl HashFilter
+{
+    /// The two bits of `hash`: its low bits, and the low bits of its spread.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn bits(
+        &self,
+        hash: TableHash,
+    ) -> [FilterBit; 2]
+    {
+        let last = self.words.len().saturating_mul(64).saturating_sub(1);
+        let spread = hash.0.wrapping_mul(FILTER_SPREAD).rotate_left(16);
+        [hash.0, spread].map(|word| {
+            let bit = usize::try_from(word).unwrap_or(usize::MAX) & last;
+            FilterBit {
+                word: bit.wrapping_shr(6),
+                mask: 1_u64.wrapping_shl(u32::try_from(bit & 63).unwrap_or(0)),
+            }
+        })
+    }
+
+    /// Whether the layer of this filter can hold a key under `hash`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Admitted` for each hash that the index filed at the build. A
+    ///   filter with no word for a bit admits, so a read never passes a layer
+    ///   in error.
+    /// - provides: the test that a read of a layer runs first.
+    /// - panics: none.
+    /// - executable: none — the filed hashes are the index's, and the filter
+    ///   does not keep them.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`HashFilter`].
+    /// - witness: `table::tests::a_filter_admits_each_filed_hash_and_refuses_most_others`
+    #[inline]
+    #[must_use]
+    pub fn admits(
+        &self,
+        hash: TableHash,
+    ) -> Admission
+    {
+        let held = self.bits(hash).iter().all(|bit| {
+            self.words
+                .get(bit.word)
+                .is_none_or(|word| (word & bit.mask) != 0)
+        });
+        if held {
+            Admission::Admitted
+        }
+        else {
+            Admission::Refused
+        }
+    }
+}
+
 impl HashIndex
 {
     /// An empty index; it allocates on its first insertion.
@@ -429,6 +548,44 @@ impl HashIndex
                 }
             }
         })
+    }
+
+    /// A filter of the hashes that this index files, sized by their count.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the filter admits each hash filed at the call. Its bit count
+    ///   is a power of two, at least 64 and at least 8 for each filed hash.
+    /// - provides: the filter that a frozen layer of a memo carries.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`HashFilter`].
+    /// - witness: `table::tests::a_filter_admits_each_filed_hash_and_refuses_most_others`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.words.len().is_power_of_two()
+        && ret.words.len().saturating_mul(64)
+            >= self.len.saturating_mul(FILTER_BITS_PER_HASH).max(FILTER_MINIMUM_BITS))]
+    pub fn filter(&self) -> HashFilter
+    {
+        let bits = self
+            .len
+            .saturating_mul(FILTER_BITS_PER_HASH)
+            .max(FILTER_MINIMUM_BITS)
+            .checked_next_power_of_two()
+            .unwrap_or(1_usize.wrapping_shl(usize::BITS.saturating_sub(1)));
+        let mut filter = HashFilter {
+            words: alloc::vec![0; bits.wrapping_shr(6)],
+        };
+        for slot in self.slots.iter().filter(|slot| slot.position != VACANT) {
+            for bit in filter.bits(slot.hash) {
+                if let Some(word) = filter.words.get_mut(bit.word) {
+                    *word |= bit.mask;
+                }
+            }
+        }
+        filter
     }
 
     /// File `position` under `hash` at `slot`, which a preceding
@@ -650,6 +807,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use super::Admission;
     use super::HashIndex;
     use super::MINIMUM;
     use super::Probe;
@@ -965,5 +1123,33 @@ mod tests
             find(&index, &entries, hashes[0], entries[0]),
             Probe::Vacant(_)
         ));
+    }
+
+    #[test]
+    fn a_filter_admits_each_filed_hash_and_refuses_most_others()
+    {
+        let hash = |key: u64| TableHash::of(&Key(key));
+        assert_eq!(
+            HashIndex::new().filter().admits(hash(0)),
+            Admission::Refused,
+            "the filter of an empty index refuses each hash"
+        );
+        let mut index = HashIndex::new();
+        let mut entries = Vec::new();
+        for key in 0 .. 1_000 {
+            let _filed = intern(&mut index, &mut entries, hash(key), Key(key));
+        }
+        let filter = index.filter();
+        assert!(
+            (0 .. 1_000).all(|key| filter.admits(hash(key)) == Admission::Admitted),
+            "a filter admits each hash that its index files"
+        );
+        let admitted = (1_000 .. 11_000)
+            .filter(|&key| filter.admits(hash(key)) == Admission::Admitted)
+            .count();
+        assert!(
+            admitted < 1_000,
+            "a filter of 8 bits for each hash admits fewer than one other hash in ten: {admitted} of 10000"
+        );
     }
 }
