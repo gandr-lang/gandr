@@ -292,18 +292,6 @@ struct Sharing
     shares: AtomicUsize,
 }
 
-impl Sharing
-{
-    /// The values handed to share so far.
-    ///
-    /// # Specification
-    /// trivial.
-    fn shares(&self) -> usize
-    {
-        self.shares.load(Ordering::Relaxed)
-    }
-}
-
 impl StratumStore for Sharing
 {
     /// None.
@@ -406,7 +394,7 @@ fn a_second_context_builds_nothing_a_first_shared_7413()
     first.keep_strata_in(Arc::<Sharing>::clone(&store));
     let level = first.level_two(at).expect("level two is certified");
     assert_eq!(
-        store.shares(),
+        store.shares.load(Ordering::Relaxed),
         4,
         "the first context shares the catalogue, the wreath and two strata"
     );
@@ -418,7 +406,11 @@ fn a_second_context_builds_nothing_a_first_shared_7413()
         Arc::ptr_eq(&level, &again),
         "the second context reads the first's level two"
     );
-    assert_eq!(store.shares(), 4, "the second context shares nothing");
+    assert_eq!(
+        store.shares.load(Ordering::Relaxed),
+        4,
+        "the second context shares nothing"
+    );
     let mut third_arena = CoreArena::new();
     let mut third = CheckingContext::new(&mut third_arena, CheckBudget::DEFAULT);
     third.keep_strata_in(Arc::<Sharing>::clone(&store));

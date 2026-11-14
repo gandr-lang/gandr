@@ -250,6 +250,7 @@ impl Stored for Kept
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
+#[repr(transparent)]
 struct Shelf
 {
     /// Each value shared, by its key.
@@ -301,6 +302,7 @@ impl Shelf
 /// # Specification
 /// trivial.
 #[derive(Debug, Default)]
+#[repr(transparent)]
 struct Unstored
 {
     /// The values shared.
