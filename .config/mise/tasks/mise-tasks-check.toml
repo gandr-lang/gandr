@@ -2499,8 +2499,10 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # `.config/pr-stack/held-cases.bash` runs `held.bash` over live processes: a
 # process that works below a scratch tree holds it, and a tree that no
 # process works in is free (#6837). The caller holds its own directory, and
-# a shell that moves out leaves the directory held by its parent (#7502). The
-# sweep and `remove_landed_worktree` keep a held tree.
+# a shell that moves out leaves the directory held by its parent (#7502). A
+# delete that cannot take one file keeps its tree in one line that names the
+# file, and a delete that takes each file goes (#7533). The sweep and
+# `remove_landed_worktree` keep a held tree.
 # `.config/pr-stack/landed-heads-cases.bash` reads a scratch remote's heads
 # as the landing watcher reads them and deletes the decided ones in one push:
 # a landed head that no open pull request uses goes, and a head with a commit

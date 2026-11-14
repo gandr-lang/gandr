@@ -2054,15 +2054,18 @@ source .config/pr-stack/sweep-tree.bash
 # before and after. A clone shares its blocks with the primary worktree's
 # (`wt:warm`), so the apparent size overstates the disk freed, which the
 # free space before and after gives once the filesystem commits the delete.
+# A cache file that the seat cannot delete keeps the tree with one line, and
+# the sweep goes on (`tree_delete`, #7533). A file that `du` cannot read
+# leaves the size short, and the sweep goes on too.
 clear_incremental() {
   local tree=$1 label=$2 before after free_before free_after
   local -a caches=()
   mapfile -t caches < <(find "$tree/target" -mindepth 2 -maxdepth 3 -type d -name incremental 2> /dev/null)
   (( ${#caches[@]} > 0 )) || return 0
-  before=$(du -sk "$tree/target" | awk '{ print $1 }')
+  before=$({ du -sk "$tree/target" 2> /dev/null || true; } | awk '{ print $1 }')
   free_before=$(df -Pk "$tree" | awk 'NR == 2 { print $4 }')
-  rm -rf "${caches[@]}"
-  after=$(du -sk "$tree/target" | awk '{ print $1 }')
+  tree_delete "$label" "the clear of its incremental caches" "${caches[@]}" || return 0
+  after=$({ du -sk "$tree/target" 2> /dev/null || true; } | awk '{ print $1 }')
   sync -f "$tree" 2> /dev/null || sync
   free_after=$(df -Pk "$tree" | awk 'NR == 2 { print $4 }')
   printf 'cleared %s: idle for 4 hours; target/ %d GB, %d GB after its incremental caches; %d GB of disk freed\n' \
@@ -2141,7 +2144,7 @@ echo "wt:sweep removed $removed worktrees; ${free_gb} GB free"
 if [[ "${usage_guard:-false}" == true ]] && (( free_gb < floor_gb )); then
   echo "refused: ${free_gb} GB free is under the ${floor_gb} GB floor; the largest build directories:" >&2
   git worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r tree; do
-    if [[ -d "$tree/target" ]]; then du -sk "$tree/target"; fi
+    if [[ -d "$tree/target" ]]; then du -sk "$tree/target" 2> /dev/null || true; fi
   done | sort -rn | awk 'NR <= 10 { printf "  %d GB  %s\n", $1 / 1048576, $2 }' >&2
   exit 1
 fi
