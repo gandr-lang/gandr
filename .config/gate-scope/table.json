@@ -215,7 +215,7 @@
         "crates/",
         "ledger/"
       ],
-      "check:lockfile": [],
+      "check:lockfile": [".config/mise/"],
       "check:merge-driver": [".config/merge-driver/", "crates/surface-lowering/"],
       "check:merge-residue": [".config/merge-residue/"],
       "check:mutants": [".config/cases/", ".config/mutants/"],
