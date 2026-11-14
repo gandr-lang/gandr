@@ -1014,9 +1014,17 @@ where
 ///   under `key` is not read, and `build` runs.
 /// - fails: as `build` fails. A failure is not shared.
 /// - panics: none.
+/// - executable: none — what the store took first is its own state, behind a
+///   trait, and no predicate over the arguments reads it.
 ///
 /// # Errors
 /// As `build`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a second context reads each value that a first context
+///   built and shares nothing, and a budget that the chains exceed still
+///   refuses them while a catalogue under every budget is shared.
+/// - witness: `ua::tests::a_second_context_builds_nothing_a_first_shared_7413`
 fn shared_or<Value, Fault>(
     store: &dyn StratumStore,
     key: BuiltKey,
