@@ -189,7 +189,8 @@ fn each_judged_declaration_keeps_the_tree_its_judgement_visited()
 /// ceiling of 4,000,000 frontier entries and print nothing. The expected text
 /// is the print of the shallowest of the 19 before the memo, with every
 /// ceiling lifted: the layout that the cost order chooses when no ceiling
-/// refuses it.
+/// refuses it. Its variables read `x` and `y`, the names that the source
+/// gives the copies of the elaboration (#6745).
 #[test]
 fn a_deep_goal_prints_as_it_does_with_no_ceiling_6747()
 {
@@ -323,5 +324,64 @@ fn a_traced_pass_keeps_the_judgement_s_refusal_of_a_pattern_hole_6707()
     assert_eq!(
         undecided, 2,
         "`rank` and `weigh` keep `UndecidedCoverage` at the trace layer"
+    );
+}
+
+/// The checker judges a body that holds a computation where a value is read
+/// twice: the second run reads the body that the elaboration rebuilt (#6745).
+/// The goals of that run print in the source's names. A lambda that the
+/// elaboration copied names its binder as the lambda it copies, so `f` and
+/// `g` keep `x`, `y`, `a` and `b`. In `main` the elaboration binds `g 2 3`
+/// to a bind of its own, and a goal under that bind prints the term that the
+/// bind binds. A printer that read only the written body named the copied
+/// lambdas `a` and `b` and printed the bound variable as `?`.
+#[test]
+fn the_second_run_prints_its_goals_in_the_source_s_names_6745()
+{
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/trace/unformatted/the-second-run-keeps-the-source-s-names-6745.gandr");
+    let text = include_str!("trace/unformatted/the-second-run-keeps-the-source-s-names-6745.gandr");
+    let mut traced = session(SourceRoot::Strict);
+    recheck(&mut traced, (&path, Text(text)), Trace::default);
+    let page = PageWidth::from(80_u32);
+    let goals: Vec<Vec<String>> = traced
+        .account()
+        .rows()
+        .map(|(constant, ..)| {
+            let Maybe::Present(derivation) = traced.account().derivation_at(constant)
+            else {
+                panic!("the declaration at {constant:?} holds a tree");
+            };
+            let goals = derivation.goals();
+            derivation
+                .nodes()
+                .iter()
+                .filter_map(|node| match goals.goal(node, Lay::Page(page)) {
+                    Maybe::Present(goal) => Some(format!("{goal}")),
+                    Maybe::Absent(_) => None,
+                })
+                .collect()
+        })
+        .collect();
+    let &[ref f, ref g, ref main] = goals.as_slice()
+    else {
+        panic!("the source declares `f`, `g` and `main`: {goals:?}");
+    };
+    let holds = |goals: &[String], goal: &str| goals.iter().any(|held| held == goal);
+    assert!(
+        holds(f, "fun (x) { fun (y) { x + y } }") && holds(f, "fun (y) { x + y }"),
+        "the second run of `f` names its binders `x` and `y`: {f:?}"
+    );
+    assert!(
+        holds(g, "fun (a) { fun (b) { a + b } }") && holds(g, "fun (b) { a + b }"),
+        "the second run of `g` names its binders `a` and `b`: {g:?}"
+    );
+    assert!(
+        holds(main, "f 1 (g 2 3)") && holds(main, "(g 2 3)"),
+        "a goal under the bind that the elaboration minted prints the term it binds: {main:?}"
+    );
+    assert!(
+        goals.iter().flatten().all(|goal| !goal.contains('?')),
+        "no goal prints a variable with no name: {goals:?}"
     );
 }

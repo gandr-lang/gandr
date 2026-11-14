@@ -1094,6 +1094,11 @@ pub struct PassedItem<'pass>
     /// The steps of the machine's runs for the item, when the observer lent
     /// the pass a buffer.
     pub steps: Maybe<&'pass StepBuffer, untraced::Absent>,
+    /// The elaboration of the item's body that the pass decided the item by:
+    /// each copy it made beside the node it copies, and each bind it minted
+    /// beside its run. None for an adopted item and for a body that holds no
+    /// nested computation.
+    pub elaboration: Option<&'pass gandr_core_checker::NestedElaboration>,
     /// The arena nodes that the item's content walk reached.
     sites: &'pass Sites,
 }
@@ -3591,6 +3596,10 @@ where
                 Maybe::Absent(recall::Absent::Missed)
             },
         };
+        // The verdict the pass decided the item by, which the observer reads
+        // the item's elaboration from.
+        #[cfg(feature = "instrument")]
+        let mut decided_by: Option<Supported> = None;
         let (outcome, answer) = match adopted {
             Maybe::Present((support, typing, answer)) => {
                 bump(&mut census.adopted);
@@ -3697,6 +3706,10 @@ where
                                 }
                                 members.push((index, declaration.constant(), supported.verdict()));
                             }
+                            #[cfg(feature = "instrument")]
+                            {
+                                decided_by = Some(supported);
+                            }
                             decision
                         },
                     };
@@ -3723,6 +3736,12 @@ where
             memo: context.tally().since(before.0).plus(consulted),
             minted: context.arena().minted_since(before.1),
             steps: context.trace(),
+            elaboration: decided_by
+                .as_ref()
+                .and_then(|supported| match supported.elaboration() {
+                    Maybe::Present(elaboration) => Some(elaboration),
+                    Maybe::Absent(_) => None,
+                }),
             sites: &item.sites,
         });
         outcomes.push(outcome);
