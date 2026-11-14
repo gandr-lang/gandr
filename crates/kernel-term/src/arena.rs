@@ -976,9 +976,10 @@ pub struct Family<Node>
     )]
     tail: Vec<alloc::sync::Arc<Vec<Node>>>,
     /// Where each segment of the tail ends, past the whole chunks, oldest
-    /// first, and `usize::MAX` past the last segment. A read finds its
-    /// segment by four comparisons, with no walk of the tail.
-    ends: [usize; SEGMENTS],
+    /// first, and `u8::MAX` past the last segment. A read finds its segment
+    /// by four comparisons, with no walk of the tail. Each end is below
+    /// [`CHUNK`], so a byte holds it and the family stays small.
+    ends: [u8; SEGMENTS],
     /// How many nodes the chunks and the tail hold, so a read finds its side
     /// at once.
     frozen_len: usize,
@@ -1028,7 +1029,7 @@ impl<Node> Default for Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
-            ends: [usize::MAX; SEGMENTS],
+            ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
             own: Vec::new(),
         }
@@ -1047,7 +1048,7 @@ impl<Node> From<Vec<Node>> for Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
-            ends: [usize::MAX; SEGMENTS],
+            ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
             own: nodes,
         }
@@ -1096,7 +1097,7 @@ impl<Node> Family<Node>
         Self {
             frozen: None,
             tail: Vec::new(),
-            ends: [usize::MAX; SEGMENTS],
+            ends: [u8::MAX; SEGMENTS],
             frozen_len: 0,
             own: Vec::new(),
         }
@@ -1175,15 +1176,14 @@ impl<Node> Family<Node>
     ) -> Option<TailPlace>
     {
         let [first, second, third, fourth, _] = self.ends;
-        let segment = usize::from(first <= within.0)
-            .saturating_add(usize::from(second <= within.0))
-            .saturating_add(usize::from(third <= within.0))
-            .saturating_add(usize::from(fourth <= within.0));
+        let segment = usize::from(usize::from(first) <= within.0)
+            .saturating_add(usize::from(usize::from(second) <= within.0))
+            .saturating_add(usize::from(usize::from(third) <= within.0))
+            .saturating_add(usize::from(usize::from(fourth) <= within.0));
         let start = segment
             .checked_sub(1)
             .and_then(|before| self.ends.get(before))
-            .copied()
-            .unwrap_or(0);
+            .map_or(0, |&end| usize::from(end));
         let place = within.0.checked_sub(start)?;
         (place < self.tail.get(segment)?.len()).then_some(TailPlace { segment, place })
     }
@@ -1196,11 +1196,11 @@ impl<Node> Family<Node>
     #[inline]
     fn mark_ends(&mut self)
     {
-        let mut ends = [usize::MAX; SEGMENTS];
+        let mut ends = [u8::MAX; SEGMENTS];
         let mut end = 0_usize;
         for (slot, segment) in ends.iter_mut().zip(&self.tail) {
             end = end.saturating_add(segment.len());
-            *slot = end;
+            *slot = u8::try_from(end).unwrap_or(u8::MAX);
         }
         self.ends = ends;
     }
