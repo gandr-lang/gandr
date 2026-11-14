@@ -912,12 +912,12 @@ fn wait(
         tv_nsec: i64::from(timeout.subsec_nanos()),
     };
     // A wait that a signal or a changed word ends reads the counter again.
-    drop(rustix::thread::futex::wait(
+    let _ended = rustix::thread::futex::wait(
         word,
         rustix::thread::futex::Flags::empty(),
         seen.0,
         Some(&timeout),
-    ));
+    );
 }
 
 /// Wake one waiter on `word`.
@@ -927,11 +927,7 @@ fn wait(
 #[cfg(target_os = "linux")]
 fn wake(word: &AtomicU32)
 {
-    drop(rustix::thread::futex::wake(
-        word,
-        rustix::thread::futex::Flags::empty(),
-        1,
-    ));
+    let _woken = rustix::thread::futex::wake(word, rustix::thread::futex::Flags::empty(), 1);
 }
 
 /// Wait on `word` while it holds `seen`, for at most `timeout`.
