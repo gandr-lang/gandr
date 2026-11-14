@@ -89,6 +89,7 @@ Mechanism, rule tables, decisions and specification detail live in the rustdoc b
 - `vault:01a1b48c-2d17-7fc1-80ce-cb35e5cffd0e` — background: Ljungström and Mörtberg, LICS 2023, `arXiv:2302.00151` — § 2.2's eliminator of the spheres, in `words`.
 - `vault:01a178ab-289d-7702-b010-1c47ae9fd427` — anchor: the loop carried past two empty images of a cell, in `words`.
 - `vault:01a156e3-93c7-7e62-9a50-b38b2da60284` — anchor: the loops design (§ loops-shapes) — productivity as a guard on observations, in `check::guard`.
+- `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile — a device fails on the allocation and not on the average, so the `counts` feature counts each frame that the machines pop, in `check`.
 
 ## License
 

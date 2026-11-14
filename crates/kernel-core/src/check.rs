@@ -269,6 +269,10 @@
 //!   presented-spaces plan (§ presented-spaces-crates) — the field label on
 //!   each refusal of a record field's value or a restriction's fixed value, for
 //!   the replay of a patched type's formation and of its meets.
+//! - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile
+//!   — a device fails on the allocation and not on the average, so the `counts`
+//!   feature counts each frame that the machines pop, for the small-device
+//!   bench.
 
 use alloc::vec::Vec;
 use core::num::NonZeroUsize;

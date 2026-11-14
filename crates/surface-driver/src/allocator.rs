@@ -47,6 +47,12 @@
 //! of every thread, the pool's workers among them. That count is one shared
 //! atomic add for each allocation. So only the small-device bench's count
 //! build takes it, and the hub's `instrument` build compiles none of it.
+//!
+//! # References
+//!
+//! - `vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b` — anchor: the device profile
+//!   — a device fails on the allocation and not on the average, so the `counts`
+//!   feature counts each allocation of the process, for the small-device bench.
 
 /// The private malloc zone and the global allocator over it.
 #[cfg(all(feature = "malloc-zone", target_os = "macos"))]
