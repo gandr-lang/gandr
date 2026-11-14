@@ -15,21 +15,25 @@
 //! it renames, over the wall time of the renames and the sync. A width whose
 //! put rate is above the fold rate outruns one writer.
 //!
-//! `cargo bench` runs the full measurement and prints one row for each width.
-//! The full run measures the widths 1, 16 and 64, and it omits a width above
-//! the parallelism of the host. `--widths 1,8,96` measures the widths that it
-//! names, a width above the parallelism of the host among them. Under `cargo
-//! test`, the bench loads 64 files at widths 1 and 2 and prints nothing. So
-//! the gates run it, and they do not time it.
+//! # Examples
 //!
-//! `--directory <path>` puts the source tree and the stores under that
-//! directory, in place of the temporary directory of the host. Each row names
-//! the filesystem and the device that hold the directory: on Linux, from the
-//! mount table of the process; on macOS, from `statfs` and the node of the
-//! device under `/dev`. A row on tmpfs states that it measures the locks of
-//! the kernel and no device. The bench refuses a run whose directory names
-//! no filesystem or no device. Beside each row stand the user CPU, the system
-//! CPU and the voluntary context switches of the process during the load.
+//! `cargo bench -p gandr-storage-store --bench load` measures the widths 1, 16
+//! and 64 under the temporary directory of the host, and prints one row for
+//! each width. `-- --directory <path>` puts the source tree and the stores
+//! under that directory. `-- --widths 1,8,96` measures the widths that it
+//! names. Under `cargo test`, the bench loads 64 files at widths 1 and 2 and
+//! prints nothing, so the gates run it and do not time it.
+//!
+//! # Boundaries
+//!
+//! The full run omits a width above the parallelism of the host, and
+//! `--widths` does not. Each row names the filesystem and the device that
+//! hold the directory: on Linux, from the mount table of the process; on
+//! macOS, from `statfs` and the node of the device under `/dev`. A row on
+//! tmpfs states that it measures the locks of the kernel and no device. The
+//! bench refuses a run whose directory names no filesystem or no device.
+//! Beside each row stand the user CPU, the system CPU and the voluntary
+//! context switches of the process during the load.
 //!
 //! # References
 //!
@@ -348,7 +352,15 @@ impl Substrate
             else {
                 continue;
             };
-            let point = PathBuf::from(unescape(point));
+            // The mount table writes a space, a tab, a newline and a backslash
+            // in a mount point as three octal digits.
+            let point = PathBuf::from(
+                point
+                    .replace("\\040", " ")
+                    .replace("\\011", "\t")
+                    .replace("\\012", "\n")
+                    .replace("\\134", "\\"),
+            );
             let depth = point.components().count();
             if directory.starts_with(&point) && depth >= longest {
                 longest = depth;
@@ -424,21 +436,6 @@ impl Substrate
             self.device.clone()
         }
     }
-}
-
-/// A mount point of the mount table with its escapes undone: a space, a tab,
-/// a newline and a backslash each stand as three octal digits.
-///
-/// # Specification
-/// trivial.
-#[cfg(target_os = "linux")]
-fn unescape(point: &str) -> String
-{
-    point
-        .replace("\\040", " ")
-        .replace("\\011", "\t")
-        .replace("\\012", "\n")
-        .replace("\\134", "\\")
 }
 
 /// Print one row: `width`, the objects and the wall of `pass`, its put rate,
