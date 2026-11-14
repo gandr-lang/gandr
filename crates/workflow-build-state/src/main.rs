@@ -1,16 +1,21 @@
 //! `build-state`: prunes a Cargo profile directory to the units the
-//! recorded builds used.
+//! recorded builds used, and joins the builds of a lane's shards into it.
 //!
 //! `build-state prune --profile-dir DIR MESSAGES...` reads each file of
 //! Cargo JSON messages, removes every unit's entries in `DIR` that none of
 //! them names, and prints what it removed and kept.
 //!
+//! `build-state join --profile-dir DIR SHARDS...` moves into `DIR` each unit
+//! of the shards' profile directories, whole from the first shard that holds
+//! it, drops each unit whose dependencies are not the builds `DIR` keeps, and
+//! prints what it took, kept and dropped.
+//!
 //! # Exit codes
 //!
-//! - `0`: the directory was pruned; also `--help` and `--version`.
+//! - `0`: the directory was pruned or joined; also `--help` and `--version`.
 //! - `2`: a refusal — a message file could not be read, is not Cargo's JSON,
-//!   records an incomplete or failed build, or the directory could not be read
-//!   or pruned; also a malformed invocation.
+//!   records an incomplete or failed build, or a directory could not be read,
+//!   pruned or joined; also a malformed invocation.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -20,6 +25,7 @@ use anodized::spec;
 use gandr_workflow_build_state::BuildStateError;
 use gandr_workflow_build_state::Messages;
 use gandr_workflow_build_state::Units;
+use gandr_workflow_build_state::join;
 use gandr_workflow_build_state::prune;
 
 /// The exit code of a refusal or a malformed invocation.
@@ -53,6 +59,19 @@ enum Command
         /// Files of Cargo JSON messages, one per build whose units are kept.
         #[arg(required = true)]
         messages: Vec<PathBuf>,
+    },
+    /// Joins the builds of a lane's shards into the restored state, each unit
+    /// whole from one build.
+    Join
+    {
+        /// The profile directory that holds the restored state.
+        #[arg(long)]
+        profile_dir: PathBuf,
+        /// The shards' profile directories. The first shard that holds a unit
+        /// gives its build, and each shard holds each entry at its path in the
+        /// profile directory.
+        #[arg(required = true)]
+        shards: Vec<PathBuf>,
     },
 }
 
@@ -97,13 +116,13 @@ fn main() -> ExitCode
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: every message file is read before anything is removed; on success
-///   the directory is pruned and standard output receives one line naming the
-///   entries and mebibytes removed and the entries kept.
+/// - ensures: a prune reads every message file before it removes anything; on
+///   success the directory is pruned or joined and standard output receives one
+///   line naming what the subcommand removed, took, kept and dropped.
 /// - provides: the whole subcommand.
 /// - fails: [`BuildStateError::Io`] when a message file cannot be read; every
-///   refusal of [`Units::read`] and [`prune()`]; [`BuildStateError::Output`]
-///   when standard output cannot be written.
+///   refusal of [`Units::read`], [`prune()`] and [`join()`];
+///   [`BuildStateError::Output`] when standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the directory on disk and the bytes on
 ///   standard output.
@@ -113,33 +132,51 @@ fn main() -> ExitCode
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a prune of a profile with one superseded library reports
-///   it; a failed build's messages remove nothing.
+///   it; a failed build's messages remove nothing; a join of two shards reports
+///   the unit it took and the dependent it dropped.
 /// - witness: `tests::cli::a_prune_reports_what_it_removed`
 /// - witness: `tests::cli::a_refusal_removes_nothing_and_exits_two`
+/// - witness: `tests::cli::a_join_reports_what_it_took_and_dropped_7508`
 fn run(cli: Cli) -> Result<(), BuildStateError>
 {
-    let Command::Prune {
-        profile_dir,
-        messages,
-    } = cli.command;
-    let mut units = Units::default();
-    for path in &messages {
-        let text = std::fs::read_to_string(path).map_err(|error| BuildStateError::Io {
-            path: path.clone(),
-            message: error.to_string(),
-        })?;
-        units.read(path, Messages::from(text.as_str()))?;
-    }
-    let pruned = prune(&profile_dir, &units)?;
-    writeln!(
-        std::io::stdout(),
-        "pruned {} entries, {} MiB, from {}; kept {}",
-        pruned.removed,
-        pruned.bytes.checked_div(MEBIBYTE).unwrap_or_default(),
-        profile_dir.display(),
-        pruned.kept
-    )
-    .map_err(|error| BuildStateError::Output {
+    let report = match cli.command {
+        Command::Prune {
+            profile_dir,
+            messages,
+        } => {
+            let mut units = Units::default();
+            for path in &messages {
+                let text = std::fs::read_to_string(path).map_err(|error| BuildStateError::Io {
+                    path: path.clone(),
+                    message: error.to_string(),
+                })?;
+                units.read(path, Messages::from(text.as_str()))?;
+            }
+            let pruned = prune(&profile_dir, &units)?;
+            format!(
+                "pruned {} entries, {} MiB, from {}; kept {}",
+                pruned.removed,
+                pruned.bytes.checked_div(MEBIBYTE).unwrap_or_default(),
+                profile_dir.display(),
+                pruned.kept
+            )
+        },
+        Command::Join {
+            profile_dir,
+            shards,
+        } => {
+            let joined = join(&profile_dir, &shards)?;
+            format!(
+                "joined {} shards into {}: took {} units, kept {} restored, dropped {}",
+                shards.len(),
+                profile_dir.display(),
+                joined.taken,
+                joined.restored,
+                joined.dropped
+            )
+        },
+    };
+    writeln!(std::io::stdout(), "{report}").map_err(|error| BuildStateError::Output {
         message: error.to_string(),
     })
 }

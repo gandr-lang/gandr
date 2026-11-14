@@ -1,6 +1,7 @@
 //! **Build state**: a Cargo profile directory pruned to the units the
-//! recorded builds used, so the state CI carries from landing to landing
-//! stays the size of one build.
+//! recorded builds used, and joined from the builds of a lane's shards one
+//! unit at a time, so the state that CI hands on stays the size of one build
+//! and holds each unit from one build.
 //!
 //! Cargo names every file a unit writes with a hash of the unit's package,
 //! features, profile and dependencies. An edit rebuilds a unit under the
@@ -15,6 +16,9 @@
 //!   `deps`, `build`, `.fingerprint` and `examples` that no recorded unit
 //!   names, and finds the unit behind each executable Cargo copied out under
 //!   its plain name by the hard link between the two.
+//! - [`mod@join`] joins the shards' builds into the restored state. Each unit
+//!   comes whole from one build, and a unit stays only when each dependency its
+//!   fingerprint names is the build the join keeps.
 //!
 //! # Boundaries
 //!
@@ -28,10 +32,13 @@
 //! See the [crate README](https://github.com/gandr-lang/gandr/blob/main/crates/workflow-build-state/README.md).
 
 pub mod error;
+pub mod join;
 pub mod prune;
 pub mod units;
 
 pub use crate::error::BuildStateError;
+pub use crate::join::Joined;
+pub use crate::join::join;
 pub use crate::prune::Pruned;
 pub use crate::prune::prune;
 pub use crate::units::Messages;

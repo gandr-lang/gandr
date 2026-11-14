@@ -114,7 +114,7 @@ crates/
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
 ├── theory-stone-duality/          finite Stone duality: the free distributive lattice in normal form, finite Birkhoff duality, and monotone maps as lattice homomorphisms
 ├── theory-virtual-doctrines/      virtual double categories, reflected judgments and directed laws over replayable rewriting evidence
-├── workflow-build-state/          the `build-state` binary: build state kept to one build's units
+├── workflow-build-state/          the `build-state` binary: build state kept to one build's units, and joined from a lane's shards each unit from one build
 ├── workflow-coverage-guard/       the `coverage-guard` binary: main's coverage upload against the one before it, filed on one issue when it drops
 ├── workflow-debt-ledger/          the comment and prose gates' debt ledger
 ├── workflow-github/               the workflow binaries' one `gh` runner

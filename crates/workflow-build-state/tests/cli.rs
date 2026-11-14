@@ -1,6 +1,6 @@
-//! The prune, its report and the exit codes, observed by spawning the
-//! binary over a scratch profile directory holding one recorded and one
-//! superseded library.
+//! The prune and the join, their reports and the exit codes, observed by
+//! spawning the binary over scratch profile directories: one with a recorded
+//! and a superseded library, and one restored state with two shards.
 //!
 //! The process-level cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
@@ -52,6 +52,86 @@ fn a_prune_reports_what_it_removed()
     );
     assert!(deps.join(RECORDED).exists());
     assert!(!deps.join(SUPERSEDED).exists());
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_join_reports_what_it_took_and_dropped_7508()
+{
+    let root = std::env::temp_dir().join(format!("build-state-cli-{}-join", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    let (profile, first, second) = (
+        root.join("debug"),
+        root.join("a/debug"),
+        root.join("b/debug"),
+    );
+    // Writes a library unit of the new layout under a profile: its
+    // fingerprint of `value` naming the fingerprints `dependencies`, and its
+    // library holding `marker`.
+    let unit = |profile: &std::path::Path,
+                package: &str,
+                hash: &str,
+                value: u64,
+                dependencies: &[u64],
+                marker: &str| {
+        let directory = profile.join("build").join(package).join(hash);
+        let fingerprint = directory.join("fingerprint");
+        std::fs::create_dir_all(&fingerprint).unwrap();
+        std::fs::create_dir_all(directory.join("out")).unwrap();
+        let deps: Vec<String> = dependencies
+            .iter()
+            .map(|value| format!("[1,\"dependency\",false,{value}]"))
+            .collect();
+        let dep_info = format!("debug/build/{package}/{hash}/fingerprint/dep-lib-{package}");
+        std::fs::write(
+            fingerprint.join(format!("lib-{package}.json")),
+            format!(
+                "{{\"deps\":[{}],\"local\":[{{\"CheckDepInfo\":{{\"dep_info\":\"{dep_info}\",\"checksum\":false}}}}]}}",
+                deps.join(",")
+            ),
+        )
+        .unwrap();
+        let text = format!("{:016x}", value.swap_bytes());
+        std::fs::write(fingerprint.join(format!("lib-{package}")), text).unwrap();
+        std::fs::write(
+            fingerprint.join(format!("dep-lib-{package}")),
+            "dependencies",
+        )
+        .unwrap();
+        std::fs::write(
+            directory
+                .join("out")
+                .join(format!("lib{package}-{hash}.rmeta")),
+            marker,
+        )
+        .unwrap();
+    };
+    unit(&profile, "base", "00000000000000d1", 1, &[], "restored");
+    unit(&first, "base", "00000000000000d1", 2, &[], "first");
+    unit(&second, "base", "00000000000000d1", 3, &[], "second");
+    unit(&second, "mixed", "00000000000000e1", 4, &[3], "second");
+    let output = Command::new(env!("CARGO_BIN_EXE_build-state"))
+        .arg("join")
+        .arg("--profile-dir")
+        .arg(&profile)
+        .arg(&first)
+        .arg(&second)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "joined 2 shards into {}: took 1 units, kept 0 restored, dropped 1\n",
+            profile.display()
+        )
+    );
+    let library = profile.join("build/base/00000000000000d1/out/libbase-00000000000000d1.rmeta");
+    assert_eq!(std::fs::read_to_string(library).unwrap(), "first");
+    assert!(!profile.join("build/mixed/00000000000000e1").exists());
     std::fs::remove_dir_all(&root).unwrap();
 }
 

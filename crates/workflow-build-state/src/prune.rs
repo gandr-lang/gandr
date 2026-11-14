@@ -113,7 +113,7 @@ pub fn prune(
 /// - witness: `prune::tests::a_prune_keeps_exactly_the_recorded_units`
 /// - witness: `prune::tests::a_prune_of_the_new_layout_keeps_exactly_the_recorded_units_6951`
 /// - witness: `prune::tests::a_missing_profile_is_refused`
-fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateError>
+pub(crate) fn unit_entries(profile: &Path) -> Result<Vec<(PathBuf, UnitHash)>, BuildStateError>
 {
     let profile_metadata = fs::metadata(profile).map_err(|error| io(profile, &error))?;
     if !profile_metadata.is_dir() {
@@ -362,7 +362,7 @@ fn count_bytes(
 /// - hypothesis: L3 — a superseded library file and a superseded build
 ///   directory are both gone after a prune.
 /// - witness: `prune::tests::a_prune_keeps_exactly_the_recorded_units`
-fn remove(path: &Path) -> Result<(), BuildStateError>
+pub(crate) fn remove(path: &Path) -> Result<(), BuildStateError>
 {
     let metadata = fs::symlink_metadata(path).map_err(|error| io(path, &error))?;
     let removed = if metadata.is_dir() {
@@ -378,7 +378,7 @@ fn remove(path: &Path) -> Result<(), BuildStateError>
 ///
 /// # Specification
 /// trivial.
-fn io(
+pub(crate) fn io(
     path: &Path,
     error: &std::io::Error,
 ) -> BuildStateError
