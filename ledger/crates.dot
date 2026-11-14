@@ -198,15 +198,18 @@ digraph crates {
   "kernel-core" -> "kernel-check-memo";
   "kernel-core" -> "kernel-conversion-trace";
   "kernel-core" -> "kernel-core-base";
+  "kernel-core" -> "kernel-data";
   "kernel-core" -> "kernel-strata";
   "kernel-core" -> "kernel-term";
   "kernel-core" -> "theory-dynamic-graphs";
   "kernel-core" -> "theory-graphs";
   "kernel-core-base" -> "kernel-check-memo";
+  "kernel-core-base" -> "kernel-data";
   "kernel-core-base" -> "kernel-strata";
   "kernel-core-base" -> "kernel-term";
   "kernel-core-base" -> "theory-dynamic-graphs";
   "kernel-core-base" -> "theory-graphs";
+  "kernel-strata" -> "kernel-data";
   "kernel-term" -> "kernel-check-memo";
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";
