@@ -4075,6 +4075,70 @@ git ls-files -z -- 'crates/*.rs' | xargs -0 awk '
 '
 '''
 
+# The ledger of declared allocations (#7419): each `- allocation: <what>,
+# <why>` line of a `# Cost` section in the crates, counted by crate and by
+# why, as one Markdown table on standard output. The nightly writes it into
+# the reports job's summary. A line can go on over the next documentation
+# lines, and the report reads the why at the end of the whole line. The lint
+# `allocation_free_region`, not this list, refuses a malformed line, so a
+# line of no known why counts under `other`.
+["report:allocations"]
+description = "Count the declared allocations of each crate, by why"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+git ls-files -z -- 'crates/*.rs' | xargs -0 awk '
+  function close_line(   why) {
+    if (text == "") return
+    if (text ~ /, setup\.?$/) why = "setup"
+    else if (text ~ /, growth within .+$/) why = "growth"
+    else if (text ~ /, error path\.?$/) why = "error"
+    else if (text ~ /, diagnostic\.?$/) why = "diagnostic"
+    else if (text ~ /, durable by .+$/) why = "durable"
+    else why = "other"
+    count[crate, why]++
+    total[crate]++
+    crates[crate] = 1
+    all++
+    text = ""
+  }
+  FNR == 1 { close_line() }
+  {
+    if (text != "" && match($0, /^[[:space:]]*\/\/[\/!]   +[^ -]/)) {
+      line = $0
+      sub(/^[[:space:]]*\/\/[\/!][[:space:]]+/, "", line)
+      text = text " " line
+      next
+    }
+    close_line()
+    if (match($0, /^[[:space:]]*\/\/[\/!][[:space:]]*- allocation: /)) {
+      text = substr($0, RSTART + RLENGTH)
+      if (text ~ /^none in steady state/) { text = ""; next }
+      crate = FILENAME
+      sub(/^crates\//, "", crate)
+      sub(/\/.*/, "", crate)
+    }
+  }
+  END {
+    close_line()
+    split("setup growth error diagnostic durable other", whys, " ")
+    print "## Declared allocations"
+    print ""
+    printf "%d allocations stand declared under `# Cost` (`allocation_free_region`, #7419).\n\n", all + 0
+    print "|Crate|setup|growth within|error path|diagnostic|durable by|other|Total|"
+    print "|---|---:|---:|---:|---:|---:|---:|---:|"
+    fflush()
+    sorter = "LC_ALL=C sort"
+    for (name in crates) {
+      row = "|`" name "`"
+      for (w = 1; w <= 6; w++) row = row "|" (count[name, whys[w]] + 0)
+      print row "|" total[name] "|" | sorter
+    }
+    close(sorter)
+  }
+'
+'''
+
 # The night's chain report (#6893). Each chain job of the nightly builds the
 # driver cold (`.config/nightly/chain-build.bash`) and keeps its build log as
 # the artifact `chain-log-<arch>`, and `reports` downloads each one into

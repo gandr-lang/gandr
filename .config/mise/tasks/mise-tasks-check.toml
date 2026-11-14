@@ -524,6 +524,16 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # is the first; each later wave adds its class. A site that keeps its trait
 # object states why in an `expect` at the site, as each `Error::source`
 # does, since `core` fixes that signature.
+# `allocation_free_region` (deny by default) holds a function to no
+# allocation unless its `# Cost` declares one, `- allocation: <what>, <why>`
+# (#7419). It holds each function of a crate in `allocation_default_crates`,
+# which each wave of the epic fills. It also holds each function whose MIR
+# differs from the base's record of its unit, or that the record lacks, in
+# every crate. The run writes those records to `target/allocation-base`
+# (`.config/policy/base-records.bash`): the base's records of the packages
+# that the change touches, from the cache that `check:deletes` fills. A run
+# with no `GATE_BASE`, as `gate:all` and the merge group, writes none, and the
+# lint holds the default's crates alone.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -537,6 +547,8 @@ presenters = [
   { enum = "gandr_surface_pretty::former::Former", functions = ["gandr_surface_pretty::walk::Walk::visit", "gandr_surface_pretty::walk::Walk::form"] },
 ]
 trait_object_classes = ["core::error::Error"]
+allocation_default_crates = []
+allocation_base_records = "{{ config_root }}/target/allocation-base"
 
 [quenchant-dylints.productions]
 marker = "gandr_surface_pretty::walk::Production"
@@ -667,6 +679,11 @@ policy() {
   fi
   .config/mise/gated "${run[@]}"
 }
+# The base's records for `allocation_free_region` (#7419), built in a gate
+# slot as the policy run is: an empty directory when no base stands.
+rm -rf target/allocation-base
+mkdir -p target/allocation-base
+if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.bash "$GATE_BASE" target/allocation-base; fi
 features=$(cargo metadata --no-deps --locked --format-version 1 | .config/policy/required.bash {{ env.GATE_SCOPE | default(value='--workspace') }})
 # shellcheck disable=SC2086 # `$features` is `--features` and its list, or nothing.
 policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features

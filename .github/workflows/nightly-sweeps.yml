@@ -520,7 +520,8 @@ jobs:
   # prose lane saves. Then the threads outside the pool (`mise run
   # report:threads`, #3610): each site that states why it owns a thread, with
   # its reason, in the job summary. It reads the tree alone, in under a
-  # second.
+  # second. So does the ledger of declared allocations (`mise run
+  # report:allocations`, #7419): each crate's count of them by why.
   # The dependency and prose reports read the open issues and pull requests
   # from one read of them (`mise run issues:open`, #5681), 8 pages, in place
   # of 8 pages each, and each runs only when that read succeeds.
@@ -686,6 +687,9 @@ jobs:
       - name: list the threads outside the pool
         if: *not-cancelled
         run: mise run --quiet report:threads >> "$GITHUB_STEP_SUMMARY"
+      - name: count the declared allocations
+        if: *not-cancelled
+        run: mise run --quiet report:allocations >> "$GITHUB_STEP_SUMMARY"
       # The chain of each head (#6893): each chain job's build log read into
       # its row, beside the last night's row, a growth past 10 % filed on
       # the build's chain collector (`mise run report:chain`). The rows go
