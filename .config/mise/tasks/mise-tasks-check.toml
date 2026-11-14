@@ -2464,6 +2464,9 @@ FROM reference;"); keys read $resolved; $(sqlite3 "$db" "SELECT 'the citation wi
 # `.config/pr-stack/pulls.json` with a stubbed `gh`: a sweep asks about its
 # branches in one call at most, and about a branch at a head only once
 # (#5839).
+# `.config/pr-stack/sweep-gone-cases.bash` judges a scratch repository's
+# listing with `.config/pr-stack/sweep-tree.bash` after one listed worktree
+# goes away: the judgement passes and prunes it as a prunable one (#7490).
 # `.config/pr-stack/held-cases.bash` runs `held.bash` over live processes: a
 # process that works below a scratch tree holds it, a tree that no process
 # works in is free, and the caller's own directory is free (#6837). The
@@ -2511,6 +2514,7 @@ fi
 .config/pr-stack/await.bash || failed=1
 .config/pr-stack/sweep-subjects.bash || failed=1
 .config/pr-stack/sweep-pulls.bash || failed=1
+.config/pr-stack/sweep-gone-cases.bash || failed=1
 .config/pr-stack/held-cases.bash || failed=1
 .config/pr-stack/link-reads.bash || failed=1
 .config/pr-stack/landed-heads-cases.bash || failed=1
