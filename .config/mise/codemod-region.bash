@@ -27,16 +27,28 @@
 # 3. the functions whose signatures name the brand. A method of an impl that
 #    takes the brand reads the impl's, so this phase runs after the impls.
 #
-# Usage: codemod-region.bash [--path <path>]... <crate> <name>...
+# A dry run clones the paths into a scratch directory and runs there. It
+# prints the same rounds and counts, and it leaves the tree as it is. So a
+# report can hold the rules current against each landing.
+#
+# Usage: codemod-region.bash [--dry-run] [--path <path>]... <crate> <name>...
 # The crate and the names are the seed providers, and the paths default to
 # `crates`. The task prints each round and the brands it adds, by crate.
 set -euo pipefail
 export LC_ALL=C
 
+dry_run=0
 paths=()
-while (( $# >= 2 )) && [[ $1 == --path ]]; do
-  paths+=("$2")
-  shift 2
+while (( $# > 0 )); do
+  case $1 in
+    --dry-run) dry_run=1 && shift ;;
+    --path)
+      (( $# >= 2 )) || { echo 'codemod-region: --path takes a path' >&2; exit 2; }
+      paths+=("$2")
+      shift 2
+      ;;
+    *) break ;;
+  esac
 done
 (( $# >= 2 )) || { echo 'codemod-region: name the seed crate and its ids' >&2; exit 2; }
 seed_crate=$1
@@ -44,11 +56,32 @@ shift
 seed_names="$*"
 (( ${#paths[@]} > 0 )) || paths=(crates)
 
-region=.config/ast-grep/region
+region=$PWD/.config/ast-grep/region
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
-mkdir -p "$scratch/rules"
-printf 'ruleDirs:\n  - rules\n' > "$scratch/sgconfig.yml"
+# `ast-grep` reads a rule's `files` from the directory that holds the files
+# it scans, unless they lie under its configuration's directory. So the rule
+# set and the clone of a dry run are two directories apart.
+rule_set=$scratch/rules
+mkdir -p "$rule_set/rules"
+printf 'ruleDirs:\n  - rules\n' > "$rule_set/sgconfig.yml"
+
+# A dry run works in a clone of the paths, with the root's ignore file and a
+# repository of its own, so `rg` and `ast-grep` skip what the tree ignores.
+if (( dry_run )); then
+  copy=$scratch/tree
+  for path in "${paths[@]}"; do
+    mkdir -p "$copy/$(dirname "$path")"
+    if [[ $(uname -s) == Darwin ]]; then
+      cp -c -R -p "$path" "$copy/$path"
+    else
+      cp -a --reflink=auto "$path" "$copy/$path"
+    fi
+  done
+  cp .gitignore "$copy/.gitignore"
+  git init -q "$copy"
+  cd "$copy"
+fi
 
 # The count of brands in each crate: each `'r` and each `'_`.
 brands() {
@@ -207,17 +240,18 @@ while :; do
   { rg --no-heading --with-filename --no-line-number --type rust \
     '^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?use[[:space:]]' "${paths[@]}" || true; } | sort > "$scratch/uses"
   counts=$(SEED_CRATE=$seed_crate SEED_NAMES=$seed_names USES=$uses QUALIFIED=$qualified \
-    awk "$names_awk" "$scratch/defined" "$scratch/uses" 2>&1 > "$scratch/rules/uses.yml")
-  signature=$(md5sum < "$scratch/rules/uses.yml")
+    awk "$names_awk" "$scratch/defined" "$scratch/uses" 2>&1 > "$rule_set/rules/uses.yml")
+  signature=$(md5sum < "$rule_set/rules/uses.yml")
   changed=0
-  if fixpoint "$scratch/sgconfig.yml" '.'; then changed=1; fi
+  if fixpoint "$rule_set/sgconfig.yml" '.'; then changed=1; fi
   printf 'round %s: %s; files changed: %s\n' "$round" "$counts" "$( ((changed)) && echo yes || echo no)"
   [[ $changed == 1 || $signature != "$previous" ]] || break
   previous=$signature
 done
 fixpoint "$region/sgconfig.yml" '^(impl-|trait-impl-)' || true
 fixpoint "$region/sgconfig.yml" '^fn-' || true
-cargo fmt --all
+(( dry_run )) || cargo fmt --all
 brands > "$scratch/after"
 printf 'brands added, by crate:\n'
 join -a 2 -e 0 -o 0,1.2,2.2 "$scratch/before" "$scratch/after" | awk '$3 != $2 { printf "%6d %s\n", $3 - $2, $1 }' | sort -rn
+(( ! dry_run )) || printf 'dry run: settled in %s rounds; the tree is as it was\n' "$round"

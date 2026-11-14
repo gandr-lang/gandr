@@ -178,10 +178,12 @@ run = "bash .config/jq-args/check.bash"
 # package set can scope it. It reads the claim of its branch's unit as
 # `check` does. Its name keeps it out of the `check:*` glob, so it never runs
 # itself. On main's tree its time is held to a budget (#5215): it runs
-# `report:gate-time`, which files the gate past its budget, and a report that
-# fails leaves the pass recorded. `--keep-going` runs every check whatever an
-# earlier check gives, so the fixer reads every red of a tip in one pass
-# (#5440); a gate with a red still records no pass.
+# `report:gate-time`, which files the gate past its budget, and
+# `report:codemod-region`, which files a dry run of the region codemod that
+# does not settle (#7390). A report that fails leaves the pass recorded.
+# `--keep-going` runs every check whatever an earlier check gives, so the
+# fixer reads every red of a tip in one pass (#5440); a gate with a red still
+# records no pass.
 ["gate:all"]
 description = "Every check over the whole workspace, about half an hour; the integration cycle runs every check before main moves"
 tools.jq = "1.8.1"
@@ -215,6 +217,7 @@ if [[ ${usage_keep_going:-false} == true ]]; then keep=(--continue-on-error); fi
 .config/gate-scope/passed.bash record gate:all "$tree" target/gate/gate-all.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
 if [[ $tree == "$(git rev-parse 'origin/main^{tree}' 2> /dev/null)" ]]; then
   REPORT_FILE=1 mise run report:gate-time || echo "gate:all: the report of main's gate time failed; the pass stays recorded" >&2
+  REPORT_FILE=1 mise run report:codemod-region || echo "gate:all: the report of the region codemod failed; the pass stays recorded" >&2
 fi
 gate_ran=1
 {% endraw %}'''
