@@ -2062,7 +2062,10 @@ module="^\s*${visibility}mod\s+\w+\s*(\{.*)?$"
 git grep -n -I -P -e "$field" -e "$tuple" -e "$opener" -e "$function" -e "$test_cfg" -e "$module" -- ':(glob)crates/kernel-*/src/**' ':(glob)crates/core-fork/src/**' \
   ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' \
   | jq -R -s 'split("\n")' | jq -r -f .config/shared/hits.jq > "$fresh/hits.tsv"
-sqlite3 -bail -tabs "$db" 'CREATE TABLE hit(file TEXT, name TEXT);' ".import $fresh/hits.tsv hit"
+git grep -I -o -P "^\s*${visibility}(struct|enum|union|type|const|static)\s+\K[A-Z]\w*" -- ':(glob)crates/*/src/**' \
+  | tr ':' '\t' > "$fresh/declared.tsv"
+sqlite3 -bail -tabs "$db" 'CREATE TABLE hit(file TEXT, name TEXT); CREATE TABLE declared(file TEXT, item TEXT);' \
+  ".import $fresh/hits.tsv hit" ".import $fresh/declared.tsv declared"
 findings=$(sqlite3 -bail "$db" <<'SQL'
 SELECT h.file || ': `' || h.name || '` has no row; add'
   || ' INSERT INTO shared VALUES(' || quote(h.file) || ',' || quote(h.name)
@@ -2073,19 +2076,17 @@ WHERE NOT EXISTS (SELECT 1 FROM shared s WHERE (s.file, s.name) = (h.file, h.nam
 UNION ALL
 SELECT s.file || ': `' || s.name || '`: a row naming no field of the pattern; correct its file or its name, or delete it'
 FROM shared s
-WHERE NOT EXISTS (SELECT 1 FROM hit h WHERE (h.file, h.name) = (s.file, s.name));
+WHERE NOT EXISTS (SELECT 1 FROM hit h WHERE (h.file, h.name) = (s.file, s.name))
+UNION ALL
+SELECT DISTINCT s.file || ': `' || s.item || '`: a stated row naming no item that its file declares; correct its file or its item, or delete it'
+FROM stated s
+WHERE NOT EXISTS (SELECT 1 FROM declared d WHERE (d.file, d.item) = (s.file, s.item));
 SQL
 )
 if [[ -n $findings ]]; then
   printf '%s\n' "$findings" >&2
   failed=1
 fi
-while IFS=$'\t' read -r file item; do
-  if ! git grep -q -P "^\s*${visibility}(struct|enum|union|type|const|static)\s+${item}\b" -- "$file"; then
-    echo "$file: \`$item\`: a stated row naming no item that its file declares; correct its file or its item, or delete it" >&2
-    failed=1
-  fi
-done < <(sqlite3 -bail -tabs "$db" 'SELECT DISTINCT file, item FROM stated;')
 if (( failed )); then
   echo 'shared check FAILED' >&2
   exit 1
