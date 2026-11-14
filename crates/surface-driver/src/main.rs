@@ -109,7 +109,11 @@
 //! byte either stream carries, and the exit, are the same at every count: the
 //! sources are judged and printed in walk order whatever thread lowered them
 //! (`gandr-surface-dispatcher`'s `walk` module). A count of `0` is a malformed
-//! invocation.
+//! invocation. Under a jobserver that `CARGO_MAKEFLAGS` or `MAKEFLAGS` names,
+//! as cargo and a gate hand down, the pool runs a part beside the calling
+//! thread only on one of its tokens, so the count caps the threads and the
+//! jobserver bounds the parts that run (`gandr-surface-dispatcher`'s `pool`
+//! module).
 //!
 //! `gandr run` takes exactly one path, `-` among them: there is no
 //! standard-input face for it to name. The source is composed under the root
@@ -373,6 +377,7 @@ use gandr_surface_dispatcher::Formatting;
 use gandr_surface_dispatcher::Fusions;
 use gandr_surface_dispatcher::Gathered;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Grant;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Input;
@@ -2392,15 +2397,16 @@ fn host_pool() -> Arc<Pool>
     pool
 }
 
-/// A pool of `width` threads that keeps the host's measured park-to-wake
-/// cost in [`config::pool`]'s directory, so a later run reads it in place of a
-/// fresh measure.
+/// A pool of `width` threads under the process's grant, which keeps the
+/// host's measured park-to-wake cost in [`config::pool`]'s directory, so a
+/// later run reads it in place of a fresh measure. A jobserver that the
+/// parent names bounds the parts that the pool runs at once.
 ///
 /// # Specification
 /// trivial.
 fn pooled(width: Width) -> Pool
 {
-    let pool = Pool::new(width);
+    let pool = Pool::new(width).granted(Grant::of_process());
     match config::pool() {
         Some(directory) => pool.kept_in(directory),
         None => pool,

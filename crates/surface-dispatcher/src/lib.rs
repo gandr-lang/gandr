@@ -409,6 +409,7 @@ pub use crate::package::toolchain::Unconstrained;
 pub use crate::package::toolchain::Unmet;
 pub use crate::package::toolchain::Version;
 pub use crate::package::toolchain::asking;
+pub use crate::pool::Grant;
 pub use crate::pool::ItemIndex;
 pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;

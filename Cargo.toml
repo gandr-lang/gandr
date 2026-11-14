@@ -1547,10 +1547,14 @@ default-features = false
 # graph, because rustix exposes neither `MAP_JIT` nor
 # `pthread_jit_write_protect_np`; the choice reverses if it grows both. The
 # record is in the emitter's crate docs.
+#
+# The pool's grant opens one end of a jobserver with `O_NONBLOCK`, a
+# constant that `std` does not name, and calls nothing of the bindings.
 # features:
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
 # - runtime-emitter
+# - surface-dispatcher (unix)
 [workspace.dependencies.libc]
 version = "0.2.189"
 default-features = false
@@ -1591,13 +1595,17 @@ default-features = false
 # The store's load bench names the filesystem of its directory and the CPU
 # of each row. rustix carries `statfs` and no `getrusage`, and libc alone
 # needs `unsafe` for both. Reversal: rustix gaining `getrusage`.
+#
+# The pool's grant test makes its jobserver as a FIFO with `mkfifo`.
 # features:
 # - term: `pty::openpty`
-# - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS
+# - fs: `sys::statfs::statfs`, the type name of a filesystem on macOS, and
+#   `unistd::mkfifo`, the FIFO of the pool's grant test
 # - resource: `sys::resource::getrusage`, the CPU and the voluntary switches
 #   of each row of the store's load
 # consumers:
 # - storage-store (dev)
+# - surface-dispatcher (dev)
 # - surface-driver (dev)
 [workspace.dependencies.nix]
 version = "0.31.3"
