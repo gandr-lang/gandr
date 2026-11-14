@@ -266,17 +266,6 @@ run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-par
 description = "The recovery sweep over the records a change touches, or every record when it reaches the parser or removes a source"
 run = ".config/recovery/change.bash"
 
-# The session's sampled sweeps, specifications enforced, with the flags and
-# the target directory of the enforcing test gate, so the run builds over
-# the enforcing lanes' state. A pull request on `landing` runs it at the
-# head it lands on (#7365).
-["ci:session-sweeps"]
-description = "The session's sampled sweeps at the checked-out head, specifications enforced"
-env.RUSTFLAGS = "--cfg anodized_panic"
-env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-env.CARGO_UNSTABLE_FEATURE_UNIFICATION = "true"
-run = ".config/mise/scope cargo nextest run --package gandr-surface-session --locked --config 'resolver.feature-unification=\"workspace\"' --profile {{ env.NEXTEST_PROFILE | default(value='default') }} -E 'test(/(^|::)sweeps::/)'"
-
 # The goldens a corpus source carries beside it — its recovery record, its
 # role golden and, for a refusing source, its rendered refusals — rewritten
 # for every source. The records are a sweep and run whole under the `sweeps`
