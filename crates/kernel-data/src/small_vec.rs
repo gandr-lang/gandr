@@ -125,7 +125,9 @@ where
     items: PhantomData<T>,
 }
 
-/// The refusal of a grow. The vector stays as it was.
+/// The refusal of an allocation: a grow of a vector, or the block of a shared
+/// value. A vector stays as it was, and the build of a shared value gives no
+/// block.
 ///
 /// # Specification
 /// trivial.

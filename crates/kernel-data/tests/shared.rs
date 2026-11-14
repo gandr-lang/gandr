@@ -27,6 +27,7 @@ use std::thread;
 
 use gandr_kernel_data::Held;
 use gandr_kernel_data::Identity;
+use gandr_kernel_data::Refused;
 use gandr_kernel_data::Shared;
 use gandr_kernel_data::Unique;
 use quenchant_shape::shape::Maybe;
@@ -121,6 +122,55 @@ impl Drop for Tally<'_>
     }
 }
 
+/// The value of a build that the allocator accepts.
+///
+/// # Specification
+/// trivial.
+pub fn built<T>(result: Result<T, Refused>) -> T
+{
+    match result {
+        Ok(value) => value,
+        Err(refused) => panic!("the allocator refuses the block: {refused:?}"),
+    }
+}
+
+/// An allocator that refuses each block.
+#[derive(Clone, Copy)]
+pub struct Refusing;
+
+/// # Safety
+/// - unsafe invariants: the allocator gives no block, so no block returns to
+///   it.
+// SAFETY: the allocator gives no block.
+unsafe impl Allocator for Refusing
+{
+    /// A refusal of each layout.
+    ///
+    /// # Specification
+    /// trivial.
+    fn allocate(
+        &self,
+        _layout: Layout,
+    ) -> Result<NonNull<[u8]>, AllocError>
+    {
+        Err(AllocError)
+    }
+
+    /// # Safety
+    /// - unsafe invariants: the caller's, as `Allocator::deallocate` states.
+    ///
+    /// # Specification
+    /// trivial.
+    unsafe fn deallocate(
+        &self,
+        _ptr: NonNull<u8>,
+        _layout: Layout,
+    )
+    {
+        // The allocator gives no block, so no block returns here.
+    }
+}
+
 #[test]
 fn a_block_holds_one_count_and_the_value()
 {
@@ -132,7 +182,7 @@ fn a_block_holds_one_count_and_the_value()
         returned: &returned,
         last: &last,
     };
-    let shared = Unique::new_in(7_u64, ledger).into_shared();
+    let shared = built(Unique::new_in(7_u64, ledger)).into_shared();
     assert_eq!(*shared, 7);
     assert_eq!(drawn.get(), 1);
     assert_eq!(
@@ -181,7 +231,7 @@ fn a_mutable_borrow_writes_a_sole_value_in_place_and_copies_a_shared_one()
         returned: &returned,
         last: &last,
     };
-    let mut sole = Unique::new_in(1_u64, ledger).into_shared();
+    let mut sole = built(Unique::new_in(1_u64, ledger)).into_shared();
     *Shared::make_mut(&mut sole) = 2;
     assert_eq!(*sole, 2);
     assert_eq!(drawn.get(), 1, "a sole value is written in place");
@@ -228,7 +278,7 @@ fn a_sole_holder_takes_its_value_out()
         returned: &returned,
         last: &last,
     };
-    let first = Unique::new_in(vec![9_u8], ledger).into_shared();
+    let first = built(Unique::new_in(vec![9_u8], ledger)).into_shared();
     let second = first.clone();
     let Err(first) = Shared::try_unwrap(first)
     else {
@@ -257,13 +307,13 @@ fn each_value_drops_once_and_each_block_frees_once()
     };
     let drops = Cell::new(0);
     let holders: Vec<_> = {
-        let first = Unique::new_in(
+        let first = built(Unique::new_in(
             Bomb {
                 drops: &drops,
                 explodes: false,
             },
             ledger,
-        )
+        ))
         .into_shared();
         iter::repeat_with(|| first.clone()).take(4).collect()
     };
@@ -271,13 +321,13 @@ fn each_value_drops_once_and_each_block_frees_once()
     drop(holders);
     assert_eq!((drops.get(), drawn.get(), returned.get()), (1, 1, 1));
 
-    let bomb = Unique::new_in(
+    let bomb = built(Unique::new_in(
         Bomb {
             drops: &drops,
             explodes: true,
         },
         ledger,
-    )
+    ))
     .into_shared();
     let clone = bomb.clone();
     drop(bomb);
@@ -288,15 +338,38 @@ fn each_value_drops_once_and_each_block_frees_once()
         "a panicking drop still frees its block"
     );
 
-    let unique = Unique::new_in(
+    let unique = built(Unique::new_in(
         Bomb {
             drops: &drops,
             explodes: true,
         },
         ledger,
-    );
+    ));
     assert!(catch_unwind(AssertUnwindSafe(|| drop(unique))).is_err());
     assert_eq!((drops.get(), drawn.get(), returned.get()), (3, 3, 3));
+}
+
+#[test]
+fn a_refused_block_gives_the_refusal_and_drops_the_value()
+{
+    let drops = Cell::new(0);
+    let refused = Unique::new_in(
+        Bomb {
+            drops: &drops,
+            explodes: false,
+        },
+        Refusing,
+    );
+    let Err(Refused::Allocator(layout)) = refused
+    else {
+        panic!("a refusing allocator gives its refusal");
+    };
+    assert_eq!(
+        layout.size(),
+        size_of::<usize>().saturating_add(size_of::<Bomb<'_>>()),
+        "the refusal names the block's layout"
+    );
+    assert_eq!(drops.get(), 1, "the value of a refused block drops once");
 }
 
 #[test]

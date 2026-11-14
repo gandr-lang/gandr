@@ -22,7 +22,6 @@
 //!   takes the count from one to zero frees the block, once.
 
 use alloc::alloc::Global;
-use alloc::alloc::handle_alloc_error;
 use core::alloc::Allocator;
 use core::alloc::Layout;
 use core::fmt;
@@ -43,6 +42,8 @@ use anodized::spec;
 #[cfg(loom)]
 use loom::sync::atomic::AtomicUsize;
 use quenchant_shape::shape::Maybe;
+
+use crate::small_vec::Refused;
 
 /// The most holders that one block counts. A clone past it is refused.
 const MOST: usize = isize::MAX.cast_unsigned();
@@ -256,26 +257,31 @@ struct Block<T>
 ///
 /// # Specification
 /// - ensures: a block of the allocator, with one holder and `value`.
-/// - fails: the allocator's refusal goes to its error handler, as `Box`'s does.
+/// - fails: [`Refused::Allocator`] with the block's layout when the allocator
+///   refuses it; the value then drops.
 /// - panics: none.
 /// - executable: none — the pointer names memory that no safe predicate reads.
 ///
+/// # Errors
+/// - [`Refused::Allocator`]: the allocator refuses the block's layout.
+///
 /// # Adequacy
 /// - hypothesis: L2 — a counting allocator reads one allocation of the block's
-///   layout for each new pointer.
+///   layout for each new pointer, and a refusing one gives the layout back.
 /// - witness: `tests::shared::a_block_holds_one_count_and_the_value`
+/// - witness: `tests::shared::a_refused_block_gives_the_refusal_and_drops_the_value`
 #[inline]
 fn build<T, A>(
     value: T,
     alloc: &A,
-) -> NonNull<Block<T>>
+) -> Result<NonNull<Block<T>>, Refused>
 where
     A: Allocator,
 {
     let layout = Layout::new::<Block<T>>();
     let Ok(bytes) = alloc.allocate(layout)
     else {
-        handle_alloc_error(layout);
+        return Err(Refused::Allocator(layout));
     };
     let block = bytes.cast::<Block<T>>();
     // SAFETY: the allocator gave `layout`'s bytes, which fit one block.
@@ -285,7 +291,7 @@ where
             value,
         });
     }
-    block
+    Ok(block)
 }
 
 /// Drops the block's count and value, and returns its bytes to `alloc`.
@@ -348,7 +354,8 @@ impl<T> Unique<T>
     ///
     /// # Specification
     /// - ensures: the one holder of a block of `value`.
-    /// - fails: as [`Unique::new_in`].
+    /// - fails: the global allocator's refusal goes to its error handler, as
+    ///   `Box::new`'s does, until the wave of #7419.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -359,7 +366,10 @@ impl<T> Unique<T>
     #[must_use]
     pub fn new(value: T) -> Self
     {
-        Self::new_in(value, Global)
+        match Self::new_in(value, Global) {
+            Ok(unique) => unique,
+            Err(refused) => refused.raise(),
+        }
     }
 }
 
@@ -367,31 +377,35 @@ impl<T, A> Unique<T, A>
 where
     A: Allocator,
 {
-    /// A block of `value` in `alloc`, as `Box::new_in` takes it.
+    /// A block of `value` in `alloc`, or the allocator's refusal.
     ///
     /// # Specification
     /// - ensures: the one holder of a block of `value`.
-    /// - fails: the allocator's refusal goes to its error handler, as `Box`'s
-    ///   does.
+    /// - fails: [`Refused::Allocator`] when the allocator refuses the block;
+    ///   the value then drops.
     /// - panics: none.
     ///
+    /// # Errors
+    /// - [`Refused::Allocator`]: the allocator refuses the block's layout.
+    ///
     /// # Adequacy
-    /// - hypothesis: L2 — a counting allocator reads one allocation.
+    /// - hypothesis: L2 — a counting allocator reads one allocation, and a
+    ///   refusing one gives its refusal and drops the value once.
     /// - witness: `tests::shared::a_block_holds_one_count_and_the_value`
-    #[spec(ensures: |ret| ret.block().count.holders() == Holders(1))]
+    /// - witness: `tests::shared::a_refused_block_gives_the_refusal_and_drops_the_value`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|unique| unique.block().count.holders() == Holders(1)))]
     #[inline]
-    #[must_use]
     pub fn new_in(
         value: T,
         alloc: A,
-    ) -> Self
+    ) -> Result<Self, Refused>
     {
-        let block = build(value, &alloc);
-        Self {
+        let block = build(value, &alloc)?;
+        Ok(Self {
             block,
             alloc,
             value: PhantomData,
-        }
+        })
     }
 
     /// The block.
@@ -560,7 +574,8 @@ where
     /// # Specification
     /// - ensures: `this` is the only holder of its block. A value that other
     ///   holders share stays theirs, and `this` holds a clone of it.
-    /// - fails: a copy's allocation fails as [`Unique::new_in`]'s does.
+    /// - fails: a copy that the allocator refuses goes to its error handler, as
+    ///   `Box`'s does, until the wave of #7419.
     /// - panics: when the value's clone panics; `this` then stays as it was.
     ///
     /// # Adequacy
@@ -576,7 +591,10 @@ where
         A: Clone,
     {
         if this.block().count.holding() == Holding::WithOthers {
-            let copy = Unique::new_in(T::clone(this), this.alloc.clone()).into_shared();
+            let copy = match Unique::new_in(T::clone(this), this.alloc.clone()) {
+                Ok(unique) => unique.into_shared(),
+                Err(refused) => refused.raise(),
+            };
             *this = copy;
         }
         // SAFETY: `this` is the only holder, and the mutable borrow of it is

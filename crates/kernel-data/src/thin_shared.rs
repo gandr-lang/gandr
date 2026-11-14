@@ -226,7 +226,9 @@ impl<H, T> ThinShared<H, T>
     ///
     /// # Specification
     /// - ensures: as [`ThinShared::from_header_and_iter_in`].
-    /// - fails: as [`ThinShared::from_header_and_iter_in`].
+    /// - fails: a block past `isize::MAX` bytes panics, and the global
+    ///   allocator's refusal goes to its error handler, as a vector's grow
+    ///   does, until the wave of #7419.
     /// - panics: as [`ThinShared::from_header_and_iter_in`].
     ///
     /// # Adequacy
@@ -243,7 +245,10 @@ impl<H, T> ThinShared<H, T>
         I: IntoIterator<Item = T>,
         I::IntoIter: ExactSizeIterator,
     {
-        Self::from_header_and_iter_in(header, items, Global)
+        match Self::from_header_and_iter_in(header, items, Global) {
+            Ok(thin) => thin,
+            Err(refused) => refused.raise(),
+        }
     }
 }
 
@@ -252,44 +257,47 @@ where
     A: Allocator,
 {
     /// A block of `header` and the items of `items` in `alloc`, with one
-    /// holder.
+    /// holder, or the refusal of its block.
     ///
     /// # Specification
     /// - requires: the iterator yields at least as many items as its length.
     /// - ensures: one holder of a block of `header` and the first `len` items,
     ///   in order, where `len` is the iterator's length.
-    /// - fails: a block past `isize::MAX` bytes panics, and the allocator's
-    ///   refusal goes to its error handler, as a vector's grow does.
+    /// - fails: [`Refused::Overflow`] when the block passes `isize::MAX` bytes,
+    ///   and [`Refused::Allocator`] when the allocator refuses it. The header
+    ///   and the iterator then drop, and no item moves.
     /// - panics: when the iterator yields fewer items than its length, or when
     ///   it panics. The header and the items in place drop, and the block
     ///   returns, first.
     ///
+    /// # Errors
+    /// - [`Refused::Overflow`]: the block's bytes pass `isize::MAX`.
+    /// - [`Refused::Allocator`]: the allocator refuses the block's layout.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the header and the items read back, a short iterator
-    ///   panics and leaves nothing, under Miri.
+    ///   panics and leaves nothing, under Miri, and each refusal draws no block
+    ///   and drops the header once.
     /// - witness: `tests::thin_shared::a_thin_block_holds_the_count_the_length_the_header_and_the_items`
     /// - witness: `tests::thin_shared::an_iterator_short_of_its_length_panics_and_leaves_nothing`
-    #[spec(ensures: |ret| usize::from(ret.head().count.holders()) == 1)]
+    /// - witness: `tests::thin_shared::a_refused_block_gives_the_refusal_and_drops_the_header`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|thin| usize::from(thin.head().count.holders()) == 1))]
     #[inline]
-    #[must_use]
     pub fn from_header_and_iter_in<I>(
         header: H,
         items: I,
         alloc: A,
-    ) -> Self
+    ) -> Result<Self, Refused>
     where
         I: IntoIterator<Item = T>,
         I::IntoIter: ExactSizeIterator,
     {
         let mut items = items.into_iter();
         let len = items.len();
-        let layout = match layout::<H, T>(Count::from(len)) {
-            Ok(layout) => layout,
-            Err(refused) => refused.raise(),
-        };
+        let layout = layout::<H, T>(Count::from(len))?;
         let Ok(bytes) = alloc.allocate(layout)
         else {
-            Refused::Allocator(layout).raise();
+            return Err(Refused::Allocator(layout));
         };
         let head = bytes.cast::<Head<H, T>>();
         // SAFETY: the allocator gave `layout`'s bytes, which fit the head.
@@ -325,11 +333,11 @@ where
             partial.written = partial.written.saturating_add(1);
         }
         let _built = DropGuard::dismiss(partial);
-        Self {
+        Ok(Self {
             head,
             alloc,
             contents: PhantomData,
-        }
+        })
     }
 
     /// The head of the block.

@@ -17,9 +17,12 @@ use core::mem::size_of;
 use core::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 
+use gandr_kernel_data::Refused;
 use gandr_kernel_data::ThinShared;
 
 use crate::shared::Ledger;
+use crate::shared::Refusing;
+use crate::shared::built;
 
 /// A value that logs its name when it drops, and panics in its drop when it
 /// explodes.
@@ -108,7 +111,11 @@ fn a_thin_block_holds_the_count_the_length_the_header_and_the_items()
         returned: &returned,
         last: &last,
     };
-    let thin = ThinShared::from_header_and_iter_in(0xabcd_u32, [1_u16, 2, 3], ledger);
+    let thin = built(ThinShared::from_header_and_iter_in(
+        0xabcd_u32,
+        [1_u16, 2, 3],
+        ledger,
+    ));
     assert_eq!(*thin.header(), 0xabcd);
     assert_eq!(thin.slice(), [1, 2, 3]);
     assert_eq!(
@@ -116,24 +123,29 @@ fn a_thin_block_holds_the_count_the_length_the_header_and_the_items()
         (32, 8),
         "the count and the length take 16 bytes, the header 4, and three items 6, padded to 8"
     );
-    let empty = ThinShared::from_header_and_iter_in(1_u32, iter::empty::<u16>(), ledger);
+    let empty = built(ThinShared::from_header_and_iter_in(
+        1_u32,
+        iter::empty::<u16>(),
+        ledger,
+    ));
     assert_eq!(empty.slice(), [0_u16; 0]);
     assert_eq!((last.get().size(), last.get().align()), (24, 8));
     drop((thin, empty));
     assert_eq!((drawn.get(), returned.get()), (2, 2));
     assert_eq!(size_of::<ThinShared<u32, u16>>(), size_of::<usize>());
 
-    let refused = catch_unwind(AssertUnwindSafe(|| {
-        ThinShared::from_header_and_iter_in(
-            0_u32,
-            Stated {
-                items: iter::empty::<u16>(),
-                len: usize::MAX,
-            },
-            ledger,
-        )
-    }));
-    assert!(refused.is_err());
+    let refused = ThinShared::from_header_and_iter_in(
+        0_u32,
+        Stated {
+            items: iter::empty::<u16>(),
+            len: usize::MAX,
+        },
+        ledger,
+    );
+    assert!(
+        matches!(refused, Err(Refused::Overflow)),
+        "a layout past isize::MAX is refused"
+    );
     assert_eq!(drawn.get(), 2, "a layout past isize::MAX draws no block");
 }
 
@@ -149,7 +161,7 @@ fn an_iterator_short_of_its_length_panics_and_leaves_nothing()
         last: &last,
     };
     let log = RefCell::new(Vec::new());
-    let built = catch_unwind(AssertUnwindSafe(|| {
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
         ThinShared::from_header_and_iter_in(
             Logged {
                 log: &log,
@@ -163,9 +175,42 @@ fn an_iterator_short_of_its_length_panics_and_leaves_nothing()
             ledger,
         )
     }));
-    assert!(built.is_err());
+    assert!(outcome.is_err());
     assert_eq!(*log.borrow(), ["header", "item 0", "item 1"]);
     assert_eq!((drawn.get(), returned.get()), (1, 1));
+}
+
+#[test]
+fn a_refused_block_gives_the_refusal_and_drops_the_header()
+{
+    let log = RefCell::new(Vec::new());
+    let refused = ThinShared::from_header_and_iter_in(
+        Logged {
+            log: &log,
+            name: "header",
+            explodes: false,
+        },
+        logged(&log, ["item 0", "item 1"]),
+        Refusing,
+    );
+    let Err(Refused::Allocator(layout)) = refused
+    else {
+        panic!("a refusing allocator gives its refusal");
+    };
+    assert_eq!(
+        layout.size(),
+        size_of::<usize>()
+            .saturating_mul(2)
+            .saturating_add(size_of::<Logged<'_>>().saturating_mul(3)),
+        "the refusal names the block of the count, the length, the header and two items"
+    );
+    let mut dropped = log.borrow().clone();
+    dropped.sort_unstable();
+    assert_eq!(
+        dropped,
+        ["header", "item 0", "item 1"],
+        "the header and the items drop once"
+    );
 }
 
 #[test]
@@ -200,7 +245,7 @@ fn the_last_holder_drops_the_header_before_the_items()
         returned: &returned,
         last: &last,
     };
-    let bomb = ThinShared::from_header_and_iter_in(
+    let bomb = built(ThinShared::from_header_and_iter_in(
         Logged {
             log: &log,
             name: "header",
@@ -208,7 +253,7 @@ fn the_last_holder_drops_the_header_before_the_items()
         },
         logged(&log, ["item 0", "item 1"]),
         ledger,
-    );
+    ));
     assert!(catch_unwind(AssertUnwindSafe(|| drop(bomb))).is_err());
     assert_eq!(
         *log.borrow(),
