@@ -224,6 +224,7 @@ digraph crates {
   "runtime-net" -> "core-term";
   "runtime-net" -> "storage-values";
   "storage-artifact" -> "kernel-term";
+  "storage-artifact" -> "storage-chunker";
   "storage-artifact" -> "storage-records";
   "storage-artifact" -> "storage-values";
   "storage-artifact" -> "theory-cell-complexes";

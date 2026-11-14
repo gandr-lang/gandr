@@ -3,7 +3,16 @@
 //! read back through the kernel's decoder, and each refusal of that read.
 //!
 //! The artifact contract suite.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        primitive_signature,
+        reason = "the fixtures pass an order's records as key and value bytes, a count of segments, the width of a place and a chunk's occurrence"
+    )
+)]
 
+use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use core::fmt::Write as _;
 use core::num::NonZeroU64;
 
@@ -28,11 +37,12 @@ use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactManifestVersion;
 use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::CHUNK_CAP;
+use gandr_storage_artifact::CHUNK_KEY_LEN;
 use gandr_storage_artifact::ContentName;
 use gandr_storage_artifact::HEADER_KEY;
 use gandr_storage_artifact::MANIFEST_DOMAIN;
 use gandr_storage_artifact::Naming;
-use gandr_storage_artifact::ORDER_KEY;
 use gandr_storage_artifact::RECORD_KEY_LEN;
 use gandr_storage_artifact::RecordKey;
 use gandr_storage_artifact::SegmentBytes;
@@ -50,6 +60,7 @@ use gandr_storage_records::DecodeWork;
 use gandr_storage_records::EncodingVersion;
 use gandr_storage_records::HashAlgorithm;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::NamedValue;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::NodeKind;
 use gandr_storage_records::RecordCount;
@@ -57,10 +68,12 @@ use gandr_storage_records::RecordIndex;
 use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
 use gandr_storage_records::RecordTreeError;
+use gandr_storage_records::RecordValue;
 use gandr_storage_records::SeparatorConvention;
 use gandr_storage_records::StoredNode;
 use gandr_storage_records::TreeKind;
 use gandr_storage_records::TreeParams;
+use gandr_storage_records::ValueLeafHasher;
 use gandr_storage_records::decode_node;
 use gandr_storage_records::encode_leaf;
 use gandr_storage_records::hash_node;
@@ -584,6 +597,106 @@ fn an_insertion_leaves_every_record_it_does_not_rewrite_7340()
     );
 }
 
+/// An insertion into a long order rewrites the chunk it lands in, the record
+/// of the chunk before it and the head, which counts the places. Each other
+/// chunk keeps its key, its record and its leaf (#7432).
+#[test]
+fn an_insertion_rewrites_only_the_chunks_it_touches_7432()
+{
+    let order_of = |inserted: bool| {
+        let mut segments: Vec<Vec<u8>> = (0_usize .. 3_000_usize)
+            .map(|index| format!("segment {index}").into_bytes())
+            .collect();
+        if inserted {
+            segments.insert(1_500, b"the inserted segment".to_vec());
+        }
+        order_records(&ArtifactRecordSet::from_segments(
+            SegmentBytes::from(b"header".as_slice()),
+            segments
+                .iter()
+                .map(|segment| SegmentBytes::from(segment.as_slice())),
+        ))
+    };
+    let base: BTreeSet<(Vec<u8>, Vec<u8>)> = order_of(false).into_iter().collect();
+    let edited: BTreeSet<(Vec<u8>, Vec<u8>)> = order_of(true).into_iter().collect();
+    assert!(base.len() > 10, "the order runs to many chunks");
+    let written: Vec<&(Vec<u8>, Vec<u8>)> = edited.difference(&base).collect();
+    let dropped = base.difference(&edited).count();
+    assert!(
+        (3 ..= 4).contains(&written.len()),
+        "the insertion writes the head, the record before its chunk, and the one or two chunks \
+         its place lands in: {written:?}"
+    );
+    assert_eq!(
+        3, dropped,
+        "the insertion drops the old head, the old record before its chunk and the chunk"
+    );
+}
+
+/// No record of the index grows with the order: the head and each chunk's
+/// record hold at most one chunk key beside the form and the count, and each
+/// chunk holds at most the cap's places (#7432).
+#[test]
+fn no_record_of_the_index_grows_with_the_order_7432()
+{
+    let (set, store) = synthetic(20_000);
+    let order = order_records(&set);
+    let bound = CHUNK_KEY_LEN.saturating_add(9);
+    assert!(
+        order.iter().all(|record| record.1.len() <= bound),
+        "each record of the order holds at most {bound} bytes"
+    );
+    let chain = chain(&order, &store, RECORD_KEY_LEN);
+    let cap = usize::try_from(CHUNK_CAP.get()).expect("the cap fits a word");
+    assert!(
+        chain
+            .iter()
+            .all(|&(_, places)| (1 ..= cap).contains(&places)),
+        "each chunk holds one to {cap} places"
+    );
+    assert_eq!(
+        20_000,
+        chain.iter().map(|&(_, places)| places).sum::<usize>(),
+        "the chain holds each place once"
+    );
+    assert_eq!(
+        order.len().saturating_sub(1),
+        chain.len(),
+        "the chain reaches each chunk the order holds"
+    );
+}
+
+/// A chunk image that repeats past occurrence 255 reads back. The keys of one
+/// image sort by occurrence, so each chunk stands directly after the chunk of
+/// the same image one occurrence before it (#7432).
+#[test]
+fn an_image_repeated_past_occurrence_255_reads_back_7432()
+{
+    let repeated = |segment: &[u8]| {
+        ArtifactRecordSet::from_segments(
+            SegmentBytes::from(b"header".as_slice()),
+            core::iter::repeat_with(|| SegmentBytes::from(segment)).take(300),
+        )
+    };
+    // A place whose key meets the cut forms a chunk alone, so 300 places of
+    // its segment hold one image at the occurrences 0 to 299.
+    let (set, order) = (0_usize .. 4_096_usize)
+        .map(|index| repeated(format!("segment {index}").as_bytes()))
+        .map(|set| {
+            let order = order_records(&set);
+            (set, order)
+        })
+        .find(|pair| pair.1.len() == 301)
+        .expect("a segment whose place forms a chunk alone");
+    let mut store = InMemoryBlockStore::new();
+    let _manifest = build(&set, TreeParams::current(), &mut store).expect("the set commits");
+    assert_eq!(
+        Ok(&set),
+        read_back(&set, &order, &store).as_ref(),
+        "300 chunks of one image read back in the order of their occurrences"
+    );
+}
+
 /// A set named by its writer stores and reads back with each name at its
 /// place, under a manifest that says it is named. A manifest that says the
 /// other form is refused, and so are one name too few and an absent name.
@@ -597,7 +710,7 @@ fn a_named_set_reads_back_with_its_names_7340()
     let named = honest.clone().named(&names).expect("one name per place");
     let (manifest, store) = committed(&named);
     assert_eq!(Naming::Named, manifest.naming());
-    let order = named.order_image();
+    let order = named.stored_order();
     let refs = named.record_refs(&order);
     let tree = RecordTree::build(&refs, TreeParams::current()).expect("the records build a tree");
     let back =
@@ -644,9 +757,10 @@ fn a_named_set_reads_back_with_its_names_7340()
 #[test]
 fn tree_nodes_store_and_reopen()
 {
-    // The index holds two records. Under the current rule they share one leaf;
-    // a rule that caps a leaf at one record puts each in a leaf of its own,
-    // under an internal root. So these fixtures witness both root shapes.
+    // The index holds the header, the order's head and one chunk. Under the
+    // current rule they share one leaf; a rule that caps a leaf at one record
+    // puts each in a leaf of its own, under an internal root. So these
+    // fixtures witness both root shapes.
     let current = TreeParams::current();
     let one_per_leaf = TreeParams::new(
         TreeKind::CURRENT,
@@ -796,161 +910,407 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     );
 }
 
+/// A record set of `count` distinct segments, committed into a fresh store.
+/// The segments need not decode: the order's reader decodes nothing.
+///
+/// # Specification
+/// trivial.
+fn synthetic(count: usize) -> (ArtifactRecordSet, InMemoryBlockStore)
+{
+    let segments: Vec<Vec<u8>> = (0 .. count)
+        .map(|index| format!("segment {index}").into_bytes())
+        .collect();
+    let set = ArtifactRecordSet::from_segments(
+        SegmentBytes::from(b"header".as_slice()),
+        segments
+            .iter()
+            .map(|segment| SegmentBytes::from(segment.as_slice())),
+    );
+    let mut store = InMemoryBlockStore::new();
+    let _manifest = build(&set, TreeParams::current(), &mut store).expect("the set commits");
+
+    (set, store)
+}
+
+/// The records of `set`'s stored order as owned pairs of a key and a value,
+/// ascending by key: the head first, then each chunk.
+///
+/// # Specification
+/// trivial.
+fn order_records(set: &ArtifactRecordSet) -> Vec<(Vec<u8>, Vec<u8>)>
+{
+    let order = set.stored_order();
+    set.record_refs(&order)
+        .iter()
+        .skip(1)
+        .map(|record| {
+            (
+                record.key().as_ref().to_vec(),
+                <&[u8]>::from(record.value()).to_vec(),
+            )
+        })
+        .collect()
+}
+
+/// Each chunk of `order`'s chain from the head on: its key and its count of
+/// places, read off the leaves of `store` at `width` bytes a place.
+///
+/// # Specification
+/// trivial.
+fn chain(
+    order: &[(Vec<u8>, Vec<u8>)],
+    store: &InMemoryBlockStore,
+    width: usize,
+) -> Vec<(Vec<u8>, usize)>
+{
+    let head = &order.first().expect("the order has a head").1;
+    let mut key = head
+        .get(9 ..)
+        .expect("the head names its first chunk")
+        .to_vec();
+    let links: BTreeMap<&[u8], &[u8]> = order
+        .iter()
+        .map(|&(ref key, ref value)| (key.as_slice(), value.as_slice()))
+        .collect();
+    let mut chain = Vec::new();
+    while !key.is_empty() {
+        let identity: [u8; 32] = key
+            .get(1 ..= 32)
+            .and_then(|bytes| bytes.try_into().ok())
+            .expect("a chunk's key holds an identity");
+        let leaf = NamedValue::load(store, NodeHash::from(identity)).expect("the chunk's leaf");
+        let places = <&[u8]>::from(leaf.value())
+            .len()
+            .checked_div(width)
+            .expect("a width");
+        let next = links
+            .get(key.as_slice())
+            .map(|&value| value.to_vec())
+            .expect("the chain names a chunk the order holds");
+        chain.push((key, places));
+        key = next;
+    }
+    chain
+}
+
+/// `set`'s header and `order`, built into one tree and read back over
+/// `store`.
+///
+/// # Specification
+/// trivial.
+fn read_back(
+    set: &ArtifactRecordSet,
+    order: &[(Vec<u8>, Vec<u8>)],
+    store: &InMemoryBlockStore,
+) -> Result<ArtifactRecordSet, ArtifactError>
+{
+    let header = set.header();
+    let mut records = vec![RecordRef::new(HEADER_KEY, header.as_ref())];
+    records.extend(
+        order
+            .iter()
+            .map(|&(ref key, ref value)| RecordRef::new(key.as_slice(), value.as_slice())),
+    );
+    records.sort_by(|lower, higher| lower.key().as_ref().cmp(higher.key().as_ref()));
+    let tree = RecordTree::build(&records, TreeParams::current())?;
+    ArtifactRecordSet::from_stored(tree.records(), store)
+}
+
+/// The position `key` takes in the index tree that [`read_back`] builds of
+/// `order`: the header at zero, then the order's records in key order.
+///
+/// # Specification
+/// trivial.
+fn position(
+    order: &[(Vec<u8>, Vec<u8>)],
+    key: &[u8],
+) -> RecordIndex
+{
+    let below = order
+        .iter()
+        .filter(|record| record.0.as_slice() < key)
+        .count();
+    RecordIndex::from(below.saturating_add(1))
+}
+
+/// `order` with the record under `key` holding `value`, or with that record
+/// added when the order holds none.
+///
+/// # Specification
+/// trivial.
+fn with(
+    order: &[(Vec<u8>, Vec<u8>)],
+    key: &[u8],
+    value: &[u8],
+) -> Vec<(Vec<u8>, Vec<u8>)>
+{
+    let mut changed: Vec<(Vec<u8>, Vec<u8>)> = order
+        .iter()
+        .filter(|record| record.0.as_slice() != key)
+        .cloned()
+        .collect();
+    changed.push((key.to_vec(), value.to_vec()));
+    changed.sort();
+    changed
+}
+
+/// The key of a chunk whose image has `identity`, at `occurrence`.
+///
+/// # Specification
+/// trivial.
+#[expect(
+    clippy::big_endian_bytes,
+    reason = "a chunk key's occurrence is big-endian, so the keys of one image sort by occurrence"
+)]
+fn chunk_key(
+    identity: &[u8],
+    occurrence: u32,
+) -> Vec<u8>
+{
+    let mut key = vec![0_u8];
+    key.extend_from_slice(identity);
+    key.extend_from_slice(&occurrence.to_be_bytes());
+    key
+}
+
 #[test]
 fn a_stored_tree_with_misplaced_keys_is_refused()
 {
-    let honest = records_of(&shared_artifact());
-    let (_honest_manifest, leaves) = committed(&honest);
-    let order = honest.order_image();
-    let refs = honest.record_refs(&order);
-    let place_count = honest.places().len();
-    let record_count = honest.records().len();
-    let refused = |records: &[RecordRef<'_>], store: &InMemoryBlockStore| {
-        let (manifest, store) = stored_as_named(records, store.clone());
-        manifest.read_under(&store, TreeParams::current())
-    };
-    let header_bytes = honest.header();
-    let header = RecordRef::new(HEADER_KEY, header_bytes.as_ref());
-    let first = honest
-        .records()
-        .first()
-        .expect("the artifact has a declaration");
-    let segment = first.segment();
-    let key = RecordKey::of(segment);
-    // The order's keys start past its form and its count, and its places
-    // past its keys.
-    let keys_at = 5_usize;
-    let places_at = keys_at.saturating_add(record_count.saturating_mul(RECORD_KEY_LEN));
-    let short = order
-        .as_ref()
-        .get(.. order.as_ref().len().saturating_sub(1))
-        .expect("a prefix");
-    let second_key_at = keys_at.saturating_add(RECORD_KEY_LEN);
-    let first_key = order
-        .as_ref()
-        .get(keys_at .. second_key_at)
-        .expect("a first key")
-        .to_vec();
-    let mut repeated = order.as_ref().to_vec();
-    repeated
-        .get_mut(second_key_at .. second_key_at.saturating_add(RECORD_KEY_LEN))
-        .expect("a second key")
-        .copy_from_slice(&first_key);
-    let mut early = order.as_ref().to_vec();
-    early
-        .get_mut(places_at .. places_at.saturating_add(4))
-        .expect("a first place")
-        .copy_from_slice(&1_u32.to_le_bytes());
-    let past_keys = u32::try_from(record_count)
-        .expect("a count fits four bytes")
-        .to_le_bytes();
-    let mut past = order.as_ref().to_vec();
-    past.get_mut(places_at .. places_at.saturating_add(4))
-        .expect("a first place")
-        .copy_from_slice(&past_keys);
-    let mut unplaced = order.as_ref().get(.. 1).expect("the form").to_vec();
-    unplaced.extend_from_slice(
-        &u32::try_from(record_count.saturating_add(1))
-            .expect("a count fits four bytes")
-            .to_le_bytes(),
+    let (set, store) = synthetic(2_000);
+    let honest = order_records(&set);
+    let chain = chain(&honest, &store, RECORD_KEY_LEN);
+    let total = set.places().len();
+    let (head_key, head) = honest.first().expect("the order has a head").clone();
+    let (first, first_places) = chain.first().cloned().expect("the order has a chunk");
+    let (second, _) = chain
+        .get(1)
+        .cloned()
+        .expect("the order runs to more than one chunk");
+    assert!(
+        first_places >= 2,
+        "the first chunk holds more than one place"
     );
-    unplaced.extend_from_slice(order.as_ref().get(keys_at .. places_at).expect("the keys"));
-    unplaced.extend_from_slice(&[0xff; RECORD_KEY_LEN]);
-    unplaced.extend_from_slice(order.as_ref().get(places_at ..).expect("the places"));
-    for (records, expected, what) in [
+    let first_next = honest
+        .iter()
+        .find(|record| record.0 == first)
+        .map(|record| record.1.clone())
+        .expect("the first chunk's record");
+    assert_eq!(second, first_next, "the first chunk names the second");
+    assert_eq!(
+        Ok(&set),
+        read_back(&set, &honest, &store).as_ref(),
+        "the honest order reads back as the set"
+    );
+    let head_with = |first_key: &[u8], count: usize| {
+        let mut value = head.get(.. 1).expect("the form").to_vec();
+        value.extend_from_slice(
+            &u64::try_from(count)
+                .expect("a count fits eight bytes")
+                .to_le_bytes(),
+        );
+        value.extend_from_slice(first_key);
+        value
+    };
+    let missing = chunk_key(&[0xee; 32], 0);
+    let identity = first.get(1 ..= 32).expect("the first chunk's identity");
+    let later = chunk_key(identity, 1);
+    let unreached = chunk_key(identity, 9);
+    // A chunk of the first chunk's leading place alone ends where the chunker
+    // does not cut, and one of its other places follows it.
+    let mut forged = store.clone();
+    let hasher = ValueLeafHasher::new();
+    let first_hash = NodeHash::from(<[u8; 32]>::try_from(identity).expect("an identity"));
+    let first_image = NamedValue::load(&store, first_hash).expect("the first chunk's leaf");
+    let (lead, rest) = <&[u8]>::from(first_image.value())
+        .split_at_checked(RECORD_KEY_LEN)
+        .expect("the first chunk holds a place");
+    let lead = hasher.named(RecordValue::from(lead));
+    let rest = hasher.named(RecordValue::from(rest));
+    let broken = hasher.named(RecordValue::from([0x5a_u8; 31].as_slice()));
+    for leaf in [&lead, &rest, &broken] {
+        forged.admit_value(leaf).expect("the leaf stores");
+    }
+    let lead_key = chunk_key(lead.identity().as_ref(), 0);
+    let rest_key = chunk_key(rest.identity().as_ref(), 0);
+    let broken_key = chunk_key(broken.identity().as_ref(), 0);
+    let split = {
+        let unsplit: Vec<(Vec<u8>, Vec<u8>)> = honest
+            .iter()
+            .filter(|record| record.0 != first)
+            .cloned()
+            .collect();
+        let split = with(&unsplit, &head_key, &head_with(&lead_key, total));
+        let split = with(&split, &lead_key, &rest_key);
+        with(&split, &rest_key, &first_next)
+    };
+    let past_head = set.records().first().expect("the set has a record").key();
+    for (order, held, expected, what) in [
         (
-            vec![header, RecordRef::new(key.as_ref(), segment.as_ref())],
-            ArtifactError::MisplacedRecord {
-                position: RecordIndex::from(1_usize),
-            },
-            "a tree without the order is refused at its second record",
-        ),
-        (
-            vec![
-                RecordRef::new(ORDER_KEY, order.as_ref()),
-                RecordRef::new(key.as_ref(), segment.as_ref()),
-            ],
-            ArtifactError::MisplacedRecord {
-                position: RecordIndex::ZERO,
-            },
-            "a tree without a header record is refused at its first record",
-        ),
-        (
-            vec![
-                header,
-                RecordRef::new(ORDER_KEY, order.as_ref()),
-                RecordRef::new(key.as_ref(), segment.as_ref()),
-            ],
-            ArtifactError::TreeMismatch,
-            "an index of three records is refused: the manifest names an index of two",
-        ),
-        (
-            vec![header, RecordRef::new(ORDER_KEY, &[0x07])],
+            with(&honest, &head_key, &[0x07]),
+            &store,
             ArtifactError::MalformedOrder {
                 place: RecordIndex::ZERO,
             },
-            "an order that opens with no form is refused at place zero",
+            "a head that names no form is refused at place zero",
         ),
         (
-            vec![header, RecordRef::new(ORDER_KEY, short)],
+            with(&honest, &head_key, head.get(.. 8).expect("a short count")),
+            &store,
             ArtifactError::MalformedOrder {
-                place: RecordIndex::from(place_count.saturating_sub(1)),
+                place: RecordIndex::ZERO,
             },
-            "an order one byte short is refused at its last place",
+            "a head with no whole count is refused at place zero",
         ),
         (
-            vec![header, RecordRef::new(ORDER_KEY, repeated.as_slice())],
+            with(
+                &honest,
+                &head_key,
+                &head_with(first.get(.. 36).expect("a short key"), total),
+            ),
+            &store,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::ZERO,
+            },
+            "a head whose first key has another width is refused at place zero",
+        ),
+        (
+            with(&honest, past_head.as_ref(), b"bytes"),
+            &store,
             ArtifactError::MisplacedRecord {
-                position: RecordIndex::from(3_usize),
+                position: position(&with(&honest, past_head.as_ref(), b""), past_head.as_ref()),
             },
-            "a key the order lists twice is refused at its second listing",
+            "a record past the head under a key of another shape is refused at its position: no \
+             record stores its key beside its bytes",
         ),
         (
-            vec![header, RecordRef::new(ORDER_KEY, early.as_slice())],
-            ArtifactError::MisplacedRecord {
-                position: RecordIndex::from(3_usize),
-            },
-            "a place that names a key before its turn is refused at that key",
-        ),
-        (
-            vec![header, RecordRef::new(ORDER_KEY, past.as_slice())],
+            with(&honest, &head_key, &head_with(&missing, total)),
+            &store,
             ArtifactError::UnheldRecord {
                 place: RecordIndex::ZERO,
             },
-            "a slot past the keys is refused at its place",
+            "a head that names a chunk the tree does not hold is refused at place zero",
         ),
         (
-            vec![header, RecordRef::new(ORDER_KEY, unplaced.as_slice())],
-            ArtifactError::UnplacedRecord {
-                position: RecordIndex::from(record_count.saturating_add(2)),
+            with(&honest, &first, &missing),
+            &store,
+            ArtifactError::UnheldRecord {
+                place: RecordIndex::from(first_places),
             },
-            "a key no place names is refused at that key",
+            "a link to a chunk the tree does not hold is refused where that chunk would start",
+        ),
+        (
+            with(&honest, &first, &first),
+            &store,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::from(first_places),
+            },
+            "a chain that comes back to a chunk is refused where it comes back",
+        ),
+        (
+            with(&honest, &unreached, b""),
+            &store,
+            ArtifactError::UnplacedRecord {
+                position: position(&with(&honest, &unreached, b""), &unreached),
+            },
+            "a chunk the chain does not reach is refused at its position",
+        ),
+        (
+            with(
+                &honest,
+                &head_key,
+                &head_with(&first, total.saturating_add(1)),
+            ),
+            &store,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::from(total),
+            },
+            "a head that counts one place more is refused where the places end",
+        ),
+        (
+            with(
+                &honest,
+                &head_key,
+                &head_with(&first, total.saturating_sub(1)),
+            ),
+            &store,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::from(total.saturating_sub(1)),
+            },
+            "a head that counts one place fewer is refused at the place past its count",
+        ),
+        (
+            with(
+                &with(&honest, &later, &first_next),
+                &head_key,
+                &head_with(&later, total),
+            ),
+            &store,
+            ArtifactError::MisplacedRecord {
+                position: position(&with(&honest, &later, b""), &later),
+            },
+            "a chunk the chain reaches before an earlier occurrence of its image is refused at \
+             its position",
+        ),
+        (
+            split.clone(),
+            &forged,
+            ArtifactError::MisplacedRecord {
+                position: position(&split, &lead_key),
+            },
+            "a chunk that ends where the chunker does not cut is refused at its position",
+        ),
+        (
+            with(
+                &with(&honest, &broken_key, b""),
+                &head_key,
+                &head_with(&broken_key, total),
+            ),
+            &forged,
+            ArtifactError::MalformedOrder {
+                place: RecordIndex::ZERO,
+            },
+            "a chunk that does not hold whole places is refused at its first place cut short",
         ),
     ] {
-        assert_eq!(Err(expected), refused(&records, &leaves), "{what}");
+        assert_eq!(Err(expected), read_back(&set, &order, held), "{what}");
     }
-    let three = [
-        header,
-        RecordRef::new(ORDER_KEY, order.as_ref()),
-        RecordRef::new(key.as_ref(), segment.as_ref()),
-    ];
-    let three = RecordTree::build(&three, TreeParams::current()).expect("the records build a tree");
+    let header_bytes = set.header();
+    let header = || RecordRef::new(HEADER_KEY, header_bytes.as_ref());
+    let tree_of = |records: &[RecordRef<'_>]| {
+        RecordTree::build(records, TreeParams::current()).expect("the records build a tree")
+    };
+    let order_refs: Vec<RecordRef<'_>> = honest
+        .iter()
+        .map(|&(ref key, ref value)| RecordRef::new(key.as_slice(), value.as_slice()))
+        .collect();
     assert_eq!(
         Err(ArtifactError::MisplacedRecord {
-            position: RecordIndex::from(2_usize),
+            position: RecordIndex::ZERO,
         }),
-        ArtifactRecordSet::from_stored(three.records(), &leaves).map(|set| set.records().len()),
-        "a record past the order is refused at its position: no record stores its key beside \
-         its bytes"
+        ArtifactRecordSet::from_stored(tree_of(&order_refs).records(), &store),
+        "a tree without a header record is refused at its first record"
+    );
+    let headless: Vec<RecordRef<'_>> = core::iter::once(header())
+        .chain(
+            honest
+                .iter()
+                .skip(1)
+                .map(|&(ref key, ref value)| RecordRef::new(key.as_slice(), value.as_slice())),
+        )
+        .collect();
+    assert_eq!(
+        Err(ArtifactError::MisplacedRecord {
+            position: RecordIndex::from(1_usize),
+        }),
+        ArtifactRecordSet::from_stored(tree_of(&headless).records(), &store),
+        "a tree without the order's head is refused at its second record"
     );
     assert_eq!(
         Err(ArtifactError::Records {
-            refusal: RecordTreeError::UnknownNode {
-                hash: NodeHash::from(first.key()),
-            },
+            refusal: RecordTreeError::UnknownNode { hash: first_hash },
         }),
-        refused(&refs, &InMemoryBlockStore::new()),
-        "an index whose value leaves the store lacks is refused at the first key"
+        read_back(&set, &honest, &InMemoryBlockStore::new()),
+        "an order whose leaves the store lacks is refused at the first chunk"
     );
     let foreign = encode_leaf(&[RecordRef::new(b"a", b"1")]).expect("the leaf encodes");
     let foreign_hash = hash_node(foreign.as_borrowed());
@@ -958,29 +1318,41 @@ fn a_stored_tree_with_misplaced_keys_is_refused()
     holding
         .insert(StoredNode::new(foreign_hash, foreign.as_borrowed()))
         .expect("the leaf stores");
-    let mut lone = vec![u8::from(Naming::Bytes)];
-    lone.extend_from_slice(&1_u32.to_le_bytes());
-    lone.extend_from_slice(foreign_hash.as_ref());
-    lone.extend_from_slice(&0_u32.to_le_bytes());
+    let foreign_key = chunk_key(foreign_hash.as_ref(), 0);
     assert!(
         matches!(
-            refused(
-                &[header, RecordRef::new(ORDER_KEY, lone.as_slice())],
+            read_back(
+                &set,
+                &with(
+                    &[(head_key.clone(), head_with(&foreign_key, 1))],
+                    &foreign_key,
+                    b""
+                ),
                 &holding
             ),
             Err(ArtifactError::Records {
                 refusal: RecordTreeError::MalformedNode { .. }
             })
         ),
-        "a key that names a node other than a value leaf is refused"
+        "a chunk key that names a node other than a value leaf is refused"
+    );
+    let dangling = with(&honest, &head_key, &head_with(&missing, total));
+    let (manifest, stored) = stored_as_named(
+        &core::iter::once(header())
+            .chain(
+                dangling
+                    .iter()
+                    .map(|&(ref key, ref value)| RecordRef::new(key.as_slice(), value.as_slice())),
+            )
+            .collect::<Vec<_>>(),
+        store,
     );
     assert_eq!(
-        order.as_ref().len(),
-        record_count
-            .saturating_mul(RECORD_KEY_LEN)
-            .saturating_add(place_count.saturating_mul(4))
-            .saturating_add(5),
-        "an order of bytes alone holds its form, its count, each key once and four bytes per place"
+        Err(ArtifactError::UnheldRecord {
+            place: RecordIndex::ZERO,
+        }),
+        manifest.read_under(&stored, TreeParams::current()),
+        "the manifest's read refuses the chain by the same name"
     );
 }
 

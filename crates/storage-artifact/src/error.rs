@@ -94,22 +94,25 @@ pub enum ArtifactError
         refusal: RecordTreeError,
     },
 
-    /// The order record holds bytes this build does not read: an opening byte
-    /// that names no form, or bytes past the last whole place.
+    /// The order holds bytes this build does not read: a head that names no
+    /// form, no whole count or a first key of another width; a chunk that
+    /// does not hold whole places; a chain that comes back to a chunk; or a
+    /// chain whose places differ in number from the head's count.
     MalformedOrder
     {
         /// The first place refused, in artifact order.
         place: RecordIndex,
     },
 
-    /// A place of the order names a record that the set does not hold.
+    /// A key of the order's chain names a chunk that the index tree does not
+    /// hold.
     UnheldRecord
     {
-        /// The place, in artifact order.
+        /// The place where that chunk would start, in artifact order.
         place: RecordIndex,
     },
 
-    /// A stored record that no place of the order names.
+    /// A stored chunk of the order that the order's chain does not reach.
     UnplacedRecord
     {
         /// The record's position in key order.
@@ -169,13 +172,14 @@ pub enum ArtifactError
     },
 
     /// A stored record sits under a key other than the one its position
-    /// requires: the header first, under the empty key, then the order under
-    /// [`ORDER_KEY`](crate::ORDER_KEY), and nothing past it; or a key of the
-    /// order repeats a key before it, or a place names it before its turn.
+    /// requires: the header first, under the empty key, then the order's head
+    /// under [`ORDER_KEY`](crate::ORDER_KEY), then each chunk of the order
+    /// under a chunk's key. Or a chunk stands out of its occurrence's turn, or
+    /// at a cut where the order's chunker does not cut.
     MisplacedRecord
     {
-        /// The record's position: the header zero, the order one, and each
-        /// key of the order from two.
+        /// The record's position: the header zero, the order's head one, and
+        /// each chunk of the order from two.
         position: RecordIndex,
     },
 
@@ -257,13 +261,13 @@ impl fmt::Display for ArtifactError
             Self::UnheldRecord { place } => {
                 write!(
                     f,
-                    "place {place} of the order names a record the set does not hold"
+                    "at place {place}, the order's chain names a chunk the index tree does not hold"
                 )
             },
             Self::UnplacedRecord { position } => {
                 write!(
                     f,
-                    "stored record {position} is named by no place of the order"
+                    "stored record {position} is a chunk the order's chain does not reach"
                 )
             },
             Self::Misnamed { place } => {

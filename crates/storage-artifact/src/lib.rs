@@ -11,10 +11,10 @@
 //!
 //! [`ArtifactRecordSet::from_artifact`] cuts a kernel artifact where the
 //! kernel's decoder finds its segments end: the header under the empty key,
-//! the order of the declarations under [`ORDER_KEY`], and each distinct
-//! segment as a value leaf. [`build`] writes the header and the order as the
-//! set's index tree, and each value leaf beside it, into a [`BlockStore`], and
-//! returns the [`ArtifactManifest`] naming them;
+//! the order's head under [`ORDER_KEY`] and its chunks under keys of their
+//! own, and each distinct segment as a value leaf. [`build`] writes the header
+//! and the order as the set's index tree, and each value leaf beside it, into
+//! a [`BlockStore`], and returns the [`ArtifactManifest`] naming them;
 //! [`ArtifactManifest::identity`] is the one identity an artifact has.
 //! [`ArtifactManifest::read_under`] reads the tree
 //! back, checks it against the manifest, and hands the reassembled bytes to
@@ -45,7 +45,8 @@
 //! # Records and the manifest
 //!
 //! The record layout and where its cuts come from are stated in the `record`
-//! module, and the set's tokens on the value plane in `record::value`; the
+//! module, the order's chain of chunks in `record::chain`, and the set's
+//! tokens on the value plane in `record::value`; the
 //! artifact manifest, its image and what its identity binds, in the
 //! `manifest` module.
 //!
@@ -157,17 +158,20 @@ pub use crate::manifest::ManifestImage;
 pub use crate::manifest::ManifestImageBuf;
 pub use crate::record::ArtifactRecord;
 pub use crate::record::ArtifactRecordSet;
+pub use crate::record::CHUNK_CAP;
+pub use crate::record::CHUNK_KAPPA;
+pub use crate::record::CHUNK_KEY_LEN;
 pub use crate::record::CONTENT_NAME_LEN;
 pub use crate::record::ContentName;
 pub use crate::record::HEADER_KEY;
 pub use crate::record::Naming;
 pub use crate::record::ORDER_KEY;
-pub use crate::record::OrderImage;
 pub use crate::record::Place;
 pub use crate::record::RECORD_KEY_LEN;
 pub use crate::record::ReassembledArtifact;
 pub use crate::record::RecordKey;
 pub use crate::record::SegmentBytes;
+pub use crate::record::StoredOrder;
 pub use crate::record::unnamed;
 
 /// Writes a record set's index tree and value leaves into `store` and names
@@ -177,18 +181,24 @@ pub use crate::record::unnamed;
 /// - requires: nothing; a set whose bytes are not an artifact commits, and is
 ///   refused when it is read back.
 /// - ensures: on success every node of the index tree built from
-///   [`ArtifactRecordSet::record_refs`] under `params`, and the value leaf of
-///   every record, is loadable from `store`. The manifest carries this build's
-///   kernel format version, `params`' boundary commitment, the set's record
-///   count — the header, the order and one per distinct segment — the index
-///   tree's root node identity, and the set's naming. The index tree is a
-///   function of the records alone, and the order lists them by key, so equal
-///   sets mint equal identities.
+///   [`ArtifactRecordSet::record_refs`] under `params`, the value leaf of every
+///   record, and the leaf of every chunk of the order, is loadable from
+///   `store`. The manifest carries this build's kernel format version,
+///   `params`' boundary commitment, the set's record count — the header, the
+///   order and one per distinct segment — the index tree's root node identity,
+///   and the set's naming. The index tree is a function of the records alone,
+///   and the order's chunks are a function of the places, so equal sets mint
+///   equal identities.
 /// - provides: the commit path, and the one place an artifact identity is
 ///   minted.
 /// - fails: [`ArtifactError::Records`] carrying the record plane's refusal of
 ///   the parameters, the tree's shape or a node the store will not admit.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the stored order, growth within the set's places.
+/// - allocation: the index's records, growth within the order's chunks.
+/// - allocation: the index tree's nodes, growth within the set's records.
 ///
 /// # Errors
 /// [`ArtifactError::Records`] — the record plane refuses.
@@ -223,12 +233,11 @@ pub fn build<S>(
 where
     S: BlockStore + ?Sized,
 {
-    let order = records.order_image();
+    let order = records.stored_order();
     let tree = RecordTree::build(&records.record_refs(&order), params)?;
     tree.write_to(store)?;
-    records.write_leaves(store)?;
-    // A count of records past sixty-four bits takes the word's ceiling; such
-    // a set holds no order the tree admits.
+    records.write_leaves(&order, store)?;
+    // A count of records past sixty-four bits takes the word's ceiling.
     let count = u64::try_from(records.records().len())
         .unwrap_or(u64::MAX)
         .saturating_add(2_u64);

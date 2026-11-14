@@ -20,13 +20,15 @@ path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers; BLAKE3
 # is the manifest identity's digest; the kernel's term crate decodes and
-# delimits the artifact; the record plane holds its records, and the value
-# plane takes the set as one canonical value; the specification combinators
-# supply the answer a type's invariant reads.
+# delimits the artifact; the chunker cuts the order into its chunks; the
+# record plane holds its records, and the value plane takes the set as one
+# canonical value; the specification combinators supply the answer a type's
+# invariant reads.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
 gandr-kernel-term.workspace = true
+gandr-storage-chunker.workspace = true
 gandr-storage-records.workspace = true
 gandr-storage-values.workspace = true
 gandr-theory-cell-complexes.workspace = true
@@ -36,11 +38,9 @@ gandr-theory-spec-combinators.workspace = true
 quenchant-shape.workspace = true
 
 # The level oracle builds the universe declarations the generated environments
-# range over; proptest generates them; the chunker's parameters state the cuts
-# the value-plane witnesses commit under.
+# range over; proptest generates them.
 [dev-dependencies]
 gandr-kernel-strata.workspace = true
-gandr-storage-chunker.workspace = true
 gandr-theory-coherent-resolutions.workspace = true
 proptest.workspace = true
 
