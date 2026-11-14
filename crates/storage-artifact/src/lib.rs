@@ -98,6 +98,10 @@
 //!
 //! # References
 //!
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — anchor: §
+//!   storage-programme-gluing — a record names its bytes and never its
+//!   position, so a record under its value leaf's identity stays where it is
+//!   across an insertion.
 //! - `Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory` — exemplar: the CAM
 //!   a keyed artifact instantiates, and the token-bound lemmas whose scope
 //!   § Scope of the mechanized bounds states.
