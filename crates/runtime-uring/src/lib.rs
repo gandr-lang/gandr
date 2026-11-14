@@ -1,3 +1,24 @@
+// The ring is the Linux kernel's: on another system the crate compiles empty.
+#![cfg(target_os = "linux")]
+// The owner's text as it stands meets the wall at these sites; the rule of
+// the port forbids a rewrite, and #7645 owes a mend in place for each:
+// 347 preparer arguments of the kernel's C types, 16 fields that the ring's
+// modules read across modules, 15 counters, 8 references made raw by
+// coercion, and 38 structs that the builder's macro makes.
+#![expect(
+    clippy::arithmetic_side_effects,
+    clippy::field_scoped_visibility_modifiers,
+    reason = "the owner's text, kept as it stands; #7645 owes each mend in place"
+)]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        primitive_signature,
+        raw_pointer_through_reference,
+        single_field_struct_needs_transparent_repr,
+        reason = "the owner's text, kept as it stands; #7645 owes each mend in place"
+    )
+)]
 #![cfg_attr(
     test,
     allow(
@@ -14,9 +35,6 @@
 )]
 #![allow(clippy::missing_docs_in_private_items, reason = "WIP")]
 #![allow(clippy::missing_safety_doc, reason = "WIP")]
-
-#[cfg(not(target_os = "linux"))]
-compile_error!("This crate is only supported on Linux");
 
 pub mod cqe;
 mod cqueue;
