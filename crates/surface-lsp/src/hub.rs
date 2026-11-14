@@ -112,6 +112,12 @@
 //! its clients serving standalone until it does; a client that needs the hub's
 //! own judgement of its session's ending replaces the relay's reading of its
 //! input with one of the hub's answers.
+//!
+//! # References
+//!
+//! - `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: § pool-tokens
+//!   places the counter's segment in the hub's runtime directory, beside its
+//!   socket, and gives the reap of a dead holder to the hub's idle tick.
 
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -168,6 +174,7 @@ const POLL: Duration = Duration::from_millis(20);
 ///
 /// economy: 500 ms. A dead holder's tokens stay out for at most this long; a
 /// reap reads each slot's atomics and locks only the slots that hold a token.
+/// #7543 reaps a holder at its death, by an event, and the tick goes.
 const REAP: Duration = Duration::from_millis(500);
 
 /// Why no socket could be named for a workspace.

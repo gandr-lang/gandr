@@ -757,6 +757,7 @@ INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surfa
 INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surface-dispatcher','pool::workers','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surface-dispatcher','verdicts','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surface-driver','','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surface-lsp','hub','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','surface-driver','allocator','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','core-checker-base','ua::strata','anchor',NULL,NULL,NULL);

@@ -112,13 +112,15 @@ const BELOW_ZERO: u64 = 1 << 31;
 /// How long a take waits on the futex before it reads the counter again.
 ///
 /// economy: 50 ms. A wake that the futex misses costs at most this long, and
-/// a waiter reads the counter twenty times a second.
+/// a waiter reads the counter twenty times a second. #7543 reaps a dead giver
+/// at its death and wakes its waiters, so a take waits with no timeout.
 const WAIT: Duration = Duration::from_millis(50);
 
 /// How long a take waits in all before it reaps the segment itself.
 ///
 /// economy: 1 s. A hub reaps every half second; a waiter reaps only when no
-/// hub did, so it adds one scan of the slots each second of its wait.
+/// hub did, so it adds one scan of the slots each second of its wait. #7543
+/// gives the waiter the owner's lock when the hub dies, and it reaps then.
 const STARVED: Duration = Duration::from_secs(1);
 
 /// The tries of an audit before it leaves the segment to the next reap.
