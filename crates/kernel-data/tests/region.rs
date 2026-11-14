@@ -1,8 +1,14 @@
 //! The region: its values under a budget, and each of its three crossings.
 
+use core::num::NonZeroUsize;
+
 use gandr_kernel_data::Budget;
+use gandr_kernel_data::Child;
 use gandr_kernel_data::Id;
 use gandr_kernel_data::Key;
+use gandr_kernel_data::Rebase;
+use gandr_kernel_data::Shift;
+use gandr_kernel_data::Width;
 use gandr_kernel_data::scoped;
 use gandr_kernel_data::scoped_in;
 
@@ -12,6 +18,38 @@ const ONE_BUCKET: usize = 1_536;
 
 /// A budget that holds every value a test mints: one mebibyte.
 const LARGE: usize = 0x10_0000;
+
+/// A value of a forked region: a word, or the key of another value of the
+/// region.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Value
+{
+    /// A word.
+    Word(u64),
+    /// The key of another value.
+    Names(Key),
+}
+
+impl Rebase for Value
+{
+    /// The value with the key it names read through `shift`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn rebase(
+        self,
+        shift: Shift,
+    ) -> Self
+    {
+        match self {
+            Self::Word(_) => self,
+            Self::Names(key) => Self::Names(shift.key(key)),
+        }
+    }
+}
 
 /// Values minted across two buckets read back at their ids, and the value
 /// past a budget that holds one bucket is refused.
@@ -48,21 +86,28 @@ fn a_region_reads_each_value_at_its_id_and_refuses_past_its_budget()
 fn a_child_reads_a_value_of_its_parent_through_adopt()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let parent: Id<'_> = region.mint(&mut mint, 7_u64).expect("the budget holds it");
+        let parent: Id<'_> = region
+            .mint(&mut mint, Value::Word(7))
+            .expect("the budget holds it");
         region
-            .fork::<(), _>(&mut mint, |child, mut own, adopt| {
-                let adopted = adopt.adopt(parent);
-                let first = child.mint(&mut own, 9_u64).ok()?;
-                (adopted != first
-                    && child.get(adopted) == Some(&7_u64)
-                    && child.get(first) == Some(&9_u64))
-                .then_some(())
-            })
+            .forks::<(), _, _>(
+                &mut mint,
+                Width::ONE,
+                &|_sibling, child, mut own, adopt| {
+                    let adopted = adopt.adopt(parent);
+                    let first = child.mint(&mut own, Value::Word(9)).ok()?;
+                    (adopted != first
+                        && child.get(adopted) == Some(&Value::Word(7))
+                        && child.get(first) == Some(&Value::Word(9)))
+                    .then_some(())
+                },
+                |children| children.iter_mut().for_each(Child::enter),
+            )
             .expect("the join holds no suffix past the budget")
     });
     assert_eq!(
         read,
-        Some(()),
+        vec![Some(())],
         "the child reads the parent's value and its own"
     );
 }
@@ -74,16 +119,27 @@ fn a_child_reads_a_value_of_its_parent_through_adopt()
 fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
-        let before: Id<'_> = region.mint(&mut mint, 1_u64).expect("the budget holds it");
+        let before: Id<'_> = region
+            .mint(&mut mint, Value::Word(1))
+            .expect("the budget holds it");
         let joined = region
-            .fork::<Option<Id<'static>>, _>(&mut mint, |child, mut own, _adopt| {
-                let _second = child.mint::<()>(&mut own, 2_u64).ok()?;
-                Some(Some(child.mint(&mut own, 3_u64).ok()?))
-            })
+            .forks::<Option<Id<'static>>, _, _>(
+                &mut mint,
+                Width::ONE,
+                &|_sibling, child, mut own, _adopt| {
+                    let _second = child.mint::<()>(&mut own, Value::Word(2)).ok()?;
+                    Some(Some(child.mint(&mut own, Value::Word(3)).ok()?))
+                },
+                |children| children.iter_mut().for_each(Child::enter),
+            )
             .expect("the budget holds the suffix")
+            .pop()
+            .flatten()
             .flatten()
             .expect("the child agrees");
-        let after: Id<'_> = region.mint(&mut mint, 4_u64).expect("the budget holds it");
+        let after: Id<'_> = region
+            .mint(&mut mint, Value::Word(4))
+            .expect("the budget holds it");
         (
             u32::from(before.key()),
             u32::from(joined.key()),
@@ -93,7 +149,7 @@ fn a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted()
     });
     assert_eq!(
         read,
-        (0_u32, 2_u32, Some(3_u64), 3_u32),
+        (0_u32, 2_u32, Some(Value::Word(3)), 3_u32),
         "the suffix lands at offsets 1 and 2, and the parent goes on at 3"
     );
 }
@@ -105,21 +161,105 @@ fn a_fork_that_disagrees_drops_its_suffix_whole()
 {
     let read = scoped(Budget::from(LARGE), |region, mut mint| {
         let _before = region
-            .mint::<()>(&mut mint, 1_u64)
+            .mint::<()>(&mut mint, Value::Word(1))
             .expect("the budget holds it");
         let joined = region
-            .fork::<(), _>(&mut mint, |child, mut own, _adopt| {
-                let _dropped = child.mint::<()>(&mut own, 2_u64).ok()?;
-                None
-            })
+            .forks::<(), _, _>(
+                &mut mint,
+                Width::ONE,
+                &|_sibling, child, mut own, _adopt| {
+                    let _dropped = child.mint::<()>(&mut own, Value::Word(2)).ok()?;
+                    None
+                },
+                |children| children.iter_mut().for_each(Child::enter),
+            )
             .expect("a dropped suffix draws nothing");
-        let after: Id<'_> = region.mint(&mut mint, 5_u64).expect("the budget holds it");
+        let after: Id<'_> = region
+            .mint(&mut mint, Value::Word(5))
+            .expect("the budget holds it");
         (joined, u32::from(after.key()), region.get(after).copied())
     });
     assert_eq!(
         read,
-        (None, 1_u32, Some(5_u64)),
+        (vec![None], 1_u32, Some(Value::Word(5))),
         "the parent's next value takes the mark, offset 1"
+    );
+}
+
+/// Four children on four threads read one frozen value at one address, and
+/// the two that agree glue in the order of the siblings. The second agreeing
+/// child's values move past the first one's suffix, the key that one of them
+/// names moves with them, and the id that the child answers reads its value
+/// there.
+#[test]
+fn siblings_over_one_frozen_prefix_glue_their_suffixes_in_order()
+{
+    let width = Width::from(NonZeroUsize::new(4).expect("four is not zero"));
+    let read = scoped(Budget::from(LARGE), |region, mut mint| {
+        let frozen: Id<'_> = region
+            .mint(&mut mint, Value::Word(7))
+            .expect("the budget holds it");
+        let address = region
+            .get(frozen)
+            .map(|value| core::ptr::from_ref(value).addr());
+        let answers = region
+            .forks::<Option<Id<'static>>, _, _>(
+                &mut mint,
+                width,
+                &|sibling, child, mut own, adopt| {
+                    let index = u64::try_from(usize::from(sibling)).ok()?;
+                    // Each child reads the frozen value where the parent
+                    // holds it, with no copy.
+                    let seen = child
+                        .get(adopt.adopt(frozen))
+                        .map(|value| core::ptr::from_ref(value).addr());
+                    (seen == address).then_some(())?;
+                    let word: Id<'_> = child.mint(&mut own, Value::Word(index)).ok()?;
+                    let names: Id<'_> = child.mint(&mut own, Value::Names(word.key())).ok()?;
+                    // The children at 1 and 3 agree, and those at 0 and 2 do
+                    // not.
+                    (index & 1_u64 == 1_u64).then_some(Some(names))
+                },
+                |children| {
+                    std::thread::scope(|threads| {
+                        for child in children.iter_mut() {
+                            let _running = threads.spawn(|| child.enter());
+                        }
+                    });
+                },
+            )
+            .expect("the budget holds both suffixes");
+        let after: Id<'_> = region
+            .mint(&mut mint, Value::Word(9))
+            .expect("the budget holds it");
+        let glued: Vec<Option<(u32, Option<Value>)>> = answers
+            .into_iter()
+            .map(|answer| {
+                answer
+                    .flatten()
+                    .map(|names| (u32::from(names.key()), region.get(names).copied()))
+            })
+            .collect();
+        let moved = region
+            .seat::<()>(Key::from(3_u32))
+            .and_then(|id| region.get(id))
+            .copied();
+        (glued, moved, u32::from(after.key()))
+    });
+    assert_eq!(
+        read,
+        (
+            vec![
+                None,
+                Some((2_u32, Some(Value::Names(Key::from(1_u32))))),
+                None,
+                Some((4_u32, Some(Value::Names(Key::from(3_u32))))),
+            ],
+            Some(Value::Word(3)),
+            5_u32,
+        ),
+        "the first agreeing suffix stays at 1 and 2, the second moves to 3 and 4 with its key, \
+         and the parent goes on at 5"
     );
 }
 

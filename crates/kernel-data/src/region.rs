@@ -9,10 +9,11 @@
 //! another, and each family crosses by the same three crossings.
 //!
 //! The scope hands its body the region and one [`Mint`]. Each id takes the
-//! mint, and [`Region::fork`] borrows it for the fork's whole life. So the
+//! mint, and [`Region::forks`] borrows it for the fork's whole life. So the
 //! parent makes no id while a child lives. Each id of the parent that a child
-//! can name thus lies in the child's frozen prefix, and `adopt` is the id
-//! itself.
+//! can name thus lies in the frozen prefix, and `adopt` is the id itself. The
+//! children of one fork read that prefix by reference, each on its own
+//! thread, and the glue moves each agreeing suffix past the ones before it.
 //!
 //! A region takes the allocator below it as a parameter, `Global` by default,
 //! and draws its buckets from it. A borrow of a region is itself an
@@ -27,9 +28,10 @@
 //!   suffix are two regions, and the join folds or drops the suffix. One
 //!   allocator with a budget refuses and never aborts. Its handle is one
 //!   pointer, with `Global` as the default.
-//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: lines 1 to 3 of the
-//!   performance picture. A worker owns its region, what is shared is frozen,
-//!   and each crossing is explicit.
+//! - `vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583` — anchor: lines 1 to 3 and 5
+//!   of the performance picture. A worker owns its region, what is shared is
+//!   frozen, each crossing is explicit, and what was written apart glues again
+//!   at the cost of what differs.
 
 use alloc::alloc::Global;
 use alloc::boxed::Box;
@@ -47,6 +49,7 @@ use core::hash::Hasher;
 use core::marker::PhantomData;
 use core::mem::size_of;
 use core::num::NonZero;
+use core::num::NonZeroUsize;
 use core::ptr::NonNull;
 
 use anodized::spec;
@@ -87,6 +90,62 @@ impl From<usize> for Budget
     fn from(bytes: usize) -> Self
     {
         Self(bytes)
+    }
+}
+
+/// The number of children of a fork over one frozen prefix: one or more.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Width(NonZeroUsize);
+
+impl Width
+{
+    /// The width of the one-child fork.
+    pub const ONE: Self = Self(NonZeroUsize::MIN);
+}
+
+impl From<NonZeroUsize> for Width
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(children: NonZeroUsize) -> Self
+    {
+        Self(children)
+    }
+}
+
+impl From<Width> for NonZeroUsize
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(width: Width) -> Self
+    {
+        width.0
+    }
+}
+
+/// A child's place among the children of one fork, from zero. The glue
+/// folds the suffixes of the children in this order.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Sibling(usize);
+
+impl From<Sibling> for usize
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(sibling: Sibling) -> Self
+    {
+        sibling.0
     }
 }
 
@@ -200,6 +259,121 @@ impl Bucket
     fn slots(self) -> Option<Count>
     {
         FIRST.checked_shl(self.0).map(Count)
+    }
+}
+
+/// The move of one child's suffix at the glue: each offset at or past the
+/// fork's mark moves past the suffixes that the siblings before the child
+/// folded, and each offset below the mark stays.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Shift
+{
+    /// The first offset of every child's suffix.
+    mark: Offset,
+    /// The values that the siblings before the child folded.
+    by: Count,
+}
+
+impl Shift
+{
+    /// The offset `offset` after the move.
+    ///
+    /// # Specification
+    /// - ensures: `offset` itself below the mark; past it, `offset` moved by
+    ///   the folded values. The glue checks that each moved offset fits, so the
+    ///   sum does not saturate.
+    /// - panics: none.
+    /// - executable: none — the predicate would repeat the comparison and the
+    ///   sum it checks.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the second of two agreeing children reads in the
+    ///   parent past the first child's suffix, and a value of the parent that
+    ///   it adopted keeps its offset.
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    const fn offset(
+        self,
+        offset: Offset,
+    ) -> Offset
+    {
+        if offset.0 < self.mark.0 {
+            offset
+        }
+        else {
+            Offset(offset.0.saturating_add(self.by.0))
+        }
+    }
+
+    /// The key `key` after the move: what a value of a child's suffix names
+    /// at the offset `key`, read where the glue moves it.
+    ///
+    /// # Specification
+    /// - ensures: `key` itself below the mark; past it, `key` moved by the
+    ///   values that the siblings before the child folded.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value of the second agreeing child names a value of
+    ///   its own suffix, and reads it in the parent past the first child's
+    ///   suffix.
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    #[spec(ensures: |ret| (key.0 < self.mark.0) == (ret == key) || self.by.0 == 0_u32)]
+    #[inline]
+    #[must_use]
+    pub fn key(
+        self,
+        key: Key,
+    ) -> Key
+    {
+        Key(self.offset(Offset(key.0)).0)
+    }
+}
+
+/// A value that names offsets of its own region, by [`Key`].
+///
+/// The glue of a fork moves each value of a child's suffix past the suffixes
+/// of the siblings before it. It reads each key that the value names through
+/// the same [`Shift`].
+///
+/// # Specification
+/// - requires: `rebase` reads each key of the value through the shift and
+///   changes nothing else.
+pub trait Rebase
+{
+    /// The value with each key it names read through `shift`.
+    ///
+    /// # Specification
+    /// - ensures: the value with each of its keys read through [`Shift::key`],
+    ///   and nothing else changed.
+    /// - panics: none.
+    /// - executable: none — the body is each implementor's, and the trait asks
+    ///   no equality of the value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a value of the second agreeing child names a value of
+    ///   its own suffix, and reads it in the parent past the first child's
+    ///   suffix.
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    #[must_use]
+    fn rebase(
+        self,
+        shift: Shift,
+    ) -> Self;
+}
+
+impl Rebase for ()
+{
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn rebase(
+        self,
+        _shift: Shift,
+    ) -> Self
+    {
     }
 }
 
@@ -385,7 +559,7 @@ impl<Kind> Id<'_, Kind>
 }
 
 /// The one right to make ids of brand `'region`. It is neither `Copy` nor
-/// `Clone`, and only [`scoped`] and [`Region::fork`] make one.
+/// `Clone`, and only [`scoped`] and [`Region::forks`] make one.
 ///
 /// # Specification
 /// trivial.
@@ -399,9 +573,9 @@ pub struct Mint<'region>
 
 /// The crossing at a fork: an id of the parent, read as the child's.
 ///
-/// A fork hands one to its child. The parent makes no id while the child
-/// lives, so each id of the parent lies below the child's mark, in its frozen
-/// prefix.
+/// A fork hands one to each child. The parent makes no id while a child
+/// lives, so each id of the parent lies below the children's mark, in their
+/// frozen prefix.
 ///
 /// # Specification
 /// trivial.
@@ -444,33 +618,40 @@ impl<'parent, 'child> Adopt<'parent, 'child>
 
 /// The crossing at a join: an id of the child, read as the parent's.
 ///
-/// The join hands one to [`Branded::rebrand`]. The parent makes no id while
-/// the child lives, so each id of the child keeps its offset in the parent.
+/// The glue hands one to [`Branded::rebrand`]. The parent makes no id while
+/// the children live, so each id below the mark keeps its offset, and each id
+/// of the child's suffix moves past the suffixes that the siblings before it
+/// folded.
 ///
 /// # Specification
 /// trivial.
-#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 pub struct Translation<'child, 'parent>
 {
+    /// The move of the child's suffix.
+    shift: Shift,
     /// The two brands.
     brands: PhantomData<(Brand<'child>, Brand<'parent>)>,
 }
 
 impl<'child, 'parent> Translation<'child, 'parent>
 {
-    /// The child's id under the parent's brand: the id at the same offset.
+    /// The child's id under the parent's brand: the id at the offset where the
+    /// glue moved its value.
     ///
     /// # Specification
-    /// - ensures: the result keeps the offset of `id`, so the parent reads at
-    ///   it the value that the child minted at `id`.
+    /// - ensures: the offset of `id` below the mark, so the parent reads at it
+    ///   the value it adopted; past the mark, the offset moved by the shift, so
+    ///   the parent reads at it the value that the child minted at `id`.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an id that a child answers reads in the parent the
-    ///   value the child minted at it.
+    ///   value the child minted at it, and the second of two agreeing children
+    ///   reads past the first child's suffix.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
-    #[spec(ensures: |ret| ret.offset == id.offset)]
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    #[spec(ensures: |ret| (id.offset < self.shift.mark) == (ret.offset == id.offset) || self.shift.by.0 == 0_u32)]
     #[inline]
     #[must_use]
     pub fn translate<Kind>(
@@ -479,7 +660,7 @@ impl<'child, 'parent> Translation<'child, 'parent>
     ) -> Id<'parent, Kind>
     {
         Id {
-            offset: id.offset,
+            offset: self.shift.offset(id.offset),
             brand: PhantomData,
             kind: PhantomData,
         }
@@ -1211,125 +1392,317 @@ where
         })
     }
 
-    /// Fork a child region over this region's frozen prefix, and fold its
-    /// suffix back when its body agrees.
+    /// Fork `width` children over this region's frozen prefix, and glue the
+    /// suffixes of the children that agree.
     ///
     /// The fork borrows `mint` for its whole life, so this region makes no id
-    /// while the child lives. The child takes this region's remaining budget,
-    /// its own mint and an [`Adopt`]. A body that answers `None` disagrees,
-    /// and the child's suffix drops whole. A body that answers `Some` agrees:
-    /// the join appends the child's suffix at the offsets the child minted it
-    /// at, and reads the answer under this region's brand.
+    /// while a child lives, and each value below the mark stays as it is: the
+    /// children's frozen prefix. Each child holds a suffix of its own, an equal
+    /// share of this region's remaining budget, its own mint and an [`Adopt`].
+    /// `run` enters each child on the threads that it chooses. A child reads
+    /// the frozen prefix by reference and writes only its own suffix, so no
+    /// child takes a lock. A child that `run` does not enter answers `None`.
     ///
-    /// No id of the child leaves the fork but through the join:
+    /// A body that answers `None` disagrees, and its child's suffix drops
+    /// whole. The glue appends the suffix of each child that agrees, in the
+    /// order of the siblings. Each suffix moves past the suffixes before it by
+    /// a [`Shift`]: [`Rebase`] reads each value through it, and
+    /// [`Branded::rebrand`] reads the answer through it. The one-child fork is
+    /// the width [`Width::ONE`].
+    ///
+    /// No id of a child leaves the fork but through the glue:
     ///
     /// ```compile_fail
+    /// use core::cell::Cell;
+    ///
     /// use gandr_kernel_data::Budget;
+    /// use gandr_kernel_data::Child;
+    /// use gandr_kernel_data::Width;
     /// use gandr_kernel_data::scoped;
     ///
     /// scoped(Budget::from(4096_usize), |region, mut mint| {
-    ///     let mut leaked = None;
-    ///     let _ = region.fork::<(), _>(&mut mint, |child, mut own, _adopt| {
-    ///         leaked = child.mint::<()>(&mut own, 7_u64).ok();
-    ///         Some(())
-    ///     });
+    ///     let leaked = Cell::new(None);
+    ///     let _ = region.forks::<(), _, _>(
+    ///         &mut mint,
+    ///         Width::ONE,
+    ///         &|_sibling, child, mut own, _adopt| {
+    ///             leaked.set(child.mint::<()>(&mut own, ()).ok());
+    ///             Some(())
+    ///         },
+    ///         |children| children.iter_mut().for_each(Child::enter),
+    ///     );
     /// });
     /// ```
     ///
     /// # Specification
-    /// - ensures: `Ok(None)` and this region unchanged when the body answers
-    ///   `None`; `Ok(Some(answer))` when it answers `Some`, each value of the
-    ///   child at its own offset in this region, and each id of the answer at
-    ///   the offset it had.
+    /// - ensures: one answer for each child, in the order of the siblings:
+    ///   `None` for a child that disagrees or that `run` does not enter, and
+    ///   `Some` for a child that agrees. Each value of an agreeing child then
+    ///   reads in this region past the suffixes of the agreeing children before
+    ///   it, and each id of its answer reads the value that the child minted at
+    ///   it.
     /// - fails: [`Exhausted`] when this region's budget cannot draw the buckets
-    ///   the suffix needs; the suffix then drops whole.
+    ///   that the agreeing suffixes need; the suffixes then drop whole.
     /// - panics: none.
-    /// - executable: none — the answer is generic, and the child's values have
-    ///   no equality that a predicate could compare them by.
+    /// - executable: none — the answers are generic, and the children's values
+    ///   have no equality that a predicate could compare them by.
     ///
     /// # Errors
-    /// [`Exhausted`] when the join cannot hold the child's suffix.
+    /// [`Exhausted`] when the glue cannot hold the agreeing suffixes.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an agreeing child's values read in the parent at the
-    ///   ids the join gives, and the parent's next id follows them; a
-    ///   disagreeing child leaves the parent's next id at the mark.
+    ///   ids the glue gives, and the parent's next id follows them; a
+    ///   disagreeing child leaves the parent's next id at the mark; four
+    ///   children on four threads read one frozen value at one address, and the
+    ///   two that agree glue in the order of the siblings.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
     /// - witness: `tests::region::a_fork_that_disagrees_drops_its_suffix_whole`
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
     #[inline]
-    pub fn fork<Family, Body>(
+    pub fn forks<'body, Family, Body, Run>(
         &self,
         _mint: &mut Mint<'region>,
-        body: Body,
-    ) -> Result<Option<Family::Of<'region>>, Exhausted>
+        width: Width,
+        body: &'body Body,
+        run: Run,
+    ) -> Result<Vec<Option<Family::Of<'region>>>, Exhausted>
     where
+        Value: Rebase,
         Family: Branded,
-        Body: for<'child> FnOnce(
+        Body: for<'child> Fn(
+            Sibling,
             &'child Region<'child, Value, Below>,
             Mint<'child>,
             Adopt<'region, 'child>,
         ) -> Option<Family::Of<'child>>,
+        Run: FnOnce(&mut [Child<'region, 'body, Value, Below, Family, Body>]),
     {
         let mark = self.layer.extent()?;
-        let layer = Layer::new(
-            Some(self.layer),
-            mark,
-            self.layer.remaining(),
-            self.layer.bytes.allocator.clone(),
+        let count = NonZeroUsize::from(width).get();
+        let share = Budget(
+            self.layer
+                .remaining()
+                .0
+                .checked_div(count)
+                .unwrap_or(0_usize),
         );
-        let child = Region {
-            layer: &layer,
-            brand: PhantomData,
-        };
-        let Some(answer) = body(&child, Mint { brand: PhantomData }, Adopt {
-            brands: PhantomData,
-        })
-        else {
-            return Ok(None);
-        };
-        let joined = Family::rebrand(answer, Translation {
-            brands: PhantomData,
-        });
-        self.fold(layer)?;
-        Ok(Some(joined))
+        let mut children = Vec::new();
+        children
+            .try_reserve_exact(count)
+            .ok()
+            .ok_or_else(|| self.layer.exhausted())?;
+        children.extend((0 .. count).map(|sibling| Child {
+            layer: Layer::new(
+                Some(self.layer),
+                mark,
+                share,
+                self.layer.bytes.allocator.clone(),
+            ),
+            sibling: Sibling(sibling),
+            body,
+            answer: Entry::Waiting,
+        }));
+        run(&mut children);
+        self.glue(mark, children)
     }
 
-    /// Append the child's own values, whole or not at all.
+    /// Append the suffix of each child that agrees, in the order of the
+    /// siblings, and read each answer through the move of its suffix.
     ///
     /// # Specification
-    /// - ensures: on `Ok`, each value of `child` at the offset the child minted
-    ///   it at; on `Err`, this region unchanged.
+    /// - ensures: on `Ok`, one answer for each child in order: `None` for a
+    ///   child that disagrees or that the run did not enter, and for an
+    ///   agreeing child its answer, with its values past the suffixes of the
+    ///   agreeing children before it. On a refusal of the budget, this region
+    ///   is unchanged.
     /// - fails: [`Exhausted`] when this region's remaining budget cannot draw
-    ///   the buckets of the child's values.
+    ///   the buckets of the agreeing suffixes, or their values pass the last
+    ///   offset. The check comes before the first value moves.
     /// - panics: none.
     /// - executable: none — the values move, and `Value` has no equality that a
     ///   predicate could compare them by.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a child's values read in the parent at the offsets
-    ///   the child minted them at, and the parent's next id follows them.
+    ///   the glue gives them, and the parent's next id follows them; the second
+    ///   agreeing child reads past the first child's suffix.
     /// - witness: `tests::region::a_fork_that_agrees_folds_its_suffix_at_the_offsets_it_minted`
-    fn fold(
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    fn glue<Family, Body>(
         &self,
-        child: Layer<'_, Value, Below>,
-    ) -> Result<(), Exhausted>
+        mark: Offset,
+        children: Vec<Child<'region, '_, Value, Below, Family, Body>>,
+    ) -> Result<Vec<Option<Family::Of<'region>>>, Exhausted>
+    where
+        Value: Rebase,
+        Family: Branded,
     {
-        let count = child.len.get();
-        if count == Count(0_u32) {
-            return Ok(());
-        }
-        let bytes = self
-            .layer
-            .draw_for(count)
+        let agreeing = children
+            .iter()
+            .filter(|child| matches!(child.answer, Entry::Agrees(_)))
+            .try_fold(Count(0_u32), |sum, child| {
+                sum.0.checked_add(child.layer.len.get().0).map(Count)
+            })
             .ok_or_else(|| self.layer.exhausted())?;
-        if bytes > self.layer.remaining() {
-            return Err(self.layer.exhausted());
+        if agreeing != Count(0_u32) {
+            let bytes = self
+                .layer
+                .draw_for(agreeing)
+                .ok_or_else(|| self.layer.exhausted())?;
+            let fits = mark.0.checked_add(agreeing.0).is_some();
+            if !fits || bytes > self.layer.remaining() {
+                return Err(self.layer.exhausted());
+            }
         }
-        for value in child.into_values() {
-            let _offset: Offset = self.layer.push(value)?;
+        let mut answers = Vec::new();
+        answers
+            .try_reserve_exact(children.len())
+            .ok()
+            .ok_or_else(|| self.layer.exhausted())?;
+        for child in children {
+            let Child { layer, answer, .. } = child;
+            let Entry::Agrees(answer) = answer
+            else {
+                answers.push(None);
+                continue;
+            };
+            let by = self
+                .layer
+                .extent()?
+                .0
+                .checked_sub(mark.0)
+                .map(Count)
+                .ok_or_else(|| self.layer.exhausted())?;
+            let shift = Shift { mark, by };
+            for value in layer.into_values() {
+                let _offset: Offset = self.layer.push(value.rebase(shift))?;
+            }
+            answers.push(Some(Family::rebrand(answer, Translation {
+                shift,
+                brands: PhantomData,
+            })));
         }
-        Ok(())
+        Ok(answers)
     }
+}
+
+/// One child of [`Region::forks`]: a suffix of its own over the frozen
+/// prefix, its place among its siblings, and its answer once
+/// [`Child::enter`] runs it.
+///
+/// # Specification
+/// trivial.
+pub struct Child<'region, 'body, Value, Below, Family, Body>
+where
+    Below: Allocator + Clone,
+    Family: Branded,
+{
+    /// The child's suffix, over the parent's frozen layer.
+    layer: Layer<'region, Value, Below>,
+    /// The child's place among its siblings.
+    sibling: Sibling,
+    /// The body that each child of the fork runs.
+    body: &'body Body,
+    /// Where the child stands: not entered yet, or entered with the body's
+    /// answer.
+    answer: Entry<Family::Of<'region>>,
+}
+
+/// Where a child of a fork stands, once the run ends.
+///
+/// # Specification
+/// trivial.
+enum Entry<Answer>
+{
+    /// The run did not enter the child.
+    Waiting,
+    /// The body disagreed, so the child's suffix drops.
+    Disagrees,
+    /// The body agreed with this answer, under the parent's brand at the
+    /// offsets that the child minted; the glue moves them.
+    Agrees(Answer),
+}
+
+impl<'region, Value, Below, Family, Body> Child<'region, '_, Value, Below, Family, Body>
+where
+    Below: Allocator + Clone,
+    Family: Branded,
+    Body: for<'child> Fn(
+        Sibling,
+        &'child Region<'child, Value, Below>,
+        Mint<'child>,
+        Adopt<'region, 'child>,
+    ) -> Option<Family::Of<'child>>,
+{
+    /// Run the body on this child, under a brand of its own, and keep its
+    /// answer for the glue. A child runs once: a second entry does nothing.
+    ///
+    /// # Specification
+    /// - ensures: the child holds an answer; the body ran once over the child's
+    ///   suffix.
+    /// - panics: none of its own; a panic of the body passes through.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four children on four threads each write a suffix of
+    ///   their own, and the glue reads the two that agree.
+    /// - witness: `tests::region::siblings_over_one_frozen_prefix_glue_their_suffixes_in_order`
+    #[spec(ensures: !matches!(self.answer, Entry::Waiting))]
+    #[inline]
+    pub fn enter(&mut self)
+    {
+        if !matches!(self.answer, Entry::Waiting) {
+            return;
+        }
+        let region = Region {
+            layer: &self.layer,
+            brand: PhantomData,
+        };
+        let answer = (self.body)(self.sibling, &region, Mint { brand: PhantomData }, Adopt {
+            brands: PhantomData,
+        });
+        let shift = Shift {
+            mark: self.layer.base,
+            by: Count(0_u32),
+        };
+        self.answer = answer.map_or(Entry::Disagrees, |value| {
+            Entry::Agrees(Family::rebrand(value, Translation {
+                shift,
+                brands: PhantomData,
+            }))
+        });
+    }
+}
+
+/// A child crosses to the thread that enters it.
+///
+/// # Safety
+/// - unsafe invariants: the child's own layer moves whole, and `Send` lets its
+///   values and the chunks it draws from `Below` cross. Its one shared borrow
+///   is of the frozen prefix, which the child reads through `Layer::get` alone.
+///   [`Region::forks`] keeps the parent's mint borrowed until each child ends,
+///   and so does the fork of each layer below it, so no push writes a count or
+///   a bucket of the prefix while a child reads it. The parent's allocator face
+///   writes only its cursor, its chunks and its drawn bytes, which no child
+///   reads. `Value: Sync` lets each thread read the prefix's values, `Below:
+///   Sync` lets each thread draw from one allocator, `Body: Sync` lets each
+///   thread run the one body, and the answer that moves back is `Send`.
+#[expect(
+    clippy::non_send_fields_in_send_ty,
+    reason = "the layer's one shared borrow is the frozen prefix, which a child only reads, and \
+              its chunks are its own; the invariants above state why it crosses"
+)]
+// SAFETY: the invariants above hold: `Child` exposes its layer only to the
+// body through `Child::enter`, and `Layer::get` writes nothing.
+unsafe impl<'region, Value, Below, Family, Body> Send
+    for Child<'region, '_, Value, Below, Family, Body>
+where
+    Value: Send + Sync,
+    Below: Allocator + Clone + Send + Sync,
+    Family: Branded,
+    Family::Of<'region>: Send,
+    Body: Sync,
+{
 }
 
 /// The allocator face of a region: a borrow of the region hands out blocks
