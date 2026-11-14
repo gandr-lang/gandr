@@ -31,11 +31,12 @@
 //!   with a step log so admission and entailment can hand back replayable
 //!   derivations instead of asking for trust.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::level::LevelConstant;
 use crate::level::LevelError;
@@ -821,7 +822,7 @@ impl ModelValue
 pub struct HornClause
 {
     /// The body atoms, sorted by variable, one maximal offset each.
-    body: Vec<HornAtom>,
+    body: SmallVec<HornAtom, 0, Global>,
     /// The conclusion atom.
     head: HornAtom,
 }
@@ -974,7 +975,7 @@ impl HornClause
 pub struct ClauseSystem
 {
     /// The base clauses, in the documented deterministic compilation order.
-    pub clauses: Vec<HornClause>,
+    pub clauses: SmallVec<HornClause, 0, Global>,
     /// The minimum admissible upward shift.
     pub min_shift: HornShift,
 }
@@ -1108,7 +1109,7 @@ pub struct Saturation
     /// Infinite-conclusion firings, where all body variables are infinite, are
     /// not logged: they have no single replayable instance and occur only after
     /// divergence is already recorded.
-    pub log: Vec<FiringLogStep>,
+    pub log: SmallVec<FiringLogStep, 0, Global>,
     /// Whether the resulting model has an infinite component, including one
     /// already present in the seed.
     pub diverged: SaturationDiverged,
@@ -1199,7 +1200,7 @@ pub fn saturate(
 ) -> Result<Saturation, LevelError>
 {
     let mut values = seed;
-    let mut log = Vec::new();
+    let mut log = SmallVec::<_, 0, Global>::new();
     let mut diverged = values.values().any(|value| bool::from(value.is_infinite()));
     loop {
         let mut progress = false;
@@ -1300,10 +1301,10 @@ pub fn derive_targets(
     seed: BTreeMap<HVar, ModelValue>,
     targets: &[HornAtom],
     round_limit: DerivationRoundLimit,
-) -> Result<Option<Vec<FiringLogStep>>, LevelError>
+) -> Result<Option<SmallVec<FiringLogStep, 0, Global>>, LevelError>
 {
     let mut values = seed;
-    let mut log = Vec::new();
+    let mut log = SmallVec::<_, 0, Global>::new();
     if bool::from(covered(&values, targets)) {
         return Ok(Some(log));
     }
@@ -1484,11 +1485,13 @@ pub fn fire(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::collections::BTreeMap;
     use alloc::vec;
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
 
     use super::ClauseIndex;
     use super::ClauseSystem;
@@ -1511,7 +1514,7 @@ mod tests
     fn saturation_preserves_seeded_infinity_without_a_firing()
     {
         let system = ClauseSystem {
-            clauses: Vec::new(),
+            clauses: SmallVec::new(),
             min_shift: HornShift::ZERO,
         };
         let seed = BTreeMap::from([
@@ -1535,13 +1538,11 @@ mod tests
     fn saturation_snaps_only_above_the_bound()
     {
         let finite = ClauseSystem {
-            clauses: vec![
-                HornClause::new(
-                    &[HornAtom::new(v0(), HornOffset::ZERO)],
-                    HornAtom::new(v1(), HornOffset::ZERO),
-                )
-                .expect("nonempty body"),
-            ],
+            clauses: SmallVec::from_iter([HornClause::new(
+                &[HornAtom::new(v0(), HornOffset::ZERO)],
+                HornAtom::new(v1(), HornOffset::ZERO),
+            )
+            .expect("nonempty body")]),
             min_shift: HornShift::ZERO,
         };
         let seed = BTreeMap::from([(v0(), ModelValue::Finite(HornOffset::ZERO))]);
@@ -1556,13 +1557,11 @@ mod tests
         );
         assert!(!bool::from(fixed.diverged));
         let looping = ClauseSystem {
-            clauses: vec![
-                HornClause::new(
-                    &[HornAtom::new(v0(), HornOffset::ZERO)],
-                    HornAtom::new(v0(), HornOffset::ONE),
-                )
-                .expect("nonempty body"),
-            ],
+            clauses: SmallVec::from_iter([HornClause::new(
+                &[HornAtom::new(v0(), HornOffset::ZERO)],
+                HornAtom::new(v0(), HornOffset::ONE),
+            )
+            .expect("nonempty body")]),
             min_shift: HornShift::ZERO,
         };
         let fixed = saturate(&looping, seed, SaturationBound::from(1_u128))
@@ -1651,7 +1650,7 @@ mod tests
     fn clause_gain_and_subsumption_use_the_correct_extrema()
     {
         let empty = ClauseSystem {
-            clauses: vec![],
+            clauses: SmallVec::new(),
             min_shift: HornShift::ZERO,
         };
         assert_eq!(empty.maxgain(), MaxGain::ZERO);
@@ -1665,7 +1664,7 @@ mod tests
         assert_eq!(clause.gain(), MaxGain::from(5_u128));
         assert!(!bool::from(clause.is_trivial()));
         let system = ClauseSystem {
-            clauses: vec![clause],
+            clauses: SmallVec::from_iter([clause]),
             min_shift: HornShift::ONE,
         };
         assert_eq!(system.maxgain(), MaxGain::from(5_u128));
@@ -1682,13 +1681,11 @@ mod tests
     fn derivation_respects_zero_and_exact_round_limits()
     {
         let system = ClauseSystem {
-            clauses: vec![
-                HornClause::new(
-                    &[HornAtom::new(v0(), HornOffset::ZERO)],
-                    HornAtom::new(v0(), HornOffset::ONE),
-                )
-                .expect("nonempty body"),
-            ],
+            clauses: SmallVec::from_iter([HornClause::new(
+                &[HornAtom::new(v0(), HornOffset::ZERO)],
+                HornAtom::new(v0(), HornOffset::ONE),
+            )
+            .expect("nonempty body")]),
             min_shift: HornShift::ZERO,
         };
         let seed = BTreeMap::from([(v0(), ModelValue::Finite(HornOffset::ZERO))]);
@@ -1700,7 +1697,7 @@ mod tests
                     &targets,
                     DerivationRoundLimit::from(0_u128)
                 ),
-                Ok(Some(vec![]))
+                Ok(Some(SmallVec::new()))
             );
         }
         let targets = [HornAtom::new(v0(), HornOffset::from(2_u128))];
@@ -1931,13 +1928,11 @@ mod tests
     {
         // The self-loop `x implies x+1`: from `x+0`, deriving `x+3` takes three
         // logged pumping steps.
-        let clauses = vec![
-            HornClause::new(
-                &[HornAtom::new(v0(), HornOffset::from(0_u128))],
-                HornAtom::new(v0(), HornOffset::from(1_u128)),
-            )
-            .expect("a single-atom body is nonempty"),
-        ];
+        let clauses = SmallVec::from_iter([HornClause::new(
+            &[HornAtom::new(v0(), HornOffset::from(0_u128))],
+            HornAtom::new(v0(), HornOffset::from(1_u128)),
+        )
+        .expect("a single-atom body is nonempty")]);
         let system = ClauseSystem {
             clauses,
             min_shift: HornShift::ZERO,
@@ -1978,13 +1973,11 @@ mod tests
     #[test]
     fn derive_targets_reports_underivable_targets()
     {
-        let clauses = vec![
-            HornClause::new(
-                &[HornAtom::new(v0(), HornOffset::from(0_u128))],
-                HornAtom::new(v1(), HornOffset::from(0_u128)),
-            )
-            .expect("a single-atom body is nonempty"),
-        ];
+        let clauses = SmallVec::from_iter([HornClause::new(
+            &[HornAtom::new(v0(), HornOffset::from(0_u128))],
+            HornAtom::new(v1(), HornOffset::from(0_u128)),
+        )
+        .expect("a single-atom body is nonempty")]);
         let system = ClauseSystem {
             clauses,
             min_shift: HornShift::ZERO,
@@ -2005,7 +1998,7 @@ mod tests
     {
         // `x implies y` fires y at the 0 it already holds; `y implies x+1`
         // then raises x. Only the second firing is a step.
-        let clauses = vec![
+        let clauses = SmallVec::from_iter([
             HornClause::new(
                 &[HornAtom::new(v0(), HornOffset::from(0_u128))],
                 HornAtom::new(v1(), HornOffset::from(0_u128)),
@@ -2016,7 +2009,7 @@ mod tests
                 HornAtom::new(v0(), HornOffset::from(1_u128)),
             )
             .expect("a single-atom body is nonempty"),
-        ];
+        ]);
         let system = ClauseSystem {
             clauses,
             min_shift: HornShift::ZERO,
@@ -2102,9 +2095,9 @@ mod tests
     /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
     #[spec(ensures: |ret| ret.iter().map(|clause| clause.head().variable())
         .eq([v1(), v2(), v3(), v4()]))]
-    fn paper_clauses() -> Vec<HornClause>
+    fn paper_clauses() -> SmallVec<HornClause, 0, Global>
     {
-        vec![
+        SmallVec::from_iter([
             HornClause::new(
                 &[
                     HornAtom::new(v0(), HornOffset::from(0_u128)),
@@ -2131,7 +2124,7 @@ mod tests
                 HornAtom::new(v4(), HornOffset::from(0_u128)),
             )
             .expect("a two-atom body is nonempty"),
-        ]
+        ])
     }
 
     /// A total zero seed over the worked example's five variables.

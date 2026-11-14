@@ -70,8 +70,11 @@ const SMALL_STACK_BYTES: usize = 256 * 1024;
 #[spec(ensures: |ret| u32::from(ret.params()) == 0)]
 fn levels() -> LevelContext
 {
-    LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
-        .expect("an unconstrained context admits")
+    LevelContext::admit(
+        LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::new(),
+    )
+    .expect("an unconstrained context admits")
 }
 
 /// Check a chain-deep definition and report the census.

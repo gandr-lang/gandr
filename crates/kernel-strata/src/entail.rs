@@ -42,12 +42,13 @@
 //! endomorphism", *Theoretical Computer Science* 913 (2022), 1–7,
 //! `doi:10.1016/j.tcs.2022.01.017`; entailment is its corollary 3.4.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
 use core::ops::Not;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::horn;
 use crate::horn::ClauseIndex;
@@ -380,13 +381,13 @@ pub struct QueryEncoding
 {
     /// The query clause system's base clauses: the poset's compiled clauses,
     /// then one bottom clause per in-scope variable, ascending.
-    clauses: Vec<HornClause>,
+    clauses: SmallVec<HornClause, 0, Global>,
     /// The seeds: every in-scope variable at `0`, the right side's atoms at
     /// `offset + 1`, the bottom generator at `c_right + 1`.
     seed: BTreeMap<HVar, HornOffset>,
     /// The goals: the bottom goal first, then one per left atom, ascending;
     /// offsets already shifted.
-    goals: Vec<HornAtom>,
+    goals: SmallVec<HornAtom, 0, Global>,
 }
 
 /// The shared decision path of both public faces.
@@ -410,6 +411,10 @@ pub struct QueryEncoding
 /// # Errors
 /// [`PosetError::Overflow`], [`PosetError::UnexpectedDivergence`] or
 /// [`PosetError::EvidenceIncomplete`].
+///
+/// # Cost
+/// - allocation: the query's clauses, goals and seed model, and the
+///   saturation's values and log, growth within the query's atoms
 ///
 /// # Adequacy
 /// - hypothesis: L2 — empty-poset queries agree with the independent free
@@ -493,7 +498,8 @@ fn decide(
     }
     let cutoff = witness_cutoff(&encoding.seed, &encoding.goals, &outcome.log)
         .ok_or(PosetError::EvidenceIncomplete)?;
-    let trimmed: Vec<FiringLogStep> = outcome.log.into_iter().take(usize::from(cutoff)).collect();
+    let trimmed: SmallVec<FiringLogStep, 0, Global> =
+        outcome.log.into_iter().take(usize::from(cutoff)).collect();
     Ok(Entailment::Holds(EntailmentWitness {
         strict,
         derivation: Derivation::from_log(&trimmed),
@@ -973,7 +979,7 @@ pub fn encode_query(
     let mut scope: BTreeSet<LevelVar> = poset.variables().clone();
     scope.extend(left.atoms().map(|(variable, _offset)| variable));
     scope.extend(right.atoms().map(|(variable, _offset)| variable));
-    let mut clauses = poset.compiled_clauses().to_vec();
+    let mut clauses = SmallVec::<_, 0, Global>::from_iter(poset.compiled_clauses().iter().cloned());
     for &variable in &scope {
         if let Some(clause) = HornClause::new(
             &[HornAtom::new(HVar::Var(variable), HornOffset::ZERO)],
@@ -996,7 +1002,7 @@ pub fn encode_query(
         .checked_add(HornOffset::ONE)
         .map_err(|_error| PosetError::Overflow)?;
     let _previous = seed.insert(HVar::Bottom, bottom_seed);
-    let mut goals = Vec::new();
+    let mut goals = SmallVec::<_, 0, Global>::new();
     let bottom_goal = HornOffset::from(left.constant_part())
         .checked_add(goal_shift)
         .map_err(|_error| PosetError::Overflow)?;
@@ -1070,7 +1076,7 @@ fn witness_cutoff(
             .get(&goal.variable())
             .is_some_and(|&maximum| goal.offset() <= maximum)
     };
-    let mut remaining: Vec<HornAtom> = goals
+    let mut remaining: SmallVec<HornAtom, 0, Global> = goals
         .iter()
         .copied()
         .filter(|&goal| !covered(&maxima, goal))
@@ -1099,6 +1105,7 @@ mod tests
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_data::SmallVec;
 
     use super::Entailment;
     use super::EntailmentCountermodel;
@@ -1168,7 +1175,7 @@ mod tests
     fn witness_prefix_is_the_first_covering_prefix()
     {
         let system = crate::horn::ClauseSystem {
-            clauses: vec![
+            clauses: SmallVec::from_iter([
                 crate::horn::HornClause::new(
                     &[HornAtom::new(HVar::Var(x()), HornOffset::ZERO)],
                     HornAtom::new(HVar::Var(y()), HornOffset::ONE),
@@ -1179,7 +1186,7 @@ mod tests
                     HornAtom::new(HVar::Var(var8()), HornOffset::ONE),
                 )
                 .expect("nonempty body"),
-            ],
+            ]),
             min_shift: HornShift::ZERO,
         };
         let seed = BTreeMap::from([(HVar::Var(x()), HornOffset::ZERO)]);
@@ -1687,7 +1694,9 @@ mod tests
     #[spec(ensures: |ret| crate::poset::validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
-        match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
+        match LandmarkPoset::admit(SmallVec::from_iter(constraints))
+            .expect("admission does not overflow")
+        {
             AdmissionOutcome::Admitted(poset) => poset,
             AdmissionOutcome::Loop(_witness) => panic!("expected admission"),
         }

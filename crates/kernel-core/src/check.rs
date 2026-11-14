@@ -9761,7 +9761,10 @@ pub(crate) fn check_closed_value(
     expected: ValueTypeId,
 ) -> Result<(), KernelError>
 {
-    let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
+    let levels = LevelContext::admit(
+        gandr_kernel_term::LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::new(),
+    )?;
     let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
     let mut memo = DefaultMemo::new();
     let mut session = SupportContext::new();
@@ -9835,7 +9838,10 @@ pub(crate) fn synth_closed_value(
     value: ValueId,
 ) -> Result<ValueTypeId, KernelError>
 {
-    let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
+    let levels = LevelContext::admit(
+        gandr_kernel_term::LevelParamCount::from(0_u32),
+        gandr_kernel_data::SmallVec::<_, 0, alloc::alloc::Global>::new(),
+    )?;
     let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
     let mut memo = DefaultMemo::new();
     let mut session = SupportContext::new();
@@ -10182,7 +10188,8 @@ mod tests
     #[spec(ensures: |ret| ret.params() == params)]
     fn level_context(params: LevelParamCount) -> LevelContext
     {
-        LevelContext::admit(params, Vec::new()).expect("an unconstrained context admits")
+        LevelContext::admit(params, gandr_kernel_data::SmallVec::new())
+            .expect("an unconstrained context admits")
     }
 
     /// The constant level `value`.

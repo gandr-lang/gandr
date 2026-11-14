@@ -22,6 +22,7 @@
 //! the property under test; harness failures return [`TermFailure`].
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::AdmissionOutcome;
 use gandr_kernel_strata::Entailment;
 use gandr_kernel_strata::EntailmentHolds;
@@ -410,7 +411,7 @@ fn child(
         gandr_kernel_strata::validate_consistency(poset.constraints(), poset.consistency()).is_ok()))]
 fn admitted(constraints: Vec<LandmarkConstraint>) -> Result<LandmarkPoset, TermFailure>
 {
-    let outcome = LandmarkPoset::admit(constraints)?;
+    let outcome = LandmarkPoset::admit(SmallVec::from_iter(constraints))?;
     match outcome {
         AdmissionOutcome::Admitted(poset) => Ok(poset),
         AdmissionOutcome::Loop(_witness) => Err(TermFailure::NotAdmitted),

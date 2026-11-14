@@ -1489,11 +1489,10 @@ mod tests
 {
     use alloc::string::String;
     use alloc::string::ToString;
-    use alloc::vec;
-    use alloc::vec::Vec;
 
     use anodized::spec;
     use gandr_kernel_check_memo::ContentDigest;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::LandmarkConstraint;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelVar;
@@ -1599,7 +1598,7 @@ mod tests
         let unit_returner = comp_type_witness(&arena, unit_returner);
         let integer_returner = comp_type_witness(&arena, integer_returner);
         let mismatch = CompTypeMismatch::new(unit_returner, integer_returner);
-        let free = LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
+        let free = LevelContext::admit(LevelParamCount::from(0_u32), SmallVec::new())
             .expect("an unconstrained context admits");
         let universe = free
             .check_universe_below(&Level::zero(), &Level::zero())
@@ -1609,8 +1608,11 @@ mod tests
         let constraint =
             LandmarkConstraint::leq(level.succ().expect("one successor is representable"), level)
                 .expect("a variable-only constraint is well formed");
-        let inconsistent = LevelContext::admit(LevelParamCount::from(1_u32), vec![constraint])
-            .expect_err("a self-successor constraint has no model");
+        let inconsistent = LevelContext::admit(
+            LevelParamCount::from(1_u32),
+            SmallVec::from_iter([constraint]),
+        )
+        .expect_err("a self-successor constraint has no model");
         let index = ConstantIndex::from(usize::MAX);
         let type_id = arena.value_type_unit();
         let value_id = arena.value_unit();

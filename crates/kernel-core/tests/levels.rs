@@ -93,7 +93,10 @@ impl Difference
 /// trivial.
 fn context(constraints: Vec<LandmarkConstraint>) -> Verdict
 {
-    match LevelContext::admit(LevelParamCount::from(VARIABLES), constraints) {
+    match LevelContext::admit(
+        LevelParamCount::from(VARIABLES),
+        gandr_kernel_data::SmallVec::from_iter(constraints),
+    ) {
         Ok(_context) => Verdict::Consistent,
         Err(KernelError::InconsistentLevelConstraints(_)) => Verdict::Looping,
         Err(other) => panic!("a set in scope is admitted or loops: {other:?}"),
@@ -106,7 +109,9 @@ fn context(constraints: Vec<LandmarkConstraint>) -> Verdict
 /// trivial.
 fn loop_checking(constraints: Vec<LandmarkConstraint>) -> Verdict
 {
-    match LandmarkPoset::admit(constraints).expect("a small system does not overflow") {
+    match LandmarkPoset::admit(gandr_kernel_data::SmallVec::from_iter(constraints))
+        .expect("a small system does not overflow")
+    {
         AdmissionOutcome::Admitted(_) => Verdict::Consistent,
         AdmissionOutcome::Loop(_) => Verdict::Looping,
     }
