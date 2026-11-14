@@ -187,6 +187,7 @@ pub use crate::arena::Truncated;
 pub use crate::arena::TruncationStamp;
 pub use crate::arena::ValueId;
 pub use crate::arena::ValueTypeId;
+pub use crate::arena::kind;
 pub use crate::base::BaseType;
 pub use crate::base::CharacterLiteral;
 pub use crate::base::FixedInteger;

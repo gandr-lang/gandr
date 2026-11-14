@@ -64,6 +64,7 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::Id;
 use gandr_kernel_strata::Level;
 
 use crate::base::BaseType;
@@ -79,78 +80,59 @@ use crate::types::CompType;
 use crate::types::GroundSort;
 use crate::types::ValueType;
 
-/// The id of a [`Value`] node in a [`TermArena`].
-///
-/// A family ordinal minted by a [`TermArena`] constructor. It can dangle after
-/// truncation or alias a reminted or foreign ordinal; it carries no arena
-/// provenance. Only same-family children share its allocation order.
-///
-/// # Specification
-/// - requires: all ordinals are representable; resolution depends on the
-///   selected arena’s current values family.
-/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
-///   reuse generation.
-/// - panics: none.
-/// - executable: none — data declaration, not a callable boundary; executable
-///   predicates belong to its constructors and observers.
-///
-/// # Adequacy
-/// - hypothesis: L3 observes all four family prefixes before and after
-///   truncation, stale marks, dangling ids, reminting and a foreign id with a
-///   coincident ordinal. Exact retained variants and dense indices separate
-///   prefix damage, accidental growth, wrong-family lookup and
-///   generation/provenance assumptions. Allocation at the u32 ceiling is not
-///   exercised; its conversion is checked separately.
-/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ValueId(u32);
+/// The kinds of the arena's four families: phantoms that keep an id of one
+/// family apart from an id of another in the arena's one id space.
+pub mod kind
+{
+    /// The kind of a [`Value`](crate::Value) node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Value;
 
-/// The id of a [`Computation`] node in a [`TermArena`].
-///
-/// # Specification
-/// - requires: all ordinals are representable; resolution depends on the
-///   selected arena’s current computations family.
-/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
-///   reuse generation.
-/// - panics: none.
-/// - executable: none — data declaration, not a callable boundary; executable
-///   predicates belong to its constructors and observers.
-///
-/// # Adequacy
-/// - hypothesis: L3 observes all four family prefixes before and after
-///   truncation, stale marks, dangling ids, reminting and a foreign id with a
-///   coincident ordinal. Exact retained variants and dense indices separate
-///   prefix damage, accidental growth, wrong-family lookup and
-///   generation/provenance assumptions. Allocation at the u32 ceiling is not
-///   exercised; its conversion is checked separately.
-/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ComputationId(u32);
+    /// The kind of a [`Computation`](crate::Computation) node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct Computation;
 
-/// The id of a [`ValueType`] node in a [`TermArena`].
+    /// The kind of a [`ValueType`](crate::ValueType) node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ValueType;
+
+    /// The kind of a [`CompType`](crate::CompType) node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct CompType;
+}
+
+/// The id of a [`Value`] node in a [`TermArena`]: an id of the arena's region,
+/// of the kind [`kind::Value`].
 ///
 /// # Specification
-/// - requires: all ordinals are representable; resolution depends on the
-///   selected arena’s current value-type family.
-/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
-///   reuse generation.
-/// - panics: none.
-/// - executable: none — data declaration, not a callable boundary; executable
-///   predicates belong to its constructors and observers.
+/// trivial.
+pub type ValueId<'r> = Id<'r, kind::Value>;
+
+/// The id of a [`Computation`] node in a [`TermArena`]: an id of the arena's
+/// region, of the kind [`kind::Computation`].
 ///
-/// # Adequacy
-/// - hypothesis: L3 observes all four family prefixes before and after
-///   truncation, stale marks, dangling ids, reminting and a foreign id with a
-///   coincident ordinal. Exact retained variants and dense indices separate
-///   prefix damage, accidental growth, wrong-family lookup and
-///   generation/provenance assumptions. Allocation at the u32 ceiling is not
-///   exercised; its conversion is checked separately.
-/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ValueTypeId(u32);
+/// # Specification
+/// trivial.
+pub type ComputationId<'r> = Id<'r, kind::Computation>;
+
+/// The id of a [`ValueType`] node in a [`TermArena`]: an id of the arena's
+/// region, of the kind [`kind::ValueType`].
+///
+/// # Specification
+/// trivial.
+pub type ValueTypeId<'r> = Id<'r, kind::ValueType>;
 
 // The const projection lives beside the id representation so its predicate
 // can compare private ordinals without exposing a scalar observer.
@@ -196,28 +178,12 @@ impl crate::decl::DeclarationContent
     }
 }
 
-/// The id of a [`CompType`] node in a [`TermArena`].
+/// The id of a [`CompType`] node in a [`TermArena`]: an id of the arena's
+/// region, of the kind [`kind::CompType`].
 ///
 /// # Specification
-/// - requires: all ordinals are representable; resolution depends on the
-///   selected arena’s current computation-type family.
-/// - ensures: carries a family-specific u32 ordinal, not arena provenance or a
-///   reuse generation.
-/// - panics: none.
-/// - executable: none — data declaration, not a callable boundary; executable
-///   predicates belong to its constructors and observers.
-///
-/// # Adequacy
-/// - hypothesis: L3 observes all four family prefixes before and after
-///   truncation, stale marks, dangling ids, reminting and a foreign id with a
-///   coincident ordinal. Exact retained variants and dense indices separate
-///   prefix damage, accidental growth, wrong-family lookup and
-///   generation/provenance assumptions. Allocation at the u32 ceiling is not
-///   exercised; its conversion is checked separately.
-/// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CompTypeId(u32);
+/// trivial.
+pub type CompTypeId<'r> = Id<'r, kind::CompType>;
 
 /// A cross-family node reference: the work item every walk over the arena's
 /// edge relation carries.

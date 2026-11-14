@@ -29,6 +29,7 @@ path = "tests/lib.rs"
 anodized.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-theory-path-orders.workspace = true
 quenchant-shape.workspace = true
