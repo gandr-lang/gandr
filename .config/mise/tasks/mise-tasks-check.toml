@@ -2213,8 +2213,9 @@ echo "positions check OK: $structs structs, each with its row; rows: $kept kept,
 {% endraw %}'''
 
 # The sharing ledger (#7339, `ledger/shared.sql`): every field whose type
-# holds an `Arc`, alone or in an `Option`, a `Maybe` or a `Vec`, in a struct or
-# an enum of a kernel crate or of the fork crate outside its tests, has a row
+# holds an `Arc`, or a `Shared` or a `ThinShared` of `gandr-kernel-data`, alone
+# or in an `Option`, a `Maybe`, a `Vec` or a `SmallVec`, in a struct or an enum
+# of a kernel crate or of the fork crate outside its tests, has a row
 # in `shared`, and every row names such a field. A freeze, a fork or a hand-on
 # clones such a field by a count, so the row classes what a write after it
 # does: `chunked`, `layered`, `copied whole` or `grows with the module`, the
@@ -2244,7 +2245,7 @@ if ! cmp -s "$fresh/shared.sql" ledger/shared.sql; then
   failed=1
 fi
 visibility='(pub(\([a-z]+\))?\s+)?'
-holds='((Option|Maybe|Vec|alloc::vec::Vec)<)?(alloc::sync::|std::sync::|core::sync::)?Arc<'
+holds='((Option|Maybe|Vec|alloc::vec::Vec|SmallVec)<)?((alloc::sync::|std::sync::|core::sync::)?Arc|(gandr_kernel_data::)?(Shared|ThinShared))<'
 field="^\s*${visibility}[a-z_][a-z0-9_]*:\s*${holds}"
 tuple="^\s*([A-Z]\w*|${visibility}struct\s+[A-Z]\w*(<[^>]*>)?)\(${visibility}${holds}"
 opener="^\s*${visibility}(struct|enum|union)\s+[A-Z]"

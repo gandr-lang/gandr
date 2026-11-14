@@ -15,6 +15,19 @@
     "output": "crates/kernel-core-base/src/env.rs\tEntries.log\ncrates/kernel-core-base/src/env.rs\tEntries.spares\ncrates/kernel-core-base/src/verdict.rs\tVerdicts.chain\ncrates/kernel-core/src/environment.rs\tEnvironment.commits"
   },
   {
+    "name": "a field that holds a Shared or a ThinShared of kernel-data, alone, in an Option or in a SmallVec, is a hit, and a type whose name starts with Shared is not",
+    "input": [
+      "crates/kernel-check-memo/src/overlay.rs:75:pub struct OverlaidMemo<Support, Outcome>",
+      "crates/kernel-check-memo/src/overlay.rs:93:    point: Option<Shared<(), Global>>,",
+      "crates/kernel-check-memo/src/overlay.rs:176:struct Frozen<Support, Outcome>",
+      "crates/kernel-check-memo/src/overlay.rs:181:    memo: Shared<HashedMemo<Support, Outcome>, Global>,",
+      "crates/kernel-check-memo/src/overlay.rs:185:    names: SmallVec<gandr_kernel_data::ThinShared<str, Global>, 0, Global>,",
+      "crates/kernel-check-memo/src/overlay.rs:186:    fork: SharedFork,",
+      ""
+    ],
+    "output": "crates/kernel-check-memo/src/overlay.rs\tFrozen.memo\ncrates/kernel-check-memo/src/overlay.rs\tFrozen.names\ncrates/kernel-check-memo/src/overlay.rs\tOverlaidMemo.point"
+  },
+  {
     "name": "a parameter after a function that opens is not a hit, and a field after a type that opens later is",
     "input": [
       "crates/kernel-core-base/src/verdict.rs:1401:pub struct Verdicts",
