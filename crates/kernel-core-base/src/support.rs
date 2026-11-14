@@ -442,7 +442,7 @@ impl SupportContext
     /// # Adequacy
     /// - hypothesis: L3 — as the table's and the memo's compactions.
     /// - witness: `encoding::tests::a_table_that_forks_without_a_break_keeps_its_layers_to_a_logarithm_7335`
-    /// - witness: `gandr-kernel-check-memo::overlay::tests::a_memo_that_forks_without_a_break_keeps_its_layers_to_the_open_forks_7335`
+    /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[inline]
     pub fn compact(
         &mut self,
