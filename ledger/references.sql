@@ -604,6 +604,7 @@ INSERT INTO reference VALUES('vault:01a178ab-081c-74a0-bd58-f8db4f9573c8','kerne
 INSERT INTO reference VALUES('vault:01a178ab-081c-74a0-bd58-f8db4f9573c8','kernel-core-base','weakening','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','core-sequent','store','lineage','40910e71052bab6fb695592650b018c4e9d0b615','2026-10-27','81f38554c102ce824ddb881d6d39e30719eb7a04');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','kernel-core-base','verdict','newest',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','kernel-data','region','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','crossing','lineage','5630fb4598d9bfdaafb4ddf50a51da4d99bc1bb6','2026-10-27','e18d7dd7526358fee7a1b74909f23cbf4c6580e3');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','run','lineage','369732040a5bf26e640bab58f3d89bd9f4368110','2026-10-29','9b28997d81f735c6cf7080802cf6bf58d95c2d97');
 INSERT INTO reference VALUES('vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c','runtime-emitter','world','lineage','ac6d1b53b231cccc887d0b195e7f255cdf667edf','2026-10-28','e466a5329dce861389d9d3fa2c2eac81cce5b0c5');
@@ -759,6 +760,7 @@ INSERT INTO reference VALUES('vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a','surfa
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','kernel-core','check','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d73a-dd43-75b3-87d1-dd3ce49eff5b','surface-driver','allocator','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','core-checker-base','ua::strata','anchor',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','kernel-data','region','anchor',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a1d7fd-eeb5-7010-80e7-df4d768b6583','theory-sites','map','anchor',NULL,NULL,NULL);
 CREATE TABLE work(
   -- A work the crates or the corpus cite, by the key the citations write: the

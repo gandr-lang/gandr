@@ -17,6 +17,7 @@ members = [
   "crates/kernel-conversion-trace",
   "crates/kernel-core",
   "crates/kernel-core-base",
+  "crates/kernel-data",
   "crates/kernel-strata",
   "crates/kernel-term",
   "crates/runtime-emitter",

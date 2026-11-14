@@ -1,0 +1,31 @@
+[package]
+name = "gandr-kernel-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's own data types: a budgeted region whose ids carry its brand, with its three crossings"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["arena", "gandr", "region"]
+categories = ["data-structures", "memory-management", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# A leaf of the kernel's chain: core and alloc alone, and the pinned anodized
+# facade for the specification attribute. Dev-dependencies are exempt: test
+# code is not shipped trust.
+[dependencies]
+anodized.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
