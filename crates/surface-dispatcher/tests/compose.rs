@@ -19,7 +19,6 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::decode;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::KernelImage;
 use gandr_surface_corpus::Outcome;
@@ -1036,6 +1035,7 @@ fn a_judged_module_renders_before_its_admission()
         .0
         .expect("the kernel re-derives every acceptance");
         let kernel = readmission.export(module.structured_names());
+        let keys = readmission.export_names();
         let mut program = fixture::program(&arena, &module, &verdicts);
         let report = settle(
             CorpusRoot::Fixture,
@@ -1080,6 +1080,7 @@ fn a_judged_module_renders_before_its_admission()
             unused,
             unreached: Vec::new(),
             kernel: Maybe::Present(kernel),
+            keys,
             positions: Maybe::Absent(gandr_surface_dispatcher::positioned::Absent::Unasked),
             program,
         };
@@ -1101,6 +1102,7 @@ fn a_judged_module_renders_before_its_admission()
         };
         let Composed::Settled {
             kernel: Maybe::Present(ref kernel),
+            ref keys,
             ..
         } = readmitted_first
         else {
@@ -1109,6 +1111,7 @@ fn a_judged_module_renders_before_its_admission()
         assert_eq!(
             settled.clone().admitted(
                 kernel.clone(),
+                keys.clone(),
                 Maybe::Absent(gandr_surface_dispatcher::positioned::Absent::Unasked),
                 &[]
             ),
@@ -1355,6 +1358,7 @@ fn the_kernel_artifact_holds_what_crossed_under_its_names()
     let mut lowerings = LoweringCount::default();
     let Ok(Composed::Settled {
         kernel: Maybe::Present(kernel),
+        keys,
         ..
     }) = compose::<Evaluator>(
         &grammar,
@@ -1367,7 +1371,8 @@ fn the_kernel_artifact_holds_what_crossed_under_its_names()
     else {
         panic!("the module settles");
     };
-    let decoded = decode(kernel.as_image()).expect("the kernel's own export decodes");
+    let decoded = gandr_kernel_term::decode_named(kernel.as_image(), &keys)
+        .expect("the kernel's own export decodes");
     let names: Vec<Vec<&str>> = decoded
         .declarations()
         .iter()
@@ -1397,6 +1402,7 @@ fn a_sealed_module_settles_its_abstract_type()
     let Ok(Composed::Settled {
         report,
         kernel: Maybe::Present(kernel),
+        keys,
         ..
     }) = compose::<Evaluator>(
         &grammar,
@@ -1443,7 +1449,8 @@ fn a_sealed_module_settles_its_abstract_type()
         ),
         "the abstract type is judged as a type former, with no axiom behind it"
     );
-    let decoded = decode(kernel.as_image()).expect("the kernel's own export decodes");
+    let decoded = gandr_kernel_term::decode_named(kernel.as_image(), &keys)
+        .expect("the kernel's own export decodes");
     let crossed: Vec<(Vec<&str>, bool)> = decoded
         .declarations()
         .iter()

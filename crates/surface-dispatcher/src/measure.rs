@@ -73,8 +73,8 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::ExpandedWork;
 use gandr_kernel_term::TableEntryCount;
-use gandr_kernel_term::decode;
 use gandr_kernel_term::decode_measured;
+use gandr_kernel_term::decode_named;
 use gandr_surface_lowering::SurfaceName;
 use quenchant_shape::shape::Maybe;
 
@@ -428,6 +428,9 @@ impl CheckSchedule
 ///   the kernel's own export never meets.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decode and its rows, growth within the artifact
+///
 /// # Errors
 /// [`DecodeError`] from [`decode_measured`].
 ///
@@ -456,6 +459,7 @@ pub fn measure<'source>(
     let Composed::Settled {
         ref report,
         ref kernel,
+        ref keys,
         ref positions,
         ..
     } = *composed
@@ -470,7 +474,7 @@ pub fn measure<'source>(
     else {
         return Ok(Maybe::Absent(measured::Absent::Unpositioned));
     };
-    let (artifact, measures) = decode_measured(kernel.as_image())?;
+    let (artifact, measures) = decode_measured(kernel.as_image(), keys)?;
     let layout = artifact.segments();
     let rows = report
         .declarations()
@@ -566,8 +570,11 @@ impl<'composed> ScheduleRow<'composed>
 ///   the kernel's own export never meets.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the decode and the chain, growth within the artifact
+///
 /// # Errors
-/// [`DecodeError`] from [`decode`].
+/// [`DecodeError`] from [`decode_named`].
 ///
 /// # Adequacy
 /// - hypothesis: L2 — over a source whose definitions read each other in a
@@ -587,6 +594,7 @@ pub fn schedule<'composed>(
 {
     let Composed::Settled {
         ref kernel,
+        ref keys,
         ref positions,
         ..
     } = *composed
@@ -605,7 +613,7 @@ pub fn schedule<'composed>(
     else {
         return Ok(Maybe::Absent(measured::Absent::Untimed));
     };
-    let artifact = decode(kernel.as_image())?;
+    let artifact = decode_named(kernel.as_image(), keys)?;
     let declarations = artifact.declarations();
     let chain = schedule
         .chain()

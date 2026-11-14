@@ -950,10 +950,10 @@ impl Identification for Exact
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a goal over a plain definition takes one name in two
-///   environments that admitted its declarations in two orders, and a goal over
-///   an axiom takes two.
+///   environments that admitted its declarations in two orders, and so does a
+///   goal over an axiom.
 /// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
-/// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `gandr-kernel-core::environment::encoding_tests::a_goal_over_an_axiom_takes_one_name_in_either_admission_order_7340`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RecordName<I: Identification = Exact>([u8; 32], PhantomData<I>);
@@ -2881,9 +2881,9 @@ impl<A: Allocator + Clone> ContentTable<A>
     /// # Adequacy
     /// - hypothesis: L3 — the predicate checks the count named; a definition
     ///   and an axiom referent each admitted before and after another
-    ///   definition separate reading by content from reading by position.
+    ///   definition read alike, by content and not by position.
     /// - witness: `gandr-kernel-core::environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `gandr-kernel-core::environment::encoding_tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `gandr-kernel-core::environment::encoding_tests::an_axiom_reference_reads_its_key_in_either_admission_order_7340`
     #[spec(captures: named_before = usize::from(self.constants.len()),
         ensures: usize::from(self.constants.len()) == named_before.max(usize::from(entries.len())))]
     #[inline]

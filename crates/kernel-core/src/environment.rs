@@ -2856,8 +2856,9 @@ impl Environment
     ///   below the first rank of `ranks` and each member's held key is the key
     ///   its check reads at `ranks` now.
     /// - fails: [`KernelError::UnboundConstant`] at a reference that is not
-    ///   live or not ranked below the unit, and [`KernelError::Unkept`] when
-    ///   the unit or its check now has no key or the key changed.
+    ///   live or not ranked below the unit, and [`KernelError::Unkept`] under a
+    ///   policy that rechecks, or when the unit or its check now has no key or
+    ///   the key changed.
     /// - panics: none.
     ///
     /// # Errors
@@ -2879,6 +2880,11 @@ impl Environment
             position: first,
             refusal,
         };
+        // A policy that rechecks keeps nothing in place: each entry crosses
+        // again, whatever its content key reads.
+        if self.verdicts.keying() == crate::verdict::Keying::Rechecks {
+            return Err(unkept(KeepRefusal::Unkeyed));
+        }
         let unit = entry.unit();
         let Some(&below) = ranks.first()
         else {
@@ -3452,12 +3458,16 @@ impl Environment
     }
 
     /// Key the atom at `atom`, closed at `extent`, and each unit in its scope
-    /// that holds no key, in the order of their positions: the keys that a
-    /// fresh admission of the closed module gives. A member admitted while
-    /// the seal was open read the atom open, so it took no key.
+    /// that holds no content key, in the order of their positions: the keys
+    /// that a fresh admission of the closed module gives. A member admitted
+    /// while the seal was open read the atom open, so it took no key.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a frozen chunk's copy, growth within the scope
+    /// - allocation: a shared commit table's copy, growth within the commits
     fn key_scope(
         &mut self,
         atom: ConstantIndex,
@@ -3477,7 +3487,7 @@ impl Environment
             };
             let unit = entry.unit();
             at = usize::from(unit.end).max(at.saturating_add(1));
-            if unit.first != position || matches!(entry.key(), Maybe::Present(_)) {
+            if unit.first != position || matches!(entry.content_key(), Maybe::Present(_)) {
                 continue;
             }
             let ranks = self.unit_ranks(unit);
@@ -3487,10 +3497,7 @@ impl Environment
             };
             for (offset, member) in (usize::from(unit.first) .. usize::from(unit.end)).enumerate() {
                 let content = key.member(crate::verdict::KeyedCount::from(offset));
-                let Maybe::Present(entry) = self.entry_key(Maybe::Present(content))
-                else {
-                    continue;
-                };
+                let entry = self.entry_key(Maybe::Present(content));
                 self.entries
                     .rekey(ConstantIndex::from(member), (content, entry));
             }
@@ -4260,19 +4267,17 @@ impl Environment
     ///   retired unit at a keep. `members` are in the environment's arena, and
     ///   `ranks` holds one rank per member, ascending.
     /// - ensures: absent as
-    ///   [`keyed::Absent::Rechecking`](crate::verdict::keyed::Absent::Rechecking)
-    ///   under a policy that rechecks, as
     ///   [`keyed::Absent::OpenSeal`](crate::verdict::keyed::Absent::OpenSeal)
     ///   when a member is an abstract type sealed to the end of the sequence,
     ///   and as [`keyed::Absent::Unkeyed`](crate::verdict::keyed::Absent::Unkeyed)
     ///   when a position a member names, a type of words its references reach,
     ///   a role holder it reads or an atom manifest at the admission has no
-    ///   entry key. Otherwise the key over this kernel's build; each member's
-    ///   keyed segment, the keys of the positions it names in the order it
-    ///   names them, and what [`Self::key_ranks`] writes of its ranks; each
-    ///   manifest atom's key with how many members read it; and the keys of the
-    ///   types of words ranked below the first member over each sort the
-    ///   references reach, in rank order.
+    ///   entry key. Otherwise the key, under every policy, since it reads no
+    ///   build: each member's keyed segment, the keys of the positions it names
+    ///   in the order it names them, and what [`Self::key_ranks`] writes of its
+    ///   ranks; each manifest atom's key with how many members read it; and the
+    ///   keys of the types of words ranked below the first member over each
+    ///   sort the references reach, in rank order.
     /// - provides: one key for two units at two positions exactly when, up to a
     ///   BLAKE3 collision, their checks read the same content in the same
     ///   source order.
@@ -4300,9 +4305,8 @@ impl Environment
         (first, ranks): (ConstantIndex, &[SourceRank]),
     ) -> Maybe<crate::verdict::EntryContentKey, crate::verdict::keyed::Absent>
     {
-        if self.verdicts.keying() == crate::verdict::Keying::Rechecks {
-            return Maybe::Absent(crate::verdict::keyed::Absent::Rechecking);
-        }
+        // The key reads no build, so a policy that rechecks computes it too,
+        // and the export names each place by it.
         self.content_key_from(members, (first, ranks), &mut |position| {
             self.entries.content(position)
         })
@@ -4783,10 +4787,11 @@ impl Environment
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a plain definition reads alike under either admission
-    ///   order, an axiom keeps its position, and definitions of one type and
-    ///   body keep a name each.
+    ///   order, and definitions of one type and body keep a name each. An axiom
+    ///   names its position, and the reference reads that position's content
+    ///   key.
     /// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
-    /// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `environment::encoding_tests::an_axiom_reference_reads_its_key_in_either_admission_order_7340`
     /// - witness: `environment::encoding_tests::each_twin_of_one_content_ranks_past_the_latest_3686`
     #[spec(ensures: |ret| match ret {
         ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()

@@ -103,11 +103,13 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::ArtifactImage;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstantKey;
 use gandr_kernel_term::DecodedPrefix;
+use gandr_kernel_term::Names;
 use gandr_kernel_term::SegmentLayout;
-use gandr_kernel_term::decode;
 use gandr_kernel_term::decode_after;
 use gandr_kernel_term::decode_keeping;
+use gandr_kernel_term::decode_named;
 use gandr_kernel_term::decoded_prefix;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::NamedValue;
@@ -360,6 +362,26 @@ impl AsRef<[u8]> for ContentName
     {
         self.0.as_slice()
     }
+}
+
+/// The kernel's names of an artifact's places, as its segments write them.
+///
+/// Each place's content name is its key when `names` names every place.
+/// Otherwise the names name no place, and the segments write each place bare.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: a key for each place, growth within names
+#[inline]
+#[must_use]
+pub fn kernel_names(names: &[Maybe<ContentName, unnamed::Absent>]) -> Names
+{
+    Names::whole(names.iter().map(|name| match *name {
+        Maybe::Present(ContentName(bytes)) => Some(ConstantKey::from(bytes)),
+        Maybe::Absent(_) => None,
+    }))
 }
 
 /// One place of the order: the slot of the record that stands there.
@@ -671,8 +693,8 @@ impl ArtifactRecordSet
         }
     }
 
-    /// Cuts an artifact into its record set where the kernel's decoder finds
-    /// its segments end.
+    /// Cuts an artifact whose places `names` names into its record set where
+    /// the kernel's decoder finds its segments end.
     ///
     /// # Specification
     /// - requires: nothing; the bytes are arbitrary.
@@ -686,6 +708,9 @@ impl ArtifactRecordSet
     ///   refuses; [`ArtifactError::SegmentBoundary`] for a reported end the
     ///   image does not hold, which a decode's own specification rules out.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the decoded artifact and the set, growth within the image
     ///
     /// # Errors
     /// - [`ArtifactError::Kernel`] — the decoder refuses the image.
@@ -706,9 +731,12 @@ impl ArtifactRecordSet
         Err(_) => false,
     })]
     #[inline]
-    pub fn from_artifact(image: ArtifactImage<'_>) -> Result<Self, ArtifactError>
+    pub fn from_artifact(
+        image: ArtifactImage<'_>,
+        names: &Names,
+    ) -> Result<Self, ArtifactError>
     {
-        let decoded = decode(image)?;
+        let decoded = decode_named(image, names)?;
         Self::cut(image, decoded.segments())
     }
 
@@ -726,6 +754,9 @@ impl ArtifactRecordSet
     /// - fails: as [`from_artifact`](Self::from_artifact).
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the decoded artifact and the set, growth within the image
+    ///
     /// # Errors
     /// As [`from_artifact`](Self::from_artifact).
     ///
@@ -741,9 +772,10 @@ impl ArtifactRecordSet
     pub fn from_artifact_keeping(
         image: ArtifactImage<'_>,
         end: ConstantIndex,
+        names: &Names,
     ) -> Result<(Self, Maybe<DecodedPrefix, decoded_prefix::Absent>), ArtifactError>
     {
-        let (decoded, prefix) = decode_keeping(image, end)?;
+        let (decoded, prefix) = decode_keeping(image, end, names)?;
         Ok((Self::cut(image, decoded.segments())?, prefix))
     }
 
@@ -758,6 +790,9 @@ impl ArtifactRecordSet
     ///   document's segments alone.
     /// - fails: as [`from_artifact`](Self::from_artifact).
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the decoded segments and the set, growth within the image
     ///
     /// # Errors
     /// As [`from_artifact`](Self::from_artifact).
@@ -774,9 +809,10 @@ impl ArtifactRecordSet
     pub fn from_artifact_after(
         prefix: &DecodedPrefix,
         image: ArtifactImage<'_>,
+        names: &Names,
     ) -> Result<Self, ArtifactError>
     {
-        let decoded = decode_after(prefix, image)?;
+        let decoded = decode_after(prefix, image, names)?;
         Self::cut(image, decoded.segments())
     }
 
@@ -955,6 +991,52 @@ impl ArtifactRecordSet
         Ok(self)
     }
 
+    /// [`named`](Self::named), reading each place's name from `names`, the
+    /// kernel's names the artifact's segments were written under.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the set as it was when `names` names no place; otherwise as
+    ///   [`named`](Self::named) with the key [`Names::keys`] holds at each
+    ///   place, a place with no key unnamed.
+    /// - fails: as [`named`](Self::named).
+    /// - panics: none.
+    /// - executable: none — the set moves into the call, so a predicate would
+    ///   compare the result with a copy of every record.
+    ///
+    /// # Cost
+    /// - allocation: a name for each place, growth within names
+    ///
+    /// # Errors
+    /// As [`named`](Self::named).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a set cut and named under the names its artifact was
+    ///   written under reads back through the decoder.
+    /// - witness: `tests::artifact_contract::a_named_reference_keeps_its_record_past_an_insertion_7340`
+    #[inline]
+    pub fn named_by(
+        self,
+        names: &Names,
+    ) -> Result<Self, ArtifactError>
+    {
+        // The kernel names an artifact whole or not at all, and one it names
+        // not at all is stored as its bytes.
+        if names.keys().is_empty() {
+            return Ok(self);
+        }
+        let names: Vec<_> = names
+            .keys()
+            .iter()
+            .map(|key| {
+                key.map_or(Maybe::Absent(unnamed::Absent::Unkeyed), |named| {
+                    Maybe::Present(ContentName(<[u8; CONTENT_NAME_LEN]>::from(named)))
+                })
+            })
+            .collect();
+        self.named(&names)
+    }
+
     /// Reads a stored artifact back into a set: the records of its index tree,
     /// then the value leaf of each record the order names.
     ///
@@ -1108,6 +1190,28 @@ impl ArtifactRecordSet
         match self.names {
             Maybe::Present(ref names) => Maybe::Present(names),
             Maybe::Absent(absent) => Maybe::Absent(absent),
+        }
+    }
+
+    /// Returns the kernel's names of the set's places, which its segments
+    /// write their references by: none when the set names no place.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a key for each place, growth within the places
+    #[inline]
+    #[must_use]
+    pub fn kernel_names(&self) -> Names
+    {
+        match self.names {
+            Maybe::Present(ref names) => Names::new(
+                names
+                    .iter()
+                    .map(|&ContentName(bytes)| Some(ConstantKey::from(bytes))),
+            ),
+            Maybe::Absent(_) => Names::default(),
         }
     }
 

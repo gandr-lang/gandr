@@ -172,6 +172,7 @@ pub use crate::record::ReassembledArtifact;
 pub use crate::record::RecordKey;
 pub use crate::record::SegmentBytes;
 pub use crate::record::StoredOrder;
+pub use crate::record::kernel_names;
 pub use crate::record::unnamed;
 
 /// Writes a record set's index tree and value leaves into `store` and names

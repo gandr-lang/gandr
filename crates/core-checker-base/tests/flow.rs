@@ -121,8 +121,11 @@ fn statements_decide_by_the_engine_and_replay()
         "the kernel replays the engine's pairs against the erased graphs: {:?}",
         readmission.readmitted()
     );
-    let artifact = gandr_kernel_term::decode(readmission.export(BTreeMap::new()).as_image())
-        .expect("the certificates persist");
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .expect("the certificates persist");
     let bodies: Vec<_> = artifact
         .declarations()
         .iter()

@@ -26,6 +26,7 @@ use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Names;
 use gandr_storage_store::Register;
 use gandr_storage_store::Store;
 use gandr_storage_store::StoreError;
@@ -2490,18 +2491,19 @@ fn a_dependency_cycle_is_refused_by_its_paths_3072()
 }
 
 /// The export a walk of `sources` under `root` builds, each settled source's
-/// artifact passed through `alter` before the export takes it, beside the
-/// artifact each source was admitted with, by its path from `root`.
+/// artifact passed through `alter` with its names before the export takes it,
+/// beside the artifact each source was admitted with and its names, by its
+/// path from `root`.
 ///
 /// # Specification
 /// trivial.
 fn exported_walk(
     root: &Path,
     sources: &Path,
-    alter: &impl Fn(&Path, EncodedArtifact) -> EncodedArtifact,
+    alter: &impl Fn(&Path, EncodedArtifact, &Names) -> EncodedArtifact,
 ) -> (
     Result<Export, Unexported>,
-    BTreeMap<PathBuf, EncodedArtifact>,
+    BTreeMap<PathBuf, (EncodedArtifact, Names)>,
 )
 {
     let mut exporting = Exporting::default();
@@ -2521,13 +2523,14 @@ fn exported_walk(
                     composed:
                         Composed::Settled {
                             kernel: Maybe::Present(ref mut kernel),
+                            ref keys,
                             ..
                         },
                     ..
                 } = step
                 {
-                    let _first = admitted.insert(from.clone(), kernel.clone());
-                    *kernel = alter(&from, core::mem::take(kernel));
+                    let _first = admitted.insert(from.clone(), (kernel.clone(), keys.clone()));
+                    *kernel = alter(&from, core::mem::take(kernel), keys);
                 }
                 exporting.take(&from, &step);
                 ControlFlow::Continue(())
@@ -2543,6 +2546,7 @@ fn exported_walk(
 fn kept(
     _source: &Path,
     kernel: EncodedArtifact,
+    _keys: &Names,
 ) -> EncodedArtifact
 {
     kernel
@@ -2550,13 +2554,16 @@ fn kept(
 
 /// `kernel` with its last declaration, a definition, rewritten after
 /// admission to a definition at the same type whose body is a variable no
-/// binder holds.
+/// binder holds, written under its names `keys`.
 ///
 /// # Specification
 /// trivial.
-fn unbound(kernel: &EncodedArtifact) -> EncodedArtifact
+fn unbound(
+    kernel: &EncodedArtifact,
+    keys: &Names,
+) -> EncodedArtifact
 {
-    let (mut arena, mut declarations) = gandr_kernel_term::decode(kernel.as_image())
+    let (mut arena, mut declarations) = gandr_kernel_term::decode_named(kernel.as_image(), keys)
         .expect("the artifact decodes")
         .into_parts();
     let Some(&DeclarationContent::Def { declared, .. }) =
@@ -2570,7 +2577,7 @@ fn unbound(kernel: &EncodedArtifact) -> EncodedArtifact
     if let Some(last) = declarations.last_mut() {
         *last = MarkedDeclaration::new(AdmissionMark::Checked, rewritten);
     }
-    gandr_kernel_term::encode(&arena, &declarations)
+    gandr_kernel_term::encode_named(&arena, &declarations, None, keys)
 }
 
 /// #3225: a package's export holds each artifact its walk admitted, filed
@@ -2633,7 +2640,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
     let back: Export = store.deref(pointer).expect("the export reads back");
     assert_eq!(back, export, "the export reads back whole");
     assert_eq!(admitted.len(), 3_usize, "each source was admitted");
-    for (source, image) in &admitted {
+    for (source, &(ref image, ref keys)) in &admitted {
         let Maybe::Present(read) = back.artifact(source)
         else {
             panic!("{} is exported", source.display());
@@ -2645,7 +2652,7 @@ fn a_package_s_export_holds_what_its_check_admitted_3225()
             source.display()
         );
         assert!(
-            gandr_kernel_term::decode(read.as_image()).is_ok(),
+            gandr_kernel_term::decode_named(read.as_image(), keys).is_ok(),
             "the kernel decodes {}'s artifact",
             source.display()
         );
@@ -2737,10 +2744,10 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
     let mut seen = BTreeSet::new();
     let declarations = admitted
         .values()
-        .filter(|image| seen.insert(image.as_ref().to_vec()))
-        .fold(0_usize, |count, image| {
+        .filter(|&&(ref image, _)| seen.insert(image.as_ref().to_vec()))
+        .fold(0_usize, |count, &(ref image, ref keys)| {
             count.saturating_add(
-                gandr_kernel_term::decode(image.as_image())
+                gandr_kernel_term::decode_named(image.as_image(), keys)
                     .expect("the admitted artifact decodes")
                     .declarations()
                     .len(),
@@ -2757,26 +2764,26 @@ fn a_dependency_s_export_is_re_admitted_through_the_kernel_3285()
         "the kernel re-admits every declaration of each artifact, once"
     );
     let library = Path::new("src/package.gandr");
-    let (tampered, _admitted) =
-        exported_walk(&directory, &directory.join("src"), &|source, kernel| {
+    let (tampered, _admitted) = exported_walk(
+        &directory,
+        &directory.join("src"),
+        &|source, kernel, keys| {
             if source == library {
-                unbound(&kernel)
+                unbound(&kernel, keys)
             }
             else {
                 kernel
             }
-        });
-    let rewritten = gandr_kernel_term::decode(
-        admitted
-            .get(library)
-            .expect("the library was admitted")
-            .as_image(),
-    )
-    .expect("the library's artifact decodes")
-    .declarations()
-    .len()
-    .checked_sub(1_usize)
-    .expect("the library's artifact holds a declaration");
+        },
+    );
+    let &(ref library_image, ref library_keys) =
+        admitted.get(library).expect("the library was admitted");
+    let rewritten = gandr_kernel_term::decode_named(library_image.as_image(), library_keys)
+        .expect("the library's artifact decodes")
+        .declarations()
+        .len()
+        .checked_sub(1_usize)
+        .expect("the library's artifact holds a declaration");
     let Err(Unreadmitted::Refused {
         ref source,
         ref refusal,

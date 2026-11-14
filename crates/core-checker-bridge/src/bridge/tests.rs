@@ -36,7 +36,11 @@ fn native_operations_cross_as_audited_assumptions()
         0_usize
     )]);
     assert_eq!(readmission.audit().unchecked_admissions(), []);
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let native = artifact.declarations().first().unwrap().declaration();
     assert!(matches!(native.content(), DeclarationContent::Axiom { .. }));
     assert_eq!(
@@ -111,7 +115,6 @@ use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value as KernelValue;
 use gandr_kernel_term::ValueType as KernelValueType;
-use gandr_kernel_term::decode;
 use gandr_kernel_term::encode_prefix;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::prop_assert;
@@ -981,6 +984,7 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     assert_eq!(
         first_readmission.export_resuming(
             BTreeMap::new(),
+            &first_readmission.export_names(),
             Maybe::Absent(crossed::Absent::Unasked),
             &mut recorded
         ),
@@ -1025,7 +1029,12 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     );
     let mut unchanged = again;
     assert_eq!(
-        resumed.export_resuming(BTreeMap::new(), Maybe::Present(&recorded), &mut unchanged),
+        resumed.export_resuming(
+            BTreeMap::new(),
+            &resumed.export_names(),
+            Maybe::Present(&recorded),
+            &mut unchanged
+        ),
         whole.export(BTreeMap::new()),
         "the export resumed after the kept encoding is the whole one, byte for byte"
     );
@@ -1044,6 +1053,7 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     renamed.encoded = match encode_prefix(
         first_readmission.environment().arena(),
         marked.get(.. 2).expect("the record keeps two declarations"),
+        &first_readmission.export_names(),
     ) {
         Maybe::Present(prefix) => Some(prefix),
         Maybe::Absent(absent) => panic!("no seal is open: {absent:?}"),
@@ -1051,6 +1061,7 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     assert_eq!(
         resumed.export_resuming(
             BTreeMap::new(),
+            &resumed.export_names(),
             Maybe::Present(&renamed),
             &mut Maybe::Absent(crossed::Absent::Unchanged)
         ),
@@ -1220,6 +1231,7 @@ fn an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102()
     let mut recorded = recorded;
     let _exported = first_readmission.export_resuming(
         BTreeMap::new(),
+        &first_readmission.export_names(),
         Maybe::Absent(crossed::Absent::Unasked),
         &mut recorded,
     );
@@ -1243,7 +1255,12 @@ fn an_export_recording_past_a_kept_encoding_keeps_the_record_s_2102()
     );
     let mut further = further;
     assert_eq!(
-        resumed.export_resuming(BTreeMap::new(), Maybe::Present(&recorded), &mut further),
+        resumed.export_resuming(
+            BTreeMap::new(),
+            &resumed.export_names(),
+            Maybe::Present(&recorded),
+            &mut further
+        ),
         whole.export(BTreeMap::new()),
         "the export is the whole one, byte for byte"
     );
@@ -1830,10 +1847,11 @@ fn an_export_past_a_vacancy_holds_each_admitted_declaration_7273()
     let readmission = readmit(&mut arena, &report);
     let r = DOUBLINGS.saturating_add(3);
     let name = StructuredName::from(vec![NameSegment::from_text(String::from("r")).unwrap()]);
-    let artifact = decode(
+    let artifact = gandr_kernel_term::decode_named(
         readmission
             .export(BTreeMap::from([(ConstantIndex::from(r), name.clone())]))
             .as_image(),
+        &readmission.export_names(),
     )
     .expect("the readmission exports");
     assert_eq!(
@@ -3190,7 +3208,11 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
         ],
         "the atom crosses as a nominal declaration and every member and client is admitted"
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let contents: Vec<_> = artifact
         .declarations()
         .iter()
@@ -3657,8 +3679,11 @@ fn a_formation_takes_one_name_in_each_readmission_7245()
     let names = |module: &[(Named, Formable)]| {
         let (mut arena, report, _) = formable_module(module);
         let readmission = readmit(&mut arena, &report);
-        let artifact =
-            decode(readmission.export(BTreeMap::new()).as_image()).expect("the module exports");
+        let artifact = gandr_kernel_term::decode_named(
+            readmission.export(BTreeMap::new()).as_image(),
+            &readmission.export_names(),
+        )
+        .expect("the module exports");
         artifact
             .declarations()
             .iter()
@@ -3943,19 +3968,22 @@ fn a_recheck_names_each_formation_in_one_walk_7456()
         Arc::new(NoVerdicts),
     ));
     let formations = |readmission: &Readmission| {
-        decode(readmission.export(BTreeMap::new()).as_image())
-            .expect("the module exports")
-            .declarations()
-            .iter()
-            .filter(|marked| {
-                marked
-                    .declaration()
-                    .name()
-                    .segments()
-                    .first()
-                    .is_some_and(|first| AsRef::<str>::as_ref(first) == "formation")
-            })
-            .count()
+        gandr_kernel_term::decode_named(
+            readmission.export(BTreeMap::new()).as_image(),
+            &readmission.export_names(),
+        )
+        .expect("the module exports")
+        .declarations()
+        .iter()
+        .filter(|marked| {
+            marked
+                .declaration()
+                .name()
+                .segments()
+                .first()
+                .is_some_and(|first| AsRef::<str>::as_ref(first) == "formation")
+        })
+        .count()
     };
     assert_eq!(
         formations(&rechecked),
@@ -4014,7 +4042,11 @@ fn a_seal_ending_at_a_skipped_position_closes_before_its_client_2004()
         declaration(At(2), Maybe::Present(atom), Maybe::Present(seed)),
         declaration(At(4), Maybe::Present(atom), Maybe::Present(exported)),
     ]);
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let DeclarationContent::AbstractType { scope, .. } =
         *artifact.declarations()[0].declaration().content()
     else {
@@ -4559,9 +4591,11 @@ fn native_lists_check_and_round_trip()
         Outcome::Marked(_)
     ));
     let image = readmission.export(BTreeMap::new());
-    let imported = decode(image.as_image()).expect("lists decode");
+    let keys = readmission.export_names();
+    let imported = gandr_kernel_term::decode_named(image.as_image(), &keys).expect("lists decode");
     assert_eq!(
-        gandr_kernel_term::encode(imported.arena(), imported.declarations()).as_image(),
+        gandr_kernel_term::encode_named(imported.arena(), imported.declarations(), None, &keys)
+            .as_image(),
         image.as_image()
     );
 }
@@ -4701,7 +4735,8 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
     }
     assert_eq!(readmission.audit().axioms(), []);
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the pure definitions export");
+    let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &readmission.export_names())
+        .expect("the pure definitions export");
     assert_eq!(
         decoded.declarations().len(),
         3,
@@ -4857,7 +4892,8 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         );
     }
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the handlers export");
+    let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &readmission.export_names())
+        .expect("the handlers export");
     let names = decoded
         .declarations()
         .iter()
@@ -4967,7 +5003,11 @@ fn two_declarations_at_one_row_read_one_model_6642()
                 readmission.readmitted()[crossed].outcome()
             );
         }
-        decode(readmission.export(BTreeMap::new()).as_image()).expect("the declarations export")
+        gandr_kernel_term::decode_named(
+            readmission.export(BTreeMap::new()).as_image(),
+            &readmission.export_names(),
+        )
+        .expect("the declarations export")
     };
     let decoded = session();
     let names = decoded
@@ -5017,7 +5057,11 @@ fn a_program_at_another_operation_is_the_kernels_refusal_6642()
     let mut arena = CoreArena::new();
     let module = asking_declarations(&mut arena);
     let (_, readmission) = judge_and_readmit(&mut arena, &module);
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let mut declarations = artifact.declarations().to_vec();
     let mut kernel = artifact.arena().clone();
     let asked = &mut declarations[1];
@@ -5391,7 +5435,11 @@ fn a_handled_call_folded_at_another_operation_is_the_kernels_refusal_6672()
     let mut arena = CoreArena::new();
     let module = handling_declarations(&mut arena);
     let (_, readmission) = judge_and_readmit(&mut arena, &module);
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let mut declarations = artifact.declarations().to_vec();
     let mut kernel = artifact.arena().clone();
     // The model, `asked`, then `relayed`.
@@ -5514,7 +5562,8 @@ fn a_deep_handler_of_several_operations_crosses_as_one_fold_2750()
         readmission.readmitted()[0].outcome()
     );
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the handler exports");
+    let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &readmission.export_names())
+        .expect("the handler exports");
     assert_eq!(
         decoded.declarations().len(),
         2,
@@ -5688,7 +5737,8 @@ fn a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750()
         readmission.readmitted()[0].outcome()
     );
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the handler exports");
+    let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &readmission.export_names())
+        .expect("the handler exports");
     let DeclarationContent::Data { kind, .. } = *decoded.declarations()[0].declaration().content()
     else {
         panic!("the free model is a data declaration");
@@ -5925,7 +5975,8 @@ fn a_lazy_product_crosses_as_its_kernel_nodes()
         );
     }
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the lazy product exports");
+    let decoded = gandr_kernel_term::decode_named(artifact.as_image(), &readmission.export_names())
+        .expect("the lazy product exports");
     assert_eq!(decoded.declarations().len(), 2);
 }
 
@@ -6038,9 +6089,12 @@ fn native_path_module_round_trips()
         declaration(At(3), Maybe::Present(declared), Maybe::Present(body)),
     ]);
     let image = readmission.export(BTreeMap::new());
-    let imported = decode(image.as_image()).expect("native module decodes");
+    let keys = readmission.export_names();
+    let imported =
+        gandr_kernel_term::decode_named(image.as_image(), &keys).expect("native module decodes");
     assert_eq!(
-        gandr_kernel_term::encode(imported.arena(), imported.declarations()).as_image(),
+        gandr_kernel_term::encode_named(imported.arena(), imported.declarations(), None, &keys)
+            .as_image(),
         image.as_image()
     );
     let declarations = imported.declarations();
@@ -6118,7 +6172,11 @@ fn an_export_names_each_crossed_declaration_at_its_position()
         (ConstantIndex::from(1_usize), named(["M", "first"])),
         (ConstantIndex::from(2_usize), named(["M", "second"])),
     ]);
-    let artifact = decode(readmission.export(names).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(names).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
 
     let exported: Vec<(Vec<&str>, AdmissionMark, Option<&KernelValue>)> = artifact
         .declarations()
@@ -6284,6 +6342,7 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
     assert_eq!(
         kept.export_resuming(
             kept_names,
+            &kept.export_names(),
             Maybe::Absent(crossed::Absent::Unasked),
             &mut recorded
         ),
@@ -6291,7 +6350,8 @@ fn a_kept_readmission_exports_the_bytes_of_a_fresh_one_6845()
         "the export that would resume writes the same bytes"
     );
     assert_eq!(
-        decode(expected.as_image()).map(|artifact| artifact.declarations().len()),
+        gandr_kernel_term::decode_named(expected.as_image(), &fresh.export_names())
+            .map(|artifact| artifact.declarations().len()),
         Ok(2),
         "the retired `x` leaves nothing in the artifact"
     );
@@ -6417,7 +6477,11 @@ fn element_identity_and_a_compound_endpoint_are_readmitted()
         ],
         "the definition and the three identity declarations enter in declaration order"
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let declared = artifact
         .declarations()
         .last()
@@ -6492,7 +6556,11 @@ fn a_linear_function_and_its_call_are_readmitted_5853()
             .all(|outcome| matches!(**outcome, Outcome::Defined { .. })),
         "the kernel re-derives both, and replays the call through `id`: {outcomes:?}"
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let declared = artifact
         .declarations()
         .first()
@@ -6628,7 +6696,11 @@ fn a_dependent_pair_and_its_identity_are_readmitted()
             .all(|outcome| matches!(*outcome, Outcome::Defined { .. })),
         "each crosses and the kernel re-derives it: {outcomes:?}"
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let declared = artifact
         .declarations()
         .first()
@@ -6669,7 +6741,11 @@ fn a_funext_crosses_as_a_higher_evaluation()
         "the kernel replays both functions' evaluations at every input: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let Some(&DeclarationContent::Def { body, .. }) = artifact
         .declarations()
         .last()
@@ -6978,7 +7054,11 @@ fn a_quantified_funext_crosses_as_a_quantified_evaluation()
         "the kernel replays every step under the quantifier: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let crossed: Vec<Crossed> = artifact
             .declarations()
             .iter()
@@ -7057,7 +7137,11 @@ fn a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints()
         "the kernel replays the dialogue unfolding `j` under the thunk: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let Some(&DeclarationContent::Def { body, .. }) = artifact
         .declarations()
         .last()
@@ -7121,7 +7205,11 @@ fn a_reflexivity_carries_its_right_endpoint_s_dialogue()
         "the kernel replays the right dialogue unfolding `j` under the thunk: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let Some(&DeclarationContent::Def { body, .. }) = artifact
         .declarations()
         .last()
@@ -7178,7 +7266,11 @@ fn an_ascription_crosses_with_the_endpoints_it_related()
         "the kernel replays the ascription's dialogue: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let related: Vec<usize> = artifact
         .declarations()
         .iter()
@@ -7352,7 +7444,11 @@ fn an_equiv_crosses_as_a_universe_path()
         "the kernel replays both round trips under the admitted negation: {:?}",
         readmission.readmitted()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let Some(&DeclarationContent::Def { body, .. }) = artifact
         .declarations()
         .last()
@@ -8407,7 +8503,11 @@ fn pair_operator(arena: &mut CoreArena) -> ValueId
 #[spec(ensures: |ret| ret.len() == readmission.admitted.iter().filter(|declaration| matches!(declaration.content(), DeclarationContent::Def { .. })).count())]
 fn exported_bodies(readmission: &Readmission) -> Vec<ContentDigest>
 {
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     artifact
         .declarations()
         .iter()
@@ -8926,7 +9026,11 @@ fn a_rigid_static_instance_crosses_as_a_kernel_application()
         instance.certificates().is_empty(),
         "nothing unfolds at a rigid head"
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let body = artifact
         .declarations()
         .iter()
@@ -9551,7 +9655,11 @@ fn an_operations_rules_cross_at_kernel_positions_and_the_kernel_decides_them()
     // `f(x) ==> x`, written over module positions, crosses over kernel ones.
     let (_, readmission) = judge_and_readmit(&mut arena, &[first(), ruled(&[x])]);
     let position = crossed_at(&readmission, At(1));
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let crossed: Vec<&OperationRules> = artifact
         .declarations()
         .iter()
@@ -10602,7 +10710,11 @@ fn a_matches_derivation_crosses_and_the_kernel_replays_it_5104()
         "the derivation replays against its case: {:?}",
         readmission.readmitted()[1].outcome()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let crossed: Vec<usize> = artifact
         .declarations()
         .iter()
@@ -10793,7 +10905,11 @@ fn a_reduct_leaving_the_wrong_value_is_the_kernel_s_rejection_6609()
         "the resumed hold crosses: {:?}",
         readmission.readmitted()[0].outcome()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let mut declarations = artifact.declarations().to_vec();
     let mut kernel = artifact.arena().clone();
     let statement = declarations.last_mut().expect("the hold crossed");
@@ -11119,7 +11235,11 @@ fn a_held_match_s_derivation_crosses_at_its_rebuilt_case_6641()
         "the held match and its derivation cross: {:?}",
         readmission.readmitted()[1].outcome()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let crossed: usize = artifact
         .declarations()
         .iter()
@@ -11176,7 +11296,11 @@ fn an_arm_answering_the_wrong_value_is_the_kernel_s_rejection_6641()
         "the bound case crosses: {:?}",
         readmission.readmitted()[1].outcome()
     );
-    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(BTreeMap::new()).as_image(),
+        &readmission.export_names(),
+    )
+    .unwrap();
     let mut declarations = artifact.declarations().to_vec();
     let mut kernel = artifact.arena().clone();
     let statement = declarations.last_mut().expect("the hold crossed");
@@ -12049,20 +12173,23 @@ fn a_seed_whose_first_reader_leaves_retires_6846()
             whole.export(BTreeMap::new()),
             "the export is the whole one's: {after:?}"
         );
-        let natives = decode(readmitted.export(BTreeMap::new()).as_image())
-            .unwrap()
-            .declarations()
-            .iter()
-            .filter(|declaration| {
-                declaration
-                    .declaration()
-                    .name()
-                    .segments()
-                    .iter()
-                    .map(AsRef::as_ref)
-                    .eq(["sub"])
-            })
-            .count();
+        let natives = gandr_kernel_term::decode_named(
+            readmitted.export(BTreeMap::new()).as_image(),
+            &readmitted.export_names(),
+        )
+        .unwrap()
+        .declarations()
+        .iter()
+        .filter(|declaration| {
+            declaration
+                .declaration()
+                .name()
+                .segments()
+                .iter()
+                .map(AsRef::as_ref)
+                .eq(["sub"])
+        })
+        .count();
         assert_eq!(
             natives,
             usize::from(after.contains(&Reader::Zero)),
@@ -12228,7 +12355,8 @@ fn a_retired_keeping_readmission_leaves_its_record_whole_6846()
 
 /// Across one insertion each unchanged declaration keeps its name, one place
 /// on past the insertion, and the export holds one name per declaration it
-/// writes.
+/// writes. The export writes each named place by that name, so it decodes
+/// under [`super::Readmission::export_names`] and a bare read refuses it.
 #[test]
 fn each_name_stands_beside_the_declaration_the_export_writes_7340()
 {
@@ -12262,12 +12390,31 @@ fn each_name_stands_beside_the_declaration_the_export_writes_7340()
         )
         .whole();
         let exported = whole.export(alloc::collections::BTreeMap::new());
-        let decoded = gandr_kernel_term::decode(exported.as_image()).expect("the export decodes");
+        let keys = whole.export_names();
+        let decoded = gandr_kernel_term::decode_named(exported.as_image(), &keys)
+            .expect("the export decodes under its names");
+        assert!(
+            gandr_kernel_term::decode(exported.as_image()).is_err(),
+            "a declaration names an earlier one by its key, which a bare read cannot place"
+        );
         let names = whole.content_names();
         assert_eq!(
             decoded.declarations().len(),
             names.len(),
             "one name per declaration the export writes"
+        );
+        assert!(
+            keys.keys()
+                .iter()
+                .zip(&names)
+                .all(|(key, name)| match *name {
+                    Maybe::Present(name) => {
+                        *key == Some(gandr_kernel_term::ConstantKey::from(<[u8; 32]>::from(name)))
+                    },
+                    Maybe::Absent(_) => key.is_none(),
+                })
+                && keys.keys().len() == names.len(),
+            "the export's names are the content keys, place by place"
         );
         names
     };

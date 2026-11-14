@@ -7,7 +7,7 @@
     dylint_lib = "quenchant_dylints",
     expect(
         primitive_signature,
-        reason = "the fixtures pass an order's records as key and value bytes, a count of segments, the width of a place and a chunk's occurrence"
+        reason = "the fixtures pass an order's records as key and value bytes, a count of segments, the width of a place, a chunk's occurrence, a count of definitions and the place of an inserted axiom"
     )
 )]
 
@@ -29,9 +29,12 @@ use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MalformedSite;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Names;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::decode;
+use gandr_kernel_term::decode_named;
 use gandr_kernel_term::encode;
+use gandr_kernel_term::encode_named;
 use gandr_storage_artifact::ARTIFACT_IDENTITY_LEN;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
@@ -47,6 +50,7 @@ use gandr_storage_artifact::RECORD_KEY_LEN;
 use gandr_storage_artifact::RecordKey;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
+use gandr_storage_artifact::kernel_names;
 use gandr_storage_artifact::unnamed;
 use gandr_storage_chunker::Kappa;
 use gandr_storage_chunker::TokenCap;
@@ -280,7 +284,8 @@ fn long_artifact(count: Count) -> EncodedArtifact
     })]
 fn records_of(artifact: &EncodedArtifact) -> ArtifactRecordSet
 {
-    ArtifactRecordSet::from_artifact(artifact.as_image()).expect("the artifact decodes")
+    ArtifactRecordSet::from_artifact(artifact.as_image(), &Names::default())
+        .expect("the artifact decodes")
 }
 
 /// `set` committed into a fresh store under the current parameters.
@@ -450,6 +455,7 @@ fn a_set_cut_after_a_kept_prefix_is_the_whole_cut_776()
         let (kept, prefix) = ArtifactRecordSet::from_artifact_keeping(
             artifact.as_image(),
             ConstantIndex::from(split),
+            &Names::default(),
         )
         .expect("the artifact decodes");
         assert_eq!(kept, whole, "the keeping cut is the whole one");
@@ -458,13 +464,13 @@ fn a_set_cut_after_a_kept_prefix_is_the_whole_cut_776()
             panic!("the first {split} declarations are kept");
         };
         assert_eq!(
-            ArtifactRecordSet::from_artifact_after(&prefix, artifact.as_image())
+            ArtifactRecordSet::from_artifact_after(&prefix, artifact.as_image(), &Names::default())
                 .expect("the artifact decodes"),
             whole,
             "resumed after {split}"
         );
         assert_eq!(
-            ArtifactRecordSet::from_artifact_after(&prefix, other.as_image())
+            ArtifactRecordSet::from_artifact_after(&prefix, other.as_image(), &Names::default())
                 .expect("the other artifact decodes"),
             records_of(&other),
             "another artifact, after {split}"
@@ -699,14 +705,20 @@ fn an_image_repeated_past_occurrence_255_reads_back_7432()
 
 /// A set named by its writer stores and reads back with each name at its
 /// place, under a manifest that says it is named. A manifest that says the
-/// other form is refused, and so are one name too few and an absent name.
+/// other form is refused, and so are one name too few and an absent name. The
+/// artifact is written under the names, so its reference to the first place
+/// writes that place's name.
 #[test]
 fn a_named_set_reads_back_with_its_names_7340()
 {
-    let honest = records_of(&shared_artifact());
     let names: Vec<Maybe<ContentName, unnamed::Absent>> = (0_u8 .. 4)
         .map(|index| Maybe::Present(ContentName::from([index; 32])))
         .collect();
+    let keys = kernel_names(&names);
+    let bare = decode(shared_artifact().as_image()).expect("the shared artifact decodes");
+    let written = encode_named(bare.arena(), bare.declarations(), None, &keys);
+    let honest = ArtifactRecordSet::from_artifact(written.as_image(), &keys)
+        .expect("the artifact cuts under its names");
     let named = honest.clone().named(&names).expect("one name per place");
     let (manifest, store) = committed(&named);
     assert_eq!(Naming::Named, manifest.naming());
@@ -751,6 +763,144 @@ fn a_named_set_reads_back_with_its_names_7340()
         }),
         honest.named(&unkeyed),
         "a place the kernel gives no key is refused at that place"
+    );
+}
+
+/// Each chunk of `order`'s chain from the head on: its key and its count of
+/// places, read off the leaves of `store` at `width` bytes a place.
+///
+/// # Specification
+/// trivial.
+fn chain(
+    order: &[(Vec<u8>, Vec<u8>)],
+    store: &InMemoryBlockStore,
+    width: usize,
+) -> Vec<(Vec<u8>, usize)>
+{
+    let head = &order.first().expect("the order has a head").1;
+    let mut key = head
+        .get(9 ..)
+        .expect("the head names its first chunk")
+        .to_vec();
+    let links: BTreeMap<&[u8], &[u8]> = order
+        .iter()
+        .map(|&(ref key, ref value)| (key.as_slice(), value.as_slice()))
+        .collect();
+    let mut chain = Vec::new();
+    while !key.is_empty() {
+        let identity: [u8; 32] = key
+            .get(1 ..= 32)
+            .and_then(|bytes| bytes.try_into().ok())
+            .expect("a chunk's key holds an identity");
+        let leaf = NamedValue::load(store, NodeHash::from(identity)).expect("the chunk's leaf");
+        let places = <&[u8]>::from(leaf.value())
+            .len()
+            .checked_div(width)
+            .expect("a width");
+        let next = links
+            .get(key.as_slice())
+            .map(|&value| value.to_vec())
+            .expect("the chain names a chunk the order holds");
+        chain.push((key, places));
+        key = next;
+    }
+    chain
+}
+
+/// A chain of `count` definitions, each naming the one before it, with a unit
+/// axiom before the definition at `inserted` when one is asked: the artifact
+/// written bare, the artifact written under each declaration's name, and
+/// those names. Definition `i` is named by bytes of `i + 1`, the axiom by
+/// bytes of 200. The axiom adds no table entry, so only the places past it
+/// move.
+///
+/// # Specification
+/// trivial.
+fn definition_chain(
+    count: u8,
+    inserted: Option<u8>,
+) -> (
+    EncodedArtifact,
+    EncodedArtifact,
+    Vec<Maybe<ContentName, unnamed::Absent>>,
+)
+{
+    let mut arena = TermArena::new();
+    let mut declarations = Vec::new();
+    let mut names = Vec::new();
+    let mut previous = None;
+    for index in 0 .. count {
+        if inserted == Some(index) {
+            let declared = arena.value_type_unit();
+            let axiom =
+                DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), declared);
+            declarations.push(MarkedDeclaration::new(
+                AdmissionMark::UncheckedBypass,
+                axiom,
+            ));
+            names.push(Maybe::Present(ContentName::from([200_u8; 32])));
+        }
+        let declared = arena.value_type_unit();
+        let body = match previous {
+            Some(place) => arena.value_constant(ConstantIndex::from(place)),
+            None => arena.value_unit(),
+        };
+        let definition =
+            DeclarationBuilder::new(&mut arena).def(LevelSignature::monomorphic(), declared, body);
+        previous = Some(declarations.len());
+        declarations.push(MarkedDeclaration::new(
+            AdmissionMark::UncheckedBypass,
+            definition,
+        ));
+        names.push(Maybe::Present(ContentName::from(
+            [index.saturating_add(1); 32],
+        )));
+    }
+    let named = encode_named(&arena, &declarations, None, &kernel_names(&names));
+    (encode(&arena, &declarations), named, names)
+}
+
+/// A reference whose target an insertion moves keeps its record when the
+/// writer names its places, since its segment writes the target's name.
+/// Written bare, the same segment writes the target's place and changes with
+/// it. A named artifact cuts only under its names, and its named set reads
+/// back through the decoder under the names it holds.
+#[test]
+fn a_named_reference_keeps_its_record_past_an_insertion_7340()
+{
+    let (bare, named, names) = definition_chain(12, None);
+    let (bare_edited, named_edited, names_edited) = definition_chain(12, Some(6));
+    let cut = |artifact: &EncodedArtifact, names: &[Maybe<ContentName, unnamed::Absent>]| {
+        ArtifactRecordSet::from_artifact(artifact.as_image(), &kernel_names(names))
+            .expect("the artifact cuts under its names")
+    };
+    let base = cut(&named, &names);
+    let edited = cut(&named_edited, &names_edited);
+    assert!(
+        base.segments().skip(7).eq(edited.segments().skip(8)),
+        "each named segment past the insertion keeps its bytes"
+    );
+    assert!(
+        records_of(&bare)
+            .segments()
+            .skip(7)
+            .zip(records_of(&bare_edited).segments().skip(8))
+            .all(|(before, after)| before != after),
+        "each bare segment past the insertion writes its target's new place"
+    );
+    assert!(
+        ArtifactRecordSet::from_artifact(named.as_image(), &Names::default()).is_err(),
+        "a named artifact does not cut without its names"
+    );
+    let (manifest, store) = committed(
+        &base
+            .named_by(&kernel_names(&names))
+            .expect("one name per place"),
+    );
+    assert_eq!(
+        manifest.read_under(&store, TreeParams::current()).ok(),
+        decode_named(named.as_image(), &kernel_names(&names)).ok(),
+        "the stored set decodes under the names it holds"
     );
 }
 
@@ -950,47 +1100,6 @@ fn order_records(set: &ArtifactRecordSet) -> Vec<(Vec<u8>, Vec<u8>)>
             )
         })
         .collect()
-}
-
-/// Each chunk of `order`'s chain from the head on: its key and its count of
-/// places, read off the leaves of `store` at `width` bytes a place.
-///
-/// # Specification
-/// trivial.
-fn chain(
-    order: &[(Vec<u8>, Vec<u8>)],
-    store: &InMemoryBlockStore,
-    width: usize,
-) -> Vec<(Vec<u8>, usize)>
-{
-    let head = &order.first().expect("the order has a head").1;
-    let mut key = head
-        .get(9 ..)
-        .expect("the head names its first chunk")
-        .to_vec();
-    let links: BTreeMap<&[u8], &[u8]> = order
-        .iter()
-        .map(|&(ref key, ref value)| (key.as_slice(), value.as_slice()))
-        .collect();
-    let mut chain = Vec::new();
-    while !key.is_empty() {
-        let identity: [u8; 32] = key
-            .get(1 ..= 32)
-            .and_then(|bytes| bytes.try_into().ok())
-            .expect("a chunk's key holds an identity");
-        let leaf = NamedValue::load(store, NodeHash::from(identity)).expect("the chunk's leaf");
-        let places = <&[u8]>::from(leaf.value())
-            .len()
-            .checked_div(width)
-            .expect("a width");
-        let next = links
-            .get(key.as_slice())
-            .map(|&value| value.to_vec())
-            .expect("the chain names a chunk the order holds");
-        chain.push((key, places));
-        key = next;
-    }
-    chain
 }
 
 /// `set`'s header and `order`, built into one tree and read back over

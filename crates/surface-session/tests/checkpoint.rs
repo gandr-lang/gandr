@@ -20,7 +20,6 @@ use gandr_core_incremental::RestoreFrom;
 use gandr_core_incremental::stored;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::MalformedSite;
-use gandr_kernel_term::decode;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactRecordSet;
@@ -472,6 +471,7 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
     let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
     let Composed::Settled {
         kernel: Maybe::Present(ref kernel),
+        ref keys,
         ..
     } = *written.composed()
     else {
@@ -485,7 +485,8 @@ fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
     else {
         panic!("the memory block store holds the kernel checkpoint: {checkpoint:?}");
     };
-    let exported = decode(kernel.as_image()).expect("the kernel's own export decodes");
+    let exported = gandr_kernel_term::decode_named(kernel.as_image(), keys)
+        .expect("the kernel's own export decodes");
     let names: Vec<Vec<&str>> = exported
         .declarations()
         .iter()
@@ -558,6 +559,7 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
     let Composed::Settled {
         kernel: Maybe::Present(ref kernel),
+        ref keys,
         ..
     } = *written.composed()
     else {
@@ -565,7 +567,8 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
     };
     // The genuine records under a header whose magic is broken: a writer that
     // mints a manifest over bytes the kernel refuses.
-    let genuine = ArtifactRecordSet::from_artifact(kernel.as_image()).expect("the export cuts");
+    let genuine =
+        ArtifactRecordSet::from_artifact(kernel.as_image(), keys).expect("the export cuts");
     let mut header = genuine.header().as_ref().to_vec();
     let magic = header.first_mut().expect("the header opens with its magic");
     *magic ^= 0xFF;
@@ -695,12 +698,13 @@ fn a_kernel_store_failure_preserves_resume_and_edit_state()
     );
     let Composed::Settled {
         kernel: Maybe::Present(ref kernel),
+        ref keys,
         ..
     } = *first.composed()
     else {
         panic!("the accepted revision settles");
     };
-    let records = ArtifactRecordSet::from_artifact(kernel.as_image())
+    let records = ArtifactRecordSet::from_artifact(kernel.as_image(), keys)
         .expect("the accepted kernel cuts into records");
     let manifest = build(
         &records,

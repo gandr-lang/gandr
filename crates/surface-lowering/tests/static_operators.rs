@@ -32,7 +32,6 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::StructuredName;
-use gandr_kernel_term::decode;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
@@ -291,7 +290,11 @@ fn elaborate(source: SourceText<'_>) -> Elaborated
         })
         .collect();
     let readmission = bridge::readmit(&mut arena, &report);
-    let artifact = decode(readmission.export(names).as_image()).expect("the export decodes");
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(names).as_image(),
+        &readmission.export_names(),
+    )
+    .expect("the export decodes");
     let digest = |node| format!("{:?}", content_digest(artifact.arena(), node));
     let exported = artifact
         .declarations()

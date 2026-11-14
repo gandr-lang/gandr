@@ -155,7 +155,9 @@ fn each_count_decides_its_verdict()
         &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
         &declarations,
     );
-    let kernel = bridge::readmit(&mut arena, &verdicts).export(module.structured_names());
+    let readmission = bridge::readmit(&mut arena, &verdicts);
+    let kernel = readmission.export(module.structured_names());
+    let keys = readmission.export_names();
     let mut program = fixture::program(&arena, &module, &verdicts);
     let report = settle(
         CorpusRoot::Fixture,
@@ -170,6 +172,7 @@ fn each_count_decides_its_verdict()
         exercised: Exercised::default(),
         unstatable: Vec::new(),
         kernel: quenchant_shape::shape::Maybe::Present(kernel),
+        keys,
         positions: quenchant_shape::shape::Maybe::Absent(positioned::Absent::Unasked),
         origins: module.into_origins(),
         spellings: gandr_surface_diagnostics::TypeSpellings::default(),

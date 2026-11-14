@@ -352,6 +352,7 @@ use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::Names;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactManifest;
 use gandr_storage_artifact::ArtifactRecordSet;
@@ -1094,6 +1095,8 @@ pub struct Admitted
 {
     /// The kernel artifact the admission exported.
     kernel: EncodedArtifact,
+    /// The names the kernel artifact writes its references by.
+    keys: Names,
     /// Where each declaration that crossed stands in the artifact, when the
     /// admission was asked to record it.
     positions: Maybe<ArtifactPositions, positioned::Absent>,
@@ -1121,6 +1124,18 @@ impl Admitted
     pub const fn kernel(&self) -> &EncodedArtifact
     {
         &self.kernel
+    }
+
+    /// The names the kernel artifact writes its references by, which a reader
+    /// decodes it under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn keys(&self) -> &Names
+    {
+        &self.keys
     }
 
     /// Whether the artifact reached the block store, and the manifest naming
@@ -2704,12 +2719,15 @@ impl<Store, Blocks> Session<Store, Blocks>
         {
             let Admitted {
                 kernel,
+                keys,
                 positions,
                 declined,
                 checkpoint,
                 ..
             } = admitted;
-            submission.composed = submission.composed.admitted(kernel, positions, &declined);
+            submission.composed = submission
+                .composed
+                .admitted(kernel, keys, positions, &declined);
             submission.kernel = Maybe::Present(checkpoint);
         }
         Ok(submission)
@@ -3807,6 +3825,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   re-derive.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the closure's admission and its records, growth within it
+    ///
     /// # Errors
     /// The readmission of the first declaration the kernel did not re-derive.
     ///
@@ -3885,7 +3906,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.account.settled(&resumption.tiers);
         let checkpoint = match Store::KEEPING {
             Keeping::Kept => checkpoint_kernel(
-                &kernel,
+                (&kernel, &resumption.keys),
                 &resumption.names,
                 &mut self.blocks,
                 held.as_deref(),
@@ -3894,6 +3915,7 @@ impl<Store, Blocks> Session<Store, Blocks>
         };
         Ok(Maybe::Present(Admitted {
             kernel,
+            keys: resumption.keys,
             positions: resumption.positions,
             declined: resumption.declined,
             checkpoint,
@@ -3908,6 +3930,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the rebuilds' generations and the build's task, setup
     fn rebuild(
         &mut self,
         rebuild: Option<Rebuild>,
@@ -4561,6 +4586,9 @@ impl<Store, Blocks> Session<Store, Blocks>
 /// - fails: never; a refusal is the checkpoint's own variant.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the record set and its tree, growth within the artifact
+///
 /// # Adequacy
 /// - hypothesis: L3 — a committed artifact read back after reopening is exactly
 ///   its independently decoded composition image. The predicate checks the
@@ -4581,7 +4609,7 @@ impl<Store, Blocks> Session<Store, Blocks>
 },
 )]
 fn checkpoint_kernel<Blocks>(
-    kernel: &EncodedArtifact,
+    (kernel, keys): (&EncodedArtifact, &Names),
     names: &[Maybe<ContentName, unnamed::Absent>],
     blocks: &mut Blocks,
     held: Option<&ClosureAdmission>,
@@ -4591,19 +4619,23 @@ where
 {
     let image = kernel.as_image();
     let records = held.map_or_else(
-        || ArtifactRecordSet::from_artifact(image),
+        || ArtifactRecordSet::from_artifact(image, keys),
         |held| {
             held.decoded().map_or_else(
                 || {
-                    ArtifactRecordSet::from_artifact_keeping(image, held.crossed().kernel_end())
-                        .map(|(records, decoded)| {
-                            if let Maybe::Present(decoded) = decoded {
-                                held.keep_decoded(decoded);
-                            }
-                            records
-                        })
+                    ArtifactRecordSet::from_artifact_keeping(
+                        image,
+                        held.crossed().kernel_end(),
+                        keys,
+                    )
+                    .map(|(records, decoded)| {
+                        if let Maybe::Present(decoded) = decoded {
+                            held.keep_decoded(decoded);
+                        }
+                        records
+                    })
                 },
-                |decoded| ArtifactRecordSet::from_artifact_after(decoded, image),
+                |decoded| ArtifactRecordSet::from_artifact_after(decoded, image, keys),
             )
         },
     );

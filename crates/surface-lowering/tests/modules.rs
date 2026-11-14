@@ -43,7 +43,6 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeclarationContent;
 use gandr_kernel_term::Value as KernelValue;
-use gandr_kernel_term::decode;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
@@ -1340,7 +1339,11 @@ fn modules_lower_to_named_member_declarations()
     let names = lowered.module.structured_names();
     let report = report(&mut lowered);
     let readmission = bridge::readmit(&mut lowered.arena, &report);
-    let artifact = decode(readmission.export(names).as_image()).expect("the export decodes");
+    let artifact = gandr_kernel_term::decode_named(
+        readmission.export(names).as_image(),
+        &readmission.export_names(),
+    )
+    .expect("the export decodes");
     let exported: Vec<(Vec<String>, Option<KernelValue>)> = artifact
         .declarations()
         .iter()

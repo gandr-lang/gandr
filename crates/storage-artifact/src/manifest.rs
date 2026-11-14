@@ -79,7 +79,7 @@ use anodized::spec;
 use gandr_kernel_term::DecodedArtifact;
 use gandr_kernel_term::FORMAT_VERSION;
 use gandr_kernel_term::FormatVersion;
-use gandr_kernel_term::decode;
+use gandr_kernel_term::decode_named;
 use gandr_storage_records::BlockStore;
 use gandr_storage_records::DecodeWork;
 use gandr_storage_records::DecodedNode;
@@ -746,6 +746,9 @@ impl ArtifactManifest
     /// - allocation: the set, growth within the record count.
     /// - allocation: the decoded artifact, growth within the record count.
     ///
+    /// # Cost
+    /// - allocation: the records and the decode, growth within the record count
+    ///
     /// # Errors
     /// [`ArtifactError`] — as listed above.
     ///
@@ -815,7 +818,7 @@ impl ArtifactManifest
             });
         }
         let image = set.reassemble();
-        let decoded = decode(image.as_image())?;
+        let decoded = decode_named(image.as_image(), &set.kernel_names())?;
         set.ensure_cut_at(decoded.segments())?;
 
         Ok(decoded)

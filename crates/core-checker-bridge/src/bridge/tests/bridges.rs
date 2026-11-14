@@ -23,7 +23,6 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::ValueType as KernelValueType;
-use gandr_kernel_term::decode;
 use quenchant_shape::shape::Maybe;
 
 use super::super::Outcome;
@@ -202,10 +201,11 @@ fn a_bridge_crosses_as_the_kernel_s_bridge_node()
         Maybe::Present(bridged),
         Maybe::Present(total),
     )]);
-    let artifact = decode(
+    let artifact = gandr_kernel_term::decode_named(
         readmission
             .export(alloc::collections::BTreeMap::new())
             .as_image(),
+        &readmission.export_names(),
     )
     .unwrap();
     let declared = artifact

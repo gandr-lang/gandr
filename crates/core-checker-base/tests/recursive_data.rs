@@ -1815,8 +1815,11 @@ fn the_kernel_replays_a_conversion_through_a_definition_by_eliminator()
     assert_eq!(agreed, MachineVerdict::Convertible);
     assert_eq!(apart, MachineVerdict::NotConvertible);
     // The kernel replays both traces over the exported declarations.
-    let artifact = gandr_kernel_term::decode(crossed.export(BTreeMap::new()).as_image())
-        .expect("the export decodes");
+    let artifact = gandr_kernel_term::decode_named(
+        crossed.export(BTreeMap::new()).as_image(),
+        &crossed.export_names(),
+    )
+    .expect("the export decodes");
     let mut kernel = artifact.arena().clone();
     let unfoldings = Unfoldings::new(
         artifact

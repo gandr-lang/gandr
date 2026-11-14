@@ -31,10 +31,11 @@ use quenchant_shape::shape::Maybe;
 /// # Specification
 /// trivial.
 fn sizes_by_name(
-    image: ArtifactImage<'_>
+    image: ArtifactImage<'_>,
+    keys: &gandr_kernel_term::Names,
 ) -> BTreeMap<String, (ByteCount, TableEntryCount, ExpandedWork)>
 {
-    let (artifact, measures) = decode_measured(image).expect("the admitted artifact decodes");
+    let (artifact, measures) = decode_measured(image, keys).expect("the admitted artifact decodes");
     let mut sizes = BTreeMap::new();
     for ((declaration, span), measure) in artifact
         .declarations()
@@ -81,6 +82,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 };
                 let Composed::Settled {
                     kernel: Maybe::Present(ref kernel),
+                    ref keys,
                     ..
                 } = *composed
                 else {
@@ -90,7 +92,7 @@ fn a_source_measures_the_declarations_it_writes_and_none_it_imports()
                 else {
                     panic!("{} is measured", path.display());
                 };
-                let sizes = sizes_by_name(kernel.as_image());
+                let sizes = sizes_by_name(kernel.as_image(), keys);
                 for row in &rows {
                     assert_eq!(
                         sizes.get(row.name().as_ref()),

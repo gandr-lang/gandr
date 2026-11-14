@@ -312,6 +312,23 @@ struct Exported
     crossed_names: Vec<StructuredName>,
     /// The kernel artifact of what crossed.
     artifact: EncodedArtifact,
+    /// The names the artifact writes its references by.
+    keys: gandr_kernel_term::Names,
+}
+
+impl Exported
+{
+    /// The artifact, decoded under the names it writes its references by.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// The decoder's refusal of the artifact.
+    fn decoded(&self) -> Result<gandr_kernel_term::DecodedArtifact, DecodeError>
+    {
+        gandr_kernel_term::decode_named(self.artifact.as_image(), &self.keys)
+    }
 }
 
 /// What one listed source came to.
@@ -721,9 +738,10 @@ fn export_through(
         path.display()
     );
     let artifact = readmission.export(names);
+    let keys = readmission.export_names();
     if PAST_THE_WORK_CAP.iter().any(|held| path.ends_with(held)) {
         assert_eq!(
-            gandr_kernel_term::decode(artifact.as_image()).err(),
+            gandr_kernel_term::decode_named(artifact.as_image(), &keys).err(),
             Some(DecodeError::Malformed {
                 site: MalformedSite::ExpandedWork,
             }),
@@ -740,6 +758,7 @@ fn export_through(
         natives,
         crossed_names,
         artifact,
+        keys,
     })
 }
 
@@ -930,10 +949,11 @@ fn corpus(
         .is_ok_and(|node| node.identity() == ret.0.root_node())
 },
 )]
-fn commit(artifact: &EncodedArtifact) -> (ArtifactManifest, InMemoryBlockStore)
+fn commit(exported: &Exported) -> (ArtifactManifest, InMemoryBlockStore)
 {
-    let records = ArtifactRecordSet::from_artifact(artifact.as_image())
-        .expect("an export cuts at its own segments");
+    let records = ArtifactRecordSet::from_artifact(exported.artifact.as_image(), &exported.keys)
+        .and_then(|records| records.named_by(&exported.keys))
+        .expect("an export cuts at its own segments under its names");
     let mut store = InMemoryBlockStore::default();
     let manifest = build(&records, TreeParams::current(), &mut store).expect("the records commit");
     (manifest, store)
@@ -948,8 +968,6 @@ mod kernel_export_gate
     use core::num::NonZeroUsize;
 
     use anodized::spec;
-    use gandr_kernel_term::decode;
-    use gandr_kernel_term::encode;
     use gandr_storage_records::TreeParams;
     use gandr_surface_dispatcher::Pool;
     use gandr_surface_dispatcher::Threads;
@@ -1055,18 +1073,24 @@ mod kernel_export_gate
                 one.classes, two.classes,
                 "{path}: a scheduled readmission gives each declaration the serial class"
             );
-            let (manifest, store) = commit(&one.artifact);
-            let (again, _again_store) = commit(&two.artifact);
+            let (manifest, store) = commit(one);
+            let (again, _again_store) = commit(two);
             assert_eq!(
                 manifest.identity(),
                 again.identity(),
                 "{path}: the identity is a function of the source"
             );
-            let decoded = decode(one.artifact.as_image())
+            let decoded = one
+                .decoded()
                 .unwrap_or_else(|refusal| panic!("{path}: the export decodes: {refusal}"));
             assert_eq!(
                 one.artifact,
-                encode(decoded.arena(), decoded.declarations()),
+                gandr_kernel_term::encode_named(
+                    decoded.arena(),
+                    decoded.declarations(),
+                    None,
+                    &one.keys
+                ),
                 "{path}: the decoding re-encodes byte for byte"
             );
             assert_eq!(
@@ -1472,7 +1496,7 @@ mod kernel_corpus_partition
                     usize::from(named)
                 );
             }
-            let (manifest, store) = commit(&exported.artifact);
+            let (manifest, store) = commit(&exported);
             let read = manifest
                 .read_under(&store, TreeParams::current())
                 .unwrap_or_else(|refusal| panic!("{path}: the records read back: {refusal}"));
@@ -1631,7 +1655,6 @@ mod kernel_generative_distinctness
     use gandr_kernel_term::ReservedSlot;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::ValueType;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Exported;
@@ -1678,8 +1701,9 @@ mod kernel_generative_distinctness
             )
         };
         let exported = functor_pair();
-        let decoded =
-            decode(exported.artifact.as_image()).expect("the functor pair's export decodes");
+        let decoded = exported
+            .decoded()
+            .expect("the functor pair's export decodes");
         let atoms: Vec<(usize, &StructuredName)> = decoded
             .declarations()
             .iter()
@@ -1742,7 +1766,8 @@ mod kernel_generative_distinctness
     #[test]
     fn an_artifact_whose_applications_share_an_atom_is_refused()
     {
-        let mut image = Vec::from(functor_pair().artifact);
+        let pair = functor_pair();
+        let mut image = Vec::from(pair.artifact);
         let first = *image
             .get(FIRST_APPLICATION_ENTRY_OFFSET)
             .expect("the first application's entry");
@@ -1750,7 +1775,8 @@ mod kernel_generative_distinctness
             .get_mut(SECOND_APPLICATION_ENTRY_OFFSET)
             .expect("the second application's entry") = first;
         assert_eq!(
-            decode(ArtifactImage::from(image.as_slice())).map(|_decoded| ()),
+            gandr_kernel_term::decode_named(ArtifactImage::from(image.as_slice()), &pair.keys)
+                .map(|_decoded| ()),
             Err(DecodeError::ReservedSlotOccupied {
                 slot: ReservedSlot::MintedAtomTable,
             }),
@@ -1782,7 +1808,6 @@ mod kernel_ride_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -1801,7 +1826,7 @@ mod kernel_ride_readmission
         else {
             panic!("ua-by-hand lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("ua-by-hand's export decodes");
+        let decoded = exported.decoded().expect("ua-by-hand's export decodes");
         let mut declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -1916,7 +1941,6 @@ mod kernel_transport_readmission
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueType;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -1935,8 +1959,7 @@ mod kernel_transport_readmission
         else {
             panic!("transport-path lowers");
         };
-        let decoded =
-            decode(exported.artifact.as_image()).expect("transport-path's export decodes");
+        let decoded = exported.decoded().expect("transport-path's export decodes");
         let mut declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2032,7 +2055,6 @@ mod kernel_here_congruence_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -2051,8 +2073,9 @@ mod kernel_here_congruence_readmission
         else {
             panic!("here-congruence lowers");
         };
-        let decoded =
-            decode(exported.artifact.as_image()).expect("here-congruence's export decodes");
+        let decoded = exported
+            .decoded()
+            .expect("here-congruence's export decodes");
         let mut declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations).expect(
@@ -2152,7 +2175,6 @@ mod kernel_discard_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -2171,7 +2193,7 @@ mod kernel_discard_readmission
         else {
             panic!("divergence lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("divergence's export decodes");
+        let decoded = exported.decoded().expect("divergence's export decodes");
         let mut declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2308,7 +2330,6 @@ mod kernel_presented_readmission
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueType;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -2327,7 +2348,7 @@ mod kernel_presented_readmission
         else {
             panic!("the circle lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let decoded = exported.decoded().expect("the circle's export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2404,7 +2425,7 @@ mod kernel_presented_readmission
         else {
             panic!("the circle with a loop lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations).expect(
@@ -2458,7 +2479,7 @@ mod kernel_presented_readmission
         else {
             panic!("the empty type lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2471,7 +2492,7 @@ mod kernel_presented_readmission
         else {
             panic!("the circle lowers");
         };
-        let circle = decode(circle.artifact.as_image()).expect("the export decodes");
+        let circle = circle.decoded().expect("the export decodes");
         Environment::replay(circle.arena().clone(), circle.declarations())
             .expect("the loop is apart from the empty word, its square and its inverse");
         let position = |name: &str| {
@@ -2587,7 +2608,7 @@ mod kernel_presented_readmission
         else {
             panic!("the circle lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let decoded = exported.decoded().expect("the circle's export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2661,7 +2682,7 @@ mod kernel_presented_readmission
         else {
             panic!("the circle lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the circle's export decodes");
+        let decoded = exported.decoded().expect("the circle's export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2708,7 +2729,7 @@ mod kernel_presented_readmission
         else {
             panic!("the overlapping naturals lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2774,7 +2795,7 @@ mod kernel_presented_readmission
         else {
             panic!("`std.ir` lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2861,7 +2882,7 @@ mod kernel_presented_readmission
         else {
             panic!("the unmarked holder lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -2906,7 +2927,7 @@ mod kernel_presented_readmission
         else {
             panic!("the overlapping naturals lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let arena = decoded.arena().clone();
         let add = declarations
@@ -2956,7 +2977,7 @@ mod kernel_presented_readmission
         else {
             panic!("the paths through `add` lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         assert!(
             declarations
@@ -2997,7 +3018,7 @@ mod kernel_presented_readmission
             else {
                 panic!("{path} lowers");
             };
-            let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+            let decoded = exported.decoded().expect("the export decodes");
             let declarations = decoded.declarations().to_vec();
             let mut arena = decoded.arena().clone();
             let position = |name: &str| {
@@ -3085,7 +3106,7 @@ mod kernel_presented_readmission
         else {
             panic!("the walks lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         for name in ["walkSecond", "walkWritten"] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
@@ -3119,7 +3140,7 @@ mod kernel_presented_readmission
         else {
             panic!("the splits lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("splitPair".into()).expect("a name segment");
         let named = StructuredName::from(vec![segment]);
@@ -3152,7 +3173,7 @@ mod kernel_presented_readmission
         else {
             panic!("the composites lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         for name in [
             "stepOmittedAtHere",
@@ -3189,7 +3210,7 @@ mod kernel_presented_readmission
         else {
             panic!("the reflexivity lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("twoLevels".into()).expect("a name segment");
         let named = StructuredName::from(vec![segment]);
@@ -3221,7 +3242,7 @@ mod kernel_presented_readmission
         else {
             panic!("the case lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("go".into()).expect("a name segment");
         let named = StructuredName::from(vec![segment]);
@@ -3253,7 +3274,7 @@ mod kernel_presented_readmission
         else {
             panic!("the cases lower");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         for name in ["unitAt", "keepAt", "trek", "walkOf"] {
             let segment = NameSegment::from_text(name.into()).expect("a name segment");
@@ -3292,7 +3313,6 @@ mod kernel_open_fold_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3311,7 +3331,7 @@ mod kernel_open_fold_readmission
         else {
             panic!("open-fold lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("open-fold's export decodes");
+        let decoded = exported.decoded().expect("open-fold's export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -3411,7 +3431,6 @@ mod kernel_loop_elimination_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3430,7 +3449,7 @@ mod kernel_loop_elimination_readmission
         else {
             panic!("circle-elim lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("circle-elim's export decodes");
+        let decoded = exported.decoded().expect("circle-elim's export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
@@ -3511,7 +3530,7 @@ mod kernel_loop_elimination_readmission
         else {
             panic!("map-named-loop-arm lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
             let name = declarations
@@ -3550,7 +3569,6 @@ mod kernel_presentation_readmission
     use gandr_kernel_term::TheoryRuleRefusal;
     use gandr_kernel_term::TheoryRules;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3579,7 +3597,7 @@ mod kernel_presentation_readmission
         else {
             panic!("{} lowers", fixture.display());
         };
-        let decoded = decode(exported.artifact.as_image()).expect("the export decodes");
+        let decoded = exported.decoded().expect("the export decodes");
         let declarations = decoded.declarations().to_vec();
         let position = declarations
             .iter()
@@ -3738,7 +3756,6 @@ mod kernel_naturality_readmission
     use gandr_kernel_core::Environment;
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3757,7 +3774,7 @@ mod kernel_naturality_readmission
         else {
             panic!("naturality lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("naturality's export decodes");
+        let decoded = exported.decoded().expect("naturality's export decodes");
         let declarations = decoded.declarations().to_vec();
         let segment = NameSegment::from_text("natassocAgrees".into()).expect("a name segment");
         let agrees = StructuredName::from(vec![segment]);
@@ -3788,7 +3805,6 @@ mod kernel_effect_tree_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::Value;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3807,7 +3823,7 @@ mod kernel_effect_tree_readmission
         else {
             panic!("tree-rows lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("tree-rows' export decodes");
+        let decoded = exported.decoded().expect("tree-rows' export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
@@ -3887,7 +3903,6 @@ mod kernel_effect_handler_readmission
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::ValueType;
-    use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
 
     use super::Root;
@@ -3906,7 +3921,7 @@ mod kernel_effect_handler_readmission
         else {
             panic!("exit lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("exit's export decodes");
+        let decoded = exported.decoded().expect("exit's export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations)
@@ -3995,7 +4010,7 @@ mod kernel_effect_handler_readmission
         else {
             panic!("state-handler lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("state-handler's export decodes");
+        let decoded = exported.decoded().expect("state-handler's export decodes");
         let declarations = decoded.declarations().to_vec();
         let mut arena = decoded.arena().clone();
         Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
@@ -4103,7 +4118,7 @@ mod kernel_effect_handler_readmission
         else {
             panic!("state-wp lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("state-wp's export decodes");
+        let decoded = exported.decoded().expect("state-wp's export decodes");
         let declarations = decoded.declarations().to_vec();
         Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
             panic!("state-wp readmits, its observation a fold: {refusal:?}")
@@ -4172,7 +4187,7 @@ mod kernel_effect_handler_readmission
         else {
             panic!("state-handler lowers");
         };
-        let decoded = decode(exported.artifact.as_image()).expect("state-handler's export decodes");
+        let decoded = exported.decoded().expect("state-handler's export decodes");
         let declarations = decoded.declarations();
         Environment::replay(decoded.arena().clone(), declarations).unwrap_or_else(|refusal| {
             panic!("state-handler readmits, the scope in scope a fold: {refusal:?}")

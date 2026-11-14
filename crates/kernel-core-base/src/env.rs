@@ -2952,16 +2952,22 @@ impl Entries
     }
 
     /// Key the entry at `position` with the content key `content` and the
-    /// entry key `key`: the keys that a fresh admission of its closed module
-    /// gives, once the seal of an atom that it reads closes.
+    /// entry key `key`, or why it has none: the keys that a fresh admission of
+    /// its closed module gives, once the seal of an atom that it reads closes.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a frozen chunk's copy, growth within the family.
     #[inline]
     pub fn rekey(
         &mut self,
         position: ConstantIndex,
-        (content, key): (crate::verdict::EntryContentKey, crate::verdict::VerdictKey),
+        (content, key): (
+            crate::verdict::EntryContentKey,
+            Maybe<crate::verdict::VerdictKey, crate::verdict::keyed::Absent>,
+        ),
     )
     {
         if let Some(entry) = self
@@ -2971,7 +2977,7 @@ impl Entries
             .and_then(Slot::admitted_mut)
         {
             entry.content = Maybe::Present(content);
-            entry.key = Maybe::Present(key);
+            entry.key = key;
         }
     }
 
