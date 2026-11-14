@@ -637,8 +637,9 @@ impl Idle
     /// part with no wake.
     ///
     /// # Specification
-    /// - ensures: a worker whose bit this call cleared, or absent when no bit
-    ///   was set at the read of its word.
+    /// - ensures: a worker whose bit this call cleared, with [`Wake::Awake`]
+    ///   when `spinning` set its bit at the read and [`Wake::Woken`] otherwise;
+    ///   absent when no bit was set at the read of its word.
     /// - panics: none.
     /// - executable: none — another party may set or clear a bit at once.
     ///
@@ -648,7 +649,7 @@ impl Idle
     fn claim_any(
         &self,
         spinning: &Self,
-    ) -> Maybe<WorkerIndex, unseated::Absent>
+    ) -> Maybe<(WorkerIndex, Wake), unseated::Absent>
     {
         let awake = self.claim_within(|at| {
             spinning
@@ -656,9 +657,12 @@ impl Idle
                 .get(at)
                 .map_or(0, |word| word.load(Ordering::Relaxed))
         });
-        match awake {
-            Maybe::Present(worker) => Maybe::Present(worker),
-            Maybe::Absent(_) => self.claim_within(|_| u64::MAX),
+        if let Maybe::Present(worker) = awake {
+            return Maybe::Present((worker, Wake::Awake));
+        }
+        match self.claim_within(|_| u64::MAX) {
+            Maybe::Present(worker) => Maybe::Present((worker, Wake::Woken)),
+            Maybe::Absent(absent) => Maybe::Absent(absent),
         }
     }
 
@@ -877,9 +881,182 @@ impl<Queued> Queue<Queued>
 /// A standing job: work that outlives the fork that started it.
 type Standing = Box<dyn FnOnce() + Send>;
 
-/// What the pool measures of its hand-offs over the process: the price of a
-/// node of a job that runs on its calling thread, what a hand-off adds to the
-/// run of a job, and what the wakes and the spins of the posts cost.
+/// Which hand-off a job takes: to a worker that is awake, which takes the job
+/// with no wake, or to a worker that the post wakes from its park. The two
+/// cost apart by an order on some hosts, so the pool measures each apart.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wake
+{
+    /// The job goes to a task that polls its lane, or to a worker that spins.
+    Awake,
+    /// The job goes to a worker that the post wakes from its park.
+    Woken,
+}
+
+/// The bits of a latency below its top bit that pick its bucket: each octave
+/// splits into eight buckets, so the middle of a latency's bucket lies within
+/// a sixteenth of it, well inside the fold's margin of 2.
+const STEP_BITS: u32 = 3;
+
+/// The buckets of an octave.
+const STEPS: u64 = 1 << STEP_BITS;
+
+/// The buckets of a latency in nanoseconds: one for each value below
+/// [`STEPS`], then [`STEPS`] for each octave up to the octave of `u64::MAX`.
+const BUCKETS: usize = 496;
+
+/// The bucket of a latency, by its index among the [`BUCKETS`].
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+struct Bucket(usize);
+
+impl Bucket
+{
+    /// The bucket that holds `latency`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(latency: Duration) -> Self
+    {
+        let nanos = u64::try_from(latency.as_nanos()).unwrap_or(u64::MAX);
+        let octave = (u64::BITS - 1).saturating_sub(nanos.leading_zeros());
+        if octave < STEP_BITS {
+            return Self(usize::try_from(nanos).unwrap_or(usize::MAX));
+        }
+        let shift = octave.saturating_sub(STEP_BITS);
+        let step = nanos.checked_shr(shift).unwrap_or_default() & STEPS.saturating_sub(1);
+        Self(
+            usize::try_from(
+                u64::from(octave.saturating_sub(STEP_BITS - 1))
+                    .saturating_mul(STEPS)
+                    .saturating_add(step),
+            )
+            .unwrap_or(usize::MAX),
+        )
+    }
+
+    /// The middle of the bucket.
+    ///
+    /// # Specification
+    /// trivial.
+    fn middle(self) -> Duration
+    {
+        let index = u64::try_from(self.0).unwrap_or(u64::MAX);
+        if index < STEPS {
+            return Duration::from_nanos(index);
+        }
+        let octave = u32::try_from(index.checked_div(STEPS).unwrap_or_default())
+            .unwrap_or(u32::MAX)
+            .saturating_add(STEP_BITS - 1);
+        let shift = octave.saturating_sub(STEP_BITS);
+        let low = STEPS
+            .saturating_add(index.checked_rem(STEPS).unwrap_or_default())
+            .checked_shl(shift)
+            .unwrap_or(u64::MAX);
+        let width = 1_u64.checked_shl(shift).unwrap_or(u64::MAX);
+        Duration::from_nanos(low.saturating_add(width.checked_div(2).unwrap_or_default()))
+    }
+}
+
+/// The latencies of one class of hand-off over the process, counted in
+/// buckets of an eighth of an octave: a fixed memory, and one atomic add for
+/// each hand-off.
+///
+/// # Specification
+/// - ensures: the median holds the middle of the bucket of the median of the
+///   latencies added, and none for no latency.
+/// - panics: none.
+/// - executable: none — the counts are shared across threads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — five latencies give the bucket of their median, and no
+///   latency gives none.
+/// - witness: `pool::workers::tests::the_median_of_a_class_s_latencies_is_read_from_its_buckets_7285`
+#[derive(Debug)]
+#[repr(transparent)]
+struct Latencies(Box<[AtomicU64]>);
+
+impl Default for Latencies
+{
+    /// No latency.
+    ///
+    /// # Specification
+    /// trivial.
+    fn default() -> Self
+    {
+        Self(
+            core::iter::repeat_with(|| AtomicU64::new(0))
+                .take(BUCKETS)
+                .collect(),
+        )
+    }
+}
+
+impl Latencies
+{
+    /// Count `latency`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn add(
+        &self,
+        latency: Duration,
+    )
+    {
+        if let Some(count) = self.0.get(Bucket::of(latency).0) {
+            count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// The median of the latencies counted, at the middle of its bucket.
+    ///
+    /// # Specification
+    /// trivial.
+    fn median(&self) -> Option<Duration>
+    {
+        let total = self
+            .0
+            .iter()
+            .map(|count| count.load(Ordering::Relaxed))
+            .fold(0_u64, u64::saturating_add);
+        let half = total.div_ceil(2);
+        if half == 0 {
+            return None;
+        }
+        // A count only grows, so the second pass reaches the half.
+        let mut seen = 0_u64;
+        self.0.iter().enumerate().find_map(|(index, count)| {
+            seen = seen.saturating_add(count.load(Ordering::Relaxed));
+            (seen >= half).then(|| Bucket(index).middle())
+        })
+    }
+}
+
+/// What the pool measures of one class of hand-off over the process.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug, Default)]
+struct Handing
+{
+    /// The latencies of the class's hand-offs: from when a handed job could
+    /// start on its lane to its start.
+    latencies: Latencies,
+    /// The nanoseconds that the class's posts' wakes took on the posting
+    /// thread.
+    wakes: AtomicU64,
+    /// The count of the class's posts.
+    posts: AtomicU64,
+}
+
+/// What the pool measures of its jobs over the process: the price of a node
+/// of a job that runs on its calling thread, and each class of hand-off.
 ///
 /// # Specification
 /// trivial.
@@ -890,19 +1067,32 @@ struct Measured
     home_nanos: AtomicU64,
     /// The nodes of those jobs.
     home_nodes: AtomicU64,
-    /// The nanoseconds that the run of each handed job took past its price.
-    added_nanos: AtomicU64,
-    /// The count of handed jobs.
-    handed: AtomicU64,
-    /// The nanoseconds of the wakes that the posts made, and of the spins of
-    /// the workers and the lanes that came after them.
-    overhead_nanos: AtomicU64,
-    /// The count of posts.
-    posts: AtomicU64,
+    /// The hand-offs to a worker that is awake.
+    awake: Handing,
+    /// The hand-offs to a worker that the post wakes.
+    woken: Handing,
 }
 
-/// What one schedule measures of its jobs, before it adds the measures to the
-/// pool's.
+impl Measured
+{
+    /// The measures of `wake`'s class.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(
+        &self,
+        wake: Wake,
+    ) -> &Handing
+    {
+        match wake {
+            Wake::Awake => &self.awake,
+            Wake::Woken => &self.woken,
+        }
+    }
+}
+
+/// What one schedule measures of the jobs that run on its calling thread,
+/// before it adds the measures to the pool's.
 ///
 /// # Specification
 /// trivial.
@@ -913,12 +1103,39 @@ pub struct Tally
     pub home_nanos: u64,
     /// The nodes of those jobs.
     pub home_nodes: u64,
-    /// The nanoseconds that the run of each handed job took past its price.
-    pub added_nanos: u64,
-    /// The count of handed jobs.
-    pub handed: u64,
-    /// The nanoseconds that the lanes' tasks spun on their empty rings.
-    pub spun_nanos: u64,
+}
+
+/// The price of a hand-off of each class, as a schedule reads it once at its
+/// start.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Hands
+{
+    /// The price of a hand-off to a worker that is awake.
+    awake: Duration,
+    /// The price of a hand-off to a worker that the post wakes.
+    woken: Duration,
+}
+
+impl Hands
+{
+    /// The price of a hand-off of `wake`'s class.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn of(
+        self,
+        wake: Wake,
+    ) -> Duration
+    {
+        match wake {
+            Wake::Awake => self.awake,
+            Wake::Woken => self.woken,
+        }
+    }
 }
 
 /// Where the band sends a job that may go beside the calling thread's job.
@@ -1052,6 +1269,20 @@ thread_local! {
     static HELD: Cell<Option<(usize, Token)>> = const { Cell::new(None) };
     /// The tokens of the grant of the pool that the current thread works for.
     static GRANT: OnceCell<Arc<Tokens>> = const { OnceCell::new() };
+    /// How the part that the current worker runs reached it: woken when the
+    /// worker parked after its last part, and awake on any other thread.
+    static WOKE: Cell<Wake> = const { Cell::new(Wake::Awake) };
+}
+
+/// How the part that the current thread runs reached it: [`Wake::Woken`] on a
+/// worker that parked after its last part, and [`Wake::Awake`] otherwise.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn woke() -> Wake
+{
+    WOKE.with(Cell::get)
 }
 
 /// Give back the token that the current worker holds for the part of
@@ -1373,59 +1604,100 @@ impl Workers
         ))
     }
 
-    /// The whole cost of a hand-off: what the run of a handed job took past
-    /// its price, on average, and what the wakes and the spins cost for each
-    /// post, with `tally`'s measures. Before the first handed job, the
-    /// park-to-wake cost.
+    /// The price of a hand-off of `wake`'s class: the median latency of the
+    /// class's hand-offs over the process, plus the mean wake of its posts.
+    /// Before the class's first hand-off, the park-to-wake cost.
     ///
     /// # Specification
     /// trivial.
     pub fn hand(
         &self,
-        tally: &Tally,
+        wake: Wake,
     ) -> Duration
     {
-        let measured = &self.shared.measured;
-        let handed = measured
-            .handed
-            .load(Ordering::Relaxed)
-            .saturating_add(tally.handed);
-        let Some(added) = measured
-            .added_nanos
-            .load(Ordering::Relaxed)
-            .saturating_add(tally.added_nanos)
-            .checked_div(handed)
+        let class = self.shared.measured.of(wake);
+        let Some(latency) = class.latencies.median()
         else {
             return self.shared.park();
         };
-        let overhead = measured
-            .overhead_nanos
+        let wakes = class
+            .wakes
             .load(Ordering::Relaxed)
-            .saturating_add(tally.spun_nanos)
-            .checked_div(measured.posts.load(Ordering::Relaxed))
+            .checked_div(class.posts.load(Ordering::Relaxed))
             .unwrap_or_default();
-        Duration::from_nanos(added.saturating_add(overhead))
+        latency.saturating_add(Duration::from_nanos(wakes))
+    }
+
+    /// The price of a hand-off of each class, as [`Workers::hand`] reads it
+    /// now.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn hands(&self) -> Hands
+    {
+        Hands {
+            awake: self.hand(Wake::Awake),
+            woken: self.hand(Wake::Woken),
+        }
+    }
+
+    /// Count the latency of a hand-off of `wake`'s class: from when the
+    /// handed job could start on its lane to its start.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn handed(
+        &self,
+        wake: Wake,
+        latency: Duration,
+    )
+    {
+        self.shared.measured.of(wake).latencies.add(latency);
+    }
+
+    /// The class of the hand-off that a post makes now: awake while an idle
+    /// worker spins, since a post claims it first, and woken otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn applies(&self) -> Wake
+    {
+        if self
+            .shared
+            .spinning
+            .0
+            .iter()
+            .any(|word| word.load(Ordering::Relaxed) != 0)
+        {
+            Wake::Awake
+        }
+        else {
+            Wake::Woken
+        }
     }
 
     /// Where the band sends a job of `size`, with `tally`'s measures: beside
-    /// the calling thread's job when the job is expected to cost more than a
-    /// hand-off.
+    /// the calling thread's job when the job is expected to cost more than
+    /// `hand`, the price of the hand-off that applies.
     ///
     /// # Specification
     /// trivial.
     pub fn band(
         &self,
         size: ItemSize,
+        hand: Duration,
         tally: &Tally,
     ) -> Band
     {
         match self.expected(size, tally) {
-            Some(expected) if expected > self.hand(tally) => Band::Beside,
+            Some(expected) if expected > hand => Band::Beside,
             _ => Band::Home,
         }
     }
 
-    /// Add the measures of one schedule to the pool's.
+    /// Add the measures of one schedule's calling thread to the pool's.
     ///
     /// # Specification
     /// trivial.
@@ -1441,13 +1713,6 @@ impl Workers
         measured
             .home_nodes
             .fetch_add(tally.home_nodes, Ordering::Relaxed);
-        measured
-            .added_nanos
-            .fetch_add(tally.added_nanos, Ordering::Relaxed);
-        measured.handed.fetch_add(tally.handed, Ordering::Relaxed);
-        measured
-            .overhead_nanos
-            .fetch_add(tally.spun_nanos, Ordering::Relaxed);
     }
 
     /// The place of the current thread among these workers.
@@ -1517,8 +1782,8 @@ impl Workers
         taking: Taking,
     ) -> Maybe<Posted, unseated::Absent>
     {
-        let worker = match self.shared.idle.claim_any(&self.shared.spinning) {
-            Maybe::Present(worker) => worker,
+        let (worker, wake) = match self.shared.idle.claim_any(&self.shared.spinning) {
+            Maybe::Present(claimed) => claimed,
             Maybe::Absent(absent) => return Maybe::Absent(absent),
         };
         let Some(seat) = self.shared.seats.get(worker.0)
@@ -1549,9 +1814,9 @@ impl Workers
         let waking = Instant::now();
         seat.sleeper.wake();
         let woke = u64::try_from(waking.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        let measured = &self.shared.measured;
-        measured.overhead_nanos.fetch_add(woke, Ordering::Relaxed);
-        measured.posts.fetch_add(1, Ordering::Relaxed);
+        let class = self.shared.measured.of(wake);
+        class.wakes.fetch_add(woke, Ordering::Relaxed);
+        class.posts.fetch_add(1, Ordering::Relaxed);
         Maybe::Present(Posted { worker, state })
     }
 
@@ -1999,6 +2264,8 @@ fn serve(
     };
     loop {
         if seat.run_posted() == Helped::Ran {
+            // The worker ran a part, so the next part reaches it awake.
+            WOKE.with(|woke| woke.set(Wake::Awake));
             shared.idle.release(worker);
             continue;
         }
@@ -2014,6 +2281,7 @@ fn serve(
                     shared.idle.release(worker);
                     seat.sleeper
                         .sleep_for(|| seat.holding() == Holding::Posted, UNGRANTED);
+                    WOKE.with(|woke| woke.set(Wake::Woken));
                     continue;
                 };
                 let spawn = shared.spawned.pop();
@@ -2058,17 +2326,17 @@ fn serve(
         // Each round yields, so on a full host the core goes to a thread with
         // work.
         let park = shared.park();
+        // A part that comes while the worker spins reaches it awake.
+        WOKE.with(|woke| woke.set(Wake::Awake));
         shared.spinning.release(worker);
         while !arrived() && idle.elapsed() < park {
             std::thread::yield_now();
         }
-        shared.measured.overhead_nanos.fetch_add(
-            u64::try_from(idle.elapsed().as_nanos()).unwrap_or(u64::MAX),
-            Ordering::Relaxed,
-        );
         shared.spinning.clear(worker);
         if !arrived() {
             seat.sleeper.sleep(arrived);
+            // A part that the wake brings reached a worker that parked.
+            WOKE.with(|woke| woke.set(Wake::Woken));
         }
     }
 }
@@ -2141,4 +2409,50 @@ fn keep_cost(
         .and_then(|()| std::fs::rename(&partial, file));
     // A host that refuses the write measures again at the next start.
     drop(kept);
+}
+
+#[cfg(test)]
+mod tests
+{
+    use core::time::Duration;
+
+    use super::Bucket;
+    use super::Latencies;
+
+    #[test]
+    fn a_latency_lies_within_a_sixteenth_of_its_bucket_s_middle_7285()
+    {
+        for nanos in [
+            0_u64,
+            1,
+            7,
+            8,
+            15,
+            16,
+            1_000,
+            1_100,
+            8_191,
+            123_456_789,
+            u64::MAX,
+        ] {
+            let latency = Duration::from_nanos(nanos);
+            let read = Bucket::of(latency).middle();
+            assert!(
+                read.abs_diff(latency) <= latency.checked_div(16_u32).unwrap(),
+                "{latency:?} reads as {read:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_median_of_a_class_s_latencies_is_read_from_its_buckets_7285()
+    {
+        let latencies = Latencies::default();
+        assert_eq!(latencies.median(), None);
+        for nanos in [50_000_u64, 1_000, 9_000, 1_100, 1_000] {
+            latencies.add(Duration::from_nanos(nanos));
+        }
+        // The median, 1,100 ns, lies in the bucket from 1,024 to 1,152 ns.
+        assert_eq!(latencies.median(), Some(Duration::from_nanos(1_088)));
+    }
 }

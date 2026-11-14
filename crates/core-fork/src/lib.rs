@@ -49,6 +49,19 @@ use core::time::Duration;
 use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
+quenchant_shape::reason_enum! {
+    /// Why a fork prices no job by its size.
+    pub mod unpriced {
+        /// The reason the fork gives no price.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No job has run on its calling thread yet, or the fork measures
+            /// none.
+            Unmeasured,
+        }
+    }
+}
+
 #[cfg(feature = "instrument")]
 pub mod activity;
 
@@ -151,6 +164,35 @@ pub trait Fork: Sync
         body.run(&Serial)
     }
 
+    /// What one hand-off of a job to another thread costs this fork, as it
+    /// measures its hand-offs over the process. By default it is zero, which
+    /// no price falls below, so a plan over the serial fork folds nothing onto
+    /// the calling thread. A fork over threads overrides it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn hand_off(&self) -> Duration
+    {
+        Duration::ZERO
+    }
+
+    /// What a job of `size` is expected to cost on the calling thread, as this
+    /// fork prices a node from the jobs that ran on their calling thread. By
+    /// default the fork prices no job, so a plan prices a job by its record
+    /// alone. A fork over threads overrides it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn price(
+        &self,
+        _size: ItemSize,
+    ) -> Maybe<Duration, unpriced::Absent>
+    {
+        Maybe::Absent(unpriced::Absent::Unmeasured)
+    }
+
     /// Release each item on the calling thread in slice order, run each job
     /// that a release gives on any worker, and commit each item on the
     /// calling thread as its job returns.
@@ -205,7 +247,7 @@ pub trait Fork: Sync
         for (position, item) in items.iter_mut().enumerate() {
             let position = ItemIndex(position);
             let out = match release(position, item) {
-                Releasing::Run(job) => run(job),
+                Releasing::Run(job) | Releasing::Fold(job) => run(job),
                 Releasing::Settled(out) | Releasing::Held(out, ..) => out,
             };
             commit(position, item, out);
@@ -216,9 +258,10 @@ pub trait Fork: Sync
 /// What the release of one item of [`Fork::schedule`] answers.
 ///
 /// # Specification
-/// - provides: a job to run, a result found at the release, or a release that
-///   waits on a running job, with the result to commit when no job runs, the
-///   kernel's reason for the wait and the item whose commit frees it.
+/// - provides: a job to run, a job that the plan folds onto the calling thread,
+///   a result found at the release, or a release that waits on a running job,
+///   with the result to commit when no job runs, the kernel's reason for the
+///   wait and the item whose commit frees it.
 /// - panics: none.
 /// - executable: none — a type-level block: a plain record that the caller's
 ///   release makes.
@@ -227,6 +270,11 @@ pub enum Releasing<Job, Out>
 {
     /// A job to run on any worker. Its result goes to the item's commit.
     Run(Job),
+    /// A job that the plan folds onto the calling thread, since it costs less
+    /// than a hand-off. The schedule runs it at its release on the calling
+    /// thread and commits its result there. Its result goes to the item's
+    /// commit, as the result of [`Releasing::Run`] does.
+    Fold(Job),
     /// The result, found at the release with no job to run.
     Settled(Out),
     /// The release reads the commit of a job that runs, for the reason that
