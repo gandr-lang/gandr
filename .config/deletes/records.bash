@@ -254,8 +254,8 @@ records_extras() {
   cargo_home=${CARGO_HOME:-$HOME/.cargo}
   {
     # The dep-info of each workspace unit that the package reaches.
-    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
-      'select(.reason == "compiler-artifact" and (.package_id | IN($closure[0].packages[])) and (.package_id | startswith("path+file://"))) | .filenames[]' \
+    jq -rn --slurpfile closure <(printf '%s\n' "$closure") \
+      '(reduce $closure[0].packages[] as $p ({}; .[$p] = true)) as $reached | inputs | select(.reason == "compiler-artifact" and $reached[.package_id] and (.package_id | startswith("path+file://"))) | .filenames[]' \
       "$messages" | while IFS= read -r file; do
         base=$(basename "$file")
         base=${base%.rmeta}
@@ -267,8 +267,8 @@ records_extras() {
           /:$/ && !/: / && !/^#/ { path = substr($0, 1, length($0) - 1); print "dep", (path ~ /^\// ? path : tree "/" path) }' "$file"
       done
     # The stdout of each build script that the package reaches.
-    jq -r --slurpfile closure <(printf '%s\n' "$closure") \
-      'select(.reason == "build-script-executed" and (.package_id | IN($closure[0].packages[]))) | [.package_id, .out_dir] | @tsv' \
+    jq -rn --slurpfile closure <(printf '%s\n' "$closure") \
+      '(reduce $closure[0].packages[] as $p ({}; .[$p] = true)) as $reached | inputs | select(.reason == "build-script-executed" and $reached[.package_id]) | [.package_id, .out_dir] | @tsv' \
       "$messages" | while IFS=$'\t' read -r package file; do
         stdout=$(dirname "$file")/run/stdout
         [[ -f $stdout ]] || stdout=$(dirname "$file")/output

@@ -191,9 +191,9 @@ if [[ $mode == full ]]; then
         'include "paths"; {root: ($unit | sub("\\.[a-z-]+$"; "")), kind: ($unit | capture("\\.(?<k>[a-z-]+)$").k),
           items: [.[] | select(.record == "item") | {id: .path, kind, file: (.file | tree_path), start, end, line, exported}]}' "$unit" \
         || return 2
-    done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: [.items[].id]}) | from_entries) as $lib
+    done | jq -s -c '(map(select(.kind != "test")) | map({key: .root, value: (reduce .items[].id as $id ({}; .[$id] = true))}) | from_entries) as $lib
       | [.[] | .root as $root | .kind as $kind | .items[]
-          | . + {test: ($kind == "test" and .kind == "fn" and (.id | IN(($lib[$root] // [])[]) | not))}]
+          | . + {test: ($kind == "test" and .kind == "fn" and ($lib[$root][.id] | not))}]
       | unique_by(.id)'
   }
   # A record whose relative path leaves the tree is refused (`paths.jq`),
@@ -233,10 +233,14 @@ if [[ $mode == full ]]; then
   # commit (`origin.bash`, #7259).
   origin() { "$here/origin.bash" "$base" text "$2" "$1"; }
   added() { "$here/origin.bash" "$base" file "$1"; }
+  # The items of the base that the head lacks, in one pass over an object
+  # keyed by the head's ids (#7479): a scan of the head's list for each item
+  # of the base took minutes. Each line carries the item's fields and its
+  # JSON, so the loop starts no `jq` to split them.
   left=$({
-    jq -c --slurpfile head "$scratch/items-head.json" '($head[0] | map(.id)) as $h | .[] | select(.id | IN($h[]) | not)' "$scratch/items-base.json" \
-      | while IFS= read -r item; do
-          IFS=$'\t' read -r id file start end < <(jq -r '[.id, .file, (.start // ""), (.end // "")] | @tsv' <<< "$item")
+    jq -r --slurpfile head "$scratch/items-head.json" '(reduce $head[0][].id as $id ({}; .[$id] = true)) as $h
+      | .[] | select($h[.id] | not) | "\(.id)\t\(.file // "")\t\(.start // "")\t\(.end // "")\t\(tojson)"' "$scratch/items-base.json" \
+      | while IFS=$'\t' read -r id file start end item; do
           if [[ $start =~ ^[0-9]+$ && $end =~ ^[0-9]+$ ]]; then
             found=$("$here/origin.bash" "$base" span "$file" "$start" "$end")
           else
