@@ -31,6 +31,11 @@
 //! `m_i` is zero, and the 0-cell is an outer wire. Its maps are the site's,
 //! fewer than Θₙ's: faces only, with the empty column initial.
 //!
+//! The faces of an object are the objects with a map into it
+//! ([`Wreath::faces`]). They make a full sub-wreath that is closed under maps
+//! into it, so the conditions run over the faces as over the whole wreath. A
+//! composite's certificate needs its faces alone.
+//!
 //! # The two units, one level up
 //!
 //! Inside a column whose inner shape is empty, a span of two lowering maps has
@@ -97,10 +102,12 @@ use core::fmt;
 use anodized::spec;
 use gandr_theory_circuit_algebras::Edge;
 use gandr_theory_circuit_algebras::EdgeCount;
+use quenchant_shape::shape::Maybe;
 
 use crate::catalogue::Catalogue;
 use crate::catalogue::Family;
 use crate::catalogue::ShapeIndex;
+use crate::catalogue::shape_class;
 use crate::degree::Degree;
 use crate::level::Level;
 use crate::map::CompositionMismatch;
@@ -437,26 +444,154 @@ impl<Inner: Level> Wreath<Inner>
     ) -> Self
     {
         let classes = Self::classes(outer, inner, bound);
-        let objects: Box<[WreathShape<Inner::Object>]> = classes
+        Self::over(outer, inner, &classes, |_, _, source, target| {
+            Self::maps_between(outer, inner, source, target)
+        })
+    }
+
+    /// The wreath of the faces of `object` among the objects of total size at
+    /// most `bound`: each object with a map into `object`, in the order
+    /// [`Wreath::build`] gives them, and one hom set per ordered pair.
+    ///
+    /// A map into a face composes with the face's map into `object`, so each
+    /// object with a map into a face is a face.
+    ///
+    /// # Specification
+    /// - ensures: present exactly when the objects of total size at most
+    ///   `bound` hold `object`'s class, and absent as [`Level::find`] names
+    ///   that class otherwise. Each object of the faces has a map into
+    ///   `object`'s class, which is among them, and there is one hom set per
+    ///   ordered pair.
+    /// - panics: none.
+    /// - intension: one hom set into `object`'s class for each object, and one
+    ///   hom set for each other ordered pair of faces.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — at each object of the chain restriction to total size
+    ///   nine, the faces are the objects of the whole wreath with a map into
+    ///   it, in its order, with its hom sets; an object past the bound and one
+    ///   outside the chains are named as [`Level::find`] names them.
+    /// - witness: `tests::theta::the_faces_are_the_full_sub_wreath_on_the_objects_with_a_map_in_7453`
+    #[inline]
+    #[spec(ensures: |ref faces| match *faces {
+        Maybe::Present(ref faces) => faces.homs.len() == faces.objects.len().saturating_mul(faces.objects.len())
+            && matches!(faces.find(object), Maybe::Present(_)),
+        Maybe::Absent(_) => true,
+    })]
+    pub fn faces(
+        outer: &Catalogue,
+        inner: &Inner,
+        bound: ShapeSize,
+        object: &WreathShape<Inner::Object>,
+    ) -> Maybe<Self, shape_class::Absent>
+    {
+        let classes = Self::classes(outer, inner, bound);
+        let key = <Self as Level>::key(object);
+        let held = match outer.find(&object.outer) {
+            Maybe::Present(outer_index) => classes.iter().find(|class| {
+                class.0 == outer_index
+                    && Self::object_of(outer, inner, class)
+                        .is_some_and(|candidate| <Self as Level>::key(&candidate) == key)
+            }),
+            Maybe::Absent(_) => None,
+        };
+        let Some(target) = held.cloned()
+        else {
+            let families = Self::families_of(outer, inner);
+            return Maybe::Absent(match Self::lies_in(&families, object) {
+                Membership::Inside => shape_class::Absent::PastTheBound,
+                Membership::Outside => shape_class::Absent::OutsideTheFamily,
+            });
+        };
+        let mut faces: Vec<Class> = Vec::new();
+        let mut into: Vec<HomSet<Inner::Map>> = Vec::new();
+        for class in classes {
+            let maps = Self::maps_between(outer, inner, &class, &target);
+            if !maps.is_empty() {
+                faces.push(class);
+                into.push(maps);
+            }
+        }
+        let at = faces.iter().position(|face| *face == target);
+        Maybe::Present(Self::over(
+            outer,
+            inner,
+            &faces,
+            |source_at, target_at, source, face| match (
+                Some(target_at) == at,
+                into.get_mut(source_at),
+            ) {
+                (true, Some(maps)) => core::mem::take(maps),
+                (true, None) | (false, _) => Self::maps_between(outer, inner, source, face),
+            },
+        ))
+    }
+
+    /// The highest degree of an object of total size at most `bound`, or zero
+    /// when there is none.
+    ///
+    /// # Specification
+    /// - ensures: the degree of no object of [`Wreath::build`] at `bound` is
+    ///   past the answer, and some object has it when there is one.
+    /// - panics: none.
+    /// - intension: the classes at `bound`, and no hom set.
+    /// - executable: none — the predicate reads each object of the whole wreath
+    ///   at `bound`, the build that this function avoids.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the answer is the highest degree among the objects of
+    ///   the chain restriction at each total size to nine.
+    /// - witness: `tests::theta::the_top_degree_is_the_highest_degree_of_the_whole_wreath_7453`
+    #[inline]
+    #[must_use]
+    pub fn top_degree(
+        outer: &Catalogue,
+        inner: &Inner,
+        bound: ShapeSize,
+    ) -> Degree
+    {
+        let top = Self::classes(outer, inner, bound)
             .iter()
-            .filter_map(|class| {
-                let outer_shape = outer.shapes().get(usize::from(class.0))?.clone();
+            .map(|class| {
                 let columns = class
                     .1
                     .iter()
-                    .filter_map(|column| inner.objects().get(usize::from(*column)).cloned())
-                    .collect();
-                Some(WreathShape {
-                    outer: outer_shape,
-                    columns,
-                })
+                    .filter_map(|column| inner.objects().get(usize::from(*column)))
+                    .fold(0_usize, |sum, column| {
+                        sum.saturating_add(usize::from(Inner::degree(column)))
+                    });
+                outer
+                    .shapes()
+                    .get(usize::from(class.0))
+                    .map_or(0_usize, |shape| usize::from(Degree::of(shape)))
+                    .saturating_add(columns)
             })
+            .max()
+            .unwrap_or(0_usize);
+        Degree::from(top)
+    }
+
+    /// The wreath over `classes`, in their order, with the hom set `hom` gives
+    /// for each ordered pair: by the two positions and the two classes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn over(
+        outer: &Catalogue,
+        inner: &Inner,
+        classes: &[Class],
+        mut hom: impl FnMut(usize, usize, &Class, &Class) -> HomSet<Inner::Map>,
+    ) -> Self
+    {
+        let objects: Box<[WreathShape<Inner::Object>]> = classes
+            .iter()
+            .filter_map(|class| Self::object_of(outer, inner, class))
             .collect();
         let mut homs: Vec<HomSet<Inner::Map>> =
             Vec::with_capacity(classes.len().saturating_mul(classes.len()));
-        for source in &classes {
-            for target in &classes {
-                homs.push(Self::maps_between(outer, inner, source, target));
+        for (source_at, source) in classes.iter().enumerate() {
+            for (target_at, target) in classes.iter().enumerate() {
+                homs.push(hom(source_at, target_at, source, target));
             }
         }
         let keys = objects
@@ -464,15 +599,48 @@ impl<Inner: Level> Wreath<Inner>
             .enumerate()
             .map(|(index, object)| (<Self as Level>::key(object), ShapeIndex::from(index)))
             .collect();
-        let families = core::iter::once(outer.family().clone())
-            .chain(inner.families().iter().cloned())
-            .collect();
         Self {
             objects,
             classes: keys,
-            families,
+            families: Self::families_of(outer, inner),
             homs: homs.into_boxed_slice(),
         }
+    }
+
+    /// The object of `class`: its outer shape with its columns.
+    ///
+    /// # Specification
+    /// trivial.
+    fn object_of(
+        outer: &Catalogue,
+        inner: &Inner,
+        class: &Class,
+    ) -> Option<WreathShape<Inner::Object>>
+    {
+        let outer_shape = outer.shapes().get(usize::from(class.0))?.clone();
+        let columns = class
+            .1
+            .iter()
+            .filter_map(|column| inner.objects().get(usize::from(*column)).cloned())
+            .collect();
+        Some(WreathShape {
+            outer: outer_shape,
+            columns,
+        })
+    }
+
+    /// The families of a wreath of `outer` over `inner`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn families_of(
+        outer: &Catalogue,
+        inner: &Inner,
+    ) -> Box<[Family]>
+    {
+        core::iter::once(outer.family().clone())
+            .chain(inner.families().iter().cloned())
+            .collect()
     }
 
     /// The classes of total size at most `bound`, each in its least form

@@ -5,13 +5,15 @@
 //! inhabit, and a `compose[n, k]` composite the one over the chain catalogue
 //! ([`Family`]). A composite of a level-two shape names level two of degree
 //! `n` over the wreath of the chains at total size `k` over themselves
-//! ([`StratumLevel`]). A context holds each catalogue, wreath and stratum it
-//! needs for its own life. Before it builds one, it asks its store for the
-//! value that another context of the process built under the same key
-//! ([`BuiltKey`]). It shares each value it builds. So the contexts of one
-//! process build each value once. No static outlives the context, so a value
-//! crosses contexts and processes only through a store. The store keeps no
-//! image of a level-one chain stratum.
+//! ([`StratumLevel`]); its admission certifies level two over the composite's
+//! faces alone ([`Strata::faces_two`]). A context holds each catalogue,
+//! wreath and stratum it needs for its own life. Before it builds one, it asks
+//! its store for the value that another context of the process built under
+//! the same key ([`BuiltKey`]). It shares each value it builds. So the
+//! contexts of one process build each value once. No static outlives the
+//! context, so a value crosses contexts and processes only through a store.
+//! The store keeps no image of a level-one chain stratum, nor of level two
+//! over a composite's faces.
 //!
 //! A run that keeps strata hands each context a [`StratumStore`]. Before it
 //! certifies, the context asks the store for the stratum's image at its level
@@ -46,14 +48,19 @@ use gandr_theory_sites::Family;
 use gandr_theory_sites::Level as _;
 use gandr_theory_sites::LevelUncertified;
 use gandr_theory_sites::SegalStratum;
+use gandr_theory_sites::Shape;
 use gandr_theory_sites::ShapeBudget;
+use gandr_theory_sites::ShapeKey;
 use gandr_theory_sites::ShapeObstruction;
 use gandr_theory_sites::ShapeSize;
 use gandr_theory_sites::StratumImage;
 use gandr_theory_sites::Uncertified;
 use gandr_theory_sites::Unreplayed;
 use gandr_theory_sites::Wreath;
+use gandr_theory_sites::WreathKey;
+use gandr_theory_sites::WreathShape;
 use gandr_theory_sites::WreathStratum;
+use gandr_theory_sites::shape_class;
 use quenchant_shape::shape::Maybe;
 
 use super::StratumDefect;
@@ -183,6 +190,20 @@ pub enum BuiltKey
     /// The stratum at a level and a stratum, over the catalogue of a family
     /// built under a budget.
     Stratum(Family, StratumAt, StratumLevel, ShapeBudget),
+    /// Level two over the faces of one object of the chains' wreath at a
+    /// bound: the bound, and the object's class.
+    Faces(ShapeSize, WreathKey<ShapeKey>),
+}
+
+/// Why level two over a composite's faces is not built: the wreath at the
+/// bound holds no object of the composite's class, or a certificate refuses.
+enum Unfaced
+{
+    /// The class is not held, as [`gandr_theory_sites::Level::find`] names
+    /// it.
+    Unheld(shape_class::Absent),
+    /// A catalogue, level one or the faces' certificate refuses.
+    Refused(StratumDefect),
 }
 
 /// A value that a context builds of the site, frozen once built. The store
@@ -467,6 +488,12 @@ pub struct Strata
     wreaths: BTreeMap<ShapeSize, Arc<Wreath<Catalogue>>>,
     /// Each level-two stratum over the chains certified or recalled so far.
     held_two: BTreeMap<StratumAt, Arc<WreathStratum>>,
+    /// Level two over the faces of each object of the chains' wreath certified
+    /// so far, by the bound and the object's class.
+    held_faces: BTreeMap<(ShapeSize, WreathKey<ShapeKey>), Arc<WreathStratum>>,
+    /// The highest degree of an object of the chains' wreath at each bound read
+    /// so far.
+    tops: BTreeMap<ShapeSize, Degree>,
     /// The wreath of the chains over level two at each bound built so far.
     wreaths_three: BTreeMap<ShapeSize, Arc<ThreeWreath>>,
     /// Each level-three stratum over the chains certified or recalled so far.
@@ -491,6 +518,8 @@ impl Default for Strata
             held: BTreeMap::new(),
             wreaths: BTreeMap::new(),
             held_two: BTreeMap::new(),
+            held_faces: BTreeMap::new(),
+            tops: BTreeMap::new(),
             wreaths_three: BTreeMap::new(),
             held_three: BTreeMap::new(),
             wreaths_four: BTreeMap::new(),
@@ -706,6 +735,132 @@ impl Strata
         })?;
         let _first = self.held_two.insert(at, Arc::clone(&held));
         Ok(held)
+    }
+
+    /// Level two over the faces of `object` in the wreath of the chains at
+    /// `at`'s bound, certified at the degree of `object`: absent when the
+    /// wreath holds no object of its class.
+    ///
+    /// The faces are the objects of the wreath with a map into `object`. Each
+    /// face of degree two to the degree of `object` is certified the colimit of
+    /// its cells against every face, from level one at the catalogue's reach.
+    /// The degree `at` names is checked as [`Strata::level_two`] checks it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a stratum at the degree of `object` over the faces of
+    ///   `object`, or absent as [`gandr_theory_sites::Level::find`] names the
+    ///   class of `object` in the wreath at `at`'s bound. Every call at one
+    ///   bound and one class answers the stratum the first answered.
+    /// - fails: [`StratumDefect::Allowance`] for a bound past
+    ///   [`ShapeSize::LARGEST`]; [`StratumDefect::Degree`] for a degree zero or
+    ///   past every object of the wreath; [`StratumDefect::Condition`] at the
+    ///   degree of the source of the first map out of order among the faces, or
+    ///   of the first face that is not the colimit of its cells; level one's
+    ///   refusals as [`Strata::certified`] gives them.
+    /// - panics: none.
+    /// - intension: the first call at a bound builds the chains and certifies
+    ///   level one at the catalogue's reach. The first call at a class asks the
+    ///   store for the stratum that another context of the process built under
+    ///   the bound and the class. With none, it builds the faces alone and
+    ///   certifies them, and the store shares the stratum. A degree past the
+    ///   degree of `object` reads the classes at the bound once in the context.
+    ///   A refusal is not held or shared, so it is checked again.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a composite's faces certify at its degree, a second
+    ///   context reads the first's stratum and builds nothing, and a degree
+    ///   past every object and an object past the bound are refused as the
+    ///   whole stratum refuses them.
+    /// - witness: `ua::tests::level_two_over_a_composite_s_faces_is_shared_and_refused_as_the_whole_7453`
+    #[spec(ensures: |ref ret| match *ret {
+        | Ok(Maybe::Present(ref stratum)) => at.bound <= ShapeSize::LARGEST
+            && stratum.degree() == <Wreath<Catalogue> as gandr_theory_sites::Level>::degree(object)
+            && matches!(stratum.wreath().find(object), Maybe::Present(_)),
+        | Ok(Maybe::Absent(_)) => at.bound <= ShapeSize::LARGEST,
+        | Err(StratumDefect::Allowance { bound: refused }) => refused == at.bound,
+        | Err(StratumDefect::Degree { degree: refused }) => refused == at.degree,
+        | Err(StratumDefect::Budget { .. }) => false,
+        | Err(StratumDefect::Condition { .. }) => true,
+    })]
+    pub fn faces_two(
+        &mut self,
+        at: StratumAt,
+        object: &WreathShape<Shape>,
+    ) -> Result<Maybe<Arc<WreathStratum>, shape_class::Absent>, StratumDefect>
+    {
+        if at.bound > ShapeSize::LARGEST {
+            return Err(StratumDefect::Allowance { bound: at.bound });
+        }
+        let degree = <Wreath<Catalogue> as gandr_theory_sites::Level>::degree(object);
+        let class = (
+            at.bound,
+            <Wreath<Catalogue> as gandr_theory_sites::Level>::key(object),
+        );
+        if let Some(held) = self.held_faces.get(&class) {
+            let held = Arc::clone(held);
+            self.reaches(at, degree)?;
+            return Ok(Maybe::Present(held));
+        }
+        let catalogue = self.catalogue(&Family::Chains, at.bound, ShapeBudget::EVERY)?;
+        let below = self.certified(
+            &Family::Chains,
+            StratumAt {
+                bound: at.bound,
+                degree: catalogue.reach(),
+            },
+            ShapeBudget::EVERY,
+        )?;
+        self.reaches(at, degree)?;
+        let store = Arc::clone(&self.store);
+        let key = BuiltKey::Faces(class.0, class.1.clone());
+        let built = shared_or(&*store, key, || {
+            let level: &Catalogue = &catalogue;
+            match Wreath::faces(level, level, at.bound, object) {
+                Maybe::Present(faces) => {
+                    WreathStratum::certify(Arc::new(faces), degree, SegalStratum::clone(&below))
+                        .map_err(|refused| Unfaced::Refused(uncertified::<Catalogue>(refused)))
+                },
+                Maybe::Absent(reason) => Err(Unfaced::Unheld(reason)),
+            }
+        });
+        match built {
+            Ok(held) => {
+                let _first = self.held_faces.insert(class, Arc::clone(&held));
+                Ok(Maybe::Present(held))
+            },
+            Err(Unfaced::Unheld(reason)) => {
+                self.reaches(at, Degree::from(0_usize))?;
+                Ok(Maybe::Absent(reason))
+            },
+            Err(Unfaced::Refused(defect)) => Err(defect),
+        }
+    }
+
+    /// Whether some object of the chains' wreath at `at`'s bound reaches
+    /// `at`'s degree, given an object of degree `held` that the wreath holds.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`StratumDefect::Degree`] for a degree zero or past every object;
+    /// [`StratumDefect`] as [`Strata::catalogue`] refuses the chains.
+    fn reaches(
+        &mut self,
+        at: StratumAt,
+        held: Degree,
+    ) -> Result<(), StratumDefect>
+    {
+        if at.degree < Degree::from(1_usize)
+            || (at.degree > held && self.top_two(at.bound)? < at.degree)
+        {
+            return Err(StratumDefect::Degree { degree: at.degree });
+        }
+        Ok(())
     }
 
     /// Level three at `at` over the wreath of the chains at `at`'s bound over
@@ -928,6 +1083,29 @@ impl Strata
         Ok((catalogue, built))
     }
 
+    /// The highest degree of an object of the chains' wreath at `bound`, read
+    /// from the classes at the first call and held for the context's life.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`StratumDefect`] as [`Strata::catalogue`] refuses the chains.
+    fn top_two(
+        &mut self,
+        bound: ShapeSize,
+    ) -> Result<Degree, StratumDefect>
+    {
+        if let Some(top) = self.tops.get(&bound) {
+            return Ok(*top);
+        }
+        let catalogue = self.catalogue(&Family::Chains, bound, ShapeBudget::EVERY)?;
+        let level: &Catalogue = &catalogue;
+        let top = Wreath::top_degree(level, level, bound);
+        let _first = self.tops.insert(bound, top);
+        Ok(top)
+    }
+
     /// Level two at the top degree of the chains' wreath at `bound`, and the
     /// wreath of the chains over level two. The wreath is built on the first
     /// call or read from the store, and held for the context's life.
@@ -1083,19 +1261,28 @@ where
         }
     }
     let stratum =
-        WreathStratum::certify(wreath, at.degree, below).map_err(|refused| match refused {
-            LevelUncertified::Degree { degree: refused } => {
-                StratumDefect::Degree { degree: refused }
-            },
-            LevelUncertified::Direct { case } => StratumDefect::Condition {
-                degree: <Wreath<Below::Level> as gandr_theory_sites::Level>::degree(case.source()),
-            },
-            LevelUncertified::Condition { failure } => StratumDefect::Condition {
-                degree: <Wreath<Below::Level> as gandr_theory_sites::Level>::degree(
-                    &failure.object,
-                ),
-            },
-        })?;
+        WreathStratum::certify(wreath, at.degree, below).map_err(uncertified::<Below::Level>)?;
     store.keep(&chains, at, level, &stratum.image());
     Ok(stratum)
+}
+
+/// The defect a context names for `refused`, a level above `Inner` that is not
+/// certified: the degree asked for, or the degree of the first object that
+/// fails.
+///
+/// # Specification
+/// trivial.
+fn uncertified<Inner>(refused: LevelUncertified<Inner::Object, Inner::Map>) -> StratumDefect
+where
+    Inner: gandr_theory_sites::Level,
+{
+    match refused {
+        LevelUncertified::Degree { degree } => StratumDefect::Degree { degree },
+        LevelUncertified::Direct { case } => StratumDefect::Condition {
+            degree: <Wreath<Inner> as gandr_theory_sites::Level>::degree(case.source()),
+        },
+        LevelUncertified::Condition { failure } => StratumDefect::Condition {
+            degree: <Wreath<Inner> as gandr_theory_sites::Level>::degree(&failure.object),
+        },
+    }
 }
