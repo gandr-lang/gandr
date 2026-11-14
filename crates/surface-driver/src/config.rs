@@ -110,6 +110,14 @@
 //! holds only the calls still pending. Removing it loses those calls: a hub
 //! that restarts cannot answer them, and their callers wait on them.
 //!
+//! # The pool's park cost under the XDG state directory
+//!
+//! Each pool of two threads or more measures the host's park-to-wake cost
+//! at its start, and keeps it in `gandr/pool/park-<threads>` under the user's
+//! state directory, by the same rule. A later run at that width reads the
+//! number in place of a fresh measure. Removing the file costs the next run
+//! one measure, about two milliseconds.
+//!
 //! # The retries of the toolset
 //!
 //! The toolset of `gandr serve` tries a callback that fails again, as
@@ -307,6 +315,36 @@ pub fn checkpoints() -> Option<PathBuf>
     checkpointed(
         std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+/// The directory a pool keeps the host's measured park-to-wake cost in,
+/// `gandr/pool` under the user's state directory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/pool` under `$XDG_STATE_HOME` and `$HOME` by
+///   [`directory`]'s rule, with `.local/state` the default; absent when neither
+///   names a directory.
+/// - provides: where each pool of the driver keeps one number for each width.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a staging under a scratch state home keeps the cost of
+///   its pool's width.
+/// - witness: `tests::cli::a_staging_keeps_its_pool_s_park_cost_under_the_state_home`
+pub fn pool() -> Option<PathBuf>
+{
+    Some(
+        directory(
+            std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+            std::env::var_os("HOME").map(PathBuf::from),
+            Path::new(".local/state"),
+        )?
+        .join("gandr")
+        .join("pool"),
     )
 }
 

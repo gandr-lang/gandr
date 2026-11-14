@@ -53,7 +53,6 @@
 //! beside the mapping and renamed over it ([`Reader::write`]).
 
 use core::cmp::Reverse;
-use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -474,12 +473,7 @@ impl Formatting
             }
         };
         match pool.helpers(&order) {
-            Maybe::Present((threads, helpers)) => threads.in_place_scope(|scope| {
-                for _ in 0 .. NonZeroUsize::from(helpers).get() {
-                    scope.spawn(|_| work());
-                }
-                work();
-            }),
+            Maybe::Present(helpers) => helpers.help(&work, |_posts| work()),
             Maybe::Absent(_) => work(),
         }
         for ((path, reached), slot) in paths.iter().zip(found).zip(laid) {

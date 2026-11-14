@@ -35,16 +35,16 @@
 //! one build; it is not a format.
 //!
 //! **On the driver's pool.** The checker names no thread: it forks through
-//! `gandr_core_fork::Fork`, and the dispatcher's fork runs on the
-//! driver's pool (the `pool` module, which records the choice of `rayon`),
-//! entered once per program. Each forked stage hands one share of its items,
-//! one slice, to each of at most one task per worker and one per item. Each
-//! task makes its worker state — an arena snapshot, a drafter — on its first
-//! item, so a stage clones no more snapshots than it has busy workers. The
-//! readmissions and the family admissions are the two halves of one
-//! `rayon::join`, and each half forks per item inside it. At one thread no
-//! pool is built, and the checker's serial fork is the reference every width
-//! is tested against.
+//! `gandr_core_fork::Fork`, and the dispatcher's fork runs on the driver's
+//! workers (the `pool` module, which records the choice of its own workers).
+//! The calling thread runs each program's check. Each forked stage hands one
+//! share of its items, one slice, to the calling thread and to each idle
+//! worker, at most one for each thread and one for each item. Each share makes
+//! its worker state — an arena snapshot, a drafter — on its first item, so a
+//! stage clones no more snapshots than it has busy threads. The readmissions
+//! and the family admissions are the two halves of one join, and each half
+//! forks per item inside it. At one thread no worker starts, and the checker's
+//! serial fork is the reference every width is tested against.
 
 use core::fmt;
 use core::fmt::Write as _;
@@ -798,7 +798,7 @@ impl Staging
 ///
 /// # Specification
 /// - ensures: what [`staging::check`] returns for the program at the verb's
-///   gate and allowance, on the calling thread or inside the pool.
+///   gate and allowance, on the calling thread with the pool's workers.
 /// - fails: as [`staging::check`].
 /// - panics: none of its own.
 /// - executable: none — a dispatch to [`staging::check`], whose contract
@@ -819,9 +819,7 @@ fn check(
 {
     match *forked {
         Forked::Serial => staging::check(program, memo, GATE, ALLOWANCE, &Serial, clock),
-        Forked::Pooled(pool, ref fork) => {
-            pool.install(|| staging::check(program, memo, GATE, ALLOWANCE, fork, clock))
-        },
+        Forked::Pooled(ref fork) => staging::check(program, memo, GATE, ALLOWANCE, fork, clock),
     }
 }
 

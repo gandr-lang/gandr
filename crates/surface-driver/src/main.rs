@@ -1569,7 +1569,7 @@ fn lock(paths: Vec<PathBuf>) -> ExitCode
         Ok(held) => held,
         Err(exit) => return exit,
     };
-    let pool = Pool::new(Width::PerformanceCores);
+    let pool = pooled(Width::PerformanceCores);
     let mut verdict = RunVerdict::Settled;
     for package in &packages {
         let path = package.lock();
@@ -2381,7 +2381,22 @@ fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
 /// trivial.
 fn host_pool() -> Arc<Pool>
 {
-    Arc::new(Pool::new(Width::PerformanceCores))
+    Arc::new(pooled(Width::PerformanceCores))
+}
+
+/// A pool of `width` threads that keeps the host's measured park-to-wake
+/// cost in [`config::pool`]'s directory, so a later run reads it in place of a
+/// fresh measure.
+///
+/// # Specification
+/// trivial.
+fn pooled(width: Width) -> Pool
+{
+    let pool = Pool::new(width);
+    match config::pool() {
+        Some(directory) => pool.kept_in(directory),
+        None => pool,
+    }
 }
 
 /// The exit code a language-server session that ended as `served` owes.
@@ -3789,7 +3804,7 @@ fn render(
             walk,
             width,
         } => {
-            let pool = Arc::new(Pool::new(width));
+            let pool = Arc::new(pooled(width));
             // The forked drain gains only where the pool has workers to
             // spare: in a run of fewer sources than threads. In a wider run
             // the other sources keep each worker busy. A process renders one
@@ -3856,11 +3871,11 @@ fn render(
             script(&mut runnable, printing.spelling, stdout, stderr)
         },
         Outcome::Stage(staging) => {
-            let pool = Pool::new(staging.width());
+            let pool = pooled(staging.width());
             stage(staging, &pool, stdout, stderr)
         },
         Outcome::Format(formatting) => {
-            let pool = Pool::new(formatting.width());
+            let pool = pooled(formatting.width());
             fmt(formatting, &pool, stdout, stderr)
         },
         Outcome::Cells(census) => cells(census, stdout, stderr),

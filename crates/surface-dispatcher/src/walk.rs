@@ -66,24 +66,23 @@
 //! judgement was two fifths of the run. The choice reverses if a checker
 //! consults what earlier components admitted, which needs the walk order.
 //!
-//! **On the driver's pool.** The walk spawns its component jobs on the
-//! driver's [`Pool`], `rayon` threads started once per process, and keeps the
+//! **On the driver's pool.** The walk hands its component jobs to the
+//! driver's [`Pool`], whose workers start once per process, and keeps the
 //! cursor and the in-order consumer on the calling thread. Before, the pool was
 //! `std::thread::scope` threads started for each visit. On the corpus, with
-//! the same cursor and the same consumer, `rayon` measured the same as scoped
-//! threads, since one shared cursor leaves nothing for work stealing to
-//! steal. The reversal the walk recorded came true: the stage verb forks
-//! below the source and needs a stealing pool, and one pool held by the
-//! driver serves both verbs, so a process starts its threads once. The choice
-//! reverses if the walk measures slower on the shared pool than on threads of
-//! its own.
+//! the same cursor and the same consumer, a shared pool measured the same as
+//! scoped threads, since one shared cursor leaves nothing to steal. One pool
+//! held by the driver serves the walk and the stage verb, so a process starts
+//! its threads once. Each helper sends a stop when it ends, by its return or
+//! by a panic, so the consumer knows when no helper can send a judgement. The
+//! choice reverses if the walk measures slower on the shared pool than on
+//! threads of its own.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map;
 use alloc::sync::Arc;
 use core::cmp::Reverse;
-use core::num::NonZeroUsize;
 use core::ops::ControlFlow;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -1006,6 +1005,8 @@ impl Walk
         let consume = |helpers: usize| -> ControlFlow<Stop> {
             // Judgements that arrived ahead of their turn in walk order.
             let mut early = BTreeMap::new();
+            // The helpers that have not sent their stop.
+            let mut running = helpers;
             // Each judged component's compositions, by source, taken as the
             // last step standing at each is handed over.
             let mut judged: BTreeMap<usize, Vec<Option<Held<'_>>>> = BTreeMap::new();
@@ -1044,9 +1045,16 @@ impl Walk
                                 if let Some(job) = early.remove(&placed.component) {
                                     break Some(job);
                                 }
-                                if let Ok((arrived, job)) = receiver.try_recv() {
-                                    early.insert(arrived, job);
-                                    continue;
+                                match receiver.try_recv() {
+                                    Ok(Arrival::Judged(arrived, job)) => {
+                                        early.insert(arrived, job);
+                                        continue;
+                                    },
+                                    Ok(Arrival::Stopped) => {
+                                        running = running.saturating_sub(1);
+                                        continue;
+                                    },
+                                    Err(_) => {},
                                 }
                                 if let Some((taken, job)) = take() {
                                     if taken == placed.component {
@@ -1055,13 +1063,18 @@ impl Walk
                                     early.insert(taken, job);
                                     continue;
                                 }
+                                // Every helper has stopped without it: one
+                                // panicked, and the fork will say so.
+                                if running == 0 {
+                                    break work(placed.component);
+                                }
                                 match receiver.recv() {
-                                    Ok((arrived, job)) => {
+                                    Ok(Arrival::Judged(arrived, job)) => {
                                         early.insert(arrived, job);
                                     },
-                                    // Every pool thread has stopped without
-                                    // it: one panicked, and the scope will say
-                                    // so.
+                                    Ok(Arrival::Stopped) => {
+                                        running = running.saturating_sub(1);
+                                    },
                                     Err(_) => {
                                         break work(placed.component);
                                     },
@@ -1122,28 +1135,58 @@ impl Walk
             ControlFlow::Continue(())
         };
         match pool.pool().helpers(&order) {
-            Maybe::Present((threads, helpers)) => threads.in_place_scope(|scope| {
-                let helpers = NonZeroUsize::from(helpers).get();
-                for _ in 0 .. helpers {
-                    let sender = sender.clone();
-                    let take = &take;
-                    scope.spawn(move |_| {
-                        while let Some(lowered) = take() {
-                            if sender.send(lowered).is_err() {
-                                break;
-                            }
+            Maybe::Present(helpers) => {
+                // A helper takes the largest component left and sends its
+                // judgement, then sends its stop as it ends.
+                let helper = || {
+                    let _stop = Stopping(&sender);
+                    while let Some((position, job)) = take() {
+                        if sender.send(Arrival::Judged(position, job)).is_err() {
+                            break;
                         }
-                    });
-                }
-                drop(sender);
-                consume(helpers)
-            })?,
+                    }
+                };
+                helpers.help(&helper, |posts| consume(posts.0))?;
+            },
             Maybe::Absent(_) => {
                 drop(sender);
                 consume(0)?;
             },
         }
         ControlFlow::Continue(self.report)
+    }
+}
+
+/// What a helper of the walk's fork sends the calling thread.
+///
+/// # Specification
+/// trivial.
+enum Arrival<Job>
+{
+    /// The judgement of the component at a place in the walk's order.
+    Judged(usize, Job),
+    /// The helper stopped: it sends nothing more.
+    Stopped,
+}
+
+/// The stop of one helper of the walk's fork, which it sends as it ends, by
+/// its return or by a panic.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct Stopping<'channel, Job>(&'channel std::sync::mpsc::Sender<Arrival<Job>>);
+
+impl<Job> Drop for Stopping<'_, Job>
+{
+    /// Send the helper's stop. A send fails only once the calling thread has
+    /// dropped its receiver, when no stop is needed.
+    ///
+    /// # Specification
+    /// trivial.
+    fn drop(&mut self)
+    {
+        drop(self.0.send(Arrival::Stopped));
     }
 }
 

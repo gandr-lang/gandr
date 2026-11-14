@@ -1697,7 +1697,6 @@ dependencies = [
  "memmap2",
  "quenchant-anodized",
  "quenchant-shape",
- "rayon",
  "rtrb",
  "self_cell",
  "serde",

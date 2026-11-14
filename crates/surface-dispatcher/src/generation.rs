@@ -49,7 +49,7 @@
 //!   boundary to poll at.
 //! - _An asynchronous runtime's cancellation token, such as `tokio-util`'s
 //!   `CancellationToken`._ It cancels futures; the engine's jobs are
-//!   synchronous steps on `rayon` threads, which would take on a runtime for
+//!   synchronous steps on the pool's threads, which would take on a runtime for
 //!   one flag. Reversal: the engine's jobs become futures.
 //!
 //! The results come back on one `std::sync::mpsc` channel that the owner of
@@ -445,7 +445,7 @@ where
         };
         self.running = self.running.saturating_add(1);
         match self.pool.standing() {
-            Maybe::Present(threads) => threads.spawn(run),
+            Maybe::Present(workers) => workers.stand(Box::new(run)),
             Maybe::Absent(_) => run(),
         }
         Submitted::Started

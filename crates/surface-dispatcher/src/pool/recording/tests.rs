@@ -21,6 +21,8 @@ use super::clock;
 use super::marked;
 use crate::pool::ItemIndex;
 use crate::pool::Pool;
+use crate::pool::workers::WorkerIndex;
+use crate::pool::workers::current_worker;
 use crate::width::Threads;
 use crate::width::Width;
 
@@ -70,13 +72,23 @@ fn a_recorded_fork_marks_each_item_with_its_declaration()
     let pool = four();
     let activity = pool.activity(slots());
     let recording = pool.recording(&activity, (Task::Fork, World::from(0)), past_a_hundred);
-    let mut items = [0_u32; 64];
+    // Each item counts its runs and keeps the worker that ran it, if any.
+    let mut items = [(0_u32, None::<usize>); 64];
     recording.each(
         &mut items,
         || (),
-        |&mut (), item| *item = item.saturating_add(1),
+        |&mut (), item| {
+            item.0 = item.0.saturating_add(1);
+            item.1 = match current_worker() {
+                Maybe::Present(WorkerIndex(worker)) => Some(worker),
+                Maybe::Absent(_) => None,
+            };
+        },
     );
-    assert!(items.iter().all(|&item| item == 1), "each item runs once");
+    assert!(
+        items.iter().all(|&(runs, _)| runs == 1),
+        "each item runs once"
+    );
     let events = events(&activity);
     let mut marked: BTreeMap<Declared, Vec<(Edge, Core)>> = BTreeMap::new();
     for event in &events {
@@ -97,9 +109,10 @@ fn a_recorded_fork_marks_each_item_with_its_declaration()
             panic!("item {index} is marked once, start before end: {edges:?}");
         };
         assert_eq!(start, end, "a job starts and ends on one thread's ring");
-        assert!(
-            usize::from(start) < 4,
-            "a job on the pool's threads marks a pool thread's ring"
+        assert_eq!(
+            usize::from(start),
+            items[index].1.unwrap_or(4),
+            "a job marks the ring of its thread: its worker's, or the last ring"
         );
     }
     assert!(

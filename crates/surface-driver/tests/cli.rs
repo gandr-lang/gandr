@@ -2113,6 +2113,23 @@ fn every_width_stages_the_serial_run()
 }
 
 #[test]
+fn a_staging_keeps_its_pool_s_park_cost_under_the_state_home()
+{
+    let output = ran(gandr(&["stage", "pow:0..8", "--jobs", "4"]));
+    assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+    let file = homes()
+        .join("state")
+        .join("gandr")
+        .join("pool")
+        .join("park-4");
+    let kept = std::fs::read_to_string(&file).expect("the pool keeps its park-to-wake cost");
+    assert!(
+        kept.trim().parse::<u64>().is_ok(),
+        "the file holds one number of nanoseconds: {kept:?}"
+    );
+}
+
+#[test]
 fn a_malformed_invocation_exits_two()
 {
     for arguments in [

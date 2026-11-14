@@ -23,11 +23,11 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 ## Provided features
 
 - `Invocation`, `Outcome`, `StatusReport` and `dispatch`: routing.
-- `Width` and `Threads`: how many threads a walk lowers its sources on, the host's physical performance cores by default.
+- `Width` and `Threads`: how many threads a walk lowers its sources on ([`width`](src/width.rs)).
 - `compose`, `compose_on`, `Scheduling`, `Composed`, `ComposeFault`, `LoweringCount` and `ParsedBytes`: the composition, on either schedule.
 - `lower_source`, `lower_parsed`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts; `lower_parsed` lowers a parse the caller made.
 - `lay_out`, `Laid`, `laid::Absent`, `lower_unit_source`, `lower_parsed_unit` and `judge_member`: one source composed over its import closure. `lower_closure`, `lower_resumed_unit`, `Unheld`, `JudgedClosure`, `lower_onto_closure`, `judge_member_after` and `Checking`: a closure lowered and judged once. `Recorded` and `Recording`: verdicts taken from the revision before ([`compose`](src/compose.rs)).
-- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`; `Admission::admit_resuming` and `Resumption` resume from an earlier readmission; `install_verdict_cache` keeps kernel verdicts on disk, in the process, or in both for a server ([`verdicts`](src/verdicts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
+- `judge`, `Judged`, `Admission` and `admitted::Absent`: the judging half split at the kernel admission, under a `HostGrant`; `Admission::admit_resuming` and `Resumption` resume from an earlier readmission; `install_verdict_cache` keeps kernel verdicts ([`verdicts`](src/verdicts.rs)). `install_admission_policy` and `admitted_tally`: the admission policy ([`tier`](src/tier.rs)).
 - `spellings` and `failures` on `Composed::Settled`: the `TypeSpellings` and the `Failures` that a face reads each checker refusal through ([`compose`](src/compose.rs)).
 - `Entries` and `entries`: what one step prints under a verb, in order, each a diagnostic the diagnostics model builds ([`entry`](src/entry.rs)).
 - `Lints`, `Reach` and `Entries::linting`: the lints an invocation enables and where each reaches ([`entry::report`](src/entry/report.rs)). `inferred` and `runs` on `Composed::Settled` hold what `explicit-exits` and `explicit-runs` report ([`compose`](src/compose.rs)).
@@ -45,7 +45,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Formatting`, `FormatStep`, `FormatFault`, `Rewrite` and `walk_step::Absent`: the format verb, and why its traversal reaches nothing further.
 - `Census`, `CensusStep`, `CensusFault` and `CellRow`: the cells verb ([`cells`](src/cells.rs)).
 - `measure`, `Measure`, `measured::Absent`, `Walk::measuring`, `Positioning`, `ArtifactPositions`, `Placed` and `positioned::Absent`: each declaration's artifact sizes and tally ([`measure`](src/measure.rs)).
-- `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool; a newer key retires a slot's older generation ([generation](src/generation.rs)).
+- `Generations`, `Watch`, `Retired`, `Submitted`, `Delivered`, `delivery::Absent`: keyed jobs on the pool ([generation](src/generation.rs)).
 - The corpus's two roots, run through the walk, and their witnesses: [`src/lib.rs`](src/lib.rs) § The corpus runs through the walk.
 - `fixture`, off by default: the shared fixtures of the composition, and each private item a test of the run stage reads, for the tests of this crate and of `gandr-surface-evaluate` ([`fixture`](src/fixture.rs)).
 
@@ -134,6 +134,7 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 - `vault:01a178ab-2ecf-7893-afda-f14010a8acbe` — exemplar: the namespace design — a shadow is an event, never a prohibition.
 - `vault:01a1cf3f-b730-7152-9d64-050e5c00b32a` — anchor: the rings.
 - `vault:01a12791-4fa7-7d23-852e-a50c09a02144` — dependency: § admission-strategies-findings, the rings.
+- `vault:01a1d2ce-8890-7cf2-a94b-b73109f5689a` — anchor: the pool's own workers, § pool-tokens.
 - `Ahrens-2025-weighted_rewriting_semiring_semantics_abstract_reduction_systems` — newest: Ahrens, Kassing, Giesl and Katoen, 2025, `arXiv:2505.08496` — a row's bound as a semiring product.
 - `Hadzihasanovic-2023-higherdimensional_subdiagram_matching` — newest: Hadzihasanovic and Kessler, 2023, `arXiv:2304.09216` — a fresh name for each internal wire.
 

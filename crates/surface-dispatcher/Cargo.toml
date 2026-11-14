@@ -36,10 +36,10 @@ path = "benches/schedule.rs"
 # hand, and builds what each step prints; the type table spells the type a
 # face asks for through the presentation printer. The `stage` verb builds the
 # normaliser's staging observer programs and checks them through the
-# checker's program entry, on the driver's `rayon` pool. The pool implements
-# the fork crate's trait, so every consumer forks on it through that trait.
-# The pool's dependence schedule hands its jobs over the wait-free rings of
-# rtrb, one ring of jobs and one ring of results for each task.
+# checker's program entry, on the driver's pool. The pool owns its workers and
+# implements the fork crate's trait, so every consumer forks on it through that
+# trait. The pool's dependence schedule hands its jobs over the wait-free rings
+# of rtrb, one ring of jobs and one ring of results for each task.
 # The reader maps a source above its crossover through memmap2, and rewrites
 # a mapped source through the one writer. A package's manifest
 # carries the BLAKE3 digest of its body, through blake3, so the checker
@@ -99,7 +99,6 @@ gandr-theory-sites.workspace = true
 hotpath = { workspace = true, optional = true }
 memmap2.workspace = true
 quenchant-shape.workspace = true
-rayon.workspace = true
 rtrb.workspace = true
 self_cell.workspace = true
 toml.workspace = true

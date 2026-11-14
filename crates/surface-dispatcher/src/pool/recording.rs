@@ -44,16 +44,17 @@ use gandr_core_fork::activity::Nanos;
 use gandr_core_fork::activity::Slots;
 use gandr_core_fork::activity::Task;
 use gandr_core_fork::activity::World;
+use quenchant_shape::shape::Maybe;
 
 use super::Forked;
 use super::Helped;
 use super::ItemIndex;
 use super::Pool;
-use super::Pooled;
-use super::Spin;
+use super::alone;
 use super::each_indexed;
 use super::schedule_indexed;
-use crate::width::Threads;
+use super::workers::WorkerIndex;
+use super::workers::current_worker;
 
 /// The process's monotonic clock: the nanoseconds since its first reading.
 ///
@@ -215,9 +216,10 @@ impl Marks<'_>
     {
         let rings = NonZeroUsize::from(NonZeroU16::from(self.activity.cores())).get();
         let outside = rings.saturating_sub(1);
-        let index = rayon::current_thread_index()
-            .filter(|&index| index < outside)
-            .unwrap_or(outside);
+        let index = match current_worker() {
+            Maybe::Present(WorkerIndex(index)) if index < outside => index,
+            Maybe::Present(_) | Maybe::Absent(_) => outside,
+        };
         let core = Core::from(u16::try_from(index).unwrap_or(u16::MAX));
         let worker = self.activity.worker(core);
         let mark = |edge| Mark {
@@ -330,11 +332,10 @@ where
             self.pool.forked()
         };
         match forked {
-            Ok(Forked::Pooled(threads, fork)) => {
-                let (start, marked) = (&start, &marked);
-                threads.install(move || each_indexed(fork.threads, items, start, marked));
+            Ok(Forked::Pooled(fork)) => each_indexed(Maybe::Present(fork), items, start, marked),
+            Ok(Forked::Serial) | Err(_) => {
+                each_indexed(Maybe::Absent(alone::Absent::Serial), items, start, marked);
             },
-            Ok(Forked::Serial) | Err(_) => each_indexed(Threads::ONE, items, start, marked),
         }
     }
 
@@ -420,16 +421,17 @@ where
             self.pool.forked()
         };
         match forked {
-            Ok(Forked::Pooled(threads, fork)) => {
-                schedule_indexed(Some(threads), fork, items, after, release, marked, commit);
+            Ok(Forked::Pooled(fork)) => {
+                schedule_indexed(Maybe::Present(fork), items, after, release, marked, commit);
             },
-            Ok(Forked::Serial) | Err(_) => {
-                let serial = Pooled {
-                    threads: Threads::ONE,
-                    spin: Spin::PARK,
-                };
-                schedule_indexed(None, serial, items, after, release, marked, commit);
-            },
+            Ok(Forked::Serial) | Err(_) => schedule_indexed(
+                Maybe::Absent(alone::Absent::Serial),
+                items,
+                after,
+                release,
+                marked,
+                commit,
+            ),
         }
     }
 }
