@@ -16,8 +16,8 @@ fn main()
 ///
 /// # Specification
 ///
-/// - fails: the target's architecture has no headers variable, the variable is
-///   not set, or bindgen refuses the headers.
+/// - fails: the target's variable names a directory that holds no
+///   `include/linux/io_uring.h`, or bindgen refuses the headers.
 #[cfg(feature = "bindgen")]
 fn main() -> ::std::io::Result<()>
 {
@@ -26,44 +26,52 @@ fn main() -> ::std::io::Result<()>
 }
 
 #[cfg(feature = "bindgen")]
+/// The bindgen pass over the kernel's `io_uring` header.
 mod bindgen
 {
     /// The name of the variable that holds the kernel's headers for an
-    /// architecture.
+    /// architecture, or none for an architecture that the script does not
+    /// name.
     ///
     /// # Specification
     ///
-    /// - fails: the architecture is not one of the eight that the script names.
-    fn linux_headers(target_arch: &str) -> ::std::io::Result<&'static str>
+    /// trivial.
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            primitive_signature,
+            reason = "the owner's script maps an architecture's name to a variable's name; #7645 owes a mend in place"
+        )
+    )]
+    fn linux_headers(target_arch: &str) -> Option<&'static str>
     {
         match target_arch {
-            "aarch64" => Ok("arm64_LINUX_HEADERS"),
-            "arm" | "armv7" => Ok("arm_LINUX_HEADERS"),
-            "loongarch64" => Ok("loongarch_LINUX_HEADERS"),
-            "powerpc" | "powerpc64" | "powerpc64le" => Ok("powerpc_LINUX_HEADERS"),
-            "riscv64gc" => Ok("riscv_LINUX_HEADERS"),
-            "s390x" => Ok("s390_LINUX_HEADERS"),
-            "x86" => Ok("i386_LINUX_HEADERS"),
-            "x86_64" => Ok("x86_64_LINUX_HEADERS"),
-            _ => {
-                let msg = format!("Unsupported target arch: \"{target_arch}\"");
-                let err = ::std::io::Error::other(msg);
-                Err(err)
-            },
+            "aarch64" => Some("arm64_LINUX_HEADERS"),
+            "arm" | "armv7" => Some("arm_LINUX_HEADERS"),
+            "loongarch64" => Some("loongarch_LINUX_HEADERS"),
+            "powerpc" | "powerpc64" | "powerpc64le" => Some("powerpc_LINUX_HEADERS"),
+            "riscv64" => Some("riscv_LINUX_HEADERS"),
+            "s390x" => Some("s390_LINUX_HEADERS"),
+            "x86" => Some("i386_LINUX_HEADERS"),
+            "x86_64" => Some("x86_64_LINUX_HEADERS"),
+            _ => None,
         }
     }
 
+    /// The wrapper header that bindgen reads: the kernel's `io_uring` header.
     #[expect(clippy::needless_raw_strings, reason = "readability")]
     const HEADER: &str = r#"
 #include <linux/io_uring.h>
 "#;
 
     /// Makes the declarations from the headers that the target's variable
-    /// names, and writes them to `src/sys/sys_<arch>.rs`.
+    /// names, and writes them to `src/sys/sys_<arch>.rs`. With no variable
+    /// for the target, or the variable not set, it makes nothing.
     ///
     /// # Specification
     ///
-    /// - fails: a variable is not set, bindgen refuses the headers, or the file
+    /// - fails: the variable names a directory that holds no
+    ///   `include/linux/io_uring.h`, bindgen refuses the headers, or the file
     ///   cannot be written.
     pub fn bind() -> ::std::io::Result<()>
     {
@@ -71,8 +79,24 @@ mod bindgen
 
         let target_arch =
             ::std::env::var("CARGO_CFG_TARGET_ARCH").map_err(::std::io::Error::other)?;
-        let linux_headers = self::linux_headers(&target_arch)?;
-        let linux_headers = ::std::env::var(linux_headers).map_err(::std::io::Error::other)?;
+        let Some(variable) = self::linux_headers(&target_arch)
+        else {
+            return Ok(());
+        };
+        println!("cargo::rerun-if-env-changed={variable}");
+        let Some(linux_headers) = ::std::env::var_os(variable)
+        else {
+            return Ok(());
+        };
+        let linux_headers = PathBuf::from(linux_headers);
+        let header = linux_headers.join("include/linux/io_uring.h");
+        if !header.is_file() {
+            let msg = format!(
+                "{variable} names {}, which holds no include/linux/io_uring.h",
+                linux_headers.display()
+            );
+            return Err(::std::io::Error::other(msg));
+        }
 
         let manifest_dir =
             ::std::env::var("CARGO_MANIFEST_DIR").map_err(::std::io::Error::other)?;
@@ -89,7 +113,7 @@ mod bindgen
             .use_core()
             .wrap_unsafe_ops(true)
             .header_contents("wrapper.h", HEADER)
-            .clang_arg(format!("-I{linux_headers}/include"))
+            .clang_arg(format!("-I{}", linux_headers.join("include").display()))
             .allowlist_type("io_timespec.*")
             .allowlist_type("io_uring_.*")
             .allowlist_type("io_wq_.*")
