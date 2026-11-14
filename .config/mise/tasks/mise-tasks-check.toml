@@ -1052,8 +1052,12 @@ done
 # in a test the body names. A change whose diff touches no Rust has no test
 # for lldb to stop in, so there the box is ticked when the change adds a
 # `.config` case whose name cites an issue the body closes (#3784). A Rust
-# file whose diff changes only comments counts as no Rust (#5498). No hand
-# ticks it. `--require-acknowledged` exits 2 while it is open.
+# file whose diff changes only comments counts as no Rust (#5498). A defect
+# whose fault is a check's refusal on a head is observed in the check: there
+# the box is ticked when the change adds the check's transcript under a
+# crate's `tests/debug-traces/`, a `mise run check:` command and an issue the
+# body works, refusing before and passing after (#7643). No hand ticks it.
+# `--require-acknowledged` exits 2 while it is open.
 # `--observed-only` reads this block alone and builds no Rust evidence:
 # `pr:open` runs no specification obligation (#5458), but the observation is
 # the author's to give before the pull request opens.
