@@ -1183,8 +1183,19 @@ fn a_data_type_that_reads_itself_charges_its_readers_keyed_as_rechecked_7341()
             .map(|row| {
                 let (_source, rest) = row.split_once(": ").expect("a row names its source");
                 let (name, fields) = rest.split_once(": ").expect("a row names its declaration");
-                let goals: Vec<&str> = fields.split(", ").skip(3).take(3).collect();
-                (name.to_owned(), goals.join(", "))
+                let goals =
+                    fields
+                        .split(", ")
+                        .skip(3)
+                        .take(3)
+                        .fold(String::new(), |mut joined, goal| {
+                            if !joined.is_empty() {
+                                joined.push_str(", ");
+                            }
+                            joined.push_str(goal);
+                            joined
+                        });
+                (name.to_owned(), goals)
             })
             .collect()
     };

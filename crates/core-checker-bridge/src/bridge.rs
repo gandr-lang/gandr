@@ -6732,6 +6732,7 @@ fn formation_segment(
 /// name. A formation's witnesses then read the constant that its first reader
 /// reads, in each readmission alike.
 #[derive(Clone, Debug)]
+#[repr(transparent)]
 struct FormationTable
 {
     /// The table that places and names the records.
