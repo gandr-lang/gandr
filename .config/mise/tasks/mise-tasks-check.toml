@@ -684,10 +684,7 @@ policy() {
 # The base's records for `allocation_free_region` (#7419), built in a gate
 # slot as the policy run is: an empty directory when no base stands. A merge
 # group with no base would hold no changed function, so it stops (#7632).
-if [[ ${GITHUB_EVENT_NAME:-} == merge_group && -z ${GATE_BASE:-} ]]; then
-  echo "check:dylint: the merge group names no GATE_BASE, so allocation_free_region would hold no changed function (#7632)" >&2
-  exit 1
-fi
+.config/policy/group-base.bash
 rm -rf target/allocation-base
 mkdir -p target/allocation-base
 if [[ -n ${GATE_BASE:-} ]]; then .config/mise/gated .config/policy/base-records.bash "$GATE_BASE" target/allocation-base; fi
