@@ -1636,6 +1636,11 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
         reversed.admitted.iter().eq(serial.admitted.iter()),
         "the kernel admits the serial declarations, in the serial order"
     );
+    assert_eq!(
+        reversed.export(BTreeMap::new()),
+        serial.export(BTreeMap::new()),
+        "the export is the serial one"
+    );
     let bounded = |record: &Maybe<super::Crossed, crossed::Absent>| match *record {
         Maybe::Present(ref record) => Ok(record.boundary()),
         Maybe::Absent(absent) => Err(absent),
@@ -1654,6 +1659,53 @@ fn an_undecided_pair_released_beside_later_checks_readmits_as_the_serial_run_347
         usize::from(reversed.environment().rollbacks()),
         2,
         "the undecided pair drops the two releases that ran beside it"
+    );
+}
+
+/// #7273: the export of a readmission past a vacancy holds each declaration
+/// that the kernel admitted, at the place of its rank. The refusal of `r`
+/// leaves a vacancy at its own position, and the answer admits `r` at the
+/// next one. The export holds one declaration for each admission, and the
+/// one declaration of a path type is `r`, under its own name, at its place.
+#[test]
+fn an_export_past_a_vacancy_holds_each_admitted_declaration_7273()
+{
+    let (mut arena, report) = undecided_beside_later();
+    let readmission = readmit(&mut arena, &report);
+    let r = DOUBLINGS.saturating_add(3);
+    let name = StructuredName::from(vec![NameSegment::from_text(String::from("r")).unwrap()]);
+    let artifact = decode(
+        readmission
+            .export(BTreeMap::from([(ConstantIndex::from(r), name.clone())]))
+            .as_image(),
+    )
+    .expect("the readmission exports");
+    assert_eq!(
+        artifact.declarations().len(),
+        usize::from(readmission.admitted.len()),
+        "the export holds one declaration for each admission"
+    );
+    let paths: Vec<(usize, &StructuredName)> = artifact
+        .declarations()
+        .iter()
+        .enumerate()
+        .filter(|&(_, marked)| match *marked.declaration().content() {
+            DeclarationContent::Def { declared, .. } => matches!(
+                artifact.arena().value_type(declared),
+                Some(&KernelValueType::Path { .. })
+            ),
+            DeclarationContent::Axiom { .. }
+            | DeclarationContent::LiteralIdentity { .. }
+            | DeclarationContent::Data { .. }
+            | DeclarationContent::Codata { .. }
+            | DeclarationContent::AbstractType { .. } => false,
+        })
+        .map(|(place, marked)| (place, marked.declaration().name()))
+        .collect();
+    assert_eq!(
+        paths,
+        [(r, &name)],
+        "`r` stands at the place of its rank, under its own name"
     );
 }
 

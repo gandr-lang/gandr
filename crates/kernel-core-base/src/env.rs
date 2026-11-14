@@ -2002,6 +2002,35 @@ impl Entries
         gandr_kernel_term::ArenaLength::from(self.log.as_deref().map_or(0, |log| log.retired))
     }
 
+    /// The positions of the vacancies, ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each position whose slot is a vacancy, ascending, and no
+    ///   other. The walk stops at the last vacancy, so it reads no slot while
+    ///   no declaration is refused.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the positions walk the slots, and a clause may not
+    ///   walk the entries.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk that missed a vacancy, or stopped before the
+    ///   last one, moves each declaration past it to another place in an
+    ///   export.
+    /// - witness: `gandr-core-checker-bridge::bridge::tests::an_export_past_a_vacancy_holds_each_admitted_declaration_7273`
+    #[inline]
+    pub fn vacancies(&self) -> impl Iterator<Item = ConstantIndex> + '_
+    {
+        let vacancies = self.log.as_deref().map_or(0, |log| log.vacancies);
+        self.family()
+            .iter()
+            .enumerate()
+            .filter(|&(_, slot)| matches!(*slot, Slot::Vacant))
+            .map(|(position, _)| ConstantIndex::from(position))
+            .take(vacancies)
+    }
+
     /// The entry at `offset`, read through the support of the check that
     /// runs.
     ///

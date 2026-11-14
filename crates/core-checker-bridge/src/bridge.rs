@@ -1607,7 +1607,8 @@ pub struct Readmission
     /// The union of the admitted declarations' audits.
     audit: ArtifactAudit,
     /// The declarations the kernel admitted, as they were staged, in kernel
-    /// admission order; those a record froze are shared with it.
+    /// admission order; those a record froze are shared with it. A vacancy
+    /// takes a kernel position and no row ([`Self::staged_at`]).
     admitted: gandr_kernel_term::Family<KernelDeclaration>,
     /// How many leading entries were resumed from an earlier readmission's
     /// [`Crossed`] rather than crossed again.
@@ -1709,7 +1710,8 @@ impl Readmission
     ///
     /// # Specification
     /// - requires: `names` is keyed by module position, the positions the
-    ///   judged declarations carry; each crossed position indexes `admitted`.
+    ///   judged declarations carry; each crossed position holds a staged
+    ///   declaration ([`Self::staged_at`]).
     /// - ensures: the canonical encoding of the environment's arena and the
     ///   live admitted declarations, in rank order, each marked checked and
     ///   carrying the name `names` holds at its module position, or no name
@@ -1734,14 +1736,17 @@ impl Readmission
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times; #104 owns the cost of the clause"
+            reason = "parity: the body walks every readmitted entry and every admitted declaration once; the check walks the readmitted entries three times and the slots up to the last vacancy once; #104 owns the cost of the clause"
         )
     )]
     #[spec(
-        requires: self.readmitted.iter().all(|entry| match entry.outcome {
-            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
-            | _ => true,
-        }),
+        requires: {
+            let vacancies: Vec<ConstantIndex> = self.environment.entries().vacancies().collect();
+            self.readmitted.iter().all(|entry| match entry.outcome {
+                | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.staged_at(&vacancies, admitted.position()).is_some(),
+                | _ => true,
+            })
+        },
         captures: [before = names.len(), named = self.readmitted.iter().filter(|entry|
             matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. } | Outcome::Data { .. }) && names.contains_key(&entry.constant)).count()],
         ensures: before.checked_sub(names.len()) == Some(named) && self.readmitted.iter().all(|entry|
@@ -1798,14 +1803,17 @@ impl Readmission
         dylint_lib = "quenchant_dylints",
         expect(
             spec_clause_traversal,
-            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries once; #104 owns the cost of the clause"
+            reason = "parity: the body walks every readmitted entry once; the check walks the readmitted entries and the slots up to the last vacancy once; #104 owns the cost of the clause"
         )
     )]
     #[spec(
-        requires: self.readmitted.iter().all(|entry| match entry.outcome {
-            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
-            | _ => true,
-        }),
+        requires: {
+            let vacancies: Vec<ConstantIndex> = self.environment.entries().vacancies().collect();
+            self.readmitted.iter().all(|entry| match entry.outcome {
+                | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } | Outcome::Data { admitted, .. } => self.staged_at(&vacancies, admitted.position()).is_some(),
+                | _ => true,
+            })
+        },
         ensures: |ret| match *recorded {
             Maybe::Present(ref record) => record.encoded.as_ref().is_none_or(|prefix|
                 usize::from(prefix.end()) == record.positions.exports.len()),
@@ -1872,8 +1880,8 @@ impl Readmission
     /// absent, and the live ones in rank order otherwise.
     ///
     /// # Specification
-    /// - requires: each crossed position indexes `admitted`; `places` is the
-    ///   environment's own.
+    /// - requires: each crossed position holds a staged declaration
+    ///   ([`Self::staged_at`]); `places` is the environment's own.
     /// - ensures: while `places` is absent, one declaration per admitted
     ///   declaration at `from` or later, in kernel admission order; otherwise
     ///   one per live entry at `from` or later, in rank order. Each carries the
@@ -1917,6 +1925,8 @@ impl Readmission
             MarkedDeclaration::new(AdmissionMark::Checked, declaration)
         };
         match *places {
+            // A vacancy ranks the order, so in kernel admission order each
+            // row stands at its own position.
             Maybe::Absent(places::Absent::InOrder) => self
                 .admitted
                 .iter()
@@ -1924,14 +1934,34 @@ impl Readmission
                 .skip(usize::from(from))
                 .map(|(position, declaration)| mark((ConstantIndex::from(position), declaration)))
                 .collect(),
-            Maybe::Present(_) => self
-                .environment
-                .in_rank_order()
-                .filter(|&position| position >= from)
-                .filter_map(|position| Some((position, self.admitted.get(usize::from(position))?)))
-                .map(mark)
-                .collect(),
+            Maybe::Present(_) => {
+                let vacancies: Vec<ConstantIndex> =
+                    self.environment.entries().vacancies().collect();
+                self.environment
+                    .in_rank_order()
+                    .filter(|&position| position >= from)
+                    .filter_map(|position| Some((position, self.staged_at(&vacancies, position)?)))
+                    .map(mark)
+                    .collect()
+            },
         }
+    }
+
+    /// The declaration the kernel admitted at `position`, as it was staged:
+    /// the row at `position` less the `vacancies` below it, since a vacancy
+    /// takes a position and stages nothing. None for a vacancy, and none
+    /// past the rows. `vacancies` are the environment's own, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    fn staged_at(
+        &self,
+        vacancies: &[ConstantIndex],
+        position: ConstantIndex,
+    ) -> Option<&KernelDeclaration>
+    {
+        let below = vacancies.binary_search(&position).err()?;
+        self.admitted.get(usize::from(position).checked_sub(below)?)
     }
 }
 
