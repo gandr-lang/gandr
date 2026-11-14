@@ -262,87 +262,9 @@ impl Place
     /// # Specification
     /// trivial.
     #[inline]
-    #[must_use]
     pub const fn name(&self) -> Maybe<ContentName, unnamed::Absent>
     {
         self.name
-    }
-
-    /// Appends the place's [`PLACE_LEN`] bytes to `order`.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: `order` grows by [`PLACE_LEN`] bytes: the tag, the record
-    ///   key, and the name or zeros.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a named set stored and read back holds each name at
-    ///   its place.
-    /// - witness: `tests::artifact_contract::a_named_set_reads_back_with_its_names_7340`
-    fn write_to(
-        &self,
-        order: &mut Vec<u8>,
-    )
-    {
-        let (tag, name) = match self.name {
-            Maybe::Present(name) => (NAMED, name.0),
-            Maybe::Absent(unnamed::Absent::Bytes) => (FROM_BYTES, [0_u8; CONTENT_NAME_LEN]),
-            Maybe::Absent(unnamed::Absent::Unkeyed) => (UNKEYED, [0_u8; CONTENT_NAME_LEN]),
-        };
-        order.push(tag);
-        order.extend_from_slice(&self.record.0);
-        order.extend_from_slice(&name);
-    }
-
-    /// Reads one place from its [`PLACE_LEN`] bytes.
-    ///
-    /// # Specification
-    /// - requires: nothing; the bytes are arbitrary.
-    /// - ensures: on success the place [`Place::write_to`] wrote as `bytes`.
-    /// - fails: [`ArtifactError::MalformedOrder`] naming `place` for a tag that
-    ///   no place carries, a name beside a tag without one, or a width other
-    ///   than [`PLACE_LEN`].
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`ArtifactError::MalformedOrder`] — the bytes are not a place.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a stored order with a foreign tag is refused at its
-    ///   place.
-    /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
-    fn read(
-        bytes: &[u8],
-        place: RecordIndex,
-    ) -> Result<Self, ArtifactError>
-    {
-        let malformed = ArtifactError::MalformedOrder { place };
-        let Some((&tag, rest)) = bytes.split_first()
-        else {
-            return Err(malformed);
-        };
-        let Some((record, name)) = rest.split_first_chunk::<RECORD_KEY_LEN>()
-        else {
-            return Err(malformed);
-        };
-        let Ok(&name) = <&[u8; CONTENT_NAME_LEN]>::try_from(name)
-        else {
-            return Err(malformed);
-        };
-        let unnamed = name == [0_u8; CONTENT_NAME_LEN];
-        let name = match tag {
-            NAMED => Maybe::Present(ContentName(name)),
-            FROM_BYTES if unnamed => Maybe::Absent(unnamed::Absent::Bytes),
-            UNKEYED if unnamed => Maybe::Absent(unnamed::Absent::Unkeyed),
-            _ => return Err(malformed),
-        };
-
-        Ok(Self {
-            record: RecordKey(*record),
-            name,
-        })
     }
 }
 
@@ -566,13 +488,14 @@ impl ArtifactRecordSet
     {
         let mut placed = Vec::new();
         placed.resize(self.records.len(), false);
-        let held = self.places.iter().all(|place| {
-            self.slot(place.record).is_ok_and(|slot| {
-                if let Some(seen) = placed.get_mut(slot) {
-                    *seen = true;
-                }
-                true
-            })
+        let held = self.places.iter().enumerate().all(|(index, place)| {
+            self.slot(place.record, RecordIndex::from(index))
+                .is_ok_and(|slot| {
+                    if let Some(seen) = placed.get_mut(usize::from(slot)) {
+                        *seen = true;
+                    }
+                    true
+                })
         });
         Holds::from(
             self.records
@@ -583,25 +506,35 @@ impl ArtifactRecordSet
         )
     }
 
-    /// The position in key order of the record keyed `key`.
+    /// The position in key order of the record that place `place` names by
+    /// `key`.
     ///
     /// # Specification
     /// - requires: the records ascend strictly by key.
-    /// - ensures: `Ok` with the position of the record keyed `key`, or `Err`
-    ///   with the position a record keyed `key` would take.
-    /// - fails: never.
+    /// - ensures: on success the position of the record keyed `key`.
+    /// - fails: [`ArtifactError::UnheldRecord`] naming `place` when the set
+    ///   holds no record keyed `key`.
     /// - panics: none.
     ///
+    /// # Errors
+    /// [`ArtifactError::UnheldRecord`] — no record is keyed `key`.
+    ///
     /// # Adequacy
-    /// - hypothesis: L2 — every reassembly reads each place's record through
-    ///   this search.
+    /// - hypothesis: L3 — every reassembly reads each place's record through
+    ///   this search, and a stored tree that lacks a placed record is refused
+    ///   at the place.
     /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `tests::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
     fn slot(
         &self,
         key: RecordKey,
-    ) -> Result<usize, usize>
+        place: RecordIndex,
+    ) -> Result<RecordIndex, ArtifactError>
     {
-        self.records.binary_search_by_key(&key, |record| record.key)
+        self.records
+            .binary_search_by_key(&key, |record| record.key)
+            .map(RecordIndex::from)
+            .map_err(|_absent| ArtifactError::UnheldRecord { place })
     }
 
     /// The set that `header` and `segments` make, one place per segment in
@@ -617,10 +550,12 @@ impl ArtifactRecordSet
     /// # Adequacy
     /// - hypothesis: L2 — as [`from_artifact`](Self::from_artifact).
     /// - witness: `record::tests::equal_segments_share_one_record`
-    fn gathered<'segment>(
+    fn gathered<'segment, Segments>(
         header: SegmentBytes<'_>,
-        segments: impl IntoIterator<Item = SegmentBytes<'segment>>,
+        segments: Segments,
     ) -> Self
+    where
+        Segments: IntoIterator<Item = SegmentBytes<'segment>>,
     {
         let segments = segments.into_iter();
         let mut places = Vec::with_capacity(segments.size_hint().0);
@@ -851,10 +786,12 @@ impl ArtifactRecordSet
     #[spec(ensures: |ret| ret.header.as_ref() == header.0)]
     #[inline]
     #[must_use]
-    pub fn from_segments<'segment>(
+    pub fn from_segments<'segment, Segments>(
         header: SegmentBytes<'_>,
-        segments: impl IntoIterator<Item = SegmentBytes<'segment>>,
+        segments: Segments,
     ) -> Self
+    where
+        Segments: IntoIterator<Item = SegmentBytes<'segment>>,
     {
         Self::gathered(header, segments)
     }
@@ -956,7 +893,7 @@ impl ArtifactRecordSet
         let order = stored
             .next()
             .filter(|order| order.key().as_ref() == ORDER_KEY)
-            .ok_or(ArtifactError::MisplacedRecord {
+            .ok_or_else(|| ArtifactError::MisplacedRecord {
                 position: RecordIndex::from(1_usize),
             })?;
         let mut records = Vec::with_capacity(stored.len());
@@ -971,15 +908,41 @@ impl ArtifactRecordSet
         }
         let order_value = order.value();
         let order = order_value.as_ref();
-        let whole = order.len().checked_div(PLACE_LEN).unwrap_or_default();
-        if order.len() % PLACE_LEN != 0 {
+        let (whole, rest) = order.as_chunks::<PLACE_LEN>();
+        if !rest.is_empty() {
             return Err(ArtifactError::MalformedOrder {
-                place: RecordIndex::from(whole),
+                place: RecordIndex::from(whole.len()),
             });
         }
-        let mut places = Vec::with_capacity(whole);
-        for (index, bytes) in order.chunks_exact(PLACE_LEN).enumerate() {
-            places.push(Place::read(bytes, RecordIndex::from(index))?);
+        let mut places = Vec::with_capacity(whole.len());
+        for (index, bytes) in whole.iter().enumerate() {
+            // A place: its tag, its record's key, then its name or zeros.
+            let malformed = ArtifactError::MalformedOrder {
+                place: RecordIndex::from(index),
+            };
+            let Some((&tag, rest)) = bytes.split_first()
+            else {
+                return Err(malformed);
+            };
+            let Some((record, name)) = rest.split_first_chunk::<RECORD_KEY_LEN>()
+            else {
+                return Err(malformed);
+            };
+            let Ok(&name) = <&[u8; CONTENT_NAME_LEN]>::try_from(name)
+            else {
+                return Err(malformed);
+            };
+            let unnamed = name == [0_u8; CONTENT_NAME_LEN];
+            let name = match tag {
+                NAMED => Maybe::Present(ContentName(name)),
+                FROM_BYTES if unnamed => Maybe::Absent(unnamed::Absent::Bytes),
+                UNKEYED if unnamed => Maybe::Absent(unnamed::Absent::Unkeyed),
+                _ => return Err(malformed),
+            };
+            places.push(Place {
+                record: RecordKey(*record),
+                name,
+            });
         }
         let set = Self {
             header: Box::from(header.value().as_ref()),
@@ -989,13 +952,8 @@ impl ArtifactRecordSet
         let mut placed = Vec::new();
         placed.resize(set.records.len(), false);
         for (index, place) in set.places.iter().enumerate() {
-            let Ok(slot) = set.slot(place.record)
-            else {
-                return Err(ArtifactError::UnheldRecord {
-                    place: RecordIndex::from(index),
-                });
-            };
-            if let Some(seen) = placed.get_mut(slot) {
+            let slot = set.slot(place.record, RecordIndex::from(index))?;
+            if let Some(seen) = placed.get_mut(usize::from(slot)) {
                 *seen = true;
             }
         }
@@ -1056,12 +1014,13 @@ impl ArtifactRecordSet
     /// - hypothesis: L2 — as [`reassemble`](Self::reassemble).
     /// - witness: `tests::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
     #[inline]
+    #[must_use]
     pub fn segments(&self) -> impl ExactSizeIterator<Item = SegmentBytes<'_>> + '_
     {
         self.places.iter().map(|place| {
-            self.slot(place.record)
+            self.slot(place.record, RecordIndex::ZERO)
                 .ok()
-                .and_then(|slot| self.records.get(slot))
+                .and_then(|slot| self.records.get(usize::from(slot)))
                 .map_or(SegmentBytes(&[]), ArtifactRecord::segment)
         })
     }
@@ -1085,7 +1044,15 @@ impl ArtifactRecordSet
     {
         let mut order = Vec::with_capacity(self.places.len().saturating_mul(PLACE_LEN));
         for place in &self.places {
-            place.write_to(&mut order);
+            // A place: its tag, its record's key, then its name or zeros.
+            let (tag, name) = match place.name {
+                Maybe::Present(name) => (NAMED, name.0),
+                Maybe::Absent(unnamed::Absent::Bytes) => (FROM_BYTES, [0_u8; CONTENT_NAME_LEN]),
+                Maybe::Absent(unnamed::Absent::Unkeyed) => (UNKEYED, [0_u8; CONTENT_NAME_LEN]),
+            };
+            order.push(tag);
+            order.extend_from_slice(&place.record.0);
+            order.extend_from_slice(&name);
         }
 
         OrderImage(order.into_boxed_slice())
@@ -1227,7 +1194,6 @@ impl ArtifactRecordSet
 mod tests
 {
     use alloc::vec;
-    use alloc::vec::Vec;
 
     use gandr_storage_records::RecordIndex;
     use quenchant_shape::shape::Maybe;
@@ -1239,26 +1205,16 @@ mod tests
     use super::unnamed;
     use crate::error::ArtifactError;
 
-    /// The segments `bytes` names, borrowed.
-    ///
-    /// # Specification
-    /// trivial.
-    fn segments<'bytes>(bytes: &[&'bytes [u8]]) -> Vec<SegmentBytes<'bytes>>
-    {
-        bytes
-            .iter()
-            .map(|&segment| SegmentBytes::from(segment))
-            .collect()
-    }
-
     /// Two places with equal bytes share one record, reassemble to both, and
     /// one changed byte gives another key.
     #[test]
     fn equal_segments_share_one_record()
     {
         let header = SegmentBytes::from(b"header".as_slice());
-        let set =
-            ArtifactRecordSet::from_segments(header, segments(&[b"alpha", b"beta", b"alpha"]));
+        let set = ArtifactRecordSet::from_segments(
+            header,
+            [b"alpha".as_slice(), b"beta", b"alpha"].map(SegmentBytes::from),
+        );
         assert_eq!(3, set.places().len(), "one place per segment");
         assert_eq!(2, set.records().len(), "one record per distinct segment");
         assert_eq!(
@@ -1283,7 +1239,10 @@ mod tests
     fn names_go_beside_their_places_in_order()
     {
         let header = SegmentBytes::from(b"h".as_slice());
-        let set = ArtifactRecordSet::from_segments(header, segments(&[b"a", b"b"]));
+        let set = ArtifactRecordSet::from_segments(
+            header,
+            [b"a".as_slice(), b"b"].map(SegmentBytes::from),
+        );
         assert!(
             set.places()
                 .iter()
@@ -1321,7 +1280,7 @@ mod tests
 
         let set = ArtifactRecordSet::from_segments(
             SegmentBytes::from(b"h".as_slice()),
-            segments(&[b"zero", b"one", b"two", b"three"]),
+            [b"zero".as_slice(), b"one", b"two", b"three"].map(SegmentBytes::from),
         );
         assert!(anodized::types::Spec::predicate(&set));
         let mut record = set.records().first().expect("first record").clone();

@@ -156,10 +156,8 @@ impl CanonicalValue for ArtifactRecordSet
         }
         for (place, segment) in self.places.iter().zip(self.segments()) {
             if let Maybe::Present(name) = place.name {
-                for word in name.0.chunks_exact(NAME_WORD_LEN) {
-                    let mut bytes = [0_u8; NAME_WORD_LEN];
-                    bytes.copy_from_slice(word);
-                    sink.word(CanonicalWord::from(u64::from_le_bytes(bytes)))?;
+                for word in name.0.as_chunks::<NAME_WORD_LEN>().0 {
+                    sink.word(CanonicalWord::from(u64::from_le_bytes(*word)))?;
                 }
             }
             sink.bytes(TokenBytes::from(segment.as_ref()))?;
@@ -225,8 +223,8 @@ impl CanonicalValue for ArtifactRecordSet
             names.push(match tag {
                 NAMED_PLACE => {
                     let mut name = [0_u8; CONTENT_NAME_LEN];
-                    for word in name.chunks_exact_mut(NAME_WORD_LEN) {
-                        word.copy_from_slice(&u64::from(reader.read_word()?).to_le_bytes());
+                    for word in name.as_chunks_mut::<NAME_WORD_LEN>().0 {
+                        *word = u64::from(reader.read_word()?).to_le_bytes();
                     }
                     Maybe::Present(ContentName(name))
                 },

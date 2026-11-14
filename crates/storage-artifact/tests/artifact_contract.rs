@@ -1002,7 +1002,7 @@ proptest! {
         let reassembled = set.reassemble();
         prop_assert_eq!(artifact.as_ref(), reassembled.as_ref());
         prop_assert_eq!(kinds.len(), set.places().len());
-        let distinct: std::collections::BTreeSet<Vec<u8>> =
+        let distinct: alloc::collections::BTreeSet<Vec<u8>> =
             set.segments().map(|segment| segment.as_ref().to_vec()).collect();
         prop_assert_eq!(distinct.len(), set.records().len());
 
