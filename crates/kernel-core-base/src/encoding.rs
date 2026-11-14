@@ -2727,11 +2727,11 @@ impl ContentTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a data type that reads itself checks its readers as a
-    ///   rechecking run does, a definition committed after a later release
-    ///   named its position reads by its content to the checks after it, and a
-    ///   moved data type keeps the names of its readers' goals.
-    /// - witness: `gandr-kernel-core::tests::verdicts::a_data_type_that_reads_itself_takes_one_name_from_its_staging_on_7341`
+    /// - hypothesis: L3 — a data type that reads itself charges its readers in
+    ///   a keyed check as a rechecking one does, a definition committed after a
+    ///   later release named its position reads by its content to the checks
+    ///   after it, and a moved data type keeps the names of its readers' goals.
+    /// - witness: `gandr-lang::tests::cli::a_data_type_that_reads_itself_charges_its_readers_keyed_as_rechecked_7341`
     /// - witness: `gandr-kernel-core::tests::verdicts::the_point_of_a_moved_sort_stands_on_the_outcomes_of_its_first_check_7341`
     /// - witness: `gandr-kernel-core::environment::tests::each_commit_order_of_a_released_source_folds_as_the_serial_run_3476`
     #[spec(captures: named_before = usize::from(self.constants.len()),
