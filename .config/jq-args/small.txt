@@ -171,7 +171,9 @@
 --argjson primary
 --argjson pushes
 --argjson ran
+--argjson reading
 --argjson red
+--argjson required
 --argjson retry_at
 --argjson scratch
 --argjson seconds

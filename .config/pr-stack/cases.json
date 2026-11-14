@@ -1528,6 +1528,138 @@
     "output": "{\"failed\":[],\"pending\":[]}"
   },
   {
+    "name": "#7549: a job of the head's own run that ended red holds the landing by its name, required or not; a red report, a job still running, a red job of another workflow, one of an older run and one whose re-run passed do not",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "lint the pull request title"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 300, "workflow": { "name": "landing-title-and-deletes" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "report the mutants of the change (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check the prose against its ledger",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "take stale claims off",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 400, "workflow": { "name": "tracker-release-claims" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check the VS Code extension",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T13:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 100, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "document the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "document the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:20:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      }
+    ],
+    "output": "{\"failed\":[\"check formatting and lint gates (treefmt)\"],\"pending\":[]}"
+  },
+  {
+    "name": "#7549: a head whose ended jobs are all green reads green while a job the rules do not require still runs: no landing waits longer",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
     "name": "a required context red at its newest run fails the wait, a re-run green over an old failure passes it (#1601)",
     "program": "required.jq",
     "args": {
