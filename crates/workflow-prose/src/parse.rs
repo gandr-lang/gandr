@@ -9,13 +9,19 @@
 //! sentence without Python. The cache keeps each passage's line by its text's
 //! digest, so the script reads only the texts the cache misses.
 
+extern crate alloc;
+
+use alloc::collections::VecDeque;
+use core::num::NonZeroUsize;
 use std::collections::HashMap;
 use std::io::BufRead as _;
 use std::io::BufReader;
 use std::io::Write as _;
 use std::path::Path;
+use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::mpsc;
 
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
@@ -162,6 +168,53 @@ pub struct Parsed
     pub fresh: Fresh,
 }
 
+/// The most interpreters a cold parse runs at once.
+///
+/// # Specification
+/// - provides: the bound of a run's interpreters: the host's parallelism, or
+///   the invocation's `--width`.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Width(pub NonZeroUsize);
+
+/// The fewest texts that one interpreter of a fanned-out parse takes. The
+/// measure sets it: over a cold tree of 11,200 passages at width 32, shards of
+/// 512 give the lowest median wall of 256, 512, 1,024 and 2,048. A smaller
+/// shard adds model loads, and each interpreter holds about 227 MiB.
+const SHARD: usize = 512;
+
+/// What a reader heard from one shard's interpreter.
+///
+/// # Specification
+/// - provides: the messages the readers send to the thread that delivers.
+#[derive(Debug)]
+enum Heard
+{
+    /// One printing, as the script wrote it.
+    Line(String),
+    /// The interpreter's output closed.
+    Ended,
+    /// The interpreter's output could not be read.
+    Unread(String),
+}
+
+/// What a run holds of one shard.
+///
+/// # Specification
+/// - provides: the order in which the shards' printings reach `each`.
+#[derive(Debug)]
+struct Shard<'slice, 'text>
+{
+    /// The texts that the shard's interpreter parses.
+    texts: &'slice [Text<'text>],
+    /// The lines that arrived before every shard ahead of this one ended.
+    waiting: VecDeque<String>,
+    /// The lines read.
+    read: usize,
+    /// Whether the interpreter's output closed.
+    ended: bool,
+}
+
 /// Each passage's sentences, read from `cache` where it keeps them and parsed
 /// by running `python` on `script` where it does not; `judge` reads each
 /// passage's sentences as soon as they are known.
@@ -171,12 +224,12 @@ pub struct Parsed
 ///   misses the cache.
 /// - ensures: one vector of sentences per passage, in order; each token's head
 ///   is an index into its own sentence, a head the script places outside its
-///   sentence read as the token itself. The script runs once, on each text the
-///   cache misses, each distinct text once, and not at all when every text
-///   hits. Each fresh parse is kept by its text's digest. An entry whose text
-///   the crate cannot read is a miss. `judge` reads each passage once: a hit
-///   before the script starts, and a miss as the script's line for its text
-///   arrives.
+///   sentence read as the token itself. The script parses each text the cache
+///   misses, each distinct text once, across at most `width` interpreters as
+///   `printed` states. It does not start when every text hits. Each fresh parse
+///   is kept by its text's digest. An entry whose text the crate cannot read is
+///   a miss. `judge` reads each passage once: a hit before the script starts,
+///   and a miss as the script's line for its text arrives.
 /// - provides: the parse every rule reads, and the first finding before the
 ///   last passage parses.
 /// - fails: [`ProseError::Parse`] when the interpreter cannot start, its input
@@ -209,6 +262,7 @@ pub fn parse<Judge>(
     script: &Path,
     passages: &[&Passage],
     cache: &Cache,
+    width: Width,
     mut judge: Judge,
 ) -> Result<Parsed, ProseError>
 where
@@ -248,7 +302,7 @@ where
     if !missed.is_empty() {
         let texts: Vec<Text<'_>> = missed.iter().map(|&(_, text)| Text(text)).collect();
         let mut next = missed.iter();
-        printed(python, script, &texts, |printing| {
+        printed(python, script, &texts, width, |printing| {
             let Some(&(digest, text)) = next.next()
             else {
                 return Ok(());
@@ -277,107 +331,180 @@ where
     })
 }
 
-/// Runs the script on `texts` and hands `each` one printing per text, in
-/// order, as each line arrives.
+/// Runs the script on `texts` across interpreters and hands `each` one
+/// printing per text, in order, as each line arrives.
 ///
 /// # Specification
 /// - requires: as [`parse`].
-/// - ensures: `each` reads one printing per text, or the run refuses. A writer
-///   thread feeds the script, so a long input never waits on a full output
-///   pipe.
-/// - provides: the one run of the script [`parse`] makes.
-/// - fails: as [`parse`].
+/// - ensures: the texts split into at most `width` shards of at least [`SHARD`]
+///   texts each, one interpreter for each. The first interpreter starts alone,
+///   and the rest start when it prints its first line, so the first printing
+///   costs one interpreter's load. `each` reads the first shard's printings as
+///   they arrive, and each later shard's when every shard ahead of it has
+///   ended: one printing per text, in order, or the run refuses. A writer feeds
+///   each interpreter, so no pipe fills.
+/// - provides: the one fanned-out run of the script that [`parse`] makes.
+/// - fails: as [`parse`]; an interpreter that exits unsuccessfully refuses with
+///   its status and its message before a short or an unread output.
 /// - panics: none.
-/// - executable: none — the outcome is the external process's.
+/// - executable: none — the outcome is the external processes'.
 ///
 /// # Errors
 /// As `fails` lists.
 ///
 /// # Cost
-/// - allocation: the JSON input and each line read, growth within the texts
-///   given
+/// - allocation: each shard's input and each line read, growth within the texts
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`parse`].
+/// - hypothesis: L3 — as [`parse`]; three shards over a fake interpreter
+///   deliver every printing in the texts' order, and a lost, repeated or
+///   reordered line changes the judged findings.
 /// - witness: `tests::cli::a_failing_parse_is_reported_with_its_message`
+/// - witness: `tests::cli::a_cold_parse_across_interpreters_judges_in_order`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         pool_only_threads,
-        reason = "a writer feeds the script's stdin while this thread reads its stdout, so neither pipe fills; a pool job must not block on a child process"
+        reason = "each interpreter has a writer that feeds its stdin and a reader that sends its lines to this thread, so no pipe fills; a pool job must not block on a child process"
     )
 )]
 fn printed<Each>(
     python: &Path,
     script: &Path,
     texts: &[Text<'_>],
+    width: Width,
     mut each: Each,
 ) -> Result<(), ProseError>
 where
     Each: FnMut(Printing) -> Result<(), ProseError>,
 {
-    let mut command = Command::new(python);
-    command.arg(script);
-    let label = format!("{command:?}");
+    let label = format!("{:?}", Command::new(python).arg(script));
     let refuse = |message: String| ProseError::Parse {
         command: label.clone(),
         message,
     };
-    let input = serde_json::to_string(texts).map_err(|error| refuse(error.to_string()))?;
-    let mut child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| refuse(error.to_string()))?;
-    let stdin = child.stdin.take();
-    let stdout = child.stdout.take();
-    let mut count = 0_usize;
+    let interpreters = texts.len().div_ceil(SHARD).clamp(1, width.0.get());
+    let size = texts.len().div_ceil(interpreters).max(1);
+    let mut shards: Vec<Shard<'_, '_>> = texts
+        .chunks(size)
+        .map(|texts| Shard {
+            texts,
+            waiting: VecDeque::new(),
+            read: 0,
+            ended: false,
+        })
+        .collect();
+    let mut children: Vec<Child> = Vec::with_capacity(shards.len());
     let streamed = std::thread::scope(|scope| {
-        let writer = scope
-            .spawn(move || stdin.map_or(Ok(()), |mut stdin| stdin.write_all(input.as_bytes())));
-        let mut read = Ok(());
-        if let Some(stdout) = stdout {
-            for line in BufReader::new(stdout).lines() {
-                read = line
-                    .map_err(|error| refuse(error.to_string()))
-                    .and_then(|line| {
-                        serde_json::from_str::<Printing>(&line)
-                            .map_err(|error| refuse(error.to_string()))
-                    })
-                    .and_then(|printing| {
-                        count = count.saturating_add(1);
-                        each(printing)
-                    });
-                if read.is_err() {
-                    break;
+        let (heard, hearing) = mpsc::channel::<(usize, Heard)>();
+        let mut start = |index: usize, texts: &[Text<'_>]| -> Result<(), ProseError> {
+            let input = serde_json::to_string(texts).map_err(|error| refuse(error.to_string()))?;
+            let mut child = Command::new(python)
+                .arg(script)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|error| refuse(error.to_string()))?;
+            let stdin = child.stdin.take();
+            let stdout = child.stdout.take();
+            children.push(child);
+            scope.spawn(move || {
+                if let Some(mut stdin) = stdin {
+                    drop(stdin.write_all(input.as_bytes()));
+                }
+            });
+            let heard = heard.clone();
+            scope.spawn(move || {
+                if let Some(stdout) = stdout {
+                    for line in BufReader::new(stdout).lines() {
+                        let said =
+                            line.map_or_else(|error| Heard::Unread(error.to_string()), Heard::Line);
+                        let unread = matches!(said, Heard::Unread(_));
+                        if heard.send((index, said)).is_err() || unread {
+                            return;
+                        }
+                    }
+                }
+                drop(heard.send((index, Heard::Ended)));
+            });
+            Ok(())
+        };
+        let mut deliver = |line: &str| {
+            serde_json::from_str::<Printing>(line)
+                .map_err(|error| refuse(error.to_string()))
+                .and_then(&mut each)
+        };
+        start(0, shards.first().map_or(&[][..], |shard| shard.texts))?;
+        let mut alone = true;
+        let mut current = 0_usize;
+        while current < shards.len() {
+            let Ok((index, said)) = hearing.recv()
+            else {
+                break;
+            };
+            if alone && index == 0 {
+                alone = false;
+                for (later, shard) in shards.iter().enumerate().skip(1) {
+                    start(later, shard.texts)?;
                 }
             }
+            match said {
+                Heard::Line(line) => {
+                    let Some(shard) = shards.get_mut(index)
+                    else {
+                        continue;
+                    };
+                    shard.read = shard.read.saturating_add(1);
+                    if index == current {
+                        deliver(&line)?;
+                    }
+                    else {
+                        shard.waiting.push_back(line);
+                    }
+                },
+                Heard::Ended => {
+                    if let Some(shard) = shards.get_mut(index) {
+                        shard.ended = true;
+                    }
+                    while let Some(shard) = shards.get_mut(current).filter(|shard| shard.ended) {
+                        if shard.read != shard.texts.len() {
+                            return Err(refuse(format!(
+                                "{} passages parsed for {} given",
+                                shard.read,
+                                shard.texts.len()
+                            )));
+                        }
+                        current = current.saturating_add(1);
+                        if let Some(next) = shards.get_mut(current) {
+                            while let Some(line) = next.waiting.pop_front() {
+                                deliver(&line)?;
+                            }
+                        }
+                    }
+                },
+                Heard::Unread(message) => return Err(refuse(message)),
+            }
         }
-        let written = writer
-            .join()
-            .unwrap_or(Ok(()))
-            .map_err(|error| refuse(error.to_string()));
-        read.and(written)
+        Ok(())
     });
-    let output = child
-        .wait_with_output()
-        .map_err(|error| refuse(error.to_string()))?;
-    if !output.status.success() {
-        return Err(refuse(format!(
-            "{}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+    let mut failed = None;
+    for child in children {
+        let output = child
+            .wait_with_output()
+            .map_err(|error| refuse(error.to_string()))?;
+        if failed.is_none()
+            && !output.status.success()
+            && (output.status.code().is_some() || streamed.is_ok())
+        {
+            failed = Some(refuse(format!(
+                "{}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )));
+        }
     }
-    streamed?;
-    if count != texts.len() {
-        return Err(refuse(format!(
-            "{count} passages parsed for {} given",
-            texts.len()
-        )));
-    }
-    Ok(())
+    failed.map_or(streamed, Err)
 }
 
 /// The sentences of one printing: each token's head an index into its own

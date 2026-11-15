@@ -27,6 +27,7 @@
 //!   override, a failed parse or git read, or standard output closed; also a
 //!   malformed invocation.
 
+use core::num::NonZeroUsize;
 use std::collections::HashSet;
 use std::io::Write as _;
 use std::path::Path;
@@ -42,6 +43,7 @@ use gandr_workflow_prose::Key;
 use gandr_workflow_prose::ProseError;
 use gandr_workflow_prose::cache::Cache;
 use gandr_workflow_prose::cache::Model;
+use gandr_workflow_prose::cache::Pruned;
 use gandr_workflow_prose::cache::Script;
 use gandr_workflow_prose::digest::Digest;
 use gandr_workflow_prose::documents;
@@ -52,6 +54,7 @@ use gandr_workflow_prose::mechanical::Override;
 use gandr_workflow_prose::mechanical::Unread;
 use gandr_workflow_prose::parse;
 use gandr_workflow_prose::parse::Fresh;
+use gandr_workflow_prose::parse::Width;
 use gandr_workflow_prose::passage;
 use gandr_workflow_prose::passage::Advice;
 use gandr_workflow_prose::passage::Passage;
@@ -98,6 +101,14 @@ struct Cli
     /// The parser's and the model's versions, which name the cache.
     #[arg(long, requires = "cache")]
     model: Option<String>,
+    /// After the run, remove each kept parse whose passage the head does not
+    /// hold, and the cache's directories of another script or model.
+    #[arg(long, requires = "cache", conflicts_with = "body")]
+    prune: bool,
+    /// The most interpreters a cold parse runs at once: the host's parallelism
+    /// when it is not given.
+    #[arg(long)]
+    width: Option<NonZeroUsize>,
 }
 
 /// The paragraphs a change wrote in the markdown documents.
@@ -273,6 +284,7 @@ fn judge(
         &script,
         &inputs,
         &cache(cli, &script)?,
+        width(cli),
         |passage, sentences| {
             for finding in rules::sentences(passage, sentences, &glossary) {
                 print(&mut out, &finding)?;
@@ -328,6 +340,72 @@ fn cache(
         },
         _ => Ok(Cache::none()),
     }
+}
+
+/// The most interpreters a cold parse runs at once: `--width`, or the host's
+/// parallelism.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the error of a host that reads no parallelism, error path
+fn width(cli: &Cli) -> Width
+{
+    Width(
+        cli.width
+            .unwrap_or_else(|| std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)),
+    )
+}
+
+/// The digest of each passage of the head: the passages a run read, and each
+/// paragraph of every markdown document.
+///
+/// # Specification
+/// - requires: `cli.root` is a repository checkout.
+/// - ensures: the digests of `inputs`, with those of the paragraphs that
+///   [`passage::document`] reads from each document [`documents::every`] lists;
+///   no paragraph parses.
+/// - provides: what a prune keeps.
+/// - fails: every refusal of [`documents::every`]; [`ProseError::Io`] for a
+///   document that cannot be read.
+/// - panics: none.
+/// - executable: none — the outcome is git's and the file system's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: each document's text, paragraphs and digest, growth within the
+///   tree
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run whose cache holds a parse of the head, a parse of
+///   an untouched document and a parse no paragraph holds; the first two
+///   removed or the third kept changes the next run's fresh count.
+/// - witness: `tests::cli::a_prune_keeps_the_head_s_parses_and_removes_the_rest`
+fn head(
+    cli: &Cli,
+    inputs: &[&Passage],
+) -> Result<HashSet<Digest>, ProseError>
+{
+    let mut held: HashSet<Digest> = inputs
+        .iter()
+        .map(|passage| Digest::of(Text(&passage.text)))
+        .collect();
+    for path in documents::every(&cli.root)? {
+        let full = cli.root.join(&path);
+        let text = std::fs::read_to_string(&full).map_err(|error| ProseError::Io {
+            path: full.clone(),
+            message: error.to_string(),
+        })?;
+        held.extend(
+            passage::document(Text(&path), Text(&text))
+                .iter()
+                .map(|passage| Digest::of(Text(&passage.text))),
+        );
+    }
+    Ok(held)
 }
 
 /// The paragraphs a change wrote since `base` in the markdown documents it
@@ -425,12 +503,15 @@ fn written(
 ///   count it claims. The run prints the passages and words it parsed afresh,
 ///   and the outcome is agreed exactly when no finding, stale line or differing
 ///   count was printed. The written paragraphs, the ledger's passages and the
-///   diagnostics' advice parse in one run of the script, in that order.
+///   diagnostics' advice parse in one [`parse::parse`], in that order. With
+///   `--prune`, the cache keeps only the parses of [`head`] after the parse,
+///   and the run prints what the prune kept and removed.
 /// - provides: the whole command.
 /// - fails: every refusal of [`passage::gather`], [`Glossary::read`],
-///   [`written`] and [`parse::parse`]; [`ProseError::Ledger`] for a ledger line
-///   [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger, the
-///   glossary, the parse script or standard output cannot be read or written.
+///   [`written`], [`parse::parse`] and [`head`]; [`ProseError::Ledger`] for a
+///   ledger line [`Ledger::read`] refuses; [`ProseError::Io`] when the ledger,
+///   the glossary, the parse script or standard output cannot be read or
+///   written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes printed and the ledger file.
 ///
@@ -446,6 +527,7 @@ fn written(
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
 /// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+/// - witness: `tests::cli::a_prune_keeps_the_head_s_parses_and_removes_the_rest`
 fn run(cli: &Cli) -> Result<Outcome, ProseError>
 {
     let io = |path: PathBuf| {
@@ -481,11 +563,13 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         message: error.to_string(),
     };
     let mut refused = false;
+    let cache = cache(cli, &script)?;
     let parsed = parse::parse(
         &cli.python,
         &script,
         &inputs,
-        &cache(cli, &script)?,
+        &cache,
+        width(cli),
         |passage, sentences| {
             if passage.source == Source::Document {
                 for finding in rules::sentences(passage, sentences, &glossary) {
@@ -496,6 +580,20 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
             Ok(())
         },
     )?;
+    if cli.prune {
+        let Pruned {
+            kept,
+            removed,
+            stale,
+            stuck,
+        } = cache.prune(&head(cli, &inputs)?);
+        writeln!(
+            out,
+            "prose: the prune kept {kept} parse(s) and removed {removed}, with {stale} stale \
+             directory(ies); {stuck} could not be removed"
+        )
+        .map_err(output)?;
+    }
     let mut parses = parsed.sentences.iter().skip(documents);
     let mut findings: Vec<Finding> = Vec::new();
     let mut passage_parses = Vec::new();

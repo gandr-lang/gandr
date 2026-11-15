@@ -324,6 +324,142 @@ fn a_second_run_reads_every_parse_from_the_cache()
 }
 
 #[test]
+fn a_prune_keeps_the_head_s_parses_and_removes_the_rest()
+{
+    let root = scratch!("prune", "The kernel reduces the term.", "", PRESENT);
+    put!(root, "crates/workflow-prose/parse.py", "the parse script");
+    assert!(run!(root, ["--write"], "").status.success());
+    git!(root, ["add", "."]);
+    git!(root, ["commit", "--quiet", "-m", "base"]);
+    put!(root, "docs/kept.md", "The kept page reads the term.\n");
+    put!(
+        root,
+        "crates/x/README.md",
+        "The gone paragraph reads the term.\n"
+    );
+    put!(root, "parse.json", joined!(PRESENT, PRESENT, PRESENT));
+    let cache = root.join("cache");
+    let flags = |extra: &[&str]| {
+        let mut flags = vec![
+            std::ffi::OsString::from("--cache"),
+            cache.clone().into_os_string(),
+            "--model".into(),
+            "fake 1".into(),
+        ];
+        flags.extend(extra.iter().map(std::ffi::OsString::from));
+        flags
+    };
+    assert!(run!(root, flags(&["--base", "HEAD"]), "").status.success());
+    let script = blake3::hash(b"the parse script").to_hex();
+    let scripts = cache.join("fake_1");
+    let entry = |text: &str| {
+        let digest = blake3::hash(text.as_bytes()).to_hex();
+        scripts
+            .join(script.as_str().get(.. 16).unwrap())
+            .join(digest.as_str().get(.. 2).unwrap())
+            .join(digest.as_str())
+    };
+    let kept = [
+        entry("The kernel reduces the term."),
+        entry("The kept page reads the term."),
+    ];
+    let gone = entry("The gone paragraph reads the term.");
+    assert!(kept.iter().chain([&gone]).all(|path| path.is_file()));
+    put!(
+        scripts.join("0123456789abcdef/ab"),
+        "ab00",
+        "a parse of an older script"
+    );
+    put!(cache, "notes.txt", "not a parse");
+    put!(
+        root,
+        "crates/x/README.md",
+        "The new paragraph reads the term.\n"
+    );
+    let pruned = run!(root, flags(&["--prune"]), "fail");
+    assert_eq!(String::from_utf8_lossy(&pruned.stderr), "");
+    assert_eq!(pruned.status.code(), Some(0_i32));
+    assert!(
+        String::from_utf8_lossy(&pruned.stdout).starts_with(
+            "prose: the prune kept 2 parse(s) and removed 1, with 1 stale directory(ies); 0 could \
+             not be removed\n"
+        ),
+        "{}",
+        String::from_utf8_lossy(&pruned.stdout)
+    );
+    assert!(
+        kept.iter().all(|path| path.is_file()),
+        "the head's parses stand"
+    );
+    assert!(!gone.exists(), "a parse no paragraph holds is removed");
+    assert!(
+        !scripts.join("0123456789abcdef").exists(),
+        "an older script's parses are removed"
+    );
+    assert!(cache.join("notes.txt").is_file(), "a stray file stands");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_cold_parse_across_interpreters_judges_in_order()
+{
+    let root = scratch!("fan-out", "The kernel reduces the term.", "", PRESENT);
+    assert!(run!(root, ["--write"], "").status.success());
+    git!(root, ["commit", "--quiet", "-m", "base"]);
+    let past = [3_usize, 1000, 2099];
+    let readme: Vec<String> = (0 .. 2100_usize)
+        .map(|at| {
+            let verb = if past.contains(&at) {
+                "reduced"
+            }
+            else {
+                "reduces"
+            };
+            format!("The kernel {verb} term {at}.\n")
+        })
+        .collect();
+    put!(root, "crates/x/README.md", readme.join("\n"));
+    put!(root, "parse.json", joined!(PAST, PRESENT));
+    let judged = |width: &str| {
+        for entry in std::fs::read_dir(&root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.to_string_lossy().contains("input.json.") {
+                std::fs::remove_file(path).unwrap();
+            }
+        }
+        let output = run!(root, ["--base", "HEAD", "--width", width], "each");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+        assert_eq!(output.status.code(), Some(1_i32));
+        let interpreters = std::fs::read_dir(&root)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("input.json.")
+            })
+            .count();
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            interpreters,
+        )
+    };
+    let (alone, one) = judged("1");
+    let (fanned, three) = judged("3");
+    assert_eq!((one, three), (1, 3), "2101 texts take three interpreters");
+    assert_eq!(fanned, alone, "the shards judge as one interpreter does");
+    let lines: Vec<&str> = fanned
+        .lines()
+        .filter_map(|line| line.strip_prefix("crates/x/README.md:"))
+        .filter_map(|line| line.split(':').next())
+        .collect();
+    assert_eq!(lines, ["7", "2001", "4199"], "{fanned}");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
 fn a_document_answers_for_the_paragraphs_its_change_wrote()
 {
     let root = scratch!("documents", "The kernel reduces the term.", "", PRESENT);

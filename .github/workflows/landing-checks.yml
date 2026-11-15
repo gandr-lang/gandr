@@ -2784,7 +2784,9 @@ jobs:
   # change wrote since `PROSE_BASE` (#7621), so the checkout holds the
   # history, as the format gate's does. The bodies of the pull requests the
   # change lands give their named overrides, and the architect's comments
-  # sign them. The parse cache is saved on main beside the tools.
+  # sign them. The parse cache is saved on main beside the tools. A run that
+  # saves it prunes it first, so the cache holds the parses of the head's
+  # passages and no older script's (#7659).
   prose-gate:
     name: check the prose against its ledger
     needs: *rust-needs
@@ -2849,6 +2851,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PROSE_PRUNE: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         run: mise run check:prose
       - name: save the prose tools
         if: ${{ !cancelled() && env.ACT != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prose-tools-restore.outputs.cache-hit != 'true' }}

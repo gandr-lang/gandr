@@ -6127,9 +6127,11 @@ INSERT INTO purpose VALUES('workflow-prose','cache::Keeping','enum','What a writ
 INSERT INTO purpose VALUES('workflow-prose','cache::Kept','struct','One passage''s parse as the script prints it: JSON text.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','cache::Missed','enum','Why the cache gives no parse for a digest.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','cache::Model','struct','The name of the model whose parses a cache keeps: the parser''s version and the model''s.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','cache::Pruned','struct','What a prune did: the entries that stand, the entries and stale directories it removed, and those it could not remove.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','cache::Script','struct','The text of the parse script, whose digest names the cache beside the model.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','digest::Digest','struct','The BLAKE3 digest of a passage''s lines joined by single spaces, which a move or a re-wrap keeps.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::Base','struct','The revision a change''s documents are read against: its merge base.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','documents::every','function','Every markdown document of the head that the tree tracks, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::held','function','The digests of the paragraphs each touched document holds at the base, read through one batch of git.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::touched','function','The markdown documents a change adds or alters since its base, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','error::ProseError','enum','Why the prose check could not run: a file unread, a malformed glossary or ledger line, or a parse that failed.',NULL,'fits','sound',NULL);
@@ -6149,7 +6151,8 @@ INSERT INTO purpose VALUES('workflow-prose','parse::Parsed','struct','The senten
 INSERT INTO purpose VALUES('workflow-prose','parse::Rootless','enum','Why a sentence has no root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','parse::Sentence','struct','One sentence of a parsed passage: its tokens in order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','parse::Token','struct','One parsed word: its text, lemma, tags, dependency, head and offset.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','parse::parse','function','Each passage''s sentences, read from the cache or parsed once for each distinct text by the parse script, each handed to the judge as soon as it is known.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','parse::Width','struct','The most interpreters a cold parse runs at once: the host''s parallelism, or the invocation''s.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','parse::parse','function','Each passage''s sentences, read from the cache or parsed once for each distinct text by the parse script across the run''s interpreters, each handed to the judge as soon as it is known.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Advice','enum','What a rendered diagnostic tells its reader to do: a `help:` line, an issue that tracks it, or nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::CommentShape','struct','The head and the item comments of one corpus source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Gathered','struct','Everything the check reads under a root: the comment passages and the rendered diagnostics.',NULL,'fits','sound',NULL);

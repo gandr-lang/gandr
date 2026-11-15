@@ -16,7 +16,7 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 
 **Why.** The style the corpus follows is ASD-STE100's: short sentences, the active voice, the present tense, no noun stacks. A reviewer misses a passive or a past tense in a dense paragraph; a parser does not. The rules need a part-of-speech tag and a dependency parse, which a pattern over the text cannot give. The ledger names the existing debt, so the check refuses new debt at once while a sweep pays the old debt down.
 
-**How.** The binary writes the passages as JSON to `parse.py`, which runs under the interpreter of the spaCy venv that the `check:prose` task pins. The script loads `en_core_web_sm` and prints each token's text, lemma, coarse and fine tags, dependency, head and character offset. Every rule is Rust over those tokens, so a rule is tested on a sentence written by hand. Text inside backticks is code, and no rule reads it. Text inside double quotes is a quotation, and the tense rule leaves it alone. A finding's key is its file, its rule and the first sixteen hexadecimal digits of its sentence's BLAKE3 digest. Moving a sentence keeps its key; rewording it retires the key.
+**How.** The binary writes the passages as JSON to `parse.py`, which runs under the interpreter of the spaCy venv that the `check:prose` task pins. The script loads `en_core_web_sm` and prints each token's text, lemma, coarse and fine tags, dependency, head and character offset. Every rule is Rust over those tokens, so a rule is tested on a sentence written by hand. Text inside backticks is code, and no rule reads it. Text inside double quotes is a quotation, and the tense rule leaves it alone. A finding's key is its file, its rule and its sentence's digest ([`ledger::Key`](src/ledger.rs)).
 
 ## Provided features
 
@@ -24,7 +24,7 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 - `--write` writes the ledger from the findings instead.
 - `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document, with no ledger. [`documents`](src/documents.rs) names the documents it reads and those it leaves out.
 - `--override FILE...` reads the `prose-override:` lines of pull request bodies, and [`mechanical`](src/mechanical.rs) states their form and their check. `check:prose` reads the architect's sign-off of each override.
-- `--cache DIR --model NAME` keeps each parse by its passage's digest, so a run parses only the texts that the cache misses.
+- `--cache DIR --model NAME` keeps each parse by its passage's digest, so a run parses only the texts that the cache misses. `--prune` removes each parse that the head does not hold, and `--width N` bounds the interpreters of a cold parse.
 - `prose --python PATH --body FILE...` judges the bodies in the files in one parse. [`passage::body`](src/passage.rs) states a body's passages and the lines it leaves unread.
 - Exit `0` when the run agrees, the ledger is written or no body breaks a rule. Exit `1` on a finding the ledger lacks, a stale line, a written paragraph's finding, an override's count that differs or a body's finding. Exit `2` on a refusal: an unreadable file, a malformed glossary, ledger or override line, a failed git read or a failed parse.
 

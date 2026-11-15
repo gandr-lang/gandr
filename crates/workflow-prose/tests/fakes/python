@@ -1,14 +1,27 @@
 #!/bin/sh
 # A stand-in for the spaCy venv's interpreter: it drains the passages it is
 # fed, into the file `FAKE_PYTHON_INPUT` names when a case names one, and
-# prints the parse the case wrote, or fails as asked.
-if [ -n "$FAKE_PYTHON_INPUT" ]; then
-  cat >"$FAKE_PYTHON_INPUT"
-else
-  cat >/dev/null
+# prints the parse the case wrote, or fails as asked. In the mode `each`, it
+# keeps its input beside that file under its own process number, and prints
+# one line for each text it is fed: the parse's first line for a text that
+# reads "reduced", and its second line for each other text.
+input=${FAKE_PYTHON_INPUT:-/dev/null}
+if [ "$FAKE_PYTHON_MODE" = each ]; then
+  input="$input.$$"
 fi
+cat >"$input"
 if [ "$FAKE_PYTHON_MODE" = fail ]; then
   echo "ModuleNotFoundError: No module named 'spacy'" >&2
   exit 1
+fi
+if [ "$FAKE_PYTHON_MODE" = each ]; then
+  awk -v parse="$FAKE_PYTHON_OUTPUT" '
+    BEGIN { getline past < parse; getline present < parse }
+    {
+      gsub(/^\["|"\]$/, "")
+      count = split($0, texts, /","/)
+      for (at = 1; at <= count; at += 1) print (texts[at] ~ /reduced/ ? past : present)
+    }' "$input"
+  exit 0
 fi
 cat "$FAKE_PYTHON_OUTPUT"
