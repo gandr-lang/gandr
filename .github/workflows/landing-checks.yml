@@ -1560,11 +1560,17 @@ jobs:
   # not from main's, which lags `landing` by the integration cycle. The
   # prune's two passes read the whole workspace, so the state that the group
   # hands on is whole for its tree whichever state it started from.
+  # The job lints on x86-64, where each lane gates, so a lane's signed record
+  # of the pass on this tree serves it (#7684): the job reads the record and
+  # runs neither lint again. The code that only an arm64 build compiles is
+  # linted by `cargo-clippy-arch`, and this required check needs that job and
+  # fails on its failure. When the ruleset of `landing` requires the arm64 job
+  # by its name, the `needs` comes out.
   cargo-clippy-crate:
     name: check Clippy wall
-    needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
-    runs-on: *linux
+    needs: [prepare, ci-image, cargo-clippy-arch]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.ci-image.result != 'failure' && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: &linux-x86 ${{ inputs.cycle && inputs.runner == 'integration' && github.ref == 'refs/heads/integration' && fromJSON('["self-hosted", "integration"]') || 'ubuntu-24.04' }}
     # A landing's push deletes the Clippy state it superseded.
     permissions:
       contents: read
@@ -1573,7 +1579,13 @@ jobs:
     container: *ci-image # zizmor: ignore[unpinned-images]
     env:
       CI_BUILD_STATE: cargo-clippy-crate
+      VERDICT_CHECKS: check:clippy-plain-only check:clippy-enforcing
     steps:
+      - name: refuse a failed lint of the arm64 code
+        if: ${{ needs.cargo-clippy-arch.result == 'failure' || needs.cargo-clippy-arch.result == 'cancelled' }}
+        run: |
+          echo "the lint of the code that only an arm64 build compiles failed (check Clippy on arm64 code), so this required check fails" >&2
+          exit 1
       - *git-checkout
       # The formatting check reads the change through Git inside the job's
       # container.
@@ -1613,6 +1625,23 @@ jobs:
             printf 'the working tree differs from its commit, so the scope reads paths the change does not hold:\n%s\n' "$changed" >&2
             exit 1
           fi
+      # A lane's gate that passed on this tree wrote a signed record of each
+      # check that this job runs (#7684, `.config/gate-scope/verdict.bash`).
+      # A record that binds this run's key holds, and the check does not run
+      # again. The key reads the scope against the record's base, which the
+      # trunk must hold.
+      - &read-verdicts
+        name: read the records of the lane's gate
+        id: verdict
+        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          read -ra checks <<< "$VERDICT_CHECKS"
+          if mise exec jq@1.8.1 -- .config/gate-scope/verdict.bash read "${checks[@]}"; then
+            echo held=true >> "$GITHUB_OUTPUT"
+          fi
       # The newest state that a group on `landing` uploaded for this job
       # (`landing-states`). A failed download falls back to main's state.
       - &download-landing-state
@@ -1643,11 +1672,11 @@ jobs:
           restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
       - name: lint the plain-only targets
         id: clippy-plain
-        if: ${{ needs.prepare.outputs.lints == 'true' }}
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.verdict.outputs.held != 'true' }}
         run: mise run check:clippy-plain-only
       - name: lint every target with specification enforcement
         id: clippy-enforcing
-        if: ${{ needs.prepare.outputs.lints == 'true' }}
+        if: ${{ needs.prepare.outputs.lints == 'true' && steps.verdict.outputs.held != 'true' }}
         run: mise run check:clippy-enforcing
       - name: prune the Clippy state to this run's units
         id: prune-clippy-state
@@ -1677,6 +1706,39 @@ jobs:
           CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
         run: mise run ci:delete-superseded clippy-state-v "$CI_STATE_KEY"
       - *lane-state
+  # The lint of the code that only an arm64 build compiles (#7684,
+  # `check:clippy-arch`): each package whose sources hold a `cfg` that names
+  # `aarch64` and not `x86_64`, cut to the packages that the change reaches.
+  # The lanes gate on x86-64 and write no record for arm64, so the job runs
+  # whenever its set holds a package. `check Clippy wall` needs it and fails
+  # on its failure.
+  cargo-clippy-arch:
+    name: check Clippy on arm64 code
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && github.base_ref != 'landing' && needs.prepare.outputs.landed != 'true' && needs.prepare.outputs.lints == 'true' && (needs.prepare.outputs.rust == 'true' || needs.prepare.outputs.unbuilt == 'true') }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      VERDICT_CHECKS: check:clippy-arch
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - *lint-scope
+      - *tree-matches-commit
+      - *read-verdicts
+      - name: restore the arm64 Clippy state
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        uses: *cache-restore
+        with:
+          path: *clippy-state
+          key: *clippy-state-key
+          restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+      - name: lint the code that only an arm64 build compiles
+        if: ${{ steps.verdict.outputs.held != 'true' }}
+        run: mise run check:clippy-arch
   # The external plugin checks all local targets once per landing, beside the
   # build it would otherwise repeat on every pull request; the obligations lane
   # runs it on a pull request for its records. The image carries its driver;
@@ -1694,9 +1756,11 @@ jobs:
     name: check quenchant compiler policy
     needs: *rust-needs
     if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
-    runs-on: *linux
+    runs-on: *linux-x86
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
+    env:
+      VERDICT_CHECKS: check:dylint
     steps:
       - *git-checkout
       # The scope reads the change through Git inside the job's container.
@@ -1706,6 +1770,7 @@ jobs:
       - *setup-rust
       - *lint-scope
       - *tree-matches-commit
+      - *read-verdicts
       - *identify-policy
       - *restore-dylint-drivers
       - *restore-gate-binary
@@ -1714,12 +1779,13 @@ jobs:
       - *restore-policy-state
       - name: lint every workspace target
         id: policy-library
+        if: ${{ steps.verdict.outputs.held != 'true' }}
         # The task strips enforcement cfgs: the separately built plugin runs
         # plain, while the source lints and DYLINT_RUSTFLAGS stay unchanged.
         run: mise run check:dylint
       - name: lint the rest of the workspace for the state it hands on
         id: policy-rest
-        if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' }}
+        if: ${{ github.event_name == 'merge_group' && env.GATE_SCOPE != '' && env.GATE_SCOPE != '--workspace' && steps.verdict.outputs.held != 'true' }}
         run: env -u GATE_SCOPE mise run check:dylint
       # The specification gates run from the gate binary installed at the
       # policy's metadata revision: the invocation state and the enforcing

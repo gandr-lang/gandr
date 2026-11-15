@@ -60,6 +60,12 @@ site = [
   { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "read", calls = 1, points = 1, pages = 1, measured = "rest", hour = 8, trigger = "pr:open, through check:deletes: the comments of each issue the body works, one paged read of 100 comments an issue, one issue for most bodies; about 8 openings an hour" },
   { file = ".config/deletes/check.bash", scope = "-", api = "rest", identity = "actions", calls = 1, points = 1, pages = 1, measured = "rest", hour = 30, trigger = "landing-title-and-deletes.yml, through queue.bash: each entry of each merge group, the comments of each issue the body works, one paged read of 100 comments an issue; a group of N entries reads N bodies, about 10 groups an hour of 3 entries" },
 
+  # The records of a check's pass (#7684): the Clippy, policy and arm64 lint
+  # jobs of landing-checks.yml read them in each merge group and each run of
+  # a stacked pull request.
+  { file = ".config/gate-scope/verdict.bash", scope = "signers", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each read of a job, the signing keys of each login in verdicts.json's signers, 1 today; 3 jobs a merge group and 2 a stacked pull request's run, about 10 of each an hour" },
+  { file = ".config/gate-scope/verdict.bash", scope = "on_trunk", api = "rest", identity = "actions", calls = 1, points = 1, measured = "rest", hour = 50, trigger = "landing-checks.yml: each record that a read takes, a compare of its base with the trunk, at most 1 a check; 4 checks a merge group and 3 a stacked pull request's run, about 10 of each an hour" },
+
   # Epics: tracker-close-epics.yml closes an epic whose last child closed (Actions).
   { file = ".config/epics/epics.sh", scope = "-", api = "graphql", identity = "actions", calls = 2, points = 4, measured = "rule", hour = 8, trigger = "tracker-close-epics.yml: each issue closed; a comment and a close; the repository comes from GITHUB_REPOSITORY (repo_name)" },
   { file = ".config/epics/epics.sh", scope = "-", api = "rest", identity = "actions", calls = 5, points = 6, pages = 3, measured = "rest", hour = 8, trigger = "tracker-close-epics.yml: each issue closed; its parent, blockers and sub-issues, one page each" },
