@@ -130,8 +130,11 @@
 //! # Optional tracing
 //!
 //! Enable `tracing` for an INFO span around `dispatch`. It records no argument
-//! or outcome payload and installs no subscriber. The driver, `gandr-lang`,
-//! owns output; the evaluator, `gandr-core-nbe`, uses the same diagnostics
+//! or outcome payload and installs no subscriber. One INFO event names the
+//! place of the standard library that an import of `std` from outside it
+//! takes: the profile, the walk or the last place, with the library's root
+//! and the importer's directory (#7685). The driver, `gandr-lang`, owns
+//! output; the evaluator, `gandr-core-nbe`, uses the same diagnostics
 //! interface independently. The dependency is optional and off by default, so
 //! ordinary routing has no instrumentation.
 //!
@@ -400,6 +403,7 @@ pub use crate::package::lock::Unresolved;
 pub use crate::package::lock::WORKSPACE_LOCK;
 pub use crate::package::lock::lock_file;
 pub use crate::package::lock::locked_source;
+pub use crate::package::lock::profile_standard;
 pub use crate::package::lock::reconcile_lock;
 pub use crate::package::lock::relock;
 pub use crate::package::package_root;

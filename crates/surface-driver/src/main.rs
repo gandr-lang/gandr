@@ -1921,6 +1921,21 @@ fn main() -> ExitCode
             };
         },
     };
+    // The place of the standard library that the host's profile names: an
+    // import of `std` from outside the standard library reads it first
+    // (#7685).
+    match configuration.library() {
+        Ok(Some(place)) => {
+            // This is the one naming of the process, so none stands before it.
+            let _named = gandr_surface_dispatcher::profile_standard(place);
+        },
+        Ok(None) => {},
+        Err(fault) => {
+            return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            };
+        },
+    }
     #[cfg(feature = "tracing")]
     let _subscriber = tracing::subscriber::set_default(
         tracing_subscriber::fmt()

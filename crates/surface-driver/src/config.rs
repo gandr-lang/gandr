@@ -815,6 +815,50 @@ impl Configuration
         }
     }
 
+    /// The place of the standard library that the user's configuration file
+    /// names: the place an import of `std` from outside it reads first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`library_parsed`] reads the file's document; none when no
+    ///   directory is named or no file is there.
+    /// - provides: the profile's place of the standard library, which the
+    ///   driver names to the dispatcher before the first check.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`library_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`TableFault`], naming the file.
+    ///
+    /// # Cost
+    /// - allocation: the place's path, setup
+    /// - allocation: the fault's path and its text, error path
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a configured place of a copy is the standard library
+    ///   that a source with no workspace above it reads, through the binary.
+    /// - witness: `tests::cli::a_profile_names_the_standard_library_7685`
+    pub fn library(&self) -> Result<Option<PathBuf>, TableFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(None),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => library_parsed(path, document.as_ref()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(TableFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
+    }
+
     /// The policy that retries the deliveries of the toolset, as the user's
     /// configuration file names it.
     ///
@@ -1009,6 +1053,72 @@ fn reals_parsed(
             names.join(" or ")
         ))
     })
+}
+
+/// The place of the standard library that `read`, the contents of `path`
+/// parsed as TOML, names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `library.std` as a path, read against the directory of `path`
+///   when it is relative; none for a document without a `library` table, or a
+///   table that names no `std`. Text that is not TOML, a `library` that is not
+///   a table, and a `std` that is not a string are each a [`TableFault`].
+/// - provides: the reading of the table, apart from reading the file.
+/// - fails: the faults the ensures clause names.
+/// - panics: none.
+/// - executable: none — the clauses relate the document's text to the place it
+///   names, which the result alone does not carry.
+///
+/// # Errors
+/// [`TableFault`], as above.
+///
+/// # Cost
+/// - allocation: the place's path, setup
+/// - allocation: the fault's path and its text, error path
+///
+/// # Adequacy
+/// - hypothesis: L3 — an absolute place, a relative place, no place, a place of
+///   another type and a `library` that is no table are each read.
+/// - witness: `config::tests::a_library_place_is_read_and_one_of_another_type_refused_7685`
+fn library_parsed(
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
+) -> Result<Option<PathBuf>, TableFault>
+{
+    let fault = |why: String| TableFault {
+        path: path.to_path_buf(),
+        why,
+    };
+    let table = match read {
+        Ok(table) => table,
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
+    };
+    let place = match table.get("library") {
+        None => return Ok(None),
+        Some(&toml::Value::Table(ref library)) => library.get("std"),
+        Some(other) => {
+            return Err(fault(format!(
+                "`library` is of type {}, not a table",
+                other.type_str()
+            )));
+        },
+    };
+    let Some(value) = place
+    else {
+        return Ok(None);
+    };
+    let Some(named) = value.as_str().map(Path::new)
+    else {
+        return Err(fault(format!(
+            "`library.std` is {}; it names the directory of a package named `std`",
+            described(value)
+        )));
+    };
+    Ok(Some(match path.parent() {
+        Some(directory) if named.is_relative() => directory.join(named),
+        Some(_) | None => named.to_path_buf(),
+    }))
 }
 
 /// The delivery policy that `read`, the contents of `path` parsed as TOML,
@@ -1257,6 +1367,7 @@ mod tests
     #[cfg(unix)]
     use super::deliveries_parsed;
     use super::kernel_parsed;
+    use super::library_parsed;
     use super::located;
     use super::reals_parsed;
     use super::seal_parsed;
@@ -1419,6 +1530,53 @@ mod tests
         assert_eq!(
             refused("reals = 1\n"),
             "/c/gandr/config.toml: `reals` is of type integer, not a table"
+        );
+    }
+
+    /// #7685: the place of the standard library is a path that the file
+    /// names, read against the file's directory when it is relative, and a
+    /// place of another type is refused.
+    #[test]
+    fn a_library_place_is_read_and_one_of_another_type_refused_7685()
+    {
+        let read = |text: &str| {
+            library_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+            )
+        };
+        let place = |text: &str| match read(text) {
+            Ok(place) => place,
+            Err(fault) => panic!("{text:?} is read: {fault}"),
+        };
+        assert_eq!(place(""), None);
+        assert_eq!(
+            place("[reals]\nprofile = \"default\"\n"),
+            None,
+            "a file without a `[library]` table names no place"
+        );
+        assert_eq!(place("[library]\n"), None);
+        assert_eq!(
+            place("[library]\nstd = \"/opt/gandr/std\"\n"),
+            Some(PathBuf::from("/opt/gandr/std"))
+        );
+        assert_eq!(
+            place("[library]\nstd = \"std\"\n"),
+            Some(PathBuf::from("/c/gandr/std")),
+            "a relative place reads against the file's directory"
+        );
+        let refused = |text: &str| match read(text) {
+            Err(fault) => fault.to_string(),
+            Ok(place) => panic!("{text:?} is refused: {place:?}"),
+        };
+        assert_eq!(
+            refused("[library]\nstd = 1\n"),
+            "/c/gandr/config.toml: `library.std` is of type integer; it names the directory of \
+             a package named `std`"
+        );
+        assert_eq!(
+            refused("library = 1\n"),
+            "/c/gandr/config.toml: `library` is of type integer, not a table"
         );
     }
 

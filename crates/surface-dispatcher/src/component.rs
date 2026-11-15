@@ -575,7 +575,8 @@ impl ImportPath
     /// The file the module path names under `sources`: under them when its
     /// head names a source or a directory there, else under the standard
     /// library for `std`: `standard` itself when the importer stands in it
-    /// (#7635), else the standard library [`lock::standard`] names.
+    /// (#7635), else the standard library [`lock::standard_from`] finds from
+    /// `sources` (#7685).
     ///
     /// # Specification
     /// - requires: the path's file is a module path's file, `hello.gandr` or
@@ -585,9 +586,9 @@ impl ImportPath
     /// - ensures: [`Named::File`] of the file under `sources` when its head —
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
     ///   a directory there; else, for the head `std`, [`Named::File`] of the
-    ///   file in `standard` when it is some, and of [`lock::standard`]'s file
-    ///   when it names one; [`Named::Unlocked`] of the file under `sources`
-    ///   otherwise.
+    ///   file in `standard` when it is some, and of the file in the package
+    ///   that [`lock::standard_from`] finds when it finds one;
+    ///   [`Named::Unlocked`] of the file under `sources` otherwise.
     /// - provides: the one rule a module path's head reads.
     /// - fails: never.
     /// - panics: none.
@@ -628,7 +629,11 @@ impl ImportPath
             return Named::Unlocked(local);
         }
         standard.map_or_else(
-            || lock::standard(rest).map_or(Named::Unlocked(local), Named::File),
+            || {
+                lock::standard_from(sources).map_or(Named::Unlocked(local), |(library, _place)| {
+                    Named::File(lock::within(&library, rest))
+                })
+            },
             |own| Named::File(lock::within(own, rest)),
         )
     }
