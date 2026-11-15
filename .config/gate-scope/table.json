@@ -4,6 +4,7 @@
       "check:anodized",
       "check:anodized-enforcing",
       "check:clippy",
+      "check:clippy-arch",
       "check:clippy-enforcing",
       "check:clippy-plain-only",
       "check:corpus-comments",
