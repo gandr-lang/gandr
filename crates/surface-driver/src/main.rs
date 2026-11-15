@@ -521,9 +521,22 @@ const REFUSED: u8 = 1;
 /// The exit code of `fmt --check` over a source out of layout.
 const UNFORMATTED: u8 = 1;
 
-/// The exit code of `gandr tokens` when no porter carries the host's tokens.
+/// The exit code of `gandr tokens` when the verb holds no counter: no hub
+/// answers, or the verb joins no slot or makes no FIFO. It is 125, as `env`
+/// and `timeout` exit when they fail themselves, so a command's own code
+/// stands apart from it.
 #[cfg(unix)]
-const UNPORTED: u8 = 1;
+const UNHELD: u8 = 125;
+
+/// The exit code of `gandr tokens` when its command does not start, 126 as a
+/// shell's.
+#[cfg(unix)]
+const UNSTARTED: u8 = 126;
+
+/// The exit code of `gandr tokens` when no program has its command's name,
+/// 127 as a shell's.
+#[cfg(unix)]
+const UNFOUND: u8 = 127;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -744,16 +757,20 @@ enum Command
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
     },
-    /// Hold the engine hub for a build that runs beside it, and name the build
-    /// tools' FIFO that the hub's porter carries.
+    /// Run one build command on the host's counter, which the engine hub owns,
+    /// through a FIFO of this process's own.
     ///
     /// The hub serving the current directory's workspace is reached, started
-    /// when none runs, and the path of the host's FIFO is printed on standard
-    /// output. The connection holds the hub until standard input ends. A build
-    /// names the path as `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`, so
-    /// make, cargo and gandr draw on the host's one counter. The verb takes no
-    /// token. Exits 0 when standard input ends, 1 when no porter carries the
-    /// host's tokens, and 2 when no hub can be reached or a stream fails.
+    /// when none runs. The verb then joins the hub's counter with a slot of its
+    /// own, makes its FIFO beside the counter, and runs the command with
+    /// `MAKEFLAGS` and `CARGO_MAKEFLAGS` that name the FIFO as
+    /// `--jobserver-auth=fifo:<path>`, so make, cargo and gandr draw on the
+    /// host's one counter. When the command ends, the slot gives back each
+    /// token that the command's tools read and did not write back, and the
+    /// verb writes that count on standard error when it is above 0. Exits
+    /// with the command's code, or 128 and the signal that ended it; 125 when
+    /// the verb holds no counter, 126 when the command does not start, and
+    /// 127 when no program has its name.
     #[cfg(unix)]
     Tokens
     {
@@ -764,6 +781,9 @@ enum Command
         /// last has left, before it exits. Defaults to a minute.
         #[arg(long, value_name = "MILLISECONDS")]
         linger_ms: Option<u64>,
+        /// The program to run on the FIFO, and its arguments, after `--`.
+        #[arg(last = true, required = true, value_name = "COMMAND")]
+        command: Vec<std::ffi::OsString>,
     },
     /// Follow the document the engine hub checked last: its diagnostics, each
     /// at its row and column with its derivation, and its holes, beside the
@@ -2306,11 +2326,16 @@ fn main() -> ExitCode
             );
         },
         #[cfg(unix)]
-        Some(Command::Tokens { socket, linger_ms }) => {
+        Some(Command::Tokens {
+            socket,
+            linger_ms,
+            command,
+        }) => {
             return tokens(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
+                &command,
             );
         },
         Some(Command::Repl { batch }) => {
@@ -2991,51 +3016,65 @@ fn mcp(
     )
 }
 
-/// Hold the hub at `socket`, starting one lingering `linger` and configured
-/// with `spelling` when none answers, name the build tools' FIFO that its
-/// porter carries, and choose the exit code.
+/// Run `command` on the host's counter beside the hub at `socket`, starting
+/// one lingering `linger` and configured with `spelling` when none answers,
+/// through a FIFO of this process's own, and choose the exit code.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: the hub that [`reach_hub`] reaches holds the connection until
-///   standard input ends. The verb asks the hub one `server/discover` and reads
-///   its answer: the hub answers once it runs its loop, after it makes its
-///   porter. While a porter then holds the porter's lock in the directory of
-///   the hub's socket, the FIFO's path goes to standard output, and the verb
-///   exits `0` once standard input ends. With no porter it exits `1`, and with
-///   no hub, no answer or a stream that fails, `2`, the cause noted on standard
-///   error when writable. The verb takes no token.
-/// - provides: `gandr tokens`, the hold of a build on the host's counter.
+/// - requires: `command` names a program and then its arguments.
+/// - ensures: the hub that [`reach_hub`] reaches holds the connection until the
+///   command ends. The verb asks the hub one `server/discover` and reads its
+///   answer: the hub answers once it runs its loop, after it owns the counter.
+///   The verb then holds the counter in the directory of the hub's socket with
+///   a porter of its own, and runs the command with `MAKEFLAGS` and
+///   `CARGO_MAKEFLAGS` that [`jobserver_flags`] makes. When the command ends,
+///   the porter ends: the FIFO goes away, and the slot gives back each token
+///   that the command's tools read and did not write back. The verb writes that
+///   count on standard error when it is above 0, so the output of a command
+///   whose tools write back each token stays the command's own. It exits with
+///   the command's code, or 128 and its signal. It exits `125` when it holds no
+///   counter, `126` when the command does not start, and `127` when no program
+///   has its name, the cause noted on standard error when writable.
+/// - provides: `gandr tokens`, the hold of one build command on the host's
+///   counter.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
+/// - executable: none — the exit code is the command's own, which no predicate
+///   over the verb's arguments names.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a client that starts the hub names the FIFO of the hub's
-///   porter, and exits once its input ends.
-/// - witness: `tests::cli::tokens_names_the_fifo_of_the_hub_s_porter_7605`
+/// - hypothesis: L3 — a command that the verb runs names a FIFO of the verb's
+///   own beside the hub's socket, a token that its tool keeps comes back at its
+///   end, and the verb's exit code is the command's.
+/// - witness: `tests::cli::tokens_runs_a_command_on_a_fifo_of_its_own_7688`
 ///
 /// # Cost
-/// - allocation: the paths and the hub's answer, setup
+/// - allocation: the paths, the flags, the hub's answer and the porter's
+///   threads, setup
 #[cfg(unix)]
-#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNPORTED) || ret == ExitCode::from(FAULTED))]
 fn tokens(
     socket: Option<PathBuf>,
     linger: Duration,
     spelling: Spelling,
+    command: &[std::ffi::OsString],
 ) -> ExitCode
 {
+    let Some((program, arguments)) = command.split_first()
+    else {
+        return unheld(&"no command to run");
+    };
     let named = match hub_socket(socket) {
         Ok(named) => named,
-        Err(error) => return hub_fault(&error),
+        Err(error) => return unheld(&format_args!("the engine hub: {error}")),
     };
     let held = match reach_hub(Some(named.clone()), linger, spelling) {
         Ok(held) => held,
-        Err(error) => return hub_fault(&error),
+        Err(error) => return unheld(&format_args!("the engine hub: {error}")),
     };
     let directory = named.parent().unwrap_or_else(|| Path::new("."));
-    // A hub binds its socket before it makes its porter, and it accepts a
+    // A hub binds its socket before it owns the counter, and it accepts a
     // connection only once it runs its loop. So its answer to one request
-    // comes after its porter starts.
+    // comes after it owns the counter.
     let answered = held.try_clone().and_then(|reading| {
         use std::io::BufRead as _;
 
@@ -3047,37 +3086,143 @@ fn tokens(
         }
     });
     if let Err(error) = answered {
-        return hub_fault(&error);
+        return unheld(&format_args!("the engine hub: {error}"));
     }
-    let Maybe::Present(fifo) = gandr_surface_dispatcher::Porter::carried(directory)
-    else {
-        let noted = writeln!(
-            std::io::stderr(),
-            "gandr: no porter carries the host's tokens in {}",
-            directory.display()
-        );
-        return match noted {
-            // When standard error is unwritable too, the exit code is the one
-            // channel left.
-            Ok(()) | Err(_) => ExitCode::from(UNPORTED),
-        };
+    let porter = match gandr_surface_dispatcher::Porter::hold(directory) {
+        Ok(porter) => porter,
+        Err(error) => {
+            return unheld(&format_args!(
+                "no hold of the host's tokens in {}: {error}",
+                directory.display()
+            ));
+        },
     };
-    let mut stdout = std::io::stdout().lock();
-    let named = writeln!(stdout, "{}", fifo.display()).and_then(|()| stdout.flush());
-    drop(stdout);
-    // The build holds standard input open while it runs, and the connection
-    // holds the hub until then.
-    let held_for =
-        named.and_then(|()| std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink()));
+    let flags = jobserver_flags(std::env::var_os("MAKEFLAGS").as_deref(), porter.fifo());
+    let ran = std::process::Command::new(program)
+        .args(arguments)
+        .env("MAKEFLAGS", &flags)
+        .env("CARGO_MAKEFLAGS", &flags)
+        .status();
+    let kept = porter.end();
     drop(held);
-    match held_for {
-        Ok(_) => ExitCode::SUCCESS,
-        Err(error) => match writeln!(std::io::stderr(), "gandr: the hold of the hub: {error}") {
-            // When standard error is unwritable too, the exit code is the one
-            // channel left.
-            Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    if kept != gandr_surface_dispatcher::Reaped::NONE {
+        // When standard error is unwritable, the count has no channel, and
+        // the exit code stays the command's.
+        let _noted = writeln!(
+            std::io::stderr(),
+            "gandr tokens: tokens from the hands of the command's tools, which the reap gives back: {kept}"
+        );
+    }
+    match ran {
+        Ok(status) => exit_of(status),
+        Err(error) => {
+            let _noted = writeln!(
+                std::io::stderr(),
+                "gandr tokens: the command {} does not start: {error}",
+                Path::new(program).display()
+            );
+            ExitCode::from(if error.kind() == std::io::ErrorKind::NotFound {
+                UNFOUND
+            }
+            else {
+                UNSTARTED
+            })
         },
     }
+}
+
+/// Note on standard error that `gandr tokens` holds no counter, for `cause`,
+/// and give its exit code.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the note, error path
+#[cfg(unix)]
+fn unheld<Cause>(cause: &Cause) -> ExitCode
+where
+    Cause: core::fmt::Display + ?Sized,
+{
+    match writeln!(std::io::stderr(), "gandr tokens: {cause}") {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        Ok(()) | Err(_) => ExitCode::from(UNHELD),
+    }
+}
+
+/// The exit code that stands for a command's `status`: its own code, or 128
+/// and the signal that ended it, as a shell's.
+///
+/// # Specification
+/// trivial.
+#[cfg(unix)]
+fn exit_of(status: std::process::ExitStatus) -> ExitCode
+{
+    use std::os::unix::process::ExitStatusExt as _;
+
+    let code = status
+        .code()
+        .or_else(|| status.signal().map(|signal| signal.saturating_add(128)));
+    ExitCode::from(
+        code.and_then(|code| u8::try_from(code).ok())
+            .unwrap_or(FAULTED),
+    )
+}
+
+/// The `MAKEFLAGS` of a command that draws on the FIFO at `fifo`: each word of
+/// `inherited` but a jobserver's, with the FIFO named before a `--` word,
+/// which starts the variables of make.
+///
+/// # Specification
+/// - ensures: the result names `fifo` as `--jobserver-auth=fifo:<path>`, and no
+///   other jobserver.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a command that the verb runs reads the verb's FIFO in
+///   place of the jobserver that the verb's `MAKEFLAGS` names, and keeps the
+///   other words, the variables after `--` among them.
+/// - witness: `tests::cli::tokens_runs_a_command_on_a_fifo_of_its_own_7688`
+///
+/// # Cost
+/// - allocation: the flags, setup
+#[cfg(unix)]
+#[spec(ensures: |ref ret| ret.to_string_lossy().matches("--jobserver-").count() == 1
+    && ret.to_string_lossy().contains(&format!("--jobserver-auth=fifo:{}", fifo.display())))]
+fn jobserver_flags(
+    inherited: Option<&std::ffi::OsStr>,
+    fifo: &Path,
+) -> std::ffi::OsString
+{
+    let text = inherited.map_or_else(Default::default, std::ffi::OsStr::to_string_lossy);
+    let mut flags = std::ffi::OsString::new();
+    let mut named = false;
+    for word in text.split_ascii_whitespace() {
+        if word.starts_with("--jobserver-auth=") || word.starts_with("--jobserver-fds=") {
+            continue;
+        }
+        if word == "--" && !named {
+            if !flags.is_empty() {
+                flags.push(" ");
+            }
+            flags.push("--jobserver-auth=fifo:");
+            flags.push(fifo);
+            named = true;
+        }
+        if !flags.is_empty() {
+            flags.push(" ");
+        }
+        flags.push(word);
+    }
+    if !named {
+        if !flags.is_empty() {
+            flags.push(" ");
+        }
+        flags.push("--jobserver-auth=fifo:");
+        flags.push(fifo);
+    }
+    flags
 }
 
 /// Attach to the render bus of the hub at `socket`, starting one lingering

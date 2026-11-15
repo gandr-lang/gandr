@@ -48,23 +48,31 @@
 //! takes the token all the same. So a batch waits at most one retry at each
 //! boundary of its jobs, and a stream of keystrokes starves no batch.
 //!
-//! **The porter carries tokens to the build tools.** The hub makes the build
-//! tools' FIFO beside the segment, and its porter joins the counter with a
-//! slot of its own. The porter makes two crossings, and nothing else moves a
-//! token between the FIFO and the counter. It moves a byte of the FIFO to the
-//! counter while a take of gandr waits, or while the FIFO holds more than one
-//! byte. It moves a free token of the counter to the FIFO while the FIFO holds
-//! no byte and no take of gandr waits. So the FIFO holds at most one spare
-//! token. The porter's slot counts each token in the FIFO or in the hands of a
-//! tool, so the reap gives them back when the hub dies. A give wakes a porter
-//! whose FIFO is empty, and a take of gandr that waits wakes a porter whose
-//! FIFO holds a spare. On Linux, an inotify watch of the FIFO wakes the porter
-//! at each read and each write of a tool, and `FIONREAD` counts the FIFO's
-//! bytes, so the porter reads only a byte that crosses. On macOS, a tool's
-//! read or write wakes nothing, so the porter reads the FIFO again at its
-//! tick. `FIONREAD` reads a FIFO as empty there, so the porter counts the
-//! bytes by one read of two bytes at most, and it writes a lone spare back.
-//! Its slot counts the spare all the while, so that write moves no token.
+//! **Each holder of the build tools carries a FIFO of its own.** A process
+//! that holds the counter for a build, as `gandr tokens` does for one build
+//! command, joins the counter with a slot of its own and makes its FIFO beside
+//! the segment, `tokens3.<slot>.fifo`. So the directory holds one FIFO for each
+//! slot at most, and a holder makes its FIFO afresh over the one that a dead
+//! holder of its slot left. Its porter, a thread of that process, makes
+//! two crossings, and nothing else moves a token between that FIFO and the
+//! counter. It moves a byte of the FIFO to the counter while a take of gandr
+//! waits, or while the FIFO holds more than one byte. It moves a free token of
+//! the counter to the FIFO while the FIFO holds no byte and no take of gandr
+//! waits. So the FIFO holds at most one spare token, and the porter stocks the
+//! next one only when a tool reads the spare: a reader that waits on an empty
+//! FIFO raises no event that the porter can read. The holder's slot counts
+//! each token in its FIFO or in the hands of its tools. So when the holder
+//! ends or dies, the slot gives back each token that its tools kept, and a
+//! token that a tool takes with it when the tool dies stays lost for one
+//! holder's life at most. A give wakes the porters whose FIFO is empty, and a
+//! take of gandr that waits wakes the porters whose FIFO holds a spare. On
+//! Linux, an inotify watch of the FIFO wakes its porter at each read and each
+//! write of a tool, and `FIONREAD` counts the FIFO's bytes, so the porter
+//! reads only a byte that crosses. On macOS, a tool's read or write wakes
+//! nothing, so the porter reads the FIFO again at its tick. `FIONREAD` reads a
+//! FIFO as empty there, so the porter counts the bytes by one read of two
+//! bytes at most, and it writes a lone spare back. Its slot counts the spare
+//! all the while, so that write moves no token.
 //!
 //! **Alternatives.** The jobserver's FIFO costs two system calls for each
 //! token, and it keeps no record of the holder of a byte. A pid alone names a
@@ -109,6 +117,8 @@ mod porter;
 
 #[cfg(unix)]
 pub use self::porter::Porter;
+#[cfg(unix)]
+pub use self::porter::Reaped;
 
 quenchant_shape::reason_enum! {
     /// Why a process takes no token of the host's counter.
@@ -139,8 +149,8 @@ pub enum Class
     Batch,
 }
 
-/// The first word of a segment whose counter is set: `gandrtk2`.
-const MAGIC: u64 = u64::from_le_bytes(*b"gandrtk2");
+/// The first word of a segment whose counter is set: `gandrtk3`.
+const MAGIC: u64 = u64::from_le_bytes(*b"gandrtk3");
 
 /// The slots of a segment: the processes that hold the host's tokens at once.
 const SLOTS: usize = 256;
@@ -172,27 +182,29 @@ const STARVED: Duration = Duration::from_secs(1);
 /// The tries of an audit before it leaves the segment to the next reap.
 const AUDITS: usize = 64;
 
-/// The file of the segment, in the runtime directory.
-const SEGMENT: &str = "tokens";
+/// The file of the segment, in the runtime directory. The name carries the
+/// segment's layout, so a build of another layout keeps a counter of its own
+/// and never sets this one afresh under its holders.
+const SEGMENT: &str = "tokens3";
 
 /// The owner's file, which each hub holds a shared lock on.
-const OWNER: &str = "tokens.lock";
+const OWNER: &str = "tokens3.lock";
 
 /// The setter's file: a hub holds an exclusive lock on it only while it sets
 /// the counter.
-const SETTER: &str = "tokens.set";
+const SETTER: &str = "tokens3.set";
 
 /// The directory of the slots' files.
-const SLOT_FILES: &str = "tokens.d";
+const SLOT_FILES: &str = "tokens3.d";
 
-/// The build tools' FIFO, in the runtime directory. A tool names it as
+/// The first part of the name of a holder's FIFO in the runtime directory,
+/// `tokens3.<slot>.fifo`. A tool names the FIFO as
 /// `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`, and a process of gandr that
-/// the FIFO names takes the counter beside it.
-pub(super) const FIFO: &str = "tokens.fifo";
+/// a holder's FIFO names takes the counter beside it.
+const FIFO_STEM: &str = "tokens3.";
 
-/// The porter's file: the hub whose porter carries the tokens holds an
-/// exclusive lock on it.
-const PORTER: &str = "tokens.porter";
+/// The last part of the name of a holder's FIFO.
+const FIFO_END: &str = ".fifo";
 
 /// How long the porter waits before it reads the FIFO again.
 ///
@@ -213,15 +225,64 @@ const TICK: Duration = Duration::from_millis(10);
 #[cfg(target_os = "linux")]
 const TICK: Duration = WAIT;
 
-/// The porter's word: no event wakes the porter.
+/// A slot's porter word for [`Porting::Idle`].
 const IDLE: u32 = 0;
 
-/// The porter's word: the FIFO holds no byte, so a give wakes the porter.
+/// A slot's porter word for [`Porting::Hungry`].
 const HUNGRY: u32 = 1;
 
-/// The porter's word: the FIFO holds a spare, so a take of gandr that waits
-/// wakes the porter.
+/// A slot's porter word for [`Porting::Stocked`].
 const STOCKED: u32 = 2;
+
+/// What wakes a holder's porter while it waits, as its slot records it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Porting
+{
+    /// The porter waits on no event, or the slot has no porter.
+    Idle,
+    /// The porter's FIFO holds no byte, so a give wakes the porter.
+    Hungry,
+    /// The porter's FIFO holds a spare, so a take of gandr that waits wakes
+    /// the porter.
+    Stocked,
+}
+
+/// Whether a file's name is the name of a holder's FIFO.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum FifoName
+{
+    /// `tokens3.<slot>.fifo`.
+    Holder,
+    /// Any other name.
+    Other,
+}
+
+/// Whether the file at `path` has the name of a holder's FIFO,
+/// `tokens3.<slot>.fifo`.
+///
+/// # Specification
+/// trivial.
+pub(super) fn fifo_name(path: &Path) -> FifoName
+{
+    let held = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix(FIFO_STEM))
+        .and_then(|rest| rest.strip_suffix(FIFO_END))
+        .is_some_and(|place| !place.is_empty() && place.bytes().all(|byte| byte.is_ascii_digit()));
+    if held {
+        FifoName::Holder
+    }
+    else {
+        FifoName::Other
+    }
+}
 
 /// The directory of the host's runtime files for this user:
 /// `$XDG_RUNTIME_DIR/gandr`, or `<temporary directory>/gandr-$USER` without
@@ -276,9 +337,12 @@ struct Counter
     urgent: AtomicU32,
     /// The count of wakes, which a waiting keystroke take waits on.
     urgent_wakes: Eventcount,
-    /// What wakes the porter: [`IDLE`], [`HUNGRY`] or [`STOCKED`].
-    porting: AtomicU32,
-    /// The count of the porter's wakes, which the porter waits on.
+    /// The porters whose FIFO holds no byte: a give wakes them.
+    hungry: AtomicU32,
+    /// The porters whose FIFO holds a spare: a take of gandr that waits wakes
+    /// them.
+    stocked: AtomicU32,
+    /// The count of the porters' wakes, which each porter waits on.
     porter_wakes: Eventcount,
 }
 
@@ -301,6 +365,42 @@ struct Slot
     /// The holder's keystroke takes that wait, which the counter's urgent
     /// takes count too.
     urging: AtomicU32,
+    /// What wakes the holder's porter while it waits: [`IDLE`], [`HUNGRY`] or
+    /// [`STOCKED`]. The counter's porters of that word count it too.
+    porting: AtomicU32,
+}
+
+impl Slot
+{
+    /// What wakes the holder's porter, as the slot records it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn porting(&self) -> Porting
+    {
+        match self.porting.load(Ordering::SeqCst) {
+            HUNGRY => Porting::Hungry,
+            STOCKED => Porting::Stocked,
+            _ => Porting::Idle,
+        }
+    }
+
+    /// Record `porting` as what wakes the holder's porter.
+    ///
+    /// # Specification
+    /// trivial.
+    fn set_porting(
+        &self,
+        porting: Porting,
+    )
+    {
+        let word = match porting {
+            Porting::Idle => IDLE,
+            Porting::Hungry => HUNGRY,
+            Porting::Stocked => STOCKED,
+        };
+        self.porting.store(word, Ordering::SeqCst);
+    }
 }
 
 /// The segment that the file maps: the head, the counter and the slots.
@@ -455,6 +555,10 @@ impl Mapping
     /// # Adequacy
     /// - hypothesis: L3 — a hub sets the counter, and a process joins it.
     /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
+    ///
+    /// # Cost
+    /// - allocation: the path's C string of the open, setup
+    /// - allocation: the host's error of an open, a length or a map, error path
     fn opened(
         path: &Path,
         opening: Opening,
@@ -491,10 +595,12 @@ impl Mapping
                     slot.held.store(0, Ordering::Relaxed);
                     slot.marked.store(0, Ordering::Relaxed);
                     slot.urging.store(0, Ordering::Relaxed);
+                    slot.porting.store(IDLE, Ordering::Relaxed);
                 }
                 segment.counter.waiters.store(0, Ordering::Relaxed);
                 segment.counter.urgent.store(0, Ordering::Relaxed);
-                segment.counter.porting.store(IDLE, Ordering::Relaxed);
+                segment.counter.hungry.store(0, Ordering::Relaxed);
+                segment.counter.stocked.store(0, Ordering::Relaxed);
                 segment.head.width.store(width, Ordering::Relaxed);
                 segment
                     .counter
@@ -546,8 +652,6 @@ pub struct HostCounter
 {
     /// The segment.
     mapping: Mapping,
-    /// The runtime directory, which holds the segment and the porter's FIFO.
-    directory: PathBuf,
     /// The directory of the slots' files.
     slots: PathBuf,
     /// The owner's file, which this hub holds a shared lock on.
@@ -598,6 +702,11 @@ impl HostCounter
     /// # Adequacy
     /// - hypothesis: L3 — as [`HostCounter`].
     /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
+    ///
+    /// # Cost
+    /// - allocation: the paths of the counter's files, setup
+    /// - allocation: the host's error of a directory, a file, a lock or a map,
+    ///   error path
     #[inline]
     pub fn with(
         directory: &Path,
@@ -628,7 +737,6 @@ impl HostCounter
         owner.lock_shared()?;
         let counter = Self {
             mapping,
-            directory: directory.to_path_buf(),
             slots,
             _owner: owner,
         };
@@ -653,34 +761,6 @@ impl HostCounter
     pub fn reap(&self)
     {
         reap(self.mapping.segment(), &self.slots);
-    }
-
-    /// Start the porter, which carries tokens between the counter and the build
-    /// tools' FIFO, [`FIFO`] in the counter's directory.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a porter with a slot of its own and the porter's lock, and an
-    ///   empty FIFO at its path, which the porter stocks with one spare token.
-    /// - fails: the host's error for a file, a lock, a FIFO or a thread that
-    ///   fails; [`std::io::ErrorKind::WouldBlock`] while the porter of another
-    ///   hub carries the tokens.
-    /// - panics: none.
-    /// - executable: none — the FIFO and the counter are the host's.
-    ///
-    /// # Errors
-    /// Returns the host's error for a file, a lock, a FIFO or a thread that
-    /// fails, and [`std::io::ErrorKind::WouldBlock`] while another hub's porter
-    /// holds the porter's lock.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`Porter`].
-    /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
-    #[cfg(unix)]
-    #[inline]
-    pub fn carry(&self) -> std::io::Result<Porter>
-    {
-        Porter::start(&self.directory)
     }
 }
 
@@ -787,6 +867,89 @@ impl Host
         // The place came from the slots' own enumeration, so it is in range;
         // the first slot stands for a place that is not, which none is.
         slots.get(self.place.0).unwrap_or(&slots[0])
+    }
+
+    /// The path of the FIFO of this process's slot in `directory`,
+    /// `tokens3.<slot>.fifo`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the FIFO's path, setup
+    pub(super) fn fifo(
+        &self,
+        directory: &Path,
+    ) -> PathBuf
+    {
+        directory.join(format!("{FIFO_STEM}{}{FIFO_END}", self.place.0))
+    }
+
+    /// Count this process's porter among the porters that `porting` wakes, in
+    /// the counter and then in the slot, until [`Host::unpost`].
+    ///
+    /// # Specification
+    /// - requires: the slot records [`Porting::Idle`].
+    /// - ensures: the counter's porters of `porting` and the slot count the
+    ///   porter, under the slot's mark; [`Porting::Idle`] counts nothing.
+    /// - panics: none.
+    /// - executable: none — the counter is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a porter that dies while it waits leaves no wake to
+    ///   the counter after the reap.
+    /// - witness: `pool::host::porter::tests::a_dead_porter_s_tokens_come_back_at_the_reap`
+    pub(super) fn post(
+        &self,
+        porting: Porting,
+    )
+    {
+        if porting == Porting::Idle {
+            return;
+        }
+        let counter = &self.mapping.segment().counter;
+        let slot = self.slot();
+        slot.marked.fetch_add(1, Ordering::SeqCst);
+        raise_porters(counter, porting);
+        slot.set_porting(porting);
+        slot.marked.fetch_sub(1, Ordering::Release);
+    }
+
+    /// Take this process's porter off the porters that its slot records, in
+    /// the slot and then in the counter.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot records [`Porting::Idle`], and the counter counts
+    ///   the porter no more, under the slot's mark.
+    /// - panics: none.
+    /// - executable: none — the counter is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Host::post`].
+    /// - witness: `pool::host::porter::tests::a_dead_porter_s_tokens_come_back_at_the_reap`
+    pub(super) fn unpost(&self)
+    {
+        let counter = &self.mapping.segment().counter;
+        let slot = self.slot();
+        let porting = slot.porting();
+        if porting == Porting::Idle {
+            return;
+        }
+        slot.marked.fetch_add(1, Ordering::SeqCst);
+        slot.set_porting(Porting::Idle);
+        lower_porters(counter, porting);
+        slot.marked.fetch_sub(1, Ordering::Release);
+    }
+
+    /// The tokens that this process's slot counts: those in its porter's FIFO
+    /// and those in its tools' hands. A slot that lends counts none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held(&self) -> Count
+    {
+        Count(u32::try_from(self.slot().held.load(Ordering::SeqCst)).unwrap_or(0))
     }
 
     /// A token, when one is free, with no wait.
@@ -1054,6 +1217,9 @@ fn slot_file(
 /// # Adequacy
 /// - hypothesis: L3 — as [`HostCounter`].
 /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
+///
+/// # Cost
+/// - allocation: the host's error of a slot's lock, error path
 fn reap(
     segment: &Segment,
     slots: &Path,
@@ -1064,6 +1230,7 @@ fn reap(
         if slot.held.load(Ordering::Acquire) == 0_i32
             && slot.marked.load(Ordering::Acquire) == 0
             && slot.urging.load(Ordering::Acquire) == 0
+            && slot.porting() == Porting::Idle
         {
             continue;
         }
@@ -1083,13 +1250,13 @@ fn reap(
 }
 
 /// Give back the tokens of `slot`, whose holder died or ends, take its urgent
-/// takes off the counter, and empty it.
+/// takes and its porter's wait off the counter, and empty it.
 ///
 /// # Specification
 /// - requires: the caller holds the slot's lock.
-/// - ensures: the slot holds no token, no urgent take and no mark; the tokens
-///   it held are free again. [`Audit::Due`] when the slot held a mark or a lent
-///   token.
+/// - ensures: the slot holds no token, no urgent take, no porter's wait and no
+///   mark; the tokens it held are free again. [`Audit::Due`] when the slot held
+///   a mark or a lent token.
 /// - panics: none.
 /// - executable: none — the counter is the host's.
 ///
@@ -1104,6 +1271,9 @@ fn reclaim(
     let marked = slot.marked.swap(0, Ordering::SeqCst);
     let held = slot.held.swap(0, Ordering::SeqCst);
     let urging = slot.urging.swap(0, Ordering::SeqCst);
+    // No other process writes the slot while the caller holds its lock.
+    let porting = slot.porting();
+    slot.set_porting(Porting::Idle);
     slot.pid.store(0, Ordering::Relaxed);
     if urging != 0 {
         // The holder counts its want in the counter before its slot, so the
@@ -1114,6 +1284,9 @@ fn reclaim(
                 Some(urgent.saturating_sub(urging))
             });
     }
+    // The holder counts its porter in the counter before its slot, as it
+    // counts a want.
+    lower_porters(counter, porting);
     let lent = match u32::try_from(held) {
         Ok(0) => Audit::Whole,
         Ok(count) => {
@@ -1144,7 +1317,7 @@ fn give_back(
 }
 
 /// Wake one waiter of `counter`: an urgent take first, then a batch take, then
-/// a porter whose FIFO is empty.
+/// the porters whose FIFO is empty.
 ///
 /// # Specification
 /// trivial.
@@ -1156,7 +1329,7 @@ fn rouse(counter: &Counter)
     else if counter.waiters.load(Ordering::SeqCst) > 0 {
         &counter.wakes
     }
-    else if counter.porting.load(Ordering::SeqCst) == HUNGRY {
+    else if counter.hungry.load(Ordering::SeqCst) > 0 {
         &counter.porter_wakes
     }
     else {
@@ -1165,16 +1338,54 @@ fn rouse(counter: &Counter)
     word.raise();
 }
 
-/// Wake the porter when its FIFO holds a spare, so it carries the spare to a
-/// take of gandr that waits.
+/// Wake the porters whose FIFO holds a spare, so one of them carries its spare
+/// to a take of gandr that waits.
 ///
 /// # Specification
 /// trivial.
 fn summon(counter: &Counter)
 {
-    if counter.porting.load(Ordering::SeqCst) == STOCKED {
+    if counter.stocked.load(Ordering::SeqCst) > 0 {
         counter.porter_wakes.raise();
     }
+}
+
+/// Count one porter more among the counter's porters of `porting`;
+/// [`Porting::Idle`] counts nothing.
+///
+/// # Specification
+/// trivial.
+fn raise_porters(
+    counter: &Counter,
+    porting: Porting,
+)
+{
+    let porters = match porting {
+        Porting::Idle => return,
+        Porting::Hungry => &counter.hungry,
+        Porting::Stocked => &counter.stocked,
+    };
+    porters.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Count one porter less among the counter's porters of `porting`, never
+/// below zero; [`Porting::Idle`] counts nothing.
+///
+/// # Specification
+/// trivial.
+fn lower_porters(
+    counter: &Counter,
+    porting: Porting,
+)
+{
+    let porters = match porting {
+        Porting::Idle => return,
+        Porting::Hungry => &counter.hungry,
+        Porting::Stocked => &counter.stocked,
+    };
+    let _left = porters.try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+        Some(count.saturating_sub(1))
+    });
 }
 
 /// Whether `counter` holds a free token.
@@ -1200,8 +1411,9 @@ fn left(counter: &Counter) -> Left
 /// - requires: each dead holder's slot is reclaimed.
 /// - ensures: when a count reads two equal words around the slots and no slot
 ///   marked, the free tokens and the slots' tokens sum to the host's tokens,
-///   and the counter's urgent takes are the slots'. After [`AUDITS`] counts
-///   that no move leaves alone, the counter stays as it was, for the next reap.
+///   and the counter's urgent takes and porters are the slots'. After
+///   [`AUDITS`] counts that no move leaves alone, the counter stays as it was,
+///   for the next reap.
 /// - panics: none.
 /// - executable: none — the holders move tokens at once.
 ///
@@ -1214,9 +1426,13 @@ fn audit(segment: &Segment)
     let width = i64::from(segment.head.width.load(Ordering::Relaxed));
     for _ in 0 .. AUDITS {
         let urgent = segment.counter.urgent.load(Ordering::SeqCst);
+        let hungry = segment.counter.hungry.load(Ordering::SeqCst);
+        let stocked = segment.counter.stocked.load(Ordering::SeqCst);
         let before = segment.counter.word.load(Ordering::SeqCst);
         let mut held = 0_i64;
         let mut urging = 0_u32;
+        let mut starving = 0_u32;
+        let mut stocking = 0_u32;
         let mut quiet = Audit::Whole;
         for slot in &segment.slots {
             if slot.marked.load(Ordering::SeqCst) != 0 {
@@ -1225,16 +1441,34 @@ fn audit(segment: &Segment)
             }
             held = held.saturating_add(i64::from(slot.held.load(Ordering::SeqCst)));
             urging = urging.saturating_add(slot.urging.load(Ordering::SeqCst));
+            match slot.porting() {
+                Porting::Hungry => starving = starving.saturating_add(1),
+                Porting::Stocked => stocking = stocking.saturating_add(1),
+                Porting::Idle => {},
+            }
         }
         let after = segment.counter.word.load(Ordering::SeqCst);
         if quiet == Audit::Due || before != after {
             std::thread::yield_now();
             continue;
         }
-        // A want that moved since the first read leaves the count to it.
+        // A want or a porter that moved since the first read leaves the count
+        // to it.
         let _set = segment.counter.urgent.compare_exchange(
             urgent,
             urging,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        );
+        let _set = segment.counter.hungry.compare_exchange(
+            hungry,
+            starving,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        );
+        let _set = segment.counter.stocked.compare_exchange(
+            stocked,
+            stocking,
             Ordering::SeqCst,
             Ordering::Relaxed,
         );

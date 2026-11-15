@@ -251,11 +251,11 @@ gate_row() {
   fi
 }
 
-# The one trap that ends a gate (#7021): the row of an open gate, read before
-# the release so that its count of the gates beside still holds, then the
-# release of the lane's lock and the slot, of the hold on the host's counter,
-# and of the jobserver's FIFO. Each step guards its own failure, so the trap
-# keeps the status of the gate.
+# The one trap that ends a gate. It writes the row of an open gate before the
+# release, so the row's count of the gates beside still holds. Then it
+# releases the lane's lock, the slot and the jobserver's FIFO. Each step
+# guards its own failure, so the trap keeps the status of the gate.
+# - see: #7021 — the row of each gate
 gate_exit() {
   local status=$?
   if [[ -n ${gate_name:-} ]]; then
@@ -266,7 +266,6 @@ gate_exit() {
     host_unlock 9 || :
     host_unlock 8 || :
   fi
-  gate_unhold || :
   if [[ -n ${gate_jobs_fifo:-} ]]; then rm -f "$gate_jobs_fifo" || :; fi
 }
 
@@ -285,9 +284,11 @@ gate_exit() {
 # jobserver that `MAKEFLAGS` already names stays, and so does a lower
 # `NEXTEST_TEST_THREADS`.
 #
-# The gate does not draw on the host's counter (`gate_hosted`, #7605) until
-# #7688 mends the porter. On the counter, each cargo of a gate runs one
-# `rustc`, and a gate's median run grows from 701 s to 1,868 s.
+# The gate keeps its own FIFO for now. It draws on the host's counter only
+# after four gates at once on it beat a median run of 701 seconds. On the
+# hub's porter, each cargo of a gate runs one `rustc`. A gate's median run on
+# the porter is 1,868 seconds.
+# - see: #7688 — the gate's cargo on the host's counter
 #
 # A driver that a test starts takes the host's width unless `GANDR_JOBS` caps
 # it, so the gate sets `GANDR_JOBS` to the share too, and keeps a lower one
@@ -312,43 +313,30 @@ gate_bound() {
   export MAKEFLAGS="-j$share --jobserver-auth=fifo:$gate_jobs_fifo"
 }
 
-# The host's counter (#7605): `gandr tokens` holds the hub of the deployed
-# build and names the FIFO that the hub's porter carries. `MAKEFLAGS` names
-# that FIFO, so each cargo of each gate on the host draws on the counter, and
-# each process of gandr takes the counter directly. The hold lasts until
-# `gate_exit` closes its input. A deployed build that predates the verb, a hub
-# with no porter, or a line that names no FIFO leaves the gate to its own
-# FIFO. `$1` is the gate's share, the `-j` that make reads.
+# Each cargo command of a gate on the host's counter runs through its own
+# `gandr tokens`. The `cargo` of the `gate-bin` directory beside this file
+# starts it. `mise.toml` puts that directory first on each task's `PATH` while
+# `GANDR_GATE_BIN` names it.
+# - see: #7688 — the hold of one build command on the host's counter
+#
+# The verb holds the command's FIFO on a slot of its own. At the command's
+# end, the slot returns each token that the command's tools still hold. So a
+# `rustc` that exits with tokens in its hands takes them from one command at
+# most.
+#
+# `MAKEFLAGS` keeps the share as the `-j` that make reads. It names no
+# jobserver of the gate's own. Each process of gandr takes the counter
+# directly. A deployed build whose `tokens` runs no command leaves the gate to
+# its own FIFO. `$1` is the gate's share.
 gate_hosted() {
-  local fifo=
+  local usage
   command -v gandr > /dev/null 2>&1 || return 1
-  coproc gate_tokens { exec gandr tokens 2> /dev/null; }
-  # Bash unsets the coprocess's names when it reaps it, so they are kept.
-  # shellcheck disable=SC2154 # `coproc` sets `gate_tokens_PID`.
-  gate_tokens_pid=$gate_tokens_PID
-  gate_tokens_in=${gate_tokens[1]}
-  gate_tokens_out=${gate_tokens[0]}
-  if IFS= read -r -t 20 fifo <&"$gate_tokens_out" 2> /dev/null && [[ -p $fifo ]]; then
-    export MAKEFLAGS="-j$1 --jobserver-auth=fifo:$fifo"
-    gate_jobs="the host's counter's"
-    return 0
-  fi
-  kill "$gate_tokens_pid" 2> /dev/null || :
-  gate_unhold
-  return 1
-}
-
-# Ends the hold of `gandr tokens` on the hub: its input closes, so it exits,
-# and the gate waits for it. A coprocess that bash reaped has its ends closed
-# and its names unset already, and the numbers may name other files by now, so
-# the ends close only while the names stand. The `exec` carries no other
-# redirection, since an `exec` keeps each redirection for the rest of the
-# shell.
-gate_unhold() {
-  [[ -n ${gate_tokens_pid:-} ]] || return 0
-  if [[ -v 'gate_tokens[1]' ]]; then exec {gate_tokens_in}>&- {gate_tokens_out}<&-; fi
-  wait "$gate_tokens_pid" 2> /dev/null || :
-  gate_tokens_pid=
+  usage=$(gandr tokens --help 2> /dev/null) || return 1
+  [[ $usage == *'-- <COMMAND>'* ]] || return 1
+  GANDR_GATE_BIN=$(cd "${BASH_SOURCE[0]%/*}/gate-bin" && pwd) || return 1
+  export GANDR_GATE_BIN
+  export MAKEFLAGS="-j$1"
+  gate_jobs="the host's counter's"
 }
 
 # The lower of a value already set, when it is a positive count, and a share.

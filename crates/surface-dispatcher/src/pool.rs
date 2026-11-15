@@ -139,6 +139,8 @@ pub use self::host::Host;
 pub use self::host::HostCounter;
 #[cfg(unix)]
 pub use self::host::Porter;
+#[cfg(unix)]
+pub use self::host::Reaped;
 pub use self::host::Wanting;
 pub use self::host::runtime_directory;
 use self::lane::Attendance;
