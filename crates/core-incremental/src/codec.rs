@@ -6968,6 +6968,21 @@ where
     write_item_content_with(&mut writer, content)
 }
 
+/// Write the content of one node: its table, then its root's support.
+///
+/// # Specification
+/// trivial.
+pub(crate) fn write_node_content<Out>(
+    sink: &mut Out,
+    content: &TypeContent,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    let mut writer = Writer { sink };
+    write_type(&mut writer, content)
+}
+
 /// Write an item's content.
 ///
 /// # Specification

@@ -494,6 +494,70 @@ fn an_item_s_content_key_moves_only_with_its_content_1547()
     assert_ne!(first_two, edited_two, "the edited item's key moves");
 }
 
+/// #7403: a node's content key moves with its content and nothing else. The
+/// bodies of two items that hold one literal are two nodes of one content,
+/// and they share a key, in one arena and over an arena numbered apart. The
+/// key of an edited literal moves.
+#[test]
+fn a_node_s_key_moves_only_with_its_content_7403()
+{
+    let bodies = |program: &Program| {
+        program
+            .items()
+            .iter()
+            .map(|item| match *item.declaration().content() {
+                gandr_core_checker::DeclarationContent::Value {
+                    body: Maybe::Present(body),
+                    ..
+                } => (
+                    body,
+                    super::node_key(
+                        (program.arena(), program.layout()),
+                        crate::content::ArenaNode::Value(body),
+                    ),
+                ),
+                _ => panic!("each integer item has a body"),
+            })
+            .collect::<vec::Vec<_>>()
+    };
+    let first = bodies(&integers(CoreArena::new(), &[
+        (Key("one"), Digits("1")),
+        (Key("also"), Digits("1")),
+        (Key("two"), Digits("2")),
+    ]));
+    let edited = bodies(&integers(noisy(Noise(3)), &[
+        (Key("one"), Digits("1")),
+        (Key("also"), Digits("1")),
+        (Key("two"), Digits("20")),
+    ]));
+    let (
+        [
+            (one_node, Maybe::Present(one)),
+            (also_node, Maybe::Present(also)),
+            (_, Maybe::Present(two)),
+        ],
+        [
+            (edited_node, Maybe::Present(edited_one)),
+            _,
+            (_, Maybe::Present(edited_two)),
+        ],
+    ) = (first.as_slice(), edited.as_slice())
+    else {
+        panic!("each literal body has a key: {first:?} {edited:?}");
+    };
+    assert_ne!(one_node, also_node, "the two bodies are two nodes");
+    assert_eq!(one, also, "two nodes of one content share a key");
+    assert_ne!(
+        one_node, edited_node,
+        "the arena numbered apart mints the body elsewhere"
+    );
+    assert_eq!(
+        one, edited_one,
+        "the key holds over an arena numbered apart"
+    );
+    assert_ne!(two, edited_two, "the edited literal's key moves");
+}
+
 /// #6286: each checkpoint keeps the content key of its item, from a fresh
 /// pass and from a resume after an edit alike, so a reader keys the item's
 /// outcomes without a second hash, and an edit moves the key of the edited

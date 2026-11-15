@@ -220,6 +220,7 @@ pub use crate::checkpoint::check_program;
 pub use crate::checkpoint::content_key;
 pub use crate::checkpoint::lead;
 pub use crate::checkpoint::leading;
+pub use crate::checkpoint::node_key;
 pub use crate::checkpoint::recall;
 pub use crate::checkpoint::resume;
 pub use crate::checkpoint::resume_after;

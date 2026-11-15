@@ -179,6 +179,7 @@ use gandr_core_checker::unfolding;
 use gandr_core_term::ArenaWatermark;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::key::NodeKey;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
@@ -196,6 +197,7 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::ItemCount;
 use crate::boundary::ItemOrdinal;
 use crate::codec::write_item_content;
+use crate::codec::write_node_content;
 use crate::content::ArenaNode;
 use crate::content::Encoded;
 use crate::content::ItemContent;
@@ -2280,6 +2282,19 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
     if write_item_content(&mut hasher, content).is_err() {
         return Maybe::Absent(recall::Absent::Opaque);
     }
+    Maybe::Present(ItemIdentity {
+        content,
+        digest: digest_of(&hasher),
+    })
+}
+
+/// The first sixteen bytes of the BLAKE3 digest that `hasher` holds: its high
+/// word, then its low word, each little-endian.
+///
+/// # Specification
+/// trivial.
+fn digest_of(hasher: &blake3::Hasher) -> ContentDigest
+{
     let [
         h0,
         h1,
@@ -2299,13 +2314,10 @@ fn identity_of(content: &ItemContent) -> Maybe<ItemIdentity<'_>, recall::Absent>
         l7,
         ..,
     ] = *hasher.finalize().as_bytes();
-    Maybe::Present(ItemIdentity {
-        content,
-        digest: ContentDigest::new(
-            DigestWord::from(u64::from_le_bytes([h0, h1, h2, h3, h4, h5, h6, h7])),
-            DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
-        ),
-    })
+    ContentDigest::new(
+        DigestWord::from(u64::from_le_bytes([h0, h1, h2, h3, h4, h5, h6, h7])),
+        DigestWord::from(u64::from_le_bytes([l0, l1, l2, l3, l4, l5, l6, l7])),
+    )
 }
 
 /// An item's content key: the digest of its canonical content.
@@ -2448,6 +2460,33 @@ pub fn content_key(
 ) -> Maybe<ContentKey, recall::Absent>
 {
     content_key_of(&encode_item(program.arena(), program.layout(), ordinal).content)
+}
+
+/// The content key of the node `node` of `arena`: the digest of its canonical
+/// content, each constant named by the item that `layout` gives it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the digest of the bytes of [`TypeContent::of`] `node`, as a key;
+///   absent as [`recall::Absent::Opaque`] for a node whose content holds an
+///   unresolved node, which no key names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two nodes of one content minted apart share a key, in one
+///   arena and in two arenas numbered apart; nodes of different content do not.
+/// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+#[inline]
+pub fn node_key(
+    (arena, layout): (&CoreArena, &Layout),
+    node: ArenaNode,
+) -> Maybe<NodeKey, recall::Absent>
+{
+    let mut hasher = blake3::Hasher::new();
+    if write_node_content(&mut hasher, &TypeContent::of(arena, layout, node)).is_err() {
+        return Maybe::Absent(recall::Absent::Opaque);
+    }
+    Maybe::Present(NodeKey::from(digest_of(&hasher)))
 }
 
 /// A choice of memo for the pass: the type parameter that separates batch

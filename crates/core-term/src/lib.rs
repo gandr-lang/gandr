@@ -232,6 +232,7 @@ pub mod handler;
 pub mod hole;
 pub mod identity;
 mod import;
+pub mod key;
 pub mod memory;
 pub mod model;
 pub mod pattern;
