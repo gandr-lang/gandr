@@ -1,5 +1,6 @@
-//! TODO
+//! The Linux kernel's interface: its error number, its system call
+//! instructions and its UAPI.
 
-pub(crate) mod errno;
-pub(crate) mod syscalls;
-pub(crate) mod uapi;
+pub mod errno;
+pub mod syscalls;
+pub mod uapi;

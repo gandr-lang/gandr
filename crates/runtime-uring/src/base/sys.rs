@@ -1,3 +1,3 @@
-//! TODO
+//! The interface of each kernel that the base serves: Linux alone.
 
-pub(crate) mod linux;
+pub mod linux;

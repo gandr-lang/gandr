@@ -1,7 +1,7 @@
 //! Architecture-specific syscall code.
 //!
-//! This module also has a `choose` submodule which chooses a scheme and is
-//! what most of the `rustix` syscalls use.
+//! This module also has a `strategy` alias which chooses a scheme and is
+//! what the base's three calls use.
 //!
 //! Compilers should really have intrinsics for making system calls. They're
 //! much like regular calls, with custom calling conventions, and calling
@@ -16,8 +16,8 @@
 //! This contains the inline `asm` statements performing the syscall
 //! instructions.
 
-pub(crate) mod convert;
-pub(crate) mod registers;
+pub mod convert;
+pub mod registers;
 
 // These functions always use the machine's syscall instruction, even when it
 // isn't the fastest option available.
@@ -26,7 +26,7 @@ pub(crate) mod registers;
 #[cfg_attr(target_arch = "riscv64", path = "syscalls/arch/riscv64.rs")]
 #[cfg_attr(target_arch = "s390x", path = "syscalls/arch/s390x.rs")]
 #[cfg_attr(target_arch = "x86_64", path = "syscalls/arch/x86_64.rs")]
-pub(crate) mod arch;
+pub mod arch;
 
 // On most architectures, the architecture syscall instruction is fast, so use
 // it directly.
@@ -37,4 +37,4 @@ pub(crate) mod arch;
     target_arch = "s390x",
     target_arch = "x86_64",
 ))]
-pub(crate) use self::arch as strategy;
+pub use self::arch as strategy;

@@ -1,4 +1,5 @@
-#![expect(clippy::undocumented_unsafe_blocks, reason = "WIP")]
+//! The ring's three system calls: `io_uring_setup`, `io_uring_register` and
+//! `io_uring_enter`.
 
 use ::std::os::fd::AsRawFd as _;
 use ::std::os::fd::BorrowedFd;
@@ -20,7 +21,27 @@ use crate::base::sys::linux::uapi::arch::__NR_io_uring_register;
 use crate::base::sys::linux::uapi::arch::__NR_io_uring_setup;
 use crate::base::sys::linux::uapi::arch::io_uring_params;
 
+/// Sets up a ring of `entries` submission entries. The kernel fills `params`
+/// with the ring's sizes, offsets and features.
+///
 /// # Errors
+///
+/// The kernel refuses the setup and answers its error number.
+///
+/// # Specification
+///
+/// - ensures: on `Ok`, the ring's descriptor, owned, and `params` as the kernel
+///   fills it.
+/// - fails: the kernel's error number, such as `EPERM` where a policy refuses
+///   the ring.
+/// - panics: none.
+/// - executable: none — the descriptor is a kernel object, which no predicate
+///   reads.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — a setup of two entries answers a descriptor.
+/// - witness: `base::io_uring::test::setup`
 #[inline]
 pub fn io_uring_setup(
     entries: u32,
@@ -30,11 +51,36 @@ pub fn io_uring_setup(
     let nr = SyscallNumber::new(__NR_io_uring_setup);
     let entries = c_uint(entries);
     let params = by_mut(params);
+    // SAFETY: `params` names one `io_uring_params` that the borrow keeps
+    // valid and writable for the call.
     let result = unsafe { syscall2(nr, entries, params) };
+    // SAFETY: a setup answers a new descriptor, which nothing else owns.
     unsafe { ret_owned_fd(result) }
 }
 
+/// Registers the `nr_args` items at `arg` with the ring `fd`, as `opcode`
+/// names them.
+///
 /// # Errors
+///
+/// The kernel refuses the registration and answers its error number.
+///
+/// # Safety
+///
+/// - unsafe invariants: `arg` names `nr_args` items of the kind that `opcode`
+///   reads, valid for the call, and `opcode` writes no memory of the process.
+///
+/// # Specification
+///
+/// - ensures: on `Ok`, the kernel's answer.
+/// - fails: the kernel's error number.
+/// - panics: none.
+/// - executable: none — the registration is the kernel's.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — a table of one file registers on a ring and unregisters.
+/// - witness: `base::io_uring::test::register`
 #[inline]
 pub unsafe fn io_uring_register(
     fd: BorrowedFd<'_>,
@@ -46,6 +92,7 @@ pub unsafe fn io_uring_register(
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
         let fd = fd.as_raw_fd();
+        // SAFETY: the borrow keeps the ring's descriptor open for the call.
         unsafe { raw_fd(fd) }
     };
     let opcode = c_uint(opcode);
@@ -55,11 +102,37 @@ pub unsafe fn io_uring_register(
         raw_arg(arg)
     };
     let nr_args = c_uint(nr_args);
+    // SAFETY: the caller's invariants hold for the table, and the opcode
+    // reads it alone.
     let result = unsafe { syscall4_readonly(nr, fd, opcode, arg, nr_args) };
     ret_c_uint(result)
 }
 
+/// Registers the `nr_args` items at `arg` with the ring `fd`, as `opcode`
+/// names them, with the flags `flags` joined to the opcode.
+///
 /// # Errors
+///
+/// The kernel refuses the registration and answers its error number.
+///
+/// # Safety
+///
+/// - unsafe invariants: `fd` is the ring's descriptor, or its registered index
+///   when `flags` names one. `arg` names `nr_args` items of the kind that
+///   `opcode` reads, valid for the call, and `opcode` writes no memory of the
+///   process.
+///
+/// # Specification
+///
+/// - ensures: on `Ok`, the kernel's answer.
+/// - fails: the kernel's error number.
+/// - panics: none.
+/// - executable: none — the registration is the kernel's.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — the unregistration of a table of one file answers zero.
+/// - witness: `base::io_uring::test::register`
 #[inline]
 pub unsafe fn io_uring_register_with(
     fd: BorrowedFd<'_>,
@@ -72,6 +145,8 @@ pub unsafe fn io_uring_register_with(
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
         let fd = fd.as_raw_fd();
+        // SAFETY: the borrow keeps the ring's descriptor open for the call,
+        // or the caller gives the ring's registered index.
         unsafe { raw_fd(fd) }
     };
     let opcode = {
@@ -84,11 +159,38 @@ pub unsafe fn io_uring_register_with(
         raw_arg(arg)
     };
     let nr_args = c_uint(nr_args);
+    // SAFETY: the caller's invariants hold for the table, and the opcode
+    // reads it alone.
     let result = unsafe { syscall4_readonly(nr, fd, opcode, arg, nr_args) };
     ret_c_uint(result)
 }
 
+/// Submits `to_submit` entries of the ring `fd` and waits for `min_complete`
+/// completions, as `flags` asks. `arg` and `size` give the extended argument.
+///
 /// # Errors
+///
+/// The kernel refuses the call and answers its error number.
+///
+/// # Safety
+///
+/// - unsafe invariants: each submitted entry names memory that stays valid
+///   until its completion, the ring's mappings stay mapped, and `arg` names
+///   `size` bytes of the extended argument that `flags` names, or is null.
+///
+/// # Specification
+///
+/// - ensures: on `Ok`, the count of entries that the kernel consumed.
+/// - fails: the kernel's error number.
+/// - panics: none.
+/// - executable: none — the entries and the completions are the kernel's to
+///   read and write.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — an enter that submits nothing and waits for nothing
+///   answers zero.
+/// - witness: `base::io_uring::test::enter`
 #[inline]
 pub unsafe fn io_uring_enter(
     fd: BorrowedFd<'_>,
@@ -102,6 +204,7 @@ pub unsafe fn io_uring_enter(
     let nr = SyscallNumber::new(__NR_io_uring_enter);
     let fd = {
         let fd = fd.as_raw_fd();
+        // SAFETY: the borrow keeps the ring's descriptor open for the call.
         unsafe { raw_fd(fd) }
     };
     let to_submit = c_uint(to_submit);
@@ -113,6 +216,8 @@ pub unsafe fn io_uring_enter(
         raw_arg(arg)
     };
     let size = pass_usize(size);
+    // SAFETY: the caller's invariants hold for the entries, the mappings and
+    // the extended argument.
     let result = unsafe { syscall6(nr, fd, to_submit, min_complete, flags, arg, size) };
     ret_c_uint(result)
 }

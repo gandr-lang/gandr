@@ -1,13 +1,3 @@
-#![expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::missing_assert_message,
-    clippy::unnecessary_cast,
-    reason = "WIP"
-)]
-
 //! Encapsulation for system call arguments and return values.
 //!
 //! The inline-asm code paths do some amount of reordering of arguments; to
@@ -16,8 +6,8 @@
 //!
 //! # Safety
 //!
-//! The `ToAsm` and `FromAsm` traits are unsafe to use; they should only be
-//! used by the syscall code which executes actual syscall machine
+//! The `into_asm` and `from_asm` methods are unsafe to use; they should only
+//! be used by the syscall code which executes actual syscall machine
 //! instructions.
 
 use core::marker::PhantomData;
@@ -33,21 +23,30 @@ use crate::base::sys::linux::errno::Errno;
 /// pointer types. They need a type to point to, so we define a custom private
 /// type, to prevent it from being used for anything else.
 #[repr(transparent)]
-pub(crate) struct Opaque(::core::ffi::c_void);
+pub struct Opaque(::core::ffi::c_void);
 
 // Argument numbers.
-pub(crate) struct A0(());
-pub(crate) struct A1(());
-pub(crate) struct A2(());
-pub(crate) struct A3(());
-pub(crate) struct A4(());
-pub(crate) struct A5(());
+/// The first argument of a system call.
+pub struct A0(());
+/// The second argument of a system call.
+pub struct A1(());
+/// The third argument of a system call.
+pub struct A2(());
+/// The fourth argument of a system call.
+pub struct A3(());
+/// The fifth argument of a system call.
+pub struct A4(());
+/// The sixth argument of a system call.
+pub struct A5(());
+/// The seventh argument of a system call, which MIPS alone has.
 #[cfg(any(target_arch = "mips", target_arch = "mips32r6"))]
-pub(crate) struct A6(());
+pub struct A6(());
+/// The socket argument of a system call on x86.
 #[cfg(target_arch = "x86")]
-pub(crate) struct SocketArg;
+pub struct SocketArg;
 
-pub(crate) trait ArgNumber: private::ArgNumber
+/// The index of an argument's register.
+pub trait ArgNumber: private::ArgNumber
 {
 }
 impl ArgNumber for A0
@@ -70,52 +69,42 @@ impl ArgNumber for A5
 }
 
 // Return value numbers.
-pub(crate) struct R0(());
+/// The register that a system call answers in.
+pub struct R0(());
 
-pub(crate) trait RetNumber: private::RetNumber
+/// The index of the register that a system call answers in.
+pub trait RetNumber: private::RetNumber
 {
 }
 impl RetNumber for R0
 {
 }
 
+/// One argument of a system call, in the register that `Num` names, which
+/// may borrow memory or a descriptor for `'arg`.
 #[must_use]
 #[repr(transparent)]
-pub(crate) struct ArgReg<'arg, Num>
+pub struct ArgReg<'arg, Num>
 where
     Num: ArgNumber,
 {
-    pub(crate) raw: *mut Opaque,
-    pub(crate) marker: PhantomData<(&'arg (), Num)>,
+    /// The register's value.
+    raw: *mut Opaque,
+    /// The borrow and the register's index.
+    marker: PhantomData<(&'arg (), Num)>,
 }
 
 impl<Num> ArgReg<'_, Num>
 where
     Num: ArgNumber,
 {
+    /// The argument whose register holds `raw`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
-    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque
-    {
-        self.raw
-    }
-}
-
-#[must_use]
-#[repr(transparent)]
-pub(crate) struct RetReg<Num>
-where
-    Num: RetNumber,
-{
-    raw: *mut Opaque,
-    marker: PhantomData<Num>,
-}
-
-impl<Num> RetReg<Num>
-where
-    Num: RetNumber,
-{
-    #[inline]
-    pub(crate) const unsafe fn from_asm(raw: *mut Opaque) -> Self
+    pub const fn new(raw: *mut Opaque) -> Self
     {
         Self {
             raw,
@@ -123,55 +112,159 @@ where
         }
     }
 
+    /// The register's value, for the instruction alone.
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: the value goes to the system call instruction and
+    ///   to no other use.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
-    pub(crate) fn decode_usize(self) -> usize
+    pub const unsafe fn into_asm(self) -> *mut Opaque
     {
-        debug_assert!(!(-4095 .. 0).contains(&(self.raw as isize)));
-
-        self.raw as usize
-    }
-
-    #[inline]
-    pub(crate) fn decode_raw_fd(self) -> RawFd
-    {
-        let bits = self.decode_usize();
-        let raw = bits as RawFd;
-        debug_assert_eq!(raw as usize, bits);
-        raw
-    }
-
-    #[inline]
-    pub(crate) fn decode_c_uint(self) -> ::core::ffi::c_uint
-    {
-        let bits = self.decode_usize();
-        let uint = bits as ::core::ffi::c_uint;
-        debug_assert_eq!(uint as usize, bits);
-        uint
-    }
-
-    #[inline]
-    pub(crate) fn decode_error_code(self) -> u16
-    {
-        debug_assert!((-4095 .. 0).contains(&(self.raw as isize)));
-        self.raw as u16
-    }
-
-    pub(crate) fn errno_contains(&self) -> bool
-    {
-        Errno::contains(self.raw as isize)
+        self.raw
     }
 }
 
+/// The answer of a system call, in the register that `Num` names.
+#[must_use]
 #[repr(transparent)]
-pub(crate) struct SyscallNumber<'arg>
+pub struct RetReg<Num>
+where
+    Num: RetNumber,
 {
-    pub(crate) val: usize,
+    /// The register's value.
+    raw: *mut Opaque,
+    /// The register's index.
+    marker: PhantomData<Num>,
+}
+
+impl<Num> RetReg<Num>
+where
+    Num: RetNumber,
+{
+    /// The answer that the instruction leaves in its register.
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: `raw` is the value that the system call instruction
+    ///   answers.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub const unsafe fn from_asm(raw: *mut Opaque) -> Self
+    {
+        Self {
+            raw,
+            marker: PhantomData,
+        }
+    }
+
+    /// The answer as a number, which names no error.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub fn decode_usize(self) -> usize
+    {
+        debug_assert!(
+            !(-4095 .. 0).contains(&self.raw.addr().cast_signed()),
+            "the answer names no error"
+        );
+
+        self.raw.addr()
+    }
+
+    /// The answer as a descriptor. A descriptor that the kernel answers fits
+    /// 31 bits, and the largest descriptor stands for one that does not.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub fn decode_raw_fd(self) -> RawFd
+    {
+        let bits = self.decode_usize();
+        let raw = RawFd::try_from(bits);
+        debug_assert!(raw.is_ok(), "the descriptor fits 31 bits");
+        raw.unwrap_or(RawFd::MAX)
+    }
+
+    /// The answer as a count. A count that the kernel answers fits 32 bits,
+    /// and the largest count stands for one that does not.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub fn decode_c_uint(self) -> ::core::ffi::c_uint
+    {
+        let bits = self.decode_usize();
+        let uint = ::core::ffi::c_uint::try_from(bits);
+        debug_assert!(uint.is_ok(), "the count fits 32 bits");
+        uint.unwrap_or(::core::ffi::c_uint::MAX)
+    }
+
+    /// The error number that the answer names, in the encoded form of
+    /// [`Errno`]: the error number negated in 16 bits, as the owner's
+    /// `into_raw_os_error` reads it.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub fn decode_error_code(self) -> u16
+    {
+        debug_assert!(
+            (-4095 .. 0).contains(&self.raw.addr().cast_signed()),
+            "the answer names an error"
+        );
+        let errno = self.raw.addr().cast_signed().unsigned_abs();
+        u16::try_from(errno).unwrap_or(u16::MAX).wrapping_neg()
+    }
+
+    /// Whether the answer names an error.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub fn errno_contains(&self) -> bool
+    {
+        Errno::contains(self.raw.addr().cast_signed())
+    }
+}
+
+/// The number of a system call on this architecture, which the call borrows
+/// for `'arg`.
+#[repr(transparent)]
+pub struct SyscallNumber<'arg>
+{
+    /// The number.
+    val: usize,
+    /// The borrow.
     marker: PhantomData<&'arg ()>,
 }
 
 impl SyscallNumber<'_>
 {
-    pub(crate) const fn new(val: u32) -> Self
+    /// The system call that `val` numbers.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[expect(
+        clippy::as_conversions,
+        reason = "a const fn cannot call `usize::from`, and a u32 widens into a usize whole on each 64-bit target of the base"
+    )]
+    #[inline]
+    pub const fn new(val: u32) -> Self
     {
         let val = val as usize;
         SyscallNumber {
@@ -180,15 +273,28 @@ impl SyscallNumber<'_>
         }
     }
 
+    /// The number, as the instruction takes it: a pointer with no
+    /// provenance.
+    ///
+    /// # Safety
+    ///
+    /// - unsafe invariants: the value goes to the system call instruction and
+    ///   to no other use.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
-    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque
+    pub const unsafe fn into_asm(self) -> *mut Opaque
     {
-        self.val as usize as *mut Opaque
+        ::core::ptr::without_provenance_mut(self.val)
     }
 }
 
+/// The traits that no other module implements.
 mod private
 {
+    /// The index of an argument's register.
     pub trait ArgNumber
     {
     }
@@ -214,6 +320,7 @@ mod private
     {
     }
 
+    /// The index of an answer's register.
     pub trait RetNumber
     {
     }

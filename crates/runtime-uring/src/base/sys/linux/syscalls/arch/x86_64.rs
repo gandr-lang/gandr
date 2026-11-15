@@ -1,4 +1,6 @@
-#![expect(clippy::undocumented_unsafe_blocks, reason = "WIP")]
+//! The system call instruction of x86-64. The number goes in `rax`, and the
+//! arguments go in `rdi`, `rsi`, `rdx`, `r10`, `r8` and `r9`. The answer comes
+//! back in `rax`, and the instruction overwrites `rcx` and `r11`.
 
 use core::arch::asm;
 
@@ -13,17 +15,40 @@ use crate::base::sys::linux::syscalls::registers::R0;
 use crate::base::sys::linux::syscalls::registers::RetReg;
 use crate::base::sys::linux::syscalls::registers::SyscallNumber;
 
+/// Issues the system call `nr` with two arguments.
+///
+/// # Safety
+///
+/// - unsafe invariants: each pointer argument names memory that is valid for
+///   the call's access, and the caller allows each effect of the call.
+///
+/// # Specification
+///
+/// - ensures: the kernel's answer.
+/// - panics: none.
+/// - executable: none — the call's effect is the kernel's.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — a ring that this call sets up answers its descriptor.
+/// - witness: `base::io_uring::test::setup`
 #[inline]
-pub(crate) unsafe fn syscall2(
+pub unsafe fn syscall2(
     nr: SyscallNumber<'_>,
     a0: ArgReg<'_, A0>,
     a1: ArgReg<'_, A1>,
 ) -> RetReg<R0>
 {
     let r0;
+    // SAFETY: the number goes to the instruction alone.
     let nr = unsafe { nr.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a0 = unsafe { a0.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a1 = unsafe { a1.into_asm() };
+    // SAFETY: the caller's invariants hold for the arguments, and the block
+    // declares each register that the instruction overwrites and touches no
+    // stack.
     unsafe {
         asm!(
             "syscall",
@@ -35,11 +60,31 @@ pub(crate) unsafe fn syscall2(
             options(nostack, preserves_flags)
         );
     }
+    // SAFETY: `r0` is the value that the instruction answers.
     unsafe { RetReg::from_asm(r0) }
 }
 
+/// Issues the system call `nr` with four arguments, which writes no memory of
+/// the process.
+///
+/// # Safety
+///
+/// - unsafe invariants: each pointer argument names memory that is valid for
+///   the call's reads, and the call writes no memory of the process.
+///
+/// # Specification
+///
+/// - ensures: the kernel's answer.
+/// - panics: none.
+/// - executable: none — the call's effect is the kernel's.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — a table of files that this call registers on a ring
+///   answers zero, and so does its unregistration.
+/// - witness: `base::io_uring::test::register`
 #[inline]
-pub(crate) unsafe fn syscall4_readonly(
+pub unsafe fn syscall4_readonly(
     nr: SyscallNumber<'_>,
     a0: ArgReg<'_, A0>,
     a1: ArgReg<'_, A1>,
@@ -48,11 +93,19 @@ pub(crate) unsafe fn syscall4_readonly(
 ) -> RetReg<R0>
 {
     let r0;
+    // SAFETY: the number goes to the instruction alone.
     let nr = unsafe { nr.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a0 = unsafe { a0.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a1 = unsafe { a1.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a2 = unsafe { a2.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a3 = unsafe { a3.into_asm() };
+    // SAFETY: the caller's invariants hold for the arguments, and they let
+    // the block promise that it writes no memory. The block declares each
+    // register that the instruction overwrites and touches no stack.
     unsafe {
         asm!(
             "syscall",
@@ -66,11 +119,30 @@ pub(crate) unsafe fn syscall4_readonly(
             options(nostack, preserves_flags, readonly)
         );
     }
+    // SAFETY: `r0` is the value that the instruction answers.
     unsafe { RetReg::from_asm(r0) }
 }
 
+/// Issues the system call `nr` with six arguments.
+///
+/// # Safety
+///
+/// - unsafe invariants: each pointer argument names memory that is valid for
+///   the call's access, and the caller allows each effect of the call.
+///
+/// # Specification
+///
+/// - ensures: the kernel's answer.
+/// - panics: none.
+/// - executable: none — the call's effect is the kernel's.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — an enter that submits nothing and waits for nothing
+///   answers zero.
+/// - witness: `base::io_uring::test::enter`
 #[inline]
-pub(crate) unsafe fn syscall6(
+pub unsafe fn syscall6(
     nr: SyscallNumber<'_>,
     a0: ArgReg<'_, A0>,
     a1: ArgReg<'_, A1>,
@@ -81,13 +153,23 @@ pub(crate) unsafe fn syscall6(
 ) -> RetReg<R0>
 {
     let r0;
+    // SAFETY: the number goes to the instruction alone.
     let nr = unsafe { nr.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a0 = unsafe { a0.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a1 = unsafe { a1.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a2 = unsafe { a2.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a3 = unsafe { a3.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a4 = unsafe { a4.into_asm() };
+    // SAFETY: the argument goes to the instruction alone.
     let a5 = unsafe { a5.into_asm() };
+    // SAFETY: the caller's invariants hold for the arguments, and the block
+    // declares each register that the instruction overwrites and touches no
+    // stack.
     unsafe {
         asm!(
             "syscall",
@@ -103,5 +185,6 @@ pub(crate) unsafe fn syscall6(
             options(nostack, preserves_flags)
         );
     }
+    // SAFETY: `r0` is the value that the instruction answers.
     unsafe { RetReg::from_asm(r0) }
 }

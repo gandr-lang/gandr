@@ -27,6 +27,22 @@
 #![expect(clippy::undocumented_unsafe_blocks, reason = "bindgen")]
 #![expect(clippy::unreadable_literal, reason = "bindgen")]
 #![expect(clippy::use_self, reason = "bindgen")]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(raw_pointer_through_reference, reason = "bindgen")
+)]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(specification_present, reason = "bindgen")
+)]
+#![allow(
+    unknown_lints,
+    reason = "bindgen: rustc alone does not know the quenchant lint below"
+)]
+#![allow(
+    unsafe_safety_documentation,
+    reason = "bindgen: the made helpers carry no safety section"
+)]
 
 #[repr(C)]
 #[derive(Default)]
