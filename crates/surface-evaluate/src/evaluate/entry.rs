@@ -4,7 +4,7 @@
 //!
 //! The run takes a host. An operation no handler of the run claims is offered
 //! to it: `Proc.exit` stops the run with its payload as the exit status,
-//! `Console.print` writes its line to the run's [`Console`], a `Net`
+//! `Console.print` writes its line to the run's [`Streams`], a `Net`
 //! operation goes to the run's network when it has one, a `Reals` operation
 //! goes to the plans and the machines the run holds, a `Rand` operation draws
 //! from the entropy source of the operating system, and every other operation
