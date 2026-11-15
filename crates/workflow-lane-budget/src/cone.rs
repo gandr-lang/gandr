@@ -25,6 +25,22 @@ pub enum Cone
     Surface,
 }
 
+impl Cone
+{
+    /// The class as the report's class column spells it: `deep` or
+    /// `surface`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn spelling(self) -> &'static str
+    {
+        match self {
+            Self::Deep => "deep",
+            Self::Surface => "surface",
+        }
+    }
+}
+
 impl fmt::Display for Cone
 {
     /// Writes the class as the report's class column: `deep` or `surface`.
@@ -42,10 +58,7 @@ impl fmt::Display for Cone
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(match *self {
-            Self::Deep => "deep",
-            Self::Surface => "surface",
-        })
+        f.write_str(self.spelling())
     }
 }
 

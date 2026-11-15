@@ -9,15 +9,13 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_dispatcher::Captured;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Closed;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Entry;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::ExitStatus;
-use gandr_surface_dispatcher::Input;
-use gandr_surface_dispatcher::Line;
-use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::fixture::Listed;
 use gandr_surface_dispatcher::program_entry;
 use gandr_surface_lowering::Arguments;
@@ -100,7 +98,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             ran.enter(
                 entry,
                 &arguments,
-                &mut Captured::default(),
+                &mut Streams::Captured(&mut Captured::default()),
                 (None, None, RealsProfile::Default)
             ),
             Entered::Exited(ExitStatus::from(wanted)),
@@ -117,7 +115,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             goal.enter(
                 entry,
                 &[],
-                &mut Captured::default(),
+                &mut Streams::Captured(&mut Captured::default()),
                 (None, None, RealsProfile::Default)
             ),
             Entered::Ended(Evaluation::Holed { .. })
@@ -196,7 +194,7 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         ran.enter(
             entry,
             &[],
-            &mut Captured::default(),
+            &mut Streams::Captured(&mut Captured::default()),
             (None, None, RealsProfile::Default)
         ),
         Entered::Exited(ExitStatus::from(2)),
@@ -207,7 +205,7 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
     match ran.enter(
         entry,
         &[String::from("a")],
-        &mut Captured::default(),
+        &mut Streams::Captured(&mut Captured::default()),
         (None, None, RealsProfile::Default),
     ) {
         Entered::Ended(Evaluation::Holed {
@@ -242,27 +240,31 @@ fn an_entry_prints_through_its_console_2279()
         ran.enter(
             entry,
             &[],
-            &mut console,
+            &mut Streams::Captured(&mut console),
             (None, None, RealsProfile::Default)
         ),
         Entered::Exited(ExitStatus::from(0)),
         "the unit exits with 0"
     );
     assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
-    let mut refusing = Refusing { asked: 0 };
+    let mut closed = Closed::default();
     assert!(
         matches!(
             ran.enter(
                 entry,
                 &[],
-                &mut refusing,
+                &mut Streams::Closed(&mut closed),
                 (None, None, RealsProfile::Default)
             ),
             Entered::Ended(Evaluation::Stuck(_))
         ),
         "a line the console fails to write stops the run"
     );
-    assert_eq!(refusing.asked, 1, "nothing runs past the failed line");
+    assert_eq!(
+        usize::from(closed.asked()),
+        1,
+        "nothing runs past the failed line"
+    );
 }
 
 /// An entry handed the ambient authority prints through it, and through a
@@ -283,7 +285,7 @@ fn an_entry_prints_through_its_authority_2970()
         ran.enter(
             entry,
             &[],
-            &mut console,
+            &mut Streams::Captured(&mut console),
             (None, None, RealsProfile::Default)
         ),
         Entered::Exited(ExitStatus::from(0)),
@@ -311,7 +313,7 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
         ran.enter(
             entry,
             &[],
-            &mut console,
+            &mut Streams::Captured(&mut console),
             (None, None, RealsProfile::Default)
         ),
         Entered::Exited(ExitStatus::from(0)),
@@ -323,51 +325,4 @@ fn an_entry_reads_and_writes_the_three_streams_2970()
         [""],
         "the end of input is the empty string"
     );
-}
-
-/// A console failing every line it is handed, counting them.
-#[repr(transparent)]
-struct Refusing
-{
-    /// The lines handed to it.
-    asked: usize,
-}
-
-impl Console for Refusing
-{
-    /// Count the line and fail it.
-    ///
-    /// # Specification
-    /// trivial.
-    fn print(
-        &mut self,
-        _line: Line<'_>,
-    ) -> Printed
-    {
-        self.asked = self.asked.saturating_add(1);
-        Printed::Failed
-    }
-
-    /// Count the line and fail it.
-    ///
-    /// # Specification
-    /// trivial.
-    fn eprint(
-        &mut self,
-        _line: Line<'_>,
-    ) -> Printed
-    {
-        self.asked = self.asked.saturating_add(1);
-        Printed::Failed
-    }
-
-    /// Count the read and fail it.
-    ///
-    /// # Specification
-    /// trivial.
-    fn read_line(&mut self) -> Input
-    {
-        self.asked = self.asked.saturating_add(1);
-        Input::Failed
-    }
 }

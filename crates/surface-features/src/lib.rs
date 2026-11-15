@@ -166,6 +166,23 @@ pub enum Status
     Declined,
 }
 
+impl Status
+{
+    /// The status as the ledger spells it.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn spelling(self) -> &'static str
+    {
+        match self {
+            Self::Implemented => "implemented",
+            Self::Partial => "partial",
+            Self::Planned => "planned",
+            Self::Declined => "declined",
+        }
+    }
+}
+
 impl fmt::Display for Status
 {
     /// Writes the status as the ledger spells it.
@@ -178,12 +195,7 @@ impl fmt::Display for Status
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(match *self {
-            Self::Implemented => "implemented",
-            Self::Partial => "partial",
-            Self::Planned => "planned",
-            Self::Declined => "declined",
-        })
+        f.write_str(self.spelling())
     }
 }
 
@@ -282,19 +294,19 @@ pub struct Feature
     since: Option<String>,
 }
 
-/// One column of a row and its value, `None` where the row holds `NULL`.
+/// One column of a row and its text, `None` where the row holds `NULL`.
 #[derive(Clone, Copy)]
 struct Cell<'row>
 {
     /// The column's name.
     column: &'static str,
-    /// The value.
-    value: Option<&'row dyn fmt::Display>,
+    /// The text.
+    value: Option<&'row str>,
 }
 
 impl Feature
 {
-    /// The row's columns, in the dump's order, each with its value.
+    /// The row's columns, in the dump's order, each with its text.
     ///
     /// # Specification
     /// trivial.
@@ -303,76 +315,55 @@ impl Feature
         [
             Cell {
                 column: "id",
-                value: Some(&self.id),
+                value: Some(self.id.as_str()),
             },
             Cell {
                 column: "area",
-                value: Some(&self.area),
+                value: Some(self.area.as_str()),
             },
             Cell {
                 column: "name",
-                value: Some(&self.name),
+                value: Some(self.name.as_str()),
             },
             Cell {
                 column: "parent",
-                value: self
-                    .parent
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.parent.as_deref(),
             },
             Cell {
                 column: "status",
-                value: Some(&self.status),
+                value: Some(self.status.spelling()),
             },
             Cell {
                 column: "notability",
-                value: Some(&self.notability),
+                value: Some(self.notability.as_str()),
             },
             Cell {
                 column: "compared_to",
-                value: self
-                    .compared_to
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.compared_to.as_deref(),
             },
             Cell {
                 column: "line",
-                value: Some(&self.line),
+                value: Some(self.line.as_str()),
             },
             Cell {
                 column: "crate",
-                value: self
-                    .crates
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.crates.as_deref(),
             },
             Cell {
                 column: "corpus",
-                value: self
-                    .corpus
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.corpus.as_deref(),
             },
             Cell {
                 column: "exemplar",
-                value: self
-                    .exemplar
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.exemplar.as_deref(),
             },
             Cell {
                 column: "issue",
-                value: self
-                    .issue
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.issue.as_deref(),
             },
             Cell {
                 column: "since",
-                value: self
-                    .since
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.since.as_deref(),
             },
         ]
     }
@@ -401,7 +392,7 @@ impl Feature
         let mut object = Map::new();
         for cell in self.cells() {
             if let Some(value) = cell.value {
-                let _replaced = object.insert(String::from(cell.column), json!(value.to_string()));
+                let _replaced = object.insert(String::from(cell.column), json!(value));
             }
         }
         Value::Object(object)

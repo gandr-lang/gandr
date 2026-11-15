@@ -105,8 +105,8 @@ use crate::tools::Job;
 pub trait Verbs: Send + Sync
 {
     /// Walk `paths` under `verb` on `pool`, as the command line walks them,
-    /// and write what the verb prints to `printed` and each fault to
-    /// `faulted`.
+    /// and write what the verb prints to the first stream of `streams` and
+    /// each fault to the second.
     ///
     /// # Specification
     /// trivial.
@@ -118,7 +118,7 @@ pub trait Verbs: Send + Sync
         verb: Verb,
         paths: Vec<PathBuf>,
         pool: &Pool,
-        streams: (&mut impl Write, &mut impl Write),
+        streams: (&mut JobStream, &mut JobStream),
     ) -> io::Result<()>;
 
     /// Walk as [`Verbs::walk`] walks, and mark each job of the walk on
@@ -137,7 +137,7 @@ pub trait Verbs: Send + Sync
         verb: Verb,
         paths: Vec<PathBuf>,
         (pool, _rings): (&Pool, &Activity),
-        streams: (&mut impl Write, &mut impl Write),
+        streams: (&mut JobStream, &mut JobStream),
     ) -> io::Result<()>
     {
         self.walk(verb, paths, pool, streams)
@@ -847,7 +847,7 @@ impl Walking
         &self,
         verbs: &dyn Verbs,
         (verb, paths): (Verb, Vec<PathBuf>),
-        streams: (&mut impl Write, &mut impl Write),
+        streams: (&mut JobStream, &mut JobStream),
     ) -> io::Result<()>
     {
         #[cfg(feature = "instrument")]
@@ -874,7 +874,7 @@ fn walked(
     watch: &Watch,
 ) -> Result<Outcome, Retired>
 {
-    let (mut printed, mut faulted) = (Printed::new(watch), Printed::new(watch));
+    let (mut printed, mut faulted) = (JobStream::new(watch.clone()), JobStream::new(watch.clone()));
     // A panic of the verb ends its job alone, not the thread of the jobs.
     let walked = std::panic::catch_unwind(AssertUnwindSafe(|| {
         walking.walk(verbs, (verb, paths), (&mut printed, &mut faulted))
@@ -958,23 +958,24 @@ fn view<Log>(
     }
 }
 
-/// The lines that a verb writes, kept until its job ends. A write fails once
-/// the job is retired, so the walk stops there.
-struct Printed<'watch>
+/// One stream of a job of the hub: the lines that a verb writes, kept until
+/// its job ends. A write fails once the job is retired, so the walk stops
+/// there.
+pub struct JobStream
 {
     /// The job's watch.
-    watch: &'watch Watch,
+    watch: Watch,
     /// The bytes written.
     bytes: Vec<u8>,
 }
 
-impl<'watch> Printed<'watch>
+impl JobStream
 {
     /// No line yet, for the job that `watch` watches.
     ///
     /// # Specification
     /// trivial.
-    const fn new(watch: &'watch Watch) -> Self
+    const fn new(watch: Watch) -> Self
     {
         Self {
             watch,
@@ -983,12 +984,16 @@ impl<'watch> Printed<'watch>
     }
 }
 
-impl Write for Printed<'_>
+impl Write for JobStream
 {
     /// Keep `buf`, unless the job is retired.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes written, kept until the job ends
+    #[inline]
     fn write(
         &mut self,
         buf: &[u8],
@@ -1003,6 +1008,7 @@ impl Write for Printed<'_>
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn flush(&mut self) -> io::Result<()>
     {
         Ok(())

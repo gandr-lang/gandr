@@ -175,6 +175,8 @@ pub use crate::rap::Announced;
 #[cfg(unix)]
 pub use crate::rap::Announcement;
 #[cfg(unix)]
+pub use crate::rap::JobStream;
+#[cfg(unix)]
 pub use crate::rap::Policy;
 #[cfg(unix)]
 pub use crate::rap::Retries;

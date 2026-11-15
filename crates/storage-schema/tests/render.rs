@@ -1,7 +1,6 @@
 //! Every refusal renders what it carries, and no two render alike.
 
 use core::fmt::Display;
-use core::fmt::Write as _;
 
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::RecordTreeError;
@@ -19,11 +18,20 @@ use gandr_storage_schema::SchemaIdentity;
 use gandr_storage_schema::StoreError;
 use gandr_storage_schema::StoreRoot;
 
+/// The rendering of each value given, in order.
+macro_rules! rendered {
+    ($($value:expr),+ $(,)?) => {
+        [$(ToString::to_string(&$value)),+]
+    };
+}
+
 /// Asserts that no two renderings are equal.
 ///
 /// # Specification
 /// trivial.
-fn assert_distinct(rendered: &[&dyn Display])
+fn assert_distinct<Shown>(rendered: &[Shown])
+where
+    Shown: Display,
 {
     let mut sorted: Vec<String> = rendered.iter().map(ToString::to_string).collect();
     let count = sorted.len();
@@ -32,21 +40,17 @@ fn assert_distinct(rendered: &[&dyn Display])
     assert_eq!(sorted.len(), count, "{sorted:?}");
 }
 
-/// Asserts that the rendering of `refusal` carries the rendering of every
-/// one of `parts`.
+/// Asserts that the rendering of `refusal` carries every one of `parts`.
 ///
 /// # Specification
 /// trivial.
 fn assert_names(
     refusal: &impl Display,
-    parts: &[&dyn Display],
+    parts: &[String],
 )
 {
     let rendered = refusal.to_string();
-    let mut part = String::new();
-    for each in parts {
-        part.clear();
-        write!(part, "{each}").expect("a string takes the rendering");
+    for part in parts {
         assert!(
             rendered.contains(part.as_str()),
             "`{rendered}` does not name `{part}`"
@@ -64,13 +68,13 @@ fn every_schema_refusal_names_its_elements()
         ElementKind::Attribute,
         ElementKind::Equation,
     ];
-    assert_distinct(&kinds.each_ref().map(|kind| -> &dyn Display { kind }));
+    assert_distinct(&kinds);
     for kind in kinds {
         let unknown = SchemaError::Unknown {
             kind,
             name: Name::from("ghost"),
         };
-        assert_names(&unknown, &[&kind, &"ghost"]);
+        assert_names(&unknown, &rendered![kind, "ghost"]);
     }
 
     let empty = SchemaError::EmptyName;
@@ -101,12 +105,12 @@ fn every_schema_refusal_names_its_elements()
     let image = SchemaError::Image {
         fault: ImageFault::Trailing,
     };
-    assert_names(&twice, &[&"twice"]);
-    assert_names(&ordinal, &[&ElementKind::Object, &7_usize]);
-    assert_names(&not_composable, &[&"square", &"src", &"Vertex"]);
-    assert_names(&apart, &[&"square", &"Edge", &"Vertex"]);
-    assert_names(&too_large, &[&ElementKind::Attribute]);
-    assert_names(&image, &[&ImageFault::Trailing]);
+    assert_names(&twice, &rendered!["twice"]);
+    assert_names(&ordinal, &rendered![ElementKind::Object, 7_usize]);
+    assert_names(&not_composable, &rendered!["square", "src", "Vertex"]);
+    assert_names(&apart, &rendered!["square", "Edge", "Vertex"]);
+    assert_names(&too_large, &rendered![ElementKind::Attribute]);
+    assert_names(&image, &rendered![ImageFault::Trailing]);
     assert_distinct(&[
         &empty,
         &twice,
@@ -127,7 +131,7 @@ fn every_map_refusal_names_its_elements()
     };
     let carried = MapError::from(lookup.clone());
     assert_eq!(MapError::Schema(lookup.clone()), carried);
-    assert_names(&carried, &[&lookup]);
+    assert_names(&carried, &rendered![lookup]);
 
     let unmapped = MapError::Unmapped {
         kind: ElementKind::Equation,
@@ -151,11 +155,11 @@ fn every_map_refusal_names_its_elements()
     let not_preserved = MapError::EquationNotPreserved {
         equation: Name::from("square"),
     };
-    assert_names(&unmapped, &[&ElementKind::Equation, &"square"]);
-    assert_names(&not_composable, &[&"edge", &"tgt", &"Vertex"]);
-    assert_names(&wrong_end, &[&"edge", &"Vertex", &"Edge"]);
-    assert_names(&attribute_type, &[&"label", &"Text", &"Bytes"]);
-    assert_names(&not_preserved, &[&"square"]);
+    assert_names(&unmapped, &rendered![ElementKind::Equation, "square"]);
+    assert_names(&not_composable, &rendered!["edge", "tgt", "Vertex"]);
+    assert_names(&wrong_end, &rendered!["edge", "Vertex", "Edge"]);
+    assert_names(&attribute_type, &rendered!["label", "Text", "Bytes"]);
+    assert_names(&not_preserved, &rendered!["square"]);
     assert_distinct(&[
         &carried,
         &unmapped,
@@ -210,19 +214,24 @@ fn every_edit_refusal_names_its_parts()
     let exhausted = Refusal::Exhausted {
         object: Name::from("Edge"),
     };
-    assert_names(&not_live, &[&"Vertex", &eleven]);
-    assert_names(&referenced, &[&"Vertex", &eleven, &"src", &twenty_three]);
-    assert_names(&unset, &[&"label", &"Vertex", &eleven]);
-    assert_names(&violated, &[
-        &"square",
-        &"Edge",
-        &eleven,
-        &twenty_three,
-        &thirty_seven,
+    assert_names(&not_live, &rendered!["Vertex", eleven]);
+    assert_names(&referenced, &rendered![
+        "Vertex",
+        eleven,
+        "src",
+        twenty_three
     ]);
-    assert_names(&not_indexed, &[&"tgt"]);
-    assert_names(&foreign, &[&"tgt", &"Vertex"]);
-    assert_names(&exhausted, &[&"Edge"]);
+    assert_names(&unset, &rendered!["label", "Vertex", eleven]);
+    assert_names(&violated, &rendered![
+        "square",
+        "Edge",
+        eleven,
+        twenty_three,
+        thirty_seven,
+    ]);
+    assert_names(&not_indexed, &rendered!["tgt"]);
+    assert_names(&foreign, &rendered!["tgt", "Vertex"]);
+    assert_names(&exhausted, &rendered!["Edge"]);
     assert_distinct(&[
         &carried,
         &not_live,
@@ -246,14 +255,14 @@ fn every_store_refusal_names_what_it_compared()
         LayoutFault::Root,
         LayoutFault::NotCanonical,
     ];
-    assert_distinct(&layout.each_ref().map(|fault| -> &dyn Display { fault }));
+    assert_distinct(&layout);
     let manifest = [
         ManifestFault::Domain,
         ManifestFault::Version,
         ManifestFault::Truncated,
         ManifestFault::Trailing,
     ];
-    assert_distinct(&manifest.each_ref().map(|fault| -> &dyn Display { fault }));
+    assert_distinct(&manifest);
 
     let records = RecordTreeError::UnknownNode {
         hash: NodeHash::from([0x5a_u8; 32]),
@@ -301,10 +310,10 @@ fn every_store_refusal_names_what_it_compared()
     let wrong_question = StoreError::WrongQuestion;
     assert_eq!(records.to_string(), carried_records.to_string());
     assert_eq!(refusal.to_string(), carried_refusal.to_string());
-    assert_names(&schema_mismatch, &[&held, &committed]);
-    assert_names(&malformed, &[&ManifestFault::Truncated]);
-    assert_names(&root_mismatch, &[&verifier, &hashed]);
-    assert_names(&doctored, &[&"Vertex", &LayoutFault::Counter]);
+    assert_names(&schema_mismatch, &rendered![held, committed]);
+    assert_names(&malformed, &rendered![ManifestFault::Truncated]);
+    assert_names(&root_mismatch, &rendered![verifier, hashed]);
+    assert_names(&doctored, &rendered!["Vertex", LayoutFault::Counter]);
     assert_distinct(&[
         &carried_records,
         &carried_refusal,

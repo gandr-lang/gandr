@@ -368,7 +368,6 @@ use gandr_surface_dispatcher::Census;
 use gandr_surface_dispatcher::CensusStep;
 use gandr_surface_dispatcher::Class;
 use gandr_surface_dispatcher::Composed;
-use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Export;
@@ -381,10 +380,8 @@ use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Grant;
 use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Hosted;
-use gandr_surface_dispatcher::Input;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
-use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::Lock;
 use gandr_surface_dispatcher::LockFault;
@@ -397,7 +394,6 @@ use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::PackageAddress;
 use gandr_surface_dispatcher::Pool;
-use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Reached;
@@ -419,6 +415,7 @@ use gandr_surface_dispatcher::StageVerdict;
 use gandr_surface_dispatcher::Staging;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Traversal;
 use gandr_surface_dispatcher::Unaddressed;
@@ -1525,12 +1522,17 @@ struct Opened
 /// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
 fn opened() -> Result<Opened, ExitCode>
 {
-    let fault = |why: &dyn core::fmt::Display| {
-        // When standard error is unwritable too, the exit code is the one
-        // channel left.
+    /// Note `why` on standard error, and give the faulted exit code. When
+    /// standard error is unwritable too, the exit code is the one channel
+    /// left.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fault(why: &impl core::fmt::Display) -> ExitCode
+    {
         let _written = writeln!(std::io::stderr(), "gandr: {why}");
         ExitCode::from(FAULTED)
-    };
+    }
     let Some(root) = config::store()
     else {
         return Err(fault(
@@ -3410,7 +3412,10 @@ impl HubVerbs
         self,
         (verb, paths): (Verb, Vec<PathBuf>),
         (pool, rings): (&Pool, Rings<'_>),
-        (printed, faulted): (&mut impl std::io::Write, &mut impl std::io::Write),
+        (printed, faulted): (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
     ) -> std::io::Result<()>
     {
         let (paths, reached, gathered) = match packaged::<Evaluator>(paths, Path::new(".")) {
@@ -3473,8 +3478,8 @@ impl HubVerbs
                 #[cfg(feature = "instrument")]
                 occupancy: Occupancy::Unprinted,
             },
-            printed,
-            faulted,
+            &mut Stream::Job(printed),
+            &mut Stream::Job(faulted),
         )
         .map(|_exit| ())
     }
@@ -3493,7 +3498,10 @@ impl gandr_surface_agentic::Verbs for HubVerbs
         verb: Verb,
         paths: Vec<PathBuf>,
         pool: &Pool,
-        streams: (&mut impl std::io::Write, &mut impl std::io::Write),
+        streams: (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
     ) -> std::io::Result<()>
     {
         self.walked((verb, paths), (pool, Rings::default()), streams)
@@ -3510,7 +3518,10 @@ impl gandr_surface_agentic::Verbs for HubVerbs
         verb: Verb,
         paths: Vec<PathBuf>,
         (pool, rings): (&Pool, &gandr_core_fork::activity::Activity),
-        streams: (&mut impl std::io::Write, &mut impl std::io::Write),
+        streams: (
+            &mut gandr_surface_agentic::JobStream,
+            &mut gandr_surface_agentic::JobStream,
+        ),
     ) -> std::io::Result<()>
     {
         self.walked((verb, paths), (pool, Some(rings)), streams)
@@ -3678,10 +3689,11 @@ fn doc(
     let mut stderr = std::io::stderr().lock();
     let mut traversal = Traversal::new(Vec::from([path.to_path_buf()]));
     let (mut entries, mut sources, mut faulted) = (Vec::new(), Vec::new(), false);
-    let mut fault = |stderr: &mut dyn std::io::Write, at: &Path, why: &dyn core::fmt::Display| {
-        faulted = true;
-        writeln!(stderr, "gandr: {}: {why}", at.display())
-    };
+    let mut fault =
+        |stderr: &mut std::io::StderrLock<'_>, at: &Path, why: core::fmt::Arguments<'_>| {
+            faulted = true;
+            writeln!(stderr, "gandr: {}: {why}", at.display())
+        };
     let write = |target: &Path, contents: &str| {
         target
             .parent()
@@ -3717,7 +3729,7 @@ fn doc(
                                 });
                                 writeln!(stdout, "{}", target.display())
                             },
-                            Err(why) => fault(&mut stderr, &source, &why),
+                            Err(why) => fault(&mut stderr, &source, format_args!("{why}")),
                         }
                     },
                     Pages::Site => match sourced(&source, relative) {
@@ -3725,12 +3737,12 @@ fn doc(
                             sources.push(read);
                             Ok(())
                         },
-                        Err(unpaged) => fault(&mut stderr, &source, &unpaged),
+                        Err(unpaged) => fault(&mut stderr, &source, format_args!("{unpaged}")),
                     },
                 }
             },
-            Reached::Unreadable(error) => fault(&mut stderr, &source, &error),
-            Reached::NoSource => fault(&mut stderr, &source, &"names no source"),
+            Reached::Unreadable(error) => fault(&mut stderr, &source, format_args!("{error}")),
+            Reached::NoSource => fault(&mut stderr, &source, format_args!("names no source")),
         };
         if noted.is_err() {
             return ExitCode::from(FAULTED);
@@ -3752,7 +3764,7 @@ fn doc(
         let target = out.join(&file.path);
         let noted = match write(&target, &file.contents) {
             Ok(()) => writeln!(stdout, "{}", target.display()),
-            Err(why) => fault(&mut stderr, &target, &why),
+            Err(why) => fault(&mut stderr, &target, format_args!("{why}")),
         };
         if noted.is_err() {
             return ExitCode::from(FAULTED);
@@ -3993,8 +4005,8 @@ fn render(
     reached: (&[Package], &[Gathered]),
     hosting: Hosting,
     store: Option<&mut Opened>,
-    stdout: &mut impl std::io::Write,
-    stderr: &mut impl std::io::Write,
+    stdout: &mut std::io::StdoutLock<'static>,
+    stderr: &mut std::io::StderrLock<'static>,
 ) -> std::io::Result<ExitCode>
 {
     match outcome {
@@ -4028,8 +4040,8 @@ fn render(
                 walk,
                 &pool,
                 printing,
-                stdout,
-                stderr,
+                &mut Stream::Out(stdout),
+                &mut Stream::Err(stderr),
             )
         },
         Outcome::Script(mut runnable) => {
@@ -4052,7 +4064,7 @@ fn render(
                 runnable.hosting(migrations);
             }
             runnable.reals(hosting.reals);
-            script(&mut runnable, printing.spelling, stdout, stderr)
+            script(&mut runnable, printing.spelling, stderr)
         },
         Outcome::Stage(staging) => {
             let pool = pooled(staging.width(), Class::Batch);
@@ -4284,6 +4296,72 @@ fn stage(
     })
 }
 
+/// A stream that [`run`] writes to: the closed set of the writers its two
+/// hosts hand it. The command line hands the process's standard output and
+/// standard error, and the hub hands a job's two streams. The walk has one
+/// instance, and each write is one match.
+enum Stream<'stream>
+{
+    /// Standard output, locked for the run.
+    Out(&'stream mut std::io::StdoutLock<'static>),
+    /// Standard error, locked for the run.
+    Err(&'stream mut std::io::StderrLock<'static>),
+    /// One stream of a job of the hub.
+    #[cfg(unix)]
+    Job(&'stream mut gandr_surface_agentic::JobStream),
+}
+
+impl std::io::Write for Stream<'_>
+{
+    /// Write `buf` to the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    fn write(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<usize>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.write(buf),
+            Self::Err(ref mut err) => err.write(buf),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.write(buf),
+        }
+    }
+
+    /// Write the whole of `buf` to the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    fn write_all(
+        &mut self,
+        buf: &[u8],
+    ) -> std::io::Result<()>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.write_all(buf),
+            Self::Err(ref mut err) => err.write_all(buf),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.write_all(buf),
+        }
+    }
+
+    /// Flush the stream held.
+    ///
+    /// # Specification
+    /// trivial.
+    fn flush(&mut self) -> std::io::Result<()>
+    {
+        match *self {
+            Self::Out(ref mut out) => out.flush(),
+            Self::Err(ref mut err) => err.flush(),
+            #[cfg(unix)]
+            Self::Job(ref mut job) => job.flush(),
+        }
+    }
+}
+
 /// Visit `walk` on `pool` under the pass's verb, printing each step at the
 /// verbosity and in the spelling `printing` names, then each manifest the
 /// packages and workspaces of the pass reconcile, then the report and the
@@ -4376,8 +4454,8 @@ fn run(
     walk: Walk,
     pool: &Pool,
     printing: Printing,
-    stdout: &mut impl std::io::Write,
-    stderr: &mut impl std::io::Write,
+    stdout: &mut Stream<'_>,
+    stderr: &mut Stream<'_>,
 ) -> std::io::Result<ExitCode>
 {
     let Pass {
@@ -5511,15 +5589,10 @@ const fn worse(
 fn script(
     runnable: &mut Script,
     spelling: Spelling,
-    stdout: &mut impl std::io::Write,
     stderr: &mut impl std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    let ran = runnable.run::<Evaluator>(&mut Lines {
-        out: &mut *stdout,
-        err: &mut *stderr,
-        input: &mut std::io::stdin().lock(),
-    });
+    let ran = runnable.run::<Evaluator>(&mut Streams::Standard);
     let status = ran.status();
     let mut exited = None;
     match ran {
@@ -5607,64 +5680,4 @@ fn script(
         (None, RunStatus::Failed) => ExitCode::from(STOPPED),
         (None, RunStatus::Unreached) => ExitCode::from(UNREACHED),
     })
-}
-
-/// The console `gandr run` hands a program: each line it prints written to
-/// `out`, standard output, or `err`, standard error, as one line, and each line
-/// it reads read from `input`, standard input.
-struct Lines<'out>
-{
-    /// Where standard output's lines go.
-    out: &'out mut dyn std::io::Write,
-    /// Where standard error's lines go.
-    err: &'out mut dyn std::io::Write,
-    /// Where input is read from.
-    input: &'out mut dyn std::io::BufRead,
-}
-
-impl Console for Lines<'_>
-{
-    /// Write `line` and a newline to `out`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn print(
-        &mut self,
-        line: Line<'_>,
-    ) -> Printed
-    {
-        match writeln!(self.out, "{}", line.as_ref()) {
-            Ok(()) => Printed::Written,
-            Err(_) => Printed::Failed,
-        }
-    }
-
-    /// Write `line` and a newline to `err`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn eprint(
-        &mut self,
-        line: Line<'_>,
-    ) -> Printed
-    {
-        match writeln!(self.err, "{}", line.as_ref()) {
-            Ok(()) => Printed::Written,
-            Err(_) => Printed::Failed,
-        }
-    }
-
-    /// The next line of `input`, its newline kept; the empty string at its
-    /// end. A line that is not UTF-8 fails.
-    ///
-    /// # Specification
-    /// trivial.
-    fn read_line(&mut self) -> Input
-    {
-        let mut line = String::new();
-        match self.input.read_line(&mut line) {
-            Ok(_) => Input::Line(line),
-            Err(_) => Input::Failed,
-        }
-    }
 }

@@ -200,6 +200,7 @@ use self::deliver::Post;
 pub use self::deliver::Retries;
 use self::deliver::Row;
 use self::jobs::Command;
+pub use self::jobs::JobStream;
 use self::jobs::Pinned;
 pub use self::jobs::Verbs;
 use self::subscriptions::Generation;
@@ -2843,6 +2844,7 @@ mod tests
 
     use super::Announcement;
     use super::Buffer;
+    use super::JobStream;
     use super::LOST;
     use super::Policy;
     use super::REQUEST_WAIT;
@@ -4297,7 +4299,7 @@ mod tests
             _verb: Verb,
             paths: Vec<PathBuf>,
             _pool: &Pool,
-            (printed, _faulted): (&mut impl std::io::Write, &mut impl std::io::Write),
+            (printed, _faulted): (&mut JobStream, &mut JobStream),
         ) -> std::io::Result<()>
         {
             for path in &paths {

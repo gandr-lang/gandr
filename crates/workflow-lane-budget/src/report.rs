@@ -685,12 +685,12 @@ fn table(
             Maybe::Present(median) => median.to_string(),
             Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
         };
-        let class: &dyn fmt::Display = match window {
-            Window::Landing => &row.cone,
-            Window::Integration => &"integration",
-            Window::Main => &"main",
-            Window::Scheduled => &"daily",
-            Window::Nightly => &"nightly",
+        let class = match window {
+            Window::Landing => row.cone.spelling(),
+            Window::Integration => "integration",
+            Window::Main => "main",
+            Window::Scheduled => "daily",
+            Window::Nightly => "nightly",
         };
         if informed {
             writeln!(

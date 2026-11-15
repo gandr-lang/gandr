@@ -46,9 +46,10 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::Bits;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Console as _;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::Streams;
 
 #[cfg(test)]
 mod tests;
@@ -439,14 +440,12 @@ impl Draws
     captures: [random = request.signature.name().as_ref() == RAND],
     ensures: |ret| ret.is_none() != random,
 )]
-pub(super) fn answered<Abort, Printer>(
-    console: &mut Printer,
+pub(super) fn answered<Abort>(
+    console: &mut Streams<'_>,
     draws: &mut Draws,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>
-where
-    Printer: Console + ?Sized,
 {
     if request.signature.name().as_ref() != RAND {
         return None;

@@ -559,6 +559,44 @@ impl fmt::Display for Millis
     }
 }
 
+/// The reading of one row of the table: the closed set of the kinds a row
+/// reads.
+#[derive(Clone, Copy, Debug)]
+enum Reading
+{
+    /// A count.
+    Tally(Tally),
+    /// A wall time in milliseconds with one decimal.
+    Millis(Millis),
+    /// A count per second.
+    PerSecond(PerSecond),
+    /// A part of a whole, as a percentage.
+    Share(Share),
+    /// A count per unit.
+    Ratio(Ratio),
+}
+
+impl fmt::Display for Reading
+{
+    /// Writes the reading as its kind writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Tally(ref tally) => tally.fmt(f),
+            Self::Millis(ref millis) => millis.fmt(f),
+            Self::PerSecond(ref rate) => rate.fmt(f),
+            Self::Share(ref share) => share.fmt(f),
+            Self::Ratio(ref ratio) => ratio.fmt(f),
+        }
+    }
+}
+
 /// What the latency workload read: how many keystrokes it typed, and the
 /// median and the 99th percentile of their times to a settled answer.
 #[derive(Clone, Copy, Debug)]
@@ -1059,98 +1097,132 @@ fn main() -> Result<(), Failure>
         whole: decisions,
     };
     let mut table = String::from("| Axis | Measure | Reading |\n| --- | --- | --- |\n");
-    let rows: [(&str, &str, &dyn fmt::Display); 26] = [
-        ("latency", "keystrokes typed", &latency.keystrokes),
+    let whole_millis =
+        |wall: Duration| Tally(usize::try_from(wall.as_millis()).unwrap_or(usize::MAX));
+    let rows: [(&str, &str, Reading); 26] = [
+        (
+            "latency",
+            "keystrokes typed",
+            Reading::Tally(latency.keystrokes),
+        ),
         (
             "latency",
             "time from a keystroke to its settled answer, ms, p50",
-            &Millis(latency.p50),
+            Reading::Millis(Millis(latency.p50)),
         ),
         (
             "latency",
             "time from a keystroke to its settled answer, ms, p99",
-            &Millis(latency.p99),
+            Reading::Millis(Millis(latency.p99)),
         ),
-        ("throughput", "sources", &throughput.sources),
-        ("throughput", "bytes", &throughput.bytes),
-        ("throughput", "significant tokens", &throughput.tokens),
+        ("throughput", "sources", Reading::Tally(throughput.sources)),
+        ("throughput", "bytes", Reading::Tally(throughput.bytes)),
+        (
+            "throughput",
+            "significant tokens",
+            Reading::Tally(throughput.tokens),
+        ),
         (
             "throughput",
             "cold parse, ms, the fastest of each source's runs summed",
-            &throughput.wall.as_millis(),
+            Reading::Tally(whole_millis(throughput.wall)),
         ),
-        ("throughput", "bytes per second", &PerSecond {
-            count: throughput.bytes,
-            wall: throughput.wall,
-        }),
-        ("throughput", "significant tokens per second", &PerSecond {
-            count: throughput.tokens,
-            wall: throughput.wall,
-        }),
-        ("recovery", "mutants swept", &swept),
+        (
+            "throughput",
+            "bytes per second",
+            Reading::PerSecond(PerSecond {
+                count: throughput.bytes,
+                wall: throughput.wall,
+            }),
+        ),
+        (
+            "throughput",
+            "significant tokens per second",
+            Reading::PerSecond(PerSecond {
+                count: throughput.tokens,
+                wall: throughput.wall,
+            }),
+        ),
+        ("recovery", "mutants swept", Reading::Tally(swept)),
         (
             "recovery",
             "marked where they were made",
-            &of_swept(tally.where_made),
+            Reading::Share(of_swept(tally.where_made)),
         ),
-        ("recovery", "accepted", &of_swept(tally.accepted)),
+        (
+            "recovery",
+            "accepted",
+            Reading::Share(of_swept(tally.accepted)),
+        ),
         (
             "recovery",
             "well formed and refused",
-            &of_swept(tally.formed),
+            Reading::Share(of_swept(tally.formed)),
         ),
-        ("recovery", "closed early", &of_swept(tally.early)),
-        ("recovery", "marked elsewhere", &of_swept(tally.elsewhere)),
+        (
+            "recovery",
+            "closed early",
+            Reading::Share(of_swept(tally.early)),
+        ),
+        (
+            "recovery",
+            "marked elsewhere",
+            Reading::Share(of_swept(tally.elsewhere)),
+        ),
         (
             "recovery",
             "keystrokes typed, indented first",
-            &indented.keystrokes,
+            Reading::Tally(indented.keystrokes),
         ),
         (
             "recovery",
             "obligations owed outside the typed line, indented first",
-            &indented.elsewhere,
+            Reading::Tally(indented.elsewhere),
         ),
         (
             "recovery",
             "keystrokes typed, at column zero",
-            &zero.keystrokes,
+            Reading::Tally(zero.keystrokes),
         ),
         (
             "recovery",
             "obligations owed outside the typed line, at column zero",
-            &zero.elsewhere,
+            Reading::Tally(zero.elsewhere),
         ),
-        ("ambiguity", "decisions", &decisions),
+        ("ambiguity", "decisions", Reading::Tally(decisions)),
         (
             "ambiguity",
             "settled by one admissible mold",
-            &of_decisions(census.sole),
+            Reading::Share(of_decisions(census.sole)),
         ),
         (
             "ambiguity",
             "settled by the least local key",
-            &of_decisions(census.least_key),
+            Reading::Share(of_decisions(census.least_key)),
         ),
         (
             "ambiguity",
             "settled by refuting or folding tied openers",
-            &of_decisions(census.opener),
+            Reading::Share(of_decisions(census.opener)),
         ),
         (
             "ambiguity",
             "settled by the next token",
-            &of_decisions(census.next_token),
+            Reading::Share(of_decisions(census.next_token)),
         ),
         (
             "ambiguity",
             "settled by a lookahead window",
-            &of_decisions(census.window),
+            Reading::Share(of_decisions(census.window)),
         ),
-        ("ambiguity", "candidates per decision", &Ratio {
-            part: Tally::from(census.candidates),
-            whole: decisions,
-        }),
+        (
+            "ambiguity",
+            "candidates per decision",
+            Reading::Ratio(Ratio {
+                part: Tally::from(census.candidates),
+                whole: decisions,
+            }),
+        ),
     ];
     for (axis, measure, reading) in rows {
         writeln!(table, "| {axis} | {measure} | {reading} |")?;
@@ -1199,21 +1271,33 @@ fn main() -> Result<(), Failure>
         )?;
     }
     let micros = |wall: Duration| Tally(usize::try_from(wall.as_micros()).unwrap_or(usize::MAX));
-    let parallel_rows: [(&str, &dyn fmt::Display); 5] = [
-        ("units, the form split's runs", &parallel.units),
-        ("seams broken, each unit molded again", &parallel.broken),
-        ("bytes in units that join as molded", &Share {
-            part: parallel.held,
-            whole: throughput.bytes,
-        }),
+    let parallel_rows: [(&str, Reading); 5] = [
+        (
+            "units, the form split's runs",
+            Reading::Tally(parallel.units),
+        ),
+        (
+            "seams broken, each unit molded again",
+            Reading::Tally(parallel.broken),
+        ),
+        (
+            "bytes in units that join as molded",
+            Reading::Share(Share {
+                part: parallel.held,
+                whole: throughput.bytes,
+            }),
+        ),
         (
             "split scan, ms, the fastest of each source's runs summed",
-            &parallel.scan.as_millis(),
+            Reading::Tally(whole_millis(parallel.scan)),
         ),
-        ("split scan against the cold parse", &Share {
-            part: micros(parallel.scan),
-            whole: micros(throughput.wall),
-        }),
+        (
+            "split scan against the cold parse",
+            Reading::Share(Share {
+                part: micros(parallel.scan),
+                whole: micros(throughput.wall),
+            }),
+        ),
     ];
     for (measure, reading) in parallel_rows {
         writeln!(table, "| parallel | {measure} | {reading} |")?;

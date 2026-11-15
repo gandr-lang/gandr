@@ -562,11 +562,16 @@ mod tests
     #[test]
     fn diagnostics_preserve_semantic_distinctions_and_sink_refusal()
     {
-        let mut empty = [];
-        let refusal = self::std::io::Write::write_all(&mut empty.as_mut_slice(), b"x")
-            .expect_err("an exhausted byte sink refuses output")
-            .kind();
-        let check_sink = |value: &dyn core::fmt::Display| {
+        /// Format `value` into a sink with no room, and check the sink's
+        /// refusal reaches the caller as `refusal`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn check_sink(
+            refusal: self::std::io::ErrorKind,
+            value: &impl core::fmt::Display,
+        )
+        {
             let mut storage = [];
             let actual = self::std::io::Write::write_fmt(
                 &mut storage.as_mut_slice(),
@@ -574,7 +579,11 @@ mod tests
             )
             .expect_err("formatting propagates sink refusal");
             assert_eq!(refusal, actual.kind());
-        };
+        }
+        let mut empty = [];
+        let refusal = self::std::io::Write::write_all(&mut empty.as_mut_slice(), b"x")
+            .expect_err("an exhausted byte sink refuses output")
+            .kind();
         let distinct = |texts: Vec<String>| {
             for (index, text) in texts.iter().enumerate() {
                 for other in texts.iter().skip(index.saturating_add(1)) {
@@ -590,7 +599,7 @@ mod tests
             ReservedKind::FunctorDef,
         ] {
             names.push(format!("{kind}"));
-            check_sink(&kind);
+            check_sink(refusal, &kind);
             let error = DecodeError::ReservedDeclarationKind { kind };
             assert!(format!("{error}").contains(format!("{kind}").as_str()));
             errors.push(error);
@@ -603,7 +612,7 @@ mod tests
             ReservedSlot::DirectednessVariance,
         ] {
             names.push(format!("{slot}"));
-            check_sink(&slot);
+            check_sink(refusal, &slot);
             let error = DecodeError::ReservedSlotOccupied { slot };
             assert!(format!("{error}").contains(format!("{slot}").as_str()));
             errors.push(error);
@@ -627,7 +636,7 @@ mod tests
             TagSite::Role,
         ] {
             names.push(format!("{site}"));
-            check_sink(&site);
+            check_sink(refusal, &site);
             for byte in [0u8, 127, 128, 255] {
                 let error = DecodeError::UnknownTag {
                     site,
@@ -663,7 +672,7 @@ mod tests
             MalformedSite::BridgeEndpoint,
         ] {
             names.push(format!("{site}"));
-            check_sink(&site);
+            check_sink(refusal, &site);
             let error = DecodeError::Malformed { site };
             assert!(format!("{error}").contains(format!("{site}").as_str()));
             errors.push(error);
@@ -672,38 +681,38 @@ mod tests
         for version in [0u16, 1, u16::MAX] {
             let wrapped = FormatVersion(version);
             assert_eq!(format!("{version}"), format!("{wrapped}"));
-            check_sink(&wrapped);
+            check_sink(refusal, &wrapped);
             let error = DecodeError::UnsupportedVersion { found: wrapped };
             assert!(format!("{error}").contains(format!("{version}").as_str()));
             errors.push(error);
         }
         let mut rendered = Vec::new();
         for error in errors {
-            check_sink(&error);
+            check_sink(refusal, &error);
             rendered.push(format!("{error}"));
         }
         distinct(rendered);
         for byte in 0u8 ..= u8::MAX {
             let tag = WireTag(byte);
             assert_eq!(format!("0x{byte:02x}"), format!("{tag}"));
-            check_sink(&tag);
+            check_sink(refusal, &tag);
         }
         for quantity in [0u64, 1, u64::MAX] {
             let work = crate::ExpandedWork(quantity);
             assert_eq!(format!("{quantity}"), format!("{work}"));
-            check_sink(&work);
+            check_sink(refusal, &work);
         }
         for quantity in [0usize, 1, usize::MAX] {
             let count = crate::TableEntryCount(quantity);
             assert_eq!(format!("{quantity}"), format!("{count}"));
-            check_sink(&count);
+            check_sink(refusal, &count);
         }
         for (sort, literal) in [
             (crate::GroundSort::Value, "+"),
             (crate::GroundSort::Computation, "-"),
         ] {
             assert_eq!(literal, format!("{sort}"));
-            check_sink(&sort);
+            check_sink(refusal, &sort);
         }
     }
 }

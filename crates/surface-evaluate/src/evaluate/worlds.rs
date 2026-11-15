@@ -73,12 +73,13 @@ use gandr_runtime_net::Net;
 use gandr_runtime_net::WorldName;
 use gandr_storage_values::ChunkCount;
 use gandr_storage_values::ValueManifest;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Console as _;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Worlds;
 
 use super::Machine;
@@ -305,7 +306,7 @@ impl Machine<'_, '_>
             World::Host => None,
         };
         let mut entry = EntryHost::new(
-            console,
+            console.reborrow(),
             Some(&mut *net),
             profile,
             Some((worlds, self.names.as_slice())),

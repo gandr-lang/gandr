@@ -33,11 +33,11 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_net::Net;
-use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Entry;
 use gandr_surface_dispatcher::ExitStatus;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Worlds;
 use gandr_surface_lowering::Arguments;
 use quenchant_shape::shape::Maybe;
@@ -65,7 +65,7 @@ const EXIT: &str = "exit";
 pub(super) struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
-    console: &'host mut dyn Console,
+    console: Streams<'host>,
     /// The run's network, when it has one.
     net: Option<&'host mut Net>,
     /// The plans and the machines of exact reals that the run holds.
@@ -83,7 +83,7 @@ impl<'host> EntryHost<'host>
     /// # Specification
     /// trivial.
     pub(super) fn new(
-        console: &'host mut Streams<'_>,
+        console: Streams<'host>,
         net: Option<&'host mut Net>,
         profile: RealsProfile,
         worlds: Option<(Worlds<'host>, &'host [String])>,
@@ -116,7 +116,7 @@ impl HostHandler for EntryHost<'_>
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>
     {
-        if let Some(reply) = console::served(self.console, request, values) {
+        if let Some(reply) = console::served(&mut self.console, request, values) {
             return reply;
         }
         if let Some(network) = self.net.as_deref_mut()
@@ -124,10 +124,10 @@ impl HostHandler for EntryHost<'_>
         {
             return reply;
         }
-        if let Some(reply) = reals::served(&mut self.reals, self.console, request, values) {
+        if let Some(reply) = reals::served(&mut self.reals, &mut self.console, request, values) {
             return reply;
         }
-        if let Some(reply) = rand::served(self.console, request, values) {
+        if let Some(reply) = rand::served(&mut self.console, request, values) {
             return reply;
         }
         if request.signature.name().as_ref() != PROC || request.operation.as_ref() != EXIT {
@@ -246,7 +246,7 @@ impl<'source> Machine<'_, 'source>
         };
         let mut store = Store::new();
         let mut host = EntryHost::new(
-            console,
+            console.reborrow(),
             net,
             profile,
             worlds.map(|worlds| (worlds, self.names.as_slice())),

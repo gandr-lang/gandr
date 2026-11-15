@@ -36,7 +36,7 @@ use crate::compose::compose;
 use crate::compose::judge_lowering;
 use crate::compose::lower_unit_source;
 use crate::engine::Engine;
-use crate::entry::console::Console;
+use crate::entry::console::Streams;
 use crate::entry::entered::Entered;
 use crate::entry::entered::Entry;
 use crate::entry::entered::RealsProfile;

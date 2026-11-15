@@ -18,7 +18,7 @@ use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_net::Net;
 use gandr_surface_corpus::Runner;
 
-use crate::entry::console::Console;
+use crate::entry::console::Streams;
 use crate::entry::entered::Entered;
 use crate::entry::entered::Entry;
 use crate::entry::entered::RealsProfile;
