@@ -172,7 +172,7 @@ impl Occupied
     /// - witness: `tests::cli::check_prints_each_thread_s_occupancy_6298`
     ///
     /// # Cost
-    /// - allocation: each thread's report text and the I/O error's payload,
+    /// - allocation: each thread's report text and the I/O fault's payload,
     ///   diagnostic
     pub fn print<Faults>(
         &self,
