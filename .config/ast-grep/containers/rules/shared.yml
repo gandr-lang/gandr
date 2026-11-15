@@ -1,6 +1,38 @@
-# An `Arc` in a type takes the shared pointer of the kernel's data over the
-# global allocator. That pointer has one count and no weak count, and it is
-# `Send` and `Sync` as `Arc` is.
+# An `Arc` of a slice takes the thin shared block of the kernel's data, with a
+# unit header, over the global allocator. The holder is one word, and the
+# block keeps one count and the items behind the header. It dereferences to
+# the slice, as the `Arc` does.
+id: arc-slice-is-thin-shared
+language: Rust
+severity: hint
+message: the thin shared block of the kernel's data, its allocator named at the site
+rule:
+  all:
+    - kind: generic_type
+    - has:
+        field: type
+        regex: ^(?:(?:alloc|std)::sync::)?Arc$
+    - has:
+        field: type_arguments
+        pattern: $ARGUMENTS
+        regex: ^<\[[\s\S]*\]>$
+    - not:
+        inside:
+          kind: mod_item
+          regex: ^mod tests
+          stopBy: end
+transform:
+  ITEMS:
+    replace:
+      source: $ARGUMENTS
+      replace: ^<\[(?<item>[\s\S]*)\]>$
+      by: <(), $item, Global>
+fix: ThinShared$ITEMS
+---
+# An `Arc` of a sized value in a type takes the shared pointer of the kernel's
+# data over the global allocator. The pointer keeps one count and no weak
+# count, and it is `Send` and `Sync` as `Arc` is. An `Arc` of a slice is the
+# rule before.
 id: arc-is-shared
 language: Rust
 severity: hint
@@ -14,6 +46,10 @@ rule:
     - has:
         field: type_arguments
         pattern: $ARGUMENTS
+    - not:
+        has:
+          field: type_arguments
+          regex: ^<\[
     - not:
         inside:
           kind: mod_item
