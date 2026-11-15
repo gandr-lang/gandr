@@ -48,6 +48,40 @@
     "output": "[\"`.github/workflows/report-coverage.yml` job `coverage-part` walks a build directory with `hashFiles(format('target/{0}/**/.rustc_info.json', env.COVERAGE_STATE)`. Test one file at the directory's root\"]"
   },
   {
+    "name": "#7705: a hashFiles walk from the workspace's root is refused",
+    "input": {
+      "workflow": ".github/workflows/landing-checks.yml",
+      "jobs": {
+        "sweep": {
+          "steps": [
+            {
+              "env": { "CI_STATE_INPUTS": "${{ hashFiles('**/Cargo.toml', 'Cargo.lock') }}" }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[\"`.github/workflows/landing-checks.yml` job `sweep` walks a build directory with `hashFiles('**/Cargo.toml', 'Cargo.lock')`. Test one file at the directory's root\"]"
+  },
+  {
+    "name": "#7705: a hashFiles of the manifests by their places holds",
+    "input": {
+      "workflow": ".github/workflows/landing-checks.yml",
+      "jobs": {
+        "sweep": {
+          "steps": [
+            {
+              "env": {
+                "CI_STATE_INPUTS": "${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock') }}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output": "[]"
+  },
+  {
     "name": "a hashFiles test of one file at a build directory's root holds",
     "input": {
       "workflow": ".github/workflows/report-coverage.yml",

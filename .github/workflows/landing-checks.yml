@@ -339,6 +339,9 @@ jobs:
           done
           if [[ -n $line ]]; then printf '### Lane state\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
       # Compute once, before any restored build directory can add manifests.
+      # The manifests are named by their places: a pattern from the root
+      # walks a self-hosted runner's warm build and passes the expression
+      # engine's 120 s (#7705).
       # The fingerprint names one exact state; the generation is the toolchain
       # pin alone. A restore takes the newest state of its generation and
       # Cargo's own fingerprints, which hash a Git dependency's revision and
@@ -348,7 +351,7 @@ jobs:
       - &identify-build-state
         name: identify build-state inputs
         env:
-          CI_STATE_INPUTS: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          CI_STATE_INPUTS: ${{ hashFiles('Cargo.toml', 'crates/*/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
           CI_STATE_GENERATION: ${{ hashFiles('rust-toolchain.toml') }}
         run: printf 'CI_BUILD_FINGERPRINT=%s\nCI_BUILD_GENERATION=%s\n' "$CI_STATE_INPUTS" "$CI_STATE_GENERATION" >> "$GITHUB_ENV"
       - &restore-test-state
