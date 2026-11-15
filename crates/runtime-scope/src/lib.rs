@@ -1,7 +1,7 @@
 //! The scoped runtime: one thread drives the futures of a scope over the
 //! kernel's ring, and the scope's end drains every operation of the scope.
 //!
-//! A [`Runtime`] owns the ring. [`Runtime::run`] gives the scope's future a
+//! A `Runtime` owns the ring. `Runtime::run` gives the scope's future a
 //! `Scope`, through which each task requests the kernel's operations. The
 //! memory of an operation is a borrow of the scope's life, so the kernel
 //! writes only memory that the scope holds.
