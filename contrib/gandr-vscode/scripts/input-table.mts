@@ -16,13 +16,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// A public file that the table reads, pinned by its digest. `read` names what
+// the table reads from it.
 interface Source {
   readonly name: string;
   readonly revision: string;
   readonly url: string;
   readonly sha256: string;
-  readonly licence: string;
-  readonly notice: string;
+  readonly read: string;
 }
 
 const AGDA: Source = {
@@ -30,9 +31,7 @@ const AGDA: Source = {
   revision: "v2.8.0.2",
   url: "https://raw.githubusercontent.com/agda/agda/v2.8.0.2/src/data/emacs-mode/agda-input.el",
   sha256: "21666bf0fd5290f93d2c7c86098fad3d31744779544150aa6e146d636cfe5fbb",
-  licence: "MIT",
-  notice:
-    'Copyright (c) 2005-2026 remains with the authors. Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.',
+  read: "the abbreviation names, each with the code points it writes",
 };
 
 const W3C: Source = {
@@ -40,9 +39,7 @@ const W3C: Source = {
   revision: "0f766d761eebd0908b4f2cfaa30cf9b06bdc79b0",
   url: "https://raw.githubusercontent.com/w3c/xml-entities/0f766d761eebd0908b4f2cfaa30cf9b06bdc79b0/unicode.xml",
   sha256: "8ad442b9360ea43f3ba0704f033c4e6db4c15356184838d000a4ac12182fb935",
-  licence: "W3C Software Notice and License",
-  notice:
-    "Copyright David Carlisle 1999-2025. W3C Software Notice and License, http://www.w3.org/Consortium/Legal/2002/copyright-software-20021231.html. Changed: the characters' LaTeX and unicode-math names and their Unicode names are read and reshaped into this table's commands.",
+  read: "the entity names, each character's LaTeX and unicode-math names with its code point",
 };
 
 const LATEX: Source = {
@@ -50,9 +47,7 @@ const LATEX: Source = {
   revision: "release-2026-06-01",
   url: "https://raw.githubusercontent.com/latex3/latex2e/release-2026-06-01/base/fontdef.dtx",
   sha256: "a3376423114232dc36439df7388b588d5b3bc42655d31f87800bb55fb0109dc4",
-  licence: "LPPL-1.3c",
-  notice:
-    "The LaTeX Project Public License, version 1.3c, https://www.latex-project.org/lppl.txt. Read: which command names the kernel declares at one symbol slot, nothing of the file reproduced.",
+  read: "the command names that the kernel declares at each symbol slot",
 };
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");

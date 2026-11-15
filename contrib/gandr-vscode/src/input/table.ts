@@ -1,6 +1,6 @@
 // The commands of the generated table, `table.json`, each with its glyphs.
-// `scripts/input-table.mts` writes the table from its pinned sources; the
-// table names them and their licences.
+// `scripts/input-table.mts` writes the table from three pinned public files.
+// The table names each file and what it reads from it.
 
 import type { Entry } from "./trie";
 
