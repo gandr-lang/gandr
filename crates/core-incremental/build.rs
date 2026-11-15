@@ -267,6 +267,10 @@ fn main() -> Result<(), Refusal>
 /// [`Refusal::Parse`] when the file holds no `CheckRefusalOf`, or a field's
 /// type is not a plain path in the arena form.
 ///
+/// # Cost
+/// - allocation: the variants and their fields, durable by the generated source
+/// - allocation: the refusal's message, error path
+///
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
 /// - witness: `typing::tests::each_refusal_projects_its_payload`
@@ -425,6 +429,11 @@ fn emit_frame_roles(
 /// [`Refusal::Parse`] when the type is not a path, a segment carries type
 /// arguments other than the naming, or the naming names no node.
 ///
+/// # Cost
+/// - allocation: the type's segments and the documentation lines, durable by
+///   the generated source
+/// - allocation: the refusal's message, error path
+///
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
 /// - witness: `typing::tests::each_refusal_projects_its_payload`
@@ -445,7 +454,14 @@ fn field_of(
             let ident = segment.ident.to_string();
             match segment.arguments {
                 syn::PathArguments::None => Ok(ident),
-                syn::PathArguments::AngleBracketed(ref arguments) if over_the_naming(arguments) => {
+                syn::PathArguments::AngleBracketed(ref arguments)
+                    if arguments.args.len() == 1
+                        && matches!(
+                            arguments.args.first(),
+                            Some(syn::GenericArgument::Type(syn::Type::Path(argument)))
+                                if argument.qself.is_none() && argument.path.is_ident("N")
+                        ) =>
+                {
                     ident.strip_suffix("Of").map(String::from).ok_or_else(|| {
                         Refusal::Parse(format!("the field `{name}` is generic but not `…Of<N>`"))
                     })
@@ -481,24 +497,6 @@ fn field_of(
         ty,
         docs: docs(&field.attrs),
     })
-}
-
-/// Whether a segment's arguments are the naming alone, `<N>`.
-///
-/// # Specification
-/// - ensures: true exactly when the arguments are one type, the path `N`.
-/// - executable: none — a reading of parsed arguments.
-///
-/// # Adequacy
-/// - hypothesis: L2 — as [`main`].
-/// - witness: `typing::tests::each_refusal_projects_its_payload`
-fn over_the_naming(arguments: &syn::AngleBracketedGenericArguments) -> bool
-{
-    matches!(
-        arguments.args.iter().collect::<Vec<_>>().as_slice(),
-        [syn::GenericArgument::Type(syn::Type::Path(argument))]
-            if argument.qself.is_none() && argument.path.is_ident("N")
-    )
 }
 
 /// The documentation lines of an item.

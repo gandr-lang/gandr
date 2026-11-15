@@ -2478,6 +2478,8 @@ pub fn content_key(
 ///   absent as [`recall::Absent::Opaque`] for a node whose content holds an
 ///   unresolved node, which no key names.
 /// - panics: none.
+/// - executable: none — a clause would encode the node's content a second time,
+///   which is the body itself.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two nodes of one content minted apart share a key, in one
