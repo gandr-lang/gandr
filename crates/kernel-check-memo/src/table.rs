@@ -711,6 +711,31 @@ impl<A: Allocator + Clone> HashIndex<A>
         }
     }
 
+    /// The slot that files `position` in the probe run from `hash`'s home slot
+    /// to its first vacant slot, if any: the run that [`HashIndex::remove`]
+    /// searches and shifts. The walk reads each slot at most once.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn slot_in_run(
+        &self,
+        hash: TableHash,
+        position: TablePosition,
+    ) -> Option<TableSlot>
+    {
+        let mut slot = self.home(hash);
+        for _ in 0 .. self.slots.len() {
+            match self.slots.get(slot.0) {
+                Some(stored) if stored.position == VACANT => return None,
+                Some(stored) if stored.position == position => return Some(slot),
+                Some(_) => slot = self.next(slot),
+                None => return None,
+            }
+        }
+        None
+    }
+
     /// Forget `position`, filed under `hash`, closing its probe gap by
     /// shifting later entries of the same run backward.
     ///
@@ -733,26 +758,8 @@ impl<A: Allocator + Clone> HashIndex<A>
     /// - witness: `table::tests::removal_keeps_every_other_position`
     /// - witness: `table::tests::removal_leaves_a_key_at_its_own_home`
     #[inline]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "the check walks only the probe run from `hash`'s home slot to its first vacant slot, the run the body searches and shifts"
-        )
-    )]
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            allocation_free_region,
-            reason = "neither the body nor the postcondition allocates: the postcondition borrows the slots through iterators, and the lint reads the call of its closure as a call whose body is unavailable (gandr-lang/quenchant#152)"
-        )
-    )]
-    #[spec(captures: [before = self.len, recorded = self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
-            .take_while(|slot| slot.position != VACANT)
-            .any(|slot| slot.position == position)],
-        ensures: !self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
-                .take_while(|slot| slot.position != VACANT)
-                .any(|slot| slot.position == position)
+    #[spec(captures: [before = self.len, recorded = self.slot_in_run(hash, position).is_some()],
+        ensures: self.slot_in_run(hash, position).is_none()
             && self.len == if recorded { before.saturating_sub(1) } else { before })]
     pub fn remove(
         &mut self,
