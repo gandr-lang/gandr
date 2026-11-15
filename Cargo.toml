@@ -22,6 +22,7 @@ members = [
   "crates/kernel-term",
   "crates/runtime-emitter",
   "crates/runtime-net",
+  "crates/runtime-scope",
   "crates/runtime-stencils",
   "crates/runtime-uring",
   "crates/storage-artifact",
@@ -244,6 +245,16 @@ rev = "666f60b58e1996e116f96cee889aba57cd189160"
 default-features = false
 features = ["anodized"]
 
+# A dynamic error for the scoped runtime, as the owner's crate has it. A
+# mend of #7652 puts the runtime's typed errors in its place.
+# features:
+# - none: the runtime uses the default-off surface.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.anyhow]
+version = "1.0.99"
+default-features = false
+
 # The snapshot of a store's roots that its readers load with no lock: the
 # register, the one writer of the roots, swaps in a new snapshot at each
 # drain, and a reader keeps the one it loaded. The choice, its alternatives
@@ -262,6 +273,7 @@ default-features = false
 # features:
 # - none: the tests use the default-off surface.
 # consumers:
+# - runtime-scope (dev)
 # - runtime-uring (dev)
 [workspace.dependencies.assert_fs]
 version = "1.1.3"
@@ -1564,6 +1576,16 @@ default-features = false
 version = "1.10.1"
 default-features = false
 
+# The ring under the owner's scoped runtime as the owner's crate stands on
+# it. A mend of #7652 puts `gandr-runtime-uring` in its place.
+# features:
+# - none: the runtime needs no optional feature.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.io-uring]
+version = "0.7.10"
+default-features = false
+
 # QUIC endpoints dialed by public key: the host's `Net` interface, one
 # connection and one bidirectional stream per opened stream, TLS 1.3 binding
 # each to the key its dialer named. The version is the one domhringr pins.
@@ -1600,6 +1622,17 @@ features = ["key"]
 version = "=0.6.1"
 default-features = false
 
+# The scoped runtime's channel of requests, as the owner's crate has it. A
+# mend of #7652 puts a bounded queue of slots in its place.
+# features:
+# - async: the scope's sender awaits.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.kanal]
+version = "0.1.1"
+default-features = false
+features = ["async"]
+
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
 # and the per-thread write toggle on macOS, a `memfd` mapped twice on Linux,
 # the executable view below 2 GiB on x86-64. Chosen over rustix, also in the
@@ -1615,6 +1648,7 @@ default-features = false
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
 # - runtime-emitter
+# - runtime-scope
 # - runtime-uring
 # - surface-dispatcher (unix)
 [workspace.dependencies.libc]
@@ -1749,6 +1783,17 @@ version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
 
+# The scoped runtime's channel of one completion, as the owner's crate has
+# it. A mend of #7652 puts the slot's completion in its place.
+# features:
+# - async: the completion's receiver awaits.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.oneshot]
+version = "0.1.11"
+default-features = false
+features = ["async"]
+
 # The index of a host's chunk holder and of a store plane, from a digest to its
 # slot in the arena, read and written with no lock. A read happens after the
 # write that it reads, so a reader that finds a slot reads the whole image.
@@ -1797,10 +1842,21 @@ features = ["alloc"]
 version = "0.8.3"
 default-features = false
 
+# Pin projection for the scoped runtime's operation futures, as the owner's
+# crate has it.
+# features:
+# - none: the crate has no feature to turn on.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.pin-project-lite]
+version = "0.2.16"
+default-features = false
+
 # Predicates on paths and files in the uring crate's tests.
 # features:
 # - none: the tests use the default-off surface.
 # consumers:
+# - runtime-scope (dev)
 # - runtime-uring (dev)
 [workspace.dependencies.predicates]
 version = "3.1.3"
@@ -2127,10 +2183,21 @@ version = "1.0.151"
 default-features = false
 features = ["alloc"]
 
+# The scoped runtime's table of requests in flight, as the owner's crate has
+# it. A mend of #7652 puts a table of slots of the ring's depth in its place.
+# features:
+# - none: the runtime uses the default-off surface.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.slab]
+version = "0.4.11"
+default-features = false
+
 # Sockets with their options, as the uring crate's network tests open them.
 # features:
 # - none: the crate needs no optional feature.
 # consumers:
+# - runtime-scope
 # - runtime-uring
 [workspace.dependencies.socket2]
 version = "0.6.0"

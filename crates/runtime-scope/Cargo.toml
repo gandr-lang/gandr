@@ -1,44 +1,31 @@
 [package]
 name = "gandr-runtime-scope"
 version.workspace = true
-authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "A crate implementing an io_uring async runtime"
+repository.workspace = true
 license.workspace = true
-keywords.workspace = true
-categories.workspace = true
 publish.workspace = true
 
-[dependencies]
+# The runtime stands on the Linux kernel's ring, so the crate's dependencies
+# are Linux's alone; on another system the crate compiles empty.
+[target.'cfg(target_os = "linux")'.dependencies]
 anyhow = { workspace = true }
-futures-concurrency = { workspace = true }
 io-uring = { workspace = true }
 kanal = { workspace = true }
 libc = { workspace = true }
 oneshot = { workspace = true }
 pin-project-lite = { workspace = true }
-qcell = { workspace = true }
-ringbuf = { workspace = true }
 slab = { workspace = true }
 socket2 = { workspace = true }
-tracing-subscriber = {
-  workspace = true,
-  features = [
-    "env-filter",
-    "fmt",
-  ],
-  optional = true
-}
 
-[dev-dependencies]
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 assert_fs = { workspace = true }
 predicates = { workspace = true }
 
 [features]
-default = []
 debug = []
-tracing = ["debug", "dep:tracing-subscriber"]
 
 [lints]
 workspace = true
