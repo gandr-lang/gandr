@@ -1,4 +1,4 @@
-//! A socket of the scope, whose operations go through the ring.
+//! A socket of the scope, whose operations go through the scope's adapter.
 
 mod accept;
 mod bind;
@@ -11,6 +11,8 @@ use ::socket2::Protocol;
 use ::socket2::SockAddr;
 use ::socket2::Type;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::io::buf::Buf;
 use crate::io::socket::accept::OpSocketAccept;
 pub use crate::io::socket::accept::PeerAddr;
@@ -21,18 +23,22 @@ use crate::io::socket::new::OpSocketNew;
 use crate::io::socket::recv::OpSocketRecv;
 use crate::scope::Scope;
 
-/// A socket of the scope: its descriptor, and the scope whose ring takes
+/// A socket of the scope: its descriptor, and the scope whose adapter takes
 /// its operations.
 #[non_exhaustive]
-pub struct Socket<'tsk, 'env>
+pub struct Socket<'tsk, 'env, A = Native>
+where
+    A: Adapter,
 {
-    /// The scope whose ring takes the socket's operations.
-    scope: &'tsk Scope<'tsk, 'env>,
+    /// The scope whose adapter takes the socket's operations.
+    scope: &'tsk Scope<'tsk, 'env, A>,
     /// The socket's descriptor.
     inner: ::socket2::Socket,
 }
 
-impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
+impl<'tsk, 'env: 'tsk, A> Socket<'tsk, 'env, A>
+where
+    A: Adapter,
 {
     /// The creation of a socket of `domain`, `ty` and `protocol` in
     /// `scope`.
@@ -42,16 +48,16 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     /// trivial.
     #[expect(
         clippy::new_ret_no_self,
-        reason = "the creation is an operation of the ring, so it gives a future of the socket"
+        reason = "the creation is an operation of the adapter, so it gives a future of the socket"
     )]
     #[must_use]
     #[inline]
     pub fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         domain: Domain,
         ty: Type,
         protocol: Option<Protocol>,
-    ) -> OpSocketNew<'tsk, 'env>
+    ) -> OpSocketNew<'tsk, 'env, A>
     {
         OpSocketNew::new(scope, domain, ty, protocol)
     }
@@ -66,7 +72,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     pub fn bind(
         &self,
         addr: &'tsk SockAddr,
-    ) -> OpSocketBind<'tsk, 'env, '_>
+    ) -> OpSocketBind<'tsk, 'env, '_, A>
     {
         let scope = self.scope;
         OpSocketBind::new(scope, &self.inner, addr)
@@ -82,7 +88,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     pub fn listen(
         &self,
         backlog: Backlog,
-    ) -> OpSocketListen<'tsk, 'env, '_>
+    ) -> OpSocketListen<'tsk, 'env, '_, A>
     {
         let scope = self.scope;
         OpSocketListen::new(scope, &self.inner, backlog)
@@ -99,7 +105,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     pub fn accept(
         &self,
         peer: &'tsk mut PeerAddr,
-    ) -> OpSocketAccept<'tsk, 'env, '_>
+    ) -> OpSocketAccept<'tsk, 'env, '_, A>
     {
         let scope = self.scope;
         OpSocketAccept::new(scope, &self.inner, peer)
@@ -116,7 +122,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     pub fn recv(
         &self,
         buf: Buf<'tsk>,
-    ) -> OpSocketRecv<'tsk, 'env, '_>
+    ) -> OpSocketRecv<'tsk, 'env, '_, A>
     {
         let scope = self.scope;
         OpSocketRecv::new(scope, &self.inner, buf)

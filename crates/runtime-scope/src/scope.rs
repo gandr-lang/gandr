@@ -3,12 +3,13 @@
 
 use ::core::cell::RefCell;
 use ::core::marker::PhantomData;
-use ::gandr_runtime_uring::IoUring;
-use ::gandr_runtime_uring::Sqe64;
-use ::gandr_runtime_uring::arg::UserData;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
+use crate::op::Op;
+use crate::op::Ticket;
 use crate::runtime::reap;
 use crate::submission::Hold;
 use crate::submission::Key;
@@ -17,10 +18,12 @@ use crate::submission::Table;
 /// The scope of one run. `'env` is the lifetime of the captures of the
 /// scope's future, and `'tsk` the lifetime of the scope's tasks, which
 /// borrow the scope and the memory that `'env` lends them.
-pub struct Scope<'tsk, 'env: 'tsk>
+pub struct Scope<'tsk, 'env: 'tsk, A = Native>
+where
+    A: Adapter,
 {
-    /// The kernel's ring.
-    io: &'tsk RefCell<IoUring<'static>>,
+    /// The kernel's adapter.
+    adapter: &'tsk RefCell<A>,
     /// The table of the operations in flight.
     table: &'tsk Table,
     /// The brand of the captures.
@@ -29,20 +32,22 @@ pub struct Scope<'tsk, 'env: 'tsk>
     phd_tsk: PhantomData<&'tsk mut &'tsk ()>,
 }
 
-impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
+impl<'tsk, 'env: 'tsk, A> Scope<'tsk, 'env, A>
+where
+    A: Adapter,
 {
-    /// The scope of a run on `io` with the table `table`.
+    /// The scope of a run on `adapter` with the table `table`.
     ///
     /// # Specification
     ///
     /// trivial.
     pub(crate) const fn new(
-        io: &'tsk RefCell<IoUring<'static>>,
+        adapter: &'tsk RefCell<A>,
         table: &'tsk Table,
     ) -> Self
     {
         Self {
-            io,
+            adapter,
             table,
             phd_tsk: PhantomData,
             phd_env: PhantomData,
@@ -51,7 +56,7 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
 
     /// A free slot of the table. When every slot is taken and the kernel
     /// holds some of their operations, the caller waits for a drain: the
-    /// ring completes at least one, and its slot may come free.
+    /// kernel completes at least one, and its slot may come free.
     ///
     /// # Specification
     ///
@@ -76,23 +81,24 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
             if self.table.hold() == Hold::Drained {
                 return Err(RuntimeError::Full);
             }
-            reap(self.io, self.table)?;
+            reap(self.adapter, self.table)?;
         }
     }
 
-    /// Prepares the next free entry of the ring with `prep`, and gives the
-    /// completion of its operation. The run loop submits the entry.
+    /// Hands `op` to the adapter in a free slot, and gives the completion of
+    /// the operation. The run loop starts it, when the adapter does not.
     ///
     /// # Specification
     ///
-    /// - requires: the memory that `prep` gives the entry outlives `'tsk`.
-    /// - ensures: the entry's user data names the operation's slot.
+    /// - requires: each memory that `op` lends outlives `'tsk`.
+    /// - ensures: the operation's completion names its slot.
     /// - provides: the completion of the operation, which reads its slot.
-    /// - fails: the completion gives `Full` when no slot comes free, and the
-    ///   error of a drain.
+    /// - fails: the completion gives `Full` when no slot comes free, the error
+    ///   of a drain, and the adapter's refusal of the operation, with
+    ///   `Unsupported` for a member that its kernel cannot perform.
     /// - panics: none.
-    /// - executable: none — the entry is the kernel's memory, and the call
-    ///   holds nothing to check it against.
+    /// - executable: none — the operation is the kernel's, and the call holds
+    ///   nothing to check it against.
     ///
     /// # Adequacy
     ///
@@ -101,33 +107,19 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
     /// - witness: `runtime::test::run::full`
     #[inline]
-    pub fn request<P>(
+    pub fn request(
         &'tsk self,
-        prep: P,
+        op: Op<'tsk>,
     ) -> Completion<'tsk>
-    where
-        P: for<'sq> FnOnce(&mut Sqe64<'sq>),
     {
         let key = match self.slot() {
             Ok(key) => key,
             Err(error) => return Completion::refused(self.table, error),
         };
-        let Ok(data) = u64::try_from(key)
-        else {
+        let submitted = self.adapter.borrow_mut().submit(Ticket(key), op);
+        if let Err(error) = submitted {
             self.table.give_back(key);
-            return Completion::refused(self.table, RuntimeError::Full);
-        };
-        let mut io = self.io.borrow_mut();
-        let mut sq = io.squeue();
-        let Some(mut sqe) = sq.get_sqe()
-        else {
-            self.table.give_back(key);
-            return Completion::refused(self.table, RuntimeError::Full);
-        };
-        prep(&mut sqe);
-        // SAFETY: the user data is a number that the kernel only hands back.
-        unsafe {
-            sqe.set_data64(UserData(data));
+            return Completion::refused(self.table, error);
         }
         Completion::new(self.table, key)
     }

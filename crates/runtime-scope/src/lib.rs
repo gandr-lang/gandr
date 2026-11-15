@@ -1,10 +1,10 @@
 //! The scoped runtime: one thread drives the futures of a scope over the
-//! kernel's ring, and the scope's end drains every operation of the scope.
+//! kernel's queue, and the scope's end drains every operation of the scope.
 //!
-//! A `Runtime` owns the ring. `Runtime::run` gives the scope's future a
-//! `Scope`, through which each task requests the kernel's operations. The
-//! memory of an operation is a borrow of the scope's life, so the kernel
-//! writes only memory that the scope holds.
+//! A `Runtime` owns the kernel's adapter. `Runtime::run` gives the scope's
+//! future a `Scope`, through which each task requests the operations of the
+//! one set, [`Op`]. The memory of an operation is a borrow of the scope's
+//! life, so the kernel writes only memory that the scope holds.
 
 // The runtime stands on the Linux kernel's ring: on another system the crate
 // compiles empty.
@@ -12,20 +12,38 @@
 
 extern crate alloc;
 
+mod adapter;
 mod completion;
 mod error;
 /// The operations of the scope on the kernel's files.
 pub mod io
 {
     pub mod buf;
+    pub mod fd;
     pub mod socket;
 }
+mod op;
 mod runtime;
 mod scope;
 mod submission;
 
+pub use crate::adapter::Adapter;
+pub use crate::adapter::Native;
+pub use crate::adapter::uring::Uring;
+pub use crate::completion::Completion;
+pub use crate::completion::Count;
 pub use crate::error::RuntimeError;
+pub use crate::op::Descriptor;
+pub use crate::op::Length;
+pub use crate::op::Lent;
+pub use crate::op::Member;
+pub use crate::op::Op;
+pub use crate::op::Ticket;
+pub use crate::op::Timeout;
 pub use crate::runtime::Runtime;
+pub use crate::scope::Scope;
+pub use crate::submission::Depth;
+pub use crate::submission::Table;
 
 /// The harnesses of the crate's tests, one for each area.
 #[cfg(test)]

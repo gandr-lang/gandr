@@ -99,6 +99,20 @@ impl From<u16> for Depth
     }
 }
 
+impl From<Depth> for usize
+{
+    /// The count of slots.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(depth: Depth) -> Self
+    {
+        depth.0
+    }
+}
+
 /// Whether the kernel holds an operation of the table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Hold

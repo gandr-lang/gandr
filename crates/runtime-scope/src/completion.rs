@@ -64,6 +64,29 @@ impl Cqe
     #[cfg(test)]
     pub(crate) const ZERO: Self = Self { res: 0 };
 
+    /// The completion whose result is `res`, as an adapter reads it from its
+    /// kernel: a count or a descriptor, or a negated error number.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub(crate) const fn new(res: i32) -> Self
+    {
+        Self { res }
+    }
+
+    /// The kernel's result.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    pub(crate) const fn res(self) -> i32
+    {
+        self.res
+    }
+
     /// The kernel's refusal that a negative result names.
     ///
     /// # Specification
@@ -213,6 +236,22 @@ impl<'tsk> Completion<'tsk>
             table,
             state: State::Refused(error),
             phd_tsk: PhantomData,
+        }
+    }
+
+    /// The ticket of the request's operation while the kernel holds it: what
+    /// a cancel names.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn ticket(&self) -> Option<crate::op::Ticket>
+    {
+        match self.state {
+            State::Waiting(key) => Some(crate::op::Ticket(key)),
+            State::Refused(_) | State::Read => None,
         }
     }
 }

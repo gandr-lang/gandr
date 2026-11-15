@@ -28,6 +28,8 @@ socket2 = { workspace = true }
 assert_fs = { workspace = true }
 gandr-kernel-data = { workspace = true }
 predicates = { workspace = true }
+# The pair's test fills a pipe to its capacity, which `pipe` reads.
+rustix = { workspace = true, features = ["pipe"] }
 
 [lints]
 workspace = true

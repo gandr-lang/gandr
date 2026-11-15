@@ -1,4 +1,4 @@
-//! The creation of a socket through the ring.
+//! The creation of a socket through the scope's adapter.
 
 use ::core::pin::Pin;
 use ::core::task::Context;
@@ -8,22 +8,29 @@ use ::socket2::Domain;
 use ::socket2::Protocol;
 use ::socket2::Type;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
 use crate::io::socket::Socket;
+use crate::op::Op;
 use crate::scope::Scope;
 
 /// The creation of a socket: its completion gives the socket, a socket of
 /// the scope.
 #[non_exhaustive]
-pub struct OpSocketNew<'tsk, 'env>
+pub struct OpSocketNew<'tsk, 'env, A = Native>
+where
+    A: Adapter,
 {
     /// The scope of the socket.
-    scope: &'tsk Scope<'tsk, 'env>,
+    scope: &'tsk Scope<'tsk, 'env, A>,
     /// The completion of the creation.
     cqe: Completion<'tsk>,
 }
-impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
+impl<'tsk, 'env: 'tsk, A> OpSocketNew<'tsk, 'env, A>
+where
+    A: Adapter,
 {
     /// The creation of a socket of `domain`, `ty` and `protocol` in `scope`.
     ///
@@ -31,27 +38,25 @@ impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
     ///
     /// trivial.
     pub(crate) fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         domain: Domain,
         ty: Type,
         protocol: Option<Protocol>,
     ) -> Self
     {
-        let cqe = scope.request(|sqe| {
-            let flags = ::rustix::net::SocketFlags::empty();
-            // SAFETY: a socket's creation reads no pointer and names no
-            // descriptor.
-            unsafe {
-                sqe.prep_socket(domain, ty, protocol, flags, None);
-            }
+        let cqe = scope.request(Op::Socket {
+            domain,
+            ty,
+            protocol,
         });
-
         Self { scope, cqe }
     }
 }
-impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env>
+impl<'tsk, 'env: 'tsk, A> Future for OpSocketNew<'tsk, 'env, A>
+where
+    A: Adapter,
 {
-    type Output = Result<Socket<'tsk, 'env>, RuntimeError>;
+    type Output = Result<Socket<'tsk, 'env, A>, RuntimeError>;
 
     /// The socket, once the kernel creates it.
     ///

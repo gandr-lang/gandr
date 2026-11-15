@@ -1,4 +1,5 @@
-//! The accept of a connection on a listening socket through the ring.
+//! The accept of a connection on a listening socket through the scope's
+//! adapter.
 
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
@@ -6,15 +7,17 @@ use ::core::ptr::NonNull;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
-use ::gandr_runtime_uring::SlotDesc;
-use ::gandr_runtime_uring::arg::Len;
 use ::socket2::SockAddr;
 use ::socket2::SockAddrStorage;
 use ::socket2::socklen_t;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
 use crate::io::socket::Socket;
+use crate::op::Descriptor;
+use crate::op::Op;
 use crate::scope::Scope;
 
 /// The storage of an accepted peer's address, lent for the scope's life:
@@ -73,10 +76,12 @@ impl Default for PeerAddr
 /// The accept of a connection, whose peer's address the kernel writes into
 /// storage that the caller lends for the scope's life.
 #[non_exhaustive]
-pub struct OpSocketAccept<'tsk, 'env, 'fd>
+pub struct OpSocketAccept<'tsk, 'env, 'fd, A = Native>
+where
+    A: Adapter,
 {
     /// The scope of the socket.
-    scope: &'tsk Scope<'tsk, 'env>,
+    scope: &'tsk Scope<'tsk, 'env, A>,
     /// The completion of the accept.
     rsp: Completion<'tsk>,
     /// The peer's storage, which the kernel writes until the completion.
@@ -85,7 +90,9 @@ pub struct OpSocketAccept<'tsk, 'env, 'fd>
     /// listening socket, which the operation holds until its completion.
     phd: PhantomData<(&'tsk mut PeerAddr, &'fd ::socket2::Socket)>,
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
+impl<'tsk, 'env: 'tsk, 'fd, A> OpSocketAccept<'tsk, 'env, 'fd, A>
+where
+    A: Adapter,
 {
     /// The accept of a connection on `socket` in `scope`, with the peer's
     /// address written into `peer`.
@@ -94,25 +101,16 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
     ///
     /// trivial.
     pub(crate) fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         socket: &'fd ::socket2::Socket,
         peer: &'tsk mut PeerAddr,
     ) -> Self
     {
-        let rsp = scope.request(|sqe| {
-            let flags = ::rustix::net::SocketFlags::empty();
-            // SAFETY: the peer's storage is borrowed for the scope's life, and
-            // the scope's end drains the accept before the borrow ends; the
-            // operation holds `socket` until its completion.
-            unsafe {
-                sqe.prep_accept(
-                    SlotDesc::Desc(socket),
-                    &mut peer.storage,
-                    Len(&mut peer.len),
-                    flags,
-                    None,
-                );
-            }
+        let rsp = scope.request(Op::Accept {
+            fd: Descriptor::from(socket),
+            peer: NonNull::from(&mut peer.storage),
+            len: NonNull::from(&mut peer.len),
+            phd: PhantomData,
         });
 
         Self {
@@ -123,9 +121,11 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
         }
     }
 }
-impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_>
+impl<'tsk, 'env, A> Future for OpSocketAccept<'tsk, 'env, '_, A>
+where
+    A: Adapter,
 {
-    type Output = Result<(Socket<'tsk, 'env>, SockAddr), RuntimeError>;
+    type Output = Result<(Socket<'tsk, 'env, A>, SockAddr), RuntimeError>;
 
     /// The accepted connection and its peer's address, once the kernel
     /// completes the accept.

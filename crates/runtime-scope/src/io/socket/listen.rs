@@ -1,4 +1,4 @@
-//! The listen of a socket through the ring.
+//! The listen of a socket through the scope's adapter.
 
 use ::core::ffi::c_int;
 use ::core::marker::PhantomData;
@@ -6,11 +6,13 @@ use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
-use ::gandr_runtime_uring::SlotDesc;
-use ::gandr_runtime_uring::arg::Count;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
+use crate::op::Descriptor;
+use crate::op::Op;
 use crate::scope::Scope;
 
 /// The length of a listening socket's queue of connections that wait for an
@@ -39,17 +41,35 @@ impl From<u16> for Backlog
     }
 }
 
+impl From<Backlog> for c_int
+{
+    /// The queue's length, as the kernel takes it.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(backlog: Backlog) -> Self
+    {
+        backlog.0
+    }
+}
+
 /// The listen of a socket for connections.
 #[non_exhaustive]
-pub struct OpSocketListen<'tsk, 'env, 'fd>
+pub struct OpSocketListen<'tsk, 'env, 'fd, A = Native>
+where
+    A: Adapter,
 {
     /// The completion of the listen.
     rsp: Completion<'tsk>,
     /// The borrows of the scope and of the socket, which the operation
     /// holds until its completion.
-    phd: PhantomData<(&'tsk Scope<'tsk, 'env>, &'fd ::socket2::Socket)>,
+    phd: PhantomData<(&'tsk Scope<'tsk, 'env, A>, &'fd ::socket2::Socket)>,
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
+impl<'tsk, 'env: 'tsk, 'fd, A> OpSocketListen<'tsk, 'env, 'fd, A>
+where
+    A: Adapter,
 {
     /// The listen of `socket` with a queue of `backlog` in `scope`.
     ///
@@ -57,25 +77,22 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
     ///
     /// trivial.
     pub(crate) fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         socket: &'fd ::socket2::Socket,
         backlog: Backlog,
     ) -> Self
     {
-        let rsp = scope.request(|sqe| {
-            // SAFETY: the operation holds `socket` until its completion.
-            unsafe {
-                sqe.prep_listen(SlotDesc::Desc(socket), Count(backlog.0));
-            }
-        });
-
+        let fd = Descriptor::from(socket);
+        let rsp = scope.request(Op::Listen { fd, backlog });
         Self {
             rsp,
             phd: PhantomData,
         }
     }
 }
-impl Future for OpSocketListen<'_, '_, '_>
+impl<A> Future for OpSocketListen<'_, '_, '_, A>
+where
+    A: Adapter,
 {
     type Output = Result<(), RuntimeError>;
 

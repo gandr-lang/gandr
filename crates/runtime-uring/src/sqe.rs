@@ -49,6 +49,10 @@ use ::core::ptr::NonNull;
 use crate::SubmissionQueue;
 use crate::arg::Count;
 
+/// The entry flag that links an entry to the next one: the next starts only
+/// after this one completes, and a refusal of this one cancels the next.
+pub const IO_LINK: ::core::ffi::c_uint = ::liburing_rs::IOSQE_IO_LINK;
+
 /// A run of free entries of the submission queue, each given once.
 pub struct Sqes<'sq, S>
 {

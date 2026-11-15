@@ -1,33 +1,40 @@
-//! The bind of a socket to an address through the ring.
+//! The bind of a socket to an address through the scope's adapter.
 
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
-use ::gandr_runtime_uring::SlotDesc;
 use ::socket2::SockAddr;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
+use crate::op::Descriptor;
+use crate::op::Op;
 use crate::scope::Scope;
 
 /// The bind of a socket to an address that the caller lends for the
 /// scope's life.
 #[non_exhaustive]
-pub struct OpSocketBind<'tsk, 'env, 'fd>
+pub struct OpSocketBind<'tsk, 'env, 'fd, A = Native>
+where
+    A: Adapter,
 {
     /// The completion of the bind.
     rsp: Completion<'tsk>,
     /// The borrows of the scope, of the socket and of the address, which
     /// the operation holds until its completion.
     phd: PhantomData<(
-        &'tsk Scope<'tsk, 'env>,
+        &'tsk Scope<'tsk, 'env, A>,
         &'fd ::socket2::Socket,
         &'tsk SockAddr,
     )>,
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
+impl<'tsk, 'env: 'tsk, 'fd, A> OpSocketBind<'tsk, 'env, 'fd, A>
+where
+    A: Adapter,
 {
     /// The bind of `socket` to `addr` in `scope`.
     ///
@@ -35,27 +42,22 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
     ///
     /// trivial.
     pub(crate) fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         socket: &'fd ::socket2::Socket,
         addr: &'tsk SockAddr,
     ) -> Self
     {
-        let rsp = scope.request(|sqe| {
-            // SAFETY: the address is borrowed for the scope's life, and the
-            // scope's end drains the bind before the borrow ends; the
-            // operation holds `socket` until its completion.
-            unsafe {
-                sqe.prep_bind(SlotDesc::Desc(socket), addr);
-            }
-        });
-
+        let fd = Descriptor::from(socket);
+        let rsp = scope.request(Op::Bind { fd, addr });
         Self {
             rsp,
             phd: PhantomData,
         }
     }
 }
-impl Future for OpSocketBind<'_, '_, '_>
+impl<A> Future for OpSocketBind<'_, '_, '_, A>
+where
+    A: Adapter,
 {
     type Output = Result<(), RuntimeError>;
 

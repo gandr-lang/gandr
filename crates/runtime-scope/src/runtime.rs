@@ -1,65 +1,98 @@
-//! The runtime: the ring, the run loop that drives one scope's future, and
-//! the scope's end.
+//! The runtime: the adapter of the kernel, the run loop that drives one
+//! scope's future, and the scope's end.
 
 use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
-use ::gandr_runtime_uring::IoUring;
-use ::gandr_runtime_uring::arg::Count;
-use ::gandr_runtime_uring::arg::Flags;
-use ::gandr_runtime_uring::arg::UserData;
-use ::rustix::io::Errno;
 
-use crate::completion::Cqe;
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::error::RuntimeError;
+use crate::op::Ticket;
 use crate::scope::Scope;
 use crate::submission::Depth;
 use crate::submission::Hold;
-use crate::submission::Key;
-use crate::submission::Lookup;
 use crate::submission::Table;
 
-/// The runtime: the kernel's ring, which one run of a scope drives.
+/// The runtime: the adapter of the kernel, which one run of a scope drives.
+/// A program takes the target's adapter, [`Native`]; a test names one.
 #[repr(transparent)]
 #[non_exhaustive]
-pub struct Runtime
+pub struct Runtime<A = Native>
+where
+    A: Adapter,
 {
-    /// The kernel's ring.
-    io: IoUring<'static>,
+    /// The kernel's adapter.
+    adapter: A,
 }
 
 impl Runtime
 {
-    /// The count of the ring's entries, and of the table's slots.
-    const IO_URING_ENTRIES: u16 = 4096;
-
-    /// A runtime on a new ring of the kernel.
+    /// A runtime on a new queue of the target's kernel.
     ///
     /// # Specification
     ///
-    /// - provides: a runtime whose ring has `IO_URING_ENTRIES` entries.
-    /// - fails: the kernel's error when it refuses the ring.
+    /// - provides: a runtime whose queue has `DEPTH` entries.
+    /// - fails: the kernel's error when it refuses the queue.
     /// - panics: none.
-    /// - executable: none — the ring is the kernel's, and the call holds
+    /// - executable: none — the queue is the kernel's, and the call holds
     ///   nothing to check it against.
     ///
     /// # Adequacy
     ///
-    /// - hypothesis: L3 — the kernel of the test host makes the ring.
+    /// - hypothesis: L3 — the kernel of the test host makes the queue.
     /// - witness: `runtime::test::new`
     ///
     /// # Errors
     ///
-    /// - [`RuntimeError::Kernel`] when the kernel refuses the ring.
+    /// - [`RuntimeError::Kernel`] when the kernel refuses the queue.
     /// - [`RuntimeError::Ring`] when the ring's crate refuses it with no error
     ///   number.
+    ///
+    /// # Cost
+    ///
+    /// - allocation: the adapter's state of each slot, setup
     #[inline]
     pub fn new() -> Result<Self, RuntimeError>
     {
-        let io = IoUring::builder()
-            .entries(Count(u32::from(Self::IO_URING_ENTRIES)))
-            .build()?;
-        Ok(Self { io })
+        Self::open()
+    }
+}
+
+impl<A> Runtime<A>
+where
+    A: Adapter,
+{
+    /// The count of the queue's entries, and of the table's slots.
+    const DEPTH: u16 = 4096;
+
+    /// A runtime on a new queue of the kernel that the adapter `A` names.
+    ///
+    /// # Specification
+    ///
+    /// - provides: a runtime whose queue has `DEPTH` entries.
+    /// - fails: the kernel's error when it refuses the queue.
+    /// - panics: none.
+    /// - executable: none — the queue is the kernel's, and the call holds
+    ///   nothing to check it against.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — the kernel of the test host makes the queue.
+    /// - witness: `runtime::test::new`
+    ///
+    /// # Errors
+    ///
+    /// The adapter's refusal of the queue.
+    ///
+    /// # Cost
+    ///
+    /// - allocation: the adapter's state of each slot, setup
+    #[inline]
+    pub fn open() -> Result<Self, RuntimeError>
+    {
+        let adapter = A::open(Depth::from(Self::DEPTH))?;
+        Ok(Self { adapter })
     }
 
     /// A context whose waker does nothing: the run loop polls the scope's
@@ -80,12 +113,12 @@ impl Runtime
     /// # Specification
     ///
     /// - ensures: after the run, the kernel holds no operation of the scope,
-    ///   and no completion of the scope waits in the ring.
+    ///   and no completion of the scope waits in its queue.
     /// - provides: the future's output.
     /// - fails: the kernel's error when a submission, a wait or a cancel fails,
     ///   and `Unknown` when a completion names no slot.
     /// - panics: none.
-    /// - executable: none — the kernel's state of the ring is not a value that
+    /// - executable: none — the kernel's state of the queue is not a value that
     ///   the call can read.
     ///
     /// # Adequacy
@@ -111,12 +144,12 @@ impl Runtime
         start: F,
     ) -> Result<T, RuntimeError>
     where
-        F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
+        F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env, A>) -> T,
     {
-        let io = RefCell::new(self.io);
-        let table = Table::new(Depth::from(Self::IO_URING_ENTRIES));
+        let adapter = RefCell::new(self.adapter);
+        let table = Table::new(Depth::from(Self::DEPTH));
 
-        let scope = Scope::new(&io, &table);
+        let scope = Scope::new(&adapter, &table);
         let mut future = pin!(start(&scope));
 
         loop {
@@ -125,25 +158,19 @@ impl Runtime
                 // operation that the kernel still holds is cancelled, and
                 // the run waits for every completion before it returns, so
                 // the kernel holds no operation of the scope after the run.
-                end(&io, &table)?;
+                end(&adapter, &table)?;
                 return Ok(val);
             }
 
-            // Submit the entries that the scope prepared, wait for at least
-            // one completion, and record each in its slot.
-            reap(&io, &table)?;
+            // Start the operations that the scope requested, wait for at
+            // least one completion, and record each in its slot.
+            reap(&adapter, &table)?;
         }
     }
 }
 
-/// The bit of the user data that marks a cancel's own completion. The other
-/// bits name the slot of the operation that the cancel ends, so a refused
-/// cancel names its operation. A key of the table is below the ring's depth,
-/// so no request's user data holds the bit.
-const CANCEL: u64 = 1 << 63;
-
-/// Ends a scope: submits a cancel for each operation that the kernel holds,
-/// then drains every completion, two for each cancel.
+/// Ends a scope: cancels each operation that the kernel holds, then drains
+/// every completion, the cancels' own among them.
 ///
 /// # Specification
 ///
@@ -152,7 +179,7 @@ const CANCEL: u64 = 1 << 63;
 ///   the operation's slot when a cancel fails, and `Unknown` when a completion
 ///   names no slot.
 /// - panics: none.
-/// - executable: none — the kernel's state of the ring is not a value that the
+/// - executable: none — the kernel's state of the queue is not a value that the
 ///   call can read.
 ///
 /// # Adequacy
@@ -161,52 +188,37 @@ const CANCEL: u64 = 1 << 63;
 ///   that leaves a receive, in the kernel.
 /// - witness: `io::socket::test::socket::accept_in_flight`
 /// - witness: `io::socket::test::socket::recv_in_flight`
-fn end(
-    io: &RefCell<IoUring<'static>>,
+fn end<A>(
+    adapter: &RefCell<A>,
     table: &Table,
 ) -> Result<(), RuntimeError>
+where
+    A: Adapter,
 {
     if table.hold() == Hold::Drained {
         return Ok(());
     }
     {
-        let mut ring = io.borrow_mut();
-        let mut squ = ring.squeue();
-        // The kernel takes every prepared entry, so the queue has room for a
-        // cancel of each slot that the table holds.
-        squ.submit()?;
+        let mut adapter = adapter.borrow_mut();
         for key in table.in_kernel() {
-            let data = u64::try_from(key).map_err(|_overflow| RuntimeError::Full)?;
-            let mut sqe = squ.get_sqe().ok_or(RuntimeError::Full)?;
-            // SAFETY: a cancel by user data reads no pointer and names no
-            // descriptor.
-            unsafe {
-                sqe.prep_cancel64(UserData(data), Flags(0_i32));
-            }
-            // SAFETY: the user data is a number that the kernel only hands
-            // back.
-            unsafe {
-                sqe.set_data64(UserData(CANCEL | data));
-            }
+            adapter.cancel(Ticket(key))?;
         }
     }
     while table.hold() == Hold::Held {
-        reap(io, table)?;
+        reap(adapter, table)?;
     }
     Ok(())
 }
 
-/// Submits the prepared entries, waits for at least one completion, and
-/// records each ready completion in its slot of `table`.
+/// Starts the operations that the scope requested, waits for at least one
+/// completion, and records each ready completion in its slot of `table`.
 ///
 /// # Specification
 ///
 /// - ensures: each completion that was ready is in its slot.
-/// - fails: the kernel's error when the submission or the wait fails; `Cancel`
-///   with the operation's slot when a cancel fails other than with `ENOENT` or
-///   `EALREADY`; `Unknown` when a completion names no slot.
+/// - fails: the adapter's refusal of the wait.
 /// - panics: none.
-/// - executable: none — the kernel's state of the ring is not a value that the
+/// - executable: none — the kernel's state of the queue is not a value that the
 ///   call can read.
 ///
 /// # Adequacy
@@ -215,40 +227,14 @@ fn end(
 ///   cancels of a scope's end complete with no refusal.
 /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
 /// - witness: `io::socket::test::socket::accept_in_flight`
-pub fn reap(
-    io: &RefCell<IoUring<'static>>,
+pub fn reap<A>(
+    adapter: &RefCell<A>,
     table: &Table,
 ) -> Result<(), RuntimeError>
+where
+    A: Adapter,
 {
-    let mut io = io.borrow_mut();
-    let (mut squ, mut cqu) = io.queues();
-    squ.submit_and_wait(Count(1))?;
-
-    for cqe in cqu.ready() {
-        let UserData(data) = cqe.user_data();
-        if data & CANCEL != 0 {
-            // A cancel finds its operation, or finds it already complete or
-            // past the point of a cancel; the operation's own completion
-            // follows in each case. Any other refusal names the operation's
-            // slot.
-            match Cqe::from(cqe).done() {
-                Ok(()) | Err(RuntimeError::Kernel(Errno::NOENT | Errno::ALREADY)) => {},
-                Err(RuntimeError::Kernel(errno)) => {
-                    return Err(RuntimeError::Cancel {
-                        data: data & !CANCEL,
-                        errno,
-                    });
-                },
-                Err(error) => return Err(error),
-            }
-            continue;
-        }
-        let key = Key::try_from(data).map_err(|_overflow| RuntimeError::Unknown(data))?;
-        if table.complete(key, Cqe::from(cqe)) == Lookup::Missing {
-            return Err(RuntimeError::Unknown(data));
-        }
-    }
-    Ok(())
+    adapter.borrow_mut().wait(table)
 }
 
 /// The runtime's tests and their harness.
@@ -316,13 +302,8 @@ pub mod test
         )]
         fn full()
         {
-            let nop = |sqe: &mut ::gandr_runtime_uring::Sqe64<'_>| {
-                // SAFETY: a no-op reads no pointer and names no descriptor.
-                unsafe {
-                    sqe.prep_nop();
-                }
-            };
-            let depth = usize::from(Runtime::IO_URING_ENTRIES);
+            let nop = crate::op::Op::Nop;
+            let depth = usize::from(Runtime::<Native>::DEPTH);
             crate::test::harness::runtime::new()
                 .run(async |scope| {
                     let held = ::core::iter::repeat_with(|| scope.request(nop))

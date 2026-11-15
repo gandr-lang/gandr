@@ -6,8 +6,8 @@
 use ::core::alloc::GlobalAlloc;
 use ::core::alloc::Layout;
 use ::core::cell::Cell;
+use ::gandr_runtime_scope::Op;
 use ::gandr_runtime_scope::Runtime;
-use ::gandr_runtime_uring::Sqe64;
 use ::std::alloc::System;
 
 ::std::thread_local! {
@@ -105,12 +105,7 @@ mod request
     )]
     fn a_request_allocates_nothing_after_the_start()
     {
-        let nop = |sqe: &mut Sqe64<'_>| {
-            // SAFETY: a no-op reads no pointer and names no descriptor.
-            unsafe {
-                sqe.prep_nop();
-            }
-        };
+        let nop = Op::Nop;
         let runtime = Runtime::new().unwrap();
         let made = runtime
             .run(async |scope| {

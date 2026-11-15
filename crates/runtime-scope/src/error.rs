@@ -30,6 +30,8 @@ pub enum RuntimeError
     },
     /// A completion's user data named no slot of the table.
     Unknown(u64),
+    /// The adapter's kernel cannot perform this member of the operation set.
+    Unsupported(crate::op::Member),
 }
 
 impl From<::std::io::Error> for RuntimeError
@@ -73,6 +75,12 @@ impl fmt::Display for RuntimeError
                 )
             },
             Self::Unknown(data) => write!(f, "task lookup failed: {data}"),
+            Self::Unsupported(member) => {
+                write!(
+                    f,
+                    "the kernel's adapter cannot perform the member {member:?}"
+                )
+            },
         }
     }
 }

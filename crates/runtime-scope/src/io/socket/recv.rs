@@ -1,18 +1,20 @@
-//! The receive of a socket's bytes into a lent buffer through the ring.
+//! The receive of a socket's bytes into a lent buffer through the scope's
+//! adapter.
 
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
-use ::gandr_runtime_uring::arg::Fd;
-use ::gandr_runtime_uring::arg::Flags;
-use ::gandr_runtime_uring::arg::Len;
-use ::std::os::fd::AsRawFd as _;
 
+use crate::adapter::Adapter;
+use crate::adapter::Native;
 use crate::completion::Completion;
 use crate::error::RuntimeError;
 use crate::io::buf::Buf;
+use crate::op::Descriptor;
+use crate::op::Lent;
+use crate::op::Op;
 use crate::scope::Scope;
 
 /// A receive into a buffer that the scope's caller lends for the scope's
@@ -20,7 +22,9 @@ use crate::scope::Scope;
 /// caller reads it while the kernel writes it; the completion gives back
 /// the bytes received.
 #[non_exhaustive]
-pub struct OpSocketRecv<'tsk, 'env, 'fd>
+pub struct OpSocketRecv<'tsk, 'env, 'fd, A = Native>
+where
+    A: Adapter,
 {
     /// The completion of the receive.
     rsp: Completion<'tsk>,
@@ -28,9 +32,11 @@ pub struct OpSocketRecv<'tsk, 'env, 'fd>
     buf: Option<Buf<'tsk>>,
     /// The borrows of the scope and of the socket, which the operation
     /// holds until its completion.
-    phd: PhantomData<(&'tsk Scope<'tsk, 'env>, &'fd ::socket2::Socket)>,
+    phd: PhantomData<(&'tsk Scope<'tsk, 'env, A>, &'fd ::socket2::Socket)>,
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketRecv<'tsk, 'env, 'fd>
+impl<'tsk, 'env: 'tsk, 'fd, A> OpSocketRecv<'tsk, 'env, 'fd, A>
+where
+    A: Adapter,
 {
     /// The receive of `socket`'s bytes into `buf` in `scope`.
     ///
@@ -38,21 +44,14 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketRecv<'tsk, 'env, 'fd>
     ///
     /// trivial.
     pub(crate) fn new(
-        scope: &'tsk Scope<'tsk, 'env>,
+        scope: &'tsk Scope<'tsk, 'env, A>,
         socket: &'fd ::socket2::Socket,
         mut buf: Buf<'tsk>,
     ) -> Self
     {
-        let rsp = scope.request(|sqe| {
-            let fd = socket.as_raw_fd();
-            let len = buf.len();
-            let ptr = buf.as_mut_ptr().cast();
-            // SAFETY: the buffer is borrowed for the scope's life, and the
-            // scope's end drains the receive before the borrow ends; the
-            // operation holds `socket` until its completion.
-            unsafe {
-                sqe.prep_recv(Fd(fd), ptr, Len(len), Flags(0_i32));
-            }
+        let rsp = scope.request(Op::Recv {
+            fd: Descriptor::from(socket),
+            into: Lent::of(&mut buf),
         });
 
         Self {
@@ -62,7 +61,9 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketRecv<'tsk, 'env, 'fd>
         }
     }
 }
-impl<'tsk> Future for OpSocketRecv<'tsk, '_, '_>
+impl<'tsk, A> Future for OpSocketRecv<'tsk, '_, '_, A>
+where
+    A: Adapter,
 {
     type Output = Result<Buf<'tsk>, RuntimeError>;
 
