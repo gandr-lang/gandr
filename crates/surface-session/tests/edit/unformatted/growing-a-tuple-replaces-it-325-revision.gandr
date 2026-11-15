@@ -1,0 +1,10 @@
+module Schema where {{
+  type Old = *{{String, Integer}};
+  type New = *{{Integer, String}};
+  @[ checks ]
+  def anonymise(old : Old) -> -F New {{
+    match old {{
+      | *{{name, age}} => return *{{age, {component}}}
+    }}
+  }}
+}}

@@ -1,0 +1,32 @@
+// A coherence cell: a rule between rules, its source a composite of two
+// laws spelled with `Path.step` in parentheses. The laws here nest no
+// operation, so the cell is the only member the cell layer does not read.
+//
+// A category's own triangle and pentagon, over the composition of
+// `cat-shape.gandr`, return here once the cell layer reads an operation
+// nested in a law:
+//
+//   rule triangle : (Path.step(assoc(f, id(b), g), comp(f, unitL(g))))
+//     ==> comp(unitR(f), g);
+//   rule pentagon : (Path.step(assoc(comp(f, g), h, k), assoc(f,
+//   g, comp(h, k))))
+//     ==> (Path.step(Path.step(comp(assoc(f, g, h), k), assoc(f, comp(g, h),
+//     k)), comp(f, assoc(g, h, k))));
+//
+// - see: #1510
+
+/// Two steps and the shortcut between their ends: the cell relates the
+/// composite of the steps to the shortcut.
+@[refuses("UndescribedMember.HigherCell")]
+theory Shortcut where
+  sort Ob : Type;
+
+  oper s : (a : Ob) --> Ob;
+  oper t : (a : Ob) --> Ob;
+  oper u : (a : Ob) --> Ob;
+
+  rule step : s a ==> t a;
+  rule onward : t a ==> u a;
+  rule direct : s a ==> u a;
+
+  rule shortcut : (Path.step (step a) (onward a)) ==> direct a;

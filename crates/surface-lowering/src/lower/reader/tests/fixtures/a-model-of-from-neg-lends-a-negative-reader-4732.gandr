@@ -1,0 +1,7 @@
+data Parity : Type where { | Even : Parity | Odd : Parity }
+module ParityFromNat : Model(FromNat) with sort Carrier = Parity where {
+  def fromNat(n : Integer) -> Parity { Even }
+}
+module ParityFromNeg : Model(FromNeg) with sort Carrier = Parity where {
+  def fromNeg(n : Integer) -> Parity { Odd }
+}

@@ -1,0 +1,8 @@
+data Nat : Type where {
+  | Zero : Nat
+  | Succ : (n : Nat) --> Nat
+}
+def id : Nat -> Nat;
+def id = thunk { fun (y) { pure y } };
+def twice = thunk { fun (x) { let a = id x; id a } };
+def same(n : Nat) -> -F Nat { n }
