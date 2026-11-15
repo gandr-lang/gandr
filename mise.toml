@@ -65,6 +65,10 @@ includes = [".config/mise/tasks"]
 # The ci:* tasks and the workflows' report steps read and write the server
 # through gh; the CI image carries this pin, as the hosted runner ships its own.
 "github:cli/cli" = "v2.103.3"
+# The licences, sources and bans of the lock file, and the advisories in the
+# nightly.
+# - see: `deny.toml`, #7743
+"github:EmbarkStudios/cargo-deny" = "0.20.2"
 "github:crate-ci/typos" = "v1.51.1"
 "github:j178/prek" = "v0.5.9"
 "github:koalaman/shellcheck" = "0.11.0"

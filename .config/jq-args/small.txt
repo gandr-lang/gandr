@@ -8,6 +8,7 @@
 --arg act
 --arg after
 --arg allocation
+--arg approved
 --arg arch
 --arg area
 --arg at
@@ -27,6 +28,7 @@
 --arg current
 --arg date
 --arg day
+--arg digest
 --arg dir
 --arg epic
 --arg example
@@ -55,6 +57,7 @@
 --arg landing
 --arg lane
 --arg last
+--arg licence
 --arg list
 --arg machine
 --arg main
@@ -69,17 +72,20 @@
 --arg mode
 --arg n
 --arg name
+--arg notice
 --arg oid
 --arg old
 --arg on
 --arg os
 --arg owed
 --arg own
+--arg owner
 --arg package
 --arg path
 --arg paths
 --arg policy
 --arg pr
+--arg prefix
 --arg previous
 --arg query
 --arg read
