@@ -1,17 +1,14 @@
+//! The scoped runtime: one thread drives the futures of a scope over the
+//! kernel's ring, and the scope's end drains every operation of the scope.
+//!
+//! A [`Runtime`] owns the ring. [`Runtime::run`] gives the scope's future a
+//! `Scope`, through which each task requests the kernel's operations. The
+//! memory of an operation is a borrow of the scope's life, so the kernel
+//! never writes memory that the scope no longer holds.
+
 // The runtime stands on the Linux kernel's ring: on another system the crate
 // compiles empty.
 #![cfg(target_os = "linux")]
-#![allow(dead_code, reason = "WIP")]
-#![allow(unused, reason = "WIP")]
-//
-#![allow(clippy::missing_docs_in_private_items, reason = "WIP")]
-#![allow(clippy::missing_const_for_fn, reason = "WIP")]
-#![allow(clippy::missing_errors_doc, reason = "WIP")]
-// FIXME:
-#![allow(clippy::unused_async, reason = "WIP")]
-#![allow(clippy::use_debug, reason = "WIP")]
-#![allow(clippy::todo, reason = "WIP")]
-#![allow(clippy::print_stdout, reason = "WIP")]
 
 extern crate alloc;
 
@@ -20,9 +17,9 @@ mod error;
 /// The operations of the scope on the kernel's files.
 pub mod io
 {
+    pub mod buf;
     pub mod socket;
 }
-pub mod net;
 mod runtime;
 mod scope;
 mod submission;
@@ -30,23 +27,23 @@ mod submission;
 pub use crate::error::RuntimeError;
 pub use crate::runtime::Runtime;
 
+/// The harnesses of the crate's tests, one for each area.
 #[cfg(test)]
 pub(crate) mod test
 {
-    #![allow(clippy::as_conversions, reason = "cfg(test)")]
-    #![allow(clippy::cast_possible_truncation, reason = "cfg(test)")]
-    #![allow(clippy::print_stdout, reason = "cfg(test)")]
-    #![allow(clippy::unwrap_used, reason = "cfg(test)")]
-
+    /// The harnesses of the tests, by the module that each tests.
     pub mod harness
     {
+        /// The harnesses of the operations' tests.
         pub mod io
         {
+            /// The harnesses of the socket's tests.
             pub mod socket
             {
                 pub use crate::io::socket::test::harness::*;
             }
         }
+        /// The harnesses of the runtime's tests.
         pub mod runtime
         {
             pub use crate::runtime::test::harness::*;

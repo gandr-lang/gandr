@@ -1646,7 +1646,6 @@ dependencies = [
  "gandr-kernel-data",
  "gandr-runtime-uring",
  "libc",
- "pin-project-lite",
  "predicates",
  "rustix",
  "socket2",

@@ -1808,16 +1808,6 @@ features = ["alloc"]
 version = "0.8.3"
 default-features = false
 
-# Pin projection for the scoped runtime's operation futures, as the owner's
-# crate has it.
-# features:
-# - none: the crate has no feature to turn on.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.pin-project-lite]
-version = "0.2.16"
-default-features = false
-
 # Predicates on paths and files in the uring crate's tests.
 # features:
 # - none: the tests use the default-off surface.

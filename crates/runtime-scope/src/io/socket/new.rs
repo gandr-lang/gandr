@@ -1,3 +1,5 @@
+//! The creation of a socket through the ring.
+
 use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
@@ -5,23 +7,29 @@ use ::core::task::ready;
 use ::socket2::Domain;
 use ::socket2::Protocol;
 use ::socket2::Type;
-use ::std::os::fd::FromRawFd as _;
 
 use crate::completion::Completion;
 use crate::error::RuntimeError;
 use crate::io::socket::Socket;
 use crate::scope::Scope;
 
-::pin_project_lite::pin_project! {
+/// The creation of a socket: its completion gives the socket, a socket of
+/// the scope.
 #[non_exhaustive]
-pub struct OpSocketNew<'tsk, 'env: 'tsk> {
+pub struct OpSocketNew<'tsk, 'env>
+{
+    /// The scope of the socket.
     scope: &'tsk Scope<'tsk, 'env>,
-    #[pin]
+    /// The completion of the creation.
     cqe: Completion<'tsk>,
-}
 }
 impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
 {
+    /// The creation of a socket of `domain`, `ty` and `protocol` in `scope`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
         domain: Domain,
@@ -45,25 +53,35 @@ impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env>
 {
     type Output = Result<Socket<'tsk, 'env>, RuntimeError>;
 
+    /// The socket, once the kernel creates it.
+    ///
+    /// # Specification
+    ///
+    /// - provides: the new socket, which owns its descriptor.
+    /// - fails: the kernel's error when it refuses the socket, and the
+    ///   completion's refusal.
+    /// - panics: none.
+    /// - executable: none — the descriptor is the kernel's, and the call holds
+    ///   nothing to check it against.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — the kernel creates a socket of the Unix domain.
+    /// - witness: `io::socket::test::socket::new`
     fn poll(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Self::Output>
     {
-        let this = self.as_mut().project();
-        let cqe = ready!(this.cqe.poll(cx))?;
-
-        if cqe.result().is_negative() {
-            return Poll::Ready(Err(RuntimeError::completion(cqe.result())));
-        }
-
-        let fd = cqe.result();
-        // SAFETY: trustme
-        let inner = unsafe { ::socket2::Socket::from_raw_fd(fd) };
+        let this = self.get_mut();
+        let cqe = ready!(Pin::new(&mut this.cqe).poll(cx))?;
+        // SAFETY: a socket's creation makes a descriptor when it does not
+        // fail, and nothing else owns it.
+        let fd = unsafe { cqe.descriptor() }?;
 
         Poll::Ready(Ok(Socket {
-            scope: self.scope,
-            inner,
+            scope: this.scope,
+            inner: ::socket2::Socket::from(fd),
         }))
     }
 }

@@ -1,3 +1,6 @@
+//! The runtime: the ring, the run loop that drives one scope's future, and
+//! the scope's end.
+
 use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
@@ -7,18 +10,46 @@ use ::rustix::io::Errno;
 use crate::completion::Cqe;
 use crate::error::RuntimeError;
 use crate::scope::Scope;
+use crate::submission::Depth;
+use crate::submission::Hold;
+use crate::submission::Key;
+use crate::submission::Lookup;
 use crate::submission::Table;
 
+/// The runtime: the kernel's ring, which one run of a scope drives.
+#[repr(transparent)]
 #[non_exhaustive]
 pub struct Runtime
 {
+    /// The kernel's ring.
     io: IoUring<'static>,
 }
 
 impl Runtime
 {
+    /// The count of the ring's entries, and of the table's slots.
     const IO_URING_ENTRIES: u16 = 4096;
 
+    /// A runtime on a new ring of the kernel.
+    ///
+    /// # Specification
+    ///
+    /// - provides: a runtime whose ring has `IO_URING_ENTRIES` entries.
+    /// - fails: the kernel's error when it refuses the ring.
+    /// - panics: none.
+    /// - executable: none — the ring is the kernel's, and the call holds
+    ///   nothing to check it against.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — the kernel of the test host makes the ring.
+    /// - witness: `runtime::test::new`
+    ///
+    /// # Errors
+    ///
+    /// - [`RuntimeError::Kernel`] when the kernel refuses the ring.
+    /// - [`RuntimeError::Ring`] when the ring's crate refuses it with no error
+    ///   number.
     #[inline]
     pub fn new() -> Result<Self, RuntimeError>
     {
@@ -28,12 +59,49 @@ impl Runtime
         Ok(Self { io })
     }
 
+    /// A context whose waker does nothing: the run loop polls the scope's
+    /// future after each reap, so no task wakes it.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     const fn noop_cx() -> ::core::task::Context<'static>
     {
         let waker = ::core::task::Waker::noop();
         ::core::task::Context::from_waker(waker)
     }
 
+    /// Runs the scope's future that `start` makes, and ends the scope with
+    /// it.
+    ///
+    /// # Specification
+    ///
+    /// - ensures: after the run, the kernel holds no operation of the scope,
+    ///   and no completion of the scope waits in the ring.
+    /// - provides: the future's output.
+    /// - fails: the kernel's error when a submission, a wait or a cancel fails,
+    ///   and `Unknown` when a completion names no slot.
+    /// - panics: none.
+    /// - executable: none — the kernel's state of the ring is not a value that
+    ///   the call can read.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — a scope whose future returns while an accept or a
+    ///   receive stays in the kernel ends with the table drained.
+    /// - witness: `io::socket::test::socket::accept_in_flight`
+    /// - witness: `io::socket::test::socket::recv_in_flight`
+    /// - witness: `runtime::test::run::closure`
+    ///
+    /// # Errors
+    ///
+    /// - [`RuntimeError::Kernel`] when a submission, a wait or a cancel fails.
+    /// - [`RuntimeError::Unknown`] when a completion names no slot.
+    /// - [`RuntimeError::Full`] when the queue has no room for a cancel.
+    ///
+    /// # Cost
+    ///
+    /// - allocation: the table's slots, setup
     #[inline]
     pub fn run<'env, T, F>(
         self,
@@ -43,14 +111,12 @@ impl Runtime
         F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
         let io = RefCell::new(self.io);
-        let depth = usize::from(Self::IO_URING_ENTRIES);
-        let table = Table::new(depth);
+        let table = Table::new(Depth::from(Self::IO_URING_ENTRIES));
 
         let scope = Scope::new(&io, &table);
         let mut future = pin!(start(&scope));
 
         loop {
-            // Check if the main future is ready.
             if let Poll::Ready(val) = future.as_mut().poll(&mut Self::noop_cx()) {
                 // The main future is ready, and the scope ends with it. Each
                 // operation that the kernel still holds is cancelled, and
@@ -72,12 +138,28 @@ const CANCEL: u64 = u64::MAX;
 
 /// Ends a scope: submits a cancel for each operation that the kernel holds,
 /// then drains every completion, two for each cancel.
+///
+/// # Specification
+///
+/// - ensures: the table is drained.
+/// - fails: the kernel's error when a submission, a wait or a cancel fails, and
+///   `Unknown` when a completion names no slot.
+/// - panics: none.
+/// - executable: none — the kernel's state of the ring is not a value that the
+///   call can read.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — the end drains a scope that leaves an accept, and one
+///   that leaves a receive, in the kernel.
+/// - witness: `io::socket::test::socket::accept_in_flight`
+/// - witness: `io::socket::test::socket::recv_in_flight`
 fn end(
     io: &RefCell<IoUring<'static>>,
     table: &Table,
 ) -> Result<(), RuntimeError>
 {
-    if table.held() == 0 {
+    if table.hold() == Hold::Drained {
         return Ok(());
     }
     {
@@ -101,7 +183,7 @@ fn end(
             }
         }
     }
-    while table.held() > 0 {
+    while table.hold() == Hold::Held {
         reap(io, table)?;
     }
     Ok(())
@@ -109,6 +191,23 @@ fn end(
 
 /// Submits the prepared entries, waits for at least one completion, and
 /// records each ready completion in its slot of `table`.
+///
+/// # Specification
+///
+/// - ensures: each completion that was ready is in its slot.
+/// - fails: the kernel's error when the submission or the wait fails, or a
+///   cancel fails other than with `ENOENT` or `EALREADY`; `Unknown` when a
+///   completion names no slot.
+/// - panics: none.
+/// - executable: none — the kernel's state of the ring is not a value that the
+///   call can read.
+///
+/// # Adequacy
+///
+/// - hypothesis: L3 — a thousand no-ops each complete into their slots, and the
+///   cancels of a scope's end complete with no refusal.
+/// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+/// - witness: `io::socket::test::socket::accept_in_flight`
 pub fn reap(
     io: &RefCell<IoUring<'static>>,
     table: &Table,
@@ -118,41 +217,42 @@ pub fn reap(
     let (mut squ, mut cqu) = io.queues();
     squ.submit_and_wait(1)?;
 
-    // Process newly completed tasks.
     for cqe in cqu.ready() {
         let data = cqe.user_data();
         if data == CANCEL {
             // A cancel finds its operation, or finds it already complete or
             // past the point of a cancel; the operation's own completion
             // follows in each case. Any other refusal is the kernel's error.
-            let res = cqe.res();
-            if res.is_negative() {
-                let errno = Errno::from_raw_os_error(res.saturating_neg());
-                if errno != Errno::NOENT && errno != Errno::ALREADY {
-                    return Err(RuntimeError::Kernel(errno));
-                }
+            match Cqe::from(cqe).done() {
+                Ok(()) | Err(RuntimeError::Kernel(Errno::NOENT | Errno::ALREADY)) => {},
+                Err(error) => return Err(error),
             }
             continue;
         }
-        let key = usize::try_from(data).map_err(|_overflow| RuntimeError::Unknown(data))?;
-        if !table.complete(key, Cqe::new(cqe.res(), cqe.flags())) {
+        let key = Key::try_from(data).map_err(|_overflow| RuntimeError::Unknown(data))?;
+        if table.complete(key, Cqe::from(cqe)) == Lookup::Missing {
             return Err(RuntimeError::Unknown(data));
         }
     }
     Ok(())
 }
 
+/// The runtime's tests and their harness.
 #[cfg(test)]
 pub mod test
 {
-    #![allow(clippy::unwrap_used, reason = "cfg(test)")]
-
     use super::*;
 
+    /// The harness of the runtime's tests.
     pub mod harness
     {
         use super::*;
 
+        /// A runtime on a new ring of the kernel.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn new() -> Runtime
         {
             Runtime::new().unwrap()
@@ -174,7 +274,7 @@ pub mod test
         {
             let data = &mut vec![];
             crate::test::harness::runtime::new()
-                .run(async |scope| {
+                .run(async |_scope| {
                     data.push(0u8);
                     Ok::<_, RuntimeError>(())
                 })

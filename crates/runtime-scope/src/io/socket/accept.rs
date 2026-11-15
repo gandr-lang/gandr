@@ -1,3 +1,5 @@
+//! The accept of a connection on a listening socket through the ring.
+
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
 use ::core::ptr::NonNull;
@@ -8,7 +10,6 @@ use ::gandr_runtime_uring::SlotDesc;
 use ::socket2::SockAddr;
 use ::socket2::SockAddrStorage;
 use ::socket2::socklen_t;
-use ::std::os::fd::FromRawFd as _;
 
 use crate::completion::Completion;
 use crate::error::RuntimeError;
@@ -19,19 +20,32 @@ use crate::scope::Scope;
 /// the kernel writes it when a connection arrives.
 pub struct PeerAddr
 {
+    /// The address's bytes.
     storage: SockAddrStorage,
+    /// The address's length: the storage's size before the accept, and the
+    /// length that the kernel writes after it.
     len: socklen_t,
 }
 
 impl PeerAddr
 {
     /// Empty storage, with room for any address.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn new() -> Self
     {
-        #[expect(clippy::as_conversions, reason = "size_of")]
-        #[expect(clippy::cast_possible_truncation, reason = "size_of")]
+        #[expect(
+            clippy::as_conversions,
+            reason = "a const holds no TryFrom, and the storage's size is 128 bytes"
+        )]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a const holds no TryFrom, and the storage's size is 128 bytes"
+        )]
         const STORAGE_SIZE: socklen_t = size_of::<SockAddrStorage>() as u32;
 
         Self {
@@ -43,6 +57,11 @@ impl PeerAddr
 
 impl Default for PeerAddr
 {
+    /// Empty storage, with room for any address.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn default() -> Self
     {
@@ -50,19 +69,29 @@ impl Default for PeerAddr
     }
 }
 
-::pin_project_lite::pin_project! {
+/// The accept of a connection, whose peer's address the kernel writes into
+/// storage that the caller lends for the scope's life.
 #[non_exhaustive]
-pub struct OpSocketAccept<'tsk, 'env: 'tsk, 'fd> {
+pub struct OpSocketAccept<'tsk, 'env, 'fd>
+{
+    /// The scope of the socket.
     scope: &'tsk Scope<'tsk, 'env>,
-    #[pin]
+    /// The completion of the accept.
     rsp: Completion<'tsk>,
-    socket: &'fd ::socket2::Socket,
+    /// The peer's storage, which the kernel writes until the completion.
     peer: NonNull<PeerAddr>,
-    phd_peer: PhantomData<&'tsk mut PeerAddr>,
-}
+    /// The borrows of the peer's storage for the scope's life and of the
+    /// listening socket, which the operation holds until its completion.
+    phd: PhantomData<(&'tsk mut PeerAddr, &'fd ::socket2::Socket)>,
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
 {
+    /// The accept of a connection on `socket` in `scope`, with the peer's
+    /// address written into `peer`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
         socket: &'fd ::socket2::Socket,
@@ -88,9 +117,8 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
         Self {
             scope,
             rsp,
-            socket,
             peer: NonNull::from(peer),
-            phd_peer: PhantomData,
+            phd: PhantomData,
         }
     }
 }
@@ -98,22 +126,37 @@ impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_>
 {
     type Output = Result<(Socket<'tsk, 'env>, SockAddr), RuntimeError>;
 
+    /// The accepted connection and its peer's address, once the kernel
+    /// completes the accept.
+    ///
+    /// # Specification
+    ///
+    /// - provides: the connection as a socket of the scope, and the peer's
+    ///   address.
+    /// - fails: the kernel's error when it refuses the accept, and the
+    ///   completion's refusal.
+    /// - panics: none.
+    /// - executable: none — the connection is the kernel's, and the call holds
+    ///   nothing to check it against.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — a client connects to a listening Unix socket, and the
+    ///   accept gives its connection.
+    /// - witness: `io::socket::test::socket::accept`
     fn poll(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Self::Output>
     {
-        let this = self.as_mut().project();
-        let cqe = ready!(this.rsp.poll(cx))?;
-
-        if cqe.result().is_negative() {
-            return Poll::Ready(Err(RuntimeError::completion(cqe.result())));
-        }
-
+        let this = self.get_mut();
+        let cqe = ready!(Pin::new(&mut this.rsp).poll(cx))?;
+        // SAFETY: an accept makes a descriptor when it does not fail, and
+        // nothing else owns it.
+        let fd = unsafe { cqe.descriptor() }?;
         let socket = Socket {
             scope: this.scope,
-            // SAFETY:
-            inner: unsafe { ::socket2::Socket::from_raw_fd(cqe.result()) },
+            inner: ::socket2::Socket::from(fd),
         };
 
         // SAFETY: the kernel completed the accept, so it writes the peer's
@@ -122,7 +165,8 @@ impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_>
         let peer = unsafe { this.peer.as_mut() };
         let storage = ::core::mem::replace(&mut peer.storage, SockAddrStorage::zeroed());
         let len = peer.len;
-        // SAFETY:
+        // SAFETY: the kernel wrote an address of `len` bytes into the
+        // storage.
         let addr = unsafe { SockAddr::new(storage, len) };
 
         Poll::Ready(Ok((socket, addr)))

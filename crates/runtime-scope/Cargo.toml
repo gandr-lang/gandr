@@ -18,7 +18,6 @@ path = "tests/lib.rs"
 [target.'cfg(target_os = "linux")'.dependencies]
 gandr-runtime-uring = { workspace = true }
 libc = { workspace = true }
-pin-project-lite = { workspace = true }
 rustix = { workspace = true, features = ["net"] }
 socket2 = { workspace = true }
 

@@ -1,3 +1,5 @@
+//! A socket of the scope, whose operations go through the ring.
+
 mod accept;
 mod bind;
 mod listen;
@@ -9,24 +11,39 @@ use ::socket2::Protocol;
 use ::socket2::SockAddr;
 use ::socket2::Type;
 
+use crate::io::buf::Buf;
 use crate::io::socket::accept::OpSocketAccept;
 pub use crate::io::socket::accept::PeerAddr;
 use crate::io::socket::bind::OpSocketBind;
+pub use crate::io::socket::listen::Backlog;
 use crate::io::socket::listen::OpSocketListen;
 use crate::io::socket::new::OpSocketNew;
 use crate::io::socket::recv::OpSocketRecv;
 use crate::scope::Scope;
 
+/// A socket of the scope: its descriptor, and the scope whose ring takes
+/// its operations.
 #[non_exhaustive]
 pub struct Socket<'tsk, 'env>
 {
+    /// The scope whose ring takes the socket's operations.
     scope: &'tsk Scope<'tsk, 'env>,
+    /// The socket's descriptor.
     inner: ::socket2::Socket,
 }
 
 impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
 {
-    #[expect(clippy::new_ret_no_self, reason = "future")]
+    /// The creation of a socket of `domain`, `ty` and `protocol` in
+    /// `scope`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[expect(
+        clippy::new_ret_no_self,
+        reason = "the creation is an operation of the ring, so it gives a future of the socket"
+    )]
     #[must_use]
     #[inline]
     pub fn new(
@@ -40,6 +57,10 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     }
 
     /// A bind of the socket to `addr`, an address lent for the scope's life.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn bind(
@@ -51,11 +72,16 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
         OpSocketBind::new(scope, &self.inner, addr)
     }
 
+    /// A listen of the socket, with a queue of `backlog` connections.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn listen(
         &self,
-        backlog: ::core::ffi::c_int,
+        backlog: Backlog,
     ) -> OpSocketListen<'tsk, 'env, '_>
     {
         let scope = self.scope;
@@ -64,6 +90,10 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
 
     /// An accept of a connection, whose peer's address the kernel writes
     /// into `peer`, storage lent for the scope's life.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn accept(
@@ -75,13 +105,17 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
         OpSocketAccept::new(scope, &self.inner, peer)
     }
 
-    /// A receive of at most `buf.len()` bytes into `buf`, a buffer lent for
-    /// the scope's life; the completion gives the count and the buffer back.
+    /// A receive of at most the length of `buf` into `buf`, a buffer lent
+    /// for the scope's life; the completion gives back the bytes received.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[must_use]
     #[inline]
     pub fn recv(
         &self,
-        buf: &'tsk mut [u8],
+        buf: Buf<'tsk>,
     ) -> OpSocketRecv<'tsk, 'env, '_>
     {
         let scope = self.scope;
@@ -89,17 +123,22 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     }
 }
 
+/// The socket's tests and their harness.
 #[cfg(test)]
 pub(crate) mod test
 {
     use super::*;
 
+    /// The harness of the socket's tests.
     pub mod harness
     {
-        use ::std::path::Path;
-
         use super::*;
 
+        /// The creation of a stream socket of the Unix domain in `scope`.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn new<'tsk, 'env>(scope: &'tsk Scope<'tsk, 'env>) -> OpSocketNew<'tsk, 'env>
         {
             let domain = Domain::UNIX;
@@ -109,6 +148,10 @@ pub(crate) mod test
         }
 
         /// The near end of a connected pair as a socket of `scope`.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
         pub fn wrap<'tsk, 'env>(
             scope: &'tsk Scope<'tsk, 'env>,
             near: ::std::os::unix::net::UnixStream,
@@ -118,26 +161,33 @@ pub(crate) mod test
             Socket { scope, inner }
         }
 
-        /// A buffer of `len` zero bytes, lent through the allocator of
+        /// A buffer of eight zero bytes, lent through the allocator of
         /// `region` for the region's life.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        ///
+        /// # Cost
+        ///
+        /// - allocation: the buffer's bytes in the region, the test's lent
+        ///   memory
         pub fn lend<'region>(
-            region: &'region ::gandr_kernel_data::Region<'_, (), ::alloc::alloc::Global>,
-            len: usize,
-        ) -> &'region mut [u8]
+            region: &'region ::gandr_kernel_data::Region<'_, (), ::alloc::alloc::Global>
+        ) -> Buf<'region>
         {
-            let mut bytes = ::alloc::vec::Vec::with_capacity_in(len, region);
-            bytes.resize(len, 0_u8);
-            bytes.leak()
+            let mut bytes = ::alloc::vec::Vec::with_capacity_in(8, region);
+            bytes.resize(8, 0_u8);
+            Buf::from(bytes.leak())
         }
     }
 
+    /// The socket's tests.
     pub mod socket
     {
         use ::assert_fs::assert::PathAssert as _;
-        use ::assert_fs::prelude::FileTouch as _;
         use ::assert_fs::prelude::PathChild as _;
         use ::predicates::prelude::PredicateBooleanExt as _;
-        use ::std::path::Path;
 
         use super::*;
 
@@ -187,8 +237,7 @@ pub(crate) mod test
                     path.assert(::predicates::path::exists().not());
                     socket.bind(&addr).await?;
                     path.assert(::predicates::path::exists());
-                    let backlog = ::libc::SOMAXCONN;
-                    socket.listen(backlog).await?;
+                    socket.listen(Backlog::MAX).await?;
                     Ok(())
                 })
                 .unwrap()
@@ -203,7 +252,7 @@ pub(crate) mod test
             let connector = ::std::thread::spawn({
                 let path = path.to_owned();
                 move || loop {
-                    if let Ok(stream) = ::std::os::unix::net::UnixStream::connect(&path) {
+                    if ::std::os::unix::net::UnixStream::connect(&path).is_ok() {
                         break;
                     }
                     ::core::hint::spin_loop();
@@ -216,8 +265,7 @@ pub(crate) mod test
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     socket.bind(&addr).await?;
-                    let backlog = ::libc::SOMAXCONN;
-                    socket.listen(backlog).await?;
+                    socket.listen(Backlog::MAX).await?;
                     let (socket, sockaddr) = socket.accept(&mut peer).await?;
                     drop((socket, sockaddr));
                     Ok(())
@@ -242,8 +290,7 @@ pub(crate) mod test
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     socket.bind(&addr).await?;
-                    let backlog = ::libc::SOMAXCONN;
-                    socket.listen(backlog).await?;
+                    socket.listen(Backlog::MAX).await?;
                     let accept = socket.accept(&mut peer);
                     drop(accept);
                     Ok(())
@@ -261,18 +308,16 @@ pub(crate) mod test
             ::std::io::Write::write_all(&mut far, b"ping").unwrap();
             let budget = ::gandr_kernel_data::Budget::from(4096_usize);
             ::gandr_kernel_data::scoped::<(), _, _>(budget, |region, _mint| {
-                let buf = harness::lend(region, 8);
+                let buf = harness::lend(region);
                 let got = crate::test::harness::runtime::new()
-                    .run(
-                        async |scope| -> Result<Option<Vec<u8>>, crate::RuntimeError> {
-                            let socket = harness::wrap(scope, near);
-                            let (len, buf) = socket.recv(buf).await?;
-                            Ok(buf.get(.. len).map(<[u8]>::to_vec))
-                        },
-                    )
+                    .run(async |scope| -> Result<Vec<u8>, crate::RuntimeError> {
+                        let socket = harness::wrap(scope, near);
+                        let got = socket.recv(buf).await?;
+                        Ok(got.to_vec())
+                    })
                     .unwrap()
                     .unwrap();
-                assert_eq!(got.as_deref(), Some(b"ping".as_slice()));
+                assert_eq!(got.as_slice(), b"ping".as_slice());
             });
         }
 
@@ -286,11 +331,11 @@ pub(crate) mod test
             let kept = near.try_clone().unwrap();
             let budget = ::gandr_kernel_data::Budget::from(4096_usize);
             ::gandr_kernel_data::scoped::<(), _, _>(budget, |region, _mint| {
-                let buf = harness::lend(region, 8);
+                let mut buf = harness::lend(region);
                 crate::test::harness::runtime::new()
                     .run(async |scope| -> Result<(), crate::RuntimeError> {
                         let socket = harness::wrap(scope, near);
-                        let recv = socket.recv(&mut *buf);
+                        let recv = socket.recv(Buf::from(&mut *buf));
                         drop(recv);
                         Ok(())
                     })

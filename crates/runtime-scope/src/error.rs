@@ -1,3 +1,5 @@
+//! The runtime's one error type.
+
 use ::core::fmt;
 use ::rustix::io::Errno;
 
@@ -14,22 +16,21 @@ pub enum RuntimeError
     Full,
     /// A completion was polled again after it gave its result.
     Read,
+    /// The kernel's count of bytes passed the length of the buffer that the
+    /// operation lent it.
+    Overrun,
     /// A completion's user data named no slot of the table.
     Unknown(u64),
 }
 
-impl RuntimeError
-{
-    /// The refusal of a completion whose result is the negated error number
-    /// `res`.
-    pub(crate) fn completion(res: i32) -> Self
-    {
-        Self::Kernel(Errno::from_raw_os_error(res.saturating_neg()))
-    }
-}
-
 impl From<::std::io::Error> for RuntimeError
 {
+    /// The kernel's error that `error` carries, or the kind of a refusal of
+    /// the ring's crate with no number.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn from(error: ::std::io::Error) -> Self
     {
@@ -39,6 +40,11 @@ impl From<::std::io::Error> for RuntimeError
 
 impl fmt::Display for RuntimeError
 {
+    /// The refusal, in words.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -50,6 +56,7 @@ impl fmt::Display for RuntimeError
             Self::Ring(kind) => write!(f, "the ring refused the call: {kind}"),
             Self::Full => f.write_str("submission queue full"),
             Self::Read => f.write_str("completion polled after its result"),
+            Self::Overrun => f.write_str("the kernel's count passed the buffer"),
             Self::Unknown(data) => write!(f, "task lookup failed: {data}"),
         }
     }
