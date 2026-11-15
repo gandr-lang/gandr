@@ -6018,6 +6018,7 @@ INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Failure','struct','H
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Filing','enum','Names what one site of a failed check files as, so the filing''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Judgement','enum','Names how a failed check''s section files its sites, so the judgement''s kind is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Measure','enum','Names what a section of a failed check measures, so the measure''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-hotpath-guard','check::REGRESSED','constant','Names the external id of a confirmed regression''s neutral check, so the guard files the check.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Repository','struct','Names a repository on GitHub, so the repository''s owner and name are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::RunUrl','struct','Names a check run''s page on GitHub, so the page''s address is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-hotpath-guard','check::Section','struct','Holds one metric''s sites over threshold, so the section''s heading and sites are read.',NULL,'fits','sound',NULL);

@@ -147,7 +147,14 @@ fn a_second_set_fails_only_a_row_both_sets_find()
     });
     assert!(confirmed.output.status.success(), "{:?}", confirmed.output);
     let body = check(&confirmed);
-    assert_eq!(body["conclusion"], "failure", "both sets find delete_part");
+    assert_eq!(
+        body["conclusion"], "neutral",
+        "a report posts no failing check, even when both sets find delete_part"
+    );
+    assert_eq!(
+        body["external_id"], "hotpath:regressed",
+        "the mark tells the guard to file the row"
+    );
     let table = body["table"].as_str().unwrap();
     assert!(
         table.contains("|fails: two sets find it|\n"),

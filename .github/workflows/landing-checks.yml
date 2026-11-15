@@ -2415,6 +2415,10 @@ jobs:
   # pull request: the guard looks up the one that carries the commit. When
   # `hotpath-confirm` ran, its checks are the ones posted; when it failed,
   # the first set's neutral checks are, and they file nothing (#7319).
+  #
+  # A report blocks nothing, and `main` shares the commit. So no check that
+  # this job posts fails. A row that both sets find posts a neutral check.
+  # Its external id is `hotpath:regressed`, and the guard files it.
   hotpath-judged:
     name: post the judged hotpath checks
     needs: [hotpath, hotpath-confirm]
@@ -2438,18 +2442,20 @@ jobs:
       # each under its own alias (#5078): a REST post a check spent about
       # four requests a judgement. A check keeps its name, conclusion and
       # output as the judge wrote them.
+      #
+      # The external id of a check marks a row that both sets find.
       - name: post the checks and dispatch the guard
         shell: bash
         run: |
           jq -s --arg repo "$REPO_ID" --arg sha "$HEAD_SHA" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
             [range(length)] as $i
             | {query: ("mutation($repo: ID!, $sha: GitObjectID!, $at: DateTime!"
-                  + ($i | map(", $n\(.): String!, $k\(.): CheckConclusionState!, $o\(.): CheckRunOutput!") | join(""))
+                  + ($i | map(", $n\(.): String!, $k\(.): CheckConclusionState!, $e\(.): String!, $o\(.): CheckRunOutput!") | join(""))
                   + ") { "
-                  + ($i | map("c\(.): createCheckRun(input: {repositoryId: $repo, headSha: $sha, name: $n\(.), status: COMPLETED, conclusion: $k\(.), completedAt: $at, output: $o\(.)}) { checkRun { id } }") | join(" "))
+                  + ($i | map("c\(.): createCheckRun(input: {repositoryId: $repo, headSha: $sha, name: $n\(.), status: COMPLETED, conclusion: $k\(.), externalId: $e\(.), completedAt: $at, output: $o\(.)}) { checkRun { id } }") | join(" "))
                   + " }"),
                variables: ({repo: $repo, sha: $sha, at: $at}
-                  + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "o\(.key)": .value.output}) | add))}' *.json \
+                  + (to_entries | map({"n\(.key)": .value.name, "k\(.key)": (.value.conclusion | ascii_upcase), "e\(.key)": (.value.external_id // ""), "o\(.key)": .value.output}) | add))}' *.json \
             | gh api graphql --input - --silent
           gh workflow run report-hotpath-regressions.yml --ref "$DEFAULT_BRANCH" -f sha="$HEAD_SHA"
       # The judged tables, collapsed one block for each benchmark, as the

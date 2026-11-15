@@ -142,7 +142,8 @@ struct ListedIssue
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: every completed `hotpath / ` check of the commit whose conclusion
-///   is `failure` or `success`, in the order GitHub lists them, each read by
+///   is `failure` or `success`, or `neutral` with the external id
+///   [`crate::check::REGRESSED`], in the order GitHub lists them, each read by
 ///   [`Listed::concluded`]; every page of the listing is read.
 /// - provides: the checks a report is made of, all of them at once, so each
 ///   benchmark's event files the same rows.
@@ -159,6 +160,11 @@ struct ListedIssue
 ///   passing one, a pending one and a failed check of another name; reading the
 ///   pending or foreign one changes the report.
 /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
+/// - witness: `tests::cli::a_marked_neutral_check_is_filed_7772`
+///
+/// # Cost
+/// - allocation: the `gh` command, its listing and the concluded checks,
+///   diagnostic
 #[inline]
 pub fn checks(
     repository: &Repository,
@@ -171,7 +177,7 @@ pub fn checks(
         "--paginate",
         &format!("repos/{repository}/commits/{sha}/check-runs?per_page=100"),
         "--jq",
-        ".check_runs[] | {name, status, conclusion, html_url, summary: (.output.summary // \"\")}",
+        ".check_runs[] | {name, status, conclusion, html_url, external_id, summary: (.output.summary // \"\")}",
     ]);
     let listing = gandr_workflow_github::read(&mut query, READ_PAUSE)?;
     let mut concluded = Vec::new();
