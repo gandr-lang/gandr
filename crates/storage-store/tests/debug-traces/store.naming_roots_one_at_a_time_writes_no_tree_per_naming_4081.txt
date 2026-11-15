@@ -1,0 +1,56 @@
+test: store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081
+package: gandr-storage-store
+command: mise run debug:test gandr-storage-store store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081
+
+(lldb) target create "target/debug-trace/debug/deps/tests-80cc55606f63aa8a"
+Current executable set to 'target/debug-trace/debug/deps/tests-80cc55606f63aa8a' (x86_64).
+(lldb) settings set -- target.run-args  "store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-80cc55606f63aa8a`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x00000000001408c8
+(lldb) run
+
+running 1 test
+test store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081 ... 
+thread 'store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081' (4106916) panicked at crates/storage-store/tests/store.rs:398:5:
+256 namings leave 448 nodes on the record plane
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 4106808 launched: 'target/debug-trace/debug/deps/tests-80cc55606f63aa8a' (x86_64)
+Process 4106808 stopped
+* thread #2, name = 'store::naming_r', stop reason = breakpoint 1.1
+       frame #0: 0x00005555556948c8 tests-80cc55606f63aa8a`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+* thread #2, name = 'store::naming_r', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555556948c8 tests-80cc55606f63aa8a`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x00005555556ce28c tests-80cc55606f63aa8a`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x0000555555693c92 tests-80cc55606f63aa8a`std::panicking::panic_handler::{closure#0} at panicking.rs:687:13
+     frame #3: 0x0000555555688cb9 tests-80cc55606f63aa8a`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x0000555555694b3d tests-80cc55606f63aa8a`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x00005555556bf3bc tests-80cc55606f63aa8a`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x00005555555d7745 tests-80cc55606f63aa8a`tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081 at store.rs:398:5
+     frame #7: 0x00005555555d2197 tests-80cc55606f63aa8a`tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081::{closure#0}((null)={}) at store.rs:384:63
+     frame #8: 0x00005555555e0756 tests-80cc55606f63aa8a`<tests::store::naming_roots_one_at_a_time_writes_no_tree_per_naming_4081::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x00005555555e9feb tests-80cc55606f63aa8a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x00005555555e9fe9 tests-80cc55606f63aa8a`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #11: 0x00005555555f7645 tests-80cc55606f63aa8a`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #12: 0x00005555555f7640 tests-80cc55606f63aa8a`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x00005555555f7640 tests-80cc55606f63aa8a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #14: 0x00005555555f762b tests-80cc55606f63aa8a`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #15: 0x00005555555f762b tests-80cc55606f63aa8a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x00005555555f762b tests-80cc55606f63aa8a`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #17: 0x00005555555f7616 tests-80cc55606f63aa8a`test::run_test::{closure#0} at lib.rs:668:43
+     frame #18: 0x00005555555f21a4 tests-80cc55606f63aa8a`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #19: 0x00005555555f2129 tests-80cc55606f63aa8a`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x00005555555fa782 tests-80cc55606f63aa8a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x00005555555fa773 tests-80cc55606f63aa8a`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x00005555555fa773 tests-80cc55606f63aa8a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:575:43 [inlined]
+     frame #23: 0x00005555555fa763 tests-80cc55606f63aa8a`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:543:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

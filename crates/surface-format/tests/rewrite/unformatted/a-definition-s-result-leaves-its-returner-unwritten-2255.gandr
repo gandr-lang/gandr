@@ -1,0 +1,14 @@
+def inc(x : Integer) -> -F Integer { x + 1 }
+
+def pair() -> -F (Integer * Integer) { *{1, 2} }
+
+def spin(x : Integer) -> -F [Partial] Integer { x }
+
+def call(f : +U (-F Integer)) -> -F Integer { force f }
+
+def four : () -> Integer ;
+def four = thunk { 4 } ;
+
+module Kept where {
+  def five() -> -F Integer { 5 }
+}
