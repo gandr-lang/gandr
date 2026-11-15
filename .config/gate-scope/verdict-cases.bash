@@ -114,5 +114,25 @@ got=$(setup "$scratch/trunk" && gate && GATE_BASE=000000000000000000000000000000
 got=$(setup "$scratch/off-trunk" && gate && GATE_VERDICT_TRUNK_OK=none reads)
 [[ $got == runs ]] || fail "#7684: a record whose base the trunk does not hold is refused" "$got"
 
+# An edit that keeps the size and the stamp of a file, after an index that
+# git wrote in the same second as the file: git reads the entry again by
+# content only while the copy of the index keeps the index's stamp. The
+# entry's stamp is of 2010 and the index's of 2000, so the entry is racy in
+# the index and not in a copy stamped now. The edit keeps the entry's stamp,
+# so the stat of the file matches the entry.
+got=$(
+  setup "$scratch/racy"
+  touch -t 201001010000 file
+  git add file
+  touch -t 200001010000 "$scratch/racy.old"
+  touch -r "$scratch/racy.old" "$(git rev-parse --path-format=absolute --git-path index)"
+  cp -p file "$scratch/racy.stamp"
+  printf 'two\n' > file
+  touch -r "$scratch/racy.stamp" file
+  work=$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.trustctime GIT_CONFIG_VALUE_0=false "$here/passed.bash" tree)
+  if [[ $work == "$(git rev-parse 'HEAD^{tree}')" ]]; then echo head; else echo work; fi
+)
+[[ $got == work ]] || fail "#7740: an edit that keeps a file's size and stamp is the tree of the work" "$got"
+
 (( failed == 0 )) || exit 1
-echo "verdict OK: 11 cases read, refuse and write records as recorded"
+echo "verdict OK: 12 cases read, refuse and write records as recorded"

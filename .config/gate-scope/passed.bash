@@ -51,11 +51,13 @@ here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
 
 # A copy of the index keeps its file stamps, so `git add` reads only the
-# changed files. The real index does not change.
+# changed files. The real index does not change. The copy also keeps the
+# index's own stamp: git reads an entry again by content when the entry is
+# not older than the index, and a copy stamped now hides that.
 work_tree() {
   local index
   index=$(mktemp)
-  if ! cp "$(git rev-parse --path-format=absolute --git-path index)" "$index" 2> /dev/null; then rm -f "$index"; fi
+  if ! cp -p "$(git rev-parse --path-format=absolute --git-path index)" "$index" 2> /dev/null; then rm -f "$index"; fi
   GIT_INDEX_FILE=$index git add -A :/
   GIT_INDEX_FILE=$index git write-tree
   rm -f "$index"
