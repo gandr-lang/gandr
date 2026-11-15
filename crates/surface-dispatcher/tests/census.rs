@@ -396,6 +396,67 @@ fn a_type_a_match_computes_reads_back_5383()
     }
 }
 
+/// #7564: a type that a `match` stuck on its scrutinee computes reads back to
+/// its certificate. Each stuck-arm source prints such a match where a type is
+/// read, and the reader takes it as the decode of the code that it returns.
+#[test]
+fn a_type_a_stuck_match_computes_reads_back_7564()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let mut unread = Vec::new();
+    for source in [
+        "stuck-arm-constant-fold.gandr",
+        "stuck-arm-record-code.gandr",
+    ] {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/data")
+            .join(source)
+            .canonicalize()
+            .expect("the source resolves");
+        let text = std::fs::read_to_string(&path).expect("the source reads");
+        let laid = lay_out(
+            &grammar,
+            &path,
+            classify(&path),
+            SourceText::from(text.as_str()),
+        );
+        let table = TypeTable::of_unit(
+            &grammar,
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            laid.base,
+        )
+        .expect("the source types");
+        let mut matched = 0_usize;
+        for (form, spelling) in [
+            (Form::Sugared, Spelling::Unicode),
+            (Form::Sugared, Spelling::Ascii),
+            (Form::Explicit, Spelling::Unicode),
+        ] {
+            let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style { form, spelling });
+            for read in reads.iter().filter(|read| read.spelled.contains("match")) {
+                matched = matched.saturating_add(1);
+                if matches!(
+                    read.trip,
+                    RoundTrip::Unparsed | RoundTrip::Different | RoundTrip::Refused(_)
+                ) {
+                    unread.push((
+                        source,
+                        read.spelled.clone(),
+                        read.trip.clone(),
+                        read.reprinted.clone(),
+                    ));
+                }
+            }
+        }
+        assert!(matched > 0, "{source} prints a match where a type is read");
+    }
+    assert!(
+        unread.is_empty(),
+        "each type a match computes reads back: {unread:#?}"
+    );
+}
+
 /// #5392: the types an inner case binds for its index equations read back to
 /// their certificates. `stlc.gandr`'s `lookVar` cases on `rho` inside a case
 /// on `x`, and both arms bind `_h`.

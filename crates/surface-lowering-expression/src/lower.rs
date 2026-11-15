@@ -3161,8 +3161,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   around it ([`Self::standing`](crate::lower::ExpressionsRef::standing)),
     ///   except a type standing where a value is read, which is quoted, and a
     ///   term name or a capitalised name standing where a type is read, which
-    ///   is read as the type head of that spelling, and a call standing where a
-    ///   type is read, which is read as the type application it spells; a
+    ///   is read as the type head of that spelling, and a call or another form
+    ///   [`read_as_type`] takes standing where a type is read, which is read as
+    ///   the type application it spells or the decode of the code it returns; a
     ///   block's last computation written as a statement that is not an exit
     ///   and does not leave on every path is recorded as trailing, not where a
     ///   path ends; a form where a body ends that is neither an exit nor a form
@@ -3177,6 +3178,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// The form's first refusal.
+    ///
+    /// # Cost
+    /// - allocation: the form's marks, and the plans its reader records, growth
+    ///   within the source's nodes
+    /// - allocation: the wrong-sort refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — repairs take precedence over admission, wrong
@@ -3196,8 +3202,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             }
             else if family_of(former) != site.reading.family()
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
-                && !(matches!(former, Former::Name | Former::Constructor) && site.reading.family() == Family::Type)
-                && !(former == Former::Call && site.reading.family() == Family::Type)
+                && !(site.reading.family() == Family::Type && read_as_type(former).0)
             {
                 ret == Err(self.shared().standing(site).out(FragmentBoundary::WrongSort))
             }
@@ -4199,7 +4204,9 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   a force, and a call or a selection there is nested and forced, which
     ///   the checker runs when it returns a function (#3935, #4818); a
     ///   function's result reads a computation type and reaches a value type by
-    ///   a returner; a value position reaches a type of either sort by a quote,
+    ///   a returner; a type position of either sort, a function's result
+    ///   included, reaches a computation by the decode of the code it returns
+    ///   (#7564); a value position reaches a type of either sort by a quote,
     ///   and a computation as the value it returns at an endpoint or where a
     ///   type reads it, a lambda there as its thunk (#3697, #3767), a lambda
     ///   `cong` maps by as its thunk (#3773), and nested everywhere else; a
@@ -4209,7 +4216,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///   the subject's result, reach a value by a `return` recorded as no exit;
     ///   the bridge is recorded for the form's node, and every other match
     ///   records none.
-    /// - provides: the sort check every former takes, and the six insertions
+    /// - provides: the sort check every former takes, and the seven insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
     ///   sort no bridge reaches, at the outermost grouping around the form
@@ -4218,6 +4225,11 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     ///
     /// # Errors
     /// [`LoweringRefusal::OutOfFragment`] for a sort mismatch.
+    ///
+    /// # Cost
+    /// - allocation: the node's marks in the tables of tails, exits, quotes and
+    ///   decodes, and its children's, growth within the source's nodes
+    /// - allocation: the wrong-sort refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each bridge separated from its bare neighbour: a
@@ -4238,6 +4250,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - witness: `gandr-surface-lowering::lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
     /// - witness: `gandr-surface-lowering::lower::runs::tests::a_call_returning_a_function_runs_where_it_is_applied_3935`
     /// - witness: `gandr-surface-lowering::tests::modules::models::an_operation_selected_off_a_model_binder_calls_in_place_4818`
+    /// - witness: `gandr-surface-lowering::lower::tests::a_match_where_a_type_is_read_decodes_what_it_returns_7564`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -4262,6 +4275,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                     Reading::Value(frame),
                     Produced::ValueType | Produced::CompType,
                 ) => Some((frame, Bridge::Inserted(Insertion::Quote))),
+                | (
+                    Reading::ValueType(frame) | Reading::CompType(frame) | Reading::Result(frame),
+                    Produced::Computation,
+                ) => Some((frame, Bridge::Inserted(Insertion::Decode))),
                 | (Reading::Value(frame), Produced::Computation)
                     if self.cx().over_points.contains_key(&site.at.node) =>
                 {
@@ -4399,6 +4416,12 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
                 let _exit = self.cx_mut().leaving.insert(site.at.node);
                 (frame, Bridge::Inserted(Insertion::Return))
             },
+            // A computation where a type is read is the type of the code it
+            // returns, as a call there is: `El` as unquote (#7564).
+            (
+                Reading::ValueType(frame) | Reading::CompType(frame) | Reading::Result(frame),
+                Produced::Computation,
+            ) => (frame, Bridge::Inserted(Insertion::Decode)),
             _ => {
                 return Err(self
                     .shared()
@@ -4418,6 +4441,15 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             let cx = self.cx_mut();
             let _quote = cx.in_quote.insert(site.at.node);
             cx.in_quote.extend(cx.tree.children(site.at.node));
+        }
+        // A computation a type decodes reads its values inside that type, so
+        // each binder it names counts in the type's telescope, as a decoded
+        // call's arguments do (#7564). The walk passed this node's marks to
+        // its children before it classified the node, so they are marked here.
+        if bridge == Bridge::Inserted(Insertion::Decode) {
+            let cx = self.cx_mut();
+            let _decoded = cx.in_type.insert(site.at.node);
+            cx.in_type.extend(cx.tree.children(site.at.node));
         }
 
         Ok(frame)
@@ -15106,6 +15138,10 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the nodes the plan mints into the arena and their records,
+    ///   growth within the source's nodes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a constructor awaiting its family's application is
     ///   minted at its slot's type once the application reaches it, and a type
@@ -15304,6 +15340,23 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> Expressions<
             {
                 let id = sink.arena.computation_force(forced);
                 Maybe::Present(sink.computation(id, origin))
+            },
+            // A computation where a type is read decodes the code it returns at
+            // the universe its place reads, and a function's result takes the
+            // returner over that type (#7564).
+            (Bridge::Inserted(Insertion::Decode), Maybe::Present(Lowered::Computation(run)), _) => {
+                let reading = self.cx().reading(position);
+                let decoded = decoded_return(run, reading.positional_universe(), sink, origin);
+                if let (Lowered::ValueType(_), Reading::Result(_)) = (decoded, reading) {
+                    sink.bridge(
+                        Maybe::Present(decoded),
+                        Bridge::Inserted(Insertion::Returner),
+                        origin,
+                    )
+                }
+                else {
+                    Maybe::Present(decoded)
+                }
             },
             (_, minted, _) => sink.bridge(minted, bridge, origin),
         };
@@ -16237,23 +16290,7 @@ impl<'host, 'run: 'host, 'source: 'run, F: Families<'run, 'source>> ExpressionsR
             Maybe::Present(called) => called,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let code = sink.arena.value_returned(called);
-        sink.origins
-            .record_value(code, origin.inserted(Insertion::Endpoint));
-        let level = Level::constant(universe.level);
-        let decoded = origin.inserted(Insertion::Decode);
-        match universe.sort {
-            GroundSort::Value => {
-                let id = sink.arena.value_type_element(code, level);
-                sink.origins.record_value_type(id, decoded);
-                Maybe::Present(Lowered::ValueType(id))
-            },
-            GroundSort::Computation => {
-                let id = sink.arena.comp_type_element(code, level);
-                sink.origins.record_comp_type(id, decoded);
-                Maybe::Present(Lowered::CompType(id))
-            },
-        }
+        Maybe::Present(decoded_return(called, universe, sink, origin))
     }
 
     /// Carry out a reapplied plan: the call of a dynamic function, the value
@@ -21414,6 +21451,72 @@ fn unapplied<'source>(
             written.end.saturating_sub(written.start),
         ))))
     })
+}
+
+/// Mint the type the code that `run` returns denotes: the decode of
+/// `returned(run)` at `universe`'s level.
+///
+/// # Specification
+/// - requires: `run` is minted in `sink`'s arena.
+/// - ensures: a value type for the value sort and a computation type for the
+///   computation sort, each the decode of `returned(run)` at the universe's
+///   level; the returned code and the decode are marked inserted at `origin`.
+/// - provides: `El` as unquote for each computation into a universe. A call
+///   where a type is read is one instance, and a `match` or a block there is
+///   another (#7564). The checker reduces the decode by running `run`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Cost
+/// - allocation: the returned code, its decode and their origins, growth within
+///   the source's nodes
+///
+/// # Adequacy
+/// - hypothesis: L3 — a call and a match where a type is read, each asserted as
+///   the exact core type read back out of the arena, with each node's origin.
+/// - witness: `gandr-surface-lowering::lower::tests::a_function_to_a_universe_unquotes_where_a_type_is_read`
+/// - witness: `gandr-surface-lowering::lower::tests::a_match_where_a_type_is_read_decodes_what_it_returns_7564`
+#[spec(
+    ensures: |ret| match ret {
+        | Lowered::ValueType(id) => universe.sort == GroundSort::Value
+            && matches!(
+                sink.arena.value_type(id),
+                Some(&gandr_core_term::ValueType::Element { code, .. })
+                    if matches!(sink.arena.value(code), Some(&Value::Returned(returned)) if returned == run)
+            ),
+        | Lowered::CompType(id) => universe.sort == GroundSort::Computation
+            && matches!(
+                sink.arena.comp_type(id),
+                Some(&gandr_core_term::CompType::Element { code, .. })
+                    if matches!(sink.arena.value(code), Some(&Value::Returned(returned)) if returned == run)
+            ),
+        | _ => false,
+    },
+)]
+fn decoded_return(
+    run: ComputationId,
+    universe: Universe,
+    sink: &mut Sink<'_>,
+    origin: Origin,
+) -> Lowered
+{
+    let code = sink.arena.value_returned(run);
+    sink.origins
+        .record_value(code, origin.inserted(Insertion::Endpoint));
+    let level = Level::constant(universe.level);
+    let decoded = origin.inserted(Insertion::Decode);
+    match universe.sort {
+        GroundSort::Value => {
+            let id = sink.arena.value_type_element(code, level);
+            sink.origins.record_value_type(id, decoded);
+            Lowered::ValueType(id)
+        },
+        GroundSort::Computation => {
+            let id = sink.arena.comp_type_element(code, level);
+            sink.origins.record_comp_type(id, decoded);
+            Lowered::CompType(id)
+        },
+    }
 }
 
 /// Read the argument lists a call in a type writes into `written`: the first,

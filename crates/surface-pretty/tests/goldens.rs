@@ -3757,6 +3757,66 @@ fn a_call_inside_a_lambda_inside_a_type_is_juxtaposed_5211()
     }
 }
 
+/// #7564: a call in an arm of a `match` that a type decodes is juxtaposed, as
+/// in a body. The reader reads that `match` as the decode of the code that it
+/// returns, and it reads each arm as a body, where a parenthesised list reads
+/// as one tuple.
+#[test]
+fn a_call_in_an_arm_of_a_decoded_match_is_juxtaposed_7564()
+{
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = core.value_constructor(
+        ConstantIndex::from(0_usize),
+        nat,
+        ConstructorTag::from(0_usize),
+        Vec::new(),
+    );
+    let universe = small_universe(&mut core);
+    let returns_code = core.comp_type_returner(universe);
+    let unit = core.value_type_product(&[]);
+    let unit_code = core.value_quote(unit);
+    let returns_unit = core.computation_return(unit_code);
+    let wp = core.value_constant(ConstantIndex::from(1_usize));
+    let wp = core.computation_force(wp);
+    let field = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let first = core.computation_application(wp, field);
+    let called = core.computation_application(first, unit_code);
+    let succeeded = core.computation_lambda(called);
+    let case = core.computation_data_case(
+        zero,
+        returns_code,
+        vec![returns_unit, succeeded],
+        [0_usize, 1]
+            .map(gandr_kernel_term::FieldCount::from)
+            .to_vec(),
+    );
+    let code = core.value_returned(case);
+    let decoded = core.value_type_element(code, Level::zero());
+    let names = [Name::from("Nat"), Name::from("wp")];
+    let mut constructors = Constructors::default();
+    constructors.family(FamilyKey::Named(Name::from("Nat")), [
+        (Name::from("Zero"), Arity::from(0_usize)),
+        (Name::from("Succ"), Arity::from(1_usize)),
+    ]);
+    constructors.case(case, FamilyKey::Named(Name::from("Nat")));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    let presented = presented_in(
+        &source,
+        Root::Type(CoreNode::ValueType(decoded)),
+        wide(),
+        Form::Sugared,
+    );
+    assert_eq!(
+        (presented.as_ref(), presented.fidelity()),
+        (
+            "match Zero -> -F Type { | Zero => pure Unit | Succ(a) => wp a Unit }",
+            Fidelity::Faithful
+        ),
+        "a call in an arm of a decoded match is juxtaposed"
+    );
+}
+
 /// #5203: a box from a universe to a value type prints as the alias. The
 /// lowering reads `Type -> Integer` as the box, since its codomain classifies
 /// no codes, so the thunk over `Type -> -F Integer` takes the sugar.

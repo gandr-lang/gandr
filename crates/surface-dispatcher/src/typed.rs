@@ -130,6 +130,7 @@ use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompType;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Crossing;
@@ -210,6 +211,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::FamilyKey;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::ModelSlot;
@@ -4825,7 +4827,7 @@ impl TypeTable
             &self.arena,
             node,
             context,
-            &WrittenForms::new(),
+            (&WrittenForms::new(), &[]),
             Lay::Page(page),
             style,
         )
@@ -4843,7 +4845,14 @@ impl TypeTable
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
     {
-        self.spell_in(&self.arena, node, context, &WrittenForms::new(), lay, style)
+        self.spell_in(
+            &self.arena,
+            node,
+            context,
+            (&WrittenForms::new(), &[]),
+            lay,
+            style,
+        )
     }
 
     /// `node` of `arena` spelled as [`Self::spell_laid`] spells a node of the
@@ -4852,16 +4861,26 @@ impl TypeTable
     /// `read` names past them binds the name it holds, each type `read`
     /// relates spells as the relation it was written as, and each model type
     /// the local naming or `read` records spells as the `Model(T) with sort C
-    /// = A` it was written as.
+    /// = A` it was written as. Each case of `cases` names the constructors of
+    /// its family, as each case of the table's own module does.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the printer's tables of names, homes, binders, types,
+    ///   regions, forms, constructors, implicits and model slots, growth within
+    ///   the table's entries and the context's binders
+    /// - allocation: the presentation it prints, growth within the type's nodes
     fn spell_in(
         &self,
         arena: &CoreArena,
         node: TypeNode,
         context: &Context,
-        read: &WrittenForms<String, WrittenModel>,
+        (read, cases): (
+            &WrittenForms<String, WrittenModel>,
+            &[(ComputationId, ConstantIndex)],
+        ),
         lay: Lay,
         style: Style,
     ) -> Maybe<Presentation, typing::Absent>
@@ -4919,7 +4938,10 @@ impl TypeTable
         );
         forms.append(&mut reread);
         forms.sort();
-        let constructors = self.families.naming();
+        let mut constructors = self.families.naming();
+        for &(case, family) in cases {
+            constructors.case(case, FamilyKey::Declared(family));
+        }
         // A call supplies its callee's implicits by name, `f[.x = a](b)`, and a
         // model implicit by the path its components read under, `f[.s = M]`:
         // the core applies every argument in place.
@@ -5746,6 +5768,9 @@ impl TypeTable
         // The forms the lowering records as written, at their images, so a
         // reprint binds and spells what was written.
         let mut read_back: WrittenForms<String, WrittenModel> = WrittenForms::new();
+        // The family of each case a reading's lowering eliminates, at the
+        // case's image in `arena`, so a reprint names its constructors.
+        let mut read_cases: Vec<(ComputationId, ConstantIndex)> = Vec::new();
         // The probes' constants and the declarations a reading judges, each
         // buffer kept across the readings.
         let mut probes: Vec<ConstantIndex> = Vec::new();
@@ -5881,6 +5906,13 @@ impl TypeTable
                             |ty| importer.comp_type_image(ty),
                         );
                     read_back.append(&mut imaged);
+                    read_cases.extend(module.origins().eliminations().filter_map(
+                        |(case, family)| {
+                            importer
+                                .computation_image(case)
+                                .map(|image| (image, family))
+                        },
+                    ));
                 },
                 Ok(Lowered::Refused(refusal)) => {
                     for name in names {
@@ -6036,7 +6068,7 @@ impl TypeTable
                                 &arena,
                                 again,
                                 &context,
-                                &read_back,
+                                (&read_back, &read_cases),
                                 Lay::Page(page),
                                 style,
                             ) {

@@ -5807,8 +5807,13 @@ pub struct AsType(pub bool);
 ///
 /// A former of the type family, a name or a constructor stands there as a type
 /// head. A call that the expression grammar molds stands there as the type
-/// application that it spells. Where a type is read, the lowering refuses
-/// every other form for its wrong sort.
+/// application that it spells, or as the decode of the code that it returns. A
+/// computation that returns a value stands there as the decode of the code that
+/// it returns: a block, a returner, a force, a match, a conditional and a
+/// selection (#7564). Where a type is read, the lowering refuses every other
+/// form for its wrong sort: a value, an exit and a loop, which need a body
+/// around them, a form that performs an effect, which a decode does not run, a
+/// native operation, which returns no code, and a function.
 ///
 /// # Specification
 /// trivial.
@@ -5818,7 +5823,18 @@ pub const fn read_as_type(former: Former) -> AsType
 {
     AsType(
         matches!(family_of(former), Family::Type)
-            || matches!(former, Former::Name | Former::Constructor | Former::Call),
+            || matches!(
+                former,
+                Former::Name
+                    | Former::Constructor
+                    | Former::Call
+                    | Former::Block
+                    | Former::Return
+                    | Former::Force
+                    | Former::Case
+                    | Former::If
+                    | Former::Projection
+            ),
     )
 }
 

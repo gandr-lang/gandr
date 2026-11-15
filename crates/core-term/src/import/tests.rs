@@ -99,6 +99,42 @@ fn an_imported_arrow_answers_its_image()
     );
 }
 
+/// #7564: a computation that an imported decode returns answers its image, so
+/// a side table keyed by source computations follows the import.
+#[test]
+fn an_imported_decode_answers_its_computation_s_image()
+{
+    let mut source = CoreArena::new();
+    let unit = source.value_type_unit();
+    let code = source.value_quote(unit);
+    let run = source.computation_return(code);
+    let returned = source.value_returned(run);
+    let decoded = source.value_type_element(returned, Level::zero());
+    let unreached = source.computation_return(returned);
+    let mut target = CoreArena::new();
+    let _occupied = target.value_type_unit();
+    let mut importer = TypeImporter::new(&source, &mut target);
+    let copied = importer.value_type(decoded).expect("source graph resolves");
+    let Some(&ValueType::Element { code: image, .. }) = importer.target.value_type(copied)
+    else {
+        panic!("a decode");
+    };
+    let Some(&Value::Returned(image)) = importer.target.value(image)
+    else {
+        panic!("of a returned code");
+    };
+    assert_eq!(
+        importer.computation_image(run),
+        Some(image),
+        "the computation the decode returns answers its image"
+    );
+    assert_eq!(
+        importer.computation_image(unreached),
+        None,
+        "a computation no import reached answers none"
+    );
+}
+
 #[test]
 fn an_imported_code_keeps_its_type()
 {

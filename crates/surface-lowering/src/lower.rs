@@ -6285,6 +6285,110 @@ mod tests
         );
     }
 
+    /// #7564: a `match` where a type is read is the decode of the code it
+    /// returns, as a call there is, and a function's result takes the returner
+    /// over that decode.
+    #[test]
+    fn a_match_where_a_type_is_read_decodes_what_it_returns_7564()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "data U : Type where { | NatU : U | IntU : U } def two : match NatU -> -F Type { \
+                 | NatU => pure Integer | IntU => pure Bool } ; def three(u : U) -> match u -> -F \
+                 Type { | NatU => pure Integer | IntU => pure Bool } { return 7 }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let provenance =
+            |origin: Maybe<crate::Origin, _>| origin.map(|held: crate::Origin| held.provenance());
+        let decoded = |at| {
+            let Some(&ValueType::Element { code, ref target }) = arena.value_type(at)
+            else {
+                panic!(
+                    "a match where a type is read decodes: {:?}",
+                    arena.value_type(at)
+                );
+            };
+            let Some(&Value::Returned(run)) = arena.value(code)
+            else {
+                panic!(
+                    "the code is what the match returns: {:?}",
+                    arena.value(code)
+                );
+            };
+            (code, target.clone(), run)
+        };
+        assert!(
+            matches!(lowered[1 ..], [
+                DeclarationOutcome::Uncompleted { .. },
+                DeclarationOutcome::Completed { .. }
+            ]),
+            "a match where a type is read lowers: {lowered:#?}"
+        );
+        let declared = declared_of(lowered[1]);
+        let (code, target, run) = decoded(declared);
+        assert_eq!(
+            target,
+            Level::constant(LevelConstant::ZERO),
+            "at the universe the position reads"
+        );
+        assert_eq!(
+            (
+                provenance(module.origins().value_type(declared)),
+                provenance(module.origins().value(code)),
+            ),
+            (
+                Maybe::Present(Provenance::Inserted(Insertion::Decode)),
+                Maybe::Present(Provenance::Inserted(Insertion::Endpoint)),
+            ),
+            "the decode and the returned code are the lowering's"
+        );
+        let Some(&Computation::DataCase { motive, .. }) = arena.computation(run)
+        else {
+            panic!(
+                "the match is a case on the data: {:?}",
+                arena.computation(run)
+            );
+        };
+        assert!(
+            matches!(
+                arena.comp_type(motive),
+                Some(&CompType::Returner { result, .. })
+                    if matches!(arena.value_type(result), Some(&ValueType::Universe { .. }))
+            ),
+            "its written answer is a universe's returner: {:?}",
+            arena.comp_type(motive)
+        );
+        assert_eq!(
+            provenance(module.origins().computation(run)),
+            Maybe::Present(Provenance::Written),
+            "the match is the source's"
+        );
+        let Some(&ValueType::Thunk(function)) = arena.value_type(declared_of(lowered[2]))
+        else {
+            panic!("`three` is a thunked function");
+        };
+        let codomain = match arena.comp_type(function) {
+            Some(&(CompType::Arrow { codomain, .. } | CompType::Pi { codomain, .. })) => codomain,
+            other => panic!("over its parameter: {other:?}"),
+        };
+        let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+        else {
+            panic!(
+                "a match at a result takes the returner: {:?}",
+                arena.comp_type(codomain)
+            );
+        };
+        let _decoded = decoded(result);
+        assert_eq!(
+            provenance(module.origins().comp_type(codomain)),
+            Maybe::Present(Provenance::Inserted(Insertion::Returner)),
+            "the returner over the decode is the lowering's"
+        );
+    }
+
     /// A function called at the carrier of a path type a body quotes is the
     /// decode of the code its call returns, as it is at a binder's type: the
     /// expression grammar molds it as a call, and it is read as the type

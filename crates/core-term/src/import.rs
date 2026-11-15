@@ -602,6 +602,37 @@ impl<'source, 'target> TypeImporter<'source, 'target>
         }
     }
 
+    /// The image of the source computation `source`, when an import of this
+    /// session copied it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the target node the importer relocated `source` to; none when
+    ///   no root imported so far reaches it.
+    /// - provides: a side table keyed by source computations, such as the
+    ///   family a lowering records for each case of a type that a computation
+    ///   decodes (#7564), carried to the target.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the computation that an imported decode returns
+    ///   answers its relocated node, and one no import reached answers none.
+    /// - witness: `import::tests::an_imported_decode_answers_its_computation_s_image`
+    #[spec(ensures: |ret| ret.is_none_or(|image| self.target.computation(image).is_some()))]
+    #[inline]
+    #[must_use]
+    pub fn computation_image(
+        &self,
+        source: ComputationId,
+    ) -> Option<ComputationId>
+    {
+        match self.images.get(&Node::Computation(source)) {
+            Some(&Node::Computation(image)) => Some(image),
+            Some(&(Node::Value(_) | Node::ValueType(_) | Node::CompType(_))) | None => None,
+        }
+    }
+
     /// The image of the source value type `source`, when an import of this
     /// session copied it.
     ///
