@@ -110,7 +110,6 @@ use quenchant_shape::shape::Maybe;
 use super::grant::Token;
 use super::grant::untaken;
 use crate::width::Threads;
-use crate::width::Width;
 
 #[cfg(unix)]
 mod porter;
@@ -660,29 +659,6 @@ pub struct HostCounter
 
 impl HostCounter
 {
-    /// The host's counter in `directory`, set to the host's performance cores
-    /// when no counter stands there.
-    ///
-    /// # Specification
-    /// - requires: `directory` is the runtime directory, readable by its owner
-    ///   alone.
-    /// - ensures: as [`HostCounter::with`] at the host's performance cores.
-    /// - fails: as [`HostCounter::with`].
-    /// - panics: none.
-    /// - executable: none — the segment is the host's.
-    ///
-    /// # Errors
-    /// As [`HostCounter::with`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`HostCounter`].
-    /// - witness: `pool::host::tests::a_dead_holder_of_four_tokens_gives_them_back_at_the_reap`
-    #[inline]
-    pub fn open(directory: &Path) -> std::io::Result<Self>
-    {
-        Self::with(directory, Width::PerformanceCores.whole())
-    }
-
     /// The host's counter in `directory`, set to `width` tokens when no
     /// counter stands there.
     ///
@@ -855,6 +831,30 @@ impl Host
             }
         }
         Maybe::Absent(unhosted::Absent::Full)
+    }
+
+    /// The host's tokens: the width that the hub set the counter to, which
+    /// the host's profile names or the logical count gives.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the width in the segment's head, at least one.
+    /// - panics: none.
+    /// - executable: none — the segment is the host's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a joiner reads the width that the hub's counter opens
+    ///   at.
+    /// - witness: `pool::host::tests::a_joiner_reads_the_width_that_the_hub_opens_at_7706`
+    #[inline]
+    #[must_use]
+    pub fn width(&self) -> Threads
+    {
+        let width = self.mapping.segment().head.width.load(Ordering::Relaxed);
+        usize::try_from(width)
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .map_or(Threads::ONE, Threads::from)
     }
 
     /// This process's slot.
@@ -1820,6 +1820,24 @@ mod tests
             ),
             "a counter whose hub let go of the owner's lock takes no joiner"
         );
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    /// #7706: the hub sets the counter to the profile's width, and each joiner
+    /// reads that width, not the host's topology.
+    #[test]
+    fn a_joiner_reads_the_width_that_the_hub_opens_at_7706()
+    {
+        let directory = scratch(Scratch("width"));
+        let width = Threads::from(NonZeroUsize::new(6).unwrap());
+        let counter = HostCounter::with(&directory, width).unwrap();
+        let Maybe::Present(host) = Host::join(&directory, Class::Batch)
+        else {
+            panic!("the process joins the hub's counter");
+        };
+        assert_eq!(host.width(), width, "a joiner reads the hub's width");
+        drop(host);
+        drop(counter);
         drop(std::fs::remove_dir_all(&directory));
     }
 

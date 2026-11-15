@@ -2309,12 +2309,21 @@ fn main() -> ExitCode
                     };
                 },
             };
+            let counting = match configuration.compile_width() {
+                Ok(counting) => counting,
+                Err(fault) => {
+                    return match writeln!(std::io::stderr(), "gandr: {fault}") {
+                        Ok(()) | Err(_) => ExitCode::from(FAULTED),
+                    };
+                },
+            };
             held(&configuration);
             return hub(
                 socket,
                 linger_ms.map_or(gandr_surface_lsp::LINGER, Duration::from_millis),
                 spelling,
                 toolset,
+                counting,
             );
         },
         #[cfg(unix)]
@@ -3370,7 +3379,8 @@ fn reach_hub(
 /// Run the engine hub on `socket`, lingering `linger` once its last client
 /// leaves, its workspace configured with `spelling`, its kernel admissions on
 /// a pool at the host's width, with the toolset at the address of `toolset`
-/// and its delivery policy when one is named, and choose the exit code.
+/// and its delivery policy when one is named, its host's counter set to
+/// `counting` tokens when it names a width, and choose the exit code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -3398,6 +3408,10 @@ fn reach_hub(
 ///   workspace refuses and names the file.
 /// - witness: `tests::cli::lsp_clients_share_one_engine_hub`
 /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
+///
+/// # Cost
+/// - allocation: the paths beside the socket, the toolset and the workspace,
+///   setup
 #[cfg(unix)]
 #[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn hub(
@@ -3405,6 +3419,7 @@ fn hub(
     linger: Duration,
     spelling: Spelling,
     toolset: Option<(core::net::SocketAddr, gandr_surface_agentic::Policy)>,
+    counting: Option<gandr_surface_dispatcher::Threads>,
 ) -> ExitCode
 {
     let socket = match hub_socket(socket) {
@@ -3464,6 +3479,14 @@ fn hub(
                 },
                 None => (None, None),
             };
+            let stored = config::store().map_or_else(
+                || workspace(spelling),
+                |directory| workspace(spelling).storing(gandr_surface_lsp::Stored::at(directory)),
+            );
+            let served = match counting {
+                Some(width) => stored.counting(width),
+                None => stored,
+            };
             match gandr_surface_lsp::run_hub(
                 &listener,
                 &socket,
@@ -3471,12 +3494,7 @@ fn hub(
                 std::io::stderr(),
                 Some(gandr_surface_agentic::serve),
                 beside,
-                config::store().map_or_else(
-                    || workspace(spelling),
-                    |directory| {
-                        workspace(spelling).storing(gandr_surface_lsp::Stored::at(directory))
-                    },
-                ),
+                served,
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),

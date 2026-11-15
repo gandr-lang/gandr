@@ -1635,6 +1635,11 @@ pub struct Workspace
     /// The fold of the activity ring of `pool`, and its watchers.
     #[cfg(feature = "instrument")]
     activity: crate::activity::Activities,
+    /// The tokens of the host's counter that the hub sets when no counter
+    /// stands: the width that the host's profile names, else none, and the
+    /// hub takes the logical count.
+    #[cfg(unix)]
+    counting: Option<gandr_surface_dispatcher::Threads>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -1721,6 +1726,9 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the empty workspace's maps and its pool, setup
     #[inline]
     #[must_use]
     pub fn spelled(spelling: Spelling) -> Self
@@ -1754,6 +1762,9 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the shared handle of `stored`, setup
     #[cfg(unix)]
     #[inline]
     #[must_use]
@@ -1766,6 +1777,42 @@ impl Workspace
             stored: Some(Arc::new(stored)),
             ..self
         }
+    }
+
+    /// This workspace, its hub setting the host's counter to `width` tokens
+    /// when no counter stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(unix)]
+    #[inline]
+    #[must_use]
+    pub fn counting(
+        self,
+        width: gandr_surface_dispatcher::Threads,
+    ) -> Self
+    {
+        Self {
+            counting: Some(width),
+            ..self
+        }
+    }
+
+    /// The tokens that the hub sets the host's counter to: the width that
+    /// [`Self::counting`] names, else the logical CPUs that the process may
+    /// run on.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the read of the CPUs that the process may run on, when no
+    ///   width is named, setup
+    #[cfg(unix)]
+    pub(crate) fn counter_width(&self) -> gandr_surface_dispatcher::Threads
+    {
+        self.counting
+            .unwrap_or_else(gandr_surface_dispatcher::Threads::logical)
     }
 
     /// The store the render bus reads, with the path of each open document,
@@ -1785,6 +1832,9 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the fold of the activity ring of `pool`, setup
     #[inline]
     #[must_use]
     pub fn pooled(
