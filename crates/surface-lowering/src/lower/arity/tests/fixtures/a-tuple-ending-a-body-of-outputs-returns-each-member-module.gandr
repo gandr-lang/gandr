@@ -1,0 +1,2 @@
+def swap(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (n, m) }
+def paired(m : Integer, n : Integer) -> Integer * Integer { *{n, m} }

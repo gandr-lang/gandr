@@ -1,0 +1,5033 @@
+[
+  {
+    "name": "a chain whose stack kept its merged bottoms is linked by the stack's number",
+    "program": "link.jq",
+    "input": {
+      "chain": [1272, 1273],
+      "stacks": [1269, 1269]
+    },
+    "output": "1269\n1272\n1273"
+  },
+  {
+    "name": "a chain gaining a new top is linked into the stack its lower members hold",
+    "program": "link.jq",
+    "input": {
+      "chain": [1272, 1273, 1276],
+      "stacks": [1269, 1269, null]
+    },
+    "output": "1269\n1272\n1273\n1276"
+  },
+  {
+    "name": "a chain in no stack is linked by its numbers",
+    "program": "link.jq",
+    "input": {
+      "chain": [1272, 1273],
+      "stacks": [null, null]
+    },
+    "output": "1272\n1273"
+  },
+  {
+    "name": "#3817: a chain of one in no stack, its top merged while it opened, is linked nothing",
+    "program": "link.jq",
+    "input": {
+      "chain": [3814],
+      "stacks": [null]
+    },
+    "output": ""
+  },
+  {
+    "name": "#3817: a chain of one already in a stack is still linked by the stack's number",
+    "program": "link.jq",
+    "input": {
+      "chain": [3814],
+      "stacks": [3810]
+    },
+    "output": "3810\n3814"
+  },
+  {
+    "name": "a stack is read from its middle down to main and up to its top",
+    "program": "chain.jq",
+    "args": {
+      "n": 1258,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T03:40:00Z"
+      },
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "pending-diag-1248",
+        "created": "2026-10-21T04:30:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"},{\"number\":1264,\"head\":\"triage-1264-stack-tasks\"}]"
+  },
+  {
+    "name": "#5074: each member of a stack of five has its depth from main, and a pull request alone on main is at depth 1",
+    "program": "depths.jq",
+    "args": {
+      "trunk": "main"
+    },
+    "input": [
+      { "number": 5, "head": "e", "base": "d" },
+      { "number": 1, "head": "a", "base": "main" },
+      { "number": 3, "head": "c", "base": "b" },
+      { "number": 2, "head": "b", "base": "a" },
+      { "number": 4, "head": "d", "base": "c" },
+      { "number": 9, "head": "z", "base": "main" }
+    ],
+    "output": "[{\"number\":5,\"head\":\"e\",\"base\":\"d\",\"depth\":5},{\"number\":1,\"head\":\"a\",\"base\":\"main\",\"depth\":1},{\"number\":3,\"head\":\"c\",\"base\":\"b\",\"depth\":3},{\"number\":2,\"head\":\"b\",\"base\":\"a\",\"depth\":2},{\"number\":4,\"head\":\"d\",\"base\":\"c\",\"depth\":4},{\"number\":9,\"head\":\"z\",\"base\":\"main\",\"depth\":1}]"
+  },
+  {
+    "name": "#5074: a pull request on a base no open pull request holds counts from that base, at depth 1",
+    "program": "depths.jq",
+    "args": {
+      "trunk": "main"
+    },
+    "input": [
+      { "number": 7, "head": "g", "base": "merged-branch" },
+      { "number": 8, "head": "h", "base": "g" }
+    ],
+    "output": "[{\"number\":7,\"head\":\"g\",\"base\":\"merged-branch\",\"depth\":1},{\"number\":8,\"head\":\"h\",\"base\":\"g\",\"depth\":2}]"
+  },
+  {
+    "name": "a pull request alone is a stack of one",
+    "program": "chain.jq",
+    "args": {
+      "n": 1240,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1240,\"head\":\"chore-mise\"}]"
+  },
+  {
+    "name": "where two pull requests share a base the older one is the chain",
+    "program": "chain.jq",
+    "args": {
+      "n": 1262,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1270,
+        "head": "late",
+        "base": "theory-solve",
+        "created": "2026-10-21T05:00:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T04:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"}]"
+  },
+  {
+    "name": "a pull request that is not open has no stack",
+    "program": "chain.jq",
+    "args": {
+      "n": 1234,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "#3253: the owner's `hold:owner` label reads as the owner's hold, a draft as a draft's, the owner's first when both; a `landing` label or a bot is no hold",
+    "program": "open.jq",
+    "input": [
+      {
+        "number": 10,
+        "headRefName": "a",
+        "baseRefName": "main",
+        "isDraft": true,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": [
+            {
+              "name": "hold:owner"
+            }
+          ]
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 11,
+        "headRefName": "b",
+        "baseRefName": "main",
+        "isDraft": true,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": []
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 12,
+        "headRefName": "c",
+        "baseRefName": "main",
+        "isDraft": false,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": [
+            {
+              "name": "landing"
+            }
+          ]
+        },
+        "stack": null,
+        "author": {
+          "__typename": "User"
+        }
+      },
+      {
+        "number": 13,
+        "headRefName": "d",
+        "baseRefName": "main",
+        "isDraft": false,
+        "createdAt": "2026-10-27T20:00:00Z",
+        "isInMergeQueue": false,
+        "autoMergeRequest": null,
+        "labels": {
+          "nodes": []
+        },
+        "stack": null,
+        "author": {
+          "__typename": "Bot"
+        }
+      }
+    ],
+    "output": "[{\"number\":10,\"head\":\"a\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":false,\"hold\":\"owner\"},{\"number\":11,\"head\":\"b\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":false,\"hold\":\"draft\"},{\"number\":12,\"head\":\"c\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":true,\"stack\":null,\"bot\":false,\"hold\":null},{\"number\":13,\"head\":\"d\",\"base\":\"main\",\"created\":\"2026-10-27T20:00:00Z\",\"landing\":false,\"held\":false,\"stack\":null,\"bot\":true,\"hold\":null}]"
+  },
+  {
+    "name": "#3253: under the owner's hold in the middle of a stack, the pull request below it rests on no hold, so it lands",
+    "program": "rests.jq",
+    "args": {
+      "n": 3249,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "#3253: the owner's held pull request rests on its own hold, so nothing lands it",
+    "program": "rests.jq",
+    "args": {
+      "n": 3250,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":3250,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: the pull request above the owner's hold rests on it, so it waits",
+    "program": "rests.jq",
+    "args": {
+      "n": 3252,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 3249,
+        "head": "triage-3244-bsd-restamp",
+        "base": "main",
+        "created": "2026-10-27T20:50:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 3250,
+        "head": "readme-3247",
+        "base": "triage-3244-bsd-restamp",
+        "created": "2026-10-27T21:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": "owner"
+      },
+      {
+        "number": 3252,
+        "head": "triage-3246-zero-cost",
+        "base": "readme-3247",
+        "created": "2026-10-27T21:10:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":3250,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: the nearest hold below is the one named, a draft beneath an owner's hold no matter",
+    "program": "rests.jq",
+    "args": {
+      "n": 3,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "a",
+        "base": "main",
+        "hold": "draft"
+      },
+      {
+        "number": 2,
+        "head": "b",
+        "base": "a",
+        "hold": "owner"
+      },
+      {
+        "number": 3,
+        "head": "c",
+        "base": "b",
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":2,\"hold\":\"owner\"}"
+  },
+  {
+    "name": "#3253: a pull request not open rests on no hold",
+    "program": "rests.jq",
+    "args": {
+      "n": 9,
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "a",
+        "base": "main",
+        "hold": "draft"
+      },
+      {
+        "number": 2,
+        "head": "b",
+        "base": "a",
+        "hold": "owner"
+      },
+      {
+        "number": 3,
+        "head": "c",
+        "base": "b",
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "with nothing open a new pull request opens on main",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [],
+    "output": "null"
+  },
+  {
+    "name": "the branch being opened is left out of the reading",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "main",
+        "created": "2026-10-21T04:30:00Z"
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "the top is the end of the longest chain, over a newer pull request alone on main",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T03:40:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T04:20:00Z"
+      }
+    ],
+    "output": "{\"number\":1258,\"head\":\"pending-diag-1248\",\"depth\":2,\"held\":false,\"landing\":false}"
+  },
+  {
+    "name": "between two chains of one the newest is the top",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
+    ],
+    "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1,\"held\":false,\"landing\":false}"
+  },
+  {
+    "name": "a pull request a bot opened is never the top: with only it open a new pull request opens on main (#2550)",
+    "program": "top.jq",
+    "args": {
+      "own": "probe-kernel-boundary",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 2508,
+        "head": "dependabot/cargo/cargo-0342038f58",
+        "base": "main",
+        "created": "2026-10-25T08:00:00Z",
+        "bot": true
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "beside a newer pull request a bot opened, the top is the agents' chain (#2550)",
+    "program": "top.jq",
+    "args": {
+      "own": "probe-kernel-boundary",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 2500,
+        "head": "theory-order",
+        "base": "main",
+        "created": "2026-10-24T20:00:00Z",
+        "bot": false
+      },
+      {
+        "number": 2508,
+        "head": "dependabot/cargo/cargo-0342038f58",
+        "base": "main",
+        "created": "2026-10-25T08:00:00Z",
+        "bot": true
+      }
+    ],
+    "output": "{\"number\":2500,\"head\":\"theory-order\",\"depth\":1,\"held\":false,\"landing\":false}"
+  },
+  {
+    "name": "a stack in the merge queue with nothing else open is the top: a new pull request opens on its top, unlinked (#1983)",
+    "program": "top.jq",
+    "args": {
+      "own": "witness-surface-driver",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1446,
+        "head": "triage-1420-retarget",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T13:00:00Z",
+        "landing": true
+      }
+    ],
+    "output": "{\"number\":1446,\"head\":\"triage-1420-retarget\",\"depth\":3,\"held\":false,\"landing\":true}"
+  },
+  {
+    "name": "beside a landing stack the top is the longest chain not landing, though the landing one is longer (#1455, #1983)",
+    "program": "top.jq",
+    "args": {
+      "own": "witness-surface-driver",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1449,
+        "head": "triage-1175-stacks",
+        "base": "main",
+        "created": "2026-10-21T14:10:00Z",
+        "landing": false
+      }
+    ],
+    "output": "{\"number\":1449,\"head\":\"triage-1175-stacks\",\"depth\":1,\"held\":false,\"landing\":false}"
+  },
+  {
+    "name": "a top a pr:land is waiting to queue reads held, so pr:open waits for the hold to clear (#1556, #1983)",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1456-witnessed",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1552,
+        "head": "docs-workflow-build-state",
+        "base": "docs-theory-order-maintenance",
+        "created": "2026-10-21T13:20:00Z",
+        "landing": false,
+        "held": true
+      },
+      {
+        "number": 1551,
+        "head": "docs-theory-order-maintenance",
+        "base": "main",
+        "created": "2026-10-21T13:10:00Z",
+        "landing": false,
+        "held": true
+      },
+      {
+        "number": 1550,
+        "head": "surface-1539-annotations",
+        "base": "main",
+        "created": "2026-10-21T13:30:00Z",
+        "landing": false,
+        "held": false
+      }
+    ],
+    "output": "{\"number\":1552,\"head\":\"docs-workflow-build-state\",\"depth\":2,\"held\":true,\"landing\":false}"
+  },
+  {
+    "name": "a pull request stacked on a queued top is the top, its chain read down through the queued ones (#1983)",
+    "program": "top.jq",
+    "args": {
+      "own": "triage-1983-open-on-queued",
+      "trunk": "main"
+    },
+    "input": [
+      {
+        "number": 1981,
+        "head": "triage-1505-string-append",
+        "base": "main",
+        "created": "2026-10-23T01:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1982,
+        "head": "surface-1798-collection-refusals",
+        "base": "triage-1505-string-append",
+        "created": "2026-10-23T01:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1990,
+        "head": "triage-1505-interpolation",
+        "base": "surface-1798-collection-refusals",
+        "created": "2026-10-23T03:00:00Z",
+        "landing": false
+      }
+    ],
+    "output": "{\"number\":1990,\"head\":\"triage-1505-interpolation\",\"depth\":3,\"held\":false,\"landing\":false}"
+  },
+  {
+    "name": "a green pull request alone lands alone",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1242,
+          "head": "triage-1167-receive"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1242": "green"
+      }
+    },
+    "output": "land\t1242"
+  },
+  {
+    "name": "a stack green throughout lands whole, up to its top",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        },
+        {
+          "number": 1264,
+          "head": "triage-1264-stack-tasks"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1262": "green",
+        "1258": "green",
+        "1264": "green"
+      }
+    },
+    "output": "land\t1264"
+  },
+  {
+    "name": "a stack whose bottom three are green and fourth red lands three and names the fourth (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        },
+        {
+          "number": 1943,
+          "head": "theory-1580-atom-occurrence"
+        },
+        {
+          "number": 1953,
+          "head": "theory-1480-record-transport"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1939": "green",
+        "1940": "green",
+        "1942": "green",
+        "1943": "red",
+        "1953": "green"
+      }
+    },
+    "output": "land\t1942\t1943\tred"
+  },
+  {
+    "name": "a member still pending stops the prefix below it, though a member above it is green (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1939": "green",
+        "1940": "pending",
+        "1942": "green"
+      }
+    },
+    "output": "land\t1939\t1940\tpending"
+  },
+  {
+    "name": "a stack whose bottom member is red lands nothing and names it (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1262": "red",
+        "1258": "green"
+      }
+    },
+    "output": "hold\t1262\tred"
+  },
+  {
+    "name": "a stack with a conflicting middle lands its green root and names the conflicting member (#2783)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 2774,
+          "head": "surface"
+        },
+        {
+          "number": 2776,
+          "head": "corpus-2444"
+        },
+        {
+          "number": 2777,
+          "head": "corpus-2445"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "2774": "green",
+        "2776": "conflicting",
+        "2777": "green"
+      }
+    },
+    "output": "land\t2774\t2776\tconflicting"
+  },
+  {
+    "name": "a member whose checks are green but which conflicts is conflicting, not green (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "CONFLICTING",
+      "failed": [],
+      "pending": []
+    },
+    "output": "conflicting"
+  },
+  {
+    "name": "a conflict is named before a red check: the rebase reruns the checks (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "CONFLICTING",
+      "failed": ["test (linux)"],
+      "pending": []
+    },
+    "output": "conflicting"
+  },
+  {
+    "name": "a mergeable member with a failed and a pending check is red (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "MERGEABLE",
+      "failed": ["test (linux)"],
+      "pending": ["lint"]
+    },
+    "output": "red"
+  },
+  {
+    "name": "a member whose mergeability GitHub is still computing is read by its checks (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "UNKNOWN",
+      "failed": [],
+      "pending": []
+    },
+    "output": "green"
+  },
+  {
+    "name": "a member not read is pending, and holds the prefix there (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1262": "green"
+      }
+    },
+    "output": "land\t1262\t1258\tpending"
+  },
+  {
+    "name": "a queued unit below the cap is topped up with its next green member, up to the cap (#2096)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1969,
+          "head": "core-1314-prune"
+        },
+        {
+          "number": 1970,
+          "head": "triage-1966-sweep-witnesses"
+        },
+        {
+          "number": 1971,
+          "head": "surface-1416-linear-run"
+        }
+      ],
+      "queued": [1939, 1969],
+      "states": {
+        "1970": "green",
+        "1971": "green"
+      },
+      "cap": 3
+    },
+    "output": "land\t1970\t1971\tcapped"
+  },
+  {
+    "name": "a queued unit below the cap takes the whole green rest when it fits (#2096)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 2091,
+          "head": "ci-2090-quenchant-pin"
+        },
+        {
+          "number": 2092,
+          "head": "theory-1214-dialogue"
+        },
+        {
+          "number": 2095,
+          "head": "surface-2051-stray-closer"
+        }
+      ],
+      "queued": [2091, 2092],
+      "states": {
+        "2095": "green"
+      },
+      "cap": 3
+    },
+    "output": "land\t2095"
+  },
+  {
+    "name": "a queued unit at the cap takes nothing more until it merges (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1969,
+          "head": "core-1314-prune"
+        },
+        {
+          "number": 1970,
+          "head": "triage-1966-sweep-witnesses"
+        },
+        {
+          "number": 1971,
+          "head": "surface-1416-linear-run"
+        }
+      ],
+      "queued": [1939, 1969, 1970],
+      "states": {
+        "1971": "green"
+      },
+      "cap": 3
+    },
+    "output": "busy\t1970"
+  },
+  {
+    "name": "a queued unit whose next member is pending takes nothing more (#2096)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 2091,
+          "head": "ci-2090-quenchant-pin"
+        },
+        {
+          "number": 2092,
+          "head": "theory-1214-dialogue"
+        },
+        {
+          "number": 2095,
+          "head": "surface-2051-stray-closer"
+        }
+      ],
+      "queued": [2091],
+      "states": {
+        "2092": "pending",
+        "2095": "green"
+      },
+      "cap": 3
+    },
+    "output": "busy\t2091"
+  },
+  {
+    "name": "a green stack longer than the cap queues its bottom cap members and names the next (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 2015,
+          "head": "core-1959-atom-identity"
+        },
+        {
+          "number": 2016,
+          "head": "triage-512-cc"
+        },
+        {
+          "number": 2017,
+          "head": "triage-512-coherent"
+        },
+        {
+          "number": 2018,
+          "head": "triage-512-computads"
+        },
+        {
+          "number": 2020,
+          "head": "triage-512-dynamic"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "2015": "green",
+        "2016": "green",
+        "2017": "green",
+        "2018": "green",
+        "2020": "green"
+      },
+      "cap": 3
+    },
+    "output": "land\t2017\t2018\tcapped"
+  },
+  {
+    "name": "a green stack as long as the cap lands whole (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        },
+        {
+          "number": 1264,
+          "head": "triage-1264-stack-tasks"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1262": "green",
+        "1258": "green",
+        "1264": "green"
+      },
+      "cap": 3
+    },
+    "output": "land\t1264"
+  },
+  {
+    "name": "a red member just above a full unit is named as red, not capped (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        },
+        {
+          "number": 1943,
+          "head": "theory-1580-atom-occurrence"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "1939": "green",
+        "1940": "green",
+        "1942": "green",
+        "1943": "red"
+      },
+      "cap": 3
+    },
+    "output": "land\t1942\t1943\tred"
+  },
+  {
+    "name": "a stack queued throughout has nothing left to land (#1988)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
+      ],
+      "queued": [1262, 1258],
+      "states": {}
+    },
+    "output": "queued"
+  },
+  {
+    "name": "a pull request retargeted off a branch that lands on its own waits for it, though alone on main (#1420)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 1417,
+          "head": "witness-storage-artifact"
+        }
+      ],
+      "queued": [],
+      "carried": [1415],
+      "states": {
+        "1417": "green"
+      }
+    },
+    "output": "wait\t1415"
+  },
+  {
+    "name": "a bottom landing on its own retargets the pull request on its branch, not the one above that (#1420)",
+    "program": "retarget.jq",
+    "args": {
+      "landing": [1415]
+    },
+    "input": [
+      {
+        "number": 1415,
+        "head": "witness-storage-values",
+        "base": "main",
+        "created": "2026-10-21T11:00:00Z"
+      },
+      {
+        "number": 1417,
+        "head": "witness-storage-artifact",
+        "base": "witness-storage-values",
+        "created": "2026-10-21T11:30:00Z"
+      },
+      {
+        "number": 1418,
+        "head": "surface-module-types",
+        "base": "witness-storage-artifact",
+        "created": "2026-10-21T12:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1417,\"base\":\"witness-storage-values\"}]"
+  },
+  {
+    "name": "a stack landing whole retargets what stands on any of its branches outside it, and none of its own (#1420)",
+    "program": "retarget.jq",
+    "args": {
+      "landing": [1262, 1258]
+    },
+    "input": [
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1258,
+        "head": "pending-diag-1248",
+        "base": "theory-solve",
+        "created": "2026-10-21T04:00:00Z"
+      },
+      {
+        "number": 1270,
+        "head": "late",
+        "base": "theory-solve",
+        "created": "2026-10-21T05:00:00Z"
+      },
+      {
+        "number": 1264,
+        "head": "triage-1264-stack-tasks",
+        "base": "pending-diag-1248",
+        "created": "2026-10-21T05:30:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
+    ],
+    "output": "[{\"number\":1264,\"base\":\"pending-diag-1248\"},{\"number\":1270,\"base\":\"theory-solve\"}]"
+  },
+  {
+    "name": "a landing with nothing on its branches retargets nothing (#1420)",
+    "program": "retarget.jq",
+    "args": {
+      "landing": [1240]
+    },
+    "input": [
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a landing read off part of its stack retargets a pull request beside it, never a queued member above it (#1455)",
+    "program": "retarget.jq",
+    "args": {
+      "landing": [1444, 1445]
+    },
+    "input": [
+      {
+        "number": 1444,
+        "head": "witness-storage-schema",
+        "base": "main",
+        "created": "2026-10-21T12:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1445,
+        "head": "surface-1365-file-doc",
+        "base": "witness-storage-schema",
+        "created": "2026-10-21T12:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1446,
+        "head": "triage-1420-retarget",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T13:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1448,
+        "head": "witness-surface-driver",
+        "base": "surface-1365-file-doc",
+        "created": "2026-10-21T14:00:00Z",
+        "landing": false
+      }
+    ],
+    "output": "[{\"number\":1448,\"base\":\"surface-1365-file-doc\"}]"
+  },
+  {
+    "name": "a landing retargets an unlinked pull request on its branch, never one its linked stack carries (#1520)",
+    "program": "retarget.jq",
+    "args": {
+      "landing": [1496, 1513]
+    },
+    "input": [
+      {
+        "number": 1496,
+        "head": "soundness-164250",
+        "base": "main",
+        "created": "2026-10-21T16:21:24Z",
+        "landing": true,
+        "stack": 31
+      },
+      {
+        "number": 1513,
+        "head": "witness-lsp-survivors",
+        "base": "soundness-164250",
+        "created": "2026-10-21T16:30:52Z",
+        "landing": true,
+        "stack": 31
+      },
+      {
+        "number": 1519,
+        "head": "core-1471-methods",
+        "base": "witness-lsp-survivors",
+        "created": "2026-10-21T17:01:29Z",
+        "landing": false,
+        "stack": 31
+      },
+      {
+        "number": 1521,
+        "head": "surface-beside",
+        "base": "witness-lsp-survivors",
+        "created": "2026-10-21T17:05:00Z",
+        "landing": false,
+        "stack": null
+      }
+    ],
+    "output": "[{\"number\":1521,\"base\":\"witness-lsp-survivors\"}]"
+  },
+  {
+    "name": "a restacked head re-runs the newer of its twins, cancelled by the older, and leaves an older cancelled one (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581619497,
+        "workflowName": "landing-title-and-deletes",
+        "startedAt": "2026-10-21T10:02:36Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581595024,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581594890,
+        "workflowName": "landing-title-and-deletes",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581594567,
+        "workflowName": "landing-title-and-deletes",
+        "startedAt": "2026-10-21T10:02:24Z",
+        "conclusion": "success"
+      }
+    ],
+    "output": "[39581595108]"
+  },
+  {
+    "name": "a cancelled run whose twin was re-run since is not re-run (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595024,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:40:00Z",
+        "conclusion": "success"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a cancelled run whose twin failed is not re-run: the failure is the head's own (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595024,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "failure"
+      },
+      {
+        "databaseId": 39581595108,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a run still in flight is the newest, and nothing is re-run (#1381)",
+    "program": "twins.jq",
+    "input": [
+      {
+        "databaseId": 39581595108,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:25Z",
+        "conclusion": "cancelled"
+      },
+      {
+        "databaseId": 39581599999,
+        "workflowName": "landing-checks",
+        "startedAt": "2026-10-21T10:02:30Z",
+        "conclusion": ""
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "a required context still running holds the landing, and one never reported is waited for (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"check Clippy wall\",\"test the workspace (linux)\"]}"
+  },
+  {
+    "name": "#5074: a head the CI depth gate stopped reads its cancelled required checks as pending, not failed",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"],
+      "gated": true
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"check Clippy wall\",\"test the workspace (linux)\"]}"
+  },
+  {
+    "name": "#5074: the same cancelled checks on a head no gate stopped are failed",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T07:30:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\",\"test the workspace (linux)\"],\"pending\":[]}"
+  },
+  {
+    "name": "a check the rules do not require never holds the landing: the mutants report still running (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T07:59:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-22T07:58:56Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "report the mutants of the change (linux)",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "#7549: a job of the head's own run that ended red holds the landing by its name, required or not; a red report, a job still running, a red job of another workflow, one of an older run and one whose re-run passed do not",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "lint the pull request title"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 300, "workflow": { "name": "landing-title-and-deletes" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "report the mutants of the change (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check the prose against its ledger",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "take stale claims off",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 400, "workflow": { "name": "tracker-release-claims" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check the VS Code extension",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T13:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 100, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "document the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-14T14:01:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "document the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:20:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      }
+    ],
+    "output": "{\"failed\":[\"check formatting and lint gates (treefmt)\"],\"pending\":[]}"
+  },
+  {
+    "name": "#7549: a head whose ended jobs are all green reads green while a job the rules do not require still runs: no landing waits longer",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "IN_PROGRESS",
+        "conclusion": "",
+        "startedAt": "2026-11-14T14:00:00Z",
+        "checkSuite": {
+          "workflowRun": { "databaseId": 200, "workflow": { "name": "landing-checks" } }
+        }
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "a required context red at its newest run fails the wait, a re-run green over an old failure passes it (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T08:05:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-22T07:59:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-10-22T07:59:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"test the workspace (linux)\"],\"pending\":[]}"
+  },
+  {
+    "name": "#5777: a re-run of an older run that fails after the newer run passed leaves the context green",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "#5777: a re-run of an older run that passes after the newer run failed leaves the context red",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "{\"failed\":[\"lint the pull request title\"],\"pending\":[]}"
+  },
+  {
+    "name": "a required check run GitHub left in progress beside its conclusion is read by the conclusion, never waited for (#1858)",
+    "program": "required.jq",
+    "args": {
+      "required": ["resolve the CI image reference", "check Clippy wall"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "resolve the CI image reference",
+        "status": "IN_PROGRESS",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-22T13:15:39Z",
+        "completedAt": "2026-10-22T13:16:02Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "IN_PROGRESS",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-22T13:15:39Z",
+        "completedAt": "2026-10-22T13:21:10Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\"],\"pending\":[]}"
+  },
+  {
+    "name": "a required commit status reads by its state: pending waits, success passes (#1601)",
+    "program": "required.jq",
+    "args": {
+      "required": ["lint the pull request title", "detect changed-file categories"]
+    },
+    "input": [
+      {
+        "__typename": "StatusContext",
+        "context": "lint the pull request title",
+        "state": "PENDING",
+        "startedAt": "2026-10-22T07:57:40Z"
+      },
+      {
+        "__typename": "StatusContext",
+        "context": "detect changed-file categories",
+        "state": "SUCCESS",
+        "startedAt": "2026-10-22T07:58:39Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[\"lint the pull request title\"]}"
+  },
+  {
+    "name": "a landed branch's worktree is removed, its branch deleted as merged",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/unit",
+        "branch": "unit",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#3798: a landed worktree a live pr:watch marks is kept, and one whose watch is gone is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": 4242
+      },
+      {
+        "path": "/w/unwatched",
+        "branch": "unwatched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/unwatched\",\"branch\":\"unwatched\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#6837: a landed worktree that a live process works in is kept, and so is one whose process table cannot be read; a held idle tree keeps its caches, and a landed tree nothing holds is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/gating",
+        "branch": "gating",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "held": "3457419"
+      },
+      {
+        "path": "/w/unread",
+        "branch": "unread",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "held": "unread",
+        "commits": [{ "subject": "S", "on_trunk": true }],
+        "ahead": 1
+      },
+      {
+        "path": "/w/building",
+        "branch": "building",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "held": "4242",
+        "idle": true
+      },
+      {
+        "path": "/w/free",
+        "branch": "free",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "held": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/gating\",\"branch\":\"gating\",\"action\":\"keep\",\"reason\":\"held by live process 3457419\"},{\"path\":\"/w/unread\",\"branch\":\"unread\",\"action\":\"keep\",\"reason\":\"the process table cannot be read\"},{\"path\":\"/w/building\",\"branch\":\"building\",\"action\":\"keep\",\"reason\":\"held by live process 4242\"},{\"path\":\"/w/free\",\"branch\":\"free\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "a branch judged landed whose head moved since keeps its worktree (#2299)",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/unit",
+        "branch": "unit",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "moved": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"keep\",\"reason\":\"its head moved after it was judged landed\"}]"
+  },
+  {
+    "name": "a branch not landed keeps its worktree",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/unit",
+        "branch": "unit",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+  },
+  {
+    "name": "#4227: a branch whose commits stand on main by subject, though a conflicted rebase changed their patches, is removed and its branch deleted",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/rebased",
+        "branch": "rebased",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          {
+            "subject": "fix(core): a family's argument written as a call converts with its value",
+            "on_trunk": true
+          },
+          {
+            "subject": "perf(kernel): keep content outcomes across an environment's admissions",
+            "on_trunk": true
+          }
+        ],
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/rebased\",\"branch\":\"rebased\",\"action\":\"delete\",\"reason\":\"landed: its commits stand on the trunk\"}]"
+  },
+  {
+    "name": "#4227: a branch whose merged pull request holds each subject main lacks is removed, and one with a commit past it is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/squashed",
+        "branch": "squashed",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          { "subject": "test(core): observe the staged fold", "on_trunk": false },
+          { "subject": "perf(core): stage the fold", "on_trunk": true }
+        ],
+        "pulls": [
+          {
+            "number": 4100,
+            "subjects": ["test(core): observe the staged fold", "perf(core): stage the fold"]
+          }
+        ]
+      },
+      {
+        "path": "/w/reused",
+        "branch": "reused",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [
+          { "subject": "perf(core): stage the fold", "on_trunk": true },
+          { "subject": "fix(core): a commit after the merge", "on_trunk": false }
+        ],
+        "pulls": [{ "number": 4100, "subjects": ["perf(core): stage the fold"] }]
+      }
+    ],
+    "output": "[{\"path\":\"/w/squashed\",\"branch\":\"squashed\",\"action\":\"delete\",\"reason\":\"landed: pull request #4100 merged\"},{\"path\":\"/w/reused\",\"branch\":\"reused\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+  },
+  {
+    "name": "#4227: a branch listing no commit of its own is left to Worktrunk's reading, and one landed by subject whose head moved is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/fresh",
+        "branch": "fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "pulls": null
+      },
+      {
+        "path": "/w/moving",
+        "branch": "moving",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": true,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "perf(core): stage the fold", "on_trunk": true }],
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/moving\",\"branch\":\"moving\",\"action\":\"keep\",\"reason\":\"its head moved after it was judged landed\"}]"
+  },
+  {
+    "name": "#5030: a branch whose commits have equal patches on origin/main is deleted, and a fresh branch is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/equal",
+        "branch": "equal",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "ahead": 2,
+        "pulls": null
+      },
+      {
+        "path": "/w/fresh",
+        "branch": "fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [],
+        "ahead": 0,
+        "pulls": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/equal\",\"branch\":\"equal\",\"action\":\"delete\",\"reason\":\"landed: each commit's patch stands on the trunk\"},{\"path\":\"/w/fresh\",\"branch\":\"fresh\",\"action\":\"keep\",\"reason\":\"not landed\"}]"
+  },
+  {
+    "name": "a landed wip/ branch keeps its worktree",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/try",
+        "branch": "wip/try",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/try\",\"branch\":\"wip/try\",\"action\":\"keep\",\"reason\":\"a wip/ branch\"}]"
+  },
+  {
+    "name": "the caller's own worktree is kept though its branch landed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/unit",
+        "branch": "unit",
+        "primary": false,
+        "cwd": true,
+        "merged": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"keep\",\"reason\":\"the caller's own worktree\"}]"
+  },
+  {
+    "name": "the primary worktree is kept on main",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/clone",
+        "branch": "main",
+        "primary": true,
+        "cwd": false,
+        "merged": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/clone\",\"branch\":\"main\",\"action\":\"keep\",\"reason\":\"the primary worktree\"}]"
+  },
+  {
+    "name": "a scratch whose process is gone is force-removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/tmp/gandr-scratch-41.ab",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": {
+          "holder": 41,
+          "alive": false,
+          "young": true
+        }
+      }
+    ],
+    "output": "[{\"path\":\"/tmp/gandr-scratch-41.ab\",\"branch\":null,\"action\":\"force\",\"reason\":\"scratch whose process 41 is gone\"}]"
+  },
+  {
+    "name": "a scratch its live process holds is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/tmp/gandr-scratch-42.ab/0",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": {
+          "holder": 42,
+          "alive": true,
+          "young": false
+        }
+      }
+    ],
+    "output": "[{\"path\":\"/tmp/gandr-scratch-42.ab/0\",\"branch\":null,\"action\":\"keep\",\"reason\":\"scratch held by live process 42\"}]"
+  },
+  {
+    "name": "an unnamed scratch is force-removed after 4 hours unchanged, kept before",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/tmp/tmp.old",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": {
+          "holder": null,
+          "alive": false,
+          "young": false
+        }
+      },
+      {
+        "path": "/tmp/tmp.new",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": {
+          "holder": null,
+          "alive": false,
+          "young": true
+        }
+      }
+    ],
+    "output": "[{\"path\":\"/tmp/tmp.old\",\"branch\":null,\"action\":\"force\",\"reason\":\"unnamed scratch unchanged for 4 hours\"},{\"path\":\"/tmp/tmp.new\",\"branch\":null,\"action\":\"keep\",\"reason\":\"unnamed scratch changed within 4 hours\"}]"
+  },
+  {
+    "name": "a detached worktree outside the temporary directories is kept",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/bisect",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/bisect\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, not a scratch\"}]"
+  },
+  {
+    "name": "#4221: an idle kept worktree clears its incremental caches; a busy, primary, caller's or watched one keeps them, and a removed one goes whole",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/idle",
+        "branch": "idle",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/busy",
+        "branch": "busy",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": false
+      },
+      {
+        "path": "/w/clone",
+        "branch": "main",
+        "primary": true,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/own",
+        "branch": "own",
+        "primary": false,
+        "cwd": true,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      },
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": 4242,
+        "idle": true
+      },
+      {
+        "path": "/w/landed",
+        "branch": "landed",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "scratch": null,
+        "watched": null,
+        "idle": true
+      }
+    ],
+    "output": "[{\"path\":\"/w/idle\",\"branch\":\"idle\",\"action\":\"keep\",\"reason\":\"not landed\",\"clear\":true},{\"path\":\"/w/busy\",\"branch\":\"busy\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/clone\",\"branch\":\"main\",\"action\":\"keep\",\"reason\":\"the primary worktree\"},{\"path\":\"/w/own\",\"branch\":\"own\",\"action\":\"keep\",\"reason\":\"the caller's own worktree\"},{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/landed\",\"branch\":\"landed\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#6183: a stale clean tree that has not landed is released and keeps its branch; a dirty, a recent and a watched one stay, and a landed one is removed",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/stale",
+        "branch": "stale",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/dirty",
+        "branch": "dirty",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": true,
+        "dirty": true
+      },
+      {
+        "path": "/w/recent",
+        "branch": "recent",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "commits": [{ "subject": "feat(core): an unlanded step", "on_trunk": false }],
+        "ahead": 1,
+        "pulls": null,
+        "stale": false,
+        "dirty": null
+      },
+      {
+        "path": "/w/watched",
+        "branch": "watched",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "moved": false,
+        "scratch": null,
+        "watched": 4242,
+        "stale": false,
+        "dirty": null
+      },
+      {
+        "path": "/w/landed",
+        "branch": "landed",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "moved": false,
+        "scratch": null,
+        "watched": null,
+        "stale": true,
+        "dirty": false
+      }
+    ],
+    "output": "[{\"path\":\"/w/stale\",\"branch\":\"stale\",\"action\":\"release\",\"reason\":\"not landed, idle for 24 hours; its branch stays\"},{\"path\":\"/w/dirty\",\"branch\":\"dirty\",\"action\":\"keep\",\"reason\":\"not landed, idle for 24 hours, but dirty: its seat decides\"},{\"path\":\"/w/recent\",\"branch\":\"recent\",\"action\":\"keep\",\"reason\":\"not landed\"},{\"path\":\"/w/watched\",\"branch\":\"watched\",\"action\":\"keep\",\"reason\":\"held by live pr:watch 4242\"},{\"path\":\"/w/landed\",\"branch\":\"landed\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
+  },
+  {
+    "name": "#6183: a stale detached head with commits off the trunk keeps its head as attic/<directory> and is released, one with none is released alone, and a dirty or recent one stays",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/bisect-old",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 2,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/probe",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 0,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/half",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "ahead": 1,
+        "stale": true,
+        "dirty": true
+      },
+      {
+        "path": "/w/bisect",
+        "branch": null,
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": false,
+        "dirty": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/bisect-old\",\"branch\":null,\"action\":\"release\",\"reason\":\"detached, idle for 24 hours\",\"attic\":\"attic/bisect-old\"},{\"path\":\"/w/probe\",\"branch\":null,\"action\":\"release\",\"reason\":\"detached, idle for 24 hours\"},{\"path\":\"/w/half\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, idle for 24 hours, but dirty: its seat decides\"},{\"path\":\"/w/bisect\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, not a scratch\"}]"
+  },
+  {
+    "name": "#6183: a stale wip/ branch's tree is released and its branch stays; a recent one stays",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/try",
+        "branch": "wip/try",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": true,
+        "dirty": false
+      },
+      {
+        "path": "/w/fresh",
+        "branch": "wip/fresh",
+        "primary": false,
+        "cwd": false,
+        "merged": false,
+        "scratch": null,
+        "watched": null,
+        "stale": false,
+        "dirty": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/try\",\"branch\":\"wip/try\",\"action\":\"release\",\"reason\":\"a wip/ branch, idle for 24 hours; its branch stays\"},{\"path\":\"/w/fresh\",\"branch\":\"wip/fresh\",\"action\":\"keep\",\"reason\":\"a wip/ branch\"}]"
+  },
+  {
+    "name": "#2531: a push to a queued pull request's branch is refused, naming it",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-1-a"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[{\"number\":1,\"state\":\"queued\"}]"
+  },
+  {
+    "name": "#2531: a push below a queued member is refused, naming each queued or held member above",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-1-a"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 2,
+        "head": "w-2-b",
+        "base": "w-1-a",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 3,
+        "head": "w-3-c",
+        "base": "w-2-b",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": true,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 4,
+        "head": "w-4-d",
+        "base": "w-3-c",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[{\"number\":2,\"state\":\"queued\"},{\"number\":3,\"state\":\"held\"}]"
+  },
+  {
+    "name": "#2531: a push above the queued members, or beside the stack, goes",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-3-c"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 2,
+        "head": "w-2-b",
+        "base": "w-1-a",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 3,
+        "head": "w-3-c",
+        "base": "w-2-b",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 5,
+        "head": "w-5-e",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "#2531: a branch with no pull request may be pushed",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-9-new"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "#2700: the head #2691's rebase replaced (c303937d2) failed its Clippy wall, and the reading names it",
+    "program": "required.jq",
+    "args": {
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check quenchant compiler policy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\"],\"pending\":[]}"
+  },
+  {
+    "name": "#2700: GitHub's rebase of an unchanged change whose replaced head failed runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": ["check Clippy wall"],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "GitHub's rebase of an unchanged change whose replaced head passed, its filtered lanes skipped, skips them",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "true"
+  },
+  {
+    "name": "#2700: a replaced head still running, or whose required contexts were not read, runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": ["test the workspace (linux)"]
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "no required contexts read, or no reading, runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": []
+    },
+    "output": "false"
+  },
+  {
+    "name": "a seat's push, or a rebase that changed the patch, runs the lanes whatever the replaced head did",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "agent-shade",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "a patch-id not read runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "",
+      "after": "",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "the replaced head passed: its skipped lanes read as passed",
+    "program": "required.jq",
+    "args": {
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check quenchant compiler policy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "#2701: a recorded set, with the App: the green unqueued pull request is landed, the queued one untouched, the red one told, the pending one left",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "CLEAN",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2691,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2695,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": ["test the workspace (linux)"]
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":2675,\"act\":\"land\",\"told\":false},{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "#2701: the same set without the App: the green pull request's seat is told to land it",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "CLEAN",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2691,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2695,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": ["test the workspace (linux)"]
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":2675,\"act\":\"green\"},{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "#2701: a pull request already told at its head is told nothing more",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-red:cccccccccccccccccccccccccccccccccccccccc"]
+        },
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-green:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a pull request told at an older head is told again at its new one",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-red:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "a conflicting pull request is told once per head, before its checks are read",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 10,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 11,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-dirty:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+        }
+      ]
+    },
+    "output": "[{\"number\":10,\"act\":\"dirty\"}]"
+  },
+  {
+    "name": "a held, bot or auto-merge pull request is left alone",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 20,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": true,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 21,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": true,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 22,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#5776: a stranded pull request is retargeted, queued or red; a held one and a queued one on a live base are left alone",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 30,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 9,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        },
+        {
+          "number": 31,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 9,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": false,
+          "marks": []
+        },
+        {
+          "number": 32,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": true,
+          "held": true,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        },
+        {
+          "number": 33,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": ["test"], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":30,\"act\":\"retarget\",\"told\":false},{\"number\":33,\"act\":\"retarget\",\"told\":false}]"
+  },
+  {
+    "name": "#5776: a stranded pull request told at its head carries `told`, so a failed retarget is told once",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 40,
+          "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": [] },
+          "removed": false,
+          "stranded": true,
+          "marks": ["pr-dequeued:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
+        }
+      ]
+    },
+    "output": "[{\"number\":40,\"act\":\"retarget\",\"told\":true}]"
+  },
+  {
+    "name": "a stack's green members ask for one landing, or one telling, from its lowest member",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 31,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 32,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 33,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":31,\"act\":\"land\",\"told\":false},{\"number\":33,\"act\":\"land\",\"told\":false}]"
+  },
+  {
+    "name": "#5695: a green landing the watcher refused at this head carries `told`, so the refusal is told once",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 41,
+          "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-dequeued:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]
+        },
+        {
+          "number": 42,
+          "oid": "ffffffffffffffffffffffffffffffffffffffff",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-dequeued:0000000000000000000000000000000000000000"]
+        }
+      ]
+    },
+    "output": "[{\"number\":41,\"act\":\"land\",\"told\":true},{\"number\":42,\"act\":\"land\",\"told\":false}]"
+  },
+  {
+    "name": "a green stack whose lowest member was told is not told again through the member above",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 31,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-green:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        },
+        {
+          "number": 32,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "without the App a dequeued pull request is told once, and its green stack is not queued again unchanged",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 41,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 40,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 42,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 40,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":41,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "with the App every dequeued member of a stack with no red or queued member is rebased by GitHub, nothing landed meanwhile",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 51,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 52,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 53,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":51,\"act\":\"restack\",\"told\":false},{\"number\":52,\"act\":\"restack\",\"told\":false}]"
+  },
+  {
+    "name": "#6915: with the token, a green stack that holds a workflow change is told `pr-green` from its lowest member, never landed; a green pull request with no workflow change is landed",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 61,
+          "oid": "1111111111111111111111111111111111111111",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": false
+        },
+        {
+          "number": 62,
+          "oid": "2222222222222222222222222222222222222222",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": true
+        },
+        {
+          "number": 63,
+          "oid": "3333333333333333333333333333333333333333",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "UNSTABLE",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": [],
+          "workflow": false
+        }
+      ]
+    },
+    "output": "[{\"number\":61,\"act\":\"green\"},{\"number\":63,\"act\":\"land\",\"told\":false}]"
+  },
+  {
+    "name": "#6915: with the token, a dequeued workflow change is told `pr-dequeued`, never restacked; a dequeued pull request with no workflow change is restacked",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 71,
+          "oid": "4444444444444444444444444444444444444444",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "manual",
+          "marks": [],
+          "workflow": true
+        },
+        {
+          "number": 72,
+          "oid": "5555555555555555555555555555555555555555",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "manual",
+          "marks": [],
+          "workflow": false
+        }
+      ]
+    },
+    "output": "[{\"number\":71,\"act\":\"dequeued\"},{\"number\":72,\"act\":\"restack\",\"told\":false}]"
+  },
+  {
+    "name": "#3745: a pull request the queue removed for failed checks is told, never rebased, though its own checks are green; the member above it waits",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 3737,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 3740,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "failed_checks",
+          "marks": []
+        },
+        {
+          "number": 3739,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 3740,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "removal": "",
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":3737,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "a rebase GitHub refused at this head is tried again and told no more",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 54,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": ["pr-dequeued:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[{\"number\":54,\"act\":\"restack\",\"told\":true}]"
+  },
+  {
+    "name": "#4463: without a token that may queue, a dequeued pull request whose head holds a commit its base already carries is told, naming it; once told at the head it is left",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 55,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "upstream": ["refactor(surface): the block after a tile is one shared sort (#4445)"],
+          "marks": []
+        },
+        {
+          "number": 56,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "upstream": ["lower (#1)"],
+          "marks": ["pr-dequeued:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+        }
+      ]
+    },
+    "output": "[{\"number\":55,\"act\":\"dequeued\",\"upstream\":[\"refactor(surface): the block after a tile is one shared sort (#4445)\"]}]"
+  },
+  {
+    "name": "#5214: with the token, a dequeued pull request whose head holds a commit its base already carries is restacked: the runner's rebase drops that commit",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 55,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "removal": "merge_conflict",
+          "upstream": ["refactor(surface): the block after a tile is one shared sort (#4445)"],
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":55,\"act\":\"restack\",\"told\":false}]"
+  },
+  {
+    "name": "#2701: a dequeued stack with a queued member is never pushed (#2531); its seat is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 61,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 62,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":62,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "a dequeued stack with a red member is not rebased; the red one is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 71,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 70,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 72,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 70,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":71,\"act\":\"dequeued\"},{\"number\":72,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "three restacks of a pull request are the cap: the fourth dequeue is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 81,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": [
+            "pr-restacked:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "pr-restacked:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "pr-restacked:cccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
+      ]
+    },
+    "output": "[{\"number\":81,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "#2539: a throwaway branch with no pull request is listed, remote and local; the kept branches (#5443), an open pull request's head and the queue's branches are not",
+    "program": "branches.jq",
+    "input": {
+      "kept": ["main", "landing", "integration"],
+      "heads": ["workflow-2539-branches-sweep"],
+      "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
+      "remote": [
+        "main",
+        "landing",
+        "integration",
+        "probe-throwaway",
+        "workflow-2539-branches-sweep",
+        "gh-readonly-queue/main/pr-2702-abc"
+      ],
+      "local": [
+        {
+          "name": "main",
+          "worktree": "/w/gandr"
+        },
+        {
+          "name": "probe-throwaway",
+          "worktree": null
+        },
+        {
+          "name": "workflow-2539-branches-sweep",
+          "worktree": "/w/2539"
+        }
+      ]
+    },
+    "output": "{\"remote\":[\"probe-throwaway\"],\"local\":[{\"name\":\"probe-throwaway\",\"worktree\":null}],\"wip\":[]}"
+  },
+  {
+    "name": "#2539: a wip/ branch an open issue names is not listed; one no issue names is, once, whether local or remote",
+    "program": "branches.jq",
+    "input": {
+      "kept": ["main", "landing", "integration"],
+      "heads": ["workflow-2539-branches-sweep"],
+      "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
+      "remote": ["wip/core-1630-static-lambda", "wip/surface-1105-run-target"],
+      "local": [
+        {
+          "name": "wip/surface-1105-run-target",
+          "worktree": "/w/1105"
+        }
+      ]
+    },
+    "output": "{\"remote\":[],\"local\":[],\"wip\":[\"wip/surface-1105-run-target\"]}"
+  },
+  {
+    "name": "a wip/ branch is named only whole: an issue naming a longer branch it prefixes does not name it",
+    "program": "branches.jq",
+    "input": {
+      "kept": ["main", "landing", "integration"],
+      "heads": ["workflow-2539-branches-sweep"],
+      "issues": ["see wip/core-1630-static-lambda-2"],
+      "remote": ["wip/core-1630-static-lambda"],
+      "local": []
+    },
+    "output": "{\"remote\":[],\"local\":[],\"wip\":[\"wip/core-1630-static-lambda\"]}"
+  },
+  {
+    "name": "a local branch is listed with the worktree holding it",
+    "program": "branches.jq",
+    "input": {
+      "kept": ["main", "landing", "integration"],
+      "heads": ["workflow-2539-branches-sweep"],
+      "issues": ["surface: the run target\nWork continues on `wip/core-1630-static-lambda`."],
+      "remote": [],
+      "local": [
+        {
+          "name": "workflow",
+          "worktree": "/w/workflow"
+        }
+      ]
+    },
+    "output": "{\"remote\":[],\"local\":[{\"name\":\"workflow\",\"worktree\":\"/w/workflow\"}],\"wip\":[]}"
+  },
+  {
+    "name": "#2746: a landing that ran records the head",
+    "program": "landed.jq",
+    "input": {
+      "status": 0,
+      "head": "b2",
+      "landed_head": "a1",
+      "now": 600,
+      "retry_at": 0
+    },
+    "output": "\"b2|0\""
+  },
+  {
+    "name": "#2746: a landing whose read failed keeps the head unlanded and tries again two minutes on",
+    "program": "landed.jq",
+    "input": {
+      "status": 2,
+      "head": "b2",
+      "landed_head": "",
+      "now": 600,
+      "retry_at": 0
+    },
+    "output": "\"|720\""
+  },
+  {
+    "name": "#2746: a stack that waits keeps the last landed head and tries again two minutes on",
+    "program": "landed.jq",
+    "input": {
+      "status": 3,
+      "head": "b2",
+      "landed_head": "a1",
+      "now": 600,
+      "retry_at": 480
+    },
+    "output": "\"a1|720\""
+  },
+  {
+    "name": "#2854: one DIRTY reading is no conflict; it waits a poll, holding its head",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": null
+    },
+    "output": "{\"act\":\"confirm\",\"seen\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}"
+  },
+  {
+    "name": "#2854: a DIRTY reading at a head that moved since the last one is no conflict either; the count starts again",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"confirm\",\"seen\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}"
+  },
+  {
+    "name": "#3615: a stack with a queued bottom waits for it to merge; the heal pushes no branch",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3608, "red": false, "queued": true },
+        { "number": 3611, "red": false, "queued": false },
+        { "number": 3613, "red": false, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"wait\",\"queued\":[3608]}"
+  },
+  {
+    "name": "#3615: a stack with no queued member and no red check is restacked",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3611, "red": false, "queued": false },
+        { "number": 3613, "red": false, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"restack\"}"
+  },
+  {
+    "name": "#3615: a red member stops the heal before a queued one makes it wait",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": [
+        { "number": 3608, "red": false, "queued": true },
+        { "number": 3613, "red": true, "queued": false }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#3615: a fourth heal stops",
+    "program": "heal.jq",
+    "input": {
+      "heals": 3,
+      "members": [{ "number": 3613, "red": false, "queued": false }]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#3615: an empty stack stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "members": []
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a red member below the watched one, whose paths no member above changes, is cut out; the chain keeps the members below and above it",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4547, "red": false, "queued": true, "paths": ["crates/a/src/lib.rs"] },
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"past\",\"red\":4544,\"chain\":[4547,4606,4615]}"
+  },
+  {
+    "name": "#4642: a member above the red one that changes a path the red one changes stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        {
+          "number": 4544,
+          "red": true,
+          "queued": false,
+          "paths": ["crates/b/src/lib.rs", "crates/b/tests/b.rs"]
+        },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/b/tests/b.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a red member above the watched one stops the heal: the watched one lands below it",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4606,
+      "members": [
+        { "number": 4544, "red": false, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": true, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a second red member above the first stops the heal",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": true, "queued": false, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"stop\"}"
+  },
+  {
+    "name": "#4642: a queued member above the red one makes the cut wait; a queued member below it does not",
+    "program": "heal.jq",
+    "input": {
+      "heals": 0,
+      "own": 4615,
+      "members": [
+        { "number": 4547, "red": false, "queued": true, "paths": ["crates/a/src/lib.rs"] },
+        { "number": 4544, "red": true, "queued": false, "paths": ["crates/b/src/lib.rs"] },
+        { "number": 4606, "red": false, "queued": true, "paths": ["crates/c/src/lib.rs"] },
+        { "number": 4615, "red": false, "queued": false, "paths": ["crates/d/src/lib.rs"] }
+      ]
+    },
+    "output": "{\"act\":\"wait\",\"queued\":[4606]}"
+  },
+  {
+    "name": "#2854: a DIRTY reading repeated at the same head is a conflict",
+    "program": "dirty.jq",
+    "input": {
+      "status": "DIRTY",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"conflict\",\"seen\":null}"
+  },
+  {
+    "name": "#2854: a merge state no longer DIRTY clears the reading held",
+    "program": "dirty.jq",
+    "input": {
+      "status": "BLOCKED",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "output": "{\"act\":\"clear\",\"seen\":null}"
+  },
+  {
+    "name": "#4225: the watch reads its own pull request's failed queue runs since it began, and no other's, earlier or passing one",
+    "program": "queue-runs.jq",
+    "args": {
+      "prefix": "gh-readonly-queue/main/pr-4199-",
+      "since": "2026-10-30T15:00:00Z"
+    },
+    "input": {
+      "workflow_runs": [
+        {
+          "id": 41,
+          "head_branch": "gh-readonly-queue/main/pr-4199-9abaccc19a70",
+          "conclusion": "failure",
+          "created_at": "2026-10-30T16:20:11Z"
+        },
+        {
+          "id": 42,
+          "head_branch": "gh-readonly-queue/main/pr-4199-9abaccc19a70",
+          "conclusion": "success",
+          "created_at": "2026-10-30T16:40:02Z"
+        },
+        {
+          "id": 43,
+          "head_branch": "gh-readonly-queue/main/pr-41990-0cfd96600aa1",
+          "conclusion": "failure",
+          "created_at": "2026-10-30T16:21:00Z"
+        },
+        {
+          "id": 44,
+          "head_branch": "gh-readonly-queue/main/pr-4199-01e763f54aa2",
+          "conclusion": "failure",
+          "created_at": "2026-10-30T14:59:59Z"
+        },
+        {
+          "id": 45,
+          "head_branch": "gh-readonly-queue/main/pr-4200-01e763f54aa2",
+          "conclusion": "failure",
+          "created_at": "2026-10-30T16:30:00Z"
+        }
+      ]
+    },
+    "output": "41"
+  },
+  {
+    "name": "#2829: a cancelled run beside a queued run of its workflow on the head is superseded though the queued run has the smaller id",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": null
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run beside a newer run in progress is superseded (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981551
+    },
+    "input": [
+      {
+        "id": 40412981551,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981589,
+        "conclusion": null
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run beside a completed run of its workflow is superseded: the completed run's own checks are read (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": "failure"
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "a cancelled run alone on its head is not superseded, so its checks are red (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981589
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "false"
+  },
+  {
+    "name": "a cancelled run whose every twin was cancelled too is not superseded (#2829)",
+    "program": "superseded.jq",
+    "args": {
+      "run": 40412981551
+    },
+    "input": [
+      {
+        "id": 40412981589,
+        "conclusion": "cancelled"
+      },
+      {
+        "id": 40412981551,
+        "conclusion": "cancelled"
+      }
+    ],
+    "output": "false"
+  },
+  {
+    "name": "#2984: landing on a `*/10` schedule alone, which GitHub ran hours late, is refused for the schedule and for each event it misses",
+    "program": "triggers.jq",
+    "input": {
+      "schedule": [
+        {
+          "cron": "*/10 * * * *"
+        }
+      ],
+      "workflow_dispatch": {}
+    },
+    "output": "[\"`schedule`: GitHub ran this repository's schedules four to five hours late, so a reading must follow events, never a cron (#2984)\",\"no `workflow_run` of `landing-checks` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `dequeued`: no `landing-checks` completion marks it, so it starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `landing-checks` completion marks it, so it starts no reading (#2984)\"]"
+  },
+  {
+    "name": "#2984: landing on `landing-checks`'s completion, a dequeue and a draft taken back holds",
+    "program": "triggers.jq",
+    "input": {
+      "workflow_run": {
+        "workflows": ["landing-checks"],
+        "types": ["completed"]
+      },
+      "pull_request": {
+        "types": ["dequeued", "ready_for_review"]
+      },
+      "workflow_dispatch": {}
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#2984: `landing-checks` read on `requested` rather than `completed`, and `ready_for_review` missing, are each refused",
+    "program": "triggers.jq",
+    "input": {
+      "workflow_run": {
+        "workflows": ["landing-checks"],
+        "types": ["requested"]
+      },
+      "pull_request": {
+        "types": ["dequeued"]
+      }
+    },
+    "output": "[\"no `workflow_run` of `landing-checks` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `landing-checks` completion marks it, so it starts no reading (#2984)\"]"
+  },
+  {
+    "name": "#3849: a new top opened above the measured one, sharing no path with the branch, takes the branch without measuring again",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"restack\",\"onto\":{\"number\":3845,\"head\":\"theory-3712-sigma-transport\"}}"
+  },
+  {
+    "name": "#3849: the top read again as measured keeps the branch where it stands",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"stay\"}"
+  },
+  {
+    "name": "#3849: with nothing open when it measured, a pull request opened above the fork takes the branch",
+    "program": "moved.jq",
+    "input": {
+      "top": null,
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"restack\",\"onto\":{\"number\":3845,\"head\":\"theory-3712-sigma-transport\"}}"
+  },
+  {
+    "name": "#3849: a new top that changes a path the branch changes is refused, naming the path",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": true,
+      "shared": ["crates/kernel-core/src/replay.rs"]
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top moved from #3842 to #3845, which changes `crates/kernel-core/src/replay.rs` as this branch does\"}"
+  },
+  {
+    "name": "#3849: a new top beside the measured fork is refused",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top moved from #3842 to #3845, which does not stack on the measured fork\"}"
+  },
+  {
+    "name": "#3849: a measured top restacked under the branch is refused, though a new top shares no path",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": { "number": 3845, "head": "theory-3712-sigma-transport" },
+      "kept": false,
+      "builds": true,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top #3842 was restacked while the obligations were measured\"}"
+  },
+  {
+    "name": "#3849: a measured top that left the stack, nothing open after it, is refused",
+    "program": "moved.jq",
+    "input": {
+      "top": { "number": 3842, "head": "triage-3783-lldb-recursion" },
+      "now": null,
+      "kept": true,
+      "builds": false,
+      "shared": []
+    },
+    "output": "{\"act\":\"refuse\",\"why\":\"the stack top #3842 left the stack while the obligations were measured\"}"
+  },
+  {
+    "name": "#4164: an issue waiting on `shape:signed` wakes its seat once the label stands",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "OPEN", "labels": ["kind:defect", "shape:signed"] },
+    "output": "{\"event\":\"signed\",\"exit\":0}"
+  },
+  {
+    "name": "#4164: an issue without the label is waited on",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "OPEN", "labels": ["kind:defect"] },
+    "output": "null"
+  },
+  {
+    "name": "#4164: an issue closed while it waited needs a hand",
+    "program": "awaited.jq",
+    "input": { "kind": "issue", "state": "CLOSED", "labels": [] },
+    "output": "{\"event\":\"issue-closed\",\"exit\":1}"
+  },
+  {
+    "name": "#4164: a top that merged wakes the seat",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "MERGED", "merge": "UNKNOWN", "lacks": true, "age": 60 },
+    "output": "{\"event\":\"top-merged\",\"exit\":0}"
+  },
+  {
+    "name": "#4164: a top closed without merging needs a hand",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "CLOSED", "merge": "UNKNOWN", "lacks": true, "age": 60 },
+    "output": "{\"event\":\"top-closed\",\"exit\":1}"
+  },
+  {
+    "name": "#4164: a top still lacking the trunk change is waited on",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "BEHIND", "lacks": true, "age": 60 },
+    "output": "null"
+  },
+  {
+    "name": "#4164: a top rebased to hold the trunk change wakes the seat",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "BLOCKED", "lacks": false, "age": 60 },
+    "output": "{\"event\":\"top-current\",\"exit\":0}"
+  },
+  {
+    "name": "#7188: a top that conflicts with the trunk wakes the seat at once, so `pr:open` opens the branch on the trunk by itself",
+    "program": "awaited.jq",
+    "input": { "kind": "pull", "state": "OPEN", "merge": "DIRTY", "lacks": true },
+    "output": "{\"event\":\"top-conflicts\",\"exit\":0}"
+  },
+  {
+    "name": "a bottom queued on a merged branch no open pull request heads stands off the trunk, and the landing retargets it (#4168)",
+    "program": "bottom.jq",
+    "args": { "n": 4158, "trunk": "main" },
+    "input": [
+      {
+        "number": 4158,
+        "head": "triage-2-4156-debug-macos",
+        "base": "triage-4058-stall-lane",
+        "created": "2026-10-30T13:50:00Z",
+        "landing": true,
+        "held": false,
+        "stack": 77,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 4159,
+        "head": "program-logic-4112-discharge",
+        "base": "main",
+        "created": "2026-10-30T14:24:33Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "{\"number\":4158,\"base\":\"triage-4058-stall-lane\",\"landing\":true,\"stack\":77}"
+  },
+  {
+    "name": "a bottom on the trunk stands on it, and a member on an open pull request's head is no bottom off the trunk (#4168)",
+    "program": "bottom.jq",
+    "args": { "n": 4159, "trunk": "main" },
+    "input": [
+      {
+        "number": 4159,
+        "head": "program-logic-4112-discharge",
+        "base": "main",
+        "created": "2026-10-30T14:24:33Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      },
+      {
+        "number": 4160,
+        "head": "triage-4160-upper",
+        "base": "program-logic-4112-discharge",
+        "created": "2026-10-30T14:30:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false,
+        "hold": null
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "a stack waits on a carried pull request queued on the trunk, and lands past one queued on a merged branch, naming it (#4168)",
+    "program": "carried.jq",
+    "input": {
+      "open": [
+        {
+          "number": 4158,
+          "head": "triage-2-4156-debug-macos",
+          "base": "triage-4058-stall-lane",
+          "created": "2026-10-30T13:50:00Z",
+          "landing": true,
+          "held": false,
+          "stack": 77,
+          "bot": false,
+          "hold": null
+        },
+        {
+          "number": 4159,
+          "head": "program-logic-4112-discharge",
+          "base": "main",
+          "created": "2026-10-30T14:24:33Z",
+          "landing": false,
+          "held": false,
+          "stack": null,
+          "bot": false,
+          "hold": null
+        },
+        {
+          "number": 4162,
+          "head": "core-4162-lower",
+          "base": "main",
+          "created": "2026-10-30T14:00:00Z",
+          "landing": true,
+          "held": false,
+          "stack": null,
+          "bot": false,
+          "hold": null
+        }
+      ],
+      "trunk": "main",
+      "held": [4162, 4158]
+    },
+    "output": "{\"wait\":[4162],\"off\":[{\"number\":4158,\"base\":\"triage-4058-stall-lane\"}]}"
+  },
+  {
+    "name": "#5073: a required check that concluded failure at its newest run is red, and names its run",
+    "program": "red.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/1"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/2"
+      }
+    ],
+    "output": "{\"check\":\"test the workspace (linux)\",\"run\":\"https://example.invalid/runs/1/job/2\"}"
+  },
+  {
+    "name": "#5777: a failed re-run of an older run after the newer run passed is not red, so it cuts nothing",
+    "program": "red.jq",
+    "args": {
+      "required": ["lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-06T17:33:46Z",
+        "detailsUrl": "https://example.invalid/runs/42262382545/job/2",
+        "checkSuite": { "workflowRun": { "databaseId": 42262382545 } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-11-06T17:32:11Z",
+        "detailsUrl": "https://example.invalid/runs/42262511416/job/1",
+        "checkSuite": { "workflowRun": { "databaseId": 42262511416 } }
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "#5073: a cancelled, a timed-out and a startup-failed required check are not red, and cut nothing; a failure under a newer success is not red either",
+    "program": "red.jq",
+    "args": {
+      "required": ["check Clippy wall", "test the workspace (linux)", "lint the pull request title"]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/1"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "TIMED_OUT",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/1/job/2"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-11-04T05:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/0/job/2"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "STARTUP_FAILURE",
+        "startedAt": "2026-11-04T06:00:00Z",
+        "detailsUrl": "https://example.invalid/runs/2/job/3"
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "#5073: a cut cancels a moved branch's run at its old head and a merge-group run of a cut pull request; a run at the new head, another branch's and another group's stay",
+    "program": "stale.jq",
+    "input": {
+      "runs": [
+        {
+          "id": 11,
+          "event": "pull_request",
+          "head_branch": "upper",
+          "head_sha": "old",
+          "status": "in_progress"
+        },
+        {
+          "id": 12,
+          "event": "merge_group",
+          "head_branch": "gh-readonly-queue/main/pr-2-abc",
+          "head_sha": "abc",
+          "status": "queued"
+        },
+        {
+          "id": 13,
+          "event": "pull_request",
+          "head_branch": "upper",
+          "head_sha": "new",
+          "status": "in_progress"
+        },
+        {
+          "id": 14,
+          "event": "pull_request",
+          "head_branch": "elsewhere",
+          "head_sha": "def",
+          "status": "in_progress"
+        },
+        {
+          "id": 15,
+          "event": "merge_group",
+          "head_branch": "gh-readonly-queue/main/pr-20-abc",
+          "head_sha": "abc",
+          "status": "queued"
+        },
+        {
+          "id": 16,
+          "event": "pull_request",
+          "head_branch": "top",
+          "head_sha": "older",
+          "status": "completed"
+        }
+      ],
+      "heads": { "upper": "new", "top": "newer" },
+      "numbers": [2, 3, 4],
+      "trunk": "main"
+    },
+    "output": "[11,12]"
+  },
+  {
+    "name": "#5171: a head the CI depth gate stopped waits while its CI run stays cancelled, though the title check of another workflow passed",
+    "program": "unstarted.jq",
+    "args": {
+      "required": ["lint the pull request title", "test the workspace (linux)"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "#5171: a head whose CI run runs again no longer waits for its promotion",
+    "program": "unstarted.jq",
+    "args": {
+      "required": ["lint the pull request title", "test the workspace (linux)"],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "IN_PROGRESS",
+        "conclusion": null,
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
+      }
+    ],
+    "output": "false"
+  },
+  {
+    "name": "#5517: a gated head waits though the brake, a required job of the landing-checks workflow that runs on a merge group only, skips on its pull request",
+    "program": "unstarted.jq",
+    "args": {
+      "required": [
+        "hold the landings while main lags",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "workflow": "landing-checks"
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "CANCELLED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "hold the landings while main lags",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-checks" } } }
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "checkSuite": { "workflowRun": { "workflow": { "name": "landing-title-and-deletes" } } }
+      }
+    ],
+    "output": "true"
+  },
+  {
+    "name": "#5340 stands beside #5339: both opened at once on #5325's branch",
+    "program": "beside.jq",
+    "args": { "n": 5340, "base": "workflow-5325-recovery" },
+    "input": [
+      { "number": 5325, "base": "main", "bot": false },
+      { "number": 5339, "base": "workflow-5325-recovery", "bot": false },
+      { "number": 5340, "base": "workflow-5325-recovery", "bot": false }
+    ],
+    "output": 5339
+  },
+  {
+    "name": "the earlier of two pull requests on one base stands beside none; the later one moves",
+    "program": "beside.jq",
+    "args": { "n": 5339, "base": "workflow-5325-recovery" },
+    "input": [
+      { "number": 5325, "base": "main", "bot": false },
+      { "number": 5339, "base": "workflow-5325-recovery", "bot": false },
+      { "number": 5340, "base": "workflow-5325-recovery", "bot": false }
+    ],
+    "output": null
+  },
+  {
+    "name": "of three opened at once on one base, the newest moves onto the one opened just before it",
+    "program": "beside.jq",
+    "args": { "n": 5342, "base": "floor-1-a" },
+    "input": [
+      { "number": 5339, "base": "floor-1-a", "bot": false },
+      { "number": 5341, "base": "floor-1-a", "bot": false },
+      { "number": 5342, "base": "floor-1-a", "bot": false },
+      { "number": 5343, "base": "triage-2-b", "bot": false }
+    ],
+    "output": 5341
+  },
+  {
+    "name": "an app's pull request on the same base stands beside none: it lands on its own",
+    "program": "beside.jq",
+    "args": { "n": 5340, "base": "main" },
+    "input": [
+      { "number": 5338, "base": "main", "bot": true },
+      { "number": 5340, "base": "main", "bot": false }
+    ],
+    "output": null
+  },
+  {
+    "name": "#5137: a copied unit that reads a source of the primary through CARGO_MANIFEST_DIR or a checksum is removed once, and a unit that names only the primary's build products is kept",
+    "program": "warm.jq",
+    "input": {
+      "root": "/w/gandr",
+      "named": [
+        "/w/unit/target/enforcing/debug/build/gandr-grammar/00000000000000a1/out/tests-00000000000000a1.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/grammar",
+        "/w/unit/target/debug/build/gandr-lang/00000000000000a2/out/gandr_lang-00000000000000a2.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr",
+        "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3/out/tests-00000000000000a3.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/lsp",
+        "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3/out/tests-00000000000000a3.d:# checksum:blake3=00 file_len:9 /w/gandr/clippy.toml",
+        "/w/unit/target/debug/build/ring/00000000000000a4/out/ring-00000000000000a4.d:# env-dep:OUT_DIR=/w/gandr/target/debug/build/ring/00000000000000a5/out",
+        "/w/unit/target/debug/build/ring/00000000000000a4/out/ring-00000000000000a4.d:# checksum:blake3=00 file_len:9 /w/gandr/target/debug/build/ring/00000000000000a5/out/prefix.rs"
+      ]
+    },
+    "output": [
+      "/w/unit/target/debug/build/gandr-lang/00000000000000a2",
+      "/w/unit/target/enforcing/debug/build/gandr-grammar/00000000000000a1",
+      "/w/unit/target/enforcing/debug/build/gandr-lsp/00000000000000a3"
+    ]
+  },
+  {
+    "name": "#5137: a path in a sibling directory whose name starts with the primary's is not the primary's, and a dep-info outside a unit directory names no unit",
+    "program": "warm.jq",
+    "input": {
+      "root": "/w/gandr",
+      "named": [
+        "/w/unit/target/debug/build/gandr-grammar/00000000000000b1/out/tests-00000000000000b1.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr-worktrees/unit/crates/grammar",
+        "/w/unit/target/debug/deps/tests-00000000000000b2.d:# env-dep:CARGO_MANIFEST_DIR=/w/gandr/crates/grammar"
+      ]
+    },
+    "output": []
+  },
+  {
+    "name": "#6164: with the token, a head with no CI run is rerun once; a marked head, one whose run started and a dirty one are not",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 10,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        },
+        {
+          "number": 11,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": ["pr-rerun:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+          "unrun": true
+        },
+        {
+          "number": 12,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": false
+        },
+        {
+          "number": 13,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        }
+      ]
+    },
+    "output": "[{\"number\":10,\"act\":\"rerun\"},{\"number\":13,\"act\":\"dirty\"}]"
+  },
+  {
+    "name": "#6164: without the token, a head with no CI run tells its seat `pr-unrun` once per head",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 20,
+          "oid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": [],
+          "unrun": true
+        },
+        {
+          "number": 21,
+          "oid": "ffffffffffffffffffffffffffffffffffffffff",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": { "failed": [], "pending": ["prepare the run"] },
+          "removed": false,
+          "marks": ["pr-unrun:ffffffffffffffffffffffffffffffffffffffff"],
+          "unrun": true
+        }
+      ]
+    },
+    "output": "[{\"number\":20,\"act\":\"unrun\"}]"
+  },
+  {
+    "name": "#6212: kept, merge queue, and named branches are accounted once",
+    "program": "accounted-cases.jq",
+    "input": {
+      "kept": ["landing"],
+      "named": ["stack-base"],
+      "branches": ["landing", "gh-readonly-queue/landing/pr-1", "stack-base", "stray"]
+    },
+    "output": "[{\"branch\":\"landing\",\"accounted\":true},{\"branch\":\"gh-readonly-queue/landing/pr-1\",\"accounted\":true},{\"branch\":\"stack-base\",\"accounted\":true},{\"branch\":\"stray\",\"accounted\":false}]"
+  },
+  {
+    "name": "#6797: a base on the trunk under a branch on two open parents names both, and the pull request above is the unit's own",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6793,
+      "commits": ["r1", "r2", "r3", "r4", "r5", "m1", "v1", "v2", "v3", "v4"],
+      "open": [
+        { "number": 6791, "above": false, "commits": ["v1", "v2", "v3", "v4"] },
+        { "number": 6792, "above": false, "commits": ["m1", "v1", "v2", "v3", "v4"] },
+        {
+          "number": 6795,
+          "above": true,
+          "commits": ["t1", "r1", "r2", "r3", "r4", "r5", "m1", "v1", "v2", "v3", "v4"]
+        }
+      ]
+    },
+    "output": "[{\"number\":6791,\"commits\":4},{\"number\":6792,\"commits\":5}]"
+  },
+  {
+    "name": "#6797: a base on the nearest parent's head agrees, since the parents' commits lie in the base",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6793,
+      "commits": ["r1", "r2", "r3", "r4", "r5"],
+      "open": [
+        { "number": 6791, "above": false, "commits": [] },
+        { "number": 6792, "above": false, "commits": [] },
+        { "number": 6795, "above": true, "commits": ["t1", "r1", "r2", "r3", "r4", "r5"] }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#6797: a base two levels down, as a cut leaves it with the branch unmoved, names the parent between",
+    "program": "foreign.jq",
+    "input": {
+      "number": 6795,
+      "commits": ["t1", "r1", "r2", "r3", "r4", "r5"],
+      "open": [
+        { "number": 6792, "above": false, "commits": [] },
+        { "number": 6793, "above": false, "commits": ["r1", "r2", "r3", "r4", "r5"] }
+      ]
+    },
+    "output": "[{\"number\":6793,\"commits\":5}]"
+  },
+  {
+    "name": "#6797: a branch read before its pull request opens names a sibling that shares its parent's commit",
+    "program": "foreign.jq",
+    "input": {
+      "number": null,
+      "commits": ["a1", "p1"],
+      "open": [{ "number": 7, "above": false, "commits": ["p1", "s1"] }]
+    },
+    "output": "[{\"number\":7,\"commits\":1}]"
+  },
+  {
+    "name": "#7188: a change that shares a path with a mergeable top's stack, with no hold, stacks on it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "BLOCKED",
+      "mergeable": "MERGEABLE",
+      "shared": [".config/pr-stack/stack.bash"]
+    },
+    "output": "{\"act\":\"stack\",\"why\":\"the change shares 1 paths with its stack, as .config/pr-stack/stack.bash\"}"
+  },
+  {
+    "name": "#7188: a change that shares no path with the top's stack opens on the trunk by itself",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "shared": []
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"the change shares no path with its stack\"}"
+  },
+  {
+    "name": "#7188: a top that conflicts with the trunk takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "DIRTY",
+      "mergeable": "CONFLICTING",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it conflicts with the trunk\"}"
+  },
+  {
+    "name": "#7188: a top that GitHub has not read mergeable takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": false,
+      "merge": "UNKNOWN",
+      "mergeable": "UNKNOWN",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"GitHub has not read it mergeable\"}"
+  },
+  {
+    "name": "#7188: a held top, which a pr:land is about to queue, takes no change above it and no wait",
+    "program": "joins.jq",
+    "input": {
+      "draft": false,
+      "held": true,
+      "merge": "CLEAN",
+      "mergeable": "MERGEABLE",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it carries the label landing, and a pr:land is about to queue it\"}"
+  },
+  {
+    "name": "#7188: a draft top takes no change above it",
+    "program": "joins.jq",
+    "input": {
+      "draft": true,
+      "held": false,
+      "merge": "DRAFT",
+      "mergeable": "MERGEABLE",
+      "shared": ["a"]
+    },
+    "output": "{\"act\":\"alone\",\"why\":\"it is a draft, held\"}"
+  },
+  {
+    "name": "#7207: two changes that share only the references ledger, a generated file, share no path",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["ledger/references.sql"],
+      "rows": [
+        {
+          "name": "the references ledger",
+          "paths": ["ledger/references.sql"],
+          "inputs": ["crates/"]
+        }
+      ],
+      "crates": ["a"]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#7207: a hand-written file beside the generated ones stays shared, as `crates/README.md` does beside the crate map",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["crates/README.md", "ledger/README.md", "ledger/crates.dot"],
+      "rows": [
+        {
+          "name": "the crate map",
+          "paths": ["ledger/crates.dot", "ledger/README.md"],
+          "inputs": ["crates/"]
+        }
+      ],
+      "crates": ["a"]
+    },
+    "output": "[\"crates/README.md\"]"
+  },
+  {
+    "name": "#7207: a row for each crate holds the files under its directory, and a crate it does not name keeps its path",
+    "program": "shared.jq",
+    "input": {
+      "shared": ["crates/a/tests/golden/x.txt", "crates/b/src/lib.rs"],
+      "rows": [
+        {
+          "each": "crate",
+          "name": "the goldens of {crate}",
+          "paths": ["crates/{crate}/tests/golden/"],
+          "inputs": ["crates/{crate}/"]
+        }
+      ],
+      "crates": ["a", "b"]
+    },
+    "output": "[\"crates/b/src/lib.rs\"]"
+  }
+]

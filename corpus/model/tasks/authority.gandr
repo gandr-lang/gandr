@@ -1,0 +1,34 @@
+//! `reader` and `exiter` use a capability that the parent gives to the task.
+//!
+//! The host answers a held capability operation once. The task uses its
+//! parent's authority while the parent acts.
+//!
+//! `reader` sends file text to its parent. `exiter` exits while the task
+//! end stays open.
+//!
+//! - see: #1334 — `reader`
+import "./task-base.gandr";
+// The import gives the filesystem host interface.
+import std.fs;
+// The import gives the early-exit host interface.
+import std.process;
+
+/// A task reads through its parent's capability and returns the text.
+def reader(c : Cap { read }) -> [std.fs.Eff] Unit =
+  let found = fork (task : Task.Join) {
+    let text = c.read Task.notes;
+    send task text;
+    close task
+  };
+  let text = recv found
+  close found
+
+/// A parent exits through its capability while its task's end stays open.
+def exiter(c : Cap { exit }) -> [std.process.Exit.Eff] Unit =
+  let found = fork (task : Task.Join) {
+    send task Task.notes;
+    close task
+  };
+  c.exit 1
+  let text = recv found
+  close found

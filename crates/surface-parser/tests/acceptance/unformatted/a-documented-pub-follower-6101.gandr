@@ -1,0 +1,4 @@
+/// `runExn` handles exceptions at the front and forwards the remaining row.
+pub def rec runExn(e : Type, a : Type, p : Prog (Either ExnOp e) a) -> Prog(e, Outcome a) =
+  match p where
+    | Done(x) => (Done (Returned x) : Prog(e, Outcome a))

@@ -1,0 +1,4 @@
+def greet() -> -F [std.io.Console.Eff] Unit {
+  std.io.Console.print "a" ;
+  std.io.Console.print "b"
+}

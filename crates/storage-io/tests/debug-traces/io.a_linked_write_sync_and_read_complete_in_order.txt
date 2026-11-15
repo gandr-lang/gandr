@@ -1,0 +1,74 @@
+test: io::a_linked_write_sync_and_read_complete_in_order
+package: gandr-storage-io
+command: mise run debug:test gandr-storage-io io::a_linked_write_sync_and_read_complete_in_order --break Io<.*>::open
+
+(lldb) target create "target/debug-trace/debug/build/gandr-storage-io/2ffe1666cf145c48/out/tests-2ffe1666cf145c48"
+Current executable set to 'target/debug-trace/debug/build/gandr-storage-io/2ffe1666cf145c48/out/tests-2ffe1666cf145c48' (x86_64).
+(lldb) settings set -- target.run-args  "io::a_linked_write_sync_and_read_complete_in_order" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Io<.*>::open
+Breakpoint 1: 2 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-2ffe1666cf145c48`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000000ee9d8
+(lldb) run
+
+running 1 test
+test io::a_linked_write_sync_and_read_complete_in_order ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3469315 launched: 'target/debug-trace/debug/build/gandr-storage-io/2ffe1666cf145c48/out/tests-2ffe1666cf145c48' (x86_64)
+Process 3469315 stopped
+* thread #2, name = 'io::a_linked_wr', stop reason = breakpoint 1.1
+       frame #0: 0x00005555555d77a3 tests-2ffe1666cf145c48`<gandr_storage_io::io::Io<alloc::alloc::Global>>::open(depth={0:8}) at io.rs:938:12
+   935 	    #[inline]
+   936 	    pub fn open(depth: Count) -> Result<Self, Errno>
+   937 	    {
+-> 938 	        if u32::from(depth) == 0 {
+    	           ^
+   939 	            return Err(Errno::INVALID);
+   940 	        }
+   941 	        match Ring::new(depth) {
+(lldb) bt 24
+* thread #2, name = 'io::a_linked_wr', stop reason = breakpoint 1.1
+   * frame #0: 0x00005555555d77a3 tests-2ffe1666cf145c48`<gandr_storage_io::io::Io<alloc::alloc::Global>>::open(depth={0:8}) at io.rs:938:12
+     frame #1: 0x00005555555b697d tests-2ffe1666cf145c48`tests::common::forms(depth={0:8}) at common.rs:96:9
+     frame #2: 0x00005555555e3dd7 tests-2ffe1666cf145c48`tests::io::a_linked_write_sync_and_read_complete_in_order at io.rs:36:19
+     frame #3: 0x00005555555dfa77 tests-2ffe1666cf145c48`tests::io::a_linked_write_sync_and_read_complete_in_order::{closure#0}((null)={}) at io.rs:34:52
+     frame #4: 0x00005555555b86b6 tests-2ffe1666cf145c48`<tests::io::a_linked_write_sync_and_read_complete_in_order::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x00005555555ea76b tests-2ffe1666cf145c48`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x00005555555ea769 tests-2ffe1666cf145c48`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #7: 0x00005555555f7945 tests-2ffe1666cf145c48`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #8: 0x00005555555f7940 tests-2ffe1666cf145c48`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x00005555555f7940 tests-2ffe1666cf145c48`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #10: 0x00005555555f792b tests-2ffe1666cf145c48`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #11: 0x00005555555f792b tests-2ffe1666cf145c48`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x00005555555f792b tests-2ffe1666cf145c48`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #13: 0x00005555555f7916 tests-2ffe1666cf145c48`test::run_test::{closure#0} at lib.rs:645:43
+     frame #14: 0x00005555555f2334 tests-2ffe1666cf145c48`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #15: 0x00005555555f22b9 tests-2ffe1666cf145c48`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x00005555555fa9d2 tests-2ffe1666cf145c48`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x00005555555fa9c3 tests-2ffe1666cf145c48`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x00005555555fa9c3 tests-2ffe1666cf145c48`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #19: 0x00005555555fa9b3 tests-2ffe1666cf145c48`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #20: 0x00005555555fa9b3 tests-2ffe1666cf145c48`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x00005555555fa9b3 tests-2ffe1666cf145c48`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x00005555555fa9a4 tests-2ffe1666cf145c48`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x00005555556656ef tests-2ffe1666cf145c48`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+(lldb) frame variable --depth 3
+(gandr_storage_io::ring::Count) depth = {0:8}
+(lldb) up
+frame #1: 0x00005555555b697d tests-2ffe1666cf145c48`tests::common::forms(depth={0:8}) at common.rs:96:9
+   93  	pub fn forms(depth: Count) -> [Io<Global>; 2]
+   94  	{
+   95  	    [
+-> 96  	        Io::open(depth).expect("an io opens"),
+    	        ^
+   97  	        Io::blocking(depth).expect("the blocking form opens"),
+   98  	    ]
+   99  	}
+(lldb) frame variable --depth 3
+(gandr_storage_io::ring::Count) depth = {0:8}

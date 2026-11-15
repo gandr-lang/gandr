@@ -1,0 +1,73 @@
+//! A relative monad is relative to shift `-F`.
+//!
+//! A unit returns a value. An extension runs a computation into a continuation.
+//!
+//! The host part has definitions for the option monad. The source also has
+//! code that is polymorphic in the carrier.
+//! The left unit is a second-order rule. The right unit
+//! abstracts a continuation
+//! variable. Associativity and both units form one theory.
+//!
+//! - see: #2115 — `MonadRightUnit`
+//! - see: #2116 — `RelativeMonad`
+//! - cites: [Altenkirch-2015-monads_need_not_be_endofunctors]
+//! - cites: [Jiang-2025-notions_stackmanipulating_computation_relative_monads]
+//!
+//! [Altenkirch-2015-monads_need_not_be_endofunctors]: https://doi.org/10.2168/LMCS-11(1:3)2015 "Altenkirch, Chapman and Uustalu, Monads need not be endofunctors"
+//! [Jiang-2025-notions_stackmanipulating_computation_relative_monads]: https://doi.org/10.1145/3720434 "Jiang, Xue and New, Notions of Stack-Manipulating Computation and Relative Monads"
+
+// This source imports values from the option monad.
+import "../data/data-maybe.gandr";
+
+/// The left-unit rule passes a returned value to its continuation.
+theory MonadLeftUnit where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitL : ext (ret a) k <=> k a;
+
+/// The right-unit rule removes an extension by `ret`.
+theory MonadRightUnit where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+
+/// The associativity and unit laws form `RelativeMonad`, and each
+/// critical pair joins.
+pub theory RelativeMonad where
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitL : ext (ret a) k <=> k a;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+  rule assoc : ext (ext m k) l <=> ext m (bind x. (ext (k x) l));
+
+/// `ret` returns a present option value.
+def ret(A : Type, a : A) -> Maybe A { Some a }
+
+/// `ext` runs its computation once, first. It then passes a present value to
+/// its continuation and keeps an absent value.
+def ext(A : Type, B : Type, m : () -> Maybe A, k : A -> Maybe B) -> Maybe B =
+  let r = force m
+  match r where
+    | None => None
+    | Some(x) => k x
+
+/// This extension of one returns two.
+@[runs("2")]
+def two() -> Integer =
+  let r = ext
+    Integer
+    Integer
+    (ret Integer 1)
+    (fun (x) { ret Integer (x + 1) })
+  match r where
+    | None => 0
+    | Some(y) => y
+
+/// This function reruns a computation that is polymorphic in its carrier.
+def again(T : Type -> Type[-], m : +U (T Integer)) -> T Integer { force m }

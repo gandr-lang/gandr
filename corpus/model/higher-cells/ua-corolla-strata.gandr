@@ -1,0 +1,103 @@
+//! This source checks univalence across certified signature strata.
+//!
+//! `ua[n, k]` derives a path between models' degree telescopes through degree
+//! `n`. It uses shapes of size at most `k` when each vertex is
+//! a shared corolla.
+//!
+//! The checker uses the Segal condition to certify stages from degree two. It
+//! names a refusal for an uncertified degree, bound, table or shape budget.
+//!
+//! - cites: [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]
+//!
+//! [Shulman-2015-univalence_inverse_diagrams_homotopy_canonicity]: https://doi.org/10.1017/S0960129514000565 "Shulman, Univalence for Inverse Diagrams and Homotopy Canonicity"
+
+// This import supplies the magma and its translators.
+import "./magma-base.gandr";
+
+/// `raised` applies the magma swap at degree two.
+def raised = ua[
+  2,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `lifts` transports the binary corolla boolean and carries the degree-two
+/// unit stage.
+def lifts : Path[.A = Unit * (+{Unit} * (Bool * Unit))](
+  Path.walk (fun (X) { X }) raised (*{*{}, *{+{.0 = *{}}, *{+{.0 = *{}}, *{}}}}),
+  *{*{}, *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}}
+) = Path.here (*{*{}, *{+{.0 = *{}}, *{+{.1 = *{}}, *{}}}});
+
+/// `six` applies the magma swap at bound and degree six.
+def six = ua[
+  6,
+  6
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `seven` sets both its bound and degree to seven. At bound seven, eleven
+/// of 631 shape
+/// classes lie below degree six, so the stratum certifies degrees six and seven
+/// vacuously.
+def seven = ua[
+  7,
+  7
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `above` refuses a degree past every wiring at its bound.
+@[refuses("UncertifiedDegree")]
+def above = ua[
+  5,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `empty` refuses a catalogue with no vertices.
+@[refuses("UncertifiedCondition")]
+def empty = ua[
+  1,
+  0
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `wide` refuses a bound past the largest catalogue bound.
+@[refuses("UncertifiedAllowance")]
+def wide = ua[
+  1,
+  65
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `crowded` refuses a bound that exceeds the shape budget.
+@[refuses("UncertifiedBudget")]
+def crowded = ua[
+  1,
+  8
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `short` refuses a bound smaller than the binary corolla.
+@[refuses("PastTheBound")]
+def short = ua[
+  1,
+  3
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});
+
+/// `lopsided` refuses `exchange` and `boolId` as an inverse pair.
+@[refuses("NotInverse")]
+def lopsided = ua[
+  1,
+  4
+] Magma Magma (*{.mul = exchange, .one = keep}) (*{.mul = boolId, .one = keep});
+
+/// `partial` refuses a missing corolla table.
+@[refuses("CorollaTables")]
+def partial = ua[1, 4] Magma Magma (*{.mul = exchange}) (*{.mul = exchange, .one = keep});
+
+/// `misspelt` refuses a table for an unknown generator.
+@[refuses("UnknownGenerator")]
+def misspelt = ua[
+  1,
+  4
+] Magma Magma (*{.mul = exchange, .zero = keep}) (*{.mul = exchange, .one = keep});
+
+/// `unnamed` refuses an undeclared signature.
+@[refuses("UnresolvedName")]
+def unnamed = ua[
+  1,
+  4
+] Monoid Magma (*{.mul = exchange, .one = keep}) (*{.mul = exchange, .one = keep});

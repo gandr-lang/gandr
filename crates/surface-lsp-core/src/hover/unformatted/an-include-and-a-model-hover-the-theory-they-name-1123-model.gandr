@@ -1,0 +1,15 @@
+theory Semigroup where {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+}
+
+theory Monoid where {
+  include Semigroup;
+  include Unwritten;
+  oper one : () --> M;
+}
+
+module Ints : Model(Semigroup) where {
+  type M = Integer;
+  def mul(x : Integer, y : Integer) -> -F Integer { return y }
+}

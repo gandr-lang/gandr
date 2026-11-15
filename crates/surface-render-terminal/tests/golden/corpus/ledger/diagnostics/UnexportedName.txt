@@ -1,0 +1,8 @@
+error[UnexportedName]: `code` is private to the imported source; write `pub` before its declaration there to export it
+  ╭▸ corpus/ledger/diagnostics/UnexportedName.gandr:8:12
+  │
+8 │ def used = code;
+  │            ━━━━ private to its source
+  │
+  ├ note: `used` is refused with UnexportedName, as its expectation states
+  ╰ help: export `code` from its source
