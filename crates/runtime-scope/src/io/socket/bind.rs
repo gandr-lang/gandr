@@ -16,7 +16,7 @@ pub struct OpSocketBind<'tsk, 'env: 'tsk, 'fd> {
     #[pin]
     rsp: Completion<'tsk>,
     socket: &'fd ::socket2::Socket,
-    addr: Pin<Box<SockAddr>>,
+    addr: &'tsk SockAddr,
 }
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
@@ -24,15 +24,15 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
         socket: &'fd ::socket2::Socket,
-        addr: SockAddr,
+        addr: &'tsk SockAddr,
     ) -> Self
     {
-        let addr = Box::pin(addr);
         let rsp = scope.request(|sqe| {
-            // SAFETY: the operation holds `socket` and the boxed `addr` until
-            // its completion.
+            // SAFETY: the address is borrowed for the scope's life, and the
+            // scope's end drains the bind before the borrow ends; the
+            // operation holds `socket` until its completion.
             unsafe {
-                sqe.prep_bind(SlotDesc::Desc(socket), &addr);
+                sqe.prep_bind(SlotDesc::Desc(socket), addr);
             }
         });
 

@@ -1,4 +1,6 @@
+use ::core::marker::PhantomData;
 use ::core::pin::Pin;
+use ::core::ptr::NonNull;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
@@ -13,6 +15,41 @@ use crate::error::RuntimeError;
 use crate::io::socket::Socket;
 use crate::scope::Scope;
 
+/// The storage of an accepted peer's address, lent for the scope's life:
+/// the kernel writes it when a connection arrives.
+pub struct PeerAddr
+{
+    storage: SockAddrStorage,
+    len: socklen_t,
+}
+
+impl PeerAddr
+{
+    /// Empty storage, with room for any address.
+    #[must_use]
+    #[inline]
+    pub fn new() -> Self
+    {
+        #[expect(clippy::as_conversions, reason = "size_of")]
+        #[expect(clippy::cast_possible_truncation, reason = "size_of")]
+        const STORAGE_SIZE: socklen_t = size_of::<SockAddrStorage>() as u32;
+
+        Self {
+            storage: SockAddrStorage::zeroed(),
+            len: STORAGE_SIZE,
+        }
+    }
+}
+
+impl Default for PeerAddr
+{
+    #[inline]
+    fn default() -> Self
+    {
+        Self::new()
+    }
+}
+
 ::pin_project_lite::pin_project! {
 #[non_exhaustive]
 pub struct OpSocketAccept<'tsk, 'env: 'tsk, 'fd> {
@@ -20,7 +57,8 @@ pub struct OpSocketAccept<'tsk, 'env: 'tsk, 'fd> {
     #[pin]
     rsp: Completion<'tsk>,
     socket: &'fd ::socket2::Socket,
-    addr: Pin<Box<(SockAddrStorage, socklen_t)>>,
+    peer: NonNull<PeerAddr>,
+    phd_peer: PhantomData<&'tsk mut PeerAddr>,
 }
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
@@ -28,22 +66,22 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
         socket: &'fd ::socket2::Socket,
+        peer: &'tsk mut PeerAddr,
     ) -> Self
     {
-        #[expect(clippy::as_conversions, reason = "size_of")]
-        #[expect(clippy::cast_possible_truncation, reason = "size_of")]
-        const STORAGE_SIZE: socklen_t = size_of::<SockAddrStorage>() as u32;
-
-        let mut addr = Box::new((SockAddrStorage::zeroed(), STORAGE_SIZE));
-
         let rsp = scope.request(|sqe| {
-            let storage = &mut addr.0;
-            let len = &mut addr.1;
             let flags = ::rustix::net::SocketFlags::empty();
-            // SAFETY: the operation holds `socket` and the boxed address until
-            // its completion.
+            // SAFETY: the peer's storage is borrowed for the scope's life, and
+            // the scope's end drains the accept before the borrow ends; the
+            // operation holds `socket` until its completion.
             unsafe {
-                sqe.prep_accept(SlotDesc::Desc(socket), storage, len, flags, None);
+                sqe.prep_accept(
+                    SlotDesc::Desc(socket),
+                    &mut peer.storage,
+                    &mut peer.len,
+                    flags,
+                    None,
+                );
             }
         });
 
@@ -51,7 +89,8 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
             scope,
             rsp,
             socket,
-            addr: Pin::new(addr),
+            peer: NonNull::from(peer),
+            phd_peer: PhantomData,
         }
     }
 }
@@ -77,8 +116,12 @@ impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_>
             inner: unsafe { ::socket2::Socket::from_raw_fd(cqe.result()) },
         };
 
-        let storage = ::core::mem::replace(&mut this.addr.0, SockAddrStorage::zeroed());
-        let len = this.addr.1;
+        // SAFETY: the kernel completed the accept, so it writes the peer's
+        // storage no more, and the borrow `'tsk` lends the storage to this
+        // operation alone.
+        let peer = unsafe { this.peer.as_mut() };
+        let storage = ::core::mem::replace(&mut peer.storage, SockAddrStorage::zeroed());
+        let len = peer.len;
         // SAFETY:
         let addr = unsafe { SockAddr::new(storage, len) };
 

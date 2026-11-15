@@ -10,6 +10,7 @@ use ::socket2::SockAddr;
 use ::socket2::Type;
 
 use crate::io::socket::accept::OpSocketAccept;
+pub use crate::io::socket::accept::PeerAddr;
 use crate::io::socket::bind::OpSocketBind;
 use crate::io::socket::listen::OpSocketListen;
 use crate::io::socket::new::OpSocketNew;
@@ -38,11 +39,12 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
         OpSocketNew::new(scope, domain, ty, protocol)
     }
 
+    /// A bind of the socket to `addr`, an address lent for the scope's life.
     #[must_use]
     #[inline]
     pub fn bind(
         &self,
-        addr: SockAddr,
+        addr: &'tsk SockAddr,
     ) -> OpSocketBind<'tsk, 'env, '_>
     {
         let scope = self.scope;
@@ -60,12 +62,17 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
         OpSocketListen::new(scope, &self.inner, backlog)
     }
 
+    /// An accept of a connection, whose peer's address the kernel writes
+    /// into `peer`, storage lent for the scope's life.
     #[must_use]
     #[inline]
-    pub fn accept(&self) -> OpSocketAccept<'tsk, 'env, '_>
+    pub fn accept(
+        &self,
+        peer: &'tsk mut PeerAddr,
+    ) -> OpSocketAccept<'tsk, 'env, '_>
     {
         let scope = self.scope;
-        OpSocketAccept::new(scope, &self.inner)
+        OpSocketAccept::new(scope, &self.inner, peer)
     }
 
     /// A receive of at most `buf.len()` bytes into `buf`, a buffer lent for
@@ -151,15 +158,15 @@ pub(crate) mod test
         #[test]
         fn bind()
         {
+            let temp = ::assert_fs::TempDir::new().unwrap();
+            let path = temp.child("socket");
+            let addr = ::socket2::SockAddr::unix(&path).unwrap();
             crate::test::harness::runtime::new()
                 .run(async |scope| -> Result<(), crate::RuntimeError> {
-                    let temp = ::assert_fs::TempDir::new().unwrap();
-                    let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     path.assert(::predicates::path::exists().not());
-                    let addr = ::socket2::SockAddr::unix(&path)?;
-                    socket.bind(addr).await?;
+                    socket.bind(&addr).await?;
                     path.assert(::predicates::path::exists());
                     Ok(())
                 })
@@ -170,15 +177,15 @@ pub(crate) mod test
         #[test]
         fn listen()
         {
+            let temp = ::assert_fs::TempDir::new().unwrap();
+            let path = temp.child("socket");
+            let addr = ::socket2::SockAddr::unix(&path).unwrap();
             crate::test::harness::runtime::new()
                 .run(async |scope| -> Result<(), crate::RuntimeError> {
-                    let temp = ::assert_fs::TempDir::new().unwrap();
-                    let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     path.assert(::predicates::path::exists().not());
-                    let addr = ::socket2::SockAddr::unix(&path)?;
-                    socket.bind(addr).await?;
+                    socket.bind(&addr).await?;
                     path.assert(::predicates::path::exists());
                     let backlog = ::libc::SOMAXCONN;
                     socket.listen(backlog).await?;
@@ -202,15 +209,16 @@ pub(crate) mod test
                     ::core::hint::spin_loop();
                 }
             });
+            let addr = ::socket2::SockAddr::unix(&path).unwrap();
+            let mut peer = PeerAddr::new();
             crate::test::harness::runtime::new()
                 .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
-                    let addr = ::socket2::SockAddr::unix(&path)?;
-                    socket.bind(addr).await?;
+                    socket.bind(&addr).await?;
                     let backlog = ::libc::SOMAXCONN;
                     socket.listen(backlog).await?;
-                    let (socket, sockaddr) = socket.accept().await?;
+                    let (socket, sockaddr) = socket.accept(&mut peer).await?;
                     drop((socket, sockaddr));
                     Ok(())
                 })
@@ -227,15 +235,16 @@ pub(crate) mod test
         {
             let temp = ::assert_fs::TempDir::new().unwrap();
             let path = temp.child("socket");
+            let addr = ::socket2::SockAddr::unix(&path).unwrap();
+            let mut peer = PeerAddr::new();
             crate::test::harness::runtime::new()
                 .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
-                    let addr = ::socket2::SockAddr::unix(&path)?;
-                    socket.bind(addr).await?;
+                    socket.bind(&addr).await?;
                     let backlog = ::libc::SOMAXCONN;
                     socket.listen(backlog).await?;
-                    let accept = socket.accept();
+                    let accept = socket.accept(&mut peer);
                     drop(accept);
                     Ok(())
                 })
