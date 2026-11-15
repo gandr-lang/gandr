@@ -47,6 +47,7 @@ use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
 
 use crate::SubmissionQueue;
+use crate::arg::Count;
 
 /// A run of free entries of the submission queue, each given once.
 pub struct Sqes<'sq, S>
@@ -70,7 +71,7 @@ impl<'sq, 'ring, S> Sqes<'sq, S>
     #[expect(clippy::needless_pass_by_ref_mut, reason = "API")]
     pub(crate) fn new(
         sq: &'sq mut SubmissionQueue<'ring, S>,
-        len: u32,
+        Count(len): Count<u32>,
     ) -> Self
     {
         let ring = sq.ring();
@@ -250,6 +251,13 @@ pub mod repr
     use ::core::ops::Deref;
     use ::core::ops::DerefMut;
 
+    use crate::arg::Code;
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
+    use crate::arg::Offset;
+    use crate::arg::UserData;
+
     /// The entry of the default size.
     pub type Sqe<'sq> = Sqe64<'sq>;
 
@@ -380,11 +388,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_rw(
             &mut self,
-            op: ::core::ffi::c_uint,
-            fd: ::core::ffi::c_int,
+            Code(op): Code<::core::ffi::c_uint>,
+            Fd(fd): Fd,
             addr: *const ::core::ffi::c_void,
-            len: ::core::ffi::c_uint,
-            offset: u64,
+            Len(len): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
         )
         {
             let sqe = &raw mut *self.sqe;
@@ -406,7 +414,7 @@ pub mod repr
         #[inline]
         pub unsafe fn set_flags(
             &mut self,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe;
@@ -455,7 +463,7 @@ pub mod repr
         #[inline]
         pub unsafe fn set_data64(
             &mut self,
-            data: u64,
+            UserData(data): UserData,
         )
         {
             let sqe = &raw mut *self.sqe;

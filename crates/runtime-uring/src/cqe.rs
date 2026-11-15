@@ -5,6 +5,8 @@ use ::core::marker::PhantomData;
 use ::core::mem::MaybeUninit;
 use ::core::ptr::NonNull;
 
+use crate::arg::Count;
+
 /// The completions that are ready now, each given once. The drop marks the
 /// given ones as seen, so the kernel can reuse their slots.
 pub struct CqesReady<'cq, C>
@@ -166,7 +168,7 @@ where
     pub(crate) const fn new(
         ring: NonNull<::liburing_rs::io_uring>,
         cqe_ptr: NonNull<::liburing_rs::io_uring_cqe>,
-        len: usize,
+        Count(len): Count<usize>,
     ) -> Self
     {
         Self {

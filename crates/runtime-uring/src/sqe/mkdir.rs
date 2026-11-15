@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Mode;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,8 +24,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_mkdir(
             &mut self,
-            path: *const ::core::ffi::c_char,
-            mode: ::liburing_rs::mode_t,
+            Text(path): Text,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -48,9 +51,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_mkdirat(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
-            mode: ::liburing_rs::mode_t,
+            Fd(dfd): Fd,
+            Text(path): Text,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
         )
         {
             let sqe = &raw mut *self.sqe();

@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Code;
+    use crate::arg::Fd;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,12 +26,12 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_cmd_sock(
             &mut self,
-            cmd_op: ::core::ffi::c_int,
-            fd: ::core::ffi::c_int,
-            level: ::core::ffi::c_int,
-            optname: ::core::ffi::c_int,
+            Code(cmd_op): Code<::core::ffi::c_int>,
+            Fd(fd): Fd,
+            Code(level): Code<::core::ffi::c_int>,
+            Code(optname): Code<::core::ffi::c_int>,
             optval: *mut ::core::ffi::c_void,
-            optlen: ::core::ffi::c_int,
+            Len(optlen): Len<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

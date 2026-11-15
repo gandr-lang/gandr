@@ -5,6 +5,9 @@ pub mod repr
 {
     use ::std::os::fd::AsRawFd as _;
 
+    use crate::arg::Index;
+    use crate::arg::Len;
+    use crate::arg::Switch;
     use crate::fd::SlotDesc;
     use crate::sqe::repr::Sqe64;
 
@@ -30,9 +33,9 @@ pub mod repr
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
             addr: &'op mut ::socket2::SockAddrStorage,
-            addrlen: &'op mut ::socket2::socklen_t,
+            Len(addrlen): Len<&'op mut ::socket2::socklen_t>,
             flags: ::rustix::net::SocketFlags,
-            file_index: Option<::core::ffi::c_uint>,
+            file_index: Option<Index<::core::ffi::c_uint>>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -44,7 +47,7 @@ pub mod repr
             let addr = unsafe { addr.view_as() };
             let flags = flags.bits().cast_signed();
 
-            if let Some(file_index) = file_index {
+            if let Some(Index(file_index)) = file_index {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
                     ::liburing_rs::io_uring_prep_accept_direct(
@@ -91,9 +94,9 @@ pub mod repr
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
             addr: &'op mut ::socket2::SockAddrStorage,
-            addrlen: &'op mut ::socket2::socklen_t,
+            Len(addrlen): Len<&'op mut ::socket2::socklen_t>,
             flags: ::rustix::net::SocketFlags,
-            direct: bool,
+            Switch(direct): Switch,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -134,6 +137,13 @@ pub mod repr
 }
 
 #[cfg(test)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        single_field_struct_needs_transparent_repr,
+        reason = "the builder's macro makes a struct for each field of the fixture, and the source has no struct to mark; #7729 owes the lint's reading of a macro's structs"
+    )
+)]
 pub mod test
 {
     use ::assert_fs::TempDir;
@@ -145,6 +155,13 @@ pub mod test
 
     use crate::Cqe16;
     use crate::IoUring;
+    use crate::arg::Answer;
+    use crate::arg::Count;
+    use crate::arg::Flags;
+    use crate::arg::Holds;
+    use crate::arg::Index;
+    use crate::arg::Len;
+    use crate::arg::Switch;
     use crate::fd::SlotDesc;
     use crate::sys::SysResult as _;
 
@@ -172,11 +189,11 @@ pub mod test
         mode: FixtureOpMode,
         #[builder(default = ::rustix::net::SocketFlags::empty())]
         flags: ::rustix::net::SocketFlags,
-        client_slot: Option<::core::ffi::c_uint>,
-        #[builder(default = false)]
-        sqe_link: bool,
-        #[builder(default = false)]
-        cqe_skip: bool,
+        client_slot: Option<Index<::core::ffi::c_uint>>,
+        #[builder(default = Switch(false))]
+        sqe_link: Switch,
+        #[builder(default = Switch(false))]
+        cqe_skip: Switch,
     }
 
     impl<'fds, S: self::fixture_builder::IsComplete> FixtureBuilder<'fds, S>
@@ -212,7 +229,7 @@ pub mod test
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
-        ) -> u32
+        ) -> Count<u32>
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -238,29 +255,29 @@ pub mod test
                 // SAFETY: the fixture owns `addr` and `addrlen` until it reads the
                 // completion, and `socket` stays open for the test.
                 FixtureOpMode::Singleshot => unsafe {
-                    sqe.prep_accept(socket, addr, addrlen, flags, client_slot);
+                    sqe.prep_accept(socket, addr, Len(addrlen), flags, client_slot);
                 },
                 // SAFETY: the fixture owns `addr` and `addrlen` until it reads the last
                 // completion, and `socket` stays open for the test.
                 FixtureOpMode::Multishot { direct, .. } => unsafe {
-                    sqe.prep_multishot_accept(socket, addr, addrlen, flags, direct);
+                    sqe.prep_multishot_accept(socket, addr, Len(addrlen), flags, Switch(direct));
                 },
             }
 
             let mut flags = ::core::ffi::c_uint::default();
-            if sqe_link {
+            if sqe_link.0 {
                 flags |= ::liburing_rs::IOSQE_IO_LINK;
             }
-            if cqe_skip {
+            if cqe_skip.0 {
                 flags |= ::liburing_rs::IOSQE_CQE_SKIP_SUCCESS;
             }
-            if socket.is_slot() {
+            if socket.is_slot().0 {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
             // SAFETY: each flag is the kernel's, and the fixed-file flag goes
             // with a slot alone.
             unsafe {
-                sqe.set_flags(flags);
+                sqe.set_flags(Flags(flags));
             }
 
             sq.submit().unwrap()
@@ -285,10 +302,10 @@ pub mod test
             else {
                 1
             };
-            let uses_slot = self.socket.is_slot();
+            let Holds(uses_slot) = self.socket.is_slot();
 
             let num = self.submit(ring);
-            assert_eq!(1, num);
+            assert_eq!(Count(1), num);
 
             let mut descs = vec![];
 
@@ -296,14 +313,14 @@ pub mod test
 
             for i in 0 .. clients {
                 let cqe = cq
-                    .wait(1)
+                    .wait(Count(1))
                     .unwrap()
                     .next()
                     .map(Into::<Cqe16<'_>>::into)
                     .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                     .unwrap();
 
-                let desc = cqe.cqe().res.sys_uint().unwrap();
+                let Answer(desc) = Answer(cqe.cqe().res).sys_uint().unwrap();
                 let desc = if uses_slot {
                     SlotDesc::Slot(desc)
                 }
@@ -337,7 +354,7 @@ pub mod test
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
         {
-            if self.cqe_skip {
+            if self.cqe_skip.0 {
                 self.submit(ring);
             }
             else {
@@ -405,7 +422,7 @@ pub mod test
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(
@@ -456,15 +473,19 @@ pub mod test
         let mut addrlen = ::socket2::socklen_t::default();
 
         let clients = 1;
-        let client_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
+        let client_slot = Some(Index(
+            ::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
+        ));
 
-        let slots = Some(1 + u32::try_from(clients).unwrap());
-        let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
+        let slots = Some(Count(1 + u32::try_from(clients).unwrap()));
+        let socket_slot = Some(Index(
+            ::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
+        ));
         let mode = FixtureOpMode::Singleshot;
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(
@@ -515,16 +536,16 @@ pub mod test
         let mut addrlen = ::socket2::socklen_t::default();
 
         let clients = 1;
-        let client_slot = Some(1);
+        let client_slot = Some(Index(1));
 
-        let slots = Some(1 + u32::try_from(clients).unwrap());
-        let socket_slot = Some(0);
+        let slots = Some(Count(1 + u32::try_from(clients).unwrap()));
+        let socket_slot = Some(Index(0));
         let mode = FixtureOpMode::Singleshot;
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
-        let cqe_skip = Some(true);
+        let sqe_link = Some(Switch(true));
+        let cqe_skip = Some(Switch(true));
 
         let socket = crate::sqe::socket::test::socket_with(
             &mut ring,
@@ -590,7 +611,7 @@ pub mod test
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(
@@ -643,8 +664,10 @@ pub mod test
         let clients = 4;
         let client_slot = None;
 
-        let slots = Some(1 + u32::try_from(clients).unwrap());
-        let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
+        let slots = Some(Count(1 + u32::try_from(clients).unwrap()));
+        let socket_slot = Some(Index(
+            ::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
+        ));
         let mode = FixtureOpMode::Multishot {
             clients,
             direct: true,
@@ -652,7 +675,7 @@ pub mod test
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(

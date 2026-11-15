@@ -3,6 +3,10 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Flags;
+    use crate::arg::FutexWord;
+    use crate::arg::Value;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,11 +25,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_futex_wait(
             &mut self,
-            futex: *const u32,
-            val: u64,
-            mask: u64,
-            futex_flags: u32,
-            flags: ::core::ffi::c_uint,
+            FutexWord(futex): FutexWord,
+            Value(val): Value,
+            Flags(mask): Flags<u64>,
+            Flags(futex_flags): Flags<u32>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -54,8 +58,8 @@ pub mod repr
         pub unsafe fn prep_futex_waitv(
             &mut self,
             futex: *const ::liburing_rs::futex_waitv,
-            nr_futex: u32,
-            flags: ::core::ffi::c_uint,
+            Count(nr_futex): Count<u32>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -83,11 +87,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_futex_wake(
             &mut self,
-            futex: *const u32,
-            val: u64,
-            mask: u64,
-            futex_flags: u32,
-            flags: ::core::ffi::c_uint,
+            FutexWord(futex): FutexWord,
+            Value(val): Value,
+            Flags(mask): Flags<u64>,
+            Flags(futex_flags): Flags<u32>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

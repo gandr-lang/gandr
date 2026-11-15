@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,8 +24,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_rename(
             &mut self,
-            oldpath: *const ::core::ffi::c_char,
-            newpath: *const ::core::ffi::c_char,
+            Text(oldpath): Text,
+            Text(newpath): Text,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -49,11 +52,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_renameat(
             &mut self,
-            olddfd: ::core::ffi::c_int,
-            oldpath: *const ::core::ffi::c_char,
-            newdfd: ::core::ffi::c_int,
-            newpath: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_uint,
+            Fd(olddfd): Fd,
+            Text(oldpath): Text,
+            Fd(newdfd): Fd,
+            Text(newpath): Text,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

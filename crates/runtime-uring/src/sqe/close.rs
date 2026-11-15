@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Index;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -20,7 +22,7 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_close(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -45,7 +47,7 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_close_direct(
             &mut self,
-            file_index: ::core::ffi::c_uint,
+            Index(file_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

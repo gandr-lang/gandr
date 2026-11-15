@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Fds;
+    use crate::arg::Index;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,9 +24,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_files_update(
             &mut self,
-            fds: *const ::core::ffi::c_int,
-            nr_fds: ::core::ffi::c_uint,
-            offset: ::core::ffi::c_int,
+            Fds(fds): Fds<*const ::core::ffi::c_int>,
+            Count(nr_fds): Count<::core::ffi::c_uint>,
+            Index(offset): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

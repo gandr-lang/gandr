@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::UserData;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -20,8 +23,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_poll_add(
             &mut self,
-            fd: ::core::ffi::c_int,
-            poll_mask: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Flags(poll_mask): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -45,8 +48,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_poll_multishot(
             &mut self,
-            fd: ::core::ffi::c_int,
-            poll_mask: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Flags(poll_mask): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -71,7 +74,7 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_poll_remove(
             &mut self,
-            user_data: u64,
+            UserData(user_data): UserData,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -96,10 +99,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_poll_update(
             &mut self,
-            old_user_data: u64,
-            new_user_data: u64,
-            poll_mask: ::core::ffi::c_uint,
-            flags: ::core::ffi::c_uint,
+            UserData(old_user_data): UserData,
+            UserData(new_user_data): UserData,
+            Flags(poll_mask): Flags<::core::ffi::c_uint>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

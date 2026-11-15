@@ -47,6 +47,7 @@ The example opens a ring and submits one operation that does nothing. Then it wa
 
 ```rust,no_run
 use gandr_runtime_uring::IoUring;
+use gandr_runtime_uring::arg::Count;
 
 fn main() -> std::io::Result<()> {
     let mut ring = IoUring::new()?;
@@ -54,8 +55,8 @@ fn main() -> std::io::Result<()> {
     let mut sqe = sq.get_sqe().ok_or_else(|| std::io::Error::other("the queue is full"))?;
     // SAFETY: a no-op reads no pointer and names no descriptor.
     unsafe { sqe.prep_nop() };
-    sq.submit_and_wait(1)?;
-    assert_eq!(cq.wait(1)?.count(), 1);
+    sq.submit_and_wait(Count(1))?;
+    assert_eq!(cq.wait(Count(1))?.count(), 1);
     Ok(())
 }
 ```

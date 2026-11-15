@@ -22,19 +22,8 @@
 
 // The ring is the Linux kernel's: on another system the crate compiles empty.
 #![cfg(target_os = "linux")]
-// The preparers take the kernel's C types as liburing names them, and the
-// builder's macro makes a struct for each argument of the ring's builder and
-// of four test fixtures, which the source cannot mark. #7717 gives each
-// argument a newtype and owns the builders' structs.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        primitive_signature,
-        single_field_struct_needs_transparent_repr,
-        reason = "the preparers take the kernel's C types, and the builder's macro makes structs that the source cannot mark; #7717 owes each mend"
-    )
-)]
 
+pub mod arg;
 pub mod cqe;
 mod cqueue;
 mod fd;

@@ -5,6 +5,8 @@ use ::core::ptr::NonNull;
 use ::std::os::fd::BorrowedFd;
 
 use crate::IoUring;
+use crate::arg::Answer;
+use crate::arg::Count;
 use crate::sys::SysResult as _;
 
 /// A borrow of the ring that registers files in its file table.
@@ -63,7 +65,8 @@ impl<'ring> Registrar<'ring>
         let files = files.as_ptr().cast();
         // SAFETY: `ring` is the live ring that this registrar borrows, and
         // `files` stays borrowed for the registrar's life.
-        unsafe { ::liburing_rs::io_uring_register_files(ring, files, nr_files) }.sys_zero()?;
+        Answer(unsafe { ::liburing_rs::io_uring_register_files(ring, files, nr_files) })
+            .sys_zero()?;
         Ok(())
     }
 
@@ -90,13 +93,14 @@ impl<'ring> Registrar<'ring>
     #[inline]
     pub fn register_files_sparse(
         &self,
-        nr_files: usize,
+        Count(nr_files): Count<usize>,
     ) -> ::std::io::Result<()>
     {
         let ring = self.ring.as_ptr();
         let nr_files = u32::try_from(nr_files).map_err(::std::io::Error::other)?;
         // SAFETY: `ring` is the live ring that this registrar borrows.
-        unsafe { ::liburing_rs::io_uring_register_files_sparse(ring, nr_files) }.sys_zero()?;
+        Answer(unsafe { ::liburing_rs::io_uring_register_files_sparse(ring, nr_files) })
+            .sys_zero()?;
         Ok(())
     }
 }
@@ -107,6 +111,12 @@ pub mod test
     use ::std::os::fd::AsFd as _;
 
     use crate::IoUring;
+    use crate::arg::Answer;
+    use crate::arg::Count;
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sys::SysResult as _;
 
     /// A table of two open files holds each in its slot: a read through
@@ -136,20 +146,20 @@ pub mod test
         // SAFETY: `buf` stays valid and in place until the wait below gives
         // the completion, and slot 1 of the table holds an open file.
         unsafe {
-            sqe.prep_read(1, (&raw mut buf).cast(), 16, 0);
+            sqe.prep_read(Fd(1), (&raw mut buf).cast(), Len(16), Offset(0));
         }
         // SAFETY: the entry names slot 1 of the ring's file table.
         unsafe {
-            sqe.set_flags(::liburing_rs::IOSQE_FIXED_FILE);
+            sqe.set_flags(Flags(::liburing_rs::IOSQE_FIXED_FILE));
         }
 
-        sq.submit_and_wait(1).unwrap();
+        sq.submit_and_wait(Count(1)).unwrap();
         let read = cq
-            .wait(1)
+            .wait(Count(1))
             .unwrap()
-            .map(|cqe| cqe.cqe().res.sys_uint().unwrap())
+            .map(|cqe| Answer(cqe.cqe().res).sys_uint().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(read, [6]);
+        assert_eq!(read, [Answer(6)]);
         assert_eq!(buf.get(.. 6), Some(&b"second"[..]));
     }
 }

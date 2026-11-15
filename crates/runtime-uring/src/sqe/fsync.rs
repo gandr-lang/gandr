@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -20,8 +22,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_fsync(
             &mut self,
-            fd: ::core::ffi::c_int,
-            fsync_flags: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Flags(fsync_flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

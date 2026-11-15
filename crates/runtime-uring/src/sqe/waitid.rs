@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Code;
+    use crate::arg::Flags;
+    use crate::arg::Id;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,11 +24,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_waitid(
             &mut self,
-            idtype: ::liburing_rs::idtype_t,
-            id: ::liburing_rs::id_t,
+            Code(idtype): Code<::liburing_rs::idtype_t>,
+            Id(id): Id,
             infop: *mut ::liburing_rs::siginfo_t,
-            options: ::core::ffi::c_int,
-            flags: ::core::ffi::c_uint,
+            Flags(options): Flags<::core::ffi::c_int>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

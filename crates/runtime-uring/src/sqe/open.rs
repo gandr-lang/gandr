@@ -3,6 +3,11 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Index;
+    use crate::arg::Mode;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,9 +26,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_open(
             &mut self,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            mode: ::liburing_rs::mode_t,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -47,10 +52,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_open_direct(
             &mut self,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            mode: ::liburing_rs::mode_t,
-            file_index: ::core::ffi::c_uint,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
+            Index(file_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -76,10 +81,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_openat(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            mode: ::liburing_rs::mode_t,
+            Fd(dfd): Fd,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -104,8 +109,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_openat2(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
+            Fd(dfd): Fd,
+            Text(path): Text,
             how: *const ::liburing_rs::open_how,
         )
         {
@@ -136,10 +141,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_openat2_direct(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
+            Fd(dfd): Fd,
+            Text(path): Text,
             how: *const ::liburing_rs::open_how,
-            file_index: ::core::ffi::c_uint,
+            Index(file_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -169,11 +174,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_openat_direct(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            mode: ::liburing_rs::mode_t,
-            file_index: ::core::ffi::c_uint,
+            Fd(dfd): Fd,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Mode(mode): Mode<::liburing_rs::mode_t>,
+            Index(file_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
