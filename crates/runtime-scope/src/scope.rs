@@ -48,8 +48,12 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
         prep(&mut sqe);
         let (cqe_tx, cqe_rx) = ::oneshot::channel();
         let key = self.tasks.borrow_mut().insert(Submission::new(cqe_tx));
+        // A key of the slab fits the user data on every Linux target.
+        let data = u64::try_from(key).unwrap_or(u64::MAX);
         // SAFETY: the user data is a number that the kernel only hands back.
-        unsafe { sqe.set_data64(key as u64) };
+        unsafe {
+            sqe.set_data64(data);
+        }
         Completion::new(cqe_rx)
     }
 }

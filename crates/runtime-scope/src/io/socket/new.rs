@@ -32,7 +32,9 @@ impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
             let flags = ::rustix::net::SocketFlags::empty();
             // SAFETY: a socket's creation reads no pointer and names no
             // descriptor.
-            unsafe { sqe.prep_socket(domain, ty, protocol, flags, None) };
+            unsafe {
+                sqe.prep_socket(domain, ty, protocol, flags, None);
+            }
         });
 
         Self { scope, cqe }

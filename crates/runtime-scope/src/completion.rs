@@ -40,7 +40,7 @@ pub struct Completion<'tsk>
     phd_tsk: PhantomData<&'tsk mut &'tsk ()>,
 }
 
-impl<'scope> Completion<'scope>
+impl Completion<'_>
 {
     pub(crate) const fn new(cqe: ::oneshot::Receiver<Cqe>) -> Self
     {

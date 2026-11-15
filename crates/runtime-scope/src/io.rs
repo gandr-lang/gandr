@@ -8,7 +8,7 @@ use crate::buf::IoVecBufMut;
 
 macro_rules! reader_trait {
     ($future:ident, $n_ty:ty, $f:ident) => {
-        /// Read number in async way
+        /// Read number in async way.
         fn $f(&mut self) -> impl Future<Output = std::io::Result<$n_ty>>;
     };
 }

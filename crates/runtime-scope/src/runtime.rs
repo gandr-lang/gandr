@@ -18,6 +18,7 @@ impl Runtime
 {
     const IO_URING_ENTRIES: usize = 4096;
 
+    #[inline]
     pub fn new() -> ::anyhow::Result<Self>
     {
         let io = IoUring::builder().entries(4096).build()?;
@@ -30,6 +31,7 @@ impl Runtime
         ::core::task::Context::from_waker(waker)
     }
 
+    #[inline]
     pub fn run<'env, T, F>(
         self,
         start: F,
@@ -87,7 +89,7 @@ impl Runtime
 }
 
 #[cfg(test)]
-pub(crate) mod test
+pub mod test
 {
     #![allow(clippy::unwrap_used, reason = "cfg(test)")]
 

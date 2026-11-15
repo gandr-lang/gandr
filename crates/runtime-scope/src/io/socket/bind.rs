@@ -30,7 +30,9 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
         let rsp = scope.request(|sqe| {
             // SAFETY: the operation holds `socket` and the boxed `addr` until
             // its completion.
-            unsafe { sqe.prep_bind(SlotDesc::Desc(socket), &addr) };
+            unsafe {
+                sqe.prep_bind(SlotDesc::Desc(socket), &addr);
+            }
         });
 
         Self {

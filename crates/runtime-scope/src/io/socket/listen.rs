@@ -26,7 +26,9 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
     {
         let rsp = scope.request(|sqe| {
             // SAFETY: the operation holds `socket` until its completion.
-            unsafe { sqe.prep_listen(SlotDesc::Desc(socket), backlog) };
+            unsafe {
+                sqe.prep_listen(SlotDesc::Desc(socket), backlog);
+            }
         });
 
         Self { scope, rsp, socket }

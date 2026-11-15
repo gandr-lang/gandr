@@ -1,3 +1,6 @@
+// The runtime stands on the Linux kernel's ring: on another system the crate
+// compiles empty.
+#![cfg(target_os = "linux")]
 #![allow(dead_code, reason = "WIP")]
 #![allow(unused, reason = "WIP")]
 //

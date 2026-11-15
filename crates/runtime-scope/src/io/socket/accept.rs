@@ -36,11 +36,14 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
         let mut addr = Box::new((SockAddrStorage::zeroed(), STORAGE_SIZE));
 
         let rsp = scope.request(|sqe| {
-            let (storage, len) = &mut *addr;
+            let storage = &mut addr.0;
+            let len = &mut addr.1;
             let flags = ::rustix::net::SocketFlags::empty();
             // SAFETY: the operation holds `socket` and the boxed address until
             // its completion.
-            unsafe { sqe.prep_accept(SlotDesc::Desc(socket), storage, len, flags, None) };
+            unsafe {
+                sqe.prep_accept(SlotDesc::Desc(socket), storage, len, flags, None);
+            }
         });
 
         Self {

@@ -15,7 +15,7 @@ use crate::io::socket::new::OpSocketNew;
 use crate::scope::Scope;
 
 #[non_exhaustive]
-pub struct Socket<'tsk, 'env: 'tsk>
+pub struct Socket<'tsk, 'env>
 {
     scope: &'tsk Scope<'tsk, 'env>,
     inner: ::socket2::Socket,
@@ -25,6 +25,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
 {
     #[expect(clippy::new_ret_no_self, reason = "future")]
     #[must_use]
+    #[inline]
     pub fn new(
         scope: &'tsk Scope<'tsk, 'env>,
         domain: Domain,
@@ -36,6 +37,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     }
 
     #[must_use]
+    #[inline]
     pub fn bind(
         &self,
         addr: SockAddr,
@@ -46,6 +48,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     }
 
     #[must_use]
+    #[inline]
     pub fn listen(
         &self,
         backlog: ::core::ffi::c_int,
@@ -56,6 +59,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     }
 
     #[must_use]
+    #[inline]
     pub fn accept(&self) -> OpSocketAccept<'tsk, 'env, '_>
     {
         let scope = self.scope;
@@ -66,8 +70,6 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
 #[cfg(test)]
 pub(crate) mod test
 {
-    #![expect(clippy::unwrap_used, reason = "cfg(test)")]
-
     use super::*;
 
     pub mod harness
@@ -76,7 +78,7 @@ pub(crate) mod test
 
         use super::*;
 
-        pub fn new<'tsk, 'env: 'tsk>(scope: &'tsk Scope<'tsk, 'env>) -> OpSocketNew<'tsk, 'env>
+        pub fn new<'tsk, 'env>(scope: &'tsk Scope<'tsk, 'env>) -> OpSocketNew<'tsk, 'env>
         {
             let domain = Domain::UNIX;
             let ty = Type::STREAM;
