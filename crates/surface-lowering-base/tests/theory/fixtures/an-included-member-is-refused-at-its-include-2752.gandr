@@ -1,0 +1,12 @@
+theory Monad where {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitR : ext m (bind x. (ret x)) <=> m;
+}
+theory Ordered where {
+  include Monad;
+  sort Below(w : C, v : C) : Type;
+  oper refl : (w : C) --> Below(w, w);
+}

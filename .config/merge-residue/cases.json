@@ -1,0 +1,100 @@
+[
+  { "name": "a conflict's opening marker", "line": "<<<<<<< HEAD", "residue": true },
+  { "name": "a conflict's bare separator", "line": "=======", "residue": true },
+  { "name": "a conflict's closing marker", "line": ">>>>>>> theirs", "residue": true },
+  { "name": "a diff3 base marker", "line": "||||||| base", "residue": true },
+  { "name": "a setext underline is no marker", "line": "========", "residue": false },
+  {
+    "name": "the driver's resolution trailer",
+    "line": "// weave: run 'weave check' to verify",
+    "residue": true
+  },
+  {
+    "name": "the driver's annotation at column 0 (#1560)",
+    "line": "// refused_by: fail_closed · collision: none",
+    "residue": true
+  },
+  {
+    "name": "the driver's annotation indented in a list (#1560)",
+    "line": "            // refused_by: container_member · collision: none",
+    "residue": true
+  },
+  {
+    "name": "#3217: the driver's annotation a formatter joined onto a list item",
+    "line": "- `vault:…` — lineage: the refusal `FootprintsOverlap`, which no exercised row counts. // refused_by: statement_fold · collision: none (no common ancestor text)",
+    "residue": true
+  },
+  {
+    "name": "#7588: the driver's annotation under SQL's comment leader",
+    "line": "-- refused_by: merge_ladder_exhausted · collision: none (1 contested hunk(s), neither side deleted the other's lines)",
+    "residue": true
+  },
+  {
+    "name": "#7588: the driver's annotation under a shell's or TOML's comment leader",
+    "line": "  # refused_by: fail_closed · collision: none",
+    "residue": true
+  },
+  {
+    "name": "#7588: the SQL annotation a formatter joined onto a row",
+    "line": "INSERT INTO position VALUES('a','b'); -- refused_by: merge_ladder_exhausted · collision: none",
+    "residue": true
+  },
+  {
+    "name": "a SQL comment that names the word",
+    "line": "-- what refused_by means here",
+    "residue": false
+  },
+  {
+    "name": "prose naming the annotation's key mid-line is no annotation",
+    "line": "the driver writes a `// refused_by:` line atop each side",
+    "residue": false
+  },
+  {
+    "name": "a comment that names the word",
+    "line": "// what refused_by means here",
+    "residue": false
+  },
+  {
+    "name": "a merge driver's backup (#1642)",
+    "path": "crates/surface-dispatcher/src/typed.rs.orig",
+    "residue": true
+  },
+  { "name": "a rejected hunk", "path": "crates/core-term/src/rewrite.rs.rej", "residue": true },
+  {
+    "name": "mergetool's backup copy",
+    "path": "crates/core-term/src/rewrite_BACKUP_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's base copy",
+    "path": "crates/core-term/src/rewrite_BASE_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's local copy",
+    "path": "crates/core-term/src/rewrite_LOCAL_4242.rs",
+    "residue": true
+  },
+  {
+    "name": "mergetool's remote copy, of a file without an extension",
+    "path": "Makefile_REMOTE_4242",
+    "residue": true
+  },
+  { "name": "a source named like the word", "path": "crates/x/src/origin.rs", "residue": false },
+  { "name": "an upper-case word in a name", "path": "docs/REMOTE_ACCESS.md", "residue": false },
+  {
+    "name": "#3222: wt:warm's clone probe staged at the root",
+    "path": ".wt-warm-probe",
+    "residue": true
+  },
+  {
+    "name": "#3222: the probe under its temporary suffix",
+    "path": ".wt-warm-probe.Ab12Cd",
+    "residue": true
+  },
+  {
+    "name": "a page that names the probe is no probe",
+    "path": "docs/wt-warm-probe.md",
+    "residue": false
+  }
+]

@@ -1,0 +1,3 @@
+data Point : Type where {
+  | Here : Point
+}

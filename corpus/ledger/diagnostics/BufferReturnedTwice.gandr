@@ -1,0 +1,17 @@
+/// `BufferReturnedTwice`: a placed buffer handed back a second time.
+
+// The ring's host interface.
+import std.io;
+
+/// Frees one buffer twice in one scope.
+@[refuses("BufferReturnedTwice")]
+def freedTwice() -> -F Unit =
+  handle r : std.io.Ring.Eff {
+    let b = r.alloc 4096;
+    let first = r.free b;
+    r.free b
+  } with {
+    | pure(x) => pure x
+    | oper alloc(n, b, k) => k b
+    | oper free(b, k) => k *{}
+  }
