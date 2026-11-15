@@ -3,7 +3,10 @@
     clippy::wildcard_imports,
     reason = "build"
 )]
-#![allow(dead_code, unreachable_code, unused_variables, reason = "WIP")]
+#![expect(
+    dead_code,
+    reason = "the owner's `Config::target_arch` and `cargo::feature` stay unread, and without `bindgen` so do the fields its pass reads"
+)]
 
 use ::std::path::Path;
 use ::std::path::PathBuf;
@@ -16,32 +19,62 @@ fn main() -> ::std::io::Result<()>
 
 fn run() -> ::std::io::Result<()>
 {
-    let config = crate::config::Config::new()?;
+    println!("cargo::rustc-check-cfg=cfg(asm_experimental_arch)");
+    if !crate::target::os::is_linux()? {
+        return Ok(());
+    }
 
-    if cfg!(feature = "bindgen") {
-        let result = crate::bindgen::bind(&config);
-        result?;
+    let config = crate::config::Config::new()?;
+    crate::target::check()?;
+
+    if let Some(linux_headers_dir) = &config.linux_headers_dir {
+        crate::cargo::rerun(linux_headers_dir);
+        #[cfg(feature = "bindgen")]
+        crate::bindgen::bind(&config, linux_headers_dir)?;
     }
 
     Ok(())
 }
 
+#[cfg(feature = "bindgen")]
 mod bindgen
 {
     use super::*;
 
     #[expect(clippy::needless_raw_strings, reason = "readability")]
     const HEADER: &str = r#"
-#include <asm-generic/unistd.h>
+#include <asm/unistd.h>
+#include <asm/fcntl.h>
+#include <linux/mman.h>
+#include <linux/fcntl.h>
 #include <linux/io_uring.h>
+#include <linux/time_types.h>
+#include <linux/uio.h>
+#include <linux/openat2.h>
+#include <linux/stat.h>
+#include <linux/eventpoll.h>
+#include <linux/futex.h>
+#include <linux/wait.h>
+#include <linux/socket.h>
+#include <linux/un.h>
+#include <asm/siginfo.h>
 "#;
 
-    pub fn bind(config: &crate::config::Config) -> ::std::io::Result<()>
+    pub fn bind(
+        config: &crate::config::Config,
+        linux_headers_dir: &str,
+    ) -> ::std::io::Result<()>
     {
-        self::cargo::rerun(&config.linux_headers_dir);
-        self::target::check()?;
+        let header = Path::new(linux_headers_dir).join("include/linux/io_uring.h");
+        if !header.is_file() {
+            let msg = format!(
+                "{} names {linux_headers_dir}, which holds no include/linux/io_uring.h",
+                config.linux_headers_env
+            );
+            return Err(::std::io::Error::other(msg));
+        }
         ::std::fs::create_dir_all(&config.target_arch_dir)?;
-        let bindings = self::builder(&config.linux_headers_dir)
+        let bindings = self::builder(linux_headers_dir)
             .generate()
             .map_err(::std::io::Error::other)?;
         bindings.write_to_file(&config.target_arch_mod)?;
@@ -92,7 +125,28 @@ mod bindgen
             .allowlist_type("io_timespec.*")
             .allowlist_type("io_uring_.*")
             .allowlist_type("io_wq_.*")
-            .allowlist_var("__NR_io_uring_.*")
+            .allowlist_type("__kernel_timespec")
+            .allowlist_type("__kernel_mode_t")
+            .allowlist_type("__kernel_off_t")
+            .allowlist_type("__kernel_pid_t")
+            .allowlist_type("__kernel_sockaddr_storage")
+            .allowlist_type("iovec")
+            .allowlist_type("open_how")
+            .allowlist_type("statx")
+            .allowlist_type("epoll_event")
+            .allowlist_type("futex_waitv")
+            .allowlist_type("sockaddr_un")
+            .allowlist_type("siginfo_t")
+            .allowlist_var("__NR_(io_uring_.*|mmap|munmap|madvise)")
+            .allowlist_var("IORING_.*")
+            .allowlist_var("IOSQE_.*")
+            .allowlist_var("SPLICE_F_FD_IN_FIXED")
+            .allowlist_var("PROT_(READ|WRITE)")
+            .allowlist_var("MAP_(SHARED|POPULATE|ANONYMOUS|HUGETLB|HUGE_SHIFT|HUGE_2MB)")
+            .allowlist_var("MADV_DONTFORK")
+            .allowlist_var("O_(NONBLOCK|CLOEXEC)")
+            .allowlist_var("AT_FDCWD")
+            .allowlist_var("P_(ALL|PID|PGID|PIDFD)")
     }
 }
 
@@ -154,7 +208,8 @@ mod config
         pub target_arch: String,
         pub target_arch_dir: PathBuf,
         pub target_arch_mod: PathBuf,
-        pub linux_headers_dir: String,
+        pub linux_headers_env: String,
+        pub linux_headers_dir: Option<String>,
         pub req_feature_experimental_asm: bool,
     }
 
@@ -164,7 +219,9 @@ mod config
         {
             let target_arch =
                 ::std::env::var("CARGO_CFG_TARGET_ARCH").map_err(::std::io::Error::other)?;
-            let linux_headers_dir = crate::linux::headers::path(&target_arch)?;
+            let linux_arch = crate::linux::arch(&target_arch)?;
+            let linux_headers_env = crate::linux::headers::env(linux_arch);
+            let linux_headers_dir = crate::linux::headers::path(&linux_headers_env);
 
             let manifest_dir =
                 ::std::env::var("CARGO_MANIFEST_DIR").map_err(::std::io::Error::other)?;
@@ -177,6 +234,7 @@ mod config
                 target_arch,
                 target_arch_dir,
                 target_arch_mod,
+                linux_headers_env,
                 linux_headers_dir,
                 req_feature_experimental_asm,
             };
@@ -226,13 +284,10 @@ mod linux
             format!("{linux_arch}_LINUX_HEADERS")
         }
 
-        pub fn path(target_arch: &str) -> ::std::io::Result<String>
+        pub fn path(linux_headers_env: &str) -> Option<String>
         {
-            let linux_arch = crate::linux::arch(target_arch)?;
-            let linux_headers_env = crate::linux::headers::env(linux_arch);
-            let linux_headers_dir =
-                ::std::env::var(linux_headers_env).map_err(::std::io::Error::other)?;
-            Ok(linux_headers_dir)
+            println!("cargo::rerun-if-env-changed={linux_headers_env}");
+            ::std::env::var(linux_headers_env).ok()
         }
     }
 }
@@ -283,6 +338,11 @@ mod target
 
     pub mod os
     {
+        pub fn is_linux() -> ::std::io::Result<bool>
+        {
+            Ok(crate::cargo::var("CARGO_CFG_TARGET_OS")? == "linux")
+        }
+
         pub fn check() -> ::std::io::Result<()>
         {
             let var = "CARGO_CFG_TARGET_OS";
