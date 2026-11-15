@@ -38,6 +38,7 @@ use gandr_core_incremental::Opener;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
 use gandr_core_incremental::Resume;
+use gandr_core_incremental::Tier;
 use gandr_core_incremental::TypeContent;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::check_program;
@@ -1289,11 +1290,10 @@ fn a_pass_hands_its_context_the_program_s_tier_2282()
     let program = |arena: CoreArena, items: Vec<Item>, tiered: bool| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         if tiered {
-            program.open_contexts_with(Opener::new(|arena, opened| {
-                let mut context = opened.bare(arena);
-                context.decide_endpoints_on(agreeing(), gandr_kernel_core::AdmissionPolicy::Derive);
-                context
-            }));
+            program.open_contexts_with(Opener::bare().deciding_on(Tier::new(
+                agreeing,
+                gandr_kernel_core::AdmissionPolicy::Derive,
+            )));
         }
         program
     };
@@ -1479,11 +1479,7 @@ fn a_pass_hands_its_context_the_program_s_stratum_store_4034()
     let stored = |arena: CoreArena, items: Vec<Item>, store: &Arc<Counting>| {
         let mut program = Program::new(arena, items).expect("positions ascend");
         let shared: Arc<dyn gandr_core_checker::ua::StratumStore> = Arc::<Counting>::clone(store);
-        program.open_contexts_with(Opener::new(move |arena, opened| {
-            let mut context = opened.bare(arena);
-            context.keep_strata_in(Arc::clone(&shared));
-            context
-        }));
+        program.open_contexts_with(Opener::bare().keeping_strata_in(shared));
         program
     };
     // The statements are the last two items of every program here.
