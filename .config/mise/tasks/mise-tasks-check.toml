@@ -576,6 +576,14 @@ env.DYLINT_RUSTFLAGS = "-D spec_attribute_present -D spec_attribute_unqualified 
 # keeps its container states why in an `expect` at the site.
 # `.config/policy/container-cases.bash` builds a crate of the list's first
 # name with one `Vec` left, and the gate must refuse it by name.
+#
+# `allocation_in_repeated_body` and `clone_in_loop` follow each call of a
+# loop's body into its callee over MIR, in each crate that
+# `repeated_call_crates` names. The lints refuse a call when its callee
+# allocates on some path and the pass drops what the callee allocates. The
+# key names no crate at first, so the lints only count. Each later wave fixes
+# the sites of its crates, or states each exception at its site. Then the
+# wave names those crates in the key.
 env.DYLINT_TOML = '''
 [quenchant-dylints]
 evidence_directory = "{{ config_root }}/target/evidence/records"
@@ -590,6 +598,7 @@ presenters = [
 ]
 trait_object_classes = ["core::error::Error", "core::ops::Fn", "core::ops::FnMut", "std::io::Write", "core::fmt::Display", "gandr_surface_dispatcher::Console"]
 allocation_default_crates = []
+repeated_call_crates = []
 allocation_base_records = "{{ config_root }}/target/allocation-base"
 std_container_crates = ["gandr_kernel_strata", "gandr_kernel_conversion_trace", "gandr_kernel_check_memo"]
 
