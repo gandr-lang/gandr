@@ -1652,15 +1652,13 @@ pub fn resident() -> Option<Bytes>
 pub fn resident() -> Option<Bytes>
 {
     let mut usage = core::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+    // SAFETY: `getpid` reads the id of the calling process, and it never
+    // fails.
+    let pid = unsafe { libc::getpid() };
     // SAFETY: `usage` is a live record of the type the flavour writes, and
     // the call writes nothing else.
-    let read = unsafe {
-        libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V2,
-            usage.as_mut_ptr().cast(),
-        )
-    };
+    let read =
+        unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V2, usage.as_mut_ptr().cast()) };
     // SAFETY: a zeroed `rusage_info_v2` is a valid record, and a call that
     // succeeds fills it.
     (read == 0).then(|| Bytes(unsafe { usage.assume_init() }.ri_resident_size))
