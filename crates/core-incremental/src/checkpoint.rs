@@ -154,6 +154,7 @@ use gandr_core_checker::Demand;
 use gandr_core_checker::Entered;
 use gandr_core_checker::Failure;
 use gandr_core_checker::FormedValueType;
+use gandr_core_checker::Keying;
 use gandr_core_checker::Membership;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Polled;
@@ -177,7 +178,10 @@ use gandr_core_checker::trace::untraced;
 use gandr_core_checker::unfolding;
 #[cfg(feature = "instrument")]
 use gandr_core_term::ArenaWatermark;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::key::NodeKey;
 use gandr_kernel_check_memo::CheckMemo;
@@ -2487,6 +2491,151 @@ pub fn node_key(
         return Maybe::Absent(recall::Absent::Opaque);
     }
     Maybe::Present(NodeKey::from(digest_of(&hasher)))
+}
+
+/// The key of a node whose content holds an unresolved node: the digest of a
+/// tag of its sort alone, which every such node of the sort shares.
+///
+/// A node of this kind has no content to name it, so no other key is faithful.
+/// Its admission position or its place is not a key: an edit moves both.
+///
+/// # Specification
+/// trivial.
+fn opaque_key(node: ArenaNode) -> NodeKey
+{
+    let tag: &[u8] = match node {
+        ArenaNode::Value(_) => b"gandr: an opaque value node",
+        ArenaNode::Computation(_) => b"gandr: an opaque computation node",
+        ArenaNode::ValueType(_) => b"gandr: an opaque value-type node",
+        ArenaNode::CompType(_) => b"gandr: an opaque computation-type node",
+    };
+    NodeKey::from(digest_of(blake3::Hasher::new().update(tag)))
+}
+
+/// The content key of each node of one arena, each constant named by the item
+/// that a layout gives it.
+///
+/// It takes a verdict to its keyed form. A session that takes an edit and a
+/// fresh one judge one text into two arenas, and the keyed forms agree.
+#[derive(Clone, Copy, Debug)]
+pub struct NodeKeys<'program>
+{
+    /// The arena whose nodes it keys.
+    arena: &'program CoreArena,
+    /// The items that name the constants.
+    layout: &'program Layout,
+}
+
+impl<'program> NodeKeys<'program>
+{
+    /// The keys of the nodes of `arena`, each constant named by the item that
+    /// `layout` gives it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        arena: &'program CoreArena,
+        layout: &'program Layout,
+    ) -> Self
+    {
+        Self { arena, layout }
+    }
+
+    /// The keys of the nodes of `program`'s arena, under its layout.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn of_program(program: &'program Program) -> Self
+    {
+        Self::new(program.arena(), program.layout())
+    }
+
+    /// The key of `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`node_key`] of `node`; for a node whose content holds an
+    ///   unresolved node, the key of its sort alone.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`node_key`].
+    /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
+    #[spec(ensures: |ret| match node_key((self.arena, self.layout), node) {
+        | Maybe::Present(key) => ret == key,
+        | Maybe::Absent(_) => ret == opaque_key(node),
+    })]
+    #[inline]
+    #[must_use]
+    pub fn of(
+        &self,
+        node: ArenaNode,
+    ) -> NodeKey
+    {
+        match node_key((self.arena, self.layout), node) {
+            Maybe::Present(key) => key,
+            Maybe::Absent(_) => opaque_key(node),
+        }
+    }
+}
+
+impl Keying for NodeKeys<'_>
+{
+    /// The key of the value node `value`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value(
+        &self,
+        value: ValueId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Value(value))
+    }
+
+    /// The key of the computation node `computation`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn computation(
+        &self,
+        computation: ComputationId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::Computation(computation))
+    }
+
+    /// The key of the value-type node `value_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn value_type(
+        &self,
+        value_type: ValueTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::ValueType(value_type))
+    }
+
+    /// The key of the computation-type node `comp_type`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn comp_type(
+        &self,
+        comp_type: CompTypeId,
+    ) -> NodeKey
+    {
+        self.of(ArenaNode::CompType(comp_type))
+    }
 }
 
 /// A choice of memo for the pass: the type parameter that separates batch

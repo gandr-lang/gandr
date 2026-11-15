@@ -420,6 +420,80 @@ pub struct Layout
 
 impl Layout
 {
+    /// The layout of `items`: each item's reference, and the maps from
+    /// positions and references to items.
+    ///
+    /// # Specification
+    /// - requires: nothing — positions out of order are admissible input and
+    ///   refused.
+    /// - ensures: on success the items keep their order, and each item's
+    ///   reference is its key with the number of items of that key before it.
+    /// - provides: the one place positions are checked, so the checker never
+    ///   refuses an item of a program for admission order.
+    /// - fails: [`ProgramError::PositionOrder`] naming the first item whose
+    ///   position does not exceed its predecessor's.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ProgramError::PositionOrder`] — admission positions do not strictly
+    /// ascend in source order.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Program::new`], which lays its items out here.
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
+    /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
+    /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
+    /// - witness: `region::tests::the_first_position_violation_wins`
+    #[spec(
+        captures: item_count = items.len(),
+        ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|layout| {
+            layout.items.len() == item_count
+                && layout.references.len() == item_count
+                && layout.occupied.len() == item_count
+                && layout.named.len() == item_count
+        }),
+    )]
+    #[inline]
+    pub fn new(items: Vec<Item>) -> Result<Self, ProgramError>
+    {
+        let mut references = Vec::with_capacity(items.len());
+        let mut occupied = BTreeMap::new();
+        let mut named = BTreeMap::new();
+        let mut seen: BTreeMap<&ItemKey, Occurrence> = BTreeMap::new();
+        let mut previous: Maybe<ConstantIndex, naming::Absent> =
+            Maybe::Absent(naming::Absent::Unnamed);
+        for (index, item) in items.iter().enumerate() {
+            let ordinal = ItemOrdinal::from(index);
+            let position = item.declaration.constant();
+            if let Maybe::Present(previous) = previous
+                && position <= previous
+            {
+                return Err(ProgramError::PositionOrder {
+                    ordinal,
+                    position,
+                    previous,
+                });
+            }
+            previous = Maybe::Present(position);
+            let counter = seen.entry(&item.key).or_default();
+            let occurrence = *counter;
+            *counter = Occurrence::from(usize::from(occurrence).saturating_add(1));
+            let reference = Reference::Item {
+                key: item.key.clone(),
+                occurrence,
+            };
+            let _vacant = occupied.insert(position, ordinal);
+            let _vacant = named.insert(reference.clone(), ordinal);
+            references.push(reference);
+        }
+        Ok(Self {
+            items,
+            references,
+            occupied,
+            named,
+        })
+    }
+
     /// The reference the admission position `position` resolves to.
     ///
     /// # Specification
@@ -872,48 +946,33 @@ impl Program
         items: Vec<Item>,
     ) -> Result<Self, ProgramError>
     {
-        let mut references = Vec::with_capacity(items.len());
-        let mut occupied = BTreeMap::new();
-        let mut named = BTreeMap::new();
-        let mut seen: BTreeMap<&ItemKey, Occurrence> = BTreeMap::new();
-        let mut previous: Maybe<ConstantIndex, naming::Absent> =
-            Maybe::Absent(naming::Absent::Unnamed);
-        for (index, item) in items.iter().enumerate() {
-            let ordinal = ItemOrdinal::from(index);
-            let position = item.declaration.constant();
-            if let Maybe::Present(previous) = previous
-                && position <= previous
-            {
-                return Err(ProgramError::PositionOrder {
-                    ordinal,
-                    position,
-                    previous,
-                });
-            }
-            previous = Maybe::Present(position);
-            let counter = seen.entry(&item.key).or_default();
-            let occurrence = *counter;
-            *counter = Occurrence::from(usize::from(occurrence).saturating_add(1));
-            let reference = Reference::Item {
-                key: item.key.clone(),
-                occurrence,
-            };
-            let _vacant = occupied.insert(position, ordinal);
-            let _vacant = named.insert(reference.clone(), ordinal);
-            references.push(reference);
-        }
+        Ok(Self::over(arena, Layout::new(items)?))
+    }
 
-        Ok(Self {
+    /// The program of the items that `layout` lays out, over `arena`.
+    ///
+    /// # Specification
+    /// - requires: `layout`'s items declare over `arena`.
+    /// - ensures: [`Self::arena`] is `arena`, and the items are `layout`'s.
+    /// - panics: none.
+    /// - executable: none — a construction from its parts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Program::new`], which builds each program here.
+    /// - witness: `region::tests::positions_must_ascend_and_may_skip`
+    #[inline]
+    #[must_use]
+    pub fn over(
+        arena: CoreArena,
+        layout: Layout,
+    ) -> Self
+    {
+        Self {
             arena,
-            layout: Layout {
-                items,
-                references,
-                occupied,
-                named,
-            },
+            layout,
             opener: Opener::bare(),
             host: gandr_core_checker::worlds::HostEntry::Unbounded,
-        })
+        }
     }
 
     /// The arena every declaration's ids resolve in.

@@ -211,6 +211,7 @@ pub use crate::checkpoint::ContentKey;
 pub use crate::checkpoint::ItemCheckpoint;
 pub use crate::checkpoint::Judgement;
 pub use crate::checkpoint::Leading;
+pub use crate::checkpoint::NodeKeys;
 #[cfg(feature = "instrument")]
 pub use crate::checkpoint::PassedItem;
 pub use crate::checkpoint::Resume;
@@ -280,6 +281,7 @@ pub use crate::region::Item;
 pub use crate::region::ItemKey;
 pub use crate::region::ItemSource;
 pub use crate::region::KeyName;
+pub use crate::region::Layout;
 pub use crate::region::Opened;
 pub use crate::region::Opener;
 pub use crate::region::Program;
