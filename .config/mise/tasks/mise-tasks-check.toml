@@ -734,6 +734,10 @@ policy() {
   fi
   .config/mise/gated "${run[@]}"
 }
+export toolchain
+export -f policy
+# The library case builds nothing, so it runs before the policy run.
+.config/policy/library-cases.bash
 # The base's records for `allocation_free_region` (#7419), built in a gate
 # slot as the policy run is: an empty directory when no base stands. A merge
 # group with no base would hold no changed function, so it stops (#7632).
@@ -748,8 +752,6 @@ status=0
 policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$?
 .config/policy/held.bash target/allocation-base target/evidence/records "${GATE_BASE:-}" >&2
 (( status == 0 )) || exit "$status"
-export toolchain
-export -f policy
 .config/policy/scope-cases.bash
 .config/policy/trait-object-cases.bash
 .config/policy/held-cases.bash
