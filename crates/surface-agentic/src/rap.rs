@@ -2148,7 +2148,7 @@ fn ended<Log>(
 /// trivial.
 ///
 /// # Cost
-/// - allocation: the reason's text, error path
+/// - allocation: the reason's text, diagnostic
 fn refuse(
     stream: &mut TcpStream,
     reason: &impl core::fmt::Display,
