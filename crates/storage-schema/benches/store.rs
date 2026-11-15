@@ -1,6 +1,6 @@
 //! The store's measurement on a 6400-part graph: the indexed preimage
-//! lookup, the insert-and-remove round trip, and the equation check per
-//! mutation.
+//! lookup, the arrow cell read, the insert-and-remove round trip, and the
+//! equation check per mutation.
 //!
 //! The graph is a cycle of 3200 vertices and 3200 edges, both arrows
 //! indexed. Each figure is the mean over many operations, timed with the
@@ -28,6 +28,7 @@ use gandr_storage_schema::Presentation;
 use gandr_storage_schema::Row;
 use gandr_storage_schema::Schema;
 use gandr_storage_schema::Store;
+use gandr_storage_schema::Writer;
 
 /// The vertices of the cycle; the edges are as many.
 const VERTICES: usize = 3_200;
@@ -78,8 +79,12 @@ enum Equation
 /// trivial.
 fn cycle(with_equation: Equation) -> (Store, Vec<PartKey>, Vec<PartKey>)
 {
-    let mut store = Store::new(schema(with_equation), TreeParams::default())
-        .expect("the parameters are supported");
+    let mut store = Store::new(
+        schema(with_equation),
+        TreeParams::default(),
+        Writer::from(0_u16),
+    )
+    .expect("the parameters are supported");
     let schema = store.schema().clone();
     let vertex = schema.object("V").expect("V");
     let edge = schema.object("E").expect("E");
@@ -160,6 +165,10 @@ fn main()
                 .to_vec(),
         );
     });
+    let read = mean(count, |index| {
+        let part = edges.get(index.0 % VERTICES).copied().expect("an edge");
+        black_box(store.target(src, part).expect("an arrow cell"));
+    });
     let round_trip = mean(count, |index| {
         let from = at(index);
         let to = at(Count(index.0.saturating_add(1)));
@@ -200,6 +209,7 @@ fn main()
         println!("| --- | ---: |");
         println!("| preimage lookup, borrowed | {} |", nanos(&borrowed));
         println!("| preimage lookup, copied | {} |", nanos(&copied));
+        println!("| arrow cell read | {} |", nanos(&read));
         println!("| insert-and-remove round trip | {} |", nanos(&round_trip));
         if let (Some(without), Some(with)) = (checked.first(), checked.get(1)) {
             println!("| mark round trip, no equation | {} |", nanos(without));

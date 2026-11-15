@@ -50,6 +50,8 @@ use crate::store::layout::KeyWriter;
 use crate::store::layout::PART;
 use crate::store::layout::VALUE;
 use crate::store::layout::VALUE_INDEX;
+use crate::store::layout::read_target;
+use crate::store::layout::trailing_part;
 
 mod image;
 
@@ -370,6 +372,10 @@ impl Store
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the proof's evidence, durable by the store root
+    /// - allocation: the table's name in a refusal, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — every kind of question verifies to the store's own
     ///   answer; an uncommitted edit is not what the proof states.
@@ -486,6 +492,11 @@ impl Proof
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the record plane's verification and the answer's parts,
+    ///   growth within the proof's records
+    /// - allocation: the table's name in a layout fault, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — each kind of proof verifies to the store's answer;
     ///   another root, another question and another schema are each refused by
@@ -533,9 +544,8 @@ impl Proof
             },
             (&Question::Arrow { .. }, &Evidence::Present(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed(), proof.value())?;
-                let value: &[u8] = proof.value().into();
-                let target: [u8; 8] = value.try_into().map_err(|_width| malformed())?;
-                Ok(Answer::Target(PartKey::from(u64::from_le_bytes(target))))
+                let target = read_target(proof.value()).map_err(|_width| malformed())?;
+                Ok(Answer::Target(target))
             },
             (&Question::Value { .. }, &Evidence::Present(ref proof)) => {
                 proof.verify(&tree_root, site.key.as_borrowed(), proof.value())?;
@@ -550,11 +560,7 @@ impl Proof
                 let records = proof.verify(&tree_root, range)?;
                 let mut parts = Vec::with_capacity(records.len());
                 for record in &records {
-                    let key: &[u8] = record.key().into();
-                    let (_prefix, part) = key.split_last_chunk::<8>().ok_or_else(malformed)?;
-                    let mut part = *part;
-                    part.reverse();
-                    parts.push(PartKey::from(u64::from_le_bytes(part)));
+                    parts.push(trailing_part(record.key()).map_err(|_width| malformed())?);
                 }
                 Ok(Answer::Preimage(parts.into_boxed_slice()))
             },

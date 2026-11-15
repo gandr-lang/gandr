@@ -34,6 +34,7 @@ use anodized::spec;
 use crate::error::Refusal;
 use crate::parts::Liveness;
 use crate::parts::PartKey;
+use crate::parts::Writer;
 use crate::schema::ArrowId;
 use crate::schema::AttributeId;
 use crate::schema::EquationId;
@@ -41,7 +42,39 @@ use crate::schema::ObjectId;
 use crate::store::AttributeValue;
 use crate::store::Row;
 use crate::store::Store;
-use crate::store::ensure_slot;
+
+/// The refusal of a mint in `object` that `writer`'s counter cannot make.
+///
+/// # Specification
+/// - ensures: [`Refusal::Exhausted`] naming the table and the writer, or the
+///   schema's refusal of an object outside it.
+/// - panics: none.
+/// - executable: none — the answer is the refusal itself.
+/// - intension: built only on failure, so a mint names no table.
+///
+/// # Cost
+/// - allocation: the table's name, error path
+///
+/// # Adequacy
+/// - hypothesis: L3 — a spent counter refuses the mint, and the refusal renders
+///   the table and the writer.
+/// - witness: `parts::tests::mints_are_consecutive_and_the_last_key_is_refused`
+/// - witness: `tests::render::every_edit_refusal_names_its_parts`
+#[inline]
+fn exhausted(
+    store: &Store,
+    object: ObjectId,
+    writer: Writer,
+) -> Refusal
+{
+    match store.object_name(object) {
+        Ok(name) => Refusal::Exhausted {
+            object: name,
+            writer,
+        },
+        Err(refusal) => refusal,
+    }
+}
 
 /// What an edit step replaced in a cell.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -298,57 +331,62 @@ impl Edit<'_>
     /// Adds a part to a table, every column unset.
     ///
     /// # Specification
-    /// - ensures: on success the returned key is the table's previous counter
-    ///   value, live, with every arrow and attribute of the table unset until
-    ///   this edit sets them.
+    /// - ensures: on success the returned key is in the store's writer's
+    ///   region, at that region's previous counter value; the part is live,
+    ///   with every arrow and attribute of the table unset until this edit sets
+    ///   them.
     /// - fails: [`Refusal::Schema`] for an object outside the schema, and
-    ///   [`Refusal::Exhausted`] naming a table whose counter is spent.
+    ///   [`Refusal::Exhausted`] naming the table and the writer whose counter
+    ///   is spent.
     /// - panics: none.
     ///
     /// # Errors
     /// [`Refusal::Schema`] or [`Refusal::Exhausted`].
     ///
+    /// # Cost
+    /// - allocation: the region of a new writer and the cells of the new part
+    ///   in each column of the table, growth within the table's parts
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — consecutive adds mint consecutive keys, and a finish
-    ///   without setting the new part's arrow is refused as unset.
+    /// - hypothesis: L3 — consecutive adds mint consecutive keys in the store's
+    ///   writer's region, and a finish without setting the new part's arrow is
+    ///   refused as unset.
     /// - witness: `tests::defect::a_row_must_be_complete_and_its_own`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |part| self.store.liveness(object, *part) == Ok(Liveness::Live)))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |part| part.writer() == self.store.writer && self.store.liveness(object, *part) == Ok(Liveness::Live)))]
     pub fn add_part(
         &mut self,
         object: ObjectId,
     ) -> Result<PartKey, Refusal>
     {
-        let name = self.store.object_name(object)?;
-        let table = self
+        let writer = self.store.writer;
+        let Some(Ok(part)) = self
             .store
             .tables
             .get_mut(usize::from(object))
-            .ok_or_else(|| Refusal::Exhausted {
-                object: name.clone(),
-            })?;
-        let part = table.mint().map_err(|_exhausted| Refusal::Exhausted {
-            object: name.clone(),
-        })?;
-        let slot = part
-            .slot()
-            .map_err(|_unaddressable| Refusal::Exhausted { object: name })?;
+            .map(|table| table.mint(writer))
+        else {
+            return Err(exhausted(self.store, object, writer));
+        };
+        self.undo.push(Undo::Minted(object, part));
+        self.store.touch(object);
 
         for &arrow in self.store.schema.outgoing(object) {
-            if let Some(column) = self.store.arrows.get_mut(usize::from(arrow)) {
-                ensure_slot(&mut column.targets, slot);
+            if let Some(column) = self.store.arrows.get_mut(usize::from(arrow))
+                && column.targets.ensure(part).is_err()
+            {
+                return Err(exhausted(self.store, object, writer));
             }
             self.unset_arrows.insert((arrow, part));
         }
         for &attribute in self.store.schema.fields(object) {
-            if let Some(column) = self.store.values.get_mut(usize::from(attribute)) {
-                ensure_slot(&mut column.values, slot);
+            if let Some(column) = self.store.values.get_mut(usize::from(attribute))
+                && column.values.ensure(part).is_err()
+            {
+                return Err(exhausted(self.store, object, writer));
             }
             self.unset_values.insert((attribute, part));
         }
-
-        self.undo.push(Undo::Minted(object, part));
-        self.store.touch(object);
         Ok(part)
     }
 
@@ -364,6 +402,9 @@ impl Edit<'_>
     ///
     /// # Errors
     /// [`Refusal::Schema`] or [`Refusal::NotLive`].
+    ///
+    /// # Cost
+    /// - allocation: a table's name in a refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an edge pointed at a deleted vertex is refused naming
@@ -383,7 +424,6 @@ impl Edit<'_>
         let (source, reaches) = (spec.source(), spec.target());
         self.store.ensure_live(source, part)?;
         self.store.ensure_live(reaches, target)?;
-        let slot = self.store.slot(source, part)?;
 
         let prior = if self.unset_arrows.remove(&(arrow, part)) {
             Prior::Unset
@@ -395,12 +435,13 @@ impl Edit<'_>
         else {
             return Err(self.store.not_live(source, part));
         };
-        ensure_slot(&mut column.targets, slot);
+        let Ok(cell) = column.targets.ensure(part)
+        else {
+            return Err(self.store.not_live(source, part));
+        };
+        *cell = target;
         if let Prior::Set(old) = prior {
             column.index_remove(old, part);
-        }
-        if let Some(cell) = column.targets.get_mut(usize::from(slot)) {
-            *cell = target;
         }
         column.index_insert(target, part);
 
@@ -421,6 +462,9 @@ impl Edit<'_>
     /// # Errors
     /// [`Refusal::Schema`] or [`Refusal::NotLive`].
     ///
+    /// # Cost
+    /// - allocation: a table's name in a refusal, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a standing set twice is found under the second value
     ///   only.
@@ -436,15 +480,13 @@ impl Edit<'_>
     {
         let object = self.store.schema.attribute_at(attribute)?.object();
         self.store.ensure_live(object, part)?;
-        let slot = self.store.slot(object, part)?;
         let unset = self.unset_values.remove(&(attribute, part));
 
         let Some(column) = self.store.values.get_mut(usize::from(attribute))
         else {
             return Err(self.store.not_live(object, part));
         };
-        ensure_slot(&mut column.values, slot);
-        let Some(cell) = column.values.get_mut(usize::from(slot))
+        let Ok(cell) = column.values.ensure(part)
         else {
             return Err(self.store.not_live(object, part));
         };
@@ -478,6 +520,9 @@ impl Edit<'_>
     /// # Errors
     /// [`Refusal::Schema`], [`Refusal::NotLive`] or [`Refusal::Referenced`].
     ///
+    /// # Cost
+    /// - allocation: a table's name in a refusal, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the reproduced defect: deleting vertex 1 of `1 → 2 →
     ///   3` is refused naming `src` and the edge, through an indexed and an
@@ -506,7 +551,7 @@ impl Edit<'_>
             }
         }
 
-        self.unindex(object, part)?;
+        self.unindex(object, part);
         if let Some(table) = self.store.tables.get_mut(usize::from(object)) {
             table.remove(part);
         }
@@ -724,6 +769,10 @@ impl Edit<'_>
     /// # Errors
     /// [`Refusal::Schema`].
     ///
+    /// # Cost
+    /// - allocation: the frontier of each step of the walk, growth within the
+    ///   parts that the prefix reaches
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a two-arrow prefix from a loop through an edge to its
     ///   vertex is walked back from the vertex to the loop.
@@ -739,7 +788,12 @@ impl Edit<'_>
         for &arrow in prefix.iter().rev() {
             let mut next = BTreeSet::new();
             for &target in &frontier {
-                next.extend(self.store.referrers(arrow, target, &self.unset_arrows)?);
+                next.extend(
+                    self.store
+                        .referrers(arrow, target, &self.unset_arrows)?
+                        .iter()
+                        .copied(),
+                );
             }
             frontier = next;
         }
@@ -749,14 +803,10 @@ impl Edit<'_>
     /// Drops a part's set cells from every kept inverse.
     ///
     /// # Specification
-    /// - ensures: on success no kept inverse of the part's table lists it.
-    /// - fails: [`Refusal::Schema`] for an identifier outside the schema.
+    /// - ensures: no kept inverse of the part's table lists it.
     /// - panics: none.
     /// - executable: none — the postcondition reads every inverse; the
     ///   scan-agreement witness does.
-    ///
-    /// # Errors
-    /// [`Refusal::Schema`].
     ///
     /// # Adequacy
     /// - hypothesis: L2 — after a delete every inverse agrees with a scan.
@@ -766,30 +816,32 @@ impl Edit<'_>
         &mut self,
         object: ObjectId,
         part: PartKey,
-    ) -> Result<(), Refusal>
+    )
     {
-        let slot = self.store.slot(object, part)?;
-        let outgoing = self.store.schema.outgoing(object).to_vec();
-        for arrow in outgoing {
+        let Store {
+            ref schema,
+            ref mut arrows,
+            ref mut values,
+            ..
+        } = *self.store;
+        for &arrow in schema.outgoing(object) {
             if self.unset_arrows.contains(&(arrow, part)) {
                 continue;
             }
-            if let Some(column) = self.store.arrows.get_mut(usize::from(arrow))
-                && let Some(&target) = column.targets.get(usize::from(slot))
+            if let Some(column) = arrows.get_mut(usize::from(arrow))
+                && let Ok(&target) = column.targets.cell(part)
             {
                 column.index_remove(target, part);
             }
         }
-        let fields = self.store.schema.fields(object).to_vec();
-        for attribute in fields {
+        for &attribute in schema.fields(object) {
             if self.unset_values.contains(&(attribute, part)) {
                 continue;
             }
-            if let Some(column) = self.store.values.get_mut(usize::from(attribute)) {
-                column.index_remove_slot(slot, part);
+            if let Some(column) = values.get_mut(usize::from(attribute)) {
+                column.index_remove_slot(part);
             }
         }
-        Ok(())
     }
 
     /// Puts a restored part's set cells back into every kept inverse.
@@ -812,28 +864,28 @@ impl Edit<'_>
         part: PartKey,
     )
     {
-        let Ok(slot) = part.slot()
-        else {
-            return;
-        };
-        let outgoing = self.store.schema.outgoing(object).to_vec();
-        for arrow in outgoing {
+        let Store {
+            ref schema,
+            ref mut arrows,
+            ref mut values,
+            ..
+        } = *self.store;
+        for &arrow in schema.outgoing(object) {
             if self.unset_arrows.contains(&(arrow, part)) {
                 continue;
             }
-            if let Some(column) = self.store.arrows.get_mut(usize::from(arrow))
-                && let Some(&target) = column.targets.get(usize::from(slot))
+            if let Some(column) = arrows.get_mut(usize::from(arrow))
+                && let Ok(&target) = column.targets.cell(part)
             {
                 column.index_insert(target, part);
             }
         }
-        let fields = self.store.schema.fields(object).to_vec();
-        for attribute in fields {
+        for &attribute in schema.fields(object) {
             if self.unset_values.contains(&(attribute, part)) {
                 continue;
             }
-            if let Some(column) = self.store.values.get_mut(usize::from(attribute)) {
-                column.index_insert_slot(slot, part);
+            if let Some(column) = values.get_mut(usize::from(attribute)) {
+                column.index_insert_slot(part);
             }
         }
     }
@@ -846,6 +898,10 @@ impl Edit<'_>
     /// - panics: none.
     /// - executable: none — the postcondition compares the whole store; the
     ///   witnesses do.
+    ///
+    /// # Cost
+    /// - allocation: the unset entries that the rollback restores, growth
+    ///   within the edit's undo log
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused close after an add, a set and a delete
@@ -863,20 +919,16 @@ impl Edit<'_>
                     }
                 },
                 Undo::Arrow(arrow, part, prior) => {
-                    let Ok(slot) = part.slot()
-                    else {
-                        continue;
-                    };
                     let Some(column) = self.store.arrows.get_mut(usize::from(arrow))
                     else {
                         continue;
                     };
-                    if let Some(&current) = column.targets.get(usize::from(slot)) {
+                    if let Ok(&current) = column.targets.cell(part) {
                         column.index_remove(current, part);
                     }
                     match prior {
                         Prior::Set(old) => {
-                            if let Some(cell) = column.targets.get_mut(usize::from(slot)) {
+                            if let Ok(cell) = column.targets.cell_mut(part) {
                                 *cell = old;
                             }
                             column.index_insert(old, part);
@@ -887,19 +939,15 @@ impl Edit<'_>
                     }
                 },
                 Undo::Value(attribute, part, prior) => {
-                    let Ok(slot) = part.slot()
-                    else {
-                        continue;
-                    };
                     let Some(column) = self.store.values.get_mut(usize::from(attribute))
                     else {
                         continue;
                     };
-                    column.index_remove_slot(slot, part);
+                    column.index_remove_slot(part);
                     match prior {
                         Prior::Set(old) => {
                             column.index_insert(&old, part);
-                            if let Some(cell) = column.values.get_mut(usize::from(slot)) {
+                            if let Ok(cell) = column.values.cell_mut(part) {
                                 *cell = old;
                             }
                         },

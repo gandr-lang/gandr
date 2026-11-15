@@ -15,13 +15,15 @@
 //! | `0x03 ‖ arrow ‖ target ‖ part` | empty | the arrow's kept inverse |
 //! | `0x04 ‖ attribute ‖ u32 length ‖ value ‖ part` | empty | the attribute's kept inverse |
 //!
-//! `part` and `target` are `u64` keys and `arrow` and `attribute` `u32`
-//! ordinals of columns leaving this table. A part's membership is one record;
-//! an arrow's value one record; a kept inverse's preimage of one value is the
-//! contiguous run under `0x03 ‖ arrow ‖ target`, or under
-//! `0x04 ‖ attribute ‖ length ‖ value`, so the record plane's range proof
-//! proves it complete. The length prefix keeps one value's run from
-//! continuing into a longer value that extends it.
+//! `part` and `target` are `u64` keys, a writer's sixteen bits above an
+//! offset's forty-eight, so the keys of one writer's region are one
+//! contiguous run.
+//! `arrow` and `attribute` are `u32` ordinals of columns leaving this table.
+//! A part's membership is one record; an arrow's value one record; a kept
+//! inverse's preimage of one value is the contiguous run under
+//! `0x03 ‖ arrow ‖ target`, or under `0x04 ‖ attribute ‖ length ‖ value`, so
+//! the record plane's range proof proves it complete. The length prefix keeps
+//! one value's run from continuing into a longer value that extends it.
 //!
 //! **Choice.** One tree per table, the columns as key families inside it.
 //! **Alternatives.** A tree per column multiplies the roots a manifest binds
@@ -34,7 +36,8 @@
 //!
 //! [`Store::open`] loads each table's records through the block store's
 //! verified load, rebuilds the tree and refuses one whose root node or record
-//! count is not the manifest's. It reads the parts and cells, recomputes the
+//! count is not the manifest's. It reads the parts and cells, refuses a key
+//! that its writer's committed counter has not minted, recomputes the
 //! inverses, and refuses records that are not exactly the records this store
 //! would write for what they hold. Then it refuses an arrow that reaches a
 //! part that is not live, and an equation that fails at any part: a reopened
@@ -49,8 +52,10 @@ use gandr_storage_records::DecodedNode;
 use gandr_storage_records::NodeHash;
 use gandr_storage_records::OwnedRecordKey;
 use gandr_storage_records::Record;
+use gandr_storage_records::RecordKey;
 use gandr_storage_records::RecordRef;
 use gandr_storage_records::RecordTree;
+use gandr_storage_records::RecordValue;
 use gandr_storage_records::TreeParams;
 use gandr_storage_records::decode_node;
 
@@ -59,8 +64,10 @@ use crate::error::StoreError;
 use crate::manifest::StoreManifest;
 use crate::manifest::StoreRoot;
 use crate::parts::Liveness;
+use crate::parts::Minting;
 use crate::parts::PartKey;
 use crate::parts::PartSet;
+use crate::parts::Writer;
 use crate::schema::ArrowId;
 use crate::schema::AttributeId;
 use crate::schema::ObjectId;
@@ -71,7 +78,6 @@ use crate::store::AttributeValue;
 use crate::store::Staleness;
 use crate::store::Store;
 use crate::store::ValueIndex;
-use crate::store::ensure_slot;
 
 /// The family of a part's membership record.
 pub(crate) const PART: Family = Family(0x00_u8);
@@ -83,6 +89,9 @@ pub(crate) const VALUE: Family = Family(0x02_u8);
 pub(crate) const ARROW_INDEX: Family = Family(0x03_u8);
 /// The family of an attribute's kept inverse.
 pub(crate) const VALUE_INDEX: Family = Family(0x04_u8);
+
+/// The width of a part key in a record key or in an arrow cell's value.
+const PART_WIDTH: usize = 8_usize;
 
 /// A key being written.
 #[repr(transparent)]
@@ -102,10 +111,15 @@ impl KeyWriter
         Self(bytes)
     }
 
-    /// Appends a part key, eight bytes big-endian.
+    /// Appends a part key, eight bytes big-endian: its writer's two, then its
+    /// offset's six.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the key's bytes past its first 32, growth within the key's
+    ///   value
     #[inline]
     pub(crate) fn part(
         mut self,
@@ -209,6 +223,11 @@ impl Store
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the table's records and their keys, durable by the table's
+    ///   root
+    /// - allocation: the table's name in a layout fault, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the two-vertex fixture's records are compared with
     ///   a hand-written list; reopening refuses records that are not these.
@@ -287,9 +306,10 @@ impl Store
     ///
     /// # Specification
     /// - ensures: on success every node of every table's tree is loadable from
-    ///   `blocks`, the manifest binds each table's counter and tree, and the
-    ///   returned root is [`Store::root`]; the root is a function of the
-    ///   schema, the parameters and each table's parts, cells and counter.
+    ///   `blocks`, the manifest binds each writer's counter of each table and
+    ///   each table's tree, and the returned root is [`Store::root`]; the root
+    ///   is a function of the schema, the parameters and each table's parts,
+    ///   cells and counters.
     /// - fails: [`StoreError::Records`] carrying the record plane's refusal of
     ///   a tree or a node, and [`StoreError::Layout`] for a column too wide to
     ///   key; the last commit stands.
@@ -302,6 +322,10 @@ impl Store
     ///
     /// # Errors
     /// As above.
+    ///
+    /// # Cost
+    /// - allocation: the records and the tree of each stale table, and the
+    ///   manifest's table list, durable by the store root
     ///
     /// # Adequacy
     /// - hypothesis: L2 — a committed fixture reopens from the block store to
@@ -350,7 +374,7 @@ impl Store
         let manifest = StoreManifest::over(
             &self.schema,
             self.params,
-            self.tables.iter().map(PartSet::next_key).zip(trees.iter()),
+            self.tables.iter().map(PartSet::counters).zip(trees.iter()),
         )?;
         self.committed.trees = trees.into_boxed_slice();
         self.committed.manifest = manifest;
@@ -360,20 +384,21 @@ impl Store
         Ok(self.root())
     }
 
-    /// Reopens a committed store from a block store.
+    /// Reopens a committed store from a block store, minting as `writer`.
     ///
     /// # Specification
     /// - ensures: on success the store's parts, cells, counters and root are
-    ///   the committed store's, and the store meets its invariant.
+    ///   the committed store's, the store mints as `writer`, and the store
+    ///   meets its invariant.
     /// - fails: [`StoreError::SchemaMismatch`], [`StoreError::ProfileMismatch`]
     ///   and [`StoreError::TableCount`] before any load;
     ///   [`StoreError::Records`] for a node the block store cannot
     ///   authenticate; [`StoreError::Layout`] naming the table and the fault
-    ///   for records that do not rebuild the committed tree, do not parse, or
-    ///   are not canonical; [`StoreError::Refused`] carrying
-    ///   [`crate::Refusal::NotLive`] for an arrow reaching a part that is not
-    ///   live and [`crate::Refusal::EquationViolated`] for an equation that
-    ///   fails.
+    ///   for records that do not rebuild the committed tree, do not parse, name
+    ///   a key that its writer's counter has not minted, or are not canonical;
+    ///   [`StoreError::Refused`] carrying [`crate::Refusal::NotLive`] for an
+    ///   arrow reaching a part that is not live and
+    ///   [`crate::Refusal::EquationViolated`] for an equation that fails.
     /// - panics: none.
     /// - executable: none — the postcondition compares whole stores; the
     ///   round-trip witness does.
@@ -381,17 +406,23 @@ impl Store
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: every table's records, tree, parts, cells and inverses,
+    ///   setup
+    ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the keyed fixture reopens equal to the store that
     ///   committed it; a block store whose table was rewritten with a violating
     ///   arrow, signed under its own root, is refused by the equation's name; a
-    ///   missing cell is refused as not canonical.
+    ///   missing cell is refused as not canonical; a part of a writer that the
+    ///   manifest does not name is refused by the counter fault.
     /// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
     /// - witness: `tests::keyed::a_doctored_table_is_refused_on_reopening`
     #[inline]
     pub fn open<B>(
         schema: Schema,
         params: TreeParams,
+        writer: Writer,
         manifest: &StoreManifest,
         blocks: &B,
     ) -> Result<Self, StoreError>
@@ -399,7 +430,7 @@ impl Store
         B: BlockStore + ?Sized,
     {
         manifest.ensure_reader(&schema, params)?;
-        let mut store = Self::new(schema, params)?;
+        let mut store = Self::new(schema, params, writer)?;
 
         let objects: Vec<ObjectId> = store.schema.objects().collect();
         let mut loaded = Vec::with_capacity(objects.len());
@@ -422,7 +453,7 @@ impl Store
                 });
             }
             if let Some(parts) = store.tables.get_mut(usize::from(object)) {
-                *parts = PartSet::reserved(table.next());
+                *parts = PartSet::reserved(table.counters().iter().copied());
             }
             store.read_table(object, records)?;
             trees.push(tree);
@@ -451,12 +482,12 @@ impl Store
     /// Reads one table's parts and cells from its records.
     ///
     /// # Specification
-    /// - requires: the table's counter is the manifest's.
+    /// - requires: the table's counters are the manifest's.
     /// - ensures: on success every part and cell record is in the store; the
     ///   inverse families are skipped, to be compared once recomputed.
     /// - fails: [`StoreError::Layout`] naming the table and the fault for an
-    ///   unknown family, a wrong width, a foreign column or a key at or past
-    ///   the counter.
+    ///   unknown family, a wrong width, a foreign column, or a key that its
+    ///   writer's counter has not minted.
     /// - panics: none.
     /// - executable: none — the reading is checked by the canonical comparison
     ///   that follows it.
@@ -464,9 +495,15 @@ impl Store
     /// # Errors
     /// [`StoreError::Layout`].
     ///
+    /// # Cost
+    /// - allocation: the cells of the table's parts, growth within the table's
+    ///   records
+    /// - allocation: the table's name in a layout fault, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a table with a record of an unknown family is refused
-    ///   with the family fault.
+    ///   with the family fault, and one with a part of a writer that the
+    ///   manifest does not name with the counter fault.
     /// - witness: `tests::keyed::a_doctored_table_is_refused_on_reopening`
     #[inline]
     fn read_table(
@@ -480,8 +517,6 @@ impl Store
             object: name.clone(),
             fault,
         };
-        let next = self.table(object)?.next_key();
-
         for record in records {
             let key: &[u8] = record.key().into();
             let Some((&family, rest)) = key.split_first()
@@ -491,9 +526,7 @@ impl Store
             match Family(family) {
                 PART => {
                     let part = exact_part(KeySuffix(rest)).map_err(fail)?;
-                    if part >= next {
-                        return Err(fail(LayoutFault::Counter));
-                    }
+                    minted(self.table(object)?, part).map_err(fail)?;
                     if let Some(table) = self.tables.get_mut(usize::from(object)) {
                         table.restore(part);
                     }
@@ -507,22 +540,14 @@ impl Store
                         .copied()
                         .find(|arrow| usize::from(*arrow) == ordinal.0)
                         .ok_or_else(|| fail(LayoutFault::Column))?;
-                    let value: &[u8] = record.value().into();
-                    let target: [u8; 8] = value
-                        .try_into()
-                        .map_err(|_width| fail(LayoutFault::Width))?;
-                    let target = PartKey::from(u64::from_le_bytes(target));
-                    if part >= next {
-                        return Err(fail(LayoutFault::Counter));
-                    }
-                    let slot = part
-                        .slot()
-                        .map_err(|_unaddressable| fail(LayoutFault::Counter))?;
+                    let target = read_target(record.value()).map_err(fail)?;
+                    minted(self.table(object)?, part).map_err(fail)?;
                     if let Some(column) = self.arrows.get_mut(usize::from(arrow)) {
-                        ensure_slot(&mut column.targets, slot);
-                        if let Some(cell) = column.targets.get_mut(usize::from(slot)) {
-                            *cell = target;
-                        }
+                        let cell = column
+                            .targets
+                            .ensure(part)
+                            .map_err(|_unaddressable| fail(LayoutFault::Counter))?;
+                        *cell = target;
                     }
                 },
                 VALUE => {
@@ -534,18 +559,14 @@ impl Store
                         .copied()
                         .find(|attribute| usize::from(*attribute) == ordinal.0)
                         .ok_or_else(|| fail(LayoutFault::Column))?;
-                    if part >= next {
-                        return Err(fail(LayoutFault::Counter));
-                    }
-                    let slot = part
-                        .slot()
-                        .map_err(|_unaddressable| fail(LayoutFault::Counter))?;
+                    minted(self.table(object)?, part).map_err(fail)?;
                     let value: &[u8] = record.value().into();
                     if let Some(column) = self.values.get_mut(usize::from(attribute)) {
-                        ensure_slot(&mut column.values, slot);
-                        if let Some(cell) = column.values.get_mut(usize::from(slot)) {
-                            *cell = AttributeValue::from(value);
-                        }
+                        let cell = column
+                            .values
+                            .ensure(part)
+                            .map_err(|_unaddressable| fail(LayoutFault::Counter))?;
+                        *cell = AttributeValue::from(value);
                     }
                 },
                 ARROW_INDEX | VALUE_INDEX => {},
@@ -567,6 +588,10 @@ impl Store
     ///
     /// # Errors
     /// [`StoreError::Refused`].
+    ///
+    /// # Cost
+    /// - allocation: the lists of columns and parts that it walks, and each
+    ///   inverse's entries, setup
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the reopened keyed fixture answers every preimage the
@@ -592,11 +617,10 @@ impl Store
             let parts: Vec<PartKey> = self.table(object)?.iter().collect();
             for part in parts {
                 // The read refuses a part that is not live; the inverse then
-                // takes the value from its slot in place.
+                // takes the value from its cell in place.
                 let _held = self.value(attribute, part)?;
-                let slot = self.slot(object, part)?;
                 if let Some(column) = self.values.get_mut(usize::from(attribute)) {
-                    column.index_insert_slot(slot, part);
+                    column.index_insert_slot(part);
                 }
             }
         }
@@ -637,11 +661,91 @@ impl Store
     }
 }
 
+/// Refuses a key that its writer's counter of the table has not minted.
+///
+/// # Specification
+/// - ensures: success exactly when the table holds a region of the key's writer
+///   whose counter stands past the key's offset.
+/// - fails: [`LayoutFault::Writer`] for a writer the table holds no region of,
+///   and [`LayoutFault::Counter`] for a key at or past its counter.
+/// - panics: none.
+/// - executable: none — the answer is the table's own reading of the key.
+///
+/// # Errors
+/// [`LayoutFault::Writer`] or [`LayoutFault::Counter`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a doctored part, arrow cell and attribute cell past the
+///   counter, and a part of a writer the manifest does not name, are each
+///   refused by their fault on reopening.
+/// - witness: `tests::keyed::a_doctored_table_is_refused_on_reopening`
+#[inline]
+fn minted(
+    table: &PartSet,
+    part: PartKey,
+) -> Result<(), LayoutFault>
+{
+    match table.minting(part) {
+        Minting::Minted => Ok(()),
+        Minting::Unminted => Err(LayoutFault::Counter),
+        Minting::Unseen => Err(LayoutFault::Writer),
+    }
+}
+
+/// The target an arrow cell's value names.
+///
+/// # Specification
+/// - ensures: on success the key whose bits the eight little-endian bytes
+///   state.
+/// - fails: [`LayoutFault::Width`] for a value that is not exactly eight bytes.
+/// - panics: none.
+/// - executable: none — the answer is the decoding itself.
+///
+/// # Errors
+/// [`LayoutFault::Width`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — every arrow cell of the keyed fixture reads back, and
+///   every arrow proof answers its target.
+/// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
+/// - witness: `tests::proofs::every_kind_of_proof_verifies_against_the_root`
+#[inline]
+pub(crate) fn read_target(value: RecordValue<'_>) -> Result<PartKey, LayoutFault>
+{
+    let value: &[u8] = value.into();
+    let bytes: [u8; PART_WIDTH] = value.try_into().map_err(|_width| LayoutFault::Width)?;
+    Ok(PartKey::from(u64::from_le_bytes(bytes)))
+}
+
+/// The part key that a record key ends with.
+///
+/// # Specification
+/// - ensures: on success the key that the last eight bytes state.
+/// - fails: [`LayoutFault::Width`] for a key shorter than eight bytes.
+/// - panics: none.
+/// - executable: none — the answer is the decoding itself.
+///
+/// # Errors
+/// [`LayoutFault::Width`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — every preimage proof answers its parts in key order.
+/// - witness: `tests::proofs::every_kind_of_proof_verifies_against_the_root`
+#[inline]
+pub(crate) fn trailing_part(key: RecordKey<'_>) -> Result<PartKey, LayoutFault>
+{
+    let key: &[u8] = key.into();
+    let (_prefix, part) = key
+        .split_last_chunk::<PART_WIDTH>()
+        .ok_or(LayoutFault::Width)?;
+    exact_part(KeySuffix(part))
+}
+
 /// A key suffix that is exactly one part key.
 ///
 /// # Specification
-/// - ensures: on success the key the eight big-endian bytes state.
-/// - fails: [`LayoutFault::Width`] for any other length.
+/// - ensures: on success the key whose bits the eight big-endian bytes state.
+/// - fails: [`LayoutFault::Width`] for any length but eight.
 /// - panics: none.
 /// - executable: none — the answer is the decoding itself.
 ///
@@ -654,7 +758,7 @@ impl Store
 #[inline]
 fn exact_part(suffix: KeySuffix<'_>) -> Result<PartKey, LayoutFault>
 {
-    let mut bytes: [u8; 8] = suffix.0.try_into().map_err(|_width| LayoutFault::Width)?;
+    let mut bytes: [u8; PART_WIDTH] = suffix.0.try_into().map_err(|_width| LayoutFault::Width)?;
     bytes.reverse();
     Ok(PartKey::from(u64::from_le_bytes(bytes)))
 }

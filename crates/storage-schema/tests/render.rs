@@ -12,11 +12,13 @@ use gandr_storage_schema::MapError;
 use gandr_storage_schema::Name;
 use gandr_storage_schema::Ordinal;
 use gandr_storage_schema::PartKey;
+use gandr_storage_schema::PartOffset;
 use gandr_storage_schema::Refusal;
 use gandr_storage_schema::SchemaError;
 use gandr_storage_schema::SchemaIdentity;
 use gandr_storage_schema::StoreError;
 use gandr_storage_schema::StoreRoot;
+use gandr_storage_schema::Writer;
 
 /// The rendering of each value given, in order.
 macro_rules! rendered {
@@ -181,7 +183,15 @@ fn every_edit_refusal_names_its_parts()
     assert_eq!(Refusal::Schema(lookup.clone()), carried);
     assert_eq!(lookup.to_string(), carried.to_string());
 
-    let [eleven, twenty_three, thirty_seven] = [11_u64, 23_u64, 37_u64].map(PartKey::from);
+    let writer = Writer::from(5_u16);
+    let [eleven, twenty_three, thirty_seven] = [11_u64, 23_u64, 37_u64].map(|offset| {
+        PartKey::new(writer, PartOffset::from(offset)).expect("the offset fits a key")
+    });
+    assert_eq!(
+        eleven.to_string(),
+        "5:11",
+        "a key renders its writer and offset"
+    );
     let not_live = Refusal::NotLive {
         object: Name::from("Vertex"),
         part: eleven,
@@ -213,6 +223,11 @@ fn every_edit_refusal_names_its_parts()
     };
     let exhausted = Refusal::Exhausted {
         object: Name::from("Edge"),
+        writer,
+    };
+    let disagreed = Refusal::Disagreed {
+        object: Name::from("Edge"),
+        writer,
     };
     assert_names(&not_live, &rendered!["Vertex", eleven]);
     assert_names(&referenced, &rendered![
@@ -231,7 +246,8 @@ fn every_edit_refusal_names_its_parts()
     ]);
     assert_names(&not_indexed, &rendered!["tgt"]);
     assert_names(&foreign, &rendered!["tgt", "Vertex"]);
-    assert_names(&exhausted, &rendered!["Edge"]);
+    assert_names(&exhausted, &rendered!["Edge", writer]);
+    assert_names(&disagreed, &rendered!["Edge", writer]);
     assert_distinct(&[
         &carried,
         &not_live,
@@ -241,6 +257,7 @@ fn every_edit_refusal_names_its_parts()
         &not_indexed,
         &foreign,
         &exhausted,
+        &disagreed,
     ]);
 }
 
@@ -252,6 +269,7 @@ fn every_store_refusal_names_what_it_compared()
         LayoutFault::Width,
         LayoutFault::Column,
         LayoutFault::Counter,
+        LayoutFault::Writer,
         LayoutFault::Root,
         LayoutFault::NotCanonical,
     ];
@@ -261,6 +279,7 @@ fn every_store_refusal_names_what_it_compared()
         ManifestFault::Version,
         ManifestFault::Truncated,
         ManifestFault::Trailing,
+        ManifestFault::Counters,
     ];
     assert_distinct(&manifest);
 
@@ -269,6 +288,7 @@ fn every_store_refusal_names_what_it_compared()
     };
     let refusal = Refusal::Exhausted {
         object: Name::from("Edge"),
+        writer: Writer::from(5_u16),
     };
     let lookup = SchemaError::EmptyName;
     assert_eq!(

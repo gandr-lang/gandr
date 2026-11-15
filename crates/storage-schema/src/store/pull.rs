@@ -8,7 +8,6 @@ use crate::migrate::SchemaMap;
 use crate::parts::PartKey;
 use crate::store::Staleness;
 use crate::store::Store;
-use crate::store::ensure_slot;
 
 impl Store
 {
@@ -18,11 +17,12 @@ impl Store
     /// # Specification
     /// - requires: this store is of the map's target schema.
     /// - ensures: on success the table at each source object is this store's
-    ///   table at its image, keys and counter included; each source arrow takes
-    ///   a part where its image path takes it here; each source attribute holds
-    ///   the image attribute's value at the image path's end; every kept
-    ///   inverse lists exactly its live preimages. The new store's root still
-    ///   names its empty commit until it is committed.
+    ///   table at its image, keys and counters included; each source arrow
+    ///   takes a part where its image path takes it here; each source attribute
+    ///   holds the image attribute's value at the image path's end; every kept
+    ///   inverse lists exactly its live preimages. The new store mints as this
+    ///   store's writer, and its root still names its empty commit until it is
+    ///   committed.
     /// - fails: [`StoreError::SchemaMismatch`] for a store of another schema;
     ///   [`StoreError::Refused`] for an identifier the map does not resolve.
     /// - panics: none.
@@ -33,6 +33,11 @@ impl Store
     ///
     /// # Errors
     /// As above.
+    ///
+    /// # Cost
+    /// - allocation: the pulled-back store, its tables, cells and inverses, and
+    ///   the lists of parts that it walks, setup
+    /// - allocation: a table's name in a refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L2/L3 — the keyed fixture pulled back along a view reads
@@ -51,7 +56,7 @@ impl Store
                 found: self.schema.identity(),
             });
         }
-        let mut pulled = Self::new(map.source().clone(), self.params)?;
+        let mut pulled = Self::new(map.source().clone(), self.params, self.writer)?;
 
         for object in map.source().objects() {
             let image = map.object(object)?;
@@ -67,13 +72,15 @@ impl Store
             let parts: Vec<PartKey> = pulled.table(source)?.iter().collect();
             for part in parts {
                 let target = self.follow(path, part)?;
-                let slot = pulled.slot(source, part)?;
-                if let Some(column) = pulled.arrows.get_mut(usize::from(arrow)) {
-                    ensure_slot(&mut column.targets, slot);
-                    if let Some(cell) = column.targets.get_mut(usize::from(slot)) {
-                        *cell = target;
-                    }
-                }
+                let Some(column) = pulled.arrows.get_mut(usize::from(arrow))
+                else {
+                    continue;
+                };
+                let Ok(cell) = column.targets.ensure(part)
+                else {
+                    return Err(StoreError::Refused(pulled.not_live(source, part)));
+                };
+                *cell = target;
             }
         }
 
@@ -84,13 +91,15 @@ impl Store
             for part in parts {
                 let end = self.follow(path, part)?;
                 let value = self.value(landing, end)?.clone();
-                let slot = pulled.slot(object, part)?;
-                if let Some(column) = pulled.values.get_mut(usize::from(attribute)) {
-                    ensure_slot(&mut column.values, slot);
-                    if let Some(cell) = column.values.get_mut(usize::from(slot)) {
-                        *cell = value;
-                    }
-                }
+                let Some(column) = pulled.values.get_mut(usize::from(attribute))
+                else {
+                    continue;
+                };
+                let Ok(cell) = column.values.ensure(part)
+                else {
+                    return Err(StoreError::Refused(pulled.not_live(object, part)));
+                };
+                *cell = value;
             }
         }
 

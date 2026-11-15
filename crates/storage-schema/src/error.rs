@@ -7,6 +7,7 @@ use gandr_storage_records::RecordTreeError;
 
 use crate::manifest::StoreRoot;
 use crate::parts::PartKey;
+use crate::parts::Writer;
 use crate::schema::Name;
 use crate::schema::SchemaError;
 use crate::schema::SchemaIdentity;
@@ -79,11 +80,22 @@ pub enum Refusal
         /// The table the row is for.
         object: Name,
     },
-    /// A table's counter has minted its last key.
+    /// A writer's counter has minted the last key of its region of a table.
     Exhausted
     {
         /// The table.
         object: Name,
+        /// The writer whose counter is spent.
+        writer: Writer,
+    },
+    /// Two stores hold one writer's region of a table apart, so they do not
+    /// glue.
+    Disagreed
+    {
+        /// The table.
+        object: Name,
+        /// The writer whose region the two stores hold apart.
+        writer: Writer,
     },
 }
 
@@ -103,9 +115,11 @@ impl fmt::Display for Refusal
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the defect refusal renders the vertex object, both
-    ///   keys and the arrow; the equation refusal renders the equation's name.
+    ///   keys and the arrow; the equation refusal renders the equation's name;
+    ///   the glue's refusal renders the table and the writer.
     /// - witness: `tests::defect::deleting_the_middle_vertex_refuses_by_name`
     /// - witness: `tests::equations::a_loop_that_leaves_its_vertex_is_refused_by_equation`
+    /// - witness: `tests::glue::two_stores_that_disagree_on_a_shared_region_do_not_glue`
     #[inline]
     fn fmt(
         &self,
@@ -144,7 +158,13 @@ impl fmt::Display for Refusal
                 ref field,
                 ref object,
             } => write!(f, "`{field}` is not a column of `{object}`"),
-            Self::Exhausted { ref object } => write!(f, "`{object}` has minted its last key"),
+            Self::Exhausted { ref object, writer } => {
+                write!(f, "`{object}` has minted the last key of writer {writer}")
+            },
+            Self::Disagreed { ref object, writer } => write!(
+                f,
+                "the two stores hold writer {writer}'s region of `{object}` apart, so they do not glue"
+            ),
         }
     }
 }
@@ -176,8 +196,10 @@ pub enum LayoutFault
     Width,
     /// A key names an arrow or attribute that does not leave the table.
     Column,
-    /// A key names a part at or past the table's counter.
+    /// A key names a part past its writer's counter.
     Counter,
+    /// A key names a writer whose region the manifest does not name.
+    Writer,
     /// The records do not rebuild the tree the manifest names.
     Root,
     /// The records are not the records this store writes for what they hold.
@@ -210,7 +232,8 @@ impl fmt::Display for LayoutFault
             Self::Family => "a key opens with no family of the layout",
             Self::Width => "a key or value has the wrong width",
             Self::Column => "a key names a column of another table",
-            Self::Counter => "a key names a part at or past the counter",
+            Self::Counter => "a key names a part that its writer's counter has not minted",
+            Self::Writer => "a key names a writer that the table's counters do not name",
             Self::Root => "the records do not rebuild the committed tree",
             Self::NotCanonical => "the records are not the canonical records of what they hold",
         })
@@ -229,6 +252,9 @@ pub enum ManifestFault
     Truncated,
     /// Bytes follow the last table.
     Trailing,
+    /// A table's counters do not ascend by writer, each writer once, or one
+    /// stands past the last offset of a region.
+    Counters,
 }
 
 impl fmt::Display for ManifestFault
@@ -258,6 +284,9 @@ impl fmt::Display for ManifestFault
             Self::Version => "the manifest version is unknown",
             Self::Truncated => "the manifest ends inside a field",
             Self::Trailing => "bytes follow the last table",
+            Self::Counters => {
+                "a table's counters do not ascend by writer within the offsets of a region"
+            },
         })
     }
 }

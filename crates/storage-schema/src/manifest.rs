@@ -4,25 +4,28 @@
 //! # The image
 //!
 //! ```text
-//! image := "gandr:storage-schema:store:v1"
-//!       || u16le manifest version
-//!       || 32-byte schema identity
-//!       || u64le commitment length || boundary commitment
-//!       || u64le table count
-//!       || table*                       one per object, in ordinal order
-//! table := u64le next key || u64le record count || 32-byte root node identity
-//! root  := BLAKE3(image)
+//! image   := "gandr:storage-schema:store:v1"
+//!         || u16le manifest version
+//!         || 32-byte schema identity
+//!         || u64le commitment length || boundary commitment
+//!         || u64le table count
+//!         || table*                     one per object, in ordinal order
+//! table   := u64le counter count || counter*
+//!         || u64le record count || 32-byte root node identity
+//! counter := u16le writer || u64le next offset    ascending by writer
+//! root    := BLAKE3(image)
 //! ```
 //!
 //! **Choice.** One root per store: the manifest binds the schema identity,
-//! the record plane's boundary commitment and, per table, the counter, the
-//! record count and the root node identity, and the store's root is BLAKE3 of
-//! that image. A proof carries the manifest beside the record plane's proof,
-//! so a verifier holding only the root authenticates both. The counter is
-//! committed so a store reopened from its manifest never mints a key it
-//! minted before. The layout follows the artifact and value manifests:
-//! domain inside the hashed bytes, fixed-width little-endian integers, the
-//! boundary commitment carried opaque.
+//! the record plane's boundary commitment and, per table, each writer's
+//! counter, the record count and the root node identity, and the store's
+//! root is BLAKE3 of that image. A proof carries the manifest beside the
+//! record plane's proof, so a verifier holding only the root authenticates
+//! both. Each writer's counter is committed so a store reopened from its
+//! manifest never mints a key it minted before. A writer with no counter has
+//! minted nothing in the table. The layout follows the artifact and value
+//! manifests: domain inside the hashed bytes, fixed-width little-endian
+//! integers, the boundary commitment carried opaque.
 //!
 //! **Alternatives.** One record tree for the whole store, with the table in
 //! every key, would make the tree's own root the store's root and drop the
@@ -47,7 +50,9 @@ use gandr_storage_records::TreeRoot;
 
 use crate::error::ManifestFault;
 use crate::error::StoreError;
-use crate::parts::PartKey;
+use crate::parts::Counter;
+use crate::parts::PartOffset;
+use crate::parts::Writer;
 use crate::schema::ObjectId;
 use crate::schema::Schema;
 use crate::schema::SchemaIdentity;
@@ -56,8 +61,9 @@ use crate::schema::SchemaIdentity;
 /// preimage.
 pub const MANIFEST_DOMAIN: &[u8] = b"gandr:storage-schema:store:v1";
 
-/// The manifest layout this crate writes and reads.
-const MANIFEST_VERSION: u16 = 1_u16;
+/// The manifest layout this crate writes and reads: two commits each
+/// writer's counter of each table.
+const MANIFEST_VERSION: u16 = 2_u16;
 
 /// The byte length of a [`StoreRoot`]: one BLAKE3 output.
 pub const STORE_ROOT_LEN: usize = 0x20_usize;
@@ -125,11 +131,11 @@ impl fmt::Display for StoreRoot
 }
 
 /// One table's committed tree, as the manifest binds it.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TableRoot
 {
-    /// The next key the table's counter mints.
-    next: PartKey,
+    /// Each writer's counter, ascending by writer.
+    counters: Box<[Counter]>,
     /// How many records the table's tree holds.
     records: RecordCount,
     /// The identity of the tree's root node.
@@ -138,15 +144,15 @@ pub struct TableRoot
 
 impl TableRoot
 {
-    /// The next key the table's counter mints.
+    /// Each writer's counter of the table, ascending by writer.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn next(&self) -> PartKey
+    pub fn counters(&self) -> &[Counter]
     {
-        self.next
+        &self.counters
     }
 
     /// How many records the table's tree holds.
@@ -254,10 +260,11 @@ impl StoreManifest
     /// The manifest over one tree per table.
     ///
     /// # Specification
-    /// - requires: `tables` yields one counter and tree per object of `schema`,
-    ///   in object order, built under `params`.
+    /// - requires: `tables` yields the counters and the tree of each object of
+    ///   `schema`, in object order, built under `params`; each table's counters
+    ///   ascend by writer, each writer once.
     /// - ensures: on success the manifest binds the schema, the boundary
-    ///   commitment and each table's counter, record count and root node.
+    ///   commitment and each table's counters, record count and root node.
     /// - fails: never in practice; the signature carries the record plane's
     ///   refusal for symmetry with decode.
     /// - panics: none.
@@ -265,24 +272,28 @@ impl StoreManifest
     /// # Errors
     /// [`StoreError::Records`] is reserved for the record plane.
     ///
+    /// # Cost
+    /// - allocation: the table list and each table's counters, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a committed store's manifest equals the decode of its
     ///   own image.
     /// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |manifest| manifest.schema == schema.identity()))]
-    pub(crate) fn over<'tree, I>(
+    pub(crate) fn over<'tree, Tables, Counters>(
         schema: &Schema,
         params: TreeParams,
-        tables: I,
+        tables: Tables,
     ) -> Result<Self, StoreError>
     where
-        I: IntoIterator<Item = (PartKey, &'tree RecordTree)>,
+        Tables: IntoIterator<Item = (Counters, &'tree RecordTree)>,
+        Counters: IntoIterator<Item = Counter>,
     {
         let tables = tables
             .into_iter()
-            .map(|(next, tree)| TableRoot {
-                next,
+            .map(|(counters, tree)| TableRoot {
+                counters: counters.into_iter().collect(),
                 records: tree.root().record_count(),
                 root_node: tree.root_node_hash(),
             })
@@ -323,6 +334,9 @@ impl StoreManifest
     /// - executable: none — the layout's independent statement is the pinned
     ///   golden.
     ///
+    /// # Cost
+    /// - allocation: the image, durable by the manifest root
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — against a hand-built golden image.
     /// - witness: `manifest::tests::the_image_is_golden_and_round_trips`
@@ -331,25 +345,36 @@ impl StoreManifest
     pub fn encode(&self) -> ManifestImageBuf
     {
         let commitment: &[u8] = self.commitment.as_ref();
+        let counters = self
+            .tables
+            .iter()
+            .map(|table| table.counters.len())
+            .fold(0_usize, usize::saturating_add);
         let mut image = Vec::with_capacity(
             MANIFEST_DOMAIN
                 .len()
                 .saturating_add(commitment.len())
-                .saturating_add(self.tables.len().saturating_mul(48_usize))
+                .saturating_add(self.tables.len().saturating_mul(56_usize))
+                .saturating_add(counters.saturating_mul(10_usize))
                 .saturating_add(58_usize),
         );
         image.extend_from_slice(MANIFEST_DOMAIN);
         image.extend_from_slice(&MANIFEST_VERSION.to_le_bytes());
         image.extend_from_slice(self.schema.as_ref());
-        // A commitment and a table list are held in memory, so their lengths
-        // fit sixty-four bits on every supported target.
+        // A commitment, a table list and a counter list are held in memory,
+        // so their lengths fit sixty-four bits on every supported target.
         let commitment_length = u64::try_from(commitment.len()).unwrap_or(u64::MAX);
         image.extend_from_slice(&commitment_length.to_le_bytes());
         image.extend_from_slice(commitment);
         let table_count = u64::try_from(self.tables.len()).unwrap_or(u64::MAX);
         image.extend_from_slice(&table_count.to_le_bytes());
         for table in &self.tables {
-            image.extend_from_slice(&u64::from(table.next).to_le_bytes());
+            let counter_count = u64::try_from(table.counters.len()).unwrap_or(u64::MAX);
+            image.extend_from_slice(&counter_count.to_le_bytes());
+            for counter in &table.counters {
+                image.extend_from_slice(&u16::from(counter.writer()).to_le_bytes());
+                image.extend_from_slice(&u64::from(counter.next()).to_le_bytes());
+            }
             image.extend_from_slice(&u64::from(table.records).to_le_bytes());
             image.extend_from_slice(table.root_node.as_ref());
         }
@@ -362,16 +387,20 @@ impl StoreManifest
     /// - requires: nothing; any bytes are admitted as input.
     /// - ensures: on success the manifest's image equals `image` byte for byte.
     /// - fails: [`StoreError::Manifest`] naming the first field, in image
-    ///   order, that is foreign, unknown or cut short, then trailing bytes.
+    ///   order, that is foreign, unknown or cut short, or a table whose
+    ///   counters do not ascend by writer; then trailing bytes.
     /// - panics: none.
     ///
     /// # Errors
     /// [`StoreError::Manifest`].
     ///
+    /// # Cost
+    /// - allocation: the table list and each table's counters, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the golden round-trips; a changed domain, an unknown
-    ///   version, every proper prefix and a trailing byte are each refused with
-    ///   their fault.
+    ///   version, every proper prefix, a table whose counters repeat a writer
+    ///   and a trailing byte are each refused with their fault.
     /// - witness: `manifest::tests::the_image_is_golden_and_round_trips`
     /// - witness: `manifest::tests::a_malformed_manifest_is_refused_by_field`
     #[inline]
@@ -402,11 +431,22 @@ impl StoreManifest
         let table_count = cursor.length()?;
         let mut tables = Vec::new();
         for _table in 0_usize .. table_count.0 {
-            let next = cursor.chunk::<8>()?;
+            let counter_count = cursor.length()?;
+            let mut counters: Vec<Counter> = Vec::new();
+            for _counter in 0_usize .. counter_count.0 {
+                let writer = Writer::from(u16::from_le_bytes(cursor.chunk::<2>()?.0));
+                let next = PartOffset::from(u64::from_le_bytes(cursor.chunk::<8>()?.0));
+                if next > PartOffset::LAST
+                    || counters.last().is_some_and(|last| last.writer() >= writer)
+                {
+                    return Err(fault(ManifestFault::Counters));
+                }
+                counters.push(Counter::new(writer, next));
+            }
             let records = cursor.chunk::<8>()?;
             let root_node = cursor.chunk::<32>()?;
             tables.push(TableRoot {
-                next: PartKey::from(u64::from_le_bytes(next.0)),
+                counters: counters.into_boxed_slice(),
                 records: RecordCount(u64::from_le_bytes(records.0)),
                 root_node: NodeHash::from(root_node.0),
             });
@@ -619,10 +659,13 @@ mod tests
     use super::TableRoot;
     use crate::error::ManifestFault;
     use crate::error::StoreError;
-    use crate::parts::PartKey;
+    use crate::parts::Counter;
+    use crate::parts::PartOffset;
+    use crate::parts::Writer;
     use crate::schema::SchemaIdentity;
 
-    /// A manifest with a three-byte commitment and two tables.
+    /// A manifest with a three-byte commitment and two tables: the first with
+    /// two writers' counters, the second with none.
     ///
     /// # Specification
     /// trivial.
@@ -633,12 +676,16 @@ mod tests
             ProfileCommitment::from(Vec::from([0xc1_u8, 0xc2, 0xc3])),
             Vec::from([
                 TableRoot {
-                    next: PartKey::from(3_u64),
+                    counters: Vec::from([
+                        Counter::new(Writer::from(0_u16), PartOffset::from(3_u64)),
+                        Counter::new(Writer::from(0x0405_u16), PartOffset::from(0x0102_u64)),
+                    ])
+                    .into_boxed_slice(),
                     records: RecordCount(7),
                     root_node: NodeHash::from([0xaa_u8; 32]),
                 },
                 TableRoot {
-                    next: PartKey::from(0x0102_u64),
+                    counters: Vec::new().into_boxed_slice(),
                     records: RecordCount(0),
                     root_node: NodeHash::from([0xbb_u8; 32]),
                 },
@@ -654,15 +701,19 @@ mod tests
     fn golden_image() -> ManifestImageBuf
     {
         let mut image = Vec::from(&b"gandr:storage-schema:store:v1"[..]);
-        image.extend_from_slice(&[0x01, 0x00]);
+        image.extend_from_slice(&[0x02, 0x00]);
         image.extend_from_slice(&[0x11; 32]);
         image.extend_from_slice(&[0x03, 0, 0, 0, 0, 0, 0, 0]);
         image.extend_from_slice(&[0xc1, 0xc2, 0xc3]);
         image.extend_from_slice(&[0x02, 0, 0, 0, 0, 0, 0, 0]);
+        image.extend_from_slice(&[0x02, 0, 0, 0, 0, 0, 0, 0]);
+        image.extend_from_slice(&[0x00, 0]);
         image.extend_from_slice(&[0x03, 0, 0, 0, 0, 0, 0, 0]);
+        image.extend_from_slice(&[0x05, 0x04]);
+        image.extend_from_slice(&[0x02, 0x01, 0, 0, 0, 0, 0, 0]);
         image.extend_from_slice(&[0x07, 0, 0, 0, 0, 0, 0, 0]);
         image.extend_from_slice(&[0xaa; 32]);
-        image.extend_from_slice(&[0x02, 0x01, 0, 0, 0, 0, 0, 0]);
+        image.extend_from_slice(&[0x00, 0, 0, 0, 0, 0, 0, 0]);
         image.extend_from_slice(&[0x00, 0, 0, 0, 0, 0, 0, 0]);
         image.extend_from_slice(&[0xbb; 32]);
         ManifestImageBuf(image.into_boxed_slice())
@@ -725,7 +776,7 @@ mod tests
 
         let mut version = image.clone();
         if let Some(byte) = version.get_mut(29) {
-            *byte = 0x02;
+            *byte = 0x03;
         }
         assert_eq!(
             refusal(&version),
@@ -745,6 +796,32 @@ mod tests
             );
         }
 
+        // The second counter of the first table names writer zero again.
+        let mut repeated = image.clone();
+        if let Some(writer) = repeated.get_mut(100 .. 102) {
+            writer.fill(0x00);
+        }
+        assert_eq!(
+            refusal(&repeated),
+            Some(StoreError::Manifest {
+                fault: ManifestFault::Counters
+            }),
+            "a repeated writer"
+        );
+
+        // The first counter stands past the last offset of a region.
+        let mut spent = image.clone();
+        if let Some(next) = spent.get_mut(92 .. 100) {
+            next.fill(0xff);
+        }
+        assert_eq!(
+            refusal(&spent),
+            Some(StoreError::Manifest {
+                fault: ManifestFault::Counters
+            }),
+            "a counter past the last offset"
+        );
+
         let mut trailing = image;
         trailing.push(0x00);
         assert_eq!(
@@ -760,6 +837,7 @@ mod tests
             ManifestFault::Version,
             ManifestFault::Truncated,
             ManifestFault::Trailing,
+            ManifestFault::Counters,
         ];
         let rendered: Vec<alloc::string::String> = faults
             .iter()
