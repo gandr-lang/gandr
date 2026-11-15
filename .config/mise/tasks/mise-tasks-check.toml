@@ -3870,6 +3870,22 @@ tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = [".config/licences/cases.bash", ".config/licences/check.bash"]
 
+# The ring's test binary for riscv64, built on an x86-64 host of ours under
+# the cross settings of the night's archive. The liburing crate of the ring
+# makes its bindings for the target, so the build reads them whole. The task
+# joins no gate, since only a host with the cross compiler runs it. The
+# night's archive may run it.
+# - see: #7720, `.config/riscv64/cross.bash`
+["check:riscv64-ring"]
+description = "The ring's test binary builds for riscv64 on an x86-64 host under the archive's settings"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+rustup target add riscv64gc-unknown-linux-gnu
+.config/riscv64/cross.bash cargo test --no-run --locked --quiet -p gandr-runtime-uring --target riscv64gc-unknown-linux-gnu --target-dir target/riscv64-ring
+echo "riscv64 ring OK: the ring's test binary builds for riscv64"
+'''
+
 # The bench harness's readings (#3930). A run past the host's bound is recorded
 # `past bound` and never retried larger, and Catt runs only at n = 2 and 3
 # (#3855): a run misread as a time, or an example past n = 3 let through,
