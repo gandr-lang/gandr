@@ -193,6 +193,42 @@
     "output": ["check:claims", "check:extension", "check:typos"]
   },
   {
+    "name": "#7623: a task file and a script with no extension select the prose check beside the light checks",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:doc", "check:prose", "check:typos"],
+      "changed": [".config/mise/tasks/mise-tasks-check.toml", ".config/mise/scope"]
+    },
+    "output": ["check:claims", "check:prose", "check:typos"]
+  },
+  {
+    "name": "#7623: a workflow change that holds no `#` comment's file selects no prose check",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:doc", "check:prose", "check:typos"],
+      "changed": [".config/gate-scope/cases.json"]
+    },
+    "output": ["check:claims", "check:typos"]
+  },
+  {
+    "name": "#7623: a crate's manifest selects its row's checks and the prose check",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:doc", "check:prose", "check:tests-enforcing", "check:typos"],
+      "changed": ["crates/a/Cargo.toml"]
+    },
+    "output": ["check:claims", "check:doc", "check:prose", "check:tests-enforcing", "check:typos"]
+  },
+  {
+    "name": "#7623: a crate's Rust source selects no prose check",
+    "program": "select.jq",
+    "input": {
+      "tasks": ["check:claims", "check:doc", "check:prose", "check:tests-enforcing", "check:typos"],
+      "changed": ["crates/a/src/lib.rs"]
+    },
+    "output": ["check:claims", "check:doc", "check:tests-enforcing", "check:typos"]
+  },
+  {
     "name": "#4911, #6895: no change selects the unscoped light checks alone",
     "program": "select.jq",
     "input": {

@@ -1,6 +1,6 @@
 # gandr-workflow-prose
 
-The sentence rules that need a parse, held over the comments of every tracked gandr source and the rendered diagnostics against a committed ledger of debt, and over each paragraph that a change writes in the markdown documents.
+The sentence rules that need a parse, held over the comments of every tracked gandr source and the rendered diagnostics against a committed ledger of debt, and over each paragraph that a change writes in the markdown documents and the `#` comments.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -22,7 +22,7 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 
 - `prose --python PATH` compares the findings under the current directory with `corpus/prose.ledger`; `--root DIR` names another repository root.
 - `--write` writes the ledger from the findings instead.
-- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document, with no ledger. [`documents`](src/documents.rs) names the documents it reads and those it leaves out.
+- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document or a `#` comment, with no ledger. [`documents`](src/documents.rs) names the files it reads and those it leaves out. [`passage::hash`](src/passage/hash.rs) names the syntaxes of the `#` comments, and the lines of a comment that stay unread.
 - `--override FILE...` reads the `prose-override:` lines of pull request bodies, and [`mechanical`](src/mechanical.rs) states their form and their check. `check:prose` reads the architect's sign-off of each override.
 - `--cache DIR --model NAME` keeps each parse by its passage's digest, so a run parses only the texts that the cache misses. `--prune` removes each parse that the head does not hold, and `--width N` bounds the interpreters of a cold parse.
 - `prose --python PATH --body FILE...` judges the bodies in the files in one parse. [`passage::body`](src/passage.rs) states a body's passages and the lines it leaves unread.
@@ -52,7 +52,7 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 | `STE-6.5` | the head's first sentence holds more than 20 words | cut the first sentence |
 | `STE-5.3` | a diagnostic lacks its what, its where or an imperative | state the procedure |
 
-A comment keeps every rule but `STE-5.3`. `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A document and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-2.1`, `STE-3.5`, `STE-9.3` and `STE-1.2`. A body keeps `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-6.3`, `STE-5.1`, `STE-5.2`, `STE-8.1` and `STE-4.1`. `STE-5.3` binds a diagnostic, and `STE-5.2` binds its `help:` line.
+A comment keeps every rule but `STE-5.3`. `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6` bind a corpus source outside the features ledger. A library source, a fixture and a `#` comment keep the other comment rules. A document and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-2.1`, `STE-3.5`, `STE-9.3` and `STE-1.2`. A body keeps `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-6.3`, `STE-5.1`, `STE-5.2`, `STE-8.1` and `STE-4.1`. `STE-5.3` binds a diagnostic, and `STE-5.2` binds its `help:` line.
 
 ### Issue 9
 
@@ -142,7 +142,7 @@ cargo nextest run -p gandr-workflow-prose
 
 ## Where the detail lives
 
-The crate docs in `src/lib.rs` state the boundaries. `passage` reads the text, `documents` lists the touched documents and reads the base's paragraphs, `mechanical` reads and applies an override, `parse` runs the script, `cache` keeps a parse by its `digest`, `rules` states each rule's clause, `glossary` reads the glossary, and `ledger` keys a finding. `gandr-workflow-debt-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
+The crate docs in `src/lib.rs` state the boundaries and the part that each module plays. `gandr-workflow-debt-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
 
 ## References
 

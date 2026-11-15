@@ -1,18 +1,20 @@
 //! `prose`: the sentence rules over the corpus comments and the rendered
 //! diagnostics against the committed debt, over the paragraphs a change wrote
-//! in the markdown documents, and over a pull request's or an issue's body.
+//! in the markdown documents and the `#` comments, and over a pull request's
+//! or an issue's body.
 //!
 //! `prose --python PATH [--root DIR] [--write]` gathers the text under the
 //! root, parses it by running `crates/workflow-prose/parse.py` under the given
 //! interpreter, judges every sentence and diagnostic, and compares the
 //! findings with `corpus/prose.ledger`. With `--write` it writes the ledger
-//! instead. With `--base REV` it also reads each markdown document the change
-//! touched since `REV`, and each paragraph whose digest `REV` does not hold
-//! meets every sentence rule with no ledger. `--override FILE` reads the
-//! `prose-override:` lines of a pull request body, which admit the paragraphs
-//! of a mechanical change. `--cache DIR --model NAME` keeps each parse by its
-//! passage's digest, so a passage parses once. `prose --python PATH --body
-//! FILE` judges the one body in `FILE` under the body rules, with no ledger.
+//! instead. With `--base REV` it also reads each markdown document and each
+//! file of `#` comments that the change touched since `REV`, and each
+//! paragraph whose digest `REV` does not hold meets every sentence rule with
+//! no ledger. `--override FILE` reads the `prose-override:` lines of a pull
+//! request body, which admit the paragraphs of a mechanical change. `--cache
+//! DIR --model NAME` keeps each parse by its passage's digest, so a passage
+//! parses once. `prose --python PATH --body FILE` judges the one body in
+//! `FILE` under the body rules, with no ledger.
 //!
 //! # Exit codes
 //!
@@ -57,8 +59,8 @@ use gandr_workflow_prose::parse::Fresh;
 use gandr_workflow_prose::parse::Width;
 use gandr_workflow_prose::passage;
 use gandr_workflow_prose::passage::Advice;
+use gandr_workflow_prose::passage::Debt;
 use gandr_workflow_prose::passage::Passage;
-use gandr_workflow_prose::passage::Source;
 use gandr_workflow_prose::passage::Text;
 use gandr_workflow_prose::rules;
 use gandr_workflow_prose::rules::Fix;
@@ -88,7 +90,7 @@ struct Cli
     #[arg(long, num_args = 1..)]
     body: Vec<PathBuf>,
     /// The merge base: each paragraph a change wrote since it in a markdown
-    /// document meets every sentence rule.
+    /// document or a `#` comment meets every sentence rule.
     #[arg(long, conflicts_with_all = ["body", "write"])]
     base: Option<String>,
     /// The pull request bodies whose `prose-override:` lines admit the
@@ -111,7 +113,8 @@ struct Cli
     width: Option<NonZeroUsize>,
 }
 
-/// The paragraphs a change wrote in the markdown documents.
+/// The paragraphs a change wrote in the markdown documents and the `#`
+/// comments.
 ///
 /// # Specification
 /// - provides: what the documents reader hands the parse, and the counts the
@@ -119,10 +122,12 @@ struct Cli
 #[derive(Debug, Default)]
 struct Written
 {
-    /// The documents the change touched.
+    /// The files the change touched.
     touched: usize,
     /// Their paragraphs whose digest the base holds.
     held: usize,
+    /// The lines of commented-out code that the `#` reader left out of them.
+    code: usize,
     /// The paragraphs that parse: written, and admitted by no override.
     passages: Vec<Passage>,
     /// The body's overrides, each with the count it admitted.
@@ -359,16 +364,15 @@ fn width(cli: &Cli) -> Width
 }
 
 /// The digest of each passage of the head: the passages a run read, and each
-/// paragraph of every markdown document.
+/// paragraph of every file that [`documents::every`] lists.
 ///
 /// # Specification
 /// - requires: `cli.root` is a repository checkout.
 /// - ensures: the digests of `inputs`, with those of the paragraphs that
-///   [`passage::document`] reads from each document [`documents::every`] lists;
-///   no paragraph parses.
+///   [`documents::at_head`] reads from each file [`documents::every`] lists; no
+///   paragraph parses.
 /// - provides: what a prune keeps.
-/// - fails: every refusal of [`documents::every`]; [`ProseError::Io`] for a
-///   document that cannot be read.
+/// - fails: every refusal of [`documents::every`] and [`documents::at_head`].
 /// - panics: none.
 /// - executable: none — the outcome is git's and the file system's.
 ///
@@ -376,7 +380,7 @@ fn width(cli: &Cli) -> Width
 /// As `fails` lists.
 ///
 /// # Cost
-/// - allocation: each document's text, paragraphs and digest, growth within the
+/// - allocation: each file's text, paragraphs and digest, growth within the
 ///   tree
 ///
 /// # Adequacy
@@ -393,14 +397,10 @@ fn head(
         .iter()
         .map(|passage| Digest::of(Text(&passage.text)))
         .collect();
-    for path in documents::every(&cli.root)? {
-        let full = cli.root.join(&path);
-        let text = std::fs::read_to_string(&full).map_err(|error| ProseError::Io {
-            path: full.clone(),
-            message: error.to_string(),
-        })?;
+    for file in documents::every(&cli.root)? {
         held.extend(
-            passage::document(Text(&path), Text(&text))
+            documents::at_head(&cli.root, &file)?
+                .passages
                 .iter()
                 .map(|passage| Digest::of(Text(&passage.text))),
         );
@@ -408,18 +408,19 @@ fn head(
     Ok(held)
 }
 
-/// The paragraphs a change wrote since `base` in the markdown documents it
-/// touched, the overrides of `cli.overrides` applied.
+/// The paragraphs a change wrote since `base` in the files it touched, the
+/// overrides of `cli.overrides` applied.
 ///
 /// # Specification
 /// - requires: `cli.root` is a repository checkout that holds `base`.
-/// - ensures: the documents [`documents::touched`] lists, each read at the
-///   head; the paragraphs whose digest no paragraph of [`documents::held`]
-///   shares, less those [`mechanical::admit`] admits; each override with its
-///   admitted count.
+/// - ensures: the files [`documents::touched`] lists, each read at the head by
+///   [`documents::at_head`]; the paragraphs whose digest no paragraph of
+///   [`documents::held`] shares, less those [`mechanical::admit`] admits; each
+///   override with its admitted count; the lines of commented-out code that the
+///   head's `#` comments hold.
 /// - provides: the paragraphs [`run`] parses and judges with no ledger.
-/// - fails: every refusal of [`documents::touched`] and [`documents::held`];
-///   [`ProseError::Io`] for a document or a body that cannot be read;
+/// - fails: every refusal of [`documents::touched`], [`documents::at_head`] and
+///   [`documents::held`]; [`ProseError::Io`] for a body that cannot be read;
 ///   [`ProseError::Override`] for a body's line [`mechanical::read`] refuses.
 /// - panics: none.
 /// - executable: none — the outcome is git's and the file system's.
@@ -428,8 +429,8 @@ fn head(
 /// As `fails` lists.
 ///
 /// # Cost
-/// - allocation: the head's and the base's paragraphs of the touched documents
-///   and the held digests, growth within the change
+/// - allocation: the head's and the base's paragraphs of the touched files and
+///   the held digests, growth within the change
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a change that keeps a paragraph, re-wraps one, writes one
@@ -438,6 +439,7 @@ fn head(
 ///   refused changes the output.
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::an_override_admits_its_substitution_and_counts_it`
+/// - witness: `tests::cli::a_hash_comment_answers_for_the_paragraphs_its_change_wrote`
 fn written(
     cli: &Cli,
     base: Base<'_>,
@@ -445,13 +447,11 @@ fn written(
 {
     let touched = documents::touched(&cli.root, base)?;
     let mut head = Vec::new();
-    for path in &touched {
-        let full = cli.root.join(path);
-        let text = std::fs::read_to_string(&full).map_err(|error| ProseError::Io {
-            path: full.clone(),
-            message: error.to_string(),
-        })?;
-        head.extend(passage::document(Text(path), Text(&text)));
+    let mut code: usize = 0;
+    for file in &touched {
+        let read = documents::at_head(&cli.root, file)?;
+        code = code.saturating_add(read.code);
+        head.extend(read.passages);
     }
     let base_passages = documents::held(&cli.root, base, &touched)?;
     let held: HashSet<Digest> = base_passages
@@ -483,13 +483,15 @@ fn written(
     Ok(Written {
         touched: touched.len(),
         held: held_count,
+        code,
         passages,
         overrides,
     })
 }
 
 /// Gathers, parses, judges and compares with the ledger, or writes it; with
-/// a base, judges the paragraphs a change wrote in the markdown documents.
+/// a base, judges the paragraphs a change wrote in the markdown documents and
+/// the `#` comments.
 ///
 /// # Specification
 /// - requires: `cli.python` can import spaCy and `en_core_web_sm` when a
@@ -571,7 +573,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         &cache,
         width(cli),
         |passage, sentences| {
-            if passage.source == Source::Document {
+            if passage.source.debt() == Debt::Base {
                 for finding in rules::sentences(passage, sentences, &glossary) {
                     print(&mut out, &finding)?;
                     refused = true;
@@ -668,11 +670,12 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
     if let (&Some(ref base), &Some(ref written)) = (&cli.base, &written) {
         writeln!(
             out,
-            "prose: {} document(s) touched since {base}: {} paragraph(s) kept from the base, {} \
-             written and judged",
+            "prose: {} file(s) touched since {base}: {} paragraph(s) kept from the base, {} \
+             written and judged; {} line(s) of commented-out code left out",
             written.touched,
             written.held,
-            written.passages.len()
+            written.passages.len(),
+            written.code
         )
         .map_err(output)?;
     }

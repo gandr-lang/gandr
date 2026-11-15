@@ -1,14 +1,17 @@
 //! **Prose**: the sentence rules that need a parse. They hold over the corpus
 //! comments and the rendered diagnostics with the committed debt in a ledger,
-//! over the paragraphs a change writes in the markdown documents with no debt,
-//! and over a pull request's or an issue's body with none.
+//! over the paragraphs a change writes in the markdown documents and the `#`
+//! comments with no debt, and over a pull request's or an issue's body with
+//! none.
 //!
 //! - [`passage`] reads the text: a corpus source's `///` paragraphs, a
-//!   document's prose paragraphs, a rendered diagnostic's headline, label and
-//!   advice, and a body's paragraphs and list items.
-//! - [`documents`] lists the documents a change touched since the merge base
-//!   and reads the paragraphs the base holds of them. A paragraph whose digest
-//!   the base holds is one the change did not write.
+//!   document's prose paragraphs, the `#` comments of a task, a script, a
+//!   workflow, a manifest or a list ([`passage::hash`]), a rendered
+//!   diagnostic's headline, label and advice, and a body's paragraphs and list
+//!   items.
+//! - [`documents`] lists the files a change touched since the merge base, each
+//!   with its reader, and reads the paragraphs the base holds of them. A
+//!   paragraph whose digest the base holds is one the change did not write.
 //! - [`mechanical`] reads a body's named override for a mechanical change and
 //!   admits only the paragraphs its substitution makes of the base's.
 //! - [`parse`] runs the parse script under the pinned spaCy venv's interpreter
@@ -38,9 +41,9 @@
 //! finding refuses, and a ledger line no finding matches is stale and refuses
 //! too, so the debt only shrinks.
 //!
-//! A markdown document keeps no ledger. A passage's digest is the BLAKE3
-//! digest of its lines joined by single spaces, and [`documents`] reads the
-//! touched documents at the merge base with one `git cat-file --batch`. A
+//! A markdown document and a `#` comment keep no ledger. A passage's digest is
+//! the BLAKE3 digest of its lines joined by single spaces, and [`documents`]
+//! reads the touched files at the merge base with one `git cat-file --batch`. A
 //! paragraph whose digest the base holds is a paragraph that the change keeps,
 //! so the rules leave a moved or a re-wrapped paragraph alone. Each other
 //! paragraph meets every rule, and a finding refuses.
