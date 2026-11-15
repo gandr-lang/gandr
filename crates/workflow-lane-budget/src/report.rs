@@ -679,6 +679,9 @@ impl fmt::Display for Class
 /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
 /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
 /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
+///
+/// # Cost
+/// - allocation: each row's median text, growth within the rows
 fn table(
     f: &mut fmt::Formatter<'_>,
     rows: &[Row],

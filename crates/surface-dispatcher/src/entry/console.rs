@@ -381,6 +381,9 @@ impl Console for Streams<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
     #[inline]
     fn print(
         &mut self,
@@ -399,6 +402,9 @@ impl Console for Streams<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
     #[inline]
     fn eprint(
         &mut self,

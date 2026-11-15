@@ -1980,6 +1980,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the request's text and the reply's body, growth within the
+///   request
 fn answer<Log>(
     stream: &mut TcpStream,
     buffer: &mut Buffer,
@@ -2142,6 +2146,9 @@ fn ended<Log>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the reason's text, error path
 fn refuse(
     stream: &mut TcpStream,
     reason: &impl core::fmt::Display,

@@ -89,6 +89,10 @@ fn stream(request: &HostRequest<'_>) -> Option<Stream>
 ///   [`gandr_surface_dispatcher::Console::read_line`].
 /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
 /// - witness: `evaluate::entry::tests::an_entry_reads_and_writes_the_three_streams_2970`
+///
+/// # Cost
+/// - allocation: the reply in the store and the line that the console reads,
+///   growth within the run's store
 #[spec(
     captures: [streaming = stream(&request).is_some()],
     ensures: |ret| ret.is_none() || streaming,

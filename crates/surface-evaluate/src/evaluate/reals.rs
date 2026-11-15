@@ -478,6 +478,10 @@ impl fmt::Display for Declined
 ///   verdict.
 /// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
 /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
+///
+/// # Cost
+/// - allocation: the plans and machines held, each reply in the store and the
+///   decline's line, growth within the run's tables
 #[spec(
     captures: [real = request.signature.name().as_ref() == REALS],
     ensures: |ret| ret.is_none() != real,

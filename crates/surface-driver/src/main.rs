@@ -1520,6 +1520,9 @@ struct Opened
 ///   store answers, and a homeless run with nowhere to put the store faults.
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 /// - witness: `tests::cli::a_package_s_lock_points_into_the_store_the_run_opens_3157`
+///
+/// # Cost
+/// - allocation: the store's root path, its seal and the fault's message, setup
 fn opened() -> Result<Opened, ExitCode>
 {
     /// Note `why` on standard error, and give the faulted exit code. When
@@ -1528,6 +1531,9 @@ fn opened() -> Result<Opened, ExitCode>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
     fn fault(why: &impl core::fmt::Display) -> ExitCode
     {
         let _written = writeln!(std::io::stderr(), "gandr: {why}");
@@ -3679,6 +3685,10 @@ enum Pages
 ///   and a path naming no source exits two.
 /// - witness: `tests::cli::doc_writes_a_page_per_source_and_an_index_4906`
 /// - witness: `tests::cli::doc_writes_an_html_site_4909`
+///
+/// # Cost
+/// - allocation: each page's text, the site's files and their paths, growth
+///   within the package's sources
 fn doc(
     path: &Path,
     out: &Path,
@@ -3937,6 +3947,9 @@ fn undeployed(refused: &Undeployed) -> ExitCode
 /// - hypothesis: L3 — a run given `--world` beside the corpus manifold exits
 ///   two, naming both.
 /// - witness: `tests::net::two_processes_run_the_far_world_from_their_site_and_manifold_3374`
+///
+/// # Cost
+/// - allocation: the fault's message, error path
 #[spec(ensures: |ret| ret == ExitCode::from(FAULTED))]
 fn doubled(doubled: Doubled) -> ExitCode
 {
@@ -3995,6 +4008,10 @@ fn doubled(doubled: Doubled) -> ExitCode
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::cells_reports_each_hole_s_count`
+///
+/// # Cost
+/// - allocation: each report's text, the rewritten sources and the I/O error's
+///   payload, growth within the sources
 #[spec(captures: [status = matches!(outcome, Outcome::Status(_)), script = matches!(outcome, Outcome::Script(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (script || *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
@@ -4115,6 +4132,9 @@ fn render(
 ///   source lowers to, and the formatter's own tests withdraw one.
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::fmt_sugars_a_match_over_a_stated_sum_791`
+///
+/// # Cost
+/// - allocation: each source's text and its rewrite, growth within the sources
 #[spec(captures: [checking = formatting.rewrite() == Rewrite::Check],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)
@@ -4160,6 +4180,9 @@ fn fmt(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: each kept declaration's message, diagnostic
 fn kept(
     stderr: &mut impl std::io::Write,
     path: &std::path::Path,
@@ -4198,6 +4221,9 @@ fn kept(
 ///   line on both streams and the exit; dropping a row, a fault, or the fault's
 ///   exit changes the observation.
 /// - witness: `tests::cli::cells_reports_each_hole_s_count`
+///
+/// # Cost
+/// - allocation: each row's text and the I/O error's payload, diagnostic
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(FAULTED)))]
 fn cells(
@@ -4267,6 +4293,10 @@ fn cells(
 ///   the dispatcher's verdict witness.
 /// - witness: `tests::cli::every_width_stages_the_serial_run`
 /// - witness: `tests::cli::a_malformed_invocation_exits_two`
+///
+/// # Cost
+/// - allocation: the staged program's tables and each report line, growth
+///   within the program's run
 #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(REFUSED) || *exit == ExitCode::from(FAULTED)))]
 fn stage(
@@ -4317,6 +4347,11 @@ impl std::io::Write for Stream<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes that a job's stream keeps, growth within the
+    ///   job's output
+    /// - allocation: the I/O error's payload, error path
     fn write(
         &mut self,
         buf: &[u8],
@@ -4334,6 +4369,11 @@ impl std::io::Write for Stream<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the bytes that a job's stream keeps, growth within the
+    ///   job's output
+    /// - allocation: the I/O error's payload, error path
     fn write_all(
         &mut self,
         buf: &[u8],
@@ -4351,6 +4391,9 @@ impl std::io::Write for Stream<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
     fn flush(&mut self) -> std::io::Result<()>
     {
         match *self {
@@ -4736,6 +4779,9 @@ fn run(
 ///   charged.
 /// - witness: `tests::cli::check_measures_each_declaration_a_source_writes`
 /// - witness: `tests::cli::check_measures_the_speculation_each_width_runs_under_3476`
+///
+/// # Cost
+/// - allocation: each declaration's census line, diagnostic
 fn measured(
     step: &Step<'_>,
     stdout: &mut impl std::io::Write,
@@ -4897,6 +4943,10 @@ fn discharged_cells(
 /// - hypothesis: L3 — a lock written, unchanged and drifted each print and exit
 ///   as stated.
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
+///
+/// # Cost
+/// - allocation: the lock's text and path, and each message, growth within the
+///   package's sources
 fn locked<'packaged>(
     packaged: &'packaged Packaged<'_>,
     verbosity: Verbosity,
@@ -4986,6 +5036,10 @@ fn locked<'packaged>(
 /// - witness: `tests::cli::a_package_s_manifest_is_written_and_drift_refused_2687`
 /// - witness: `tests::cli::check_writes_a_lock_and_refuses_its_drift_3072`
 /// - witness: `tests::cli::a_package_s_toolchain_is_met_or_refused_by_its_clause_3135`
+///
+/// # Cost
+/// - allocation: the manifest's text and path, and each message, growth within
+///   the package's sources
 fn manifested(
     package: &Package,
     manifest: Result<Manifest, Unmanifested>,
@@ -5096,6 +5150,10 @@ fn manifested(
 ///   writes a manifest where none stands.
 /// - witness: `tests::cli::the_witness_workspace_s_manifests_are_its_models_2687`
 /// - witness: `tests::cli::a_workspace_checks_each_member_it_names_2687`
+///
+/// # Cost
+/// - allocation: each member's manifest, path and message, growth within the
+///   workspace's members
 fn gathered_manifest(
     gathered: &Gathered,
     verbosity: Verbosity,
@@ -5307,6 +5365,10 @@ fn read_manifold(
 ///   at other sorts, and one placing a world the program lacks, are each
 ///   refused by name.
 /// - witness: `tests::cli::a_manifold_s_deployment_is_judged_at_its_check_3523`
+///
+/// # Cost
+/// - allocation: the deployment's tables and each refusal's message, growth
+///   within the manifold's worlds
 fn deployed(
     file: &Path,
     stderr: &mut impl std::io::Write,
@@ -5385,6 +5447,10 @@ fn file_export(
 /// - hypothesis: L3 — a package checked whole names its export by its address,
 ///   the same pointer on a second check, and an unsettled one names none.
 /// - witness: `tests::cli::a_checked_package_s_export_is_named_by_its_address_3225`
+///
+/// # Cost
+/// - allocation: the export's pointer and its message, growth within the
+///   package's sources
 fn exported(
     package: &Package,
     exporting: Exporting,
@@ -5446,6 +5512,10 @@ fn exported(
 ///   dependency's export, and one checked alone against a fresh store notes the
 ///   missing export and settles.
 /// - witness: `tests::cli::a_dependent_re_admits_its_dependency_s_export_3285`
+///
+/// # Cost
+/// - allocation: each dependency's export and message, growth within the
+///   package's dependencies
 fn depended(
     package: &Package,
     lock: &Lock,
@@ -5586,6 +5656,10 @@ const fn worse(
 /// - witness: `tests::cli::a_program_prints_hello_world_2279`
 /// - witness: `tests::cli::a_program_reads_and_answers_on_the_standard_streams_2970`
 /// - witness: `tests::net::two_processes_run_the_far_world_s_migrations_there`
+///
+/// # Cost
+/// - allocation: the script's source, its program and the run's store, growth
+///   within the script's run
 fn script(
     runnable: &mut Script,
     spelling: Spelling,

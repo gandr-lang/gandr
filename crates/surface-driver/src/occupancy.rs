@@ -170,6 +170,10 @@ impl Occupied
     /// - hypothesis: L3 — the printed lines are one for each thread and one for
     ///   the run, each in its form.
     /// - witness: `tests::cli::check_prints_each_thread_s_occupancy_6298`
+    ///
+    /// # Cost
+    /// - allocation: each thread's report text and the I/O error's payload,
+    ///   diagnostic
     pub fn print<Faults>(
         &self,
         stderr: &mut Faults,

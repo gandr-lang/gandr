@@ -323,6 +323,10 @@ fn located(
 /// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
 /// - witness: `wellformed::tests::an_atom_is_named_at_a_port_of_its_sort`
 /// - witness: `wellformed::tests::a_condition_is_decided_where_a_term_names_an_atom`
+///
+/// # Cost
+/// - allocation: the diagnostics, each with its message and subjects,
+///   diagnostic
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
@@ -515,6 +519,9 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
 ///   passes; skipping either or reporting the first occurrence of a name
 ///   changes the sequence.
 /// - witness: `wellformed::tests::a_shape_refuses_a_repeated_face_and_a_point_past_it`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: [before = diagnostics.len()],
     ensures: diagnostics.len() == before.saturating_add(
@@ -570,6 +577,9 @@ fn check_shape(
 ///   locating an unlocated diagnostic change that sequence.
 /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: [
         before = diagnostics.len(),
@@ -680,6 +690,9 @@ fn check_sorts<G>(
 /// - witness: `wellformed::tests::an_out_of_signature_circuit_frame_is_declined`
 /// - witness: `wellformed::tests::the_congruence_circuit_rule_checks_against_its_sphere`
 /// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() >= before && diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic|
@@ -879,6 +892,9 @@ impl fmt::Display for AttributeOwner
 ///   change the complete result.
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(RESERVED_DERIVED_MARKERS.iter().filter(|marker| bool::from(attrs.contains(NameRef::from(**marker)))).count())
@@ -943,6 +959,9 @@ fn signature_names<G>(desc: &TheoryDesc<G>) -> BTreeSet<&Name>
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
 /// - witness: `wellformed::tests::a_clean_description_passes`
 /// - witness: `wellformed::tests::a_results_tuple_stands_only_at_a_right_hand_root`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(
@@ -1033,6 +1052,9 @@ enum Site<'desc>
 ///   reading the site from the parent's constructor, or comparing the count of
 ///   binders and not their sorts, changes a verdict.
 /// - witness: `wellformed::tests::a_bound_variable_is_used_under_its_binders_or_instantiated`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1183,6 +1205,9 @@ fn check_rule_binders(
 ///   passes there.
 /// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1277,6 +1302,9 @@ fn check_abstractions(
 ///   earns one at a port of another sort.
 /// - witness: `wellformed::tests::an_atom_is_named_at_a_port_of_its_sort`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1513,6 +1541,9 @@ fn check_atoms(
 ///   field of `x` passes, and counting that field refuses it.
 /// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1692,6 +1723,9 @@ pub fn naming_port<G>(desc: &TheoryDesc<G>) -> Option<(&Name, &Name)>
 ///   marking a known head changes the result.
 /// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before.saturating_add(term.applied_symbols().filter(|name| !signature.contains(name)).count())
@@ -1730,6 +1764,9 @@ fn check_free_term_symbols(
 ///   and unlocated kinds; a missed endpoint or per-index deduplication differs.
 /// - witness: `wellformed::tests::a_non_composing_arity_is_declined`
 /// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+///
+/// # Cost
+/// - allocation: each diagnostic's message and subjects, diagnostic
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.len() == before

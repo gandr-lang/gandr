@@ -210,6 +210,10 @@ impl<'source> Machine<'_, 'source>
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_world_bound_to_this_host_runs_here`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_world_no_binding_names_is_refused_before_the_run`
+    ///
+    /// # Cost
+    /// - allocation: the core arena, the argument list, the run's store and its
+    ///   host's tables, growth within the program's run
     #[inline]
     pub fn enter(
         &mut self,

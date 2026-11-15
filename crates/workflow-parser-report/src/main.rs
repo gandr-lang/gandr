@@ -1066,6 +1066,10 @@ fn typing(pbg: &Pbg) -> Result<(Typing, Typing), Failure>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the grammar's tables, each axis's samples and the table's
+///   text, setup
 fn main() -> Result<(), Failure>
 {
     let pbg = built_in()?;

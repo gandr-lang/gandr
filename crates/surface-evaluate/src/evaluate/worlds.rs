@@ -198,6 +198,10 @@ impl Machine<'_, '_>
     ///   migration's body prints.
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_host_prints_the_line_its_migration_prints_3546`
+    ///
+    /// # Cost
+    /// - allocation: the manifests held and each migration's report line,
+    ///   growth within the migrations
     #[inline]
     pub fn host(
         &self,
@@ -251,6 +255,10 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: each capture fetched, the answer's manifest and the run's
+    ///   values, growth within the migration's captures
     fn arrived(
         &self,
         (worlds, net): (Worlds<'_>, &mut Net),

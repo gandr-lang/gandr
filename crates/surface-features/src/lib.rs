@@ -398,6 +398,10 @@ impl Feature
     /// - hypothesis: L3 — a row with and without its optional columns is read
     ///   back from its object.
     /// - witness: `tests::a_row_is_its_object`
+    ///
+    /// # Cost
+    /// - allocation: the object and each value's text, growth within the row's
+    ///   columns
     #[spec(ensures: |ret| ret.get("id").and_then(Value::as_str) == Some(self.id.as_str())
         && ret.get("status").and_then(Value::as_str).and_then(|spelling| spelling.parse::<Status>().ok())
             == Some(self.status))]

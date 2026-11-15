@@ -843,6 +843,9 @@ impl Walking
     ///
     /// # Errors
     /// The first write error, which stops the walk.
+    ///
+    /// # Cost
+    /// - allocation: what the verb's walk keeps, growth within the paths
     fn walk(
         &self,
         verbs: &dyn Verbs,
@@ -867,6 +870,10 @@ impl Walking
 ///
 /// # Errors
 /// [`Retired`] once the job is retired.
+///
+/// # Cost
+/// - allocation: the two job streams and the verdict's text, growth within the
+///   job's output
 fn walked(
     verbs: &dyn Verbs,
     (verb, paths): (Verb, Vec<PathBuf>),

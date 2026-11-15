@@ -1237,6 +1237,11 @@ impl<'source> Machine<'_, 'source>
     ///   core term is the normaliser's answer.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `gandr-surface-dispatcher::tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames and host replies, growth within
+    ///   the program's run
     fn terminal(
         &self,
         (returned, forced): (CommandId, CommandId),
@@ -1299,6 +1304,11 @@ impl<'source> Machine<'_, 'source>
     ///
     /// # Errors
     /// The tier's [`Declined`].
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames, jobs and host replies, growth
+    ///   within the program's run
     fn terminal_on(
         &self,
         (pool, scheduled): (&Pool, &Definitions),
@@ -1931,6 +1941,10 @@ impl Runner for Machine<'_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the captured text, the trace and each channel's name and
+    ///   web, diagnostic
     #[inline]
     fn run_traced(
         &mut self,
