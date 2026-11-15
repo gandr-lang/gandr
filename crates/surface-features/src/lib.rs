@@ -166,23 +166,6 @@ pub enum Status
     Declined,
 }
 
-impl Status
-{
-    /// The status as the ledger spells it.
-    ///
-    /// # Specification
-    /// trivial.
-    const fn spelling(self) -> &'static str
-    {
-        match self {
-            Self::Implemented => "implemented",
-            Self::Partial => "partial",
-            Self::Planned => "planned",
-            Self::Declined => "declined",
-        }
-    }
-}
-
 impl fmt::Display for Status
 {
     /// Writes the status as the ledger spells it.
@@ -195,7 +178,12 @@ impl fmt::Display for Status
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result
     {
-        f.write_str(self.spelling())
+        f.write_str(match *self {
+            Self::Implemented => "implemented",
+            Self::Partial => "partial",
+            Self::Planned => "planned",
+            Self::Declined => "declined",
+        })
     }
 }
 
@@ -294,19 +282,47 @@ pub struct Feature
     since: Option<String>,
 }
 
-/// One column of a row and its text, `None` where the row holds `NULL`.
+/// The value of a cell: the closed set of the kinds a row holds.
+#[derive(Clone, Copy)]
+enum Shown<'row>
+{
+    /// A column of text.
+    Text(&'row str),
+    /// The `status` column.
+    Status(Status),
+}
+
+impl fmt::Display for Shown<'_>
+{
+    /// Writes the value as the dump writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Text(text) => f.write_str(text),
+            Self::Status(ref status) => status.fmt(f),
+        }
+    }
+}
+
+/// One column of a row and its value, `None` where the row holds `NULL`.
 #[derive(Clone, Copy)]
 struct Cell<'row>
 {
     /// The column's name.
     column: &'static str,
-    /// The text.
-    value: Option<&'row str>,
+    /// The value.
+    value: Option<Shown<'row>>,
 }
 
 impl Feature
 {
-    /// The row's columns, in the dump's order, each with its text.
+    /// The row's columns, in the dump's order, each with its value.
     ///
     /// # Specification
     /// trivial.
@@ -315,55 +331,55 @@ impl Feature
         [
             Cell {
                 column: "id",
-                value: Some(self.id.as_str()),
+                value: Some(Shown::Text(&self.id)),
             },
             Cell {
                 column: "area",
-                value: Some(self.area.as_str()),
+                value: Some(Shown::Text(&self.area)),
             },
             Cell {
                 column: "name",
-                value: Some(self.name.as_str()),
+                value: Some(Shown::Text(&self.name)),
             },
             Cell {
                 column: "parent",
-                value: self.parent.as_deref(),
+                value: self.parent.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "status",
-                value: Some(self.status.spelling()),
+                value: Some(Shown::Status(self.status)),
             },
             Cell {
                 column: "notability",
-                value: Some(self.notability.as_str()),
+                value: Some(Shown::Text(&self.notability)),
             },
             Cell {
                 column: "compared_to",
-                value: self.compared_to.as_deref(),
+                value: self.compared_to.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "line",
-                value: Some(self.line.as_str()),
+                value: Some(Shown::Text(&self.line)),
             },
             Cell {
                 column: "crate",
-                value: self.crates.as_deref(),
+                value: self.crates.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "corpus",
-                value: self.corpus.as_deref(),
+                value: self.corpus.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "exemplar",
-                value: self.exemplar.as_deref(),
+                value: self.exemplar.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "issue",
-                value: self.issue.as_deref(),
+                value: self.issue.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "since",
-                value: self.since.as_deref(),
+                value: self.since.as_deref().map(Shown::Text),
             },
         ]
     }
@@ -392,7 +408,7 @@ impl Feature
         let mut object = Map::new();
         for cell in self.cells() {
             if let Some(value) = cell.value {
-                let _replaced = object.insert(String::from(cell.column), json!(value));
+                let _replaced = object.insert(String::from(cell.column), json!(value.to_string()));
             }
         }
         Value::Object(object)

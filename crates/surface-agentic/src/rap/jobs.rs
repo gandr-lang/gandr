@@ -992,7 +992,7 @@ impl Write for JobStream
     /// trivial.
     ///
     /// # Cost
-    /// - allocation: the bytes written, kept until the job ends
+    /// - allocation: the bytes written, growth within the job's output
     #[inline]
     fn write(
         &mut self,

@@ -256,6 +256,7 @@ impl From<Asked> for usize
 /// pipe whose reader is gone, and each read fails. It counts each line and
 /// each read, so a test reads where the run stopped.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(transparent)]
 pub struct Closed
 {
     /// The lines and the reads asked of it.
@@ -416,12 +417,10 @@ impl Console for Streams<'_>
     /// input that is not UTF-8 fails.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: as [`Console::read_line`].
-    /// - panics: none.
+    /// trivial.
     ///
     /// # Cost
-    /// - allocation: the line read from standard input, the reply's own text
+    /// - allocation: the line read from standard input, growth within the line
     #[inline]
     fn read_line(&mut self) -> Input
     {

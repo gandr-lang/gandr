@@ -622,6 +622,35 @@ impl Report
     }
 }
 
+/// The class column of a row: the cone of a landing's run, or the name of the
+/// window that the row reads.
+#[derive(Clone, Copy)]
+enum Class
+{
+    /// A landing's run, by the cone it touched.
+    Cone(Cone),
+    /// A run of another window, by the window's name.
+    Named(&'static str),
+}
+
+impl fmt::Display for Class
+{
+    /// Writes the class as the report's class column.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Cone(ref cone) => cone.fmt(f),
+            Self::Named(name) => f.write_str(name),
+        }
+    }
+}
+
 /// Writes `rows`, sampled over `window` from `runs`, as the report's Markdown
 /// table collapsed under a one-line summary: lane, class, median, budget,
 /// sample count and standing, the class `integration` for a row of the
@@ -686,11 +715,11 @@ fn table(
             Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
         };
         let class = match window {
-            Window::Landing => row.cone.spelling(),
-            Window::Integration => "integration",
-            Window::Main => "main",
-            Window::Scheduled => "daily",
-            Window::Nightly => "nightly",
+            Window::Landing => Class::Cone(row.cone),
+            Window::Integration => Class::Named("integration"),
+            Window::Main => Class::Named("main"),
+            Window::Scheduled => Class::Named("daily"),
+            Window::Nightly => Class::Named("nightly"),
         };
         if informed {
             writeln!(
