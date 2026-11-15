@@ -728,6 +728,13 @@ jobs:
         env: &open-issues
           OPEN_ISSUES: ${{ runner.temp }}/open-issues.json
         run: mise run report:deps
+      # The advisories of the crates of the lock file. `cargo-deny` reads its
+      # database from the network, so the night reads it, and no landing
+      # waits on it.
+      # - see: #7743, `mise run report:advisories`
+      - name: report the advisories
+        if: *not-cancelled
+        run: mise run report:advisories
       - name: report the obligations answered
         if: *not-cancelled
         run: mise run report:obligations

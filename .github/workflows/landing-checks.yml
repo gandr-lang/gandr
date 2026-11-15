@@ -2893,6 +2893,39 @@ jobs:
           path: ${{ steps.prose-tools.outputs.parses }}
           key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
 
+  # The licences, by the owner's word. `cargo-deny` reads the licences of our
+  # manifests and of each crate of the lock file, and their sources, against
+  # `deny.toml`. The check of ours reads each licence file by its digest, and
+  # each SPDX line against the allow list.
+  # - see: #7743, `check:deny`, `check:licences`,
+  #   `.config/licences/approved.json`
+  #
+  # The owner alone widens either file, by a code owner's review, and the
+  # landing ruleset requires this job. The fetch reads the crates before the
+  # checks, and no check reads the network. The advisories run in the
+  # nightly. A dependency bump brings a new licence, so the job runs for each
+  # actor.
+  # - see: `.github/CODEOWNERS`
+  licences-gate:
+    name: check the licences against the owner's set
+    needs: *rust-needs
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && needs.prepare.outputs.landed != 'true' && github.event_name != 'schedule' }}
+    runs-on: *linux
+    permissions: *image-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - *setup-rust
+      - name: fetch the crates of the lock file
+        run: cargo fetch --locked --quiet
+      - name: check the licences and the sources of the crates
+        run: mise run check:deny
+      - name: check the licence files and the headers of the tree
+        run: mise run check:licences
+
   # Light lane: pull requests, the merge group, dispatch and a push no merge
   # group built. The changes filter keeps a Rust-only diff off this job. The
   # image carries Node and aube; the bare-runner fallback installs the same

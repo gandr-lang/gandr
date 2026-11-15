@@ -3799,6 +3799,57 @@ issue_keep "$title" "$(< "$scratch/filed.json")" "$count" "$scratch/body.md" \
   --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 {% endraw %}'''
 
+# The nightly advisories report. `cargo deny check advisories` reads the
+# advisory database from the network. So it runs each night and holds no
+# landing. Each advisory of a crate of the lock file goes as one row on one
+# `collector` issue, `report: advisories`. The first finding opens it, each
+# night updates it, and a night with none closes it.
+# - see: #7743
+#
+# A run that reads no database fails and keeps the issue as it is. GH_REPO
+# names the repository. Without REPORT_FILE, the task prints the report and
+# writes nothing.
+["report:advisories"]
+description = "Report each advisory of a crate of the lock file, read by cargo-deny, on one issue"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/keep.bash"
+title='report: advisories'
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+status=0
+cargo deny --locked --format json check advisories 2> "$scratch/deny.jsonl" > /dev/null || status=$?
+jq -c 'select(.type == "diagnostic" and .fields.advisory != null)
+  | .fields | {id: .advisory.id, code, title: .advisory.title, url: "https://rustsec.org/advisories/\(.advisory.id).html",
+      crates: ([.graphs[]?.Krate | "\(.name) \(.version)"] | unique | join(", "))}' "$scratch/deny.jsonl" > "$scratch/rows.jsonl"
+count=$(jq -s length "$scratch/rows.jsonl")
+if (( status != 0 && count == 0 )); then
+  echo "report:advisories: cargo-deny exited $status with no advisory, so it read no database; the issue stays as it is" >&2
+  jq -r 'select(.type == "diagnostic") | .fields.message' "$scratch/deny.jsonl" >&2
+  exit 1
+fi
+{
+  echo "The advisories of the crates of the lock file, read each night by \`cargo deny check advisories\` against \`deny.toml\` (#7743). They hold no landing. A night with none closes this issue."
+  echo
+  echo "|Advisory|Kind|Crate|Title|"
+  echo "|---|---|---|---|"
+  jq -r '"|[\(.id)](\(.url))|\(.code)|\(.crates)|\(.title)|"' "$scratch/rows.jsonl"
+  echo
+  echo "Run: ${GITHUB_RUN_URL:-a local run}"
+} > "$scratch/body.md"
+if [[ -z ${REPORT_FILE:-} ]]; then
+  cat "$scratch/body.md"
+  echo "report:advisories: $count finding(s); REPORT_FILE unset, nothing written" >&2
+  exit 0
+fi
+issue_keep "$title" "$(issue_found "$title")" "$count" "$scratch/body.md" \
+  gh issue create --title "$title" --label collector --label kind:ci --label area:workflow \
+  --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+{% endraw %}'''
+
 # The nightly prose report (#3591): `report:prose` reads every open issue
 # body and every open pull request body under the body rules (`body:prose`),
 # in one parse, and writes one row per body that breaks a rule on one

@@ -805,18 +805,24 @@ env.PATH = "{{ config_root }}/target/workflow-tools/bin:{{ env.PATH }}"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = ".config/mise/enforcing quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 
-# The blocking set of the queue on `landing` (#5439) is Clippy's two passes
-# and the compiler policy with its specification gates, the shared
-# formatters over the paths the group changes (#6883), and the checks of the
-# treefmt job, the ledgers among them (the owner's word of 2026-11-14). The
-# queue runs these tasks in three jobs of `landing-checks.yml`: `check Clippy
-# wall`, which runs the formatters first, `check quenchant compiler policy`
-# and `check formatting and lint gates (treefmt)`. The gate runs them over
-# the change's packages and paths before `pr:open`. `check:landing-queue`
-# holds the three jobs to this list. Thus the two sets stay one. The
-# integration cycle runs the tests, the sweeps and the other gates (#5438).
+# The blocking set of the queue on `landing` is Clippy's two passes and the
+# compiler policy with its specification gates. It also holds the shared
+# formatters over the paths that the group changes, and the checks of the
+# treefmt job, the ledgers among them. It holds the licences too.
+# - see: #5439, #6883, the owner's word of 2026-11-14 and of 2026-11-15, #7743
+#
+# The queue runs these tasks in four jobs of `landing-checks.yml`. They are
+# `check Clippy wall`, which runs the formatters first, `check quenchant
+# compiler policy`, `check formatting and lint gates (treefmt)` and `check the
+# licences against the owner's set`. The gate runs them over the change's
+# packages and paths before `pr:open`.
+#
+# `check:landing-queue` holds the four jobs to this list. Thus the two sets
+# stay one. The integration cycle runs the tests, the sweeps and the other
+# gates.
+# - see: #5438
 ["check:landing"]
-description = "The checks a merge group on landing runs: the formatting of the change, Clippy, the compiler policy and the treefmt job's checks"
+description = "The checks a merge group on landing runs: the formatting of the change, Clippy, the compiler policy, the treefmt job's checks and the licences"
 depends = [
   "check:format",
   "check:clippy-plain-only",
@@ -839,8 +845,10 @@ depends = [
   "check:references",
   "check:tracking",
   "check:ledger",
+  "check:deny",
+  "check:licences",
 ]
-run = "echo 'landing check OK: the formatting of the change, Clippy, the compiler policy and the checks of the treefmt job hold'"
+run = "echo 'landing check OK: the formatting of the change, Clippy, the compiler policy, the checks of the treefmt job and the licences hold'"
 
 # CI separates compilation from execution so failed tests retain built state.
 # The plain build still covers every workspace target before test execution.
@@ -3823,6 +3831,32 @@ if [[ ${usage_rows_only:-false} == true ]]; then flags+=(--rows-only); fi
 if [[ -n ${usage_title:-} ]]; then flags+=(--title "$usage_title"); fi
 .config/deletes/check.bash "${flags[@]}" "$usage_body" "${usage_base:?check:deletes takes the base with the body}"
 '''
+
+# `cargo-deny` reads `deny.toml` against the manifests of ours and each crate
+# of the lock file. It checks their licences, the sources of the crates and
+# their duplicate versions. The owner alone approves a licence or a source, by
+# a code owner's review of `deny.toml`. A duplicate version warns.
+# - see: #7743
+#
+# No check here reads the network, and the advisories run each night. Each
+# check takes the crates that the cargo home holds. So a fresh home runs
+# `cargo fetch --locked` first.
+# - see: `report:advisories`
+["check:deny"]
+description = "The licences of our manifests and of each crate of the lock file, and their sources, against deny.toml, which the owner alone widens"
+run = "cargo deny --offline --locked check --hide-inclusion-graph licenses sources bans"
+
+# The licences that `cargo-deny` does not read. The check reads each licence
+# file by its name anywhere in the tree, by its digest. It reads each SPDX
+# line of a source. It reads them against the owner's list, and the rule's
+# cases run first.
+# - see: #7743, `.config/licences/check.bash`,
+#   `.config/licences/approved.json`, `.config/licences/cases.bash`
+["check:licences"]
+description = "Each licence file and SPDX line of the tree against the list that the owner alone widens"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = [".config/licences/cases.bash", ".config/licences/check.bash"]
 
 # The bench harness's readings (#3930). A run past the host's bound is recorded
 # `past bound` and never retried larger, and Catt runs only at n = 2 and 3
