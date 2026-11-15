@@ -5,6 +5,7 @@ use ::core::cell::RefCell;
 use ::core::marker::PhantomData;
 use ::gandr_runtime_uring::IoUring;
 use ::gandr_runtime_uring::Sqe64;
+use ::gandr_runtime_uring::arg::UserData;
 
 use crate::completion::Completion;
 use crate::error::RuntimeError;
@@ -126,7 +127,7 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
         prep(&mut sqe);
         // SAFETY: the user data is a number that the kernel only hands back.
         unsafe {
-            sqe.set_data64(data);
+            sqe.set_data64(UserData(data));
         }
         Completion::new(self.table, key)
     }

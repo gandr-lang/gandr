@@ -7,6 +7,7 @@ use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
 use ::gandr_runtime_uring::SlotDesc;
+use ::gandr_runtime_uring::arg::Count;
 
 use crate::completion::Completion;
 use crate::error::RuntimeError;
@@ -64,7 +65,7 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
         let rsp = scope.request(|sqe| {
             // SAFETY: the operation holds `socket` until its completion.
             unsafe {
-                sqe.prep_listen(SlotDesc::Desc(socket), backlog.0);
+                sqe.prep_listen(SlotDesc::Desc(socket), Count(backlog.0));
             }
         });
 

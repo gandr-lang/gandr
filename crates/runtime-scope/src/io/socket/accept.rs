@@ -7,6 +7,7 @@ use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
 use ::gandr_runtime_uring::SlotDesc;
+use ::gandr_runtime_uring::arg::Len;
 use ::socket2::SockAddr;
 use ::socket2::SockAddrStorage;
 use ::socket2::socklen_t;
@@ -107,7 +108,7 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
                 sqe.prep_accept(
                     SlotDesc::Desc(socket),
                     &mut peer.storage,
-                    &mut peer.len,
+                    Len(&mut peer.len),
                     flags,
                     None,
                 );

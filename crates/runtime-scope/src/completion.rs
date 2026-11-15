@@ -35,7 +35,7 @@ impl From<Cqe16<'_>> for Cqe
     #[inline]
     fn from(cqe: Cqe16<'_>) -> Self
     {
-        Self { res: cqe.res() }
+        Self { res: cqe.res().0 }
     }
 }
 

@@ -5,6 +5,9 @@ use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
 use ::gandr_runtime_uring::IoUring;
+use ::gandr_runtime_uring::arg::Count;
+use ::gandr_runtime_uring::arg::Flags;
+use ::gandr_runtime_uring::arg::UserData;
 use ::rustix::io::Errno;
 
 use crate::completion::Cqe;
@@ -54,7 +57,7 @@ impl Runtime
     pub fn new() -> Result<Self, RuntimeError>
     {
         let io = IoUring::builder()
-            .entries(u32::from(Self::IO_URING_ENTRIES))
+            .entries(Count(u32::from(Self::IO_URING_ENTRIES)))
             .build()?;
         Ok(Self { io })
     }
@@ -178,12 +181,12 @@ fn end(
             // SAFETY: a cancel by user data reads no pointer and names no
             // descriptor.
             unsafe {
-                sqe.prep_cancel64(data, 0);
+                sqe.prep_cancel64(UserData(data), Flags(0_i32));
             }
             // SAFETY: the user data is a number that the kernel only hands
             // back.
             unsafe {
-                sqe.set_data64(CANCEL | data);
+                sqe.set_data64(UserData(CANCEL | data));
             }
         }
     }
@@ -219,10 +222,10 @@ pub fn reap(
 {
     let mut io = io.borrow_mut();
     let (mut squ, mut cqu) = io.queues();
-    squ.submit_and_wait(1)?;
+    squ.submit_and_wait(Count(1))?;
 
     for cqe in cqu.ready() {
-        let data = cqe.user_data();
+        let UserData(data) = cqe.user_data();
         if data & CANCEL != 0 {
             // A cancel finds its operation, or finds it already complete or
             // past the point of a cancel; the operation's own completion

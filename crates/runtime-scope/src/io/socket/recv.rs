@@ -5,6 +5,9 @@ use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
+use ::gandr_runtime_uring::arg::Fd;
+use ::gandr_runtime_uring::arg::Flags;
+use ::gandr_runtime_uring::arg::Len;
 use ::std::os::fd::AsRawFd as _;
 
 use crate::completion::Completion;
@@ -48,7 +51,7 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketRecv<'tsk, 'env, 'fd>
             // scope's end drains the receive before the borrow ends; the
             // operation holds `socket` until its completion.
             unsafe {
-                sqe.prep_recv(fd, ptr, len, 0);
+                sqe.prep_recv(Fd(fd), ptr, Len(len), Flags(0_i32));
             }
         });
 
