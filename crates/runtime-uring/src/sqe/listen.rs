@@ -9,7 +9,7 @@ pub mod repr
     use crate::fd::SlotDesc;
     use crate::sqe::repr::Sqe64;
 
-    impl<'op> Sqe64<'op>
+    impl Sqe64<'_>
     {
         // #[expect(clippy::needless_pass_by_value, reason = "avoid
         // indirection")]
@@ -27,7 +27,7 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_listen(
             &mut self,
-            socket: SlotDesc<&'op ::socket2::Socket>,
+            socket: SlotDesc<&::socket2::Socket>,
             Count(backlog): Count<::core::ffi::c_int>,
         )
         {

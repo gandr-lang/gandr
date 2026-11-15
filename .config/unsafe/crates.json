@@ -6,6 +6,56 @@
       "skips": []
     },
     {
+      "package": "gandr-runtime-scope",
+      "path": "crates/runtime-scope",
+      "skips": [
+        {
+          "test": "io::socket::test::socket::accept",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::accept_in_flight",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::bind",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::listen",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::new",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::recv",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "io::socket::test::socket::recv_in_flight",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "path::request::a_request_allocates_nothing_after_the_start",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::new",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::closure",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::full",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        }
+      ]
+    },
+    {
       "package": "gandr-runtime-uring",
       "path": "crates/runtime-uring",
       "skips": [

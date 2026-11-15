@@ -1639,6 +1639,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-runtime-scope"
+version = "0.0.0"
+dependencies = [
+ "assert_fs",
+ "gandr-kernel-data",
+ "gandr-runtime-uring",
+ "libc",
+ "predicates",
+ "rustix",
+ "socket2",
+]
+
+[[package]]
 name = "gandr-runtime-stencils"
 version = "0.0.0"
 dependencies = [

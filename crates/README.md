@@ -81,6 +81,7 @@ crates/
 ├── kernel-term/                   the term arena, native universe paths, Empty, List and session codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── runtime-emitter/               the L machine's commands copy-and-patched into native code under a content cache, or run on the portable executor
 ├── runtime-net/                   the network a host holds: streams to peers named by key, chunk fetches and migrations, over iroh
+├── runtime-scope/                 the owner's scoped runtime on the ring: one thread drives a scope's futures, and the scope's end drains every operation it lent memory to
 ├── runtime-stencils/              the L machine's transitions written once: the stencils the emitter copies and patches, and the portable executor that dispatches them
 ├── runtime-uring/                 the kernel's io_uring as the owner wrote it: the ring, its queues, its registrar and a preparer for each operation
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities

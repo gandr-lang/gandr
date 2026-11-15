@@ -354,6 +354,10 @@ pub mod repr
     use ::core::ops::Deref;
     use ::core::ops::DerefMut;
 
+    use crate::arg::Answer;
+    use crate::arg::Flags;
+    use crate::arg::UserData;
+
     /// The entry of the default size.
     pub type Cqe<'cq> = Cqe16<'cq>;
 
@@ -395,6 +399,43 @@ pub mod repr
         pub(crate) const fn cqe(&self) -> &'cq ::liburing_rs::io_uring_cqe
         {
             self.cqe
+        }
+
+        /// The operation's result: a count or a descriptor when it is not
+        /// negative, and the negated error number when it is.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn res(&self) -> Answer<i32>
+        {
+            Answer(self.cqe.res)
+        }
+
+        /// The user data that the operation's entry carries.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn user_data(&self) -> UserData
+        {
+            UserData(self.cqe.user_data)
+        }
+
+        /// The kernel's flags of the completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn flags(&self) -> Flags<u32>
+        {
+            Flags(self.cqe.flags)
         }
     }
 

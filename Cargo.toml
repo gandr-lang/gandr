@@ -22,6 +22,7 @@ members = [
   "crates/kernel-term",
   "crates/runtime-emitter",
   "crates/runtime-net",
+  "crates/runtime-scope",
   "crates/runtime-stencils",
   "crates/runtime-uring",
   "crates/storage-artifact",
@@ -262,6 +263,7 @@ default-features = false
 # features:
 # - none: the tests use the default-off surface.
 # consumers:
+# - runtime-scope (dev)
 # - runtime-uring (dev)
 [workspace.dependencies.assert_fs]
 version = "1.1.3"
@@ -632,6 +634,7 @@ path = "crates/kernel-core-base"
 # The region: values in buckets under a budget, whose ids carry its brand,
 # and an allocator under the same budget.
 # consumers:
+# - runtime-scope (dev)
 # - storage-io (dev)
 [workspace.dependencies.gandr-kernel-data]
 path = "crates/kernel-data"
@@ -728,6 +731,13 @@ path = "crates/runtime-net"
 # - runtime-emitter (build and normal)
 [workspace.dependencies.gandr-runtime-stencils]
 path = "crates/runtime-stencils"
+
+# The kernel's ring, the one that the tree holds: the scoped runtime's
+# submissions and completions.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.gandr-runtime-uring]
+path = "crates/runtime-uring"
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
@@ -1615,6 +1625,7 @@ default-features = false
 # - none: the bindings alone; `std` adds nothing the emitter calls
 # consumers:
 # - runtime-emitter
+# - runtime-scope
 # - runtime-uring
 # - surface-dispatcher (unix)
 [workspace.dependencies.libc]
@@ -1801,6 +1812,7 @@ default-features = false
 # features:
 # - none: the tests use the default-off surface.
 # consumers:
+# - runtime-scope (dev)
 # - runtime-uring (dev)
 [workspace.dependencies.predicates]
 version = "3.1.3"
@@ -2033,6 +2045,7 @@ default-features = false
 #   watch borrow, and `std::io::Error` from `io::Errno`
 # - thread: `thread::futex`
 # consumers:
+# - runtime-scope: `net`, for the flags of a socket and of an accept
 # - runtime-uring: `net`, for its network tests' sockets
 # - surface-dispatcher (Linux)
 [workspace.dependencies.rustix]
@@ -2131,6 +2144,7 @@ features = ["alloc"]
 # features:
 # - none: the crate needs no optional feature.
 # consumers:
+# - runtime-scope
 # - runtime-uring
 [workspace.dependencies.socket2]
 version = "0.6.0"
