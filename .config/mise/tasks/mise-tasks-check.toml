@@ -2996,17 +2996,26 @@ fi
 echo "nightly check OK: $(jq length .config/nightly/cases.json) cases read as recorded; the nightly's reporting work is one job; $(jq length .config/nightly/chain.json) chain cases read as recorded"
 '''
 
-# The coverage measure in parts (#4020): `.config/coverage/jobs.jq` refuses a
-# job that runs `ci:coverage` whole, a matrix entry naming no part, and a set
-# of parts that is not every nextest slice once and the plain witness once.
-# Each case in `.config/coverage/cases.json` gives its refusals; then
-# `.github/workflows/report-coverage.yml`'s own jobs, anchors expanded, give none.
-# `.config/coverage/targets.jq` refuses an integration target whose file holds
-# no item (#7195): its binary has no coverage map, and `cargo llvm-cov report`
-# stops on it. Each case in `.config/coverage/targets.json` gives its
-# refusals; then the tree's targets (`targets.bash`) give none.
+# The coverage measure runs one part in each job. Each matrix entry names its
+# part. The parts are every slice of the enforcing suite once, and the plain
+# witness once.
+# - see: #4020
+#
+# A save of the build state tests a file at the root where cargo-llvm-cov
+# builds. A test of another file finds nothing. Then that save never runs.
+# - see: #7784
+#
+# Each integration target holds an item in its file. A target with no item
+# gives a binary with no coverage map. `cargo llvm-cov report` stops on that
+# binary.
+# - see: #7195
+#
+# Each case of the two programs gives the refusals that it records. Then the
+# workflow's own jobs and the tree's own targets give none.
+# - see: .config/coverage/jobs.jq
+# - see: .config/coverage/targets.jq
 ["check:coverage"]
-description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once, and every integration target holds an item"
+description = "The coverage measure runs one part a job, its parts every slice of the enforcing suite once and the plain witness once, its saves test the build's root, and every integration target holds an item"
 tools.jq = "1.8.1"
 tools.yq = "4.54.1"
 run = '''

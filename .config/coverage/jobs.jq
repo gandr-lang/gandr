@@ -4,10 +4,25 @@
 # matrix entry names its part, and the parts together are the whole: each
 # nextest slice `hash:<k>/<n>` for k from 1 to n once, and `plain` once.
 #
+# A job that measures saves its build state only after a build. The save
+# tests one file of the build. cargo-llvm-cov builds in `llvm-cov-target/`
+# under the target directory. A test of a file outside it finds nothing. Then
+# the save never runs.
+# - see: #7784
+#
 # Input: `.github/workflows/report-coverage.yml`'s `jobs`, anchors expanded, as JSON.
 # Output: the refusals, a JSON array of lines, empty when the jobs hold.
 
 def measures: (.steps // []) | any((.run // "") | test("\\bci:coverage(\\s|$)"));
+
+# The argument of each `hashFiles` test of a step that saves a cache, when
+# the argument names no file under `llvm-cov-target/`.
+def stray_saves:
+  (.steps // [])[]
+  | select((.uses // "") | startswith("actions/cache/save"))
+  | (.if // "")
+  | scan("hashFiles\\(([^)]*)\\)") | .[0]
+  | select(test("llvm-cov-target/") | not);
 
 [to_entries[]
   | select(.key != "template" and (.value | measures))
@@ -17,7 +32,7 @@ def measures: (.steps // []) | any((.run // "") | test("\\bci:coverage(\\s|$)"))
   | ($entries | map(.slice)) as $slices
   | ($slices | map(select(. != null) | capture("^hash:(?<k>[0-9]+)/(?<n>[0-9]+)$") | {k: (.k | tonumber), n: (.n | tonumber)})) as $hashes
   | ($hashes | map(.n) | unique) as $counts
-  | (if ($value.env.COVERAGE_PART // null) == null or ($entries | length) == 0
+  | ((if ($value.env.COVERAGE_PART // null) == null or ($entries | length) == 0
     then "`\($job)` runs the whole instrumented suite in one job, which reached its 45-minute limit: run one part a job, `ci:coverage \"$COVERAGE_PART\"` with the part from the job's matrix (#4020)"
     else
       ($entries[] | select(.slice == null) | "`\($job)` has a matrix entry `\(.part // "unnamed")` naming no `slice`: name its part, `hash:<k>/<n>` or `plain` (#4020)"),
@@ -29,4 +44,5 @@ def measures: (.steps // []) | any((.run // "") | test("\\bci:coverage(\\s|$)"))
        elif ($hashes | map(.k) | sort) != [range(1; $counts[0] + 1)]
        then "`\($job)` runs the slices \($hashes | map(.k) | sort | map(tostring) | join(", ")) of \($counts[0]): run every slice `hash:1/\($counts[0])` to `hash:\($counts[0])/\($counts[0])` once (#4020)"
        else empty end)
-    end)]
+    end),
+    ($value | stray_saves | "`\($job)` saves its build state when `hashFiles(\(.))` finds a file, but cargo-llvm-cov builds in `llvm-cov-target/` under the target directory: test `.rustc_info.json` there (#7784)"))]

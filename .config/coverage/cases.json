@@ -93,5 +93,61 @@
       }
     },
     "output": "[\"`coverage-part` has a matrix entry `extra` naming no `slice`: name its part, `hash:<k>/<n>` or `plain` (#4020)\",\"`coverage-part` runs the plain-only witness 0 times: run it once, as the part `plain` (#4020)\",\"`coverage-part` runs the enforcing suite in slices of 2 and 3: name one count n and every slice `hash:1/n` to `hash:n/n` once (#4020)\"]"
+  },
+  {
+    "name": "#7784: a save that tests a file outside cargo-llvm-cov's build root is refused, since the save never runs",
+    "input": {
+      "coverage-part": {
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1", "state": "coverage", "save": true },
+              { "part": "plain", "slice": "plain", "state": "coverage-plain", "save": true }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}", "COVERAGE_STATE": "${{ matrix.state }}" },
+        "steps": [
+          {
+            "name": "measure this part's coverage",
+            "run": "mise run ci:coverage \"$COVERAGE_PART\""
+          },
+          {
+            "name": "cache instrumented build state",
+            "if": "${{ !cancelled() && hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)) != '' }}",
+            "uses": "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+          }
+        ]
+      }
+    },
+    "output": "[\"`coverage-part` saves its build state when `hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)` finds a file, but cargo-llvm-cov builds in `llvm-cov-target/` under the target directory: test `.rustc_info.json` there (#7784)\"]"
+  },
+  {
+    "name": "a save that tests `.rustc_info.json` at cargo-llvm-cov's build root holds",
+    "input": {
+      "coverage-part": {
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/1", "state": "coverage", "save": true },
+              { "part": "plain", "slice": "plain", "state": "coverage-plain", "save": true }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}", "COVERAGE_STATE": "${{ matrix.state }}" },
+        "steps": [
+          {
+            "name": "measure this part's coverage",
+            "run": "mise run ci:coverage \"$COVERAGE_PART\""
+          },
+          {
+            "name": "cache instrumented build state",
+            "if": "${{ !cancelled() && hashFiles(format('target/{0}/llvm-cov-target/.rustc_info.json', env.COVERAGE_STATE)) != '' }}",
+            "uses": "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+          }
+        ]
+      }
+    },
+    "output": "[]"
   }
 ]
