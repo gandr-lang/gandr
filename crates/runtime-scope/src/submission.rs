@@ -38,6 +38,13 @@ impl TryFrom<Key> for u64
     /// - fails: on a target whose index is wider than 64 bits, past `u64::MAX`.
     /// - panics: none.
     /// - executable: none — the conversion is the standard library's.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — each request's key goes into its entry's user data,
+    ///   and its completion names the same slot.
+    /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+    /// - witness: `runtime::test::run::full`
     #[inline]
     fn try_from(key: Key) -> Result<Self, Self::Error>
     {
@@ -57,6 +64,13 @@ impl TryFrom<u64> for Key
     /// - fails: on a target whose index is narrower than the user data.
     /// - panics: none.
     /// - executable: none — the conversion is the standard library's.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — each completion's user data names the slot of its
+    ///   request.
+    /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+    /// - witness: `runtime::test::run::full`
     #[inline]
     fn try_from(data: u64) -> Result<Self, Self::Error>
     {

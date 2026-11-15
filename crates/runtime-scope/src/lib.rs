@@ -4,7 +4,7 @@
 //! A [`Runtime`] owns the ring. [`Runtime::run`] gives the scope's future a
 //! `Scope`, through which each task requests the kernel's operations. The
 //! memory of an operation is a borrow of the scope's life, so the kernel
-//! never writes memory that the scope no longer holds.
+//! writes only memory that the scope holds.
 
 // The runtime stands on the Linux kernel's ring: on another system the crate
 // compiles empty.

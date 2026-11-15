@@ -3,9 +3,12 @@ name = "gandr-runtime-scope"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "A crate implementing an io_uring async runtime"
+description = "A scoped runtime on the kernel's io_uring: one thread drives a scope's futures, and the scope's end drains each operation"
+readme = "README.md"
 repository.workspace = true
 license.workspace = true
+keywords = ["async", "gandr", "io-uring", "linux"]
+categories = ["asynchronous", "network-programming", "os::linux-apis"]
 publish.workspace = true
 autotests = false
 
@@ -25,9 +28,6 @@ socket2 = { workspace = true }
 assert_fs = { workspace = true }
 gandr-kernel-data = { workspace = true }
 predicates = { workspace = true }
-
-[features]
-debug = []
 
 [lints]
 workspace = true
