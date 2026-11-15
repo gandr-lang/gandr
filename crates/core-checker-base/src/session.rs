@@ -121,7 +121,6 @@ use gandr_core_session::NodeId;
 use gandr_core_session::Relation;
 use gandr_core_session::RelationResult;
 use gandr_core_session::Session;
-use gandr_core_term::ComputationId;
 use gandr_core_term::LinearUse;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::session::ActionKind;
@@ -131,6 +130,10 @@ use gandr_core_term::session::SessionType;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 use crate::refusal::CheckRefusal;
 use crate::view::ValueTypeView;
 use crate::view::value_type_view;
@@ -154,13 +157,41 @@ pub enum ForkSide
 /// An endpoint, named by the fork, the receive or the placement that bound
 /// it and its side.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Endpoint
+pub struct EndpointOf<N>
+where
+    N: Naming,
 {
     /// The fork, for [`ForkSide::Received`] the receive, and for
     /// [`ForkSide::Placed`] the placement.
-    pub fork: ComputationId,
+    pub fork: N::Computation,
     /// The side.
     pub side: ForkSide,
+}
+
+/// An endpoint, its fork named by its id in the checker's arena.
+pub type Endpoint = EndpointOf<Arena>;
+
+impl Endpoint
+{
+    /// The same endpoint, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> EndpointOf<Keyed>
+    where
+        K: Keying,
+    {
+        let Self { fork, side } = self;
+        EndpointOf {
+            fork: keys.computation(fork),
+            side,
+        }
+    }
 }
 
 /// What an endpoint's session state refuses of an action on it.
@@ -202,34 +233,36 @@ pub enum Capture
 /// How an endpoint, a buffer, a continuation or a linear function's parameter
 /// escaped its one linear use.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LinearityDefect
+pub enum LinearityDefectOf<N>
+where
+    N: Naming,
 {
     /// A half of a fork finished with the endpoint unconsumed.
     Residue
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
         /// Its session type when the half finished.
-        state: ValueTypeId,
+        state: N::ValueType,
     },
     /// The endpoint was acted on after it was closed.
     Closed
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
     },
     /// The endpoint was used twice in one action: sent over itself, or named
     /// by both halves of a fork.
     UsedTwice
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
     },
     /// The endpoint was named where its use may run other than once.
     Captured
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
         /// What may run it.
         by: Capture,
     },
@@ -237,17 +270,17 @@ pub enum LinearityDefect
     AsValue
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
     },
     /// Two arms of an offer or a case left the endpoint in different states.
     ArmsDisagree
     {
         /// The endpoint.
-        endpoint: Endpoint,
+        endpoint: EndpointOf<N>,
         /// The first arm.
-        first: ComputationId,
+        first: N::Computation,
         /// The arm that disagrees with it.
-        other: ComputationId,
+        other: N::Computation,
     },
     /// A declaration's type is a session type: an endpoint outside the
     /// linear zone.
@@ -264,13 +297,13 @@ pub enum LinearityDefect
     BufferUnreturned
     {
         /// The computation that placed the buffer live.
-        site: ComputationId,
+        site: N::Computation,
     },
     /// A buffer was returned a second time.
     BufferReturnedTwice
     {
         /// The computation that placed the buffer live.
-        site: ComputationId,
+        site: N::Computation,
     },
     /// A buffer was read other than by the send, the resumption or the
     /// operation that returns it, or a buffer never placed live was returned.
@@ -278,28 +311,28 @@ pub enum LinearityDefect
     {
         /// The computation that placed the buffer live, or the action that
         /// returned a buffer no slot holds.
-        site: ComputationId,
+        site: N::Computation,
     },
     /// An operation clause whose continuation holds an obligation finished
     /// without resuming or abandoning it.
     ContinuationUnspent
     {
         /// The clause's body.
-        clause: ComputationId,
+        clause: N::Computation,
     },
     /// A continuation holding an obligation was resumed or abandoned a second
     /// time.
     ContinuationUsedTwice
     {
         /// The clause's body.
-        clause: ComputationId,
+        clause: N::Computation,
     },
     /// A continuation holding an obligation was named where its end may run
     /// other than once.
     ContinuationCaptured
     {
         /// The clause's body.
-        clause: ComputationId,
+        clause: N::Computation,
         /// What may run it.
         by: Capture,
     },
@@ -308,21 +341,21 @@ pub enum LinearityDefect
     ContinuationAsValue
     {
         /// The clause's body.
-        clause: ComputationId,
+        clause: N::Computation,
     },
     /// A linear function's body read its parameter after its copy was spent:
     /// the supply holds one copy.
     LinearSlotConsumed
     {
         /// The linear lambda.
-        lambda: ComputationId,
+        lambda: N::Computation,
     },
     /// A linear function's body ended with its parameter's copy unread, or
     /// one arm of a case read the copy and another did not.
     LinearSlotUnconsumed
     {
         /// The linear lambda.
-        lambda: ComputationId,
+        lambda: N::Computation,
     },
     /// A linear function's parameter was read as a value where its read may
     /// run other than once: inside a thunk, a stack, a recursion, a
@@ -330,7 +363,7 @@ pub enum LinearityDefect
     ShadowCaptured
     {
         /// The linear lambda.
-        lambda: ComputationId,
+        lambda: N::Computation,
         /// What may run the read.
         by: Capture,
     },
@@ -340,10 +373,97 @@ pub enum LinearityDefect
     ComonoidAbsent
     {
         /// The binder's type.
-        ty: ValueTypeId,
+        ty: N::ValueType,
         /// The binder's grade.
         grade: crate::comonoid::Grade,
     },
+}
+
+/// A linearity defect, each node named by its id in the checker's arena.
+pub type LinearityDefect = LinearityDefectOf<Arena>;
+
+impl LinearityDefect
+{
+    /// The same defect, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> LinearityDefectOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Residue { endpoint, state } => LinearityDefectOf::Residue {
+                endpoint: endpoint.keyed(keys),
+                state: keys.value_type(state),
+            },
+            Self::Closed { endpoint } => LinearityDefectOf::Closed {
+                endpoint: endpoint.keyed(keys),
+            },
+            Self::UsedTwice { endpoint } => LinearityDefectOf::UsedTwice {
+                endpoint: endpoint.keyed(keys),
+            },
+            Self::Captured { endpoint, by } => LinearityDefectOf::Captured {
+                endpoint: endpoint.keyed(keys),
+                by,
+            },
+            Self::AsValue { endpoint } => LinearityDefectOf::AsValue {
+                endpoint: endpoint.keyed(keys),
+            },
+            Self::ArmsDisagree {
+                endpoint,
+                first,
+                other,
+            } => LinearityDefectOf::ArmsDisagree {
+                endpoint: endpoint.keyed(keys),
+                first: keys.computation(first),
+                other: keys.computation(other),
+            },
+            Self::Unrestricted => LinearityDefectOf::Unrestricted,
+            Self::Unbound { index } => LinearityDefectOf::Unbound { index },
+            Self::BufferUnreturned { site } => LinearityDefectOf::BufferUnreturned {
+                site: keys.computation(site),
+            },
+            Self::BufferReturnedTwice { site } => LinearityDefectOf::BufferReturnedTwice {
+                site: keys.computation(site),
+            },
+            Self::BufferRead { site } => LinearityDefectOf::BufferRead {
+                site: keys.computation(site),
+            },
+            Self::ContinuationUnspent { clause } => LinearityDefectOf::ContinuationUnspent {
+                clause: keys.computation(clause),
+            },
+            Self::ContinuationUsedTwice { clause } => LinearityDefectOf::ContinuationUsedTwice {
+                clause: keys.computation(clause),
+            },
+            Self::ContinuationCaptured { clause, by } => LinearityDefectOf::ContinuationCaptured {
+                clause: keys.computation(clause),
+                by,
+            },
+            Self::ContinuationAsValue { clause } => LinearityDefectOf::ContinuationAsValue {
+                clause: keys.computation(clause),
+            },
+            Self::LinearSlotConsumed { lambda } => LinearityDefectOf::LinearSlotConsumed {
+                lambda: keys.computation(lambda),
+            },
+            Self::LinearSlotUnconsumed { lambda } => LinearityDefectOf::LinearSlotUnconsumed {
+                lambda: keys.computation(lambda),
+            },
+            Self::ShadowCaptured { lambda, by } => LinearityDefectOf::ShadowCaptured {
+                lambda: keys.computation(lambda),
+                by,
+            },
+            Self::ComonoidAbsent { ty, grade } => LinearityDefectOf::ComonoidAbsent {
+                ty: keys.value_type(ty),
+                grade,
+            },
+        }
+    }
 }
 
 /// An endpoint the linear zone held when a run refused.

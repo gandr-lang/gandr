@@ -253,16 +253,19 @@ fn main() -> Result<(), Refusal>
     Ok(())
 }
 
-/// The variants of `CheckRefusal`, in declaration order.
+/// The variants of `CheckRefusalOf`, in declaration order.
+///
+/// The checker writes the refusal generic over its naming. The store mirrors
+/// its arena form, so each field reads as the arena names it.
 ///
 /// # Specification
 /// - ensures: one [`Variant`] per variant of the checker's enum, each field's
-///   type read as the segments of its path.
+///   type read as the segments of its path in the arena form.
 /// - executable: none — a reading of a parsed file.
 ///
 /// # Errors
-/// [`Refusal::Parse`] when the file holds no `CheckRefusal`, or a field's type
-/// is not a plain path.
+/// [`Refusal::Parse`] when the file holds no `CheckRefusalOf`, or a field's
+/// type is not a plain path in the arena form.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
@@ -274,7 +277,7 @@ fn variants(file: &syn::File) -> Result<Vec<Variant>, Refusal>
         .iter()
         .find_map(|item| {
             if let syn::Item::Enum(ref item) = *item
-                && item.ident == "CheckRefusal"
+                && item.ident == "CheckRefusalOf"
             {
                 Some(item)
             }
@@ -282,7 +285,7 @@ fn variants(file: &syn::File) -> Result<Vec<Variant>, Refusal>
                 None
             }
         })
-        .ok_or_else(|| Refusal::Parse(String::from("refusal.rs holds no `CheckRefusal`")))?;
+        .ok_or_else(|| Refusal::Parse(String::from("refusal.rs holds no `CheckRefusalOf`")))?;
     refusal
         .variants
         .iter()
@@ -407,15 +410,20 @@ fn emit_frame_roles(
     Ok(())
 }
 
-/// A field, read.
+/// A field, read in the arena form.
+///
+/// A name of the naming, `N::Value`, reads as the id of the arena that it
+/// names, `ValueId`. A type generic over the naming, `TypeNodeOf<N>`, reads as
+/// its arena form, `TypeNode`.
 ///
 /// # Specification
-/// - ensures: the field named `name`, its type's path segments and its
-///   documentation.
+/// - ensures: the field named `name`, its type's path segments in the arena
+///   form and its documentation.
 /// - executable: none — a reading of a parsed field.
 ///
 /// # Errors
-/// [`Refusal::Parse`] when the type is not a path without arguments.
+/// [`Refusal::Parse`] when the type is not a path, a segment carries type
+/// arguments other than the naming, or the naming names no node.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — as [`main`].
@@ -429,26 +437,68 @@ fn field_of(
     else {
         return Err(Refusal::Parse(format!("the field `{name}` is not a path")));
     };
-    let ty = path
+    let ty: Vec<String> = path
         .path
         .segments
         .iter()
         .map(|segment| {
-            if matches!(segment.arguments, syn::PathArguments::None) {
-                Ok(segment.ident.to_string())
-            }
-            else {
-                Err(Refusal::Parse(format!(
-                    "the field `{name}` carries type arguments"
-                )))
+            let ident = segment.ident.to_string();
+            match segment.arguments {
+                syn::PathArguments::None => Ok(ident),
+                syn::PathArguments::AngleBracketed(ref arguments) if over_the_naming(arguments) => {
+                    ident.strip_suffix("Of").map(String::from).ok_or_else(|| {
+                        Refusal::Parse(format!("the field `{name}` is generic but not `…Of<N>`"))
+                    })
+                },
+                syn::PathArguments::AngleBracketed(_) | syn::PathArguments::Parenthesized(_) => {
+                    Err(Refusal::Parse(format!(
+                        "the field `{name}` carries type arguments"
+                    )))
+                },
             }
         })
         .collect::<Result<_, _>>()?;
+    let ty = match ty.as_slice() {
+        [naming, node] if naming == "N" => {
+            let id = match node.as_str() {
+                "Value" => "ValueId",
+                "Computation" => "ComputationId",
+                "ValueType" => "ValueTypeId",
+                "CompType" => "CompTypeId",
+                "Formed" => "FormedValueType",
+                _ => {
+                    return Err(Refusal::Parse(format!(
+                        "the field `{name}` names `N::{node}`, which names no node"
+                    )));
+                },
+            };
+            Vec::from([String::from(id)])
+        },
+        _ => ty,
+    };
     Ok(Field {
         name,
         ty,
         docs: docs(&field.attrs),
     })
+}
+
+/// Whether a segment's arguments are the naming alone, `<N>`.
+///
+/// # Specification
+/// - ensures: true exactly when the arguments are one type, the path `N`.
+/// - executable: none — a reading of parsed arguments.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`main`].
+/// - witness: `typing::tests::each_refusal_projects_its_payload`
+fn over_the_naming(arguments: &syn::AngleBracketedGenericArguments) -> bool
+{
+    matches!(
+        arguments.args.iter().collect::<Vec<_>>().as_slice(),
+        [syn::GenericArgument::Type(syn::Type::Path(argument))]
+            if argument.qself.is_none() && argument.path.is_ident("N")
+    )
 }
 
 /// The documentation lines of an item.

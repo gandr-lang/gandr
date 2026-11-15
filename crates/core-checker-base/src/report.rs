@@ -34,23 +34,29 @@ use crate::declaration::OriginToken;
 use crate::elaboration::Suspension;
 use crate::equiv::Equivalence;
 use crate::failure::Failure;
-use crate::formation::FormedValueType;
 use crate::funext::Funext;
-use crate::ledger::ObligationEntry;
+use crate::ledger::ObligationEntryOf;
 use crate::ledger::ObligationLedger;
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 use crate::nested::NestedElaboration;
 use crate::refusal::CheckRefusal;
+use crate::refusal::CheckRefusalOf;
 use crate::refusal::TermNode;
 use crate::seal::SealTable;
 use crate::support::Supported;
 use crate::worlds::Mobility;
 
-/// The judgement's answer for one declaration.
+/// The judgement's answer for one declaration, each node named by `N`.
 ///
 /// An accepted verdict carries the body it judged, so a consumer re-deriving
 /// the declaration — the kernel bridge — reads everything it needs here.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Verdict
+pub enum VerdictOf<N>
+where
+    N: Naming,
 {
     /// A nominal declaration that formed: a native data declaration's complete
     /// signature, or a sealed abstract type's kind and representation, its
@@ -60,9 +66,9 @@ pub enum Verdict
     Checked
     {
         /// The declared type.
-        declared: FormedValueType,
+        declared: N::Formed,
         /// The body checked.
-        body: ValueId,
+        body: N::Value,
         /// The check's evidence.
         evidence: Checked,
     },
@@ -70,19 +76,63 @@ pub enum Verdict
     Synthesised
     {
         /// The body synthesised.
-        body: ValueId,
+        body: N::Value,
         /// The synthesis's evidence.
-        synthesised: Synthesised<FormedValueType>,
+        synthesised: Synthesised<N::Formed>,
     },
     /// The body is a hole under a declared type, owed.
-    Owed(ObligationEntry),
+    Owed(ObligationEntryOf<N>),
     /// The declaration waits on owed holes: its judgement left a bare
     /// flex–rigid equation on an owed code constant, or read the type of a
     /// declaration that waits. Nothing is defined for it; it supplies the type
     /// it carries, and the report keeps its [`Suspension`] under its position.
-    Suspended(FormedValueType),
+    Suspended(N::Formed),
     /// The declaration was refused.
-    Refused(CheckRefusal),
+    Refused(CheckRefusalOf<N>),
+}
+
+/// The judgement's answer for one declaration, each node named by its id in
+/// the checker's arena.
+pub type Verdict = VerdictOf<Arena>;
+
+impl Verdict
+{
+    /// The same answer, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> VerdictOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Data => VerdictOf::Data,
+            Self::Checked {
+                declared,
+                body,
+                evidence,
+            } => VerdictOf::Checked {
+                declared: keys.formed(declared),
+                body: keys.value(body),
+                evidence,
+            },
+            Self::Synthesised { body, synthesised } => VerdictOf::Synthesised {
+                body: keys.value(body),
+                synthesised: Synthesised::new(
+                    keys.formed(synthesised.produced()),
+                    synthesised.conversions(),
+                ),
+            },
+            Self::Owed(entry) => VerdictOf::Owed(entry.keyed(keys)),
+            Self::Suspended(formed) => VerdictOf::Suspended(keys.formed(formed)),
+            Self::Refused(refusal) => VerdictOf::Refused(refusal.keyed(keys)),
+        }
+    }
 }
 
 /// One declaration's verdict, beside the position and origin it was offered

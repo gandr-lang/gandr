@@ -213,6 +213,10 @@ use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::CheckingContext;
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 use crate::refusal::CheckRefusal;
 use crate::session::Capture;
 use crate::view::ValueTypeView;
@@ -468,7 +472,9 @@ pub enum Crossed
 /// the world a migration or a read stands at is the innermost migration
 /// around the node, or the entry's home, and is left to the reader.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LocatedDefect
+pub enum LocatedDefectOf<N>
+where
+    N: Naming,
 {
     /// A value crosses to a world where its type does not.
     Immobile
@@ -476,9 +482,9 @@ pub enum LocatedDefect
         /// What crosses.
         crossed: Crossed,
         /// Its type.
-        ty: ValueTypeId,
+        ty: N::ValueType,
         /// The former in `ty` that fails.
-        former: ValueTypeId,
+        former: N::ValueType,
         /// The predicate it fails.
         predicate: Predicate,
     },
@@ -535,7 +541,7 @@ pub enum LocatedDefect
         /// The abstract type's atom.
         atom: ConstantIndex,
         /// The former in the representation that fails.
-        former: ValueTypeId,
+        former: N::ValueType,
         /// The predicate it fails.
         predicate: Predicate,
     },
@@ -555,8 +561,68 @@ pub enum LocatedDefect
     NotAHandle
     {
         /// The type the value synthesised.
-        found: ValueTypeId,
+        found: N::ValueType,
     },
+}
+
+/// A located defect, each node named by its id in the checker's arena.
+pub type LocatedDefect = LocatedDefectOf<Arena>;
+
+impl LocatedDefect
+{
+    /// The same defect, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> LocatedDefectOf<Keyed>
+    where
+        K: Keying,
+    {
+        match self {
+            Self::Immobile {
+                crossed,
+                ty,
+                former,
+                predicate,
+            } => LocatedDefectOf::Immobile {
+                crossed,
+                ty: keys.value_type(ty),
+                former: keys.value_type(former),
+                predicate,
+            },
+            Self::CapabilityMissing { world } => LocatedDefectOf::CapabilityMissing { world },
+            Self::CapabilityCaptured { world, by } => {
+                LocatedDefectOf::CapabilityCaptured { world, by }
+            },
+            Self::Elsewhere { bound } => LocatedDefectOf::Elsewhere { bound },
+            Self::HoldElsewhere { wanted } => LocatedDefectOf::HoldElsewhere { wanted },
+            Self::OpenedElsewhere { written, handle } => {
+                LocatedDefectOf::OpenedElsewhere { written, handle }
+            },
+            Self::Unlocated => LocatedDefectOf::Unlocated,
+            Self::UndeclaredWorld { world } => LocatedDefectOf::UndeclaredWorld { world },
+            Self::HostWorldUndeclared => LocatedDefectOf::HostWorldUndeclared,
+            Self::MarkUnfounded {
+                atom,
+                former,
+                predicate,
+            } => LocatedDefectOf::MarkUnfounded {
+                atom,
+                former: keys.value_type(former),
+                predicate,
+            },
+            Self::EntryNamed { constant } => LocatedDefectOf::EntryNamed { constant },
+            Self::EntryUngranted { constant } => LocatedDefectOf::EntryUngranted { constant },
+            Self::NotAHandle { found } => LocatedDefectOf::NotAHandle {
+                found: keys.value_type(found),
+            },
+        }
+    }
 }
 
 /// One move of the world register a typed run keeps: a migration's push,
