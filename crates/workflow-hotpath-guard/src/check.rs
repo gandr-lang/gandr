@@ -19,6 +19,12 @@ use crate::judge::shift::Unread;
 /// The prefix of every check hotpath Cloud posts, before the benchmark.
 const CHECK_PREFIX: &str = "hotpath / ";
 
+/// The external id of a `neutral` check that a confirmed regression posts.
+///
+/// A report blocks nothing, so the judge posts no `failure` on a commit of
+/// `landing`. The guard files a check with this id as it files a failed one.
+pub const REGRESSED: &str = "hotpath:regressed";
+
 /// The suffix of a summary line naming a site over its policy's threshold.
 const FAILS: &str = " · fails the check";
 
@@ -236,6 +242,10 @@ pub(crate) struct Listed
     conclusion: Option<String>,
     /// The check's page.
     html_url: String,
+    /// The id the poster gave the check: [`REGRESSED`] on a confirmed
+    /// regression, absent on hotpath Cloud's checks.
+    #[serde(default)]
+    external_id: Option<String>,
     /// The Markdown summary hotpath Cloud wrote.
     summary: Summary,
 }
@@ -247,8 +257,9 @@ impl Listed
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Maybe::Present`] exactly when the name starts with `hotpath
-    ///   / `, the status is `completed` and the conclusion is `failure` or
-    ///   `success`; a failure carries the name's benchmark, the page and the
+    ///   / `, the status is `completed` and the conclusion is `failure`,
+    ///   `success`, or `neutral` with the external id [`REGRESSED`]; a failure
+    ///   or a marked `neutral` carries the name's benchmark, the page and the
     ///   summary read by [`Failure::read`], a pass the benchmark and the page.
     /// - provides: the checks a report is made of; a pending, cancelled or
     ///   foreign check is none of them.
@@ -257,20 +268,29 @@ impl Listed
     /// - executable: none — the tests are the clause.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a failed hotpath check, a passing one, a pending one
-    ///   and a failed check of another name; reading the pending or foreign one
-    ///   as concluded, or the passing one as failed, changes the report.
+    /// - hypothesis: L3 — a failed hotpath check, a passing one, a pending one,
+    ///   a failed check of another name, and a `neutral` one with the mark and
+    ///   without it; reading the pending, foreign or unmarked one as concluded,
+    ///   or the passing one as failed, changes the report.
     /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
+    /// - witness: `tests::cli::a_marked_neutral_check_is_filed_7772`
     /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
+    ///
+    /// # Cost
+    /// - allocation: the benchmark's name and the failure's sections,
+    ///   diagnostic
     #[inline]
     pub(crate) fn concluded(self) -> Maybe<Concluded, Unconcluded>
     {
+        let regressed = self.external_id.as_deref() == Some(REGRESSED);
         match (
             self.name.strip_prefix(CHECK_PREFIX),
             self.status.as_str(),
             self.conclusion.as_deref(),
         ) {
-            (Some(benchmark), "completed", Some("failure")) => {
+            (Some(benchmark), "completed", Some(conclusion))
+                if conclusion == "failure" || conclusion == "neutral" && regressed =>
+            {
                 Maybe::Present(Concluded::Failed(Failure::read(
                     Benchmark(benchmark.to_owned()),
                     RunUrl(self.html_url),

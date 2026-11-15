@@ -964,6 +964,9 @@ run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-ho
 # counts only the rows with work open, and the body is written only when a
 # row changes. A commit without a pull request number reads nothing. GH_REPO
 # names the repository.
+#
+# A neutral check with the external id `hotpath:regressed` is a regression
+# too. Two sets of runs find it, and the judge posts it with no failure.
 ["ci:hotpath-landed"]
 description = "Add the landed pull requests' hotpath verdicts to the ledger"
 tools.jq = "1.8.1"
@@ -986,7 +989,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 : > "$scratch/rows"
 gh api --paginate "repos/$repo/commits/$(git rev-parse HEAD)/check-runs?per_page=100" \
-  --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, summary: (.output.summary // "")}' \
+  --jq '.check_runs[] | select(.name | startswith("hotpath / ")) | {name, conclusion, external_id, summary: (.output.summary // "")}' \
   | jq -s . > "$scratch/runs.json"
 landed=0
 while IFS=' ' read -r commit subject; do
@@ -1009,7 +1012,7 @@ while IFS=' ' read -r commit subject; do
     conclusion=$(jq -r '.conclusion // "pending"' <<< "$run")
     # The summary's heading reads `` `<benchmark>` · <verdict> ``.
     verdict=$(jq -r '.summary | split("\n") | map(select(startswith("### "))) | (first // "") | sub("^### [^·]*· *"; "")' <<< "$run")
-    if [[ $conclusion == failure ]]; then
+    if [[ $conclusion == failure || $(jq -r '.external_id // ""' <<< "$run") == hotpath:regressed ]]; then
       row_issue=${issues:-—}
     elif grep -qi improv <<< "$verdict"; then
       row_issue='—'

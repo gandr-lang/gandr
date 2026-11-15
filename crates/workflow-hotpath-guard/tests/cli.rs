@@ -437,6 +437,62 @@ fn only_a_completed_failed_hotpath_check_is_filed()
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
+/// The judge posts a confirmed regression on a commit of `landing` as a
+/// `neutral` check with the external id `hotpath:regressed`, so that no report
+/// turns `main` red. The guard files it as it files a failed check, and files
+/// no `neutral` check without the id.
+#[test]
+fn a_marked_neutral_check_is_filed_7772()
+{
+    let scratch = scratch!("marked");
+    let marked = |name: &str, id: u64, summary: &str, external_id: Option<&str>| {
+        serde_json::json!({
+            "name": name,
+            "status": "completed",
+            "conclusion": "neutral",
+            "html_url": format!("https://github.com/gandr-lang/gandr/runs/{id}"),
+            "external_id": external_id,
+            "summary": summary,
+        })
+        .to_string()
+    };
+    let checks = [
+        check!(
+            "hotpath / store",
+            "completed",
+            Some("success"),
+            119_144_191_482_u64,
+            ""
+        ),
+        marked(
+            "hotpath / gandr",
+            119_144_034_179,
+            GANDR,
+            Some("hotpath:regressed"),
+        ),
+        marked("hotpath / gandr-suspect", 3, GANDR, None),
+        marked(
+            "hotpath / gandr-timing",
+            119_144_057_632,
+            TIMING,
+            Some("hotpath:regressed"),
+        ),
+    ]
+    .join("\n");
+    let pulls = pulls!(1358_u64);
+    let output = run!(scratch, HEAD, core::iter::empty::<&str>(), [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str())
+    ]);
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        BODY,
+        "the marked checks report as failed ones, and the unmarked one is left out"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
 /// `decide`'s row for pull request `$number` in `gandr`, open, linking its
 /// comment `$comment`.
 macro_rules! open_row {

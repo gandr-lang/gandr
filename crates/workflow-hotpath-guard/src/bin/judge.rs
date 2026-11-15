@@ -5,15 +5,19 @@
 //! NAME --policy FILE --base-run FILE… --head-run FILE… --output FILE
 //! [--confirm FILE]` reads each run's JSON report and the policy, judges the
 //! rows ([`gandr_workflow_hotpath_guard::judge`]), prints the summary, and
-//! writes the check run's body, its name, conclusion, title, summary,
-//! suspects and the table of every judged row, as JSON to the output file.
+//! writes the check run's body, its name, conclusion, external id, title,
+//! summary, suspects and the table of every judged row, as JSON to the output
+//! file.
 //! The judge reads every row.
 //!
 //! One set of runs fails no row: on a shared runner one set passes a margin by
 //! noise. A first set that finds rows writes a
 //! neutral check that names each row as a suspect, and a second job runs the
 //! series again. With `--confirm`, the first set's check, the second set
-//! fails only the rows that both sets find.
+//! finds only the rows that both sets find. A report blocks nothing, so a
+//! found row's check is `neutral` too, and its external id
+//! ([`gandr_workflow_hotpath_guard::check::REGRESSED`]) tells the guard to
+//! file it.
 //!
 //! # Exit codes
 //!
@@ -34,6 +38,7 @@ use anodized::spec;
 use gandr_workflow_hotpath_guard::CommitSha;
 use gandr_workflow_hotpath_guard::GuardError;
 use gandr_workflow_hotpath_guard::Repository;
+use gandr_workflow_hotpath_guard::check;
 use gandr_workflow_hotpath_guard::judge;
 
 /// The exit code of a refusal or a malformed invocation.
@@ -211,12 +216,14 @@ impl File
 /// # Specification
 /// - requires: nothing.
 /// - ensures: standard output receives the summary; the output file holds
-///   `{"name": "hotpath / <benchmark>", "conclusion", "output": {"title",
-///   "summary"}, "suspects", "table"}`, the table each judged row of the pull
-///   request's comment. Without `--confirm` the conclusion is `neutral` exactly
-///   when a row regressed, and `success` otherwise. With it, the conclusion is
-///   `failure` exactly when a row regressed that the first check names, and
-///   `success` otherwise.
+///   `{"name": "hotpath / <benchmark>", "conclusion", "external_id", "output":
+///   {"title", "summary"}, "suspects", "table"}`, the table each judged row of
+///   the pull request's comment. Without `--confirm` the conclusion is
+///   `neutral` exactly when a row regressed, and `success` otherwise; the
+///   external id is empty. With it, the conclusion is `neutral` and the
+///   external id is [`gandr_workflow_hotpath_guard::check::REGRESSED`] exactly
+///   when a row regressed that the first check names; otherwise the conclusion
+///   is `success` and the external id is empty.
 /// - provides: the whole command.
 /// - fails: every refusal of [`File::read`], [`File::suspects`],
 ///   [`judge::Run::read`] and [`judge::Policy::read`]; [`GuardError::Input`]
@@ -234,6 +241,10 @@ impl File
 /// - witness: `tests::judge::a_regressed_push_writes_a_neutral_check`
 /// - witness: `tests::judge::a_clear_push_writes_a_passed_check`
 /// - witness: `tests::judge::a_second_set_fails_only_a_row_both_sets_find`
+///
+/// # Cost
+/// - allocation: the read runs, the verdict, its summary, its table and the
+///   check's JSON body, diagnostic
 fn run(cli: &Cli) -> Result<(), GuardError>
 {
     let policy = judge::Policy::read(File::read(&cli.policy)?.input())?;
@@ -279,25 +290,29 @@ fn run(cli: &Cli) -> Result<(), GuardError>
     write!(std::io::stdout(), "{summary}").map_err(|error| GuardError::Output {
         message: error.to_string(),
     })?;
-    let (conclusion, title) = match (verdict.conclusion(), first.is_some()) {
+    let (conclusion, external_id, title) = match (verdict.conclusion(), first.is_some()) {
         (judge::Conclusion::Failure, true) => (
-            "failure",
+            "neutral",
+            check::REGRESSED,
             "a row regressed past its policy on two sets of runs",
         ),
         (judge::Conclusion::Failure, false) => (
             "neutral",
+            "",
             "a row passes its policy on one set of runs; a second set decides",
         ),
         (judge::Conclusion::Success, true) => (
             "success",
+            "",
             "the second set of runs clears each row the first set found",
         ),
-        (judge::Conclusion::Success, false) => ("success", "no row regressed past its policy"),
+        (judge::Conclusion::Success, false) => ("success", "", "no row regressed past its policy"),
     };
     let suspects = verdict.suspects();
     let body = serde_json::json!({
         "name": format!("hotpath / {}", cli.benchmark),
         "conclusion": conclusion,
+        "external_id": external_id,
         "output": {"title": title, "summary": summary},
         "suspects": suspects.iter().map(judge::Suspect::to_string).collect::<Vec<_>>(),
         "table": table,
