@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A policy run writes nothing into the checkouts of the cargo home.
-# `check:dylint` runs the case before its policy run, through its own
-# command `policy`. The case gives the run a cargo home of its own, with no
+# `check:dylint` runs the case after its policy run, through its own command
+# `policy`. By then the cargo home holds quenchant's checkouts, whose names
+# the case takes. The case gives the run a cargo home of its own, with no
 # network.
 # - see: #7492
 #

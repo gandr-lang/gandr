@@ -744,8 +744,6 @@ policy() {
 }
 export toolchain library
 export -f policy
-# The library case builds nothing, so it runs before the policy run.
-.config/policy/library-cases.bash
 # The base's records for `allocation_free_region` (#7419), built in a gate
 # slot as the policy run is: an empty directory when no base stands. A merge
 # group with no base would hold no changed function, so it stops (#7632).
@@ -766,6 +764,7 @@ policy {{ env.GATE_SCOPE | default(value='--workspace') }} $features || status=$
 .config/policy/fresh-cases.bash
 .config/policy/cost-cases.bash
 .config/policy/container-cases.bash
+.config/policy/library-cases.bash
 '''
 
 # External workflow consumers use one full revision in Dylint metadata for
