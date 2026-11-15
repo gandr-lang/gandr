@@ -6136,9 +6136,10 @@ INSERT INTO purpose VALUES('workflow-prose','cache::Pruned','struct','What a pru
 INSERT INTO purpose VALUES('workflow-prose','cache::Script','struct','The text of the parse script, whose digest names the cache beside the model.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','digest::Digest','struct','The BLAKE3 digest of a passage''s lines joined by single spaces, which a move or a re-wrap keeps.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::Base','struct','The revision a change''s documents are read against: its merge base.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','documents::every','function','Every markdown document of the head that the tree tracks, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','documents::cut','function','The passages of one document by its kind: a Rust source''s comments, or a markdown page''s paragraphs, with the code lines in comments.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','documents::every','function','Every markdown document and Rust source of the head that the tree tracks, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','documents::held','function','The digests of the paragraphs each touched document holds at the base, read through one batch of git.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('workflow-prose','documents::touched','function','The markdown documents a change adds or alters since its base, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','documents::touched','function','The markdown documents and Rust sources a change adds or alters since its base, and the untracked ones, the bodies and the generated pages set aside.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','error::ProseError','enum','Why the prose check could not run: a file unread, a malformed glossary or ledger line, or a parse that failed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Agrees','enum','Whether a token''s coarse tag is the part of speech the glossary gives its word.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','glossary::Glossary','struct','The glossary''s words, each with the one part of speech it carries.',NULL,'fits','sound',NULL);
@@ -6160,6 +6161,7 @@ INSERT INTO purpose VALUES('workflow-prose','parse::Width','struct','The most in
 INSERT INTO purpose VALUES('workflow-prose','parse::parse','function','Each passage''s sentences, read from the cache or parsed once for each distinct text by the parse script across the run''s interpreters, each handed to the judge as soon as it is known.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Advice','enum','What a rendered diagnostic tells its reader to do: a `help:` line, an issue that tracks it, or nothing.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::CommentShape','struct','The head and the item comments of one corpus source.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::Cut','struct','The passages a reader cuts from one file, and the code lines in its comments that the reader skips.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Gathered','struct','Everything the check reads under a root: the comment passages and the rendered diagnostics.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Golden','struct','One rendered diagnostic: its headline, whether a label places it, and its advice.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::Head','struct','The opening comment run of a corpus source.',NULL,'fits','sound',NULL);
@@ -6179,6 +6181,7 @@ INSERT INTO purpose VALUES('workflow-prose','passage::comments','function','The 
 INSERT INTO purpose VALUES('workflow-prose','passage::document','function','The prose paragraphs of a markdown document.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::gather','function','The passages and rendered diagnostics under a repository root.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','passage::golden','function','The diagnostics of one rendered golden.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-prose','passage::rust::comments','function','The comment passages of a Rust source, its parts with no prose left out by their marks, and the count of code lines in its comments.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::Finding','struct','One sentence or diagnostic that breaks a rule.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::Fix','struct','The fix a rule''s finding asks for, as the README states it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-prose','rules::NotARule','enum','Why a word is not a rule''s name.',NULL,'fits','sound',NULL);
