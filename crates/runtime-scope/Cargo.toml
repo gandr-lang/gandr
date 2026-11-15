@@ -17,7 +17,7 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The runtime stands on the Linux kernel's ring, so the crate's dependencies
-# are Linux's alone; on another system the crate compiles empty.
+# are Linux's alone. On another system the crate compiles empty.
 [target.'cfg(target_os = "linux")'.dependencies]
 gandr-runtime-uring = { workspace = true }
 libc = { workspace = true }

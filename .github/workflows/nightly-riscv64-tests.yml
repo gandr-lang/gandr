@@ -80,12 +80,13 @@ jobs:
         run: ln -sfn "$HOME/$GANDR_RISCV64_KEPT" "$GANDR_RISCV64_TARGET_DIR"
       - name: add the riscv64 standard library
         run: rustup target add "$GANDR_RISCV64_TARGET"
-      # The archive leaves out `gandr-runtime-uring` and `gandr-runtime-scope`,
+      # The archive omits `gandr-runtime-uring` and `gandr-runtime-scope`,
       # which stands on it. The liburing crate of the ring runs bindgen 0.71.1
-      # for the target, and that bindgen empties the riscv64 floating-point
-      # state of `ucontext_t` (`__riscv_mc_fp_state` 16 bytes against 528),
-      # so its layout checks refuse the build (#7720). #7638 takes that crate
-      # out, and the exclusion leaves with it (#7633).
+      # for the target. That bindgen makes `__riscv_mc_fp_state`, the riscv64
+      # floating-point state of `ucontext_t`, 16 bytes against 528. So the
+      # layout checks refuse the build. The owner's base removes that crate,
+      # and the exclusion goes with it.
+      # - see: #7720 — the layout fault on riscv64; #7638 — the owner's base
       - name: build the test archive
         env:
           CARGO_TARGET_DIR: ${{ env.GANDR_RISCV64_TARGET_DIR }}
