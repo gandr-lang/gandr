@@ -975,7 +975,7 @@ where
                     write_report_place(writer, image)?;
                 }
                 writer.count(Count(dialogues.len()))?;
-                for dialogue in dialogues {
+                for dialogue in dialogues.iter() {
                     write_dialogue(writer, dialogue, |_writer, &()| Ok(()))?;
                 }
             },
@@ -1177,7 +1177,7 @@ where
 }
 
 /// Read a kept dialogue as [`write_dialogue`] writes it, each node through
-/// `read_node`.
+/// `read_node`, into the container that the caller names.
 ///
 /// # Specification
 /// - fails: [`CodecError::Corrupt`] for a tag that no decision or side takes;
@@ -1195,11 +1195,12 @@ where
 ///
 /// # Cost
 /// - allocation: the decoded dialogue, growth within the bytes
-fn read_dialogue<Node, ReadNode>(
+fn read_dialogue<Dialogue, Node, ReadNode>(
     reader: &mut Reader<'_>,
     read_node: ReadNode,
-) -> Result<Vec<ConversionDecision<Node>>, CodecError>
+) -> Result<Dialogue, CodecError>
 where
+    Dialogue: Default + Extend<ConversionDecision<Node>>,
     ReadNode: Fn(&mut Reader<'_>) -> Result<Node, CodecError>,
 {
     let side = |reader: &mut Reader<'_>| match reader.tag()?.0 {
@@ -1208,9 +1209,9 @@ where
         _ => Err(CodecError::Corrupt),
     };
     let count = reader.count()?.0;
-    let mut dialogue = Vec::new();
+    let mut dialogue = Dialogue::default();
     for _ in 0 .. count {
-        dialogue.push(match reader.tag()?.0 {
+        dialogue.extend([match reader.tag()?.0 {
             0 => ConversionDecision::ReduceLeft {
                 redex: read_node(reader)?,
             },
@@ -1260,7 +1261,7 @@ where
             15 => ConversionDecision::Evaluate,
             16 => ConversionDecision::Admitted,
             _ => return Err(CodecError::Corrupt),
-        });
+        }]);
     }
     Ok(dialogue)
 }
@@ -1308,6 +1309,11 @@ fn read_trace(reader: &mut Reader<'_>) -> Result<TraceContent, CodecError>
 ///
 /// # Errors
 /// As `- fails:`.
+///
+/// # Cost
+/// - allocation: the roots, rows, handlers, reflexivities, payloads, flows,
+///   natives and funext steps of the table, growth within the checkpoint's
+///   bytes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_tables`].
@@ -1428,7 +1434,7 @@ fn read_tables(
                 DirectedContent::Forward {
                     classifier,
                     images,
-                    dialogues,
+                    dialogues: gandr_kernel_data::ThinShared::from_header_and_iter((), dialogues),
                 }
             },
             1 => DirectedContent::Function(places.read(reader)?),
@@ -4892,6 +4898,10 @@ field!(
 ///   codec writes them.
 /// - executable: none — the trait's method states its own clauses.
 ///
+/// # Cost
+/// - allocation: the decoded node and its fields, branches and frames, growth
+///   within the artifact's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — every refusal of every kind, its types holding a level
 ///   the decoder caps, is refused when written or reads back as written.
@@ -6443,6 +6453,10 @@ where
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the decoded bounds, marks and their paths, growth within the
+///   signature's bytes
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`write_stage_signature`].
 /// - witness: `codec::tests::an_elaborated_entry_round_trips`
@@ -6455,7 +6469,7 @@ fn read_stage_signature(reader: &mut Reader<'_>) -> Result<StageSignature, Codec
         usize::try_from(reader.word()?.0).map_err(|_wide| CodecError::Corrupt)
     };
     let count = reader.count()?;
-    let mut bounds = Vec::new();
+    let mut bounds = gandr_kernel_data::SmallVec::new();
     for _ in 0 .. count.0 {
         bounds.push(match reader.tag()?.0 {
             0 => StageBound::Unbounded,
@@ -6464,10 +6478,10 @@ fn read_stage_signature(reader: &mut Reader<'_>) -> Result<StageSignature, Codec
         });
     }
     let count = reader.count()?;
-    let mut marks = Vec::new();
+    let mut marks = gandr_kernel_data::SmallVec::new();
     for _ in 0 .. count.0 {
         let steps = reader.count()?;
-        let mut path = Vec::new();
+        let mut path = gandr_kernel_data::SmallVec::new();
         for _ in 0 .. steps.0 {
             path.push(PlacedChild::from(ordinal(reader)?));
         }

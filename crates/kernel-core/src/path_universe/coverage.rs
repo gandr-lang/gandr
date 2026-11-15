@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
@@ -53,6 +55,10 @@ use crate::rewrite::shift_value;
 /// - reason: a worklist over the finite type graph, each node expanded once; a
 ///   data type's declaration is held open until its fields are walked.
 /// - measure: the nodes not yet expanded.
+///
+/// # Cost
+/// - allocation: the worklist and the open and seen sets of type nodes, growth
+///   within the code's type graph
 ///
 /// # Adequacy
 /// - hypothesis: L3 — Bool, product, list and data codes admit; thunk codes and
@@ -344,7 +350,7 @@ fn patterns(
             // crosses its fields the same way and applies itself to them.
             Cover::Product(arity) | Cover::Constructor(_, _, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(PathError::Arena)?;
-                let mut tuples = Vec::from([(Vec::<ValueId>::new(), 0_u32)]);
+                let mut tuples = Vec::from([(SmallVec::<ValueId, 0, Global>::new(), 0_u32)]);
                 for component in results.drain(start ..) {
                     let mut crossed = Vec::new();
                     for &(ref prefix, binders) in &tuples {
@@ -353,7 +359,9 @@ fn patterns(
                             let binders = binders
                                 .checked_add(u32::from(next.binders))
                                 .ok_or(PathError::Budget)?;
-                            let mut values = Vec::with_capacity(prefix.len().saturating_add(1));
+                            let mut values = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+                                prefix.len().saturating_add(1),
+                            ));
                             for &earlier in prefix {
                                 values.push(shift_value(
                                     arena,
@@ -450,6 +458,10 @@ fn patterns(
 /// # Errors
 /// `Coverage`, `RoundTrip`, `Arena`, `UnsupportedType`, or `Budget`.
 ///
+/// # Cost
+/// - allocation: the code-generated patterns and their round-trip terms, growth
+///   within the source code's patterns
+///
 /// # Adequacy
 /// - hypothesis: L3 — constant true fails on the false branch; missing,
 ///   additional and forged dialogues cannot make formation succeed; negation
@@ -468,7 +480,7 @@ pub fn round_trip(
     (unfoldings, entries): (&Unfoldings, &Entries),
     (source, direction): (ValueTypeId, Direction),
     (forward, backward): (ValueId, ValueId),
-    dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
+    dialogues: &[SmallVec<gandr_kernel_conversion_trace::ConversionDecision<()>, 0, Global>],
     budget: ReplayBudget,
 ) -> Result<(), PathError>
 {
@@ -506,9 +518,11 @@ pub fn round_trip(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -629,8 +643,11 @@ mod tests
         let integer = staging.arena().value_type_base(BaseType::Integer);
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![vec![integer], vec![integer, integer]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([integer]),
+                SmallVec::<_, 0, Global>::from_iter([integer, integer]),
+            ]),
             kind,
         );
         let _shape = environment.add_decl(staged).expect("the shape admits");
@@ -638,20 +655,27 @@ mod tests
         let kind = staging
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = staging
-            .arena()
-            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let own = staging.arena().value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![Vec::new(), vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         );
         let _naturals = environment.add_decl(staged).expect("the naturals admit");
         let entries = environment.entries();
         let mut arena = environment.arena().clone();
 
-        let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let shape = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let quoted = arena.value_quote(shape);
         assert_eq!(
             super::code(&arena, quoted, entries, &mut Allowance(u64::MAX)),
@@ -692,7 +716,10 @@ mod tests
             assert_eq!(variables, indices, "the first field outermost");
         }
 
-        let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let naturals = arena.value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         for (root, prefix) in [(naturals, entries), (shape, &crate::env::NO_ENTRIES)] {
             let quoted = arena.value_quote(root);
             assert!(

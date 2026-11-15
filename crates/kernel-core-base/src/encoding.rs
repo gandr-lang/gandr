@@ -157,6 +157,7 @@ use gandr_kernel_check_memo::Probe;
 use gandr_kernel_check_memo::TableHash;
 use gandr_kernel_check_memo::TablePosition;
 use gandr_kernel_check_memo::TableSlot;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
@@ -431,9 +432,9 @@ pub enum ParametersBlock<'parameters>
         /// Its indices' classifiers.
         indices: &'parameters [ValueTypeId],
         /// Each constructor's field types.
-        constructors: &'parameters [Vec<ValueTypeId>],
+        constructors: &'parameters [SmallVec<ValueTypeId, 0, Global>],
         /// Each constructor's result index.
-        results: &'parameters [Vec<ValueId>],
+        results: &'parameters [SmallVec<ValueId, 0, Global>],
     },
     /// A codata declaration being admitted at `position`.
     Codata
@@ -5319,6 +5320,10 @@ fn put_constant<A>(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the open tasks for the node's children, growth within the
+///   arena's nodes
+///
 /// # Adequacy
 /// - hypothesis: L1/L3 — the predicate checks the exact appended open-task
 ///   sequence for every readable former and no tasks for unreadable roots.
@@ -8745,6 +8750,7 @@ mod tests
     #[test]
     fn parameters_name_their_block_by_content()
     {
+        use gandr_kernel_data::SmallVec;
         use gandr_kernel_strata::Level;
         use gandr_kernel_strata::LevelConstant;
         use gandr_kernel_term::GroundSort;
@@ -8764,10 +8770,19 @@ mod tests
         );
         let unit = arena.value_type_unit();
         let unit_again = arena.value_type_unit();
-        let first_takes_both = vec![vec![unit, unit], vec![]];
-        let first_takes_both_again = vec![vec![unit_again, unit_again], vec![]];
-        let one_each = vec![vec![unit], vec![unit]];
-        let results: Vec<Vec<ValueId>> = vec![vec![], vec![]];
+        let first_takes_both = vec![
+            SmallVec::<_, 0, Global>::from_iter([unit, unit]),
+            SmallVec::new(),
+        ];
+        let first_takes_both_again = vec![
+            SmallVec::<_, 0, Global>::from_iter([unit_again, unit_again]),
+            SmallVec::new(),
+        ];
+        let one_each = vec![
+            SmallVec::<_, 0, Global>::from_iter([unit]),
+            SmallVec::from_iter([unit]),
+        ];
+        let results: Vec<SmallVec<ValueId, 0, Global>> = vec![SmallVec::new(), SmallVec::new()];
         let at = |position: usize| ConstantIndex::from(position);
         let data = |position, kind, constructors| ParametersBlock::Data {
             position,
@@ -8865,7 +8880,8 @@ mod tests
         let names = |position: usize, name: ConstantName| {
             let mut arena = TermArena::new();
             let constant = ConstantIndex::from(position);
-            let codata = arena.comp_type_codata(constant, Vec::new());
+            let codata = arena
+                .comp_type_codata(constant, gandr_kernel_data::SmallVec::<_, 0, Global>::new());
             let subject = arena.value_unit();
             let mut table = ContentTable::named_in(Global);
             for _ in 0 .. position {

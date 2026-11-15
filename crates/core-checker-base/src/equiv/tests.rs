@@ -137,7 +137,7 @@ fn an_involution_is_its_own_inverse_by_computation()
             .all(|&code| arena.value(code) == Some(&Value::Quote(functions.ty))),
         "both endpoints are the quote of Bool"
     );
-    let unfolded = |dialogue: &Vec<ConversionDecision<()>>| {
+    let unfolded = |dialogue: &gandr_kernel_term::Dialogue| {
         dialogue
             .iter()
             .filter(|decision| matches!(decision, ConversionDecision::Unfold { .. }))

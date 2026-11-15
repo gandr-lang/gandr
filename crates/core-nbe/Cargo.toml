@@ -34,6 +34,7 @@ gandr-core-session.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 tracing = { workspace = true, optional = true }

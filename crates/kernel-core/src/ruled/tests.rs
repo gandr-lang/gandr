@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
@@ -5,6 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -86,7 +88,7 @@ macro_rules! var {
 /// trivial.
 fn admit(
     environment: &mut Environment,
-    rules: Vec<OperationRule>,
+    rules: impl IntoIterator<Item = OperationRule>,
 ) -> Result<(), KernelError>
 {
     let mut staging = environment.stage();
@@ -94,7 +96,7 @@ fn admit(
     let unit = staging.arena().value_unit();
     let declaration = staging
         .def(LevelSignature::monomorphic(), unit_type, unit)
-        .ruled(OperationRules::new(rules));
+        .ruled(OperationRules::new(rules.into_iter().collect()));
     environment.add_decl(declaration).map(|_admitted| ())
 }
 
@@ -107,23 +109,38 @@ fn admit(
 /// trivial.
 fn admit_or(
     environment: &mut Environment,
-    rules: Vec<OperationRule>,
+    rules: impl IntoIterator<Item = OperationRule>,
     leaves: [ConstructorTag; 3],
 ) -> Result<(), KernelError>
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let booleans = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let booleans = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let motive = arena.comp_type_returner(booleans);
     let [false_false, false_true, true_any] = leaves.map(|tag| {
-        let constructed =
-            arena.value_constructor(ConstantIndex::from(0_usize), booleans, tag, vec![]);
+        let constructed = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            booleans,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         arena.computation_return(constructed)
     });
     let second = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let on_second = arena.computation_data_case(second, motive, vec![false_false, false_true]);
+    let on_second = arena.computation_data_case(
+        second,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([false_false, false_true]),
+    );
     let first = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let tree = arena.computation_data_case(first, motive, vec![on_second, true_any]);
+    let tree = arena.computation_data_case(
+        first,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_second, true_any]),
+    );
     let inner = arena.computation_lambda(tree);
     let outer = arena.computation_lambda(inner);
     let fixpoint = arena.computation_fixpoint(outer, FixpointEvidence::Partial);
@@ -133,7 +150,7 @@ fn admit_or(
     let declared = arena.value_type_thunk(signature);
     let declaration = staging
         .def(LevelSignature::monomorphic(), declared, body)
-        .ruled(OperationRules::new(rules));
+        .ruled(OperationRules::new(rules.into_iter().collect()));
     environment.add_decl(declaration).map(|_admitted| ())
 }
 
@@ -147,8 +164,11 @@ fn rules_over_the_environment_admit_and_a_forged_pair_is_refused()
         .value_type_universe(GroundSort::Value, Level::zero());
     let booleans = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        ]),
         kind,
     );
     let _booleans = environment.add_decl(booleans).expect("the booleans admit");
@@ -221,8 +241,11 @@ fn a_body_is_admitted_only_as_its_rules_decision_tree()
         .value_type_universe(GroundSort::Value, Level::zero());
     let booleans = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        ]),
         kind,
     );
     let _booleans = environment.add_decl(booleans).expect("the booleans admit");
@@ -313,11 +336,17 @@ fn naturals() -> Environment
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let naturals = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     let _naturals = environment.add_decl(naturals).expect("the naturals admit");
@@ -332,7 +361,7 @@ fn naturals() -> Environment
 fn add_rules(
     position: ConstantIndex,
     recursion: Recursion,
-) -> Vec<OperationRule>
+) -> SmallVec<OperationRule, 0, Global>
 {
     let position = usize::from(position);
     let rule = |left: &[OperationNode], right: &[OperationNode]| {
@@ -348,12 +377,12 @@ fn add_rules(
             &[add!(position), var!(0_u32), natural!(SUCC), var!(1_u32)],
         ),
     };
-    vec![
+    SmallVec::<_, 0, Global>::from_iter([
         rule(&[add!(position), natural!(ZERO), var!(0_u32)], &[var!(
             0_u32
         )]),
         onward,
-    ]
+    ])
 }
 
 /// How a body offered for `add` departs from its rules' tree.
@@ -387,7 +416,10 @@ fn admit_add(
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let naturals = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let naturals = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let motive = arena.comp_type_returner(naturals);
     let codomain = arena.comp_type_arrow(naturals, motive);
     let signature = arena.comp_type_arrow(naturals, codomain);
@@ -398,7 +430,7 @@ fn admit_add(
             ConstantIndex::from(0_usize),
             naturals,
             ConstructorTag::from(ZERO),
-            vec![],
+            SmallVec::<_, 0, Global>::from_iter([]),
         );
         arena.computation_return(zero)
     }
@@ -420,7 +452,7 @@ fn admit_add(
                 ConstantIndex::from(0_usize),
                 naturals,
                 ConstructorTag::from(SUCC),
-                vec![result],
+                SmallVec::<_, 0, Global>::from_iter([result]),
             );
             let returned = arena.computation_return(after);
             arena.computation_bind(called, returned)
@@ -431,7 +463,7 @@ fn admit_add(
                 ConstantIndex::from(0_usize),
                 naturals,
                 ConstructorTag::from(SUCC),
-                vec![y],
+                SmallVec::<_, 0, Global>::from_iter([y]),
             );
             arena.computation_application(on_p, next)
         },
@@ -447,7 +479,11 @@ fn admit_add(
         arena.computation_lambda(on_succ)
     };
     let x = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let tree = arena.computation_data_case(x, motive, vec![on_zero, on_succ]);
+    let tree = arena.computation_data_case(
+        x,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_zero, on_succ]),
+    );
     let inputs = match departure {
         Departure::Inputs => {
             let recursive = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -539,10 +575,23 @@ fn a_ruled_fixpoint_unfolds_at_its_partial_gate_4291()
             }
         })
         .expect("`add` thunks its fixpoint");
-    let naturals = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let naturals = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let family = ConstantIndex::from(0_usize);
-    let zero = arena.value_constructor(family, naturals, ConstructorTag::from(ZERO), vec![]);
-    let one = arena.value_constructor(family, naturals, ConstructorTag::from(SUCC), vec![zero]);
+    let zero = arena.value_constructor(
+        family,
+        naturals,
+        ConstructorTag::from(ZERO),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let one = arena.value_constructor(
+        family,
+        naturals,
+        ConstructorTag::from(SUCC),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
     let on_x = arena.computation_application(root, one);
     let called = arena.computation_application(on_x, zero);
     let expected = arena.computation_return(one);
@@ -595,8 +644,11 @@ fn booleans(mut environment: Environment) -> Environment
         .value_type_universe(GroundSort::Value, Level::zero());
     let booleans = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        ]),
         kind,
     );
     let _booleans = environment.add_decl(booleans).expect("the booleans admit");
@@ -618,19 +670,26 @@ fn admit_identity(
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let booleans = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let booleans = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let motive = arena.comp_type_returner(booleans);
     let [on_false, on_true] = [FALSE, TRUE].map(|tag| {
         let constructed = arena.value_constructor(
             ConstantIndex::from(0_usize),
             booleans,
             ConstructorTag::from(tag),
-            vec![],
+            SmallVec::<_, 0, Global>::from_iter([]),
         );
         arena.computation_return(constructed)
     });
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let tree = arena.computation_data_case(x, motive, vec![on_false, on_true]);
+    let tree = arena.computation_data_case(
+        x,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([on_false, on_true]),
+    );
     let inputs = arena.computation_lambda(tree);
     let fixpoint = arena.computation_fixpoint(inputs, FixpointEvidence::Partial);
     let body = arena.value_thunk(fixpoint);
@@ -639,10 +698,10 @@ fn admit_identity(
     let rule = |left: &[OperationNode], right: &[OperationNode]| {
         OperationRule::new(Box::from(left), Box::from(right))
     };
-    let mut rules = vec![
+    let mut rules = SmallVec::<_, 0, Global>::from_iter([
         rule(&[unary!(position), boolean!(FALSE)], &[boolean!(FALSE)]),
         rule(&[unary!(position), boolean!(TRUE)], &[boolean!(TRUE)]),
-    ];
+    ]);
     rules.extend(laws(position));
     let declaration = staging
         .def(LevelSignature::monomorphic(), declared, body)

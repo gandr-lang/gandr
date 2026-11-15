@@ -142,13 +142,14 @@ fn statements_decide_by_the_engine_and_replay()
         report
             .flows()
             .get(&at)
-            .map(|statement| Arc::clone(statement.evidence()))
+            .map(|statement| gandr_kernel_data::Shared::clone(statement.evidence()))
     };
     assert!(
         matches!(
             bodies.as_slice(),
             [KernelValue::SessionPath { evidence: path, .. }, KernelValue::SessionFlow { evidence: flow, .. }]
-                if Some(Arc::clone(path)) == recorded(bisimilar) && Some(Arc::clone(flow)) == recorded(similar)
+                if Some(gandr_kernel_data::Shared::clone(path)) == recorded(bisimilar)
+                    && Some(gandr_kernel_data::Shared::clone(flow)) == recorded(similar)
         ),
         "each statement persists as the kernel's certificate over the engine's pairs: {bodies:?}"
     );
@@ -771,7 +772,7 @@ fn a_bisimulation_owes_a_path_per_differing_payload_pair()
             .flows()
             .get(&paid)
             .map(|statement| statement.evidence().payloads.clone()),
-        Some(alloc::vec![(slot(0), slot(0))]),
+        Some(gandr_kernel_data::SmallVec::from_iter([(slot(0), slot(0))])),
         "the evidence names the owed slot pair once"
     );
     assert_eq!(

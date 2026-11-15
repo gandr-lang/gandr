@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
@@ -16,6 +17,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -151,10 +153,10 @@ fn circle() -> Presentation
     let looped = RuleNode::Constructor(Loop.tag().expect("a word letter"));
     let unlooped = RuleNode::Constructor(Unloop.tag().expect("a word letter"));
     let x = RuleNode::Variable(RuleVariable::from(0_u32));
-    Presentation::new(alloc::vec![
+    Presentation::new(SmallVec::<_, 0, Global>::from_iter([
         PresentedRule::new([looped, unlooped, x].into(), [x].into()),
         PresentedRule::new([unlooped, looped, x].into(), [x].into()),
-    ])
+    ]))
 }
 
 /// The checker's spelling: the letter's function, the chain, its path
@@ -323,26 +325,37 @@ fn replayed(
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let own = staging
-        .arena()
-        .value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let own = staging.arena().value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            alloc::vec![alloc::vec![], alloc::vec![own], alloc::vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(circle());
     let _circle = environment.add_decl(staged).expect("the circle admits");
     let mut arena = environment.arena().clone();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::new(),
+    );
     let letter = |arena: &mut TermArena, letter: Letter| {
         let occurrence = arena.value_variable(DeBruijnIndex::from(0_u32));
         let tag = letter.tag().expect("a word letter");
-        let word = arena.value_constructor(ConstantIndex::from(0_usize), own, tag, alloc::vec![
-            occurrence
-        ]);
+        let word = arena.value_constructor(
+            ConstantIndex::from(0_usize),
+            own,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter([occurrence]),
+        );
         let returned = arena.computation_return(word);
         let lambda = arena.computation_lambda(returned);
         arena.value_thunk(lambda)
@@ -353,7 +366,7 @@ fn replayed(
         ConstantIndex::from(0_usize),
         own,
         ConstructorTag::from(0_usize),
-        Vec::new(),
+        SmallVec::<_, 0, Global>::new(),
     );
     let path = arena.value_variable(DeBruijnIndex::from(0_u32));
     let cong = |arena: &mut TermArena, applied: Letter, start| {

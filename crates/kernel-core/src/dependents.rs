@@ -30,6 +30,7 @@
 //!   discipline. An edit dirties the verdicts whose support holds the edited
 //!   entry, and no other.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BinaryHeap;
@@ -38,6 +39,8 @@ use alloc::vec::Vec;
 use core::cmp::Reverse;
 
 use anodized::spec;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Family;
@@ -201,6 +204,10 @@ impl Dependents
     /// - executable: none — the clauses state the rows of each position before
     ///   and after, which a predicate may not capture whole.
     ///
+    /// # Cost
+    /// - allocation: a copy of the rows and the positions, and the position
+    ///   that holds each row, growth within the index's rows
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the reach of an edit after a readmission that retires
     ///   entries holds each live entry whose support holds an edited one.
@@ -212,8 +219,8 @@ impl Dependents
     ) where
         Live: Fn(ConstantIndex) -> bool,
     {
-        let mut rows: Vec<Row> = self.rows.iter().copied().collect();
-        let mut last: Vec<usize> = self.last.iter().copied().collect();
+        let mut rows: SmallVec<Row, 0, Global> = self.rows.iter().copied().collect();
+        let mut last: SmallVec<usize, 0, Global> = self.last.iter().copied().collect();
         // The position whose rows hold each row.
         let mut named = alloc::vec![NONE; rows.len()];
         for (position, &first) in last.iter().enumerate() {
@@ -248,7 +255,7 @@ impl Dependents
             }
             kept = kept.saturating_add(1);
         }
-        rows.truncate(kept);
+        rows.truncate(Count::from(kept));
         rows.shrink_to_fit();
         self.last = Family::from(last);
         self.rows = Family::from(rows);

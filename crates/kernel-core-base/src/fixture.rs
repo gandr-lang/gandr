@@ -37,8 +37,9 @@ pub fn reads(entries: &Entries) -> gandr_kernel_term::ArenaLength
 /// the record's tests and in the judgement's.
 pub mod presented
 {
-    use alloc::vec::Vec;
+    use alloc::alloc::Global;
 
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::ConstructorTag;
     use gandr_kernel_term::Presentation;
@@ -110,40 +111,49 @@ pub mod presented
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the two rules and their sides, setup
     #[inline]
     #[must_use]
     pub fn circle() -> Presentation
     {
         let (looped, unlooped) = (Letter::Loop.node(), Letter::Unloop.node());
-        Presentation::new(alloc::vec![
+        Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([looped, unlooped, x()].into(), [x()].into()),
             PresentedRule::new([unlooped, looped, x()].into(), [x()].into()),
-        ])
+        ]))
     }
 
     /// The word over `base` spelled by `letters`, outermost first.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the word's constructors and their fields, setup
     #[inline]
     pub fn word(
         arena: &mut TermArena,
         letters: &[Letter],
     ) -> gandr_kernel_term::ValueId
     {
-        let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let own = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let mut built = arena.value_constructor(
             ConstantIndex::from(0_usize),
             own,
             Letter::Base.tag(),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         );
         for &letter in letters.iter().rev() {
             built = arena.value_constructor(
                 ConstantIndex::from(0_usize),
                 own,
                 letter.tag(),
-                alloc::vec![built],
+                SmallVec::<_, 0, Global>::from_iter([built]),
             );
         }
         built

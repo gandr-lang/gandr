@@ -431,10 +431,7 @@ fn values() -> [Former; 18]
                 let end = x(a, Index(4));
                 let path_type = a.value_type_path(carrier, end, end);
                 let (forward, backward) = (x(a, Index(0)), x(a, Index(1)));
-                let evidence = Arc::new(PathEvidence {
-                    source: Vec::new(),
-                    target: Vec::new(),
-                });
+                let evidence = gandr_kernel_data::Shared::new(PathEvidence::default());
                 CoreTerm::Value(a.value_path_equiv(path_type, forward, backward, evidence))
             },
             intuitionistic: &[0, 1, 3, 4],

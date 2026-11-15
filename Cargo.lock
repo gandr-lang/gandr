@@ -1314,6 +1314,7 @@ dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",
@@ -1337,6 +1338,7 @@ dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-deep-inference",
@@ -1390,6 +1392,7 @@ dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",
@@ -1413,6 +1416,7 @@ dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "proptest",
@@ -1426,6 +1430,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-term",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-spec-combinators",
@@ -1445,6 +1450,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-nbe",
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-runtime-emitter",
@@ -1460,6 +1466,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-term",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-term",
  "gandr-theory-deep-inference",
  "quenchant-anodized",
@@ -1471,6 +1478,7 @@ name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [
  "gandr-kernel-check-memo",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",
@@ -1814,6 +1822,7 @@ dependencies = [
  "gandr-core-term",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-term",
  "gandr-storage-artifact",
  "gandr-storage-records",
@@ -2042,6 +2051,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-checker",
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-grammar",
@@ -2150,6 +2160,7 @@ name = "gandr-surface-lowering-native"
 version = "0.0.0"
 dependencies = [
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-lowering-base",
@@ -2322,6 +2333,7 @@ dependencies = [
  "gandr-core-incremental",
  "gandr-core-nbe",
  "gandr-core-term",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-grammar",
@@ -2403,6 +2415,7 @@ dependencies = [
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-core",
+ "gandr-kernel-data",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-storage-artifact",

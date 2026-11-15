@@ -4,8 +4,8 @@
 //! its relation. Recorded bodies stay opaque. This module checks the binding
 //! between monitor identities and native payload codes before using a Flow.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -16,6 +16,9 @@ use gandr_kernel_core::convertible_value_types;
 use gandr_kernel_core::flow_universe::CertificateType;
 use gandr_kernel_core::flow_universe::Family;
 use gandr_kernel_core::flow_universe::form_certificate;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -139,6 +142,12 @@ impl core::error::Error for TransportError
 /// # Errors
 /// `TransportError::MissingPayload`.
 ///
+/// # Cost
+/// - allocation: the payload slots, the code nodes and their branches, growth
+///   within the session's nodes
+/// - allocation: the exported telescope, session graph and quoted code, durable
+///   by the arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L1 ordinary kernel admission rechecks exported code; L3
 ///   incomplete payload assignments and tampered bindings refuse.
@@ -163,7 +172,7 @@ pub fn encode(
         .enumerate()
         .map(|(index, identity)| (*identity, PayloadSlot(index)))
         .collect();
-    let mut nodes = Vec::with_capacity(session.nodes().len());
+    let mut nodes = SmallVec::<_, 0, Global>::with_capacity(Count::from(session.nodes().len()));
     for node in session.nodes() {
         nodes.push(match *node {
             Node::Send(identity, next) | Node::Receive(identity, next) => {
@@ -195,7 +204,7 @@ pub fn encode(
         });
     }
     let telescope = arena.value_type_product(&payloads.0.values().copied().collect::<Vec<_>>());
-    let graph = Arc::new(Graph {
+    let graph = Shared::new(Graph {
         nodes,
         root: State(session.root().0),
     });
@@ -213,6 +222,10 @@ pub fn encode(
 ///
 /// # Errors
 /// `CodeBinding`, `MissingPayload`, or `Session`.
+///
+/// # Cost
+/// - allocation: the decoded code graph and its payload codes, growth within
+///   the quoted code's nodes and fields
 ///
 /// # Adequacy
 /// - hypothesis: L3 swapping a monitor's payload assignment or protocol cannot
@@ -345,6 +358,12 @@ pub fn transport(
 /// # Errors
 /// `TransportError`.
 ///
+/// # Cost
+/// - allocation: the transported moves and their replay states, growth within
+///   the source moves
+/// - allocation: the temporary native proof classifiers, durable by the
+///   caller's arena watermark
+///
 /// # Adequacy
 /// - hypothesis: L1 target-monitor acceptance is independent of move mapping.
 /// - witness: `tests::certified::recorded_runs_transport_only_forward`
@@ -373,7 +392,7 @@ fn checked_transport(
     else {
         return Err(TransportError::ExpectedSessionFlow);
     };
-    let evidence = Arc::clone(evidence);
+    let evidence = Shared::clone(evidence);
     let (source, target) = protocols;
     let source_code = binding(arena, source)?;
     let target_code = binding(arena, target)?;

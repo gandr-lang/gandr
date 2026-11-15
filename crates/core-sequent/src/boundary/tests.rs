@@ -1,3 +1,6 @@
+use alloc::alloc::Global;
+
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::Family;
 
@@ -14,10 +17,16 @@ fn addresses_refuse_exactly_at_the_u32_ceiling()
     );
     assert_eq!(
         Some(ProducerId::from(2_u32)),
-        ProducerId::next_in(&Family::from(alloc::vec![(), ()]))
+        ProducerId::next_in(&Family::from(SmallVec::<(), 0, Global>::from_iter([
+            (),
+            ()
+        ])))
     );
     let ceiling = usize::try_from(u32::MAX).expect("the address ceiling fits usize");
-    let mut family = Family::from(alloc::vec![(); ceiling]);
+    let mut family = Family::from(SmallVec::<(), 0, Global>::from_iter(core::iter::repeat_n(
+        (),
+        ceiling,
+    )));
     assert_eq!(None, ProducerId::next_in(&family));
     family.truncate(ArenaLength::from(ceiling.saturating_sub(1)));
     assert_eq!(
@@ -31,7 +40,7 @@ fn addresses_refuse_exactly_at_the_u32_ceiling()
 #[test]
 fn address_reads_distinguish_end_and_truncation()
 {
-    let mut family = Family::from(alloc::vec![11_u32, 29_u32]);
+    let mut family = Family::from(SmallVec::<u32, 0, Global>::from_iter([11_u32, 29_u32]));
     let first = ProducerId::from(0_u32);
     let last = ProducerId::from(1_u32);
     assert_eq!(Some(&11_u32), first.read_in(&family));

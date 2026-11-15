@@ -32,6 +32,7 @@
 //! them in the order of its places, and a seat builds the checker's order from
 //! the ids that it mints.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -78,6 +79,7 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::Purity;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::EndpointSide;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -281,8 +283,8 @@ pub enum DirectedContent
         classifier: Place,
         /// The image at each pattern.
         images: Vec<Place>,
-        /// The dialogue at each pattern.
-        dialogues: Vec<Vec<ConversionDecision<()>>>,
+        /// The dialogue at each pattern, shared with the decided flow.
+        dialogues: ThinShared<(), gandr_kernel_term::Dialogue, Global>,
     },
     /// A function flow, at the flow type between its two function codes.
     Function(Place),
@@ -617,6 +619,10 @@ impl TableContent
     /// - executable: none — a predicate would place every node again, which the
     ///   witness does through a seat.
     ///
+    /// # Cost
+    /// - allocation: the table's entries and the nodes that they place, growth
+    ///   within the tabled entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
@@ -736,7 +742,7 @@ impl TableContent
                         .iter()
                         .map(|&image| placing.place(ArenaNode::Value(image)))
                         .collect(),
-                    dialogues: decided.dialogues().to_vec(),
+                    dialogues: ThinShared::clone(decided.dialogues()),
                 },
                 Directed::Function(classifier) => {
                     DirectedContent::Function(placing.place(ArenaNode::ValueType(classifier)))
@@ -955,6 +961,10 @@ impl TableContent
     /// - executable: none — the witness compares a taken item's report with a
     ///   fresh judgement's.
     ///
+    /// # Cost
+    /// - allocation: the seated rows, handlers, reflexivities, payloads, flows,
+    ///   natives and funext steps, growth within the report's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TableContent`].
     /// - witness: `gandr-surface-lsp::tests::taking::a_taken_handler_keeps_its_rows_and_handled_entries_7373`
@@ -1049,7 +1059,7 @@ impl TableContent
                     }
                     Directed::Forward(Forward::new(
                         value_type_of(seat.node(classifier)?)?,
-                        (seated, dialogues.clone()),
+                        (seated, ThinShared::clone(dialogues)),
                     ))
                 },
                 DirectedContent::Function(ref classifier) => {

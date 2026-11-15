@@ -347,6 +347,10 @@ impl Erasure<'_, '_>
     /// - fails: a withheld nominal declaration or an incomplete child image.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the images of the node's children and the assembled native
+    ///   image, growth within the source node's children
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — admission after a refused declaration changes kernel
     ///   positions; nominal confusion, lost labels and lost motives are exposed
@@ -634,7 +638,10 @@ impl Erasure<'_, '_>
                             .map(value_type)
                             .collect::<Result<alloc::vec::Vec<_>, _>>()?;
                         let payloads = target.value_type_product(&payloads);
-                        target.value_type_session(alloc::sync::Arc::new(graph(session)), payloads)
+                        target.value_type_session(
+                            gandr_kernel_data::Shared::new(graph(session)),
+                            payloads,
+                        )
                     },
                     ValueType::PathUniverse(..)
                     | ValueType::Path { .. }
@@ -793,6 +800,10 @@ fn ascription(
 ///   sessions at their roots only.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the kernel graph's nodes, branches, labels and the copy's
+///   tasks and binders, growth within the protocol's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — a recursive seat protocol and its widening cross and the
 ///   kernel replays the engine's simulation between them; the seat past its
@@ -851,13 +862,14 @@ fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::
     // Each task copies one protocol state into one kernel slot, under the
     // binders the copy passed through: each a protocol position and its
     // copy's slot.
-    let mut nodes = alloc::vec![Node::End];
+    let mut nodes =
+        gandr_kernel_data::SmallVec::<Node, 0, alloc::alloc::Global>::from_iter([Node::End]);
     let mut tasks = alloc::vec![(
         session.state(),
         0_usize,
         alloc::vec::Vec::<(ProtocolState, usize)>::new()
     )];
-    let slot = |nodes: &mut alloc::vec::Vec<Node>| {
+    let slot = |nodes: &mut gandr_kernel_data::SmallVec<Node, 0, alloc::alloc::Global>| {
         nodes.push(Node::End);
         nodes.len().saturating_sub(1)
     };

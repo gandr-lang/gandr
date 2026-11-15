@@ -158,6 +158,10 @@ pub fn payload_codes(
 /// # Errors
 /// The corresponding `SessionError` formation variant.
 ///
+/// # Cost
+/// - allocation: the seen and binder marks and the pending visits, growth
+///   within the graph's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 each malformed graph boundary has a distinguishing refusal;
 ///   observable recursion remains admitted.
@@ -471,6 +475,12 @@ enum Choice
 ///
 /// # Errors
 /// Any session formation or relation refusal.
+///
+/// # Cost
+/// - allocation: the payload pair set, the payload field codes and the path
+///   goals, growth within the evidence's payload pairs
+/// - allocation: the product type of the path goals, durable by the arena's
+///   identifiers
 ///
 /// # Adequacy
 /// - hypothesis: L1 the independent producer supplies pairs; L3 deletion,

@@ -1,6 +1,9 @@
 //! Differential and adversarial witnesses for compressed local judgments.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
+
+use gandr_kernel_data::SmallVec;
 
 use super::*;
 
@@ -197,7 +200,7 @@ fn schema_and_instance_refusals()
         let certificate = Certificate {
             source: endpoint,
             target: endpoint,
-            steps: Vec::from([step]),
+            steps: SmallVec::<_, 0, Global>::from_iter([step]),
         };
         assert!(crate::stage::replay(&mut arena, &[], &certificate, &mut Budget(10_000)).is_ok());
         assert_eq!(
@@ -357,7 +360,7 @@ fn successor_and_transparency()
         let certificate = Certificate {
             source: step.source,
             target: step.target,
-            steps: Vec::from([step]),
+            steps: SmallVec::<_, 0, Global>::from_iter([step]),
         };
         assert_eq!(
             crate::stage::replay(&mut arena, &[], &certificate, &mut Budget(10_000)),
@@ -387,7 +390,7 @@ fn successor_and_transparency()
     let mut certificate = Certificate {
         source,
         target: initial,
-        steps: Vec::from([Step {
+        steps: SmallVec::<_, 0, Global>::from_iter([Step {
             source,
             target: initial,
             rule: Rule::IterateZero,

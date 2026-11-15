@@ -144,7 +144,7 @@ fn plain(
     let certificate = Certificate {
         source: endpoint,
         target: endpoint,
-        steps: Vec::from([step]),
+        steps: core::iter::once(step).collect(),
     };
     let mut budget = Budget(10_000_000);
     gandr_kernel_core::stage::replay(arena, &[], &certificate, &mut budget)?;

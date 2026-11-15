@@ -3,13 +3,13 @@
 
 use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
-use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
@@ -178,7 +178,12 @@ fn forward(
 {
     let classifier = arena.value_type_flow_universe(source, target);
     let (outputs, dialogues): (Vec<_>, Vec<_>) = images.into_iter().unzip();
-    arena.value_forward_flow(classifier, translator, outputs.into(), dialogues.into())
+    arena.value_forward_flow(
+        classifier,
+        translator,
+        outputs.into(),
+        gandr_kernel_data::ThinShared::from_header_and_iter((), dialogues),
+    )
 }
 
 /// The terminal map from Bool to Unit with both source-constructor images.
@@ -912,7 +917,7 @@ fn constant_leaf_and_forged_evidence_refuse()
         &mut arena,
         (heterogeneous_code, heterogeneous_code),
         identity,
-        vec![(swapped, Vec::new())],
+        vec![(swapped, SmallVec::new())],
     );
     assert_eq!(
         admit(&mut arena, bad),
@@ -1076,14 +1081,18 @@ fn path_and_flow_never_coerce()
     let expected = arena.computation_return(fixture.unit);
     let (_, dialogue) = engine(&arena, composite, expected);
     let classifier = arena.value_type_path_universe(fixture.unit_code, fixture.unit_code);
-    let dialogue = dialogue.0.into_iter().map(portable).collect::<Vec<_>>();
+    let dialogue = dialogue
+        .0
+        .into_iter()
+        .map(portable)
+        .collect::<SmallVec<_, 0, Global>>();
     let path = arena.value_path_equiv(
         classifier,
         identity,
         identity,
-        Arc::new(PathEvidence {
-            source: vec![dialogue.clone()],
-            target: vec![dialogue],
+        gandr_kernel_data::Shared::new(PathEvidence {
+            source: SmallVec::<_, 0, Global>::from_iter([dialogue.clone()]),
+            target: SmallVec::<_, 0, Global>::from_iter([dialogue]),
         }),
     );
     assert!(
@@ -1143,7 +1152,7 @@ fn path_and_flow_never_coerce()
         classifier,
         identity,
         identity,
-        Arc::new(PathEvidence::default()),
+        gandr_kernel_data::Shared::new(PathEvidence::default()),
     );
     let result = form_certificate(&mut arena, forged, Family::Path, ReplayBudget::DEFAULT);
     assert!(matches!(result, Err(KernelError::Path(_))));
@@ -1621,7 +1630,12 @@ fn a_ride_reads_its_family_s_shape_before_it_reduces()
         gandr_kernel_strata::Level::constant(gandr_kernel_strata::LevelConstant::from(1)),
     );
     let translator = arena.value_variable(DeBruijnIndex::from(6_u32));
-    let forward = arena.value_forward_flow(unit_type, translator, Vec::new().into(), Arc::from([]));
+    let forward = arena.value_forward_flow(
+        unit_type,
+        translator,
+        Vec::new().into(),
+        gandr_kernel_data::ThinShared::from_header_and_iter((), []),
+    );
     let product = arena.value_type_product(&[reads, unit_type]);
     let short = arena.value_tuple(&[unit]);
     let moving_domain = arena.value_type_flow(reads, point, binder);

@@ -78,7 +78,7 @@ fn a_migration_is_decided_at_every_covering_input()
         (1, 1),
         "a record of two leaves covers as one pattern"
     );
-    let unfolded = |dialogue: &Vec<ConversionDecision<()>>| {
+    let unfolded = |dialogue: &gandr_kernel_term::Dialogue| {
         dialogue
             .iter()
             .filter(|decision| matches!(decision, ConversionDecision::Unfold { .. }))

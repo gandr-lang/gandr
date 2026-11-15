@@ -527,6 +527,7 @@
 //!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
@@ -592,6 +593,10 @@ use gandr_kernel_core::verdict::EntryContentKey;
 use gandr_kernel_core::verdict::NoVerdicts;
 use gandr_kernel_core::verdict::TrustPolicy;
 use gandr_kernel_core::verdict::VerdictSource;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
@@ -1800,6 +1805,12 @@ impl Readmission
     /// - executable: none — the count rests on the environment's places, which
     ///   a clause could read only by walking the environment.
     ///
+    /// # Cost
+    /// - allocation: the content key of each declaration the export writes,
+    ///   growth within the environment's declarations
+    /// - allocation: the environment's vacancies, growth within the
+    ///   environment's entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — across one insertion in an environment in admission
     ///   order, each unchanged declaration keeps its name one place on, and the
@@ -1995,6 +2006,10 @@ impl Readmission
     ///   removed from `names`, and none of a declaration before `from` is read.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the marked declarations, their names by position and the
+    ///   vacancies, growth within the bridge's admitted declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`export`](Self::export) and
@@ -3851,6 +3866,11 @@ where
     /// - executable: none — what the release reads of the environment is the
     ///   kernel's, which no predicate over one call restates.
     ///
+    /// # Cost
+    /// - allocation: the environment's ranks, kept places and recorded
+    ///   definitions for the released declarations, growth within the report's
+    ///   judged declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
@@ -5299,14 +5319,14 @@ enum Erased
     Data
     {
         /// The parameter telescope.
-        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        parameters: SmallVec<gandr_kernel_term::ValueTypeId, 0, Global>,
         /// The index telescope, under the parameters.
-        indices: Vec<gandr_kernel_term::ValueTypeId>,
+        indices: SmallVec<gandr_kernel_term::ValueTypeId, 0, Global>,
         /// Constructor fields under the parameter telescope.
-        constructors: Vec<Vec<gandr_kernel_term::ValueTypeId>>,
+        constructors: SmallVec<SmallVec<gandr_kernel_term::ValueTypeId, 0, Global>, 0, Global>,
         /// Each constructor's stated indices, under the parameters and its
         /// fields.
-        results: Vec<Vec<gandr_kernel_term::ValueId>>,
+        results: SmallVec<SmallVec<gandr_kernel_term::ValueId, 0, Global>, 0, Global>,
         /// The positive universe.
         kind: gandr_kernel_term::ValueTypeId,
     },
@@ -5318,9 +5338,9 @@ enum Erased
         /// The body's image.
         body: gandr_kernel_term::ValueId,
         /// The related endpoint pairs' images, each with its dialogue.
-        related: Vec<RelatedEndpoints>,
+        related: SmallVec<RelatedEndpoints, 0, Global>,
         /// The kernel positions of the laws its folds rest on.
-        laws: Vec<ConstantIndex>,
+        laws: SmallVec<ConstantIndex, 0, Global>,
     },
     /// An axiom's declared type.
     Axiom
@@ -5342,9 +5362,9 @@ enum Erased
     Codata
     {
         /// The parameter telescope.
-        parameters: Vec<gandr_kernel_term::ValueTypeId>,
+        parameters: SmallVec<gandr_kernel_term::ValueTypeId, 0, Global>,
         /// The observations, under the parameters.
-        observations: Vec<gandr_kernel_term::CompTypeId>,
+        observations: SmallVec<gandr_kernel_term::CompTypeId, 0, Global>,
         /// The computation universe.
         kind: gandr_kernel_term::ValueTypeId,
     },
@@ -5755,6 +5775,11 @@ enum Seed
 /// [`Unstaged::Refused`] with the refused outcome and the verdicts replayed
 /// before it.
 ///
+/// # Cost
+/// - allocation: the erased offer, its replayed certificates, its crossed
+///   covers and a copy of its presented rules, growth within the offer's
+///   signature
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`cross`] and [`cross_block`].
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
@@ -5811,7 +5836,7 @@ where
         let covered = match offer {
             Offer::Definition { covers, .. } => erasure.covered(covers),
             Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_) | Offer::Axiom { .. } => {
-                Vec::new()
+                SmallVec::new()
             },
         };
         (erased, erasure.unseeded, covered, erasure.formations)
@@ -5895,11 +5920,16 @@ where
                                 .get(&cells.sort())
                                 .copied()
                                 .unwrap_or(next);
-                            gandr_kernel_term::Presentation::new(presentation.rules().to_vec())
-                                .carrying(
-                                    gandr_kernel_term::FreeCells::new(sort, cells.cells().to_vec())
-                                        .wrapped(cells.reflexivities()),
+                            gandr_kernel_term::Presentation::new(
+                                presentation.rules().iter().cloned().collect(),
+                            )
+                            .carrying(
+                                gandr_kernel_term::FreeCells::new(
+                                    sort,
+                                    cells.cells().iter().cloned().collect(),
                                 )
+                                .wrapped(cells.reflexivities()),
+                            )
                         },
                     ))
                 },
@@ -5997,6 +6027,10 @@ fn held(
 /// # Errors
 /// As `- ensures:`.
 ///
+/// # Cost
+/// - allocation: the rules and their sides at kernel positions, growth within
+///   the operation's rules
+///
 /// # Adequacy
 /// - hypothesis: L3 — the corpus's operations cross with their rules and the
 ///   kernel admits them.
@@ -6052,7 +6086,7 @@ fn kernel_rules(
                 side(rule.right())?,
             ))
         })
-        .collect::<Result<Vec<_>, ConstantIndex>>()
+        .collect::<Result<SmallVec<_, 0, Global>, ConstantIndex>>()
         .map(gandr_kernel_term::OperationRules::new)
 }
 
@@ -6389,6 +6423,11 @@ quenchant_shape::reason_enum! {
 ///   the kernel refused.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the admitted axiom, its session name and its export, durable
+///   by the session's assumptions
+/// - allocation: the offer's unit choices, growth within the offer's arms
+///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration reading a received value, and one taking an
 ///   offer's choice, are each admitted once their assumption is, and every
@@ -6451,7 +6490,7 @@ where
         ["session", action, ordinal.as_str()]
             .into_iter()
             .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
-            .collect::<Vec<_>>(),
+            .collect::<SmallVec<_, 0, Global>>(),
     );
     let declaration = staged.declaration.declaration().clone().named(name);
     let Ok(admitted) = admit(environment, staged.declaration)
@@ -6660,6 +6699,10 @@ where
 /// - executable: none — the clause compares the names of two calls, and one
 ///   call reads one row.
 ///
+/// # Cost
+/// - allocation: the segments of the model's name, growth within the row's
+///   interfaces and their names
+///
 /// # Adequacy
 /// - hypothesis: L3 — two declarations at one row read one model, named alike
 ///   in two sessions.
@@ -6688,7 +6731,7 @@ fn model_name(
         segments
             .into_iter()
             .filter_map(gandr_kernel_term::NameSegment::from_text)
-            .collect::<Vec<_>>(),
+            .collect::<SmallVec<_, 0, Global>>(),
     )
 }
 
@@ -6738,6 +6781,12 @@ fn model_name(
 /// # Errors
 /// [`Outcome::Rejected`] with the kernel's refusal of a witness, or
 /// [`Outcome::Refused`] with its erasure's refusal.
+///
+/// # Cost
+/// - allocation: the rounds of meets, their records and the formation's
+///   witnesses, growth within the patched type's meets
+/// - allocation: the formation's key and its witnesses' positions, durable by
+///   the formation's key
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a system whose faces agree, one whose meet value differs,
@@ -6844,7 +6893,7 @@ where
             ]
             .into_iter()
             .flatten()
-            .collect::<Vec<_>>(),
+            .collect::<SmallVec<_, 0, Global>>(),
         )
     };
     let mut witnesses = Vec::with_capacity(rounds.len().saturating_mul(2));
@@ -7736,6 +7785,11 @@ impl Positions
     /// # Errors
     /// A kernel rejection of the native signature.
     ///
+    /// # Cost
+    /// - allocation: the native signature's name, its exported declaration, and
+    ///   its kernel position in the native table, durable by the native
+    ///   operation
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — native operations cross and retain their named
     ///   assumptions in a decoded artifact, and a resumed readmission seeds the
@@ -7779,7 +7833,7 @@ impl Positions
                 .as_ref()
                 .split('.')
                 .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
-                .collect::<Vec<_>>(),
+                .collect::<SmallVec<_, 0, Global>>(),
         );
         let declaration = staged.declaration().clone().named(name);
         let admitted = admit(environment, staged)?;
@@ -8112,7 +8166,7 @@ struct ForwardErasure
     /// The images crossed so far.
     erased: Vec<gandr_kernel_term::ValueId>,
     /// The decided dialogues, in coverage order.
-    dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+    dialogues: ThinShared<(), gandr_kernel_term::Dialogue, Global>,
 }
 
 /// A value coerced in to a patched type part-way through erasure: the value
@@ -8271,7 +8325,7 @@ enum Frame
         /// The inverse map.
         backward: ValueId,
         /// The untrusted round-trip dialogues.
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: Shared<gandr_kernel_term::PathEvidence, Global>,
     },
     /// Await a forward translator.
     PathEquivForward
@@ -8283,7 +8337,7 @@ enum Frame
         /// The inverse map.
         backward: ValueId,
         /// The untrusted round-trip dialogues.
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: Shared<gandr_kernel_term::PathEvidence, Global>,
     },
     /// Await an inverse translator.
     PathEquivBackward
@@ -8295,7 +8349,7 @@ enum Frame
         /// The forward map image.
         forward: gandr_kernel_term::ValueId,
         /// The untrusted round-trip dialogues.
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: Shared<gandr_kernel_term::PathEvidence, Global>,
     },
     /// Await the image of a univalence's record.
     UnivalenceRecord
@@ -8376,7 +8430,7 @@ enum Frame
         /// Bisimilarity or simulation.
         relation: gandr_core_term::session::SessionRelation,
         /// The engine's pairs.
-        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+        evidence: Shared<gandr_kernel_term::session::Evidence, Global>,
         /// The tuple of native certificates a bisimilarity's payload paths
         /// elaborated to, absent when it owes none.
         payloads: Option<ValueId>,
@@ -8389,7 +8443,7 @@ enum Frame
         /// The native classifier.
         classifier: gandr_kernel_term::ValueTypeId,
         /// The engine's pairs.
-        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+        evidence: Shared<gandr_kernel_term::session::Evidence, Global>,
     },
     /// Await the carrier of an element path, flow or bridge type.
     PathCarrier
@@ -8513,7 +8567,7 @@ enum Frame
         /// The decided images, in coverage order.
         images: alloc::sync::Arc<[ValueId]>,
         /// The decided dialogues, in coverage order.
-        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+        dialogues: ThinShared<(), gandr_kernel_term::Dialogue, Global>,
     },
     /// Await the translator of a forward flow.
     ForwardTranslator
@@ -8525,7 +8579,7 @@ enum Frame
         /// The decided images, in coverage order.
         images: alloc::sync::Arc<[ValueId]>,
         /// The decided dialogues, in coverage order.
-        dialogues: alloc::sync::Arc<[gandr_kernel_term::Dialogue]>,
+        dialogues: ThinShared<(), gandr_kernel_term::Dialogue, Global>,
     },
     /// Await the next image of a forward flow.
     ForwardImages(ForwardErasure),
@@ -9254,6 +9308,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Errors
     /// - any [`Refusal`] [`Self::value_type`] or [`Self::value`] gives.
     ///
+    /// # Cost
+    /// - allocation: the erased images of the offer's parameters, constructors,
+    ///   relations and laws, growth within the offer's signature
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a checked definition and an owed declaration expose
     ///   the exact offered family at admission; a refused declared type
@@ -9264,7 +9322,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
     /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
     #[spec(ensures: |ret| { let (matched_left_value, matched_right_value) = (offer, &ret);
-if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind, .. }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(Vec::len).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
+if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref parameters,ref constructors,ref kind, .. }) = *matched_right_value { parameters.len() == signature.parameters().len() && constructors.iter().map(|fields| fields.len()).eq(signature.constructors().iter().map(Vec::len)) && target.value_type(*kind).is_some() && parameters.iter().chain(constructors.iter().flatten()).all(|&field| target.value_type(field).is_some()) }
  else if matches!(matched_left_value, Offer::Definition { .. }) && let Ok(Erased::Definition { ref declared, ref body, ref related, ref laws }) = *matched_right_value { target.value_type(*declared).is_some() && target.value(*body).is_some()
     && matches!(matched_left_value, Offer::Definition { relations, laws: named, .. } if relations.len() == related.len() && named.len() == laws.len())
     && related.iter().all(|pair| target.value(pair.left).is_some() && target.value(pair.right).is_some()) }
@@ -9332,7 +9390,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 let body = self.value(target, body)?;
                 // The relations after the body, so their endpoints reuse the
                 // images the declared type already minted.
-                let mut related = Vec::with_capacity(relations.len());
+                let mut related = SmallVec::with_capacity(Count::from(relations.len()));
                 for relation in relations {
                     let left = self.value(target, relation.left())?;
                     let right = self.value(target, relation.right())?;
@@ -9817,6 +9875,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the crossed derivations at their roots' images, growth
+    ///   within the covers given
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a match's derivation crosses at its root's image and
     ///   the kernel replays it, and a held match's derivation crosses at the
@@ -9827,7 +9889,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     fn covered(
         &self,
         covers: &[(ComputationId, gandr_kernel_term::cover::Cover)],
-    ) -> Vec<gandr_kernel_term::cover::Covered>
+    ) -> SmallVec<gandr_kernel_term::cover::Covered, 0, Global>
     {
         covers
             .iter()
@@ -9854,6 +9916,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   the position [`Positions::admitted`] or the crossing block gives it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the kernel cover's steps, constructors, loops and
+    ///   branches, growth within the cover's steps
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::covered`].
@@ -9894,7 +9960,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         loops: loops
                             .iter()
                             .map(|owed| Some(Loop::new(position(owed.words())?, owed.cell())))
-                            .collect::<Option<Vec<Loop>>>()?,
+                            .collect::<Option<SmallVec<Loop, 0, Global>>>()?,
                     },
                     branches: branches.clone(),
                 },
@@ -10220,6 +10286,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   normalizing or open.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the value's open mark in the mode's memo and its frames on
+    ///   the stack, growth within the source's values
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::erase`], whose per-former table this is,
     ///   with the static formers separated by a saturated instance erased to
@@ -10321,7 +10391,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at,
                     forward,
                     backward,
-                    evidence: alloc::sync::Arc::clone(evidence),
+                    evidence: Shared::clone(evidence),
                 },
                 CoreNode::Type(TypeNode::Value(path_type)),
             ),
@@ -10388,7 +10458,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         at,
                         forward,
                         backward,
-                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                        evidence: Shared::clone(decided.evidence()),
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 )
@@ -10423,7 +10493,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     Frame::SessionCertificate {
                         at,
                         relation: decided.relation(),
-                        evidence: alloc::sync::Arc::clone(decided.evidence()),
+                        evidence: Shared::clone(decided.evidence()),
                         payloads,
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
@@ -10450,7 +10520,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         at,
                         translator,
                         images: alloc::sync::Arc::from(decided.images()),
-                        dialogues: alloc::sync::Arc::from(decided.dialogues()),
+                        dialogues: ThinShared::clone(decided.dialogues()),
                     },
                     CoreNode::Type(TypeNode::Value(decided.classifier())),
                 ),
@@ -10656,6 +10726,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   crossed on the machine's own stack before.
     /// - measure: the steps left, then the nodes left to visit.
     ///
+    /// # Cost
+    /// - allocation: the erased steps, their forgotten traces and their kernel
+    ///   children, growth within the extensionality's recorded steps
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `funext(not ∘ not, id)` over a binary sum of units
     ///   crosses as a higher evaluation and the kernel replays it; a dropped
@@ -10680,14 +10754,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             decisions
                 .iter()
                 .map(|decision| decision.map(|_| ()))
-                .collect::<Vec<_>>()
+                .collect::<SmallVec<_, 0, Global>>()
         };
         let quantified = record
             .steps()
             .iter()
             .any(|step| matches!(step, FunextStep::Apply { .. }));
         let image = if quantified {
-            let mut steps = Vec::with_capacity(record.steps().len());
+            let mut steps =
+                SmallVec::<_, 0, Global>::with_capacity(Count::from(record.steps().len()));
             let mut children = Vec::new();
             for step in record.steps() {
                 match *step {
@@ -10726,13 +10801,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     },
                 }
             }
-            target.value_quantified_evaluation(
-                alloc::sync::Arc::from(steps),
-                children.into_boxed_slice(),
-            )
+            target.value_quantified_evaluation(ThinShared::from(steps), children.into_boxed_slice())
         }
         else {
-            let mut dialogues = Vec::with_capacity(record.steps().len());
+            let mut dialogues =
+                SmallVec::<_, 0, Global>::with_capacity(Count::from(record.steps().len()));
             let mut components = Vec::with_capacity(record.steps().len());
             for step in record.steps() {
                 let FunextStep::Return {
@@ -10754,10 +10827,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     evidence,
                 });
             }
-            target.value_higher_evaluation(
-                alloc::sync::Arc::from(dialogues),
-                components.into_boxed_slice(),
-            )
+            target
+                .value_higher_evaluation(ThinShared::from(dialogues), components.into_boxed_slice())
         };
         Ok(self.erased_value(at, image))
     }
@@ -10785,6 +10856,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - reason: a `while let` worklist over the value's finite tree, not
     ///   recursion.
     /// - measure: the nodes left to visit, each replaced by its children.
+    ///
+    /// # Cost
+    /// - allocation: the walk's tasks, the built images and their evidence,
+    ///   growth within the value's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both injections of a binary sum of units cross with
@@ -11926,6 +12001,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// # Errors
     /// - [`Refusal`] — as [`Self::argument`].
     ///
+    /// # Cost
+    /// - allocation: the frame that waits on the next image, growth within the
+    ///   flow's images
+    /// - allocation: the kernel's forward flow over every image, durable by the
+    ///   arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a migration's forward flow crosses with one image per
     ///   pattern and replays in the kernel.
@@ -12010,6 +12091,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - fails: [`Refusal::MachineInvariant`] when `image` is not of the family
     ///   the frame awaits.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the frame that awaits the next child and the crossed field
+    ///   image, growth within the source term's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::erase`], whose frame table this is, with
@@ -12232,7 +12317,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 AnyNode::ValueType(classifier),
             ) => {
-                let evidence = alloc::sync::Arc::clone(evidence);
+                let evidence = Shared::clone(evidence);
                 if let Some(payloads) = payloads {
                     self.frames.push(Frame::SessionPayloads {
                         at,
@@ -12260,7 +12345,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 },
                 AnyNode::Value(paths),
             ) => {
-                let evidence = alloc::sync::Arc::clone(evidence);
+                let evidence = Shared::clone(evidence);
                 Ok(self.erased_value(at, target.value_session_path(classifier, evidence, paths)))
             },
             (Frame::Injection { at, summand }, AnyNode::Value(body)) => {
@@ -12328,7 +12413,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             // synthesised relates it to itself and carries none.
             (Frame::Here { at, family }, AnyNode::Value(point)) => {
                 let dialogues = self.source.reflexivities.get(&at).map(|reflexivity| {
-                    alloc::sync::Arc::new(EndpointDialogues {
+                    Shared::new(EndpointDialogues {
                         left: reflexivity
                             .left()
                             .iter()

@@ -48,6 +48,10 @@ use crate::error::KernelError;
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the presentation's read rules and their decision, growth
+///   within the body's rules
+///
 /// # Adequacy
 /// - hypothesis: L3 — a presentation stating a unit law readmits, the same
 ///   presentation forged with a second law rewriting the unit's call apart is

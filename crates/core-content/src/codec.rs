@@ -4084,7 +4084,7 @@ pub fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 let count = reader.word()?;
                 for _ in 0 .. count.0 {
                     let count = reader.word()?;
-                    let mut dialogue = Vec::new();
+                    let mut dialogue = gandr_kernel_data::SmallVec::new();
                     for _ in 0 .. count.0 {
                         let word = reader.word()?;
                         let decision = gandr_kernel_term::EvidenceWord(word.0)
@@ -4099,7 +4099,7 @@ pub fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 path_type,
                 forward,
                 backward,
-                evidence: alloc::sync::Arc::new(evidence),
+                evidence: gandr_kernel_data::Shared::new(evidence),
             }
         },
         0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),

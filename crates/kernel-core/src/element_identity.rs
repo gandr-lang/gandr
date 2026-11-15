@@ -704,6 +704,10 @@ pub(crate) fn law_type(
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: the state of the conversion and of the replay of each
+///   endpoint, growth within the replay's default budget
+///
 /// # Adequacy
 /// - hypothesis: L3 — endpoints related by the laws of bind need no dialogue;
 ///   an endpoint unfolding a definition under a thunk is admitted by the
@@ -827,6 +831,10 @@ pub(crate) fn reflexive_endpoints(
 /// - reason: the `for` loop over the set-aside pairs and the `find` over the
 ///   related pairs, not recursion.
 /// - measure: the pairs left; each replay is bounded by its budget.
+///
+/// # Cost
+/// - allocation: the set-aside endpoint pairs and each pair's pending
+///   endpoints, growth within the goal's path types
 ///
 /// # Adequacy
 /// - hypothesis: L3 — two path types whose compound endpoints relate only
@@ -1506,6 +1514,10 @@ pub(crate) fn higher_obligations(
 /// # Errors
 /// As `fails`, and `ArenaFault` for a position past the address space.
 ///
+/// # Cost
+/// - allocation: the in-memory layers of the guarded program, growth within the
+///   persisted program's layers
+///
 /// # Adequacy
 /// - hypothesis: L3 — the persisted square over Bool reads back as a program
 ///   whose symmetry computes.
@@ -1569,6 +1581,10 @@ fn higher_id(position: LayerPosition) -> Result<HigherId, KernelError>
 ///
 /// # Errors
 /// As `fails`, and `ArenaFault` on an unreadable node.
+///
+/// # Cost
+/// - allocation: the pointwise returns, their dialogues and the owed
+///   obligations, growth within the evaluation's components
 ///
 /// # Adequacy
 /// - hypothesis: L1/L3 — `not ∘ not` and the identity on Bool relate through
@@ -1641,6 +1657,10 @@ pub(crate) fn evaluation_obligations(
 ///
 /// # Errors
 /// As `fails`, and `ArenaFault` on an unreadable node.
+///
+/// # Cost
+/// - allocation: the quantified steps, their dialogues and the owed
+///   obligations, growth within the evaluation's steps
 ///
 /// # Adequacy
 /// - hypothesis: L1/L3 — `λf. f(true)` relates to itself and to its bind form,

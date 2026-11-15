@@ -3120,7 +3120,12 @@ fn native_paths_run_as_their_maps()
 
     let image = core.value_tuple(&[five, unit]);
     let expected = returned(&mut core, image);
-    let certified = core.value_path_equiv(classifier, to, left, alloc::sync::Arc::default());
+    let certified = core.value_path_equiv(
+        classifier,
+        to,
+        left,
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+    );
     let stated = core.value_equiv(to, left);
     for (path, name) in [
         (certified, "a certified equivalence"),
@@ -3140,7 +3145,12 @@ fn native_paths_run_as_their_maps()
         );
     }
 
-    let flipped = core.value_path_equiv(classifier, left, to, alloc::sync::Arc::default());
+    let flipped = core.value_path_equiv(
+        classifier,
+        left,
+        to,
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+    );
     let product = core.value_path_product(certified, flipped);
     let pair = core.value_tuple(&[five, six]);
     let moved = core.computation_transport(product, pair);

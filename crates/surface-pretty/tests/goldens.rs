@@ -5041,7 +5041,12 @@ fn native_paths_preserve_ordered_endpoints_and_maps()
     let product = core.value_path_product(first, second);
     let forward = core.value_constant(ConstantIndex::from(0_usize));
     let backward = core.value_constant(ConstantIndex::from(1_usize));
-    let equiv = core.value_path_equiv(path_type, forward, backward, Arc::default());
+    let equiv = core.value_path_equiv(
+        path_type,
+        forward,
+        backward,
+        gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+    );
     let names = [Name::from("forward"), Name::from("backward")];
     let source = CoreSource::new(&core, &names);
     for root in [first, product, equiv] {

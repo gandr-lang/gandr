@@ -9,7 +9,7 @@
 //! The readmission cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
-use alloc::sync::Arc;
+use alloc::alloc::Global;
 
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::Environment;
@@ -17,6 +17,9 @@ use gandr_kernel_core::KernelError;
 use gandr_kernel_core::flow_universe::Boundary;
 use gandr_kernel_core::flow_universe::FlowError;
 use gandr_kernel_core::flow_universe::PatternPosition;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::BaseType;
@@ -151,8 +154,9 @@ fn forward(
             arena.value_thunk(returned)
         })
         .collect();
-    let dialogues = vec![Vec::new(); outputs.len()];
-    arena.value_forward_flow(classifier, translator, images.into(), dialogues.into())
+    let dialogues =
+        ThinShared::from_header_and_iter((), core::iter::repeat_n(SmallVec::new(), outputs.len()));
+    arena.value_forward_flow(classifier, translator, images.into(), dialogues)
 }
 
 /// Bool negation as a closed translator.
@@ -267,21 +271,21 @@ fn module() -> Environment
     });
     define(&mut environment, |arena| {
         let payload = arena.value_type_unit();
-        let graph = Arc::new(Graph {
+        let graph = Shared::new(Graph {
             root: State(0),
-            nodes: vec![Node::End],
+            nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
         });
         let session = arena.value_type_session(graph, payload);
         let code = arena.value_quote(session);
         let declared = arena.value_type_flow_universe(code, code);
         let proofs = arena.value_unit();
-        let evidence = Arc::new(Evidence {
+        let evidence = Shared::new(Evidence {
             pairs: [StatePair {
                 source: State(0),
                 target: State(0),
             }]
             .into(),
-            payloads: Vec::new(),
+            payloads: SmallVec::<_, 0, Global>::new(),
         });
         (
             declared,
@@ -387,13 +391,16 @@ fn every_certificate_kind_persists_decodes_and_replays()
     let bytes = export(&environment);
     let artifact = decode(bytes.as_image()).expect("the module decodes");
     assert_eq!(
-        Vec::from(encode(artifact.arena(), artifact.declarations())),
-        Vec::from(bytes.clone()),
+        SmallVec::<u8, 0, Global>::from(encode(artifact.arena(), artifact.declarations())),
+        SmallVec::<u8, 0, Global>::from(bytes.clone()),
         "the decoded nodes re-encode to the same bytes"
     );
     let replayed = Environment::replay(artifact.arena().clone(), artifact.declarations())
         .expect("every certificate readmits by replay");
-    assert_eq!(Vec::from(export(&replayed)), Vec::from(bytes));
+    assert_eq!(
+        SmallVec::<u8, 0, Global>::from(export(&replayed)),
+        SmallVec::<u8, 0, Global>::from(bytes)
+    );
 }
 
 #[test]
@@ -413,7 +420,7 @@ fn a_tampered_certificate_refuses_by_name()
             panic!("a forward flow");
         };
         let swapped: Vec<ValueId> = outputs.iter().rev().copied().collect();
-        let dialogues = Arc::clone(dialogues);
+        let dialogues = ThinShared::clone(dialogues);
         arena.value_forward_flow(flow_type, translator, swapped.into(), dialogues)
     });
     assert!(matches!(

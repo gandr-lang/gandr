@@ -366,7 +366,7 @@ pub enum Value
         /// The closed backward translator.
         backward: ValueId,
         /// Both round-trip dialogues, checked again at kernel admission.
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: gandr_kernel_data::Shared<gandr_kernel_term::PathEvidence, alloc::alloc::Global>,
     },
     /// Reflexivity `here(a)`: the canonical element of the element identity
     /// `Path[.A = A](a, a)`, checked against a path type whose two endpoints
@@ -4909,16 +4909,20 @@ mod tests
         let returned = arena.computation_return(variable);
         let lambda = arena.computation_lambda(returned);
         let identity = arena.value_thunk(lambda);
-        let first =
-            arena.value_path_equiv(classifier, identity, identity, alloc::sync::Arc::default());
+        let first = arena.value_path_equiv(
+            classifier,
+            identity,
+            identity,
+            gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+        );
         let mut evidence = gandr_kernel_term::PathEvidence::default();
-        evidence.source.push(alloc::vec::Vec::new());
-        let evidence = alloc::sync::Arc::new(evidence);
+        evidence.source.push(gandr_kernel_data::SmallVec::new());
+        let evidence = gandr_kernel_data::Shared::new(evidence);
         let same = arena.value_path_equiv(
             classifier,
             identity,
             identity,
-            alloc::sync::Arc::clone(&evidence),
+            gandr_kernel_data::Shared::clone(&evidence),
         );
         assert_eq!(
             CertificateEquality::Equal,
@@ -5046,7 +5050,10 @@ mod tests
         let base = || -> alloc::boxed::Box<[RuleNode]> {
             [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
         };
-        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())]);
+        let cells = FreeCells::new(
+            sort,
+            gandr_kernel_data::SmallVec::from_iter([FreeCell::new(base(), base())]),
+        );
         let mut signatures = BTreeMap::new();
         let _sort = signatures.insert(
             sort,
@@ -5168,8 +5175,11 @@ mod tests
         let base = || -> alloc::boxed::Box<[RuleNode]> {
             [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
         };
-        let cells = FreeCells::new(sort, alloc::vec![FreeCell::new(base(), base())])
-            .wrapped(Reflexivities::from(1_usize));
+        let cells = FreeCells::new(
+            sort,
+            gandr_kernel_data::SmallVec::from_iter([FreeCell::new(base(), base())]),
+        )
+        .wrapped(Reflexivities::from(1_usize));
         let mut signatures = BTreeMap::new();
         let _sort = signatures.insert(
             sort,

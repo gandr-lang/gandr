@@ -53,11 +53,14 @@ gandr-theory-cellular-sheaves.workspace = true
 gandr-theory-probability.workspace = true
 quenchant-shape.workspace = true
 
+# The kernel export tests build the kernel's names, rows and evidence in the
+# containers of the data crate.
 [dev-dependencies]
 blake3.workspace = true
 gandr-core-incremental.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
+gandr-kernel-data.workspace = true
 gandr-storage-artifact.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-dispatcher.workspace = true

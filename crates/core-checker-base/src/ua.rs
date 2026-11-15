@@ -596,6 +596,10 @@ struct Stage
 /// # Errors
 /// - [`UaRefusal`] — as above.
 ///
+/// # Cost
+/// - allocation: the corolla indices, the translators' tables and the
+///   telescope's stages, growth within the stratum's corollas
+///
 /// # Adequacy
 /// - hypothesis: L3 — the swap of a binary generator beside a constant is
 ///   admitted by the kernel at its telescope, at degree one and at degree two
@@ -689,7 +693,7 @@ pub fn derive(
             decided.classifier(),
             given.forward,
             given.backward,
-            alloc::sync::Arc::clone(decided.evidence()),
+            gandr_kernel_data::Shared::clone(decided.evidence()),
         );
         corollas.push((index, given));
         stages.push(Stage {

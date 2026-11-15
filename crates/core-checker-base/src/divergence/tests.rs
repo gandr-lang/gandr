@@ -1,5 +1,3 @@
-use alloc::vec;
-
 use gandr_core_nbe::Calls;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CompTypeId;
@@ -289,10 +287,12 @@ fn a_ruled_operation_terminates_by_its_rules()
         arity: FieldCount::from(1_usize),
     };
     let x = OperationNode::Variable(RuleVariable::from(0_u32));
-    let rules = OperationRules::new(vec![OperationRule::new(
-        alloc::boxed::Box::from([call, x].as_slice()),
-        alloc::boxed::Box::from([x].as_slice()),
-    )]);
+    let rules = OperationRules::new(gandr_kernel_data::SmallVec::from_iter([
+        OperationRule::new(
+            alloc::boxed::Box::from([call, x].as_slice()),
+            alloc::boxed::Box::from([x].as_slice()),
+        ),
+    ]));
     let mut arena = CoreArena::new();
     let unit = arena.value_type_unit();
     let pure = arena.comp_type_returner(unit);

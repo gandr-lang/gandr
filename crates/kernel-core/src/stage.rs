@@ -609,6 +609,10 @@ fn representative(
 /// # Errors
 /// Returns formation, typing, syntax, budget, or certificate errors.
 ///
+/// # Cost
+/// - allocation: the formation check of the returned classifier in the
+///   specification, growth within the classifier's terms
+///
 /// # Adequacy
 /// - hypothesis: L3 — altered targets, rule tags, missing derivations,
 ///   transitive congruence and cross-universe endpoints distinguish the

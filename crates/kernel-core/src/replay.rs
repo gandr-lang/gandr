@@ -382,6 +382,8 @@ use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -3935,6 +3937,10 @@ where
     ///   reading is charged to the budget.
     /// - measure: the budget left.
     ///
+    /// # Cost
+    /// - allocation: the fresh empty word and its type of words in the arena,
+    ///   durable by the arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `Path.ap` of a map on the circle's empty word replays
     ///   against the empty word at dimension one and two, the point a held call
@@ -3986,12 +3992,14 @@ where
         else {
             return Ok(value);
         };
-        let own = self.arena.value_type_data(words, Vec::new());
+        let own = self
+            .arena
+            .value_type_data(words, SmallVec::<_, 0, Global>::new());
         Ok(self.arena.value_constructor(
             words,
             own,
             gandr_kernel_term::ConstructorTag::from(0_usize),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         ))
     }
 
@@ -4885,6 +4893,12 @@ where
     /// - measure: the budget left, which every reading charges, then the
     ///   constructor nodes still to visit and rebuild.
     ///
+    /// # Cost
+    /// - allocation: the walk's steps and the leaves read so far, growth within
+    ///   the constructor term's nodes
+    /// - allocation: each rebuilt constructor over its read fields, durable by
+    ///   the arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — `loop(⟨force wound⟩)` over the presented circle, with
     ///   `wound` returning `unloop(base)`, reads as `base` once the leaf is
@@ -4928,7 +4942,7 @@ where
             )
         };
         let mut walk = Vec::from([Walk::Visit(value)]);
-        let mut built: Vec<ValueId> = Vec::new();
+        let mut built: SmallVec<ValueId, 0, Global> = SmallVec::<_, 0, Global>::new();
         while let Some(step) = walk.pop() {
             match step {
                 Walk::Visit(id) => match self.arena.value(id) {
@@ -4968,11 +4982,11 @@ where
                         .checked_sub(fields.len())
                         .ok_or_else(unreadable)?;
                     if built.get(start ..) == Some(fields.as_slice()) {
-                        built.truncate(start);
+                        built.truncate(Count::from(start));
                         built.push(id);
                     }
                     else {
-                        let read = built.split_off(start);
+                        let read = built.split_off(Count::from(start));
                         let rebuilt = self.arena.value_constructor(family, datatype, tag, read);
                         built.push(rebuilt);
                     }
@@ -6503,6 +6517,12 @@ where
     /// # Errors
     /// [`Stop::Refused`].
     ///
+    /// # Cost
+    /// - allocation: the premises over the formers' components, growth within
+    ///   the formers' fields
+    /// - allocation: the quote pair set aside in the replay's owed, growth
+    ///   within the replay's compared pairs
+    ///
     /// # Adequacy
     /// - hypothesis: L3: pair refutations select the differing component and
     ///   reject a positive sibling or an absent index; unit and distinct rigid
@@ -7180,6 +7200,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   replaced by its children, which the arena minted before it within a
     ///   family; a crossing between families is to a node the quote or the
     ///   decode holds, and the arena is finite and acyclic across them.
+    ///
+    /// # Cost
+    /// - allocation: the worklist of nodes inside the term, growth within the
+    ///   term's nodes in the arena
     ///
     /// # Adequacy
     /// - hypothesis: L3: units and distinct variables are rigid while thunks
@@ -7942,6 +7966,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - measure: the focus's arena position while descending, and the frames
     ///   left while rebuilding.
     ///
+    /// # Cost
+    /// - allocation: the frames of the head path, growth within the term's
+    ///   spine
+    /// - allocation: the rebuilt spine over the body, durable by the arena's
+    ///   identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the trace's named-head unfoldings of
     ///   [`Self::unfold`], a ride's named flow among them, a definition at a
@@ -8330,6 +8360,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   held, finite because each was pushed by a charged iteration, and a
     ///   returned path run at most once for each continuation that moves along
     ///   it; then the frames left; then the one suspended reading.
+    ///
+    /// # Cost
+    /// - allocation: the machine's frames, cells, attempts, runs and branch
+    ///   arguments, growth within the budget left
+    /// - allocation: the terms each step and the unloading mint, durable by the
+    ///   arena's identifiers
     ///
     /// # Adequacy
     /// - hypothesis: L3 — over generated terms reaching every instantiation
@@ -9945,6 +9981,10 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// # Errors
     /// [`Stop::Refused`].
     ///
+    /// # Cost
+    /// - allocation: the shifted elimination, its continuation and the bind,
+    ///   durable by the arena's identifiers
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a force and a case over a returned endpoint reduce to
     ///   what forcing or casing its returned value gives, and a stuck one stays
@@ -11117,6 +11157,10 @@ fn passed_to(
 /// # Errors
 /// Returns an unreadable replay refusal for missing or ill-shaped native
 /// sources.
+///
+/// # Cost
+/// - allocation: the premises that pair the two spines' motives and branches,
+///   growth within the spines' eliminations and their branches
 ///
 /// # Adequacy
 /// - hypothesis: L3: case branches followed by an application distinguish

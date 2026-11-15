@@ -357,6 +357,7 @@
 //!   declares is refused, naming each family
 //!   (`Lowerer::ambiguous_constructor`).
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::string::String;
@@ -387,6 +388,8 @@ use gandr_core_term::pattern::Patterns;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::staged::Part;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CellIndex;
 use gandr_kernel_term::ConstantIndex;
@@ -8425,6 +8428,11 @@ impl<'run, 'source: 'run, F: Families<'run, 'source>> Native<'_, F>
     /// - fails: never; words over a family that did not mint mint nothing.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: each words entry's signature, its constructors and names,
+    ///   and each loop's binding, growth within the source's words and their
+    ///   loops
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a block with one loop mints its words with three
     ///   constructors and two rules, and binds the loop at its path type; a
@@ -9197,6 +9205,10 @@ fn refinings(tests: &[Test]) -> Refinings
 /// # Termination
 /// One pass over the nodes, each node reading its own children once.
 ///
+/// # Cost
+/// - allocation: the cover's steps, their branches and the per-node step slots,
+///   growth within the tree's nodes and looped's loops
+///
 /// # Adequacy
 /// - hypothesis: L3 — a nested match over `List(Maybe(Nat))` records a
 ///   derivation the signature admits, with one data split for each switch, and
@@ -9222,7 +9234,7 @@ fn covered(
             Test::Leaf { arm, .. } => Some(Step::Var(arm.0)),
             Test::Absurd(_) => Some(Step::Split {
                 cases: Cases::Absurd,
-                branches: Vec::new(),
+                branches: SmallVec::<_, 0, Global>::new(),
             }),
             Test::Data {
                 eliminated: Maybe::Present(family),
@@ -9320,6 +9332,11 @@ fn covered(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the split's branches, growth within the children
+/// - allocation: a composition minted for each child that is no leaf, durable
+///   by the cover's step identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`covered`].
 /// - witness: `gandr-surface-lowering::lower::native::tests::a_nested_match_records_its_cover_5103`
@@ -9334,7 +9351,7 @@ fn cover_split<Children>(
 where
     Children: ExactSizeIterator<Item = TestAt>,
 {
-    let mut branches = Vec::with_capacity(children.len());
+    let mut branches = SmallVec::<_, 0, Global>::with_capacity(Count::from(children.len()));
     for at in children {
         let inner = steps.get(at.0).copied().flatten()?;
         branches.push(match tests.get(at.0) {
@@ -9354,6 +9371,10 @@ where
 ///   in order; any other step unchanged.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the split's branches with one fresh `var` for each loop arm,
+///   growth within the owed loop arms
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`covered`].
@@ -13202,6 +13223,10 @@ impl<'source> NativeRef<'_, '_, 'source>
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the presented rules, their spans and the constructor
+    ///   names, growth within the declaration's presented faces
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the circle's two cancellations lower to the rules
     ///   both checkers rewrite its words by, a family without rules lowers to
@@ -13243,7 +13268,7 @@ impl<'source> NativeRef<'_, '_, 'source>
             .iter()
             .map(|generator| self.text_at(generator.named))
             .collect();
-        let mut rules = Vec::new();
+        let mut rules = SmallVec::<_, 0, Global>::new();
         let mut spans = Vec::new();
         let faces = if cells.oriented.is_empty() {
             described.description.rules.as_ref()
@@ -13315,6 +13340,10 @@ impl<'source> NativeRef<'_, '_, 'source>
     /// # Errors
     /// As the fails clause.
     ///
+    /// # Cost
+    /// - allocation: the presented rules, the operation names and the bound
+    ///   variables, growth within the theory's rules
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a unital magma's two unit rules lower to rules over
     ///   its terms, and a monoid's associativity reaches the checker, which
@@ -13358,7 +13387,7 @@ impl<'source> NativeRef<'_, '_, 'source>
             .iter()
             .map(|&named| self.text_at(named))
             .collect();
-        let mut rules = Vec::with_capacity(faces.len());
+        let mut rules = SmallVec::<_, 0, Global>::with_capacity(Count::from(faces.len()));
         let mut variables = Vec::new();
         for (face, written) in faces.iter().zip(&described.written.faces) {
             variables.clear();

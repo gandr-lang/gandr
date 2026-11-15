@@ -33,6 +33,7 @@
 //! reads the same reflexivity so in its own `present`, so the trace records
 //! nothing.
 
+use alloc::alloc::Global;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -40,6 +41,7 @@ use anodized::spec;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::FieldCount;
@@ -606,6 +608,12 @@ pub fn univalence_cell(
 ///   the nodes still to flatten, each a strict subterm; the term nodes still to
 ///   rebuild.
 ///
+/// # Cost
+/// - allocation: the flattened term, its pending nodes and the rebuilt fields,
+///   growth within the value's constructor term
+/// - allocation: the rebuilt constructors and their field spans, durable by the
+///   domain arena's identifiers
+///
 /// # Adequacy
 /// - hypothesis: L3 — `loop(unloop(loop(x)))` reads as `loop(x)` over the
 ///   variable written inside it, a reduced word is kept, the same word over a
@@ -646,7 +654,8 @@ pub fn normal_form(
     else {
         return Ok(NormalForm::Kept);
     };
-    let mut term: Vec<RuleTerm<(ValueClosureId, Origin), DomainValueId>> = Vec::new();
+    let mut term: SmallVec<RuleTerm<(ValueClosureId, Origin), DomainValueId>, 0, Global> =
+        SmallVec::<_, 0, Global>::new();
     let mut pending = Vec::from([value]);
     let mut read_any = false;
     while let Some(id) = pending.pop() {

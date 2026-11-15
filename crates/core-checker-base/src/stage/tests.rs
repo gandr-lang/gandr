@@ -226,7 +226,7 @@ fn unreplayed_and_open_residuals_are_refused()
     let certificate = Certificate {
         source: quoted,
         target: quoted,
-        steps: Vec::new(),
+        steps: gandr_kernel_data::SmallVec::new(),
     };
     assert_eq!(
         compile(&mut arena, &[token, nat], &certificate, &mut Budget(1000)),
@@ -243,7 +243,7 @@ fn unreplayed_and_open_residuals_are_refused()
         let certificate = Certificate {
             source: term,
             target: term,
-            steps: Vec::new(),
+            steps: gandr_kernel_data::SmallVec::new(),
         };
         assert_eq!(
             compile(&mut arena, &[token, nat], &certificate, &mut Budget(1000)),

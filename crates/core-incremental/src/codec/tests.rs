@@ -2874,9 +2874,10 @@ fn a_type_of_words_round_trips_its_cells()
         PresentationRoots {
             rules: FreeCells::new(
                 gandr_kernel_term::ConstantIndex::from(0_usize),
-                cells.clone(),
+                cells.iter().cloned().collect(),
             )
-            .cancellations(),
+            .cancellations()
+            .to_vec(),
             cells: Maybe::Present(CellsRoots {
                 sort,
                 reflexivities: gandr_kernel_term::Reflexivities::from(0_usize),
@@ -4000,17 +4001,20 @@ fn an_elaborated_entry_round_trips()
     use crate::entry::written;
 
     let stage = StageSignature::new(
-        vec![
+        gandr_kernel_data::SmallVec::from_iter([
             StageBound::Unbounded,
             StageBound::Below(StageBinder::from(0_usize)),
-        ],
-        vec![StageMark::new(
-            vec![PlacedChild::from(1_usize), PlacedChild::from(0_usize)],
+        ]),
+        gandr_kernel_data::SmallVec::from_iter([StageMark::new(
+            gandr_kernel_data::SmallVec::from_iter([
+                PlacedChild::from(1_usize),
+                PlacedChild::from(0_usize),
+            ]),
             StageBinder::from(1_usize),
             StageReach::Below(StageDepth::from(
                 core::num::NonZeroU32::new(2).expect("two is nonzero"),
             )),
-        )],
+        )]),
     );
     for entry in [
         EntryContent::from_parts(

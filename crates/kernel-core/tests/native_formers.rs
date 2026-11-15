@@ -1,6 +1,7 @@
 //! Native nominal declarations, dependent cases and structural records through
 //! admission.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 
 use anodized::spec;
@@ -18,6 +19,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::Apartness;
@@ -67,8 +69,8 @@ fn mono(environment: &mut Environment) -> CheckedId
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![unit]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([unit])]),
         kind,
     );
     environment
@@ -95,19 +97,28 @@ fn nominal_identity_and_constructor_refusals()
     ] {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(first, vec![]);
+        let datatype = arena.value_type_data(first, SmallVec::<_, 0, Global>::from_iter([]));
         let unit = arena.value_unit();
-        let constructor = arena.value_constructor(first, datatype, tag, vec![unit; field_count]);
+        let constructor = arena.value_constructor(
+            first,
+            datatype,
+            tag,
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(unit, field_count)),
+        );
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
         assert_eq!(environment.add_decl(declaration), Err(expected));
     }
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let first_type = arena.value_type_data(first, vec![]);
-    let second_type = arena.value_type_data(second, vec![]);
+    let first_type = arena.value_type_data(first, SmallVec::<_, 0, Global>::from_iter([]));
+    let second_type = arena.value_type_data(second, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_unit();
-    let constructor =
-        arena.value_constructor(first, first_type, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(
+        first,
+        first_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
     let declaration = staging.def(LevelSignature::monomorphic(), second_type, constructor);
     assert!(matches!(
         environment.add_decl(declaration),
@@ -118,10 +129,14 @@ fn nominal_identity_and_constructor_refusals()
     // names its own family, never the first family's constructor of its tag.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let first_type = arena.value_type_data(first, vec![]);
+    let first_type = arena.value_type_data(first, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_unit();
-    let constructor =
-        arena.value_constructor(second, first_type, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(
+        second,
+        first_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
     let declaration = staging.def(LevelSignature::monomorphic(), first_type, constructor);
     assert_eq!(
         environment.add_decl(declaration),
@@ -133,9 +148,14 @@ fn nominal_identity_and_constructor_refusals()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(first, vec![]);
+    let datatype = arena.value_type_data(first, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(first, datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(
+        first,
+        datatype,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
     let declaration = staging.def(LevelSignature::monomorphic(), datatype, constructor);
     let admitted = environment
         .add_decl(declaration)
@@ -144,13 +164,20 @@ fn nominal_identity_and_constructor_refusals()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(first, vec![]);
+    let datatype = arena.value_type_data(first, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_unit();
-    let constructor = arena.value_constructor(first, datatype, ConstructorTag::from(0), vec![unit]);
-    let declaration =
-        staging.sealed_def(LevelSignature::monomorphic(), datatype, constructor, vec![
-            first,
-        ]);
+    let constructor = arena.value_constructor(
+        first,
+        datatype,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
+    let declaration = staging.sealed_def(
+        LevelSignature::monomorphic(),
+        datatype,
+        constructor,
+        SmallVec::<_, 0, Global>::from_iter([first]),
+    );
     assert_eq!(
         environment.add_decl(declaration),
         Err(KernelError::SealingProvenanceNotProjected { atom: first })
@@ -163,7 +190,12 @@ fn data_signature_formation_checks_fields_and_parameters()
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let unit = staging.arena().value_type_unit();
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![], vec![], unit);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        unit,
+    );
     assert_eq!(
         environment.add_decl(declaration),
         Err(KernelError::DataKindNotUniverse)
@@ -174,7 +206,12 @@ fn data_signature_formation_checks_fields_and_parameters()
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let variable = arena.value_variable(DeBruijnIndex::from(0));
     let escaped = arena.value_type_element(variable, Level::zero());
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![escaped], vec![], kind);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([escaped]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        kind,
+    );
     assert_eq!(
         environment.add_decl(declaration),
         Err(KernelError::UnboundVariable {
@@ -187,8 +224,8 @@ fn data_signature_formation_checks_fields_and_parameters()
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![kind]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([kind])]),
         kind,
     );
     assert!(matches!(
@@ -200,7 +237,7 @@ fn data_signature_formation_checks_fields_and_parameters()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let unit = arena.value_unit();
-    let datatype = arena.value_type_data(nominal, vec![unit]);
+    let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([unit]));
     let declaration = staging.axiom(LevelSignature::monomorphic(), datatype);
     assert_eq!(
         environment.add_decl(declaration),
@@ -209,7 +246,9 @@ fn data_signature_formation_checks_fields_and_parameters()
 
     let missing = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
-    let datatype = staging.arena().value_type_data(missing, vec![]);
+    let datatype = staging
+        .arena()
+        .value_type_data(missing, SmallVec::<_, 0, Global>::from_iter([]));
     let declaration = staging.axiom(LevelSignature::monomorphic(), datatype);
     assert_eq!(
         environment.add_decl(declaration),
@@ -230,8 +269,8 @@ fn data_parameters_preserve_open_indices()
     let field_type = arena.value_type_element(one, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe, parameter_type],
-        vec![vec![field_type]],
+        SmallVec::<_, 0, Global>::from_iter([universe, parameter_type]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([field_type])]),
         universe,
     );
     let nominal = environment
@@ -241,9 +280,13 @@ fn data_parameters_preserve_open_indices()
 
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(nominal, vec![one, zero]);
-    let constructor =
-        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![zero]);
+    let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([one, zero]));
+    let constructor = arena.value_constructor(
+        nominal,
+        datatype,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    );
     let result = arena.computation_return(constructor);
     let inner = arena.computation_lambda(result);
     let outer = arena.computation_lambda(inner);
@@ -269,8 +312,8 @@ fn a_data_type_s_arguments_check_at_its_parameters()
         .value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([]),
         universe,
     );
     let nominal = environment
@@ -281,7 +324,8 @@ fn a_data_type_s_arguments_check_at_its_parameters()
         let mut staging = environment.stage();
         let arena = staging.arena();
         let argument = code(arena);
-        let datatype = arena.value_type_data(nominal, vec![argument]);
+        let datatype =
+            arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([argument]));
         let declaration = staging.axiom(LevelSignature::monomorphic(), datatype);
         environment.add_decl(declaration).map(|_admitted| ())
     };
@@ -334,12 +378,15 @@ fn vector(
     let nat = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(nat, vec![]);
+    let own = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         universe,
     );
     let _nat = environment.add_decl(declaration).expect("Nat is admitted");
@@ -347,30 +394,49 @@ fn vector(
     let mut staging = environment.stage();
     let arena = staging.arena();
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let length = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
+    let length = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        nat,
+        length,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     // Past `n`, the parameter is one out; past `n` and `x`, two.
     let code = arena.value_variable(DeBruijnIndex::from(1));
     let element = arena.value_type_element(code, Level::zero());
     let code = arena.value_variable(DeBruijnIndex::from(2));
     let tail_length = arena.value_variable(DeBruijnIndex::from(1));
-    let tail = arena.value_type_data(position, vec![code, tail_length]);
+    let tail = arena.value_type_data(
+        position,
+        SmallVec::<_, 0, Global>::from_iter([code, tail_length]),
+    );
     // Past all three fields, `n` is two out and `x` one.
     let field = arena.value_variable(DeBruijnIndex::from(2));
-    let successor = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![field]);
+    let successor = arena.value_constructor(
+        nat,
+        length,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([field]),
+    );
     let element_value = arena.value_variable(DeBruijnIndex::from(1));
     let cons = match stated {
-        Stated::Successor => vec![successor],
-        Stated::Element => vec![element_value],
-        Stated::Twice => vec![successor, zero],
+        Stated::Successor => SmallVec::<_, 0, Global>::from_iter([successor]),
+        Stated::Element => SmallVec::<_, 0, Global>::from_iter([element_value]),
+        Stated::Twice => SmallVec::<_, 0, Global>::from_iter([successor, zero]),
     };
     let declaration = staging.indexed(
         LevelSignature::monomorphic(),
-        vec![universe],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
         (
-            vec![length],
-            vec![vec![], vec![length, element, tail]],
-            vec![vec![zero], cons],
+            SmallVec::<_, 0, Global>::from_iter([length]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([length, element, tail]),
+            ]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([zero]),
+                cons,
+            ]),
         ),
         universe,
     );
@@ -409,17 +475,37 @@ fn an_indexed_constructor_stands_at_its_stated_index()
         let arena = staging.arena();
         let unit = arena.value_type_unit();
         let code = arena.value_quote(unit);
-        let length = arena.value_type_data(nat, vec![]);
-        let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
-        let one = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![zero]);
-        let empty = arena.value_type_data(family, vec![code, zero]);
-        let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
+        let length = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+        let zero = arena.value_constructor(
+            nat,
+            length,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let one = arena.value_constructor(
+            nat,
+            length,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([zero]),
+        );
+        let empty =
+            arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([code, zero]));
+        let nil = arena.value_constructor(
+            family,
+            empty,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let index = if successor { one } else { zero };
-        let datatype = arena.value_type_data(family, vec![code, index]);
+        let datatype =
+            arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([code, index]));
         let element = arena.value_unit();
-        let cons = arena.value_constructor(family, datatype, ConstructorTag::from(1), vec![
-            zero, element, nil,
-        ]);
+        let cons = arena.value_constructor(
+            family,
+            datatype,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([zero, element, nil]),
+        );
         let declaration = staging.def(LevelSignature::monomorphic(), datatype, cons);
         environment.add_decl(declaration).map(|_admitted| ())
     };
@@ -434,10 +520,20 @@ fn an_indexed_constructor_stands_at_its_stated_index()
     let arena = staging.arena();
     let unit = arena.value_type_unit();
     let code = arena.value_quote(unit);
-    let length = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
-    let empty = arena.value_type_data(family, vec![code, zero]);
-    let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
+    let length = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        nat,
+        length,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let empty = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([code, zero]));
+    let nil = arena.value_constructor(
+        family,
+        empty,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     // `case Nil { Nil => λe. return (); Cons(n, x, xs) => λe. return x }`:
     // each branch binds its own constructor's fields, then the equation from
     // its constructor's index to the scrutinee's, `Cons`'s at an index `Nil`
@@ -456,7 +552,7 @@ fn an_indexed_constructor_stands_at_its_stated_index()
     let case = arena.computation_data_case_with_equations(
         nil,
         motive,
-        vec![nil_branch, cons_branch],
+        SmallVec::<_, 0, Global>::from_iter([nil_branch, cons_branch]),
         EquationCount::from(1_usize),
     );
     let body = arena.value_thunk(case);
@@ -480,55 +576,77 @@ fn an_indexed_case_prunes_a_constructor_at_an_apart_index()
     // a successor, and `Cons` at `v = Cons(Z, (), Nil)` answers its length
     // field once the case supplies its equation, read back as `Z` when
     // `answered`.
-    let at =
-        |environment: &mut Environment, (successor, equations): (bool, usize), answered: bool| {
-            let mut staging = environment.stage();
-            let arena = staging.arena();
-            let unit = arena.value_type_unit();
-            let code = arena.value_quote(unit);
-            let length = arena.value_type_data(nat, vec![]);
-            let zero = arena.value_constructor(nat, length, ConstructorTag::from(0), vec![]);
-            let one = arena.value_constructor(nat, length, ConstructorTag::from(1), vec![zero]);
-            let empty = arena.value_type_data(family, vec![code, zero]);
-            let nil = arena.value_constructor(family, empty, ConstructorTag::from(0), vec![]);
-            let scrutinee = if successor {
-                let datatype = arena.value_type_data(family, vec![code, one]);
-                let element = arena.value_unit();
-                arena.value_constructor(family, datatype, ConstructorTag::from(1), vec![
-                    zero, element, nil,
-                ])
-            }
-            else {
-                nil
-            };
-            let motive = arena.comp_type_returner(length);
-            let equation = arena.value_variable(DeBruijnIndex::from(0));
-            let absurd = arena.computation_data_case(equation, motive, vec![]);
-            let nil_branch = arena.computation_lambda(absurd);
-            let field = arena.value_variable(DeBruijnIndex::from(3));
-            let mut cons_branch = arena.computation_return(field);
-            for _binder in 0_usize .. 4 {
-                cons_branch = arena.computation_lambda(cons_branch);
-            }
-            let case = arena.computation_data_case_with_equations(
-                scrutinee,
-                motive,
-                vec![nil_branch, cons_branch],
-                EquationCount::from(equations),
-            );
-            let (declared, body) = if answered {
-                let returned = arena.value_returned(case);
-                (
-                    arena.value_type_path(length, returned, zero),
-                    arena.value_here(zero),
-                )
-            }
-            else {
-                (arena.value_type_thunk(motive), arena.value_thunk(case))
-            };
-            let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
-            environment.add_decl(declaration).map(|_admitted| ())
+    let at = |environment: &mut Environment,
+              (successor, equations): (bool, usize),
+              answered: bool| {
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let length = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+        let zero = arena.value_constructor(
+            nat,
+            length,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let one = arena.value_constructor(
+            nat,
+            length,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([zero]),
+        );
+        let empty =
+            arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([code, zero]));
+        let nil = arena.value_constructor(
+            family,
+            empty,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let scrutinee = if successor {
+            let datatype =
+                arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([code, one]));
+            let element = arena.value_unit();
+            arena.value_constructor(
+                family,
+                datatype,
+                ConstructorTag::from(1),
+                SmallVec::<_, 0, Global>::from_iter([zero, element, nil]),
+            )
+        }
+        else {
+            nil
         };
+        let motive = arena.comp_type_returner(length);
+        let equation = arena.value_variable(DeBruijnIndex::from(0));
+        let absurd =
+            arena.computation_data_case(equation, motive, SmallVec::<_, 0, Global>::from_iter([]));
+        let nil_branch = arena.computation_lambda(absurd);
+        let field = arena.value_variable(DeBruijnIndex::from(3));
+        let mut cons_branch = arena.computation_return(field);
+        for _binder in 0_usize .. 4 {
+            cons_branch = arena.computation_lambda(cons_branch);
+        }
+        let case = arena.computation_data_case_with_equations(
+            scrutinee,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([nil_branch, cons_branch]),
+            EquationCount::from(equations),
+        );
+        let (declared, body) = if answered {
+            let returned = arena.value_returned(case);
+            (
+                arena.value_type_path(length, returned, zero),
+                arena.value_here(zero),
+            )
+        }
+        else {
+            (arena.value_type_thunk(motive), arena.value_thunk(case))
+        };
+        let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
+        environment.add_decl(declaration).map(|_admitted| ())
+    };
     assert_eq!(
         at(&mut environment, (true, 1), false),
         Ok(()),
@@ -559,15 +677,23 @@ fn data_case_checks_coverage_and_motive()
     for count in [0, 2] {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(nominal, vec![]);
+        let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
-        let constructor =
-            arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
+        let constructor = arena.value_constructor(
+            nominal,
+            datatype,
+            ConstructorTag::from(0),
+            SmallVec::<_, 0, Global>::from_iter([unit]),
+        );
         let motive = arena.comp_type_returner(unit_type);
         let body = arena.computation_return(unit);
         let branch = arena.computation_lambda(body);
-        let case = arena.computation_data_case(constructor, motive, vec![branch; count]);
+        let case = arena.computation_data_case(
+            constructor,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter(core::iter::repeat_n(branch, count)),
+        );
         let body = arena.value_thunk(case);
         let declared = arena.value_type_thunk(motive);
         let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -578,16 +704,24 @@ fn data_case_checks_coverage_and_motive()
     }
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(nominal, vec![]);
+    let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
     let unit_type = arena.value_type_unit();
     let unit = arena.value_unit();
-    let constructor =
-        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(
+        nominal,
+        datatype,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
     let motive = arena.comp_type_returner(unit_type);
     let parameter = arena.value_variable(DeBruijnIndex::from(0));
     let body = arena.computation_return(parameter);
     let branch = arena.computation_lambda(body);
-    let case = arena.computation_data_case(constructor, motive, vec![branch]);
+    let case = arena.computation_data_case(
+        constructor,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([branch]),
+    );
     let result = arena.computation_return(unit);
     let body = arena.value_thunk(case);
     let declared = arena.value_type_thunk(motive);
@@ -615,7 +749,11 @@ fn data_case_checks_coverage_and_motive()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let wrong_motive = arena.comp_type_returner(datatype);
-    let bad_case = arena.computation_data_case(constructor, wrong_motive, vec![branch]);
+    let bad_case = arena.computation_data_case(
+        constructor,
+        wrong_motive,
+        SmallVec::<_, 0, Global>::from_iter([branch]),
+    );
     let body = arena.value_thunk(bad_case);
     let declared = arena.value_type_thunk(wrong_motive);
     let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -635,18 +773,27 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
     let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
     // `Succ(Succ(x)) ~> x`: the naturals modulo two, where a case could
     // tell `Succ(Succ(Zero))` from `Zero`.
-    let modulo = Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+    let modulo = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [succ, succ, x].into(),
+        [x].into(),
+    )]));
     for (presentation, presented) in [(Presentation::default(), false), (modulo, true)] {
         let mut environment = Environment::new();
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+        let own = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
         let naturals = staging
             .data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![own]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(presentation);
@@ -656,16 +803,24 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
             .position();
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(nominal, vec![]);
-        let zero =
-            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![]);
+        let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
+        let zero = arena.value_constructor(
+            nominal,
+            datatype,
+            ConstructorTag::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
         let motive = arena.comp_type_returner(unit_type);
         let returned = arena.computation_return(unit);
         let successor = arena.computation_lambda(returned);
         // A bare case: at `Succ(Succ(x))` it returns, at `x` it is stuck.
-        let case = arena.computation_data_case(zero, motive, vec![returned, successor]);
+        let case = arena.computation_data_case(
+            zero,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([returned, successor]),
+        );
         let body = arena.value_thunk(case);
         let declared = arena.value_type_thunk(motive);
         let declaration = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -690,7 +845,7 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
         // `Succ(Succ(x))` it descends twice to the call stuck at `x`.
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(nominal, vec![]);
+        let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
         let unit_type = arena.value_type_unit();
         let unit = arena.value_unit();
         let motive = arena.comp_type_returner(unit_type);
@@ -701,7 +856,11 @@ fn a_case_respects_its_type_s_rules_or_is_refused_by_the_rule_357()
         let called = arena.computation_application(forced, field);
         let descending = arena.computation_lambda(called);
         let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, motive, vec![returned, descending]);
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([returned, descending]),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -726,17 +885,26 @@ fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
     let x = RuleNode::Variable(gandr_kernel_term::RuleVariable::from(0_u32));
     let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
     // `Succ(Succ(x)) ~> x`: the naturals modulo two.
-    let modulo = Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+    let modulo = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [succ, succ, x].into(),
+        [x].into(),
+    )]));
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let naturals = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(modulo);
@@ -755,7 +923,7 @@ fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
     for (wound, admitted) in [(true, Ok(())), (false, refused)] {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(nominal, vec![]);
+        let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
         let motive = arena.comp_type_returner(datatype);
         let state = arena.value_variable(DeBruijnIndex::from(0_u32));
         let ended = arena.computation_return(state);
@@ -765,19 +933,31 @@ fn a_fold_before_a_trailing_parameter_is_read_as_the_fixpoint()
         let field = arena.value_variable(DeBruijnIndex::from(0_u32));
         let passed = if wound {
             let state = arena.value_variable(DeBruijnIndex::from(1_u32));
-            arena.value_constructor(nominal, datatype, ConstructorTag::from(1_usize), vec![
-                state,
-            ])
+            arena.value_constructor(
+                nominal,
+                datatype,
+                ConstructorTag::from(1_usize),
+                SmallVec::<_, 0, Global>::from_iter([state]),
+            )
         }
         else {
-            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![])
+            arena.value_constructor(
+                nominal,
+                datatype,
+                ConstructorTag::from(0_usize),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            )
         };
         let forced = arena.computation_force(recursive);
         let called = arena.computation_application(forced, field);
         let passing = arena.computation_application(called, passed);
         let descending = arena.computation_lambda(passing);
         let number = arena.value_variable(DeBruijnIndex::from(1_u32));
-        let case = arena.computation_data_case(number, motive, vec![ended, descending]);
+        let case = arena.computation_data_case(
+            number,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([ended, descending]),
+        );
         let stated = arena.computation_lambda(case);
         let lambda = arena.computation_lambda(stated);
         let fixpoint = arena.computation_fixpoint(
@@ -837,19 +1017,26 @@ fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let circle = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
-        .presented(Presentation::new(vec![
+        .presented(Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([around, back, x].into(), [x].into()),
             PresentedRule::new([back, around, x].into(), [x].into()),
-        ]));
+        ])));
     let circle = environment
         .add_decl(circle)
         .expect("the circle admits")
@@ -889,10 +1076,10 @@ fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
     // Unloop(x) ⇒ r ← f(x); unturn(r) }`, its runs elaborated into binds
     // as the bridge delivers them: at `Loop(Unloop(x))` it computes
     // `turn(unturn(f(x)))`, which meets `f(x)` only by the first law.
-    let wind = |environment: &mut Environment, laws: Vec<ConstantIndex>| {
+    let wind = |environment: &mut Environment, laws: SmallVec<ConstantIndex, 0, Global>| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(circle, vec![]);
+        let datatype = arena.value_type_data(circle, SmallVec::<_, 0, Global>::from_iter([]));
         let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
         let motive = arena.comp_type_returner(integer);
         let zero = arena.value_literal(gandr_kernel_term::Literal::Integer(
@@ -917,7 +1104,11 @@ fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
         let looped = arm(turn);
         let unlooped = arm(unturn);
         let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, motive, vec![base, looped, unlooped]);
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([base, looped, unlooped]),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -935,17 +1126,24 @@ fn a_fold_rests_on_the_law_of_each_rule_it_computes_apart()
         gandr_kernel_term::RuleIndex::from(0_usize),
     ));
     assert_eq!(
-        wind(&mut environment, vec![]).map(|_admitted| ()),
+        wind(&mut environment, SmallVec::new()).map(|_admitted| ()),
         first,
         "with no law the fold computes the first rule's sides apart"
     );
     assert_eq!(
-        wind(&mut environment, vec![unturn_turn, turn_unturn]).map(|_admitted| ()),
+        wind(
+            &mut environment,
+            SmallVec::from_iter([unturn_turn, turn_unturn])
+        )
+        .map(|_admitted| ()),
         first,
         "the second law does not state the first rule"
     );
-    let admitted = wind(&mut environment, vec![turn_unturn, unturn_turn])
-        .expect("each rule's law relates the fold's two sides of it");
+    let admitted = wind(
+        &mut environment,
+        SmallVec::from_iter([turn_unturn, unturn_turn]),
+    )
+    .expect("each rule's law relates the fold's two sides of it");
     assert_eq!(
         environment.audit(admitted).axioms(),
         [turn, unturn, turn_unturn, unturn_turn],
@@ -967,19 +1165,26 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let integers = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
-        .presented(Presentation::new(vec![
+        .presented(Presentation::new(SmallVec::<_, 0, Global>::from_iter([
             PresentedRule::new([around, back, x].into(), [x].into()),
             PresentedRule::new([back, around, x].into(), [x].into()),
-        ]));
+        ])));
     let integers = environment
         .add_decl(integers)
         .expect("the integers admit")
@@ -988,9 +1193,13 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
     // which no data type reads as a set.
     let point = |arena: &mut gandr_kernel_term::TermArena, set: bool| {
         if set {
-            let datatype = arena.value_type_data(integers, vec![]);
-            let zero =
-                arena.value_constructor(integers, datatype, ConstructorTag::from(0_usize), vec![]);
+            let datatype = arena.value_type_data(integers, SmallVec::<_, 0, Global>::from_iter([]));
+            let zero = arena.value_constructor(
+                integers,
+                datatype,
+                ConstructorTag::from(0_usize),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            );
             (datatype, zero)
         }
         else {
@@ -1020,7 +1229,7 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
     let fold = |environment: &mut Environment, set: bool, lemma: ConstantIndex| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(integers, vec![]);
+        let datatype = arena.value_type_data(integers, SmallVec::<_, 0, Global>::from_iter([]));
         let (carrier, zero) = point(arena, set);
         let path = arena.value_type_path(carrier, zero, zero);
         let motive = arena.comp_type_returner(path);
@@ -1041,7 +1250,11 @@ fn a_fold_into_the_paths_of_a_set_respects_its_rules()
         let up = arm();
         let down = arm();
         let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, motive, vec![base, up, down]);
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([base, up, down]),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -1094,19 +1307,21 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
         let position = ConstantIndex::from(environment.entries().len());
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let own = arena.value_type_data(position, vec![]);
+        let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
         let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
         let staged = staging
             .data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![own]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
-            .presented(Presentation::new(vec![PresentedRule::new(
-                left.into(),
-                [base].into(),
-            )]));
+            .presented(Presentation::new(SmallVec::<_, 0, Global>::from_iter([
+                PresentedRule::new(left.into(), [base].into()),
+            ])));
         environment
             .add_decl(staged)
             .expect("the pointed loop admits")
@@ -1144,7 +1359,7 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
     let fold = |environment: &mut Environment, data: ConstantIndex, law: ConstantIndex| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(data, vec![]);
+        let datatype = arena.value_type_data(data, SmallVec::<_, 0, Global>::from_iter([]));
         let integer = integer(arena);
         let motive = arena.comp_type_returner(integer);
         let zero = zero(arena);
@@ -1154,7 +1369,11 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
         let applied = arena.computation_application(forced, zero);
         let looped = arena.computation_lambda(applied);
         let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-        let case = arena.computation_data_case(argument, motive, vec![point, looped]);
+        let case = arena.computation_data_case(
+            argument,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([point, looped]),
+        );
         let lambda = arena.computation_lambda(case);
         let fixpoint = arena.computation_fixpoint(
             lambda,
@@ -1165,7 +1384,7 @@ fn a_law_states_its_path_behind_one_parameter_per_rule_variable()
         let declared = arena.value_type_thunk(arrow);
         let declaration = staging
             .def(LevelSignature::monomorphic(), declared, body)
-            .lawful(vec![law]);
+            .lawful(SmallVec::<_, 0, Global>::from_iter([law]));
         environment.add_decl(declaration).map(|_admitted| ())
     };
     let refused = Err(KernelError::RuleNotRespected(
@@ -1196,18 +1415,24 @@ fn empty_nominal_case_eliminates_only_an_empty_declaration()
     let universe = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let declaration = staging.data(LevelSignature::monomorphic(), vec![], vec![], universe);
+    let declaration = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        universe,
+    );
     let empty = environment
         .add_decl(declaration)
         .expect("empty data signature")
         .position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(empty, vec![]);
+    let datatype = arena.value_type_data(empty, SmallVec::<_, 0, Global>::from_iter([]));
     let variable = arena.value_variable(DeBruijnIndex::from(0));
     let unit = arena.value_type_unit();
     let motive = arena.comp_type_returner(unit);
-    let case = arena.computation_data_case(variable, motive, vec![]);
+    let case =
+        arena.computation_data_case(variable, motive, SmallVec::<_, 0, Global>::from_iter([]));
     let lambda = arena.computation_lambda(case);
     let body = arena.value_thunk(lambda);
     let arrow = arena.comp_type_pi(datatype, motive);
@@ -1230,17 +1455,26 @@ fn an_absurd_case_rests_on_apart_endpoints()
     let succ = RuleNode::Constructor(ConstructorTag::from(1_usize));
     // The naturals modulo two: `Succ(Zero)` and `Zero` are normal and
     // differ at their heads, and `Succ(Succ(Zero))` is `Zero`.
-    let modulo = Presentation::new(vec![PresentedRule::new([succ, succ, x].into(), [x].into())]);
+    let modulo = Presentation::new(SmallVec::<_, 0, Global>::from_iter([PresentedRule::new(
+        [succ, succ, x].into(),
+        [x].into(),
+    )]));
     let mut environment = Environment::new();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let naturals = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(modulo);
@@ -1259,19 +1493,28 @@ fn an_absurd_case_rests_on_apart_endpoints()
         // `λe. case e {}` at `Path[.A = N](Succ^n(Zero), Zero) → F unit`.
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let datatype = arena.value_type_data(nominal, vec![]);
-        let zero =
-            arena.value_constructor(nominal, datatype, ConstructorTag::from(0_usize), vec![]);
+        let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
+        let zero = arena.value_constructor(
+            nominal,
+            datatype,
+            ConstructorTag::from(0_usize),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let mut left = zero;
         for _ in 0 .. successors {
-            left = arena
-                .value_constructor(nominal, datatype, ConstructorTag::from(1_usize), vec![left]);
+            left = arena.value_constructor(
+                nominal,
+                datatype,
+                ConstructorTag::from(1_usize),
+                SmallVec::<_, 0, Global>::from_iter([left]),
+            );
         }
         let path = arena.value_type_path(datatype, left, zero);
         let unit = arena.value_type_unit();
         let motive = arena.comp_type_returner(unit);
         let variable = arena.value_variable(DeBruijnIndex::from(0));
-        let case = arena.computation_data_case(variable, motive, vec![]);
+        let case =
+            arena.computation_data_case(variable, motive, SmallVec::<_, 0, Global>::from_iter([]));
         let lambda = arena.computation_lambda(case);
         let body = arena.value_thunk(lambda);
         let arrow = arena.comp_type_pi(path, motive);
@@ -1718,8 +1961,8 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
     let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![unit_type]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([unit_type])]),
         universe,
     );
     declarations.push(MarkedDeclaration::new(
@@ -1732,14 +1975,22 @@ fn native_declarations_and_eliminators_survive_canonical_decode()
         .position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let datatype = arena.value_type_data(nominal, vec![]);
+    let datatype = arena.value_type_data(nominal, SmallVec::<_, 0, Global>::from_iter([]));
     let unit = arena.value_unit();
-    let constructor =
-        arena.value_constructor(nominal, datatype, ConstructorTag::from(0), vec![unit]);
+    let constructor = arena.value_constructor(
+        nominal,
+        datatype,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([unit]),
+    );
     let motive = arena.comp_type_returner(unit_type);
     let body = arena.computation_return(unit);
     let branch = arena.computation_lambda(body);
-    let case = arena.computation_data_case(constructor, motive, vec![branch]);
+    let case = arena.computation_data_case(
+        constructor,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([branch]),
+    );
     let label = FieldLabel::from(String::from("é"));
     let record = arena.value_record(BTreeMap::from([(label.clone(), unit)]));
     let record_type = arena.value_type_record(BTreeMap::from([(label.clone(), unit_type)]));
@@ -2123,20 +2374,26 @@ fn build(
     built: Built,
 ) -> ValueId
 {
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let words = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let empty = arena.value_constructor(
         ConstantIndex::from(WORDS),
         words,
         ConstructorTag::from(0_usize),
-        vec![],
+        SmallVec::<_, 0, Global>::from_iter([]),
     );
     match built {
         Built::Point => arena.value_constructor(
             ConstantIndex::from(SORT),
             carrier,
             ConstructorTag::from(0_usize),
-            vec![],
+            SmallVec::<_, 0, Global>::from_iter([]),
         ),
         Built::Empty => empty,
         Built::Named => arena.value_constant(ConstantIndex::from(LOOP)),
@@ -2144,7 +2401,7 @@ fn build(
             ConstantIndex::from(WORDS),
             words,
             ConstructorTag::from(2_usize),
-            vec![empty],
+            SmallVec::<_, 0, Global>::from_iter([empty]),
         ),
         Built::Stays => arena.value_here(empty),
         Built::Reflexive => {
@@ -2152,13 +2409,13 @@ fn build(
                 ConstantIndex::from(SORT),
                 carrier,
                 ConstructorTag::from(0_usize),
-                vec![],
+                SmallVec::<_, 0, Global>::from_iter([]),
             );
             arena.value_here_relating(
                 point,
-                alloc::sync::Arc::new(gandr_kernel_term::EndpointDialogues {
-                    left: vec![ConversionDecision::Evaluate],
-                    right: Vec::new(),
+                gandr_kernel_data::Shared::new(gandr_kernel_term::EndpointDialogues {
+                    left: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
+                    right: SmallVec::<_, 0, Global>::new(),
                 }),
             )
         },
@@ -2178,25 +2435,37 @@ fn one_loop() -> Environment
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
+        kind,
+    );
     let _sort = environment
         .add_decl(staged)
         .expect("the one-point sort admits");
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
-    let cells = FreeCells::new(ConstantIndex::from(SORT), vec![FreeCell::new(
-        base(),
-        base(),
-    )]);
+    let cells = FreeCells::new(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    );
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(Presentation::words(cells));
@@ -2206,15 +2475,21 @@ fn one_loop() -> Environment
     let mut staging = environment.stage();
     let arena = staging.arena();
     let point = build(arena, Built::Point);
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let path = arena.value_type_path(carrier, point, point);
-    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let words = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let empty = build(arena, Built::Empty);
     let letter = arena.value_constructor(
         ConstantIndex::from(WORDS),
         words,
         ConstructorTag::from(1_usize),
-        vec![empty],
+        SmallVec::<_, 0, Global>::from_iter([empty]),
     );
     let staged = staging.def(LevelSignature::monomorphic(), path, letter);
     let _loop = environment
@@ -2264,7 +2539,10 @@ fn motive(
     family: Family,
 ) -> CompTypeId
 {
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
     let call = |arena: &mut TermArena, function: ConstantIndex, argument: ValueId| {
@@ -2323,10 +2601,13 @@ fn case_over(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let motive = motive(arena, family);
     let answer = build(arena, answer);
-    let mut branches = vec![arena.computation_return(answer)];
+    let mut branches = SmallVec::<_, 0, Global>::from_iter([arena.computation_return(answer)]);
     for &arm in arms {
         let arm = build(arena, arm);
         branches.push(arena.computation_return(arm));
@@ -2356,14 +2637,17 @@ fn binary_over(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kept = arena.comp_type_returner(carrier);
     let point = build(arena, Built::Point);
     let named = build(arena, Built::Named);
-    let branches = vec![
+    let branches = SmallVec::<_, 0, Global>::from_iter([
         arena.computation_return(point),
         arena.computation_return(named),
-    ];
+    ]);
     let over = match over {
         Argument::First => 1_u32,
         Argument::Second => 0_u32,
@@ -2491,26 +2775,38 @@ fn one_two_cell() -> Environment
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
+        kind,
+    );
     let _sort = environment
         .add_decl(staged)
         .expect("the one-point sort admits");
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
-    let cells = FreeCells::new(ConstantIndex::from(SORT), vec![FreeCell::new(
-        base(),
-        base(),
-    )])
+    let cells = FreeCells::new(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    )
     .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
     let staged = staging
         .data(
             LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![own], vec![own]],
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         )
         .presented(Presentation::words(cells));
@@ -2520,17 +2816,23 @@ fn one_two_cell() -> Environment
     let mut staging = environment.stage();
     let arena = staging.arena();
     let point = build(arena, Built::Point);
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let loops = arena.value_type_path(carrier, point, point);
     let reflexivity = arena.value_here(point);
     let path = arena.value_type_path(loops, reflexivity, reflexivity);
-    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+    let words = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let empty = build(arena, Built::Empty);
     let letter = arena.value_constructor(
         ConstantIndex::from(WORDS),
         words,
         ConstructorTag::from(1_usize),
-        vec![empty],
+        SmallVec::<_, 0, Global>::from_iter([empty]),
     );
     let staged = staging.def(LevelSignature::monomorphic(), path, letter);
     let _surf = environment
@@ -2570,17 +2872,23 @@ fn ap_on_the_two_cell(
         Imaged::Cell => build(arena, Built::Named),
         Imaged::Flat => build(arena, Built::Empty),
         Imaged::Spelled => {
-            let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+            let words = arena.value_type_data(
+                ConstantIndex::from(WORDS),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            );
             let empty = build(arena, Built::Empty);
             arena.value_constructor(
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(1_usize),
-                vec![empty],
+                SmallVec::<_, 0, Global>::from_iter([empty]),
             )
         },
     };
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let reflexivity = arena.value_here(point);
     let cell = word(arena, along);
@@ -2616,9 +2924,9 @@ fn ap_on_the_two_cell(
     // dialogue says; the right endpoint is the point itself.
     let body = arena.value_here_relating(
         image,
-        alloc::sync::Arc::new(gandr_kernel_term::EndpointDialogues {
-            left: vec![ConversionDecision::Evaluate],
-            right: Vec::new(),
+        gandr_kernel_data::Shared::new(gandr_kernel_term::EndpointDialogues {
+            left: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
+            right: SmallVec::<_, 0, Global>::new(),
         }),
     );
     let staged = staging.def(LevelSignature::monomorphic(), declared, body);
@@ -2707,7 +3015,10 @@ fn tower_on_the_two_cell(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let reflexivity = arena.value_here(point);
     let cell = build(arena, Built::Named);
@@ -2854,7 +3165,12 @@ fn two_cell_and_other() -> Environment
     let kind = staging
         .arena()
         .value_type_universe(GroundSort::Value, Level::zero());
-    let staged = staging.data(LevelSignature::monomorphic(), vec![], vec![vec![]], kind);
+    let staged = staging.data(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
+        kind,
+    );
     let _other = environment
         .add_decl(staged)
         .expect("the second one-point sort admits");
@@ -2862,19 +3178,26 @@ fn two_cell_and_other() -> Environment
         let mut staging = environment.stage();
         let arena = staging.arena();
         let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-        let own = arena.value_type_data(ConstantIndex::from(words), vec![]);
+        let own = arena.value_type_data(
+            ConstantIndex::from(words),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let base =
             || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
-        let cells = FreeCells::new(ConstantIndex::from(OTHER), vec![FreeCell::new(
-            base(),
-            base(),
-        )])
+        let cells = FreeCells::new(
+            ConstantIndex::from(OTHER),
+            SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+        )
         .wrapped(gandr_kernel_term::Reflexivities::from(wrapping));
         let staged = staging
             .data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![own], vec![own]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                    SmallVec::<_, 0, Global>::from_iter([own]),
+                ]),
                 kind,
             )
             .presented(Presentation::words(cells));
@@ -2883,30 +3206,36 @@ fn two_cell_and_other() -> Environment
             .expect("the second sort's words admit");
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(OTHER),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = arena.value_constructor(
             ConstantIndex::from(OTHER),
             carrier,
             ConstructorTag::from(0_usize),
-            vec![],
+            SmallVec::<_, 0, Global>::from_iter([]),
         );
         let mut path = arena.value_type_path(carrier, point, point);
         if wrapping == 1 {
             let reflexivity = arena.value_here(point);
             path = arena.value_type_path(path, reflexivity, reflexivity);
         }
-        let own = arena.value_type_data(ConstantIndex::from(words), vec![]);
+        let own = arena.value_type_data(
+            ConstantIndex::from(words),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let empty = arena.value_constructor(
             ConstantIndex::from(words),
             own,
             ConstructorTag::from(0_usize),
-            vec![],
+            SmallVec::<_, 0, Global>::from_iter([]),
         );
         let letter = arena.value_constructor(
             ConstantIndex::from(words),
             own,
             ConstructorTag::from(1_usize),
-            vec![empty],
+            SmallVec::<_, 0, Global>::from_iter([empty]),
         );
         let staged = staging.def(LevelSignature::monomorphic(), path, letter);
         let _word = environment
@@ -2929,16 +3258,22 @@ fn onto_other(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-    let other = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let other = arena.value_type_data(
+        ConstantIndex::from(OTHER),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = arena.value_constructor(
         ConstantIndex::from(OTHER),
         other,
         ConstructorTag::from(0_usize),
-        vec![],
+        SmallVec::<_, 0, Global>::from_iter([]),
     );
     let motive = arena.comp_type_returner(other);
-    let mut branches = vec![arena.computation_return(point)];
+    let mut branches = SmallVec::<_, 0, Global>::from_iter([arena.computation_return(point)]);
     if let Some(arm) = arm {
         let arm = arena.value_constant(arm);
         branches.push(arena.computation_return(arm));
@@ -2967,8 +3302,14 @@ fn loop_over(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-    let other = arena.value_type_data(ConstantIndex::from(OTHER), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let other = arena.value_type_data(
+        ConstantIndex::from(OTHER),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
     let function = arena.value_constant(map);
     let forced = arena.computation_force(function);
@@ -2977,7 +3318,7 @@ fn loop_over(
     let fibre = arena.value_type_path(other, image, image);
     let motive = arena.comp_type_returner(fibre);
     let answer = arena.value_constant(ConstantIndex::from(OTHER_LOOP));
-    let branches = vec![arena.computation_return(answer)];
+    let branches = SmallVec::<_, 0, Global>::from_iter([arena.computation_return(answer)]);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(0_u32));
     let case = arena.computation_data_case(scrutinee, motive, branches);
     let lambda = arena.computation_lambda(case);
@@ -3091,10 +3432,13 @@ fn pick_other(environment: &mut Environment) -> Result<ConstantIndex, KernelErro
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let kept = arena.comp_type_returner(carrier);
     let b = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let branches = vec![arena.computation_return(b)];
+    let branches = SmallVec::<_, 0, Global>::from_iter([arena.computation_return(b)]);
     let a = arena.value_variable(DeBruijnIndex::from(1_u32));
     let case = arena.computation_data_case(a, kept, branches);
     let inner = arena.computation_lambda(case);
@@ -3122,7 +3466,10 @@ fn diagonal(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let x = arena.value_variable(DeBruijnIndex::from(0_u32));
     let named = arena.value_constant(function);
     let forced = arena.computation_force(named);
@@ -3136,7 +3483,7 @@ fn diagonal(
     let fibre = arena.value_type_path(carrier, image, right);
     let motive = arena.comp_type_returner(fibre);
     let empty = build(arena, Built::Empty);
-    let branches = vec![arena.computation_return(empty)];
+    let branches = SmallVec::<_, 0, Global>::from_iter([arena.computation_return(empty)]);
     let case = arena.computation_data_case(x, motive, branches);
     let lambda = arena.computation_lambda(case);
     let pi = arena.comp_type_pi(carrier, motive);
@@ -3190,7 +3537,10 @@ fn nested_motive(
     index: Option<DeBruijnIndex>,
 ) -> CompTypeId
 {
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let at = |arena: &mut TermArena, past: u32| {
         index.map_or(point, |index| {
@@ -3225,7 +3575,10 @@ fn nested_over(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let answer = match nested {
         Nested::Looped | Nested::Joined => build(arena, Built::Empty),
         Nested::Endomaps => {
@@ -3238,10 +3591,18 @@ fn nested_over(
     let answer = arena.computation_return(answer);
     let inner_motive = nested_motive(arena, nested, None);
     let b = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let inner = arena.computation_data_case(b, inner_motive, vec![answer]);
+    let inner = arena.computation_data_case(
+        b,
+        inner_motive,
+        SmallVec::<_, 0, Global>::from_iter([answer]),
+    );
     let outer_motive = nested_motive(arena, nested, Some(DeBruijnIndex::from(0_u32)));
     let a = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let outer = arena.computation_data_case(a, outer_motive, vec![inner]);
+    let outer = arena.computation_data_case(
+        a,
+        outer_motive,
+        SmallVec::<_, 0, Global>::from_iter([inner]),
+    );
     let body = arena.computation_lambda(outer);
     let body = arena.computation_lambda(body);
     let codomain = nested_motive(arena, nested, Some(DeBruijnIndex::from(1_u32)));
@@ -3293,7 +3654,10 @@ fn a_composite_along_a_returned_path_cancels_to_the_empty_word()
     let mut cancels_to = |right: Built| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let named = build(arena, Built::Named);
         let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -3341,7 +3705,10 @@ fn a_word_written_as_a_transport_path_is_that_path()
     let mut composes_to = |right: Built| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let named = build(arena, Built::Named);
         let empty = build(arena, Built::Empty);
@@ -3398,8 +3765,14 @@ fn a_word_appends_on_its_first_word()
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let words = arena.value_type_data(
+            ConstantIndex::from(WORDS),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let empty = build(arena, Built::Empty);
         let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -3408,7 +3781,7 @@ fn a_word_appends_on_its_first_word()
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(tag),
-                vec![rest],
+                SmallVec::<_, 0, Global>::from_iter([rest]),
             )
         };
         let (moved, right) = match case {
@@ -3471,8 +3844,14 @@ fn a_word_of_two_letters_moves_a_path_whole()
     let mut moves_to = |moving: Moving, tag: usize| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let words = arena.value_type_data(
+            ConstantIndex::from(WORDS),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let empty = build(arena, Built::Empty);
         let twice = |arena: &mut TermArena, tag: usize| {
@@ -3480,13 +3859,13 @@ fn a_word_of_two_letters_moves_a_path_whole()
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(tag),
-                vec![empty],
+                SmallVec::<_, 0, Global>::from_iter([empty]),
             );
             arena.value_constructor(
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(tag),
-                vec![once],
+                SmallVec::<_, 0, Global>::from_iter([once]),
             )
         };
         let along = twice(arena, 1);
@@ -3539,8 +3918,14 @@ fn a_closed_word_moves_whole_to_its_letters_images()
     let mut moves_to = |function: ConstantIndex, right: &[usize]| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
-        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let words = arena.value_type_data(
+            ConstantIndex::from(WORDS),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let empty = build(arena, Built::Empty);
         let spelled = |arena: &mut TermArena, letters: &[usize]| {
@@ -3549,7 +3934,7 @@ fn a_closed_word_moves_whole_to_its_letters_images()
                     ConstantIndex::from(WORDS),
                     words,
                     ConstructorTag::from(tag),
-                    vec![rest],
+                    SmallVec::<_, 0, Global>::from_iter([rest]),
                 )
             })
         };
@@ -3620,7 +4005,10 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
     let mut define = |body: fn(&mut TermArena, ValueTypeId) -> (ValueTypeId, ValueId)| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let at_point = arena.value_type_path(carrier, point, point);
         let (declared, body) = body(arena, at_point);
@@ -3652,7 +4040,10 @@ fn a_composite_over_a_call_to_the_empty_word_is_its_second_word_473()
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
         let (first, second) = match case {
@@ -3722,7 +4113,10 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
     {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let at_point = arena.value_type_path(carrier, point, point);
         let body = body(arena, at_point);
@@ -3757,7 +4151,10 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
         arena.value_thunk(returned)
     });
     let outer = define(&mut environment, |arena, _at_point| {
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let moving = arena.value_variable(DeBruijnIndex::from(0_u32));
         let motive = arena.value_type_path(carrier, moving, moving);
         let function = arena.value_constant(inner);
@@ -3772,7 +4169,10 @@ fn a_held_operand_runs_on_through_the_definitions_it_meets_3789()
     let mut states = |case: Case| {
         let mut staging = environment.stage();
         let arena = staging.arena();
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let parameter = arena.value_variable(DeBruijnIndex::from(0_u32));
         let held = match case {
@@ -3821,11 +4221,17 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(NAT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     let _nat = environment.add_decl(staged).expect("the naturals admit");
@@ -3834,9 +4240,18 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     // `spin(n)`, a call stuck at the variable `n`.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
-    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let nat = arena.value_type_data(
+        ConstantIndex::from(NAT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let words = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let at_point = arena.value_type_path(carrier, point, point);
     let motive = arena.comp_type_returner(at_point);
@@ -3851,13 +4266,17 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
         ConstantIndex::from(WORDS),
         words,
         ConstructorTag::from(1_usize),
-        vec![bound],
+        SmallVec::<_, 0, Global>::from_iter([bound]),
     );
     let returned = arena.computation_return(lettered);
     let sequenced = arena.computation_bind(called, returned);
     let at_successor = arena.computation_lambda(sequenced);
     let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(argument, motive, vec![at_zero, at_successor]);
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([at_zero, at_successor]),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(
         lambda,
@@ -3873,9 +4292,18 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
     // stands at both ends: the computation types meet at the mode switch,
     // where the forced reading reads both endpoints.
     let path_at = |arena: &mut TermArena, successor: bool| {
-        let nat = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
-        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let nat = arena.value_type_data(
+            ConstantIndex::from(NAT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let words = arena.value_type_data(
+            ConstantIndex::from(WORDS),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let at_point = arena.value_type_path(carrier, point, point);
         let n = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -3884,7 +4312,7 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
                 ConstantIndex::from(NAT),
                 nat,
                 ConstructorTag::from(1_usize),
-                vec![n],
+                SmallVec::<_, 0, Global>::from_iter([n]),
             )
         }
         else {
@@ -3902,7 +4330,7 @@ fn a_recursive_call_stuck_at_a_variable_reads_as_its_call_473()
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(1_usize),
-                vec![called],
+                SmallVec::<_, 0, Global>::from_iter([called]),
             )
         };
         let stated = arena.value_type_path(at_point, endpoint, endpoint);
@@ -3939,11 +4367,17 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
+    let own = arena.value_type_data(
+        ConstantIndex::from(NAT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     let _nat = environment.add_decl(staged).expect("the naturals admit");
@@ -3952,9 +4386,18 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
     // before the first result of `spin(n)`, a call stuck at the variable `n`.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
-    let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
-    let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+    let nat = arena.value_type_data(
+        ConstantIndex::from(NAT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let words = arena.value_type_data(
+        ConstantIndex::from(WORDS),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    let carrier = arena.value_type_data(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let point = build(arena, Built::Point);
     let at_point = arena.value_type_path(carrier, point, point);
     let motive = arena.comp_type_returns(&[at_point, at_point]);
@@ -3971,13 +4414,17 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
         ConstantIndex::from(WORDS),
         words,
         ConstructorTag::from(1_usize),
-        vec![first],
+        SmallVec::<_, 0, Global>::from_iter([first]),
     );
     let returned = arena.computation_return_all(&[lettered, second]);
     let sequenced = arena.computation_bind_all(called, ResultCount::from(2_usize), returned);
     let at_successor = arena.computation_lambda(sequenced);
     let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
-    let case = arena.computation_data_case(argument, motive, vec![at_zero, at_successor]);
+    let case = arena.computation_data_case(
+        argument,
+        motive,
+        SmallVec::<_, 0, Global>::from_iter([at_zero, at_successor]),
+    );
     let lambda = arena.computation_lambda(case);
     let fixpoint = arena.computation_fixpoint(
         lambda,
@@ -3993,9 +4440,18 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
     // stands at both ends, each reading the first result past a bind of
     // both.
     let path_at = |arena: &mut TermArena, successor: bool| {
-        let nat = arena.value_type_data(ConstantIndex::from(NAT), vec![]);
-        let words = arena.value_type_data(ConstantIndex::from(WORDS), vec![]);
-        let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+        let nat = arena.value_type_data(
+            ConstantIndex::from(NAT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let words = arena.value_type_data(
+            ConstantIndex::from(WORDS),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
+        let carrier = arena.value_type_data(
+            ConstantIndex::from(SORT),
+            SmallVec::<_, 0, Global>::from_iter([]),
+        );
         let point = build(arena, Built::Point);
         let at_point = arena.value_type_path(carrier, point, point);
         let n = arena.value_variable(DeBruijnIndex::from(0_u32));
@@ -4004,7 +4460,7 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
                 ConstantIndex::from(NAT),
                 nat,
                 ConstructorTag::from(1_usize),
-                vec![n],
+                SmallVec::<_, 0, Global>::from_iter([n]),
             )
         }
         else {
@@ -4025,7 +4481,7 @@ fn a_recursive_call_under_a_bind_of_several_values_reads_as_its_call_5070()
                 ConstantIndex::from(WORDS),
                 words,
                 ConstructorTag::from(1_usize),
-                vec![called],
+                SmallVec::<_, 0, Global>::from_iter([called]),
             )
         };
         let stated = arena.value_type_path(at_point, endpoint, endpoint);
@@ -4074,12 +4530,20 @@ fn moved_along(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat = arena.value_type_data(naturals, vec![]);
-    let zero = arena.value_constructor(naturals, nat, ConstructorTag::from(0_usize), vec![]);
+    let nat = arena.value_type_data(naturals, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        naturals,
+        nat,
+        ConstructorTag::from(0_usize),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
     let path = match along {
         Along::Naturals => arena.value_type_path(nat, zero, zero),
         Along::Circle => {
-            let carrier = arena.value_type_data(ConstantIndex::from(SORT), vec![]);
+            let carrier = arena.value_type_data(
+                ConstantIndex::from(SORT),
+                SmallVec::<_, 0, Global>::from_iter([]),
+            );
             let point = build(arena, Built::Point);
             arena.value_type_path(carrier, point, point)
         },
@@ -4100,7 +4564,11 @@ fn moved_along(
     let descending = arena.computation_bind(moved, called);
     let descending = arena.computation_lambda(descending);
     let scrutinee = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let case = arena.computation_data_case(scrutinee, answer, vec![returned, descending]);
+    let case = arena.computation_data_case(
+        scrutinee,
+        answer,
+        SmallVec::<_, 0, Global>::from_iter([returned, descending]),
+    );
     let body = arena.computation_lambda(case);
     let body = arena.computation_lambda(body);
     let fixpoint =
@@ -4121,11 +4589,14 @@ fn a_stage_is_carried_across_a_set_and_not_along_a_loop_3631()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let own = arena.value_type_data(naturals, vec![]);
+    let own = arena.value_type_data(naturals, SmallVec::<_, 0, Global>::from_iter([]));
     let staged = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     let _naturals = environment.add_decl(staged).expect("the naturals admit");

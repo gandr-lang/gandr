@@ -10,10 +10,13 @@
 //! The sealed-export cases, in a `cfg(test)` module so the crate's lint wall
 //! reads them as test code rather than as shipping code.
 
+use alloc::alloc::Global;
+
 use gandr_kernel_core::Admission;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::BaseType;
@@ -108,9 +111,12 @@ fn sealed_counter() -> (Environment, CheckedId, CheckedId)
         let returned = arena.computation_return(variable);
         let lambda = arena.computation_lambda(returned);
         let body = arena.value_thunk(lambda);
-        staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![
-            atom.position(),
-        ])
+        staging.sealed_def(
+            LevelSignature::monomorphic(),
+            declared,
+            body,
+            SmallVec::<_, 0, Global>::from_iter([atom.position()]),
+        )
     };
     let _keep = environment
         .add_decl(keep)
@@ -200,11 +206,11 @@ fn a_sealed_artifact_round_trips_and_re_mints_deterministically()
     let replayed = Environment::replay(artifact.arena().clone(), artifact.declarations())
         .expect("and replays");
     assert_eq!(
-        Vec::from(export(&replayed)),
-        Vec::from(bytes.clone()),
+        SmallVec::<u8, 0, Global>::from(export(&replayed)),
+        SmallVec::<u8, 0, Global>::from(bytes.clone()),
         "replay re-mints every atom to its recorded position and closes it where it closed"
     );
-    let image = Vec::from(bytes);
+    let image = SmallVec::<u8, 0, Global>::from(bytes);
     assert_eq!(
         image.get(MINTED_ATOM_TABLE_COUNT_OFFSET),
         Some(&1),
@@ -257,8 +263,8 @@ fn sealing_provenance_round_trips_and_cannot_be_rewritten()
     let replayed = Environment::replay(artifact.arena().clone(), artifact.declarations())
         .expect("the sealed artifact replays");
     assert_eq!(
-        Vec::from(export(&replayed)),
-        Vec::from(bytes.clone()),
+        SmallVec::<u8, 0, Global>::from(export(&replayed)),
+        SmallVec::<u8, 0, Global>::from(bytes.clone()),
         "the replayed environment re-serializes its provenance identically"
     );
     // The last segment is the identity member, ending `… | erasure 0 |
@@ -267,7 +273,7 @@ fn sealing_provenance_round_trips_and_cannot_be_rewritten()
     // entry writes position zero bare, as one more than twice zero. Re-point
     // it at position 1 — the seed — which the member's declared type does not
     // project onto.
-    let mut rewritten = Vec::from(bytes);
+    let mut rewritten = SmallVec::<u8, 0, Global>::from(bytes);
     let entry = rewritten.len().saturating_sub(2);
     let slot = rewritten.get_mut(entry).expect("the provenance entry");
     assert_eq!(

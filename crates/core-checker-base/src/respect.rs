@@ -214,6 +214,10 @@ pub enum Reading
 ///   each conversion runs under the machine's fuel.
 /// - measure: the rules left.
 ///
+/// # Cost
+/// - allocation: the constructor arities and each rule's built sides and
+///   obligation, growth within the signature's rules and constructors
+///
 /// # Adequacy
 /// - hypothesis: L3 — over the circle, a fixpoint recursing through both
 ///   inverse letters is admitted, a case reading the letter as written is
@@ -287,7 +291,7 @@ pub fn respected(
                     pattern_binder(rule.variables(), variable),
                 ),
                 RuleNode::Constructor(tag) => {
-                    arena.value_constructor(declaration, datatype, tag, fields)
+                    arena.value_constructor(declaration, datatype, tag, Vec::from(fields))
                 },
             })
             .map_err(|_fault| CheckRefusal::MachineInvariant)
@@ -628,6 +632,10 @@ fn pattern_binder(
 /// - reason: the `for` loop over the rule's finite variables and the two
 ///   endpoints, not recursion; each conversion runs under the machine's fuel.
 /// - measure: the variables, then the endpoints, left.
+///
+/// # Cost
+/// - allocation: the law's instance and its endpoints read in place or
+///   sequenced, growth within the rule's variables
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the circle's fold into the integers is related by the two

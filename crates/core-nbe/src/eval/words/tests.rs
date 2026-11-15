@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -9,6 +10,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorCount;
 use gandr_kernel_term::ConstructorTag;
@@ -179,10 +181,10 @@ fn chain(
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    let cells = FreeCells::new(ConstantIndex::from(SORT), vec![FreeCell::new(
-        base(),
-        base(),
-    )]);
+    let cells = FreeCells::new(
+        ConstantIndex::from(SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    );
     let mut chain = LoweredChain::new();
     chain.present(
         ConstantIndex::from(WORDS),
@@ -402,10 +404,10 @@ fn two_sphere(core: &mut CoreArena) -> (Sphere, LoweredChain)
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    let cells = FreeCells::new(ConstantIndex::from(sort), vec![FreeCell::new(
-        base(),
-        base(),
-    )])
+    let cells = FreeCells::new(
+        ConstantIndex::from(sort),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    )
     .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
     let mut chain = LoweredChain::new();
     chain.present(
@@ -513,10 +515,10 @@ fn onto_other(
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    let cells = FreeCells::new(ConstantIndex::from(OTHER_SORT), vec![FreeCell::new(
-        base(),
-        base(),
-    )])
+    let cells = FreeCells::new(
+        ConstantIndex::from(OTHER_SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    )
     .wrapped(gandr_kernel_term::Reflexivities::from(1_usize));
     chain.present(
         ConstantIndex::from(OTHER_WORDS),
@@ -642,10 +644,10 @@ fn transport_along_a_cell_carries_a_loop_past_two_empty_images_6741()
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    let loops = FreeCells::new(ConstantIndex::from(OTHER_SORT), vec![FreeCell::new(
-        base(),
-        base(),
-    )]);
+    let loops = FreeCells::new(
+        ConstantIndex::from(OTHER_SORT),
+        SmallVec::<_, 0, Global>::from_iter([FreeCell::new(base(), base())]),
+    );
     chain.present(
         ConstantIndex::from(OTHER_LOOPS),
         Presented::new(

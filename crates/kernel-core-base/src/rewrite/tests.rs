@@ -11,6 +11,9 @@ use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoKey as _;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
@@ -1618,8 +1621,6 @@ fn build(
 {
     use alloc::boxed::Box;
     use alloc::collections::BTreeMap;
-    use alloc::sync::Arc;
-    use alloc::vec::Vec;
 
     use gandr_kernel_term::Component;
     use gandr_kernel_term::ConstantIndex;
@@ -1645,7 +1646,7 @@ fn build(
     match former {
         Former::Constructor => {
             let datatype = c.value_type(arena);
-            let fields = Vec::from([c.value(arena), c.value(arena)]);
+            let fields = SmallVec::<_, 0, Global>::from_iter([c.value(arena), c.value(arena)]);
             AnyNode::Value(arena.value_constructor(
                 ConstantIndex::from(0_usize),
                 datatype,
@@ -1663,7 +1664,7 @@ fn build(
             let paths = c.value(arena);
             AnyNode::Value(arena.value_session_path(
                 classifier,
-                Arc::new(Evidence::default()),
+                Shared::new(Evidence::default()),
                 paths,
             ))
         },
@@ -1672,7 +1673,7 @@ fn build(
             let paths = c.value(arena);
             AnyNode::Value(arena.value_session_flow(
                 classifier,
-                Arc::new(Evidence::default()),
+                Shared::new(Evidence::default()),
                 paths,
             ))
         },
@@ -1684,7 +1685,12 @@ fn build(
             let classifier = c.value_type(arena);
             let translator = c.value(arena);
             let outputs = Box::from([c.value(arena), c.value(arena)]);
-            AnyNode::Value(arena.value_forward_flow(classifier, translator, outputs, Arc::from([])))
+            AnyNode::Value(arena.value_forward_flow(
+                classifier,
+                translator,
+                outputs,
+                ThinShared::default(),
+            ))
         },
         Former::FunctionFlow => {
             let classifier = c.value_type(arena);
@@ -1710,7 +1716,7 @@ fn build(
         Former::PathEquiv => {
             let classifier = c.value_type(arena);
             let (forward, backward) = (c.value(arena), c.value(arena));
-            let evidence = Arc::new(PathEvidence::default());
+            let evidence = Shared::new(PathEvidence::default());
             AnyNode::Value(arena.value_path_equiv(classifier, forward, backward, evidence))
         },
         Former::Here => {
@@ -1722,10 +1728,10 @@ fn build(
             AnyNode::Value(arena.value_returned(computation))
         },
         Former::Higher => {
-            let program = Arc::new(HigherProgram {
+            let program = Shared::new(HigherProgram {
                 depth: HigherDepth(1),
                 root: LayerPosition(0),
-                layers: Vec::new(),
+                layers: SmallVec::<_, 0, Global>::new(),
             });
             let evidence = Box::from([c.value(arena), c.value(arena)]);
             AnyNode::Value(arena.value_higher(program, evidence))
@@ -1737,11 +1743,11 @@ fn build(
                 evidence: c.value(arena),
             };
             let components = Box::from([component(arena), component(arena)]);
-            AnyNode::Value(arena.value_higher_evaluation(Arc::from([]), components))
+            AnyNode::Value(arena.value_higher_evaluation(ThinShared::default(), components))
         },
         Former::QuantifiedEvaluation => {
             let children = Box::from([c.value(arena), c.value(arena)]);
-            AnyNode::Value(arena.value_quantified_evaluation(Arc::from([]), children))
+            AnyNode::Value(arena.value_quantified_evaluation(ThinShared::default(), children))
         },
         Former::Tuple => {
             let components = [c.value(arena), c.value(arena)];
@@ -1778,7 +1784,8 @@ fn build(
         Former::DataCase => {
             let scrutinee = c.value(arena);
             let motive = c.comp_type(arena);
-            let branches = Vec::from([c.computation(arena), c.computation(arena)]);
+            let branches =
+                SmallVec::<_, 0, Global>::from_iter([c.computation(arena), c.computation(arena)]);
             AnyNode::Computation(arena.computation_data_case(scrutinee, motive, branches))
         },
         Former::RecordProjection => {
@@ -1886,7 +1893,7 @@ fn build(
             AnyNode::Computation(arena.computation_fixpoint(body, FixpointEvidence::Partial))
         },
         Former::DataType => {
-            let arguments = Vec::from([c.value(arena), c.value(arena)]);
+            let arguments = SmallVec::<_, 0, Global>::from_iter([c.value(arena), c.value(arena)]);
             AnyNode::ValueType(arena.value_type_data(ConstantIndex::from(0_usize), arguments))
         },
         Former::RecordType => {
@@ -1897,9 +1904,9 @@ fn build(
             AnyNode::ValueType(arena.value_type_record(fields))
         },
         Former::SessionType => {
-            let graph = Arc::new(Graph {
+            let graph = Shared::new(Graph {
                 root: State(0),
-                nodes: alloc::vec![Node::End],
+                nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
             });
             let payloads = c.value_type(arena);
             AnyNode::ValueType(arena.value_type_session(graph, payloads))

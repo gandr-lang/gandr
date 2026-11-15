@@ -1,9 +1,10 @@
 //! Native admission, finite formation refusals and malicious relation data.
 
-use alloc::sync::Arc;
+use alloc::alloc::Global;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::TermArena;
@@ -33,14 +34,14 @@ use crate::flow_universe::form_certificate;
 /// trivial.
 fn code(
     arena: &mut TermArena,
-    nodes: Vec<Node>,
+    nodes: impl IntoIterator<Item = Node>,
     payload: ValueTypeId,
 ) -> ValueId
 {
     let payloads = arena.value_type_product(&[payload]);
     let ty = arena.value_type_session(
-        Arc::new(Graph {
-            nodes,
+        gandr_kernel_data::Shared::new(Graph {
+            nodes: nodes.into_iter().collect(),
             root: State(0),
         }),
         payloads,
@@ -60,7 +61,7 @@ fn path(
 ) -> (ValueTypeId, ValueId)
 {
     let ty = arena.value_type_path_universe(codes.0, codes.1);
-    let value = arena.value_session_path(ty, Arc::new(evidence), proofs);
+    let value = arena.value_session_path(ty, gandr_kernel_data::Shared::new(evidence), proofs);
     (ty, value)
 }
 
@@ -76,7 +77,7 @@ fn flow(
 ) -> (ValueTypeId, ValueId)
 {
     let ty = arena.value_type_flow_universe(codes.0, codes.1);
-    let value = arena.value_session_flow(ty, Arc::new(evidence), proofs);
+    let value = arena.value_session_flow(ty, gandr_kernel_data::Shared::new(evidence), proofs);
     (ty, value)
 }
 
@@ -135,8 +136,8 @@ fn session_codes_are_closed_and_contractive()
             Err(KernelError::Session(error))
         );
     }
-    let graph = Arc::new(Graph {
-        nodes: vec![Node::End],
+    let graph = gandr_kernel_data::Shared::new(Graph {
+        nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
         root: State(0),
     });
     let ty = arena.value_type_session(graph, payload);
@@ -169,7 +170,7 @@ fn session_codes_are_closed_and_contractive()
     let proofs = arena.value_unit();
     let evidence = Evidence {
         pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let (path_type, value) = path(&mut arena, (quoted, quoted), evidence, proofs);
     assert_eq!(check_closed_value(&mut arena, value, path_type), Ok(()));
@@ -252,7 +253,7 @@ fn session_relations_replay_without_search()
     );
     let evidence = Evidence {
         pairs: [pair(State(1), State(0)), pair(State(1), State(2))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let proofs = arena.value_unit();
     let (ty, value) = path(&mut arena, (source, target), evidence.clone(), proofs);
@@ -324,7 +325,7 @@ fn session_relations_replay_without_search()
     );
     let evidence = Evidence {
         pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let (_, bad) = path(&mut arena, (narrow, wide), evidence.clone(), proofs);
     assert_eq!(
@@ -375,7 +376,7 @@ fn session_relations_replay_without_search()
     );
     let mut evidence = Evidence {
         pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let (_, bad) = path(&mut arena, (source, target), evidence.clone(), proofs);
     assert_eq!(
@@ -420,7 +421,7 @@ fn session_relations_replay_without_search()
     let proofs = arena.value_unit();
     let relation = Evidence {
         pairs: [pair(State(0), State(0))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let (ty, good) = path(arena, (code, code), relation, proofs);
     let (_, bad) = path(arena, (code, code), Evidence::default(), proofs);
@@ -455,7 +456,7 @@ fn session_flows_persist_and_refuse_by_family()
     };
     let widening = || Evidence {
         pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let mut environment = Environment::new();
     let mut declarations = Vec::new();
@@ -531,7 +532,7 @@ fn session_flows_persist_and_refuse_by_family()
         (narrow, narrow),
         Evidence {
             pairs: [pair(State(0), State(0)), pair(State(1), State(1))].into(),
-            payloads: Vec::new(),
+            payloads: SmallVec::<_, 0, Global>::new(),
         },
         proofs,
     );
@@ -571,7 +572,11 @@ fn session_flows_persist_and_refuse_by_family()
         Err(KernelError::Flow(FlowError::RecordedRunRequired))
     );
     let path_classifier = arena.value_type_path_universe(narrow, wide);
-    let forged = arena.value_session_flow(path_classifier, Arc::new(widening()), proofs);
+    let forged = arena.value_session_flow(
+        path_classifier,
+        gandr_kernel_data::Shared::new(widening()),
+        proofs,
+    );
     assert_eq!(
         synth_closed_value(&mut arena, forged),
         Err(KernelError::Flow(FlowError::FamilyMismatch {
@@ -603,7 +608,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
         Err(SessionError::Arena)
     );
     let graph = Graph {
-        nodes: vec![Node::End],
+        nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
         root: State(0),
     };
     assert_eq!(
@@ -643,13 +648,13 @@ fn session_boundaries_name_payload_and_graph_refusals()
     // A variable in the sibling branch cannot name the other branch's binder.
     let escaped = Graph {
         root: State(0),
-        nodes: vec![
+        nodes: SmallVec::<_, 0, Global>::from_iter([
             Node::Select([(Label("a".into()), State(1)), (Label("b".into()), State(4))].into()),
             Node::Mu(State(2)),
             Node::Send(PayloadSlot(0), State(3)),
             Node::Var(State(1)),
             Node::Var(State(1)),
-        ],
+        ]),
     };
     assert_eq!(
         super::validate_graph(&arena, &escaped, telescope),
@@ -669,7 +674,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
     let pairs = [pair(State(0), State(0)), pair(State(1), State(1))];
     let mut evidence = Evidence {
         pairs: pairs.into(),
-        payloads: vec![(PayloadSlot(0), PayloadSlot(0))],
+        payloads: SmallVec::<_, 0, Global>::from_iter([(PayloadSlot(0), PayloadSlot(0))]),
     };
     let expected = super::obligations(&mut arena, ty, ty, &evidence, super::Relation::Bisimulation)
         .expect("payload path obligation");
@@ -692,7 +697,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
         (PayloadSlot(1), PayloadSlot(0)),
         (PayloadSlot(0), PayloadSlot(1)),
     ] {
-        evidence.payloads = vec![slots];
+        evidence.payloads = SmallVec::<_, 0, Global>::from_iter([slots]);
         assert_eq!(
             super::obligations(&mut arena, ty, ty, &evidence, super::Relation::Bisimulation),
             Err(SessionError::MissingPayload(PayloadSlot(1)))
@@ -717,7 +722,7 @@ fn session_boundaries_name_payload_and_graph_refusals()
 
     let administrative = Graph {
         root: State(0),
-        nodes: vec![Node::Mu(State(1)), Node::Var(State(0))],
+        nodes: SmallVec::<_, 0, Global>::from_iter([Node::Mu(State(1)), Node::Var(State(0))]),
     };
     assert_eq!(
         super::head(&administrative, State(0)),
@@ -734,7 +739,7 @@ fn session_choice_relations_exhaust_two_label_widths()
         for source_mask in 0_u8 .. 4 {
             for target_mask in 0_u8 .. 4 {
                 let graph = |mask| {
-                    let mut nodes = vec![Node::End];
+                    let mut nodes = SmallVec::<_, 0, Global>::from_iter([Node::End]);
                     let mut labels = alloc::collections::BTreeMap::new();
                     for (label, bit) in [("a", 1), ("b", 2)] {
                         if mask & bit != 0 {
@@ -751,11 +756,11 @@ fn session_choice_relations_exhaust_two_label_widths()
                         nodes,
                     }
                 };
-                let left = Arc::new(graph(source_mask));
-                let right = Arc::new(graph(target_mask));
+                let left = gandr_kernel_data::Shared::new(graph(source_mask));
+                let right = gandr_kernel_data::Shared::new(graph(target_mask));
                 let mut evidence = Evidence {
                     pairs: [pair(State(0), State(0))].into(),
-                    payloads: Vec::new(),
+                    payloads: SmallVec::<_, 0, Global>::new(),
                 };
                 for a in 1 .. left.nodes.len() {
                     for b in 1 .. right.nodes.len() {

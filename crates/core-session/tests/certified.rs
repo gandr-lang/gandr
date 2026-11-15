@@ -1,6 +1,6 @@
 //! End-to-end finite evidence, native admission and recorded-run transport.
 
-use alloc::sync::Arc;
+use alloc::alloc::Global;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -33,6 +33,8 @@ use gandr_kernel_core::flow_universe::Family;
 use gandr_kernel_core::flow_universe::form_certificate;
 use gandr_kernel_core::session::SessionError;
 use gandr_kernel_core::session::view;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::TermArena;
@@ -132,7 +134,7 @@ fn assert_admission(
     let target = encode(arena, target, &payloads).expect("target export");
     let classifier = arena.value_type_path_universe(source, target);
     let proofs = arena.value_unit();
-    let path = arena.value_session_path(classifier, Arc::new(evidence), proofs);
+    let path = arena.value_session_path(classifier, Shared::new(evidence), proofs);
     let staged = staging.def(LevelSignature::monomorphic(), classifier, path);
     assert_eq!(&environment.add_decl(staged).map(|_| ()), expected);
 }
@@ -149,7 +151,7 @@ fn native_flow(
 {
     let classifier = arena.value_type_flow_universe(codes.0, codes.1);
     let proofs = arena.value_unit();
-    arena.value_session_flow(classifier, Arc::new(evidence), proofs)
+    arena.value_session_flow(classifier, Shared::new(evidence), proofs)
 }
 
 #[test]
@@ -346,7 +348,7 @@ fn recorded_runs_transport_only_forward()
                 target: pair.source,
             })
             .collect(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let reverse = native_flow(&mut arena, (wide_code, old_code), inverse);
     assert!(matches!(
@@ -664,7 +666,7 @@ fn a_code_binds_only_the_graph_it_was_encoded_from()
         nodes: graph.nodes.clone(),
         root: State(1),
     };
-    let moved = arena.value_type_session(Arc::new(moved), telescope);
+    let moved = arena.value_type_session(Shared::new(moved), telescope);
     let moved = arena.value_quote(moved);
     let flow = native_flow(
         &mut arena,
@@ -752,7 +754,7 @@ fn a_choice_advances_only_onto_a_choice_of_its_own_kind()
             })
             .into_iter()
             .collect(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     for (source, target, choice) in [
         (&selected, &offered, Move::Select("keep".into())),
@@ -972,7 +974,7 @@ fn a_move_advances_only_along_a_related_pair_of_its_own_kind()
                 target: State(target),
             })
             .collect(),
-        payloads: Vec::new(),
+        payloads: SmallVec::<_, 0, Global>::new(),
     };
     let Ok(moved) = gandr_core_session::certified::advance(
         (&sending, &sending),

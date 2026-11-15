@@ -571,6 +571,11 @@ impl Generalizer
 /// # Errors
 /// Propagates `StageError` from arena allocation and kernel replay.
 ///
+/// # Cost
+/// - allocation: the closed reflexive endpoint term, durable by the arena's
+///   identifiers
+/// - allocation: the one-step certificate for the equation, setup
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — incorrect rule tags and discriminated points fail
 ///   despite the reflexive endpoint; honest beta and cancellation steps pass.
@@ -586,7 +591,7 @@ fn replay_equation(
     let certificate = Certificate {
         source: endpoint,
         target: endpoint,
-        steps: Vec::from([step]),
+        steps: gandr_kernel_data::SmallVec::from_iter([step]),
     };
     gandr_kernel_core::stage::replay(arena, &[], &certificate, budget)?;
     Ok(())
@@ -1694,6 +1699,10 @@ impl Template
 ///
 /// # Errors
 /// Propagates `StageError` from projection and complete replay.
+///
+/// # Cost
+/// - allocation: the instantiated template and the comparison graph for each
+///   paying step, growth within the certificate's steps
 ///
 /// # Adequacy
 /// - hypothesis: L2 — every harvested complete certificate and altered targets

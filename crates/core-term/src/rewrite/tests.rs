@@ -5105,7 +5105,12 @@ pub fn formers() -> Vec<Witnessed>
         ("path equivalence", |a, c| {
             let unit_type = a.value_type_unit();
             let unit = a.value_unit();
-            a.value_path_equiv(unit_type, unit, c, Arc::default())
+            a.value_path_equiv(
+                unit_type,
+                unit,
+                c,
+                gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::default()),
+            )
         }),
         ("marked value", |a, c| a
             .value_mark(MarkIndex::from(0_u32), c)),

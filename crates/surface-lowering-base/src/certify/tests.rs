@@ -54,7 +54,7 @@ fn certified(
         .description;
     let certificate = rule_certificate(description, cells);
     let mut symbols = Symbols::new(&certificate.ranks);
-    let written: Vec<TheoryRule> = cells
+    let written = cells
         .oriented
         .iter()
         .map(|face| symbols.face(face, Nameable(false)))

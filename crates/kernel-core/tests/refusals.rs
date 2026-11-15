@@ -3,6 +3,7 @@
 //! the mismatch; and the eliminators those refusals misapply, admitted at the
 //! types they eliminate.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -13,6 +14,7 @@ use gandr_kernel_core::ExpectedComputationShape;
 use gandr_kernel_core::ExpectedValueShape;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::NonInferableForm;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::Component;
@@ -463,7 +465,7 @@ fn refusals() -> Vec<Refusal>
                     gandr_kernel_term::ConstantIndex::from(0_usize),
                     one,
                     ConstructorTag::from(0_usize),
-                    Vec::new(),
+                    SmallVec::<_, 0, Global>::new(),
                 );
                 (one, constructed)
             },
@@ -481,7 +483,11 @@ fn refusals() -> Vec<Refusal>
                 let one = a.value_type_unit();
                 let returns = a.comp_type_returner(one);
                 let arm = done(a);
-                let case = a.computation_data_case(unit, returns, Vec::from([arm]));
+                let case = a.computation_data_case(
+                    unit,
+                    returns,
+                    SmallVec::<_, 0, Global>::from_iter([arm]),
+                );
                 (a.value_type_thunk(returns), a.value_thunk(case))
             },
             refused: |error| {

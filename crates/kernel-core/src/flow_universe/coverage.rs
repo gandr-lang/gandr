@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
+use gandr_kernel_data::Count;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
@@ -104,7 +106,7 @@ pub fn data_signature<'entries>(
     arena: &TermArena,
     entries: &'entries Entries,
     id: ValueTypeId,
-) -> Option<(ConstantIndex, &'entries [Vec<ValueTypeId>])>
+) -> Option<(ConstantIndex, &'entries [SmallVec<ValueTypeId, 0, Global>])>
 {
     let &ValueType::Data { declaration, .. } = arena.value_type(id)?
     else {
@@ -154,6 +156,10 @@ pub fn data_signature<'entries>(
 /// - reason: a worklist over the finite type graph, each node expanded once; a
 ///   data type's declaration is held open until its fields are walked.
 /// - measure: the nodes not yet expanded.
+///
+/// # Cost
+/// - allocation: the worklist of pending nodes and the sets of open
+///   declarations and seen nodes, growth within the type graph's nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a function code refuses at a forward endpoint and beneath
@@ -577,7 +583,8 @@ fn patterns(
             // its fields the same way and applies itself to them.
             Cover::Product(arity) | Cover::Constructor(_, _, _, arity) => {
                 let start = results.len().checked_sub(arity).ok_or(FlowError::Arena)?;
-                let mut tuples = Vec::from([(Vec::<ValueId>::new(), Vec::<Leaf>::new())]);
+                let mut tuples =
+                    Vec::from([(SmallVec::<ValueId, 0, Global>::new(), Vec::<Leaf>::new())]);
                 for component in results.drain(start ..) {
                     let mut crossed = Vec::new();
                     for tuple in &tuples {
@@ -586,7 +593,9 @@ fn patterns(
                             allowance.charge()?;
                             let depth = u32::try_from(next.leaves.len())
                                 .map_err(|_overflow| FlowError::Budget)?;
-                            let mut values = Vec::with_capacity(prefix.len().saturating_add(1));
+                            let mut values = SmallVec::<_, 0, Global>::with_capacity(Count::from(
+                                prefix.len().saturating_add(1),
+                            ));
                             for &earlier in prefix {
                                 values.push(shift_value(
                                     arena,
@@ -701,6 +710,10 @@ fn source_leaf(
 ///
 /// # Errors
 /// As `fails`.
+///
+/// # Cost
+/// - allocation: the pending pairs of target values and their types, growth
+///   within the output value's nodes
 ///
 /// # Adequacy
 /// - hypothesis: L3 — literals cannot hide beneath sums, products, list cells
@@ -884,6 +897,10 @@ fn peel(
 /// # Errors
 /// As `fails`.
 ///
+/// # Cost
+/// - allocation: the source shapes, their leaves and the replayed application
+///   and return terms, growth within the source's shapes
+///
 /// # Adequacy
 /// - hypothesis: L3 — omitted constructors, constant Base maps and false traces
 ///   cannot certify a forward action, and a tampered image refuses by name at
@@ -957,9 +974,11 @@ pub fn forward(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -1217,8 +1236,11 @@ mod tests
         let integer = staging.arena().value_type_base(BaseType::Integer);
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![vec![integer], vec![integer, integer]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::from_iter([integer]),
+                SmallVec::<_, 0, Global>::from_iter([integer, integer]),
+            ]),
             kind,
         );
         let _shape = environment.add_decl(staged).expect("the shape admits");
@@ -1226,20 +1248,27 @@ mod tests
         let kind = staging
             .arena()
             .value_type_universe(GroundSort::Value, Level::zero());
-        let own = staging
-            .arena()
-            .value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let own = staging.arena().value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let staged = staging.data(
             LevelSignature::monomorphic(),
-            Vec::new(),
-            vec![Vec::new(), vec![own]],
+            SmallVec::<_, 0, Global>::new(),
+            SmallVec::<_, 0, Global>::from_iter([
+                SmallVec::<_, 0, Global>::new(),
+                SmallVec::<_, 0, Global>::from_iter([own]),
+            ]),
             kind,
         );
         let _naturals = environment.add_decl(staged).expect("the naturals admit");
         let entries = environment.entries();
         let mut arena = environment.arena().clone();
 
-        let shape = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+        let shape = arena.value_type_data(
+            ConstantIndex::from(0_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         let covered =
             patterns(&mut arena, shape, entries, &mut Allowance(u64::MAX)).expect("a shape covers");
         let [ref circle, ref rectangle] = *covered.as_slice()
@@ -1279,13 +1308,13 @@ mod tests
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(1_usize),
-            vec![height, width],
+            SmallVec::<_, 0, Global>::from_iter([height, width]),
         );
         let circle = arena.value_constructor(
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(0_usize),
-            vec![width],
+            SmallVec::<_, 0, Global>::from_iter([width]),
         );
         for output in [swapped, circle] {
             assert_eq!(
@@ -1305,13 +1334,13 @@ mod tests
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(1_usize),
-            vec![width],
+            SmallVec::<_, 0, Global>::from_iter([width]),
         );
         let past = arena.value_constructor(
             ConstantIndex::from(0_usize),
             shape,
             ConstructorTag::from(2_usize),
-            Vec::new(),
+            SmallVec::<_, 0, Global>::new(),
         );
         for output in [short, past] {
             assert_eq!(
@@ -1328,7 +1357,10 @@ mod tests
             );
         }
 
-        let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+        let naturals = arena.value_type_data(
+            ConstantIndex::from(1_usize),
+            SmallVec::<_, 0, Global>::new(),
+        );
         for (root, prefix) in [(naturals, entries), (shape, &crate::env::NO_ENTRIES)] {
             let quoted = arena.value_quote(root);
             assert!(

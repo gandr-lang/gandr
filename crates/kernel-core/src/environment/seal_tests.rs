@@ -2,8 +2,10 @@
 //! one admits through `Environment` or reads through conversion, which stand
 //! above the record, so it runs in this crate.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
@@ -274,9 +276,9 @@ fn build(
             arena.value_type_flow(domain, unit, unit)
         },
         Former::Session => {
-            let graph = alloc::sync::Arc::new(gandr_kernel_term::session::Graph {
+            let graph = gandr_kernel_data::Shared::new(gandr_kernel_term::session::Graph {
                 root: gandr_kernel_term::session::State(0),
-                nodes: alloc::vec![gandr_kernel_term::session::Node::End],
+                nodes: SmallVec::<_, 0, Global>::from_iter([gandr_kernel_term::session::Node::End]),
             });
             let payloads = c.value_type(arena);
             arena.value_type_session(graph, payloads)

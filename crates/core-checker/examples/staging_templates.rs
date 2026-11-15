@@ -546,7 +546,7 @@ fn template_residency(
                 let certificate = Certificate {
                     source: step.source,
                     target: step.target,
-                    steps: Vec::from([step]),
+                    steps: core::iter::once(step).collect(),
                 };
                 gandr_kernel_core::stage::replay(
                     &mut instance,

@@ -1075,6 +1075,10 @@ impl Schema
     /// # Errors
     /// Returns `Refusal::CorruptStep` or a syntax/fuel refusal.
     ///
+    /// # Cost
+    /// - allocation: the reflexive endpoint and the replayed terms in the probe
+    ///   arena, growth within the step's equation
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a changed target or decision cannot mint a schema.
     /// - witness: `admission::tests::schema_and_instance_refusals`
@@ -1097,7 +1101,7 @@ impl Schema
         let certificate = Certificate {
             source: endpoint,
             target: endpoint,
-            steps: Vec::from([step]),
+            steps: gandr_kernel_data::SmallVec::from_iter([step]),
         };
         let before = budget.0;
         let result = crate::stage::replay(&mut arena, &[], &certificate, budget);

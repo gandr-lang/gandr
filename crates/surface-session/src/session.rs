@@ -2153,6 +2153,12 @@ impl Detached
     /// - fails: never; a disagreement is in the answer.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the declaration keys and the copy for the background
+    ///   build, growth within the admission's checkpoints
+    /// - allocation: the record of the declarations crossed before a
+    ///   retirement, durable by the closure's text and their checkpoints
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — an admission retired part way leaves its record, and
     ///   the next admission of the same revision crosses only the declarations
@@ -3149,6 +3155,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - allocation: the revision's parse, lowering and judgement, growth
     ///   within the revision
     ///
+    /// # Cost
+    /// - allocation: the lowered program, its sorted obligations and the
+    ///   written imports, growth within the revision's text
+    /// - allocation: the pending admission's closure text, durable by the
+    ///   session's pending admission
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`judge_unit_reading`](Self::judge_unit_reading).
     /// - witness: `tests::corpus::sweeps::every_source_submits_as_the_walk_composes_it`
@@ -3844,6 +3856,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Errors
     /// The readmission of the first declaration the kernel did not re-derive.
+    ///
+    /// # Cost
+    /// - allocation: the record of the whole revision and its leading
+    ///   checkpoints, durable by the closure's checkpoints
+    /// - allocation: the artifact's checkpoint in the block store, growth
+    ///   within the kernel artifact's declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Session::admit`].

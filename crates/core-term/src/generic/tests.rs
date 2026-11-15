@@ -400,7 +400,10 @@ fn each_uncovered_declaration_refuses_at_its_site()
     let base = || -> alloc::boxed::Box<[RuleNode]> {
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into()
     };
-    let cells = FreeCells::new(at(0_usize), vec![FreeCell::new(base(), base())]);
+    let cells = FreeCells::new(
+        at(0_usize),
+        gandr_kernel_data::SmallVec::from_iter([FreeCell::new(base(), base())]),
+    );
     let cases: [Case; 7] = [
         (
             "a function field",

@@ -1,5 +1,6 @@
 //! Nominal and record judgments, including independent kernel readmission.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 
 use anodized::spec;
@@ -24,6 +25,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::ConstructorTag;
@@ -175,9 +177,9 @@ fn data_declarations_and_refusals_agree_with_kernel()
         crossed.readmitted()[3].outcome()
     );
     assert_eq!(crossed.audit().axioms(), []);
-    let family = gandr_kernel_term::StructuredName::from(vec![
+    let family = gandr_kernel_term::StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
         gandr_kernel_term::NameSegment::from_text(String::from("Unit1")).unwrap(),
-    ]);
+    ]));
     let artifact = gandr_kernel_term::decode_named(
         crossed
             .export(BTreeMap::from([(first, family.clone())]))
@@ -237,7 +239,7 @@ fn word(
 /// trivial.
 fn circle(
     arena: &mut CoreArena,
-    rules: Vec<gandr_kernel_term::PresentedRule>,
+    rules: impl IntoIterator<Item = gandr_kernel_term::PresentedRule>,
 ) -> Declaration
 {
     let kind = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
@@ -245,7 +247,9 @@ fn circle(
     Declaration::data(
         ConstantIndex::from(0_usize),
         DataSignature::new(vec![], vec![vec![], vec![own], vec![own]], kind)
-            .presented(gandr_kernel_term::Presentation::new(rules))
+            .presented(gandr_kernel_term::Presentation::new(
+                rules.into_iter().collect(),
+            ))
             .into(),
         OriginToken::from(0_usize),
     )
@@ -328,7 +332,7 @@ fn a_misplaced_rule_is_refused_in_both_checkers()
         .into(),
         [RuleNode::Constructor(ConstructorTag::from(0_usize))].into(),
     );
-    let presentation = gandr_kernel_term::Presentation::new(vec![misplaced]);
+    let presentation = gandr_kernel_term::Presentation::new(SmallVec::from_iter([misplaced]));
     let tally = Declaration::data(
         ConstantIndex::from(0_usize),
         DataSignature::new(vec![], vec![vec![], vec![integer]], kind)
@@ -357,8 +361,8 @@ fn a_misplaced_rule_is_refused_in_both_checkers()
     let staged = staging
         .data(
             gandr_kernel_term::LevelSignature::monomorphic(),
-            vec![],
-            vec![vec![], vec![kernel_integer]],
+            SmallVec::new(),
+            SmallVec::from_iter([SmallVec::new(), SmallVec::from_iter([kernel_integer])]),
             kernel_kind,
         )
         .presented(presentation);
@@ -392,7 +396,7 @@ fn a_rule_binding_a_dependent_field_is_refused_in_both_checkers()
         ]
         .into(),
     );
-    let presentation = gandr_kernel_term::Presentation::new(vec![rule]);
+    let presentation = gandr_kernel_term::Presentation::new(SmallVec::from_iter([rule]));
     let refusal = gandr_kernel_term::RuleRefusal {
         rule: gandr_kernel_term::RuleIndex::from(0_usize),
         fault: gandr_kernel_term::RuleFault::DependentSlot,
@@ -425,12 +429,15 @@ fn a_rule_binding_a_dependent_field_is_refused_in_both_checkers()
     let far = arena.value_variable(DeBruijnIndex::from(1_u32));
     let first = arena.value_type_element(near, Level::zero());
     let second = arena.value_type_element(far, Level::zero());
-    let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![near]);
+    let own = arena.value_type_data(ConstantIndex::from(0_usize), SmallVec::from_iter([near]));
     let staged = staging
         .data(
             gandr_kernel_term::LevelSignature::monomorphic(),
-            vec![kernel_kind],
-            vec![vec![first, second], vec![own]],
+            SmallVec::from_iter([kernel_kind]),
+            SmallVec::from_iter([
+                SmallVec::from_iter([first, second]),
+                SmallVec::from_iter([own]),
+            ]),
             kernel_kind,
         )
         .presented(presentation);
@@ -743,7 +750,7 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
     let path = arena.value_type_path(carrier, point, point);
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
-    let cells = FreeCells::new(sort, vec![FreeCell::new(base(), base())]);
+    let cells = FreeCells::new(sort, SmallVec::from_iter([FreeCell::new(base(), base())]));
     let table = || vec![vec![], vec![own], vec![own]];
     // The one-point sort, and the words of one loop at its point.
     let one_point = Declaration::data(
@@ -800,7 +807,7 @@ fn a_loop_is_a_word_at_its_path_in_both_checkers()
     let tampered = Declaration::data(
         ConstantIndex::from(5_usize),
         DataSignature::new(vec![], table(), kind)
-            .presented(Presentation::new(vec![]).carrying(cells))
+            .presented(Presentation::new(SmallVec::new()).carrying(cells))
             .into(),
         OriginToken::from(5_usize),
     );
@@ -885,7 +892,7 @@ fn one_loop(arena: &mut CoreArena) -> (Vec<Declaration>, OneLoop)
     let path = arena.value_type_path(carrier, point, point);
     let base =
         || -> Box<[RuleNode]> { [RuleNode::Constructor(ConstructorTag::from(0_usize))].into() };
-    let cells = FreeCells::new(sort, vec![FreeCell::new(base(), base())]);
+    let cells = FreeCells::new(sort, SmallVec::from_iter([FreeCell::new(base(), base())]));
     let empty = arena.value_constructor(words, own, ConstructorTag::from(0_usize), vec![]);
     let letter = arena.value_constructor(words, own, ConstructorTag::from(1_usize), vec![empty]);
     let inverse = arena.value_constructor(words, own, ConstructorTag::from(2_usize), vec![empty]);
@@ -1834,10 +1841,10 @@ fn a_law_is_stated_bare_only_over_no_variable()
         let own = arena.value_type_data(ConstantIndex::from(0_usize), vec![]);
         let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
         let returner = arena.comp_type_returner(integer);
-        let rules = vec![
+        let rules = SmallVec::<_, 0, Global>::from_iter([
             gandr_kernel_term::PresentedRule::new([c(1), c(0)].into(), [c(0)].into()),
             gandr_kernel_term::PresentedRule::new([c(2), c(3), x].into(), [c(0)].into()),
-        ];
+        ]);
         let presented = Declaration::data(
             ConstantIndex::from(0_usize),
             DataSignature::new(vec![], vec![vec![], vec![own], vec![own], vec![own]], kind)
@@ -4832,9 +4839,9 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
         "and the kernel admits the pruned case: {:?}",
         crossed.readmitted()[7].outcome()
     );
-    let family = gandr_kernel_term::StructuredName::from(vec![
+    let family = gandr_kernel_term::StructuredName::from(SmallVec::<_, 0, Global>::from_iter([
         gandr_kernel_term::NameSegment::from_text(String::from("Count")).unwrap(),
-    ]);
+    ]));
     let artifact = gandr_kernel_term::decode_named(
         crossed.export(BTreeMap::from([(count, family)])).as_image(),
         &crossed.export_names(),
@@ -4851,7 +4858,7 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     assert_eq!(
         (
             indices.len(),
-            results.iter().map(Vec::len).collect::<Vec<_>>()
+            results.iter().map(|row| row.len()).collect::<Vec<_>>()
         ),
         (1_usize, vec![1_usize, 1]),
         "the family crosses with its index and each constructor's"

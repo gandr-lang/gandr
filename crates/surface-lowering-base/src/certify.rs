@@ -13,12 +13,14 @@
 //! peaks are found among the written rules read with their indices, and each
 //! derived rule is stated without them, as the kernel re-derives them.
 
+use alloc::alloc::Global;
 use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::Above;
 use gandr_kernel_term::BinderDistance;
 use gandr_kernel_term::Exhausted;
@@ -80,6 +82,10 @@ use crate::description::written::RuleDirection;
 ///   derived rule is stated stripped of them
 ///   ([`Indexing::strip`](gandr_theory_computads::Indexing::strip)).
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the certificate's turns, derived faces and ranks, growth
+///   within the coincidence check's oriented and derived rules
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a group's inverse law turns no rule, derives the rules
@@ -152,7 +158,7 @@ where
         .collect();
     let mut symbols = Symbols::new(&ranks);
     let nameable = Nameable::from(naming_port(description).is_some());
-    let written: Vec<TheoryRule> = read
+    let written: SmallVec<TheoryRule, 0, Global> = read
         .iter()
         .map(|face| symbols.face(face, nameable))
         .collect();
@@ -208,6 +214,10 @@ where
 ///   the fault names no partner.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the symbol table and the written and derived rules, growth
+///   within the description's rules and the derived rules
+///
 /// # Adequacy
 /// - hypothesis: L3 — a relative monad's laws pass, and a `let` rule beside a
 ///   second rewriting its constant apart is named with that rule.
@@ -223,7 +233,7 @@ pub fn second_order_parts<G>(
 {
     let mut symbols = Symbols::new(&[]);
     let nameable = Nameable::from(naming_port(description).is_some());
-    let mut rules: Vec<TheoryRule> = description
+    let mut rules: SmallVec<TheoryRule, 0, Global> = description
         .rules
         .iter()
         .map(|face| symbols.face(face, nameable))
@@ -276,6 +286,10 @@ pub fn second_order_parts<G>(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the written and derived rules, their symbols and the normal
+///   form, growth within the cells' oriented and derived rules
+///
 /// # Adequacy
 /// - hypothesis: L3 — β at a binding field and a rule instantiating its
 ///   continuation below an operation reach the normal forms substitution gives,
@@ -291,7 +305,7 @@ pub fn second_order_normal_form<G>(
 {
     let mut symbols = Symbols::new(&[]);
     let nameable = Nameable::from(naming_port(description).is_some());
-    let mut rules: Vec<TheoryRule> = cells
+    let mut rules: SmallVec<TheoryRule, 0, Global> = cells
         .oriented
         .iter()
         .map(|face| symbols.face(face, nameable))
@@ -455,7 +469,11 @@ impl<'term> Symbols<'term>
     ///
     /// # Specification
     /// trivial.
-    fn table(&self) -> Vec<(SymbolKind, FieldCount)>
+    ///
+    /// # Cost
+    /// - allocation: the symbol table, each symbol with its kind and field
+    ///   count, growth within the certifier's keys
+    fn table(&self) -> SmallVec<(SymbolKind, FieldCount), 0, Global>
     {
         self.keys
             .iter()

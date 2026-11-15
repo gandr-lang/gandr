@@ -795,6 +795,10 @@ const fn computation_part(part: Part) -> Result<CompTypeId, KernelError>
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the rebuilt former and the list of its children's results,
+///   growth within the part's children
+///
 /// # Adequacy
 /// - hypothesis: L3 — a function field over its own family is rebuilt at the
 ///   case's stage, so a call through it on the chain before the link is
@@ -1707,16 +1711,19 @@ fn held_at(
                 declaration,
                 ref arguments,
             }),
-        ) if wanted == declaration && parameters.len() == arguments.len() => parameters
-            .iter()
-            .zip(arguments)
-            .find_map(
-                |(&parameter, &argument)| match (names(parameter), staged(argument)) {
-                    (true, Maybe::Present(base)) => Some((base, Held::Argument(argument))),
-                    (true | false, Maybe::Present(_) | Maybe::Absent(_)) => None,
-                },
-            )
-            .map_or(Maybe::Absent(Unstaged::Plain), Maybe::Present),
+        ) if wanted == declaration && parameters.len() == arguments.len() => {
+            // A loop, and no constructor passed as a function: the policy
+            // reads a constructor's call as one whose body it cannot read
+            // (gandr-lang/quenchant#152).
+            for (&parameter, &argument) in parameters.iter().zip(arguments) {
+                if names(parameter)
+                    && let Maybe::Present(base) = staged(argument)
+                {
+                    return Maybe::Present((base, Held::Argument(argument)));
+                }
+            }
+            Maybe::Absent(Unstaged::Plain)
+        },
         (Some(_) | None, Some(_) | None) => Maybe::Absent(Unstaged::Plain),
     }
 }
@@ -1724,6 +1731,9 @@ fn held_at(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
+
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::Stage;
     use gandr_kernel_term::StageId;
@@ -1745,11 +1755,11 @@ mod tests
         let mut arena = TermArena::new();
         let stage = Stage::At(StageId::from(0_usize));
         let family = ConstantIndex::from(0_usize);
-        let recursive = arena.value_type_data(family, alloc::vec![]);
+        let recursive = arena.value_type_data(family, SmallVec::<_, 0, Global>::from_iter([]));
         let other = arena.value_type_unit();
         let holder = ConstantIndex::from(1_usize);
         let quoted = arena.value_quote(recursive);
-        let holding = arena.value_type_data(holder, alloc::vec![quoted]);
+        let holding = arena.value_type_data(holder, SmallVec::<_, 0, Global>::from_iter([quoted]));
         let refined =
             stage_field(&mut arena, holding, Block::lone(family), stage).expect("a readable field");
         let Some(&ValueType::Data { ref arguments, .. }) = arena.value_type(refined)
@@ -1769,7 +1779,8 @@ mod tests
             Some(&ValueType::Staged { base, stage: at }) if base == recursive && at == stage
         ));
         let quoted_other = arena.value_quote(other);
-        let elsewhere = arena.value_type_data(holder, alloc::vec![quoted_other]);
+        let elsewhere =
+            arena.value_type_data(holder, SmallVec::<_, 0, Global>::from_iter([quoted_other]));
         assert_eq!(
             stage_field(&mut arena, elsewhere, Block::lone(family), stage),
             Ok(elsewhere),

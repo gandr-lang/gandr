@@ -3393,7 +3393,7 @@ impl CoreArena
         path_type: ValueTypeId,
         forward: ValueId,
         backward: ValueId,
-        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+        evidence: gandr_kernel_data::Shared<gandr_kernel_term::PathEvidence, alloc::alloc::Global>,
     ) -> ValueId
     {
         self.alloc_value(Value::PathEquiv {

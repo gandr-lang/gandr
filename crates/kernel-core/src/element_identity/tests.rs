@@ -4,10 +4,12 @@
 use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use gandr_kernel_conversion_trace::ConversionDecision;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
@@ -165,7 +167,10 @@ pub(super) fn persisted(
             evidence: proof,
         });
     }
-    arena.value_higher_evaluation(Arc::from(dialogues), Box::from(components))
+    arena.value_higher_evaluation(
+        ThinShared::from_header_and_iter((), dialogues),
+        Box::from(components),
+    )
 }
 
 /// A guarded higher field of one self-looping guard over one evidence value.
@@ -181,11 +186,14 @@ fn guarded(
     let program = HigherProgram {
         depth,
         root: LayerPosition(0),
-        layers: Vec::from([HigherLayer::Guard {
+        layers: SmallVec::<_, 0, Global>::from_iter([HigherLayer::Guard {
             tail: LayerPosition(0),
         }]),
     };
-    arena.value_higher(Arc::new(program), Box::from([evidence]))
+    arena.value_higher(
+        gandr_kernel_data::Shared::new(program),
+        Box::from([evidence]),
+    )
 }
 
 #[test]
@@ -802,7 +810,7 @@ fn a_higher_field_checks_and_computes_square_symmetry()
     else {
         panic!("a higher field");
     };
-    let program = Arc::clone(program);
+    let program = Shared::clone(program);
     let evidence = evidence.clone();
     let codata = higher_codata(&program, &evidence).expect("one guard, one evidence");
     let path = Cell {
@@ -840,11 +848,14 @@ fn a_higher_field_checks_and_computes_square_symmetry()
     let program = HigherProgram {
         depth: HigherDepth(1),
         root: LayerPosition(0),
-        layers: Vec::from([HigherLayer::Guard {
+        layers: SmallVec::<_, 0, Global>::from_iter([HigherLayer::Guard {
             tail: LayerPosition(0),
         }]),
     };
-    let surplus = arena.value_higher(Arc::new(program), Box::from([unit, unit]));
+    let surplus = arena.value_higher(
+        gandr_kernel_data::Shared::new(program),
+        Box::from([unit, unit]),
+    );
     assert_eq!(
         check_closed_value(&mut arena, surplus, squares),
         Err(KernelError::Identity(IdentityError::GuardEvidence))
@@ -860,8 +871,8 @@ fn a_non_productive_higher_field_is_refused_by_name()
     let inner = arena.value_type_path(boolean.ty, boolean.truth, boolean.truth);
     let squares = arena.value_type_path(inner, here, here);
     for layers in [
-        Vec::from([HigherLayer::Redirect(LayerPosition(0))]),
-        Vec::from([
+        SmallVec::<_, 0, Global>::from_iter([HigherLayer::Redirect(LayerPosition(0))]),
+        SmallVec::<_, 0, Global>::from_iter([
             HigherLayer::Redirect(LayerPosition(1)),
             HigherLayer::Redirect(LayerPosition(0)),
         ]),
@@ -871,7 +882,7 @@ fn a_non_productive_higher_field_is_refused_by_name()
             root: LayerPosition(0),
             layers,
         };
-        let field = arena.value_higher(Arc::new(program), Box::from([]));
+        let field = arena.value_higher(gandr_kernel_data::Shared::new(program), Box::from([]));
         let refused = check_closed_value(&mut arena, field, squares);
         assert_eq!(
             refused,
@@ -972,7 +983,7 @@ fn a_higher_evaluation_proves_function_extensionality()
     else {
         panic!("a higher evaluation");
     };
-    let (dialogues, components) = (Arc::clone(dialogues), components.clone());
+    let (dialogues, components) = (ThinShared::clone(dialogues), components.clone());
     assert!(matches!(
         evaluation_obligations(
             &mut arena,
@@ -1062,7 +1073,9 @@ fn a_higher_evaluation_proves_function_extensionality()
 ///
 /// # Specification
 /// trivial.
-fn unfolding_left(dialogue: &[ConversionDecision<()>]) -> Vec<ConversionDecision<()>>
+fn unfolding_left(
+    dialogue: &[ConversionDecision<()>]
+) -> SmallVec<ConversionDecision<()>, 0, Global>
 {
     let (forces, rest) = dialogue.split_at(2);
     assert!(
@@ -1070,7 +1083,7 @@ fn unfolding_left(dialogue: &[ConversionDecision<()>]) -> Vec<ConversionDecision
             .iter()
             .all(|decision| matches!(decision, ConversionDecision::Force { .. }))
     );
-    let mut spliced = forces.to_vec();
+    let mut spliced = SmallVec::<_, 0, Global>::from_iter(forces.iter().copied());
     spliced.push(ConversionDecision::Unfold { constant: () });
     spliced.push(ConversionDecision::ReduceLeft { redex: () });
     spliced.extend_from_slice(rest);
@@ -1127,7 +1140,7 @@ fn a_higher_evaluation_unfolds_what_the_environment_admitted()
                 .iter()
                 .copied()
                 .map(erase)
-                .collect::<Vec<_>>();
+                .collect::<SmallVec<_, 0, Global>>();
             dialogues.push(EvaluationDialogues {
                 left: if splice {
                     unfolding_left(&erased)
@@ -1143,7 +1156,10 @@ fn a_higher_evaluation_unfolds_what_the_environment_admitted()
                 evidence: proof,
             });
         }
-        let funext = arena.value_higher_evaluation(Arc::from(dialogues), Box::from(components));
+        let funext = arena.value_higher_evaluation(
+            ThinShared::from_header_and_iter((), dialogues),
+            Box::from(components),
+        );
         let extensional = arena.value_type_path(boolean.function, constant, boolean.not);
         let declaration = staging.def(LevelSignature::monomorphic(), extensional, funext);
         environment.add_decl(declaration).map(|_admitted| ())
@@ -1300,7 +1316,10 @@ pub(super) fn quantified(
             },
         }
     }
-    arena.value_quantified_evaluation(Arc::from(words), Box::from(children))
+    arena.value_quantified_evaluation(
+        ThinShared::from_header_and_iter((), words),
+        Box::from(children),
+    )
 }
 
 /// The generic higher-order pattern's telescope at the thunk type `inner`:
@@ -2048,9 +2067,9 @@ fn unit_law(
     let declared = arena.value_type_thunk(family);
     let here = arena.value_here_relating(
         endpoint,
-        Arc::new(EndpointDialogues {
-            left: Vec::new(),
-            right: dialogue.to_vec(),
+        gandr_kernel_data::Shared::new(EndpointDialogues {
+            left: SmallVec::<_, 0, Global>::new(),
+            right: dialogue.iter().copied().collect(),
         }),
     );
     let body = arena.computation_return(here);
@@ -2086,7 +2105,7 @@ fn readmit(artifact: &DecodedArtifact) -> Result<Environment, KernelError>
         let staged = match *marked.declaration().content() {
             DeclarationContent::Def { declared, body } => staging
                 .def(levels, declared, body)
-                .relating(marked.declaration().related().to_vec()),
+                .relating(marked.declaration().related().iter().cloned().collect()),
             DeclarationContent::Axiom { declared } => staging.axiom(levels, declared),
             DeclarationContent::Data { .. }
             | DeclarationContent::LiteralIdentity { .. }
@@ -2297,9 +2316,9 @@ fn delayed_law(
     let identity = arena.value_type_path(boolean.function, endpoint, named_k);
     let here = arena.value_here_relating(
         named_k,
-        Arc::new(EndpointDialogues {
-            left: dialogue.to_vec(),
-            right: Vec::new(),
+        gandr_kernel_data::Shared::new(EndpointDialogues {
+            left: dialogue.iter().copied().collect(),
+            right: SmallVec::<_, 0, Global>::new(),
         }),
     );
     let declaration = staging.def(LevelSignature::monomorphic(), identity, here);
@@ -2397,9 +2416,9 @@ fn a_dialogue_naming_the_wrong_unfolding_is_refused_by_name()
 fn a_pair_is_converted_by_the_kernel_s_own_evaluation_3557()
 {
     let evaluate = || {
-        Arc::new(EndpointDialogues {
-            left: Vec::new(),
-            right: Vec::from([ConversionDecision::Evaluate]),
+        Shared::new(EndpointDialogues {
+            left: SmallVec::<_, 0, Global>::new(),
+            right: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
         })
     };
     let mut environment = Environment::new();
@@ -2493,8 +2512,8 @@ fn an_evaluation_past_its_budget_is_undecided_3557()
     let mut arena = TermArena::new();
     let (unfoldings, point, (left, right)) = undecided_pair(&mut arena);
     let evaluate = EndpointDialogues {
-        left: Vec::from([ConversionDecision::Evaluate]),
-        right: Vec::from([ConversionDecision::Evaluate]),
+        left: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
+        right: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
     };
     let watermark = arena.watermark();
     let reported = super::reflexive_endpoints(
@@ -2528,7 +2547,7 @@ fn a_second_certificate_serves_its_pair_alone_3557()
     let mut arena = TermArena::new();
     let (unfoldings, point, endpoints) = undecided_pair(&mut arena);
     // `d` unfolds on the right, and `b` meets `b` by its name.
-    let second = Vec::from([
+    let second = SmallVec::<_, 0, Global>::from_iter([
         ConversionDecision::Unfold { constant: () },
         ConversionDecision::ReduceRight { redex: () },
         ConversionDecision::ConstShortcut { constant: () },
@@ -2545,7 +2564,7 @@ fn a_second_certificate_serves_its_pair_alone_3557()
     };
     assert_eq!(
         relate(&EndpointDialogues {
-            left: Vec::from([ConversionDecision::Evaluate]),
+            left: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
             right: second.clone(),
         }),
         Ok(()),
@@ -2555,7 +2574,7 @@ fn a_second_certificate_serves_its_pair_alone_3557()
         matches!(
             relate(&EndpointDialogues {
                 left: second,
-                right: Vec::from([ConversionDecision::Evaluate]),
+                right: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Evaluate]),
             }),
             Err(KernelError::Identity(IdentityError::EndpointsDiffer {
                 side: EndpointSide::Left,
@@ -2583,9 +2602,9 @@ fn admit_admitted(
     let path = arena.value_type_path(boolean, point, endpoint);
     let here = arena.value_here_relating(
         point,
-        Arc::new(EndpointDialogues {
-            left: Vec::new(),
-            right: Vec::from([ConversionDecision::Admitted]),
+        gandr_kernel_data::Shared::new(EndpointDialogues {
+            left: SmallVec::<_, 0, Global>::new(),
+            right: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Admitted]),
         }),
     );
     let declaration = staging.def(LevelSignature::monomorphic(), path, here);
@@ -2619,9 +2638,9 @@ fn an_admitted_result_is_taken_only_under_the_policy_3558()
         let declared = arena.value_type_thunk(family);
         let here = arena.value_here_relating(
             bound,
-            Arc::new(EndpointDialogues {
-                left: Vec::new(),
-                right: Vec::from([ConversionDecision::Admitted]),
+            gandr_kernel_data::Shared::new(EndpointDialogues {
+                left: SmallVec::<_, 0, Global>::new(),
+                right: SmallVec::<_, 0, Global>::from_iter([ConversionDecision::Admitted]),
             }),
         );
         let body = arena.computation_return(here);
@@ -2675,7 +2694,7 @@ fn a_declaration_that_took_an_admitted_result_keeps_no_verdict_3558()
             crate::verdict::TrustPolicy::Trusted(alloc::collections::BTreeSet::from([
                 signer.identity()
             ])),
-            Arc::new(crate::verdict::NoVerdicts),
+            alloc::sync::Arc::new(crate::verdict::NoVerdicts),
         )
         .admitting(policy);
         let mut staging = environment.stage();
@@ -2799,11 +2818,11 @@ fn a_definition_relating_compound_endpoints_admits_274()
     // A relation between other terms is not read: matching is by content.
     let (mut environment, _, law, [_, endpoint]) =
         ascribed_law(Admitted::Defined).expect("the fixture");
-    let elsewhere = law.relating(alloc::vec![RelatedEndpoints {
+    let elsewhere = law.relating(SmallVec::<_, 0, Global>::from_iter([RelatedEndpoints {
         left: endpoint,
         right: endpoint,
-        dialogue: DELAYED.to_vec(),
-    }]);
+        dialogue: SmallVec::<_, 0, Global>::from_iter(DELAYED),
+    }]));
     assert!(matches!(
         environment.add_decl(elsewhere),
         Err(KernelError::ValueTypeMismatch(_))
@@ -2815,9 +2834,9 @@ fn a_definition_relating_compound_endpoints_admits_274()
     let relation = RelatedEndpoints {
         left: k,
         right: endpoint,
-        dialogue: DELAYED.to_vec(),
+        dialogue: SmallVec::<_, 0, Global>::from_iter(DELAYED),
     };
-    let law = law.relating(alloc::vec![relation]);
+    let law = law.relating(SmallVec::<_, 0, Global>::from_iter([relation]));
     admit(&mut environment, &mut declarations, law)
         .expect("the dialogue unfolds `j` under the thunk");
     let bytes = gandr_kernel_term::encode(environment.arena(), &declarations);
@@ -2827,8 +2846,12 @@ fn a_definition_relating_compound_endpoints_admits_274()
     assert_eq!(readmitted.entries().len(), 5);
     let mut stripped = decoded.declarations().to_vec();
     if let Some(last) = stripped.last_mut() {
-        *last =
-            MarkedDeclaration::new(last.mark(), last.declaration().clone().relating(Vec::new()));
+        *last = MarkedDeclaration::new(
+            last.mark(),
+            last.declaration()
+                .clone()
+                .relating(SmallVec::<_, 0, Global>::new()),
+        );
     }
     let refusal = Environment::replay(decoded.arena().clone(), &stripped)
         .expect_err("the law without its relation is refused");
@@ -2858,11 +2881,11 @@ fn a_relation_stated_the_other_way_round_admits()
     });
     let (mut environment, mut declarations, law, [k, endpoint]) =
         ascribed_law(Admitted::Defined).expect("the fixture");
-    let law = law.relating(alloc::vec![RelatedEndpoints {
+    let law = law.relating(SmallVec::<_, 0, Global>::from_iter([RelatedEndpoints {
         left: endpoint,
         right: k,
-        dialogue: mirrored.to_vec(),
-    }]);
+        dialogue: SmallVec::<_, 0, Global>::from_iter(mirrored),
+    }]));
     admit(&mut environment, &mut declarations, law)
         .expect("the reversed relation is the same relation");
 }
@@ -2939,11 +2962,11 @@ fn a_corrupted_relation_is_refused_by_name()
 {
     let refused = |alias: Admitted, dialogue: &[ConversionDecision<()>]| {
         let (mut environment, _, law, [k, endpoint]) = ascribed_law(alias).expect("the fixture");
-        let law = law.relating(alloc::vec![RelatedEndpoints {
+        let law = law.relating(SmallVec::<_, 0, Global>::from_iter([RelatedEndpoints {
             left: k,
             right: endpoint,
-            dialogue: dialogue.to_vec(),
-        }]);
+            dialogue: dialogue.iter().copied().collect(),
+        }]));
         relation_refusal(&environment.add_decl(law))
     };
     let at = |position: usize| {
@@ -3780,7 +3803,12 @@ fn a_function_moves_along_an_equivalence_by_its_maps()
     let boolean = boolean(&mut arena);
     let (truth, falsity) = (boolean.truth, boolean.falsity);
     let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
-    let path = arena.value_path_equiv(classifier, boolean.not, boolean.identity, Arc::default());
+    let path = arena.value_path_equiv(
+        classifier,
+        boolean.not,
+        boolean.identity,
+        Shared::new(gandr_kernel_term::PathEvidence::default()),
+    );
     let binder = arena.value_variable(DeBruijnIndex::from(0_u32));
     let decode = arena.value_type_element(binder, Level::zero());
     let returner = arena.comp_type_returner(decode);

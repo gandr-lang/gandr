@@ -274,6 +274,7 @@
 //!   feature counts each frame that the machines pop, for the small-device
 //!   bench.
 
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::num::NonZeroUsize;
@@ -286,6 +287,9 @@ use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey as _;
 use gandr_kernel_check_memo::OverlaidMemo;
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
+use gandr_kernel_data::ThinShared;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
@@ -4387,7 +4391,7 @@ where
                         ref evidence,
                         payload_paths,
                     } => {
-                        let evidence = alloc::sync::Arc::clone(evidence);
+                        let evidence = Shared::clone(evidence);
                         let _level = type_level(
                             arena,
                             judgement,
@@ -4430,7 +4434,7 @@ where
                         ref evidence,
                         payload_paths,
                     } => {
-                        let evidence = alloc::sync::Arc::clone(evidence);
+                        let evidence = Shared::clone(evidence);
                         let _level = type_level(
                             arena,
                             judgement,
@@ -4833,7 +4837,7 @@ where
                         && let Some(words) =
                             spelled((right, right)).or_else(|| spelled((left, left)))
                     {
-                        let words = arena.value_type_data(words, Vec::new());
+                        let words = arena.value_type_data(words, SmallVec::<_, 0, Global>::new());
                         frames.push(Frame::ConvertValue(expected));
                         frames.push(Frame::ProduceValue(words));
                         goal = Goal::CheckValue(id, words);
@@ -4855,7 +4859,7 @@ where
                             crate::words::point(arena, judgement.presentations, words)
                     {
                         let at_point = arena.value_type_path(domain, point, point);
-                        let words = arena.value_type_data(words, Vec::new());
+                        let words = arena.value_type_data(words, SmallVec::<_, 0, Global>::new());
                         frames.push(Frame::ConvertValue(expected));
                         frames.push(Frame::ProduceValue(at_point));
                         goal = Goal::CheckValue(id, words);
@@ -4864,7 +4868,7 @@ where
                     let fibre = if let Some(words) =
                         judgement.presentations.words(arena, domain, (left, right))
                     {
-                        arena.value_type_data(words, Vec::new())
+                        arena.value_type_data(words, SmallVec::<_, 0, Global>::new())
                     }
                     else if let Some(&ValueType::Sigma { first, second }) =
                         arena.value_type(domain)
@@ -5181,7 +5185,7 @@ where
                         ref program,
                         ref evidence,
                     } => {
-                        let program = alloc::sync::Arc::clone(program);
+                        let program = Shared::clone(program);
                         owed_values.clear();
                         owed_values.extend_from_slice(evidence);
                         let goals = Slice::pushed(
@@ -5208,7 +5212,7 @@ where
                         ref dialogues,
                         ref components,
                     } => {
-                        let dialogues = alloc::sync::Arc::clone(dialogues);
+                        let dialogues = ThinShared::clone(dialogues);
                         owed_components.clear();
                         owed_components.extend_from_slice(components);
                         let unfoldings = admitted_unfoldings(judgement);
@@ -5241,7 +5245,7 @@ where
                         ref steps,
                         ref children,
                     } => {
-                        let steps = alloc::sync::Arc::clone(steps);
+                        let steps = ThinShared::clone(steps);
                         owed_values.clear();
                         owed_values.extend_from_slice(children);
                         let unfoldings = admitted_unfoldings(judgement);
@@ -6462,7 +6466,7 @@ where
                     // that borrow. A translator may name
                     // what the environment admitted
                     // before it, so both round trips unfold its definitions.
-                    let evidence = alloc::sync::Arc::clone(evidence);
+                    let evidence = Shared::clone(evidence);
                     let unfoldings = admitted_unfoldings(judgement);
                     let watermark = arena.watermark();
                     let result = crate::path_universe::coverage::round_trip(
@@ -6557,7 +6561,7 @@ where
                         Some(
                             &(Value::Here { ref dialogues, .. }
                             | Value::Stay { ref dialogues, .. }),
-                        ) => alloc::sync::Arc::clone(dialogues),
+                        ) => Shared::clone(dialogues),
                         _ => return Err(KernelError::ArenaFault),
                     };
                     let unfoldings = admitted_unfoldings(judgement);
@@ -6814,7 +6818,7 @@ where
                             flow_type,
                             translator,
                             outputs.clone(),
-                            alloc::sync::Arc::clone(dialogues),
+                            ThinShared::clone(dialogues),
                         ),
                         Value::Constructor { .. }
                         | Value::Record(_)
@@ -8230,6 +8234,10 @@ pub(crate) fn form_declared(
 /// # Errors
 /// Any [`KernelError`].
 ///
+/// # Cost
+/// - allocation: the owed obligations and the contexts of each check, growth
+///   within the declaration's parameters and constructors
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the finite differential corpus agrees below the
 ///   operational ceiling. The boundary fixture separates resource refusal from
@@ -8498,7 +8506,7 @@ where
                     judgement.levels.check_universe_below(&formed, &upper)?;
                     scope.push(*field);
                 }
-                let stated = results.get(tag).map_or(&[][..], Vec::as_slice);
+                let stated = results.get(tag).map_or(&[][..], SmallVec::as_slice);
                 for (position, (&value, &index)) in stated.iter().zip(indices).enumerate() {
                     let depth = |count: usize| {
                         u32::try_from(count)
@@ -9002,6 +9010,10 @@ const FORKED_PART: usize = 16;
 ///   [`MAX_CODE_OBLIGATIONS`] times whatever the artifact contains.
 /// - input recursion: none — a drained check appends to this worklist rather
 ///   than re-entering this function.
+///
+/// # Cost
+/// - allocation: the owed obligations, the ledger's checked keys, and the
+///   cloned contexts and stages, growth within the obligation ceiling
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`drain_code_obligations`].
@@ -9886,11 +9898,13 @@ pub(crate) fn synth_closed_value(
 #[cfg(test)]
 mod tests
 {
+    use alloc::alloc::Global;
     use alloc::vec;
     use alloc::vec::Vec;
 
     use anodized::spec;
     use gandr_kernel_check_memo::NullMemo;
+    use gandr_kernel_data::SmallVec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
@@ -11532,8 +11546,11 @@ mod tests
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             let declaration = staging.data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                ]),
                 kind,
             );
             environment.add_decl(declaration)?.position()
@@ -11558,7 +11575,7 @@ mod tests
             let second = mint.value_type_thunk(case_arrow);
             let declared = mint.value_type_sigma(first, second);
 
-            let data = mint.value_type_data(two, vec![]);
+            let data = mint.value_type_data(two, SmallVec::<_, 0, Global>::from_iter([]));
             let quoted = quote(mint, data);
             let quoted = mint.value_quote(quoted);
             let returns_quote = mint.computation_return(quoted);
@@ -11587,7 +11604,11 @@ mod tests
         arm: ComputationId,
     ) -> ComputationId
     {
-        mint.computation_data_case(scrutinee, motive, vec![arm, arm])
+        mint.computation_data_case(
+            scrutinee,
+            motive,
+            SmallVec::<_, 0, Global>::from_iter([arm, arm]),
+        )
     }
 
     /// A data case on a binder whose type decodes a call returning a data
@@ -11717,8 +11738,11 @@ mod tests
                 .value_type_universe(GroundSort::Value, zero.clone());
             let declaration = staging.data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                ]),
                 kind,
             );
             environment.add_decl(declaration)?.position()
@@ -11748,7 +11772,11 @@ mod tests
             let void_arm = mint.computation_return(void);
             let decoded = |mint: &mut TermArena, arm: ComputationId| {
                 let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
-                let cased = mint.computation_data_case(scrutinee, motive, vec![void_arm, arm]);
+                let cased = mint.computation_data_case(
+                    scrutinee,
+                    motive,
+                    SmallVec::<_, 0, Global>::from_iter([void_arm, arm]),
+                );
                 let returned = mint.value_returned(cased);
                 mint.value_type_element(returned, zero.clone())
             };
@@ -11763,7 +11791,7 @@ mod tests
             let ran = decoded(mint, ran);
             let returns = mint.comp_type_returner(ran);
             let arrow = mint.comp_type_arrow(held, returns);
-            let data = mint.value_type_data(two, vec![]);
+            let data = mint.value_type_data(two, SmallVec::<_, 0, Global>::from_iter([]));
             let family = mint.comp_type_pi(data, arrow);
             let declared = mint.value_type_thunk(family);
             let bound = mint.value_variable(DeBruijnIndex::from(0_u32));
@@ -11903,8 +11931,12 @@ mod tests
             let unit = mint.value_type_unit();
             let sum = mint.value_type_sum(&[unit, unit]);
             let kind = mint.value_type_universe(GroundSort::Value, zero);
-            let declaration =
-                staging.data(LevelSignature::monomorphic(), vec![sum], vec![vec![]], kind);
+            let declaration = staging.data(
+                LevelSignature::monomorphic(),
+                SmallVec::<_, 0, Global>::from_iter([sum]),
+                SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([])]),
+                kind,
+            );
             environment.add_decl(declaration)?.position()
         };
         let definition = {
@@ -11913,7 +11945,7 @@ mod tests
             let unit = mint.value_type_unit();
             let sum = mint.value_type_sum(&[unit, unit]);
             let y = mint.value_variable(DeBruijnIndex::from(u32::from(unread)));
-            let tag_at_y = mint.value_type_data(tags, vec![y]);
+            let tag_at_y = mint.value_type_data(tags, SmallVec::<_, 0, Global>::from_iter([y]));
             let mut family = mint.comp_type_returner(tag_at_y);
             for _ in 0 .. u32::from(unread) {
                 family = mint.comp_type_pi(unit, family);
@@ -11925,9 +11957,9 @@ mod tests
                 let injected = mint.value_injection(summand, own);
                 let made = mint.value_constructor_of(
                     tags,
-                    vec![injected],
+                    SmallVec::<_, 0, Global>::from_iter([injected]),
                     gandr_kernel_term::ConstructorTag::from(0_usize),
-                    vec![],
+                    SmallVec::<_, 0, Global>::from_iter([]),
                 );
                 mint.computation_return(made)
             });
@@ -12490,9 +12522,12 @@ mod tests
             let mut staging = environment.stage();
             let declared = staging.arena().value_type_unit();
             let body = staging.arena().value_unit();
-            staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![
-                ConstantIndex::from(0_usize),
-            ])
+            staging.sealed_def(
+                LevelSignature::monomorphic(),
+                declared,
+                body,
+                SmallVec::<_, 0, Global>::from_iter([ConstantIndex::from(0_usize)]),
+            )
         };
         assert_eq!(
             Err(KernelError::SealingProvenanceNotProjected {
@@ -12527,10 +12562,15 @@ mod tests
                 .arena()
                 .value_type_abstract(ConstantIndex::from(0_usize));
             let body = staging.arena().value_unit();
-            staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![
-                ConstantIndex::from(0_usize),
-                ConstantIndex::from(0_usize),
-            ])
+            staging.sealed_def(
+                LevelSignature::monomorphic(),
+                declared,
+                body,
+                SmallVec::<_, 0, Global>::from_iter([
+                    ConstantIndex::from(0_usize),
+                    ConstantIndex::from(0_usize),
+                ]),
+            )
         };
         assert_eq!(
             Err(KernelError::SealingProvenanceNotCanonical {
@@ -12866,12 +12906,18 @@ mod tests
         let integer_type = mint.value_type_base(BaseType::Integer);
         let numbers_type = mint.value_type_product(&vec![integer_type; numbers.len()]);
         let numbers = mint.value_tuple(numbers);
-        let first_two = mint.value_type_data(two, vec![]);
-        let second_two = mint.value_type_data(two, vec![]);
+        let first_two = mint.value_type_data(two, SmallVec::<_, 0, Global>::from_iter([]));
+        let second_two = mint.value_type_data(two, SmallVec::<_, 0, Global>::from_iter([]));
         let tag = gandr_kernel_term::ConstructorTag::from(0_usize);
-        let first = mint.value_constructor(two, first_two, tag, vec![]);
+        let first =
+            mint.value_constructor(two, first_two, tag, SmallVec::<_, 0, Global>::from_iter([]));
         let second = match last {
-            Last::Constructor => mint.value_constructor(two, second_two, tag, vec![]),
+            Last::Constructor => mint.value_constructor(
+                two,
+                second_two,
+                tag,
+                SmallVec::<_, 0, Global>::from_iter([]),
+            ),
             Last::Literal => integer(mint, &gandr_kernel_term::Magnitude::zero()),
         };
         let declared = mint.value_type_product(&[numbers_type, first_two, second_two]);
@@ -12898,8 +12944,11 @@ mod tests
                 .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             let declaration = staging.data(
                 LevelSignature::monomorphic(),
-                vec![],
-                vec![vec![], vec![]],
+                SmallVec::<_, 0, Global>::from_iter([]),
+                SmallVec::<_, 0, Global>::from_iter([
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                    SmallVec::<_, 0, Global>::from_iter([]),
+                ]),
                 kind,
             );
             environment

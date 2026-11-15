@@ -2,10 +2,13 @@
 //! introductions and eliminations that read a codata type through its
 //! observations.
 
+use alloc::alloc::Global;
+
 use anodized::spec;
 use gandr_kernel_core::CheckedId;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -33,12 +36,15 @@ fn nat(environment: &mut Environment) -> CheckedId
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.value_type_data(position, vec![]);
+    let own = arena.value_type_data(position, SmallVec::<_, 0, Global>::from_iter([]));
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
     let declaration = staging.data(
         LevelSignature::monomorphic(),
-        vec![],
-        vec![vec![], vec![own]],
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([
+            SmallVec::<_, 0, Global>::from_iter([]),
+            SmallVec::<_, 0, Global>::from_iter([own]),
+        ]),
         kind,
     );
     environment
@@ -86,14 +92,17 @@ fn stream(
     let element = arena.value_type_element(parameter, Level::zero());
     let head = arena.comp_type_returner(element);
     let rest = match tail {
-        Tail::Uniform => arena.comp_type_codata(position, vec![parameter]),
+        Tail::Uniform => {
+            arena.comp_type_codata(position, SmallVec::<_, 0, Global>::from_iter([parameter]))
+        },
         Tail::Elsewhere => {
             let unit = arena.value_type_unit();
             let code = arena.value_quote(unit);
-            arena.comp_type_codata(position, vec![code])
+            arena.comp_type_codata(position, SmallVec::<_, 0, Global>::from_iter([code]))
         },
         Tail::Unguarded => {
-            let own = arena.comp_type_codata(position, vec![parameter]);
+            let own =
+                arena.comp_type_codata(position, SmallVec::<_, 0, Global>::from_iter([parameter]));
             let thunk = arena.value_type_thunk(own);
             let unit = arena.value_type_unit();
             let returns = arena.comp_type_returner(unit);
@@ -103,8 +112,8 @@ fn stream(
     let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
     let declaration = staging.codata(
         LevelSignature::monomorphic(),
-        vec![universe],
-        vec![head, rest],
+        SmallVec::<_, 0, Global>::from_iter([universe]),
+        SmallVec::<_, 0, Global>::from_iter([head, rest]),
         kind,
     );
     environment.add_decl(declaration)
@@ -119,9 +128,19 @@ fn one(
     nat: ConstantIndex,
 ) -> ValueId
 {
-    let nat_type = arena.value_type_data(nat, vec![]);
-    let zero = arena.value_constructor(nat, nat_type, ConstructorTag::from(0), vec![]);
-    arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![zero])
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+    let zero = arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(0),
+        SmallVec::<_, 0, Global>::from_iter([]),
+    );
+    arena.value_constructor(
+        nat,
+        nat_type,
+        ConstructorTag::from(1),
+        SmallVec::<_, 0, Global>::from_iter([zero]),
+    )
 }
 
 /// Admit `ones : U (Stream ⌜Nat⌝) = thunk (fix s. return 1 & force s)`.
@@ -142,9 +161,9 @@ fn ones(
 {
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let nat_code = arena.value_quote(nat_type);
-    let streamed = arena.comp_type_codata(stream, vec![nat_code]);
+    let streamed = arena.comp_type_codata(stream, SmallVec::<_, 0, Global>::from_iter([nat_code]));
     let declared = arena.value_type_thunk(streamed);
     let one = one(arena, nat);
     let head = arena.computation_return(one);
@@ -172,7 +191,7 @@ fn a_stream_is_admitted_and_observed()
     // reads the stream it eliminates through its observations.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returns = arena.comp_type_returner(nat_type);
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(ones);
@@ -194,11 +213,16 @@ fn a_single_observation_reads_as_a_lazy_product_of_one()
     let position = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returns = arena.comp_type_returner(nat_type);
     let step = arena.comp_type_arrow(nat_type, returns);
     let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
-    let declaration = staging.codata(LevelSignature::monomorphic(), vec![], vec![step], kind);
+    let declaration = staging.codata(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([step]),
+        kind,
+    );
     let machine = environment
         .add_decl(declaration)
         .expect("one observation admits")
@@ -207,12 +231,16 @@ fn a_single_observation_reads_as_a_lazy_product_of_one()
     // `bare : U Machine = thunk (λx. return (succ x))`: the observation alone
     // is not the codata, which reads as the lazy product of its one entry.
     let body = |arena: &mut gandr_kernel_term::TermArena| {
-        let nat_type = arena.value_type_data(nat, vec![]);
-        let own = arena.comp_type_codata(machine, vec![]);
+        let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
+        let own = arena.comp_type_codata(machine, SmallVec::<_, 0, Global>::from_iter([]));
         let declared = arena.value_type_thunk(own);
         let argument = arena.value_variable(DeBruijnIndex::from(0));
-        let successor =
-            arena.value_constructor(nat, nat_type, ConstructorTag::from(1), vec![argument]);
+        let successor = arena.value_constructor(
+            nat,
+            nat_type,
+            ConstructorTag::from(1),
+            SmallVec::<_, 0, Global>::from_iter([argument]),
+        );
         let returned = arena.computation_return(successor);
         (declared, arena.computation_lambda(returned))
     };
@@ -238,7 +266,7 @@ fn a_single_observation_reads_as_a_lazy_product_of_one()
     // `two : U (F Nat) = thunk ((force successor).0 1)`.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returns = arena.comp_type_returner(nat_type);
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(successor);
@@ -261,17 +289,22 @@ fn a_bind_observes_a_returner_codata()
     // 1}`.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returns = arena.comp_type_returner(nat_type);
     let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
-    let declaration = staging.codata(LevelSignature::monomorphic(), vec![], vec![returns], kind);
+    let declaration = staging.codata(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([returns]),
+        kind,
+    );
     let delayed = environment
         .add_decl(declaration)
         .expect("one observation admits")
         .position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let own = arena.comp_type_codata(delayed, vec![]);
+    let own = arena.comp_type_codata(delayed, SmallVec::<_, 0, Global>::from_iter([]));
     let declared = arena.value_type_thunk(own);
     let one = one(arena, nat);
     let returned = arena.computation_return(one);
@@ -286,7 +319,7 @@ fn a_bind_observes_a_returner_codata()
     // the projected observation's returner.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let returns = arena.comp_type_returner(nat_type);
     let declared = arena.value_type_thunk(returns);
     let named = arena.value_constant(later);
@@ -316,10 +349,10 @@ fn the_observation_product_is_not_the_codata_type()
     // its observation product.
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let nat_type = arena.value_type_data(nat, vec![]);
+    let nat_type = arena.value_type_data(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let nat_code = arena.value_quote(nat_type);
     let head = arena.comp_type_returner(nat_type);
-    let tail = arena.comp_type_codata(stream, vec![nat_code]);
+    let tail = arena.comp_type_codata(stream, SmallVec::<_, 0, Global>::from_iter([nat_code]));
     let product = arena.comp_type_with(&[head, tail]);
     let declared = arena.value_type_thunk(product);
     let value = arena.value_constant(ones);
@@ -337,7 +370,7 @@ fn a_data_head_is_not_codata()
     let nat = nat(&mut environment).position();
     let mut staging = environment.stage();
     let arena = staging.arena();
-    let named = arena.comp_type_codata(nat, vec![]);
+    let named = arena.comp_type_codata(nat, SmallVec::<_, 0, Global>::from_iter([]));
     let declared = arena.value_type_thunk(named);
     let declaration = staging.axiom(LevelSignature::monomorphic(), declared);
     assert_eq!(
@@ -357,7 +390,12 @@ fn a_value_universe_is_no_codata_kind()
     let unit = arena.value_type_unit();
     let returns = arena.comp_type_returner(unit);
     let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
-    let declaration = staging.codata(LevelSignature::monomorphic(), vec![], vec![returns], kind);
+    let declaration = staging.codata(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([returns]),
+        kind,
+    );
     assert_eq!(
         environment
             .add_decl(declaration)
@@ -373,7 +411,12 @@ fn a_codata_without_observations_is_refused()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let kind = arena.value_type_universe(GroundSort::Computation, Level::zero());
-    let declaration = staging.codata(LevelSignature::monomorphic(), vec![], vec![], kind);
+    let declaration = staging.codata(
+        LevelSignature::monomorphic(),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        SmallVec::<_, 0, Global>::from_iter([]),
+        kind,
+    );
     assert_eq!(
         environment
             .add_decl(declaration)
@@ -414,7 +457,7 @@ fn an_ill_typed_codata_argument_is_refused()
     let mut staging = environment.stage();
     let arena = staging.arena();
     let one = one(arena, nat);
-    let streamed = arena.comp_type_codata(stream, vec![one]);
+    let streamed = arena.comp_type_codata(stream, SmallVec::<_, 0, Global>::from_iter([one]));
     let declared = arena.value_type_thunk(streamed);
     let declaration = staging.axiom(LevelSignature::monomorphic(), declared);
     assert!(matches!(

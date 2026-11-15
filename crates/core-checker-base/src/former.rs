@@ -117,6 +117,7 @@
 //! and outside it relates to nothing but itself. The kernel admits the same
 //! declaration under the same two premises.
 
+use alloc::alloc::Global;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -131,6 +132,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Apartness;
 use gandr_kernel_term::ConstantIndex;
@@ -401,6 +403,10 @@ pub(crate) fn form_signature_with_failure(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the constructor table that the rules validate against, growth
+///   within the declaration's constructors
+///
 /// # Adequacy
 /// - hypothesis: L3 — a rule placing a constructor of the family at a field of
 ///   another type is refused by name in both checkers, and the circle's
@@ -439,6 +445,10 @@ fn present(
 ///   whose reach cannot be read is dependent.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the constructor table and its rows of slots, growth within the
+///   declaration's constructors and their fields
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`present`], and a fold's law reads each pattern
 ///   variable at its slot; a rule binding the second field of a pair over a
@@ -453,7 +463,7 @@ pub fn slot_table(
     arena: &gandr_core_term::CoreArena,
     position: ConstantIndex,
     signature: &DataSignature,
-) -> Vec<Vec<RuleSlot<ValueTypeId>>>
+) -> SmallVec<SmallVec<RuleSlot<ValueTypeId>, 0, Global>, 0, Global>
 {
     signature
         .constructors()
@@ -519,6 +529,12 @@ quenchant_shape::reason_enum! {
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the declaration's slot table, growth within the declaration's
+///   constructors
+/// - allocation: the list of definitions read, growth within the endpoints'
+///   nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — absurd cases over `S(Z)` against `Z`, over a free type's
 ///   distinct constructors and over the circle's loop, a definition, against
@@ -573,6 +589,12 @@ pub fn apart(
 ///   its own arena alike.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the constructor's fields in the caller's buffer, growth within
+///   the constructor's written fields
+/// - allocation: the unfolded definition's constant, growth within the
+///   definitions' constants
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`apart`].
 /// - witness: `tests::native_formers::an_absurd_case_rests_on_apart_endpoints_in_both_checkers`
@@ -580,7 +602,7 @@ pub fn apart(
 fn node(
     (arena, definitions): (&gandr_core_term::CoreArena, &crate::code::CodeDefinitions),
     declaration: ConstantIndex,
-    (at, fields): (ValueId, &mut Vec<ValueId>),
+    (at, fields): (ValueId, &mut SmallVec<ValueId, 0, Global>),
     unfolded: &mut Vec<ConstantIndex>,
 ) -> TermReading<ValueId>
 {

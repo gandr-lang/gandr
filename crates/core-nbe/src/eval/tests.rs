@@ -1,3 +1,4 @@
+use alloc::alloc::Global;
 use alloc::vec::Vec;
 use core::convert::Infallible;
 
@@ -12,6 +13,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::Zone;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -625,20 +627,25 @@ fn native_certificate_conversion_retains_map_syntax()
     let sequenced = core.computation_bind(returned, returned);
     let expanded = core.computation_lambda(sequenced);
     let expanded = core.value_thunk(expanded);
-    let proof = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
-        source: Vec::from([Vec::new()]),
-        target: Vec::from([Vec::new()]),
+    let proof = gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence {
+        source: SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
+        target: SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
     });
-    let first = core.value_path_equiv(path_type, direct, direct, alloc::sync::Arc::clone(&proof));
+    let first = core.value_path_equiv(
+        path_type,
+        direct,
+        direct,
+        gandr_kernel_data::Shared::clone(&proof),
+    );
     let other = core.value_path_equiv(path_type, direct, expanded, proof);
-    let altered = alloc::sync::Arc::new(gandr_kernel_term::PathEvidence {
-        source: Vec::from([Vec::from([
+    let altered = gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence {
+        source: SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::from_iter([
             gandr_kernel_conversion_trace::ConversionDecision::ComparedShared {
                 left: (),
                 right: (),
             },
         ])]),
-        target: Vec::from([Vec::new()]),
+        target: SmallVec::<_, 0, Global>::from_iter([SmallVec::<_, 0, Global>::new()]),
     });
     let evidence_only = core.value_path_equiv(path_type, direct, direct, altered);
     let (chain, environment) = nothing_unfolds();

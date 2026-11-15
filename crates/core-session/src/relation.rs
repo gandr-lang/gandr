@@ -1,10 +1,12 @@
 //! One coinductive engine for equivalence and directional subtyping.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 
 use crate::Action;
 use crate::Label;
@@ -143,6 +145,10 @@ pub fn relate(
 /// # Errors
 /// [`TypeError::MissingNode`] for a state its session does not hold.
 ///
+/// # Cost
+/// - allocation: the visited state pairs and the pending pairs, growth within
+///   the two sessions' nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — two states of one recursive protocol, one past the binder
 ///   and one before it, relate exactly when their unfoldings do, and a state
@@ -207,7 +213,7 @@ pub fn relate_states(
     Ok(RelationResult::Related(
         gandr_kernel_term::session::Evidence {
             pairs: visited,
-            payloads: Vec::new(),
+            payloads: SmallVec::<_, 0, Global>::new(),
         },
     ))
 }

@@ -2,6 +2,7 @@
 //! one-step dialogue: a code built by a former over one variable converts
 //! with a second copy of itself and stays apart from its twin over another.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -19,6 +20,7 @@ use gandr_kernel_core::TracePosition;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::convertible_value_types;
 use gandr_kernel_core::replay;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -215,7 +217,8 @@ fn formers() -> Vec<Former>
             build: |a, c| {
                 let arm = done(a);
                 let motive = returns_unit(a);
-                let case = a.computation_data_case(c, motive, Vec::from([arm]));
+                let case =
+                    a.computation_data_case(c, motive, SmallVec::<_, 0, Global>::from_iter([arm]));
                 a.value_thunk(case)
             },
         },

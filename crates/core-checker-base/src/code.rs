@@ -96,6 +96,7 @@
 //! returned endpoints under quotes; the choice reverses with the reversal
 //! above, when the machine decides codes under quotes.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
@@ -141,6 +142,7 @@ use gandr_core_term::instantiate_value;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_conversion_trace::TraceLog;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -1979,6 +1981,11 @@ impl CodeDefinitions
     /// # Errors
     /// - [`CheckRefusal::Undecided`] — as above.
     ///
+    /// # Cost
+    /// - allocation: the evaluated sides, the machine's trace and the kept
+    ///   decisions, growth within the two computations and the table's
+    ///   definitions
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — negation after negation returns its input at both
     ///   injections and the trace replays in the kernel; the identity after
@@ -1993,7 +2000,7 @@ impl CodeDefinitions
         at: ValueId,
         (left, right): (ComputationId, ComputationId),
         open: OpenBinders,
-    ) -> Result<Maybe<Vec<ConversionDecision<()>>, converted::Absent>, CheckRefusal>
+    ) -> Result<Maybe<SmallVec<ConversionDecision<()>, 0, Global>, converted::Absent>, CheckRefusal>
     {
         let undecided = CheckRefusal::Undecided { at };
         let definitions = self.nbe_definitions();

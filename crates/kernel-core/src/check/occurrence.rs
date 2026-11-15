@@ -56,10 +56,12 @@
 //! `doi:10.4230/LIPIcs.FSCD.2026.18`). The fixpoint the admitted
 //! family recurses through is in the sibling `descent` module.
 
+use alloc::alloc::Global;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
@@ -730,6 +732,10 @@ impl Extend<(AnyNode, Reach)> for Pending
 ///   the arena is acyclic, the definitions finite, and reaches and readings
 ///   finite per node.
 ///
+/// # Cost
+/// - allocation: the pending worklist and the set of seen node, reach and
+///   reading triples, growth within the triples reachable from the root's type
+///
 /// # Adequacy
 /// - hypothesis: L3 — a nested, an index and a non-uniform occurrence, a
 ///   negative one no stage reaches, and a reference to a later position, each
@@ -1288,6 +1294,10 @@ const fn refusal(
 /// `NestedOccurrence` or `NonUniformOccurrence` at the refused site; a
 /// parameter naming a family is always an index occurrence.
 ///
+/// # Cost
+/// - allocation: the variance of each parameter, growth within the
+///   declaration's parameters
+///
 /// # Adequacy
 /// - hypothesis: L3 — `Nat`, `List A` and `Tree` with a function field are
 ///   admitted positive; a `T → A` field domain is admitted stratified; a node
@@ -1311,7 +1321,7 @@ pub(super) fn occurrences<Earlier>(
     arena: &TermArena,
     (block, definitions, earlier): (Block, &[(ConstantIndex, ValueId)], &Earlier),
     parameters: &[ValueTypeId],
-    constructors: &[Vec<ValueTypeId>],
+    constructors: &[SmallVec<ValueTypeId, 0, Global>],
 ) -> Result<Accessibility, KernelError>
 where
     Earlier: Admitted + ?Sized,
@@ -1383,6 +1393,10 @@ where
 ///   the block's end rises strictly each time.
 /// - measure: the later positions the root names, finite.
 ///
+/// # Cost
+/// - allocation: the unread variance of each parameter, growth within the
+///   declaration's parameters
+///
 /// # Adequacy
 /// - hypothesis: L3 — a lone family reaches one past itself, and a universe
 ///   naming its decoder reaches one past the decoder.
@@ -1392,7 +1406,7 @@ pub fn reach(
     arena: &TermArena,
     position: ConstantIndex,
     parameters: &[ValueTypeId],
-    constructors: &[Vec<ValueTypeId>],
+    constructors: &[SmallVec<ValueTypeId, 0, Global>],
 ) -> ConstantIndex
 {
     let mut block = Block::lone(position);

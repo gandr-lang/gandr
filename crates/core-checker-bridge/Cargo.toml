@@ -14,13 +14,16 @@ publish.workspace = true
 # The bridge reads the judgement's report from the base. It erases into the
 # term crate's arena and admits through the kernel's choke point, which
 # re-derives every declaration the judgement accepts. A decode of a code
-# constant unfolds through the normaliser's conversion machine, and the
-# kernel replays the recorded trace, addressed by the check-memo seam's
-# content digest. The deep-inference crate gives the derivations a bridge
-# readmits. A staged program forks its independent jobs through the fork
-# crate's trait, on whatever pool the driver hands it. The pinned anodized
-# facade supplies the executable specifications. `hotpath` profiles a model
-# slot's resolution and readmission for the benchmark report.
+# constant unfolds through the normaliser's conversion machine. The kernel
+# replays the recorded trace, and the content digest of the check-memo seam
+# is the key of that trace.
+#
+# The deep-inference crate gives the derivations a bridge readmits. A staged
+# program forks its independent jobs through the fork crate's trait, on
+# whatever pool the driver hands it. The pinned anodized facade supplies the
+# executable specifications. `hotpath` profiles a model slot's resolution and
+# readmission for the benchmark report. The data crate gives the vectors and
+# shared blocks that the term crate holds.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
@@ -31,6 +34,7 @@ gandr-core-term.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
+gandr-kernel-data.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-deep-inference.workspace = true

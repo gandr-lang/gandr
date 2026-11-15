@@ -7,6 +7,8 @@
 
 use alloc::alloc::Global;
 
+use gandr_kernel_data::Shared;
+use gandr_kernel_data::SmallVec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
@@ -29,15 +31,15 @@ fn session_rewrites_preserve_graph_evidence_and_native_children()
     let element = arena.value_type_element(variable, Level::zero());
     let unit = arena.value_type_unit();
     let payloads = arena.value_type_product(&[element]);
-    let graph = alloc::sync::Arc::new(Graph {
+    let graph = Shared::new(Graph {
         root: State(0),
-        nodes: alloc::vec![Node::End],
+        nodes: SmallVec::<_, 0, Global>::from_iter([Node::End]),
     });
-    let evidence = alloc::sync::Arc::new(Evidence::default());
-    let session = arena.value_type_session(alloc::sync::Arc::clone(&graph), payloads);
+    let evidence = Shared::new(Evidence::default());
+    let session = arena.value_type_session(Shared::clone(&graph), payloads);
     let code = arena.value_quote(session);
     let classifier = arena.value_type_path_universe(code, code);
-    let path = arena.value_session_path(classifier, alloc::sync::Arc::clone(&evidence), variable);
+    let path = arena.value_session_path(classifier, Shared::clone(&evidence), variable);
     let mut table = ContentTable::named_in(Global);
     let mut memo = RewriteMemo::new();
     let shifted = crate::rewrite::shift_value(

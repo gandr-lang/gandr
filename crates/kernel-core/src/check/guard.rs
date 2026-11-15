@@ -454,6 +454,10 @@ struct Step
 /// - measure: the steps not yet visited, finite because each child is minted
 ///   before its parent.
 ///
+/// # Cost
+/// - allocation: the worklist and the visited set of the walk's steps, growth
+///   within the body's nodes
+///
 /// # Adequacy
 /// - hypothesis: L3 — the stream of ones, the bind of the delay model and a
 ///   nested fixpoint are admitted; a case on the call, an argument that holds

@@ -2426,7 +2426,9 @@ impl Kernel
                             path_type,
                             forward,
                             backward,
-                            alloc::sync::Arc::clone(evidence),
+                            gandr_kernel_data::Shared::new(gandr_kernel_term::PathEvidence::clone(
+                                evidence,
+                            )),
                         )
                     },
                     Value::Tuple(ref components) => {
