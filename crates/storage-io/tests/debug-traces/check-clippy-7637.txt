@@ -1,0 +1,34 @@
+command: mise run check:clippy, with GATE_SCOPE=--package gandr-storage-io, on aarch64-apple-darwin
+issue: #7637
+before: 384ac1e64d
+exit: 101
+error: unused extern crate
+ --> crates/storage-io/tests/lib.rs:6:1
+error[E0432]: unresolved import `gandr_storage_io::Buffer`
+   --> crates/storage-io/benches/batch.rs:42:5
+error[E0432]: unresolved import `gandr_storage_io::Chain`
+   --> crates/storage-io/benches/batch.rs:43:5
+error[E0432]: unresolved import `gandr_storage_io::Count`
+   --> crates/storage-io/benches/batch.rs:44:5
+error[E0432]: unresolved import `gandr_storage_io::Errno`
+   --> crates/storage-io/benches/batch.rs:45:5
+error[E0432]: unresolved import `gandr_storage_io::Fill`
+   --> crates/storage-io/benches/batch.rs:46:5
+error[E0432]: unresolved import `gandr_storage_io::Handle`
+   --> crates/storage-io/benches/batch.rs:47:5
+error[E0432]: unresolved import `gandr_storage_io::Io`
+   --> crates/storage-io/benches/batch.rs:48:5
+error[E0432]: unresolved import `gandr_storage_io::Moved`
+   --> crates/storage-io/benches/batch.rs:49:5
+error[E0432]: unresolved import `gandr_storage_io::Pinning`
+   --> crates/storage-io/benches/batch.rs:50:5
+error[E0432]: unresolved import `gandr_storage_io::Position`
+   --> crates/storage-io/benches/batch.rs:51:5
+error[E0432]: unresolved import `gandr_storage_io::Registered`
+   --> crates/storage-io/benches/batch.rs:52:5
+error[E0432]: unresolved import `gandr_storage_io::Segment`
+   --> crates/storage-io/benches/batch.rs:53:5
+error: could not compile `gandr-storage-io` (test "tests") due to 1 previous error
+error: could not compile `gandr-storage-io` (bench "batch") due to 12 previous errors
+after: da02168aa6
+exit: 0

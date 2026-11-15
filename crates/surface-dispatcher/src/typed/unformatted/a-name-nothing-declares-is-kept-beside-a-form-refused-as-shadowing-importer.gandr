@@ -1,0 +1,9 @@
+import "./point.gandr" ;
+data Point : Type where {
+  | Here : Point
+}
+def a : Integer ;
+def a = nope ;
+data Spot : Type where {
+  | There : Spot
+}
