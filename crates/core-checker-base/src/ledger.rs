@@ -326,6 +326,9 @@ impl ObligationLedger
     ///   one higher.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the entry's slot, growth within the module's owed holes
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the append order, separated by two
     ///   holes recorded in module order and read back in that order.

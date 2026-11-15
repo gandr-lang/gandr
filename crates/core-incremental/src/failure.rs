@@ -456,6 +456,9 @@ impl Placing<'_, '_, '_, '_, '_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the placed parts of the failure, error path
     fn parts(
         &mut self,
         failure: &Failure,
@@ -534,6 +537,10 @@ impl Projection<'_, '_, '_, '_>
     /// - panics: none.
     /// - executable: none — the places are read against the walk, which a
     ///   predicate would walk again.
+    ///
+    /// # Cost
+    /// - allocation: the places and the content of the failure's nodes, error
+    ///   path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`FailureContent`].
@@ -1210,6 +1217,10 @@ impl Seat<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the seated frames, binders and endpoints of the failure,
+    ///   error path
     fn failure(
         &mut self,
         refusal: CheckRefusal,

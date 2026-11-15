@@ -2575,6 +2575,10 @@ impl<'program> NodeKeys<'program>
     ///   unresolved node, the key of its sort alone.
     /// - panics: none; the memo is never borrowed across an encoding.
     ///
+    /// # Cost
+    /// - allocation: the memo's entry for a node keyed first, growth within the
+    ///   nodes that a report names
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`node_key`].
     /// - witness: `checkpoint::tests::a_node_s_key_moves_only_with_its_content_7403`
@@ -3104,6 +3108,10 @@ impl<'judged> Judgement<'judged>
     /// - provides: the reason the item is decided again, checked in the order
     ///   of [`taken::Absent`].
     /// - panics: in the enforcing build, where the requires clause fails.
+    ///
+    /// # Cost
+    /// - allocation: the taken item's support, typing and report, durable by
+    ///   the session's checkpoint
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Judgement`]; a pass that holds another answer
@@ -4008,6 +4016,10 @@ where
 /// - executable: none — a predicate would decide the item again, and the
 ///   function exists to decide it once.
 ///
+/// # Cost
+/// - allocation: the judgement's run and the projected typing, support and
+///   answer, durable by the session's checkpoint
+///
 /// # Adequacy
 /// - hypothesis: L2 — as [`pass`].
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
@@ -4189,6 +4201,9 @@ fn wait_on(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the candidate references and the failure's content, error path
 fn failure_of(
     projection: &Projection<'_, '_, '_, '_>,
     (verdict, failure): (Verdict, Maybe<&Failure, kept::Absent>),
@@ -4493,6 +4508,10 @@ fn adopt(
 /// - executable: none — a clause over the context after the settlement. Such a
 ///   clause resolves the entry again.
 ///
+/// # Cost
+/// - allocation: the resolved entry and the register's entry for the item,
+///   growth within the module's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a reader of an adopted located declaration is adopted
 ///   against the home the earlier judgement settled.
@@ -4576,6 +4595,10 @@ struct Seating<'input>
 /// - provides: the reason the typing does not seat: `Opaque`, `Derived` or
 ///   `Unseated`.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the seated type and the item's admission, growth within the
+///   module's declarations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`adopt`].
@@ -5008,6 +5031,10 @@ fn support_holds(
 /// - executable: none — the walk itself, over the register and the grant of
 ///   `context`.
 ///
+/// # Cost
+/// - allocation: the resolved entry and its roots, which the walk compares,
+///   setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a reader of a declaration whose home changes is judged
 ///   again; under a changed grant, each declaration whose resolved entry moves
@@ -5207,6 +5234,10 @@ fn answered(
 ///   item's own reference beside the resolved entry, or none for a refused one,
 ///   and the spending.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the roots of the resolved entry in the answer, durable by the
+///   session's checkpoint
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration stating no entry records none under no

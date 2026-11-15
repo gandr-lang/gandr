@@ -721,6 +721,9 @@ pub(crate) fn unrestricted(
 /// # Errors
 /// As above.
 ///
+/// # Cost
+/// - allocation: the engine's nodes and branch labels, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a recursive protocol, related to itself past its root and
 ///   to a differing one, separates a node mistranslated.
@@ -839,6 +842,11 @@ pub(crate) fn relate(
 ///
 /// # Errors
 /// As above.
+///
+/// # Cost
+/// - allocation: the engine's syntax of each side, setup
+/// - allocation: the evidence and its payload pairs, durable by the statement's
+///   decision
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a widened selection relates by subtyping with evidence

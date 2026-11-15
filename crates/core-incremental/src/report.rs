@@ -1450,6 +1450,10 @@ impl ReportContent
     /// - executable: none — a predicate would place every node again, which the
     ///   witness does through a seat.
     ///
+    /// # Cost
+    /// - allocation: the report's parts as content, durable by the session's
+    ///   checkpoint
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].
     /// - witness: `report::tests::a_report_read_back_from_bytes_seats_as_the_parts_that_give_it`
@@ -1980,6 +1984,10 @@ impl Seat<'_, '_, '_, '_>
     /// - fails: as [`ReportContent::seat`].
     /// - panics: none.
     /// - executable: none — the clause restates the body.
+    ///
+    /// # Cost
+    /// - allocation: the seated suspension's equations, durable by the module's
+    ///   report
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`ReportContent`].

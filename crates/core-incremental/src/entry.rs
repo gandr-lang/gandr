@@ -135,6 +135,10 @@ impl EntryContent
     /// - executable: none — a predicate would read the table again through the
     ///   reads this call makes.
     ///
+    /// # Cost
+    /// - allocation: the stage signature and the parts of the entry, durable by
+    ///   the session's checkpoint
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`EntryContent`].
     /// - witness: `entry::tests::an_elaborated_item_keeps_its_filled_body_and_mints_it_back`

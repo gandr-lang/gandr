@@ -438,6 +438,10 @@ impl Layout
     /// [`ProgramError::PositionOrder`] — admission positions do not strictly
     /// ascend in source order.
     ///
+    /// # Cost
+    /// - allocation: the references, the occupied positions and the named
+    ///   items, durable by the program's layout
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Program::new`], which lays its items out here.
     /// - witness: `region::tests::positions_must_ascend_and_may_skip`

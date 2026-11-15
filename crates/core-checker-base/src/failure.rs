@@ -799,6 +799,10 @@ impl Failure
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the frames, the binders and the endpoints as boxed slices,
+    ///   error path
     pub(crate) fn new(
         refusal: CheckRefusal,
         obligations: Vec<Obligation>,
@@ -844,6 +848,10 @@ impl Failure
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the kept frames, binders and endpoints as boxed slices,
+    ///   and the box of the solved types, error path
     #[inline]
     #[must_use]
     pub fn seated(
@@ -892,6 +900,10 @@ where
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the binders, the outer ones before the run's own, error
+    ///   path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused data signature's failure keeps the
     ///   signature's binders before the binders its run opened.
@@ -921,6 +933,9 @@ where
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the box of the solved types, error path
     pub(crate) fn solved_as(
         self,
         solved: ComparedOf<N>,
@@ -1083,6 +1098,10 @@ impl Failure
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the keyed frames, binders and endpoints and the box of the
+    ///   solved types, durable by the settle report
     #[inline]
     #[must_use]
     pub fn keyed<K>(

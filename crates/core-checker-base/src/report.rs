@@ -307,6 +307,10 @@ impl ModuleReport
     ///   table is the context's.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the copies of the context's tables, durable by the
+    ///   module's report
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the report of a module run, which every module
     ///   witness reads.
@@ -788,6 +792,9 @@ impl ModuleReport
     ///   else changes.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the failure's entry, growth within the report's failures
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — a refused and an accepted declaration, each given a
     ///   taken refusal with and without a failure, separate the verdict and the
@@ -1093,6 +1100,10 @@ quenchant_shape::reason_enum! {
 ///   definitions are unchanged.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the later judgement's entries, growth within the report's
+///   tables
+///
 /// # Adequacy
 /// - hypothesis: L1 — a fill using a rule the batch run never decided is
 ///   readmitted only when its decision reaches the bridge.
@@ -1216,6 +1227,10 @@ pub fn absorb(
 ///   define nothing, and the lift side table holds only the lifts an output
 ///   left beneath a former it reads as a leaf. Every other table is `base`'s.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the copy of `base` and one verdict per entry, durable by the
+///   bridge's report
 ///
 /// # Adequacy
 /// - hypothesis: L1 — kernel readmission checks emitted terms without trusting

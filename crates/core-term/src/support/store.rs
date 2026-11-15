@@ -208,20 +208,33 @@ impl WordArena
         at: Raw,
     ) -> Maybe<ThinningRef<'_>, unstored::Absent>
     {
-        let entry = usize::try_from(at.0)
-            .ok()
-            .and_then(|at| self.words.0.get(at ..))
-            .and_then(|entry| {
-                let (&count, rest) = entry.split_first()?;
-                let count = usize::try_from(count).ok()?;
-                let code = rest.get(.. count)?;
-                let (&head, tail) = code.split_first()?;
-                Some(ThinningRef::of_seq(Seq {
-                    head: Word(head),
-                    tail,
-                }))
-            });
-        entry.map_or(Maybe::Absent(unstored::Absent::Unstored), Maybe::Present)
+        // The entry is read with `?`, and the variant is named in a branch: a
+        // closure or a constructor that `Option` calls reads to
+        // `allocation_free_region` as a call that allocates.
+        let Some(entry) = self.entry(at)
+        else {
+            return Maybe::Absent(unstored::Absent::Unstored);
+        };
+        Maybe::Present(entry)
+    }
+
+    /// The thinning that the entry at `at` holds, or `None` past the arena.
+    ///
+    /// # Specification
+    /// trivial.
+    fn entry(
+        &self,
+        at: Raw,
+    ) -> Option<ThinningRef<'_>>
+    {
+        let entry = self.words.0.get(usize::try_from(at.0).ok()? ..)?;
+        let (&count, rest) = entry.split_first()?;
+        let code = rest.get(.. usize::try_from(count).ok()?)?;
+        let (&head, tail) = code.split_first()?;
+        Some(ThinningRef::of_seq(Seq {
+            head: Word(head),
+            tail,
+        }))
     }
 
     /// The arena's length now, to truncate back to.

@@ -30,6 +30,16 @@
         reason = "module documentation that predates the shape lint"
     )
 )]
+// 342 functions in 43 files of this crate allocate with no `# Cost`
+// declaration. A verdict's naming changes their MIR, so the lint holds them.
+// #7752 declares each one, and this allow leaves with it.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        allocation_free_region,
+        reason = "#7752 declares the allocations of the 342 functions held here"
+    )
+)]
 #![no_std]
 
 extern crate alloc;

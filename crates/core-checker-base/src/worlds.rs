@@ -1009,6 +1009,10 @@ impl Worlds
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the copy of the entry that the declaration takes, durable
+    ///   by the declaration's entry
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the three host entries against a stated entry and
     ///   none, each answer asserted.
@@ -1145,6 +1149,9 @@ enum Decoded
 /// - measure: a type is replaced by its children; a datatype's fields are read
 ///   once per declaration, its own and every other's, so a recursive datatype
 ///   adds its fields once.
+///
+/// # Cost
+/// - allocation: the worklist of pending types, setup
 ///
 /// # Adequacy
 /// - hypothesis: L3 — one type of every value-type former, each asserted to
