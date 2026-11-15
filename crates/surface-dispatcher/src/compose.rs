@@ -5532,6 +5532,11 @@ pub fn item_program(
 /// # Adequacy
 /// - hypothesis: L3 — as [`item_program`], which lays its items out here.
 /// - witness: `tests::package::each_unrefused_declaration_is_one_item_keyed_by_its_name`
+#[spec(ensures: |ret| !matches!(
+    ret,
+    Err(gandr_core_incremental::ProgramError::PositionOrder { position, previous, .. })
+        if position > previous
+))]
 #[inline]
 pub fn item_layout(
     module: &LoweredModule<'_>,

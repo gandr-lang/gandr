@@ -18,7 +18,6 @@
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -103,7 +102,7 @@ pub struct Located
     /// The call whose omitted implicit the refusal names.
     pub omitted: Maybe<Omitted, locating::Absent>,
     /// The law that the refusal names, as the source writes it.
-    pub law: Maybe<String, locating::Absent>,
+    pub law: Maybe<gandr_theory_levitation::Name, locating::Absent>,
 }
 
 impl Located
@@ -152,7 +151,7 @@ impl Located
         };
         let law = match refusal {
             CheckRefusal::HandlerUnlawful { at, rule, .. } => match origins.scope_law(at, rule) {
-                Maybe::Present(law) => Maybe::Present(law.to_string()),
+                Maybe::Present(law) => Maybe::Present(law.clone()),
                 Maybe::Absent(_) => Maybe::Absent(locating::Absent::Unrecorded),
             },
             _ => Maybe::Absent(locating::Absent::Unrecorded),
@@ -206,10 +205,10 @@ impl Located
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn law(&self) -> Maybe<&str, locating::Absent>
+    pub const fn law(&self) -> Maybe<&gandr_theory_levitation::Name, locating::Absent>
     {
         match self.law {
-            Maybe::Present(ref law) => Maybe::Present(law.as_str()),
+            Maybe::Present(ref law) => Maybe::Present(law),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
@@ -289,6 +288,7 @@ impl Locations
     /// - hypothesis: L3 — a document judged after a closure judged once locates
     ///   as on a fresh judgement of the closure.
     /// - witness: `tests::diagnostics::a_document_judged_after_its_closure_spells_as_the_whole_unit_776`
+    #[spec(ensures: |ret| earlier.0.range(.. boundary).all(|(constant, record)| ret.0.get(constant) == Some(record)))]
     #[must_use]
     pub fn after(
         earlier: &Self,
@@ -346,6 +346,7 @@ impl Locations
 /// # Adequacy
 /// - hypothesis: L3 — as [`Located::of`].
 /// - witness: `tests::diagnostics::a_refused_declaration_is_located`
+#[spec(ensures: |ret| ret.keys().all(|constant| declarations.iter().any(|declaration| declaration.constant() == *constant)))]
 fn located(
     module: &gandr_surface_lowering::LoweredModule<'_>,
     declarations: &[DeclarationReport<'_>],

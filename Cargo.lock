@@ -1824,6 +1824,7 @@ dependencies = [
  "gandr-surface-syntax",
  "gandr-theory-dynamic-graphs",
  "gandr-theory-graphs",
+ "gandr-theory-levitation",
  "gandr-theory-sites",
  "gandr-workflow-sweep",
  "quenchant-anodized",

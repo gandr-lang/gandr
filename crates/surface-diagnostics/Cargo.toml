@@ -26,9 +26,10 @@ path = "tests/lib.rs"
 # shape and element indices. The pretty printer spells the types a failure
 # names while the arena is at hand. The parser reads what separates a head
 # that is no function from the operand beside it, which a refusal names as
-# its repair. The JSON image derives through serde and encodes through
-# serde_json. The pinned anodized facade supplies core-only specification
-# helpers; logic/BigInt stays disabled.
+# its repair. A handler's refusal names its law by the levitation's own name.
+# The JSON image derives through serde and encodes through serde_json. The
+# pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
@@ -39,6 +40,7 @@ gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-theory-levitation.workspace = true
 gandr-theory-sites.workspace = true
 quenchant-shape.workspace = true
 serde.workspace = true

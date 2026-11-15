@@ -2450,6 +2450,8 @@ fn caused(
 ///   refusal through, while the arena is at hand.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — the precondition names the report that the checker gave
+///   `module`, and no value of the call holds that relation.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration refused at refused terms states their
