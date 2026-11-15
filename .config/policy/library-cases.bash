@@ -17,12 +17,16 @@ mkdir -p target
 scratch=$(mktemp -d "$PWD/target/library-case.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 
+fail() {
+  echo "library case FAILED: $1"
+  echo "  got: $2"
+  exit 1
+}
 shopt -s nullglob
 names=("${CARGO_HOME:-$HOME/.cargo}"/git/checkouts/quenchant-*)
 shopt -u nullglob
 if (( ${#names[@]} == 0 )); then
-  echo "library case FAILED: the cargo home holds no checkout of quenchant, so the case has no name to give its checkouts"
-  exit 1
+  fail "#7492: the cargo home holds a checkout of quenchant, whose names the case takes" "no checkouts directory of quenchant"
 fi
 home=$scratch/cargo-home
 checkouts=()
@@ -49,8 +53,7 @@ cp rust-toolchain.toml "$scratch/workspace/"
 
 after=$(times)
 if [[ $after != "$before" ]]; then
-  echo "library case FAILED: #7492: the policy run writes into the checkouts of its cargo home"
-  echo "  got: $(diff <(echo "$before") <(echo "$after") | grep -c '^>') of ${#checkouts[@]} checkouts with a new time"
-  exit 1
+  fail "#7492: the policy run writes into the checkouts of its cargo home" \
+    "$(diff <(echo "$before") <(echo "$after") | grep -c '^>') of ${#checkouts[@]} checkouts with a new time"
 fi
 echo "library case OK: the policy run writes nothing into the ${#checkouts[@]} checkouts of its cargo home"
