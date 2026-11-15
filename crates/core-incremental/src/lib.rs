@@ -285,6 +285,7 @@ pub use crate::region::Program;
 pub use crate::region::ProgramError;
 pub use crate::region::Reference;
 pub use crate::region::SourceTag;
+pub use crate::region::Tier;
 pub use crate::region::naming;
 pub use crate::report::ReportContent;
 pub use crate::report::SeatedReport;

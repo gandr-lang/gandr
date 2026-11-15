@@ -4890,11 +4890,12 @@ pub fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
         .collect()
 }
 
-/// What [`checking_context`] reads of a lowered module: the holes its matches
-/// were written with in place of a pattern, the reducts and the forgetting
-/// maps it mints, and the literal readers it lends. A front end reads them
-/// once, and each context of the module opens under them: the judgement's and
-/// each incremental pass's.
+/// What [`checking_context`] opens a lowered module's contexts under: the
+/// emitted tier, the installed stratum store, the holes its matches were
+/// written with in place of a pattern, the reducts and the forgetting maps it
+/// mints, and the literal readers it lends. A front end reads them once, and
+/// each context of the module opens under them: the judgement's and each
+/// incremental pass's, which [`item_program`] hands the same opener.
 ///
 /// # Specification
 /// - executable: none — a data type; [`ModuleSettings::of`] states what it
@@ -4903,18 +4904,12 @@ pub fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 /// # Adequacy
 /// - hypothesis: L3 — as [`checking_context`].
 /// - witness: `tests::typed::a_pattern_hole_refuses_its_match_in_both_tables_3617`
+#[cfg_attr(not(feature = "unfolding-probe"), repr(transparent))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModuleSettings
 {
-    /// The holes the module's matches were written with in place of a
-    /// pattern.
-    holes: Vec<HoleId>,
-    /// The reducts the module mints.
-    reducts: Vec<ConstantIndex>,
-    /// The forgetting maps the module mints.
-    forgets: Vec<ConstantIndex>,
-    /// The literal readers the module lends.
-    readers: Vec<gandr_core_term::LiteralReader>,
+    /// The settings each context of the module opens under.
+    opener: gandr_core_incremental::Opener,
     /// The names of the module's declarations, which an unfolding probe
     /// reports reads by.
     #[cfg(feature = "unfolding-probe")]
@@ -4927,18 +4922,47 @@ impl ModuleSettings
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the module's opener and its names, setup
     #[must_use]
     pub fn of(module: &LoweredModule<'_>) -> Self
     {
         Self {
-            holes: pattern_holes(module),
-            reducts: module.reducts().to_vec(),
-            forgets: module.forgets().to_vec(),
-            readers: module.readers().to_vec(),
+            opener: module_opener(module),
             #[cfg(feature = "unfolding-probe")]
             names: crate::unfolding::names(module),
         }
     }
+}
+
+/// The opener of `module`'s contexts: the emitted tier under the installed
+/// admission policy, the installed stratum store, and the module's holes,
+/// reducts with its forgetting maps, and literal readers.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the module's holes, reducts and readers, setup
+fn module_opener(module: &LoweredModule<'_>) -> gandr_core_incremental::Opener
+{
+    gandr_core_incremental::Opener::bare()
+        .deciding_on(gandr_core_incremental::Tier::new(
+            crate::tier::Emitted::boxed,
+            crate::tier::admitting(),
+        ))
+        .keeping_strata_in(crate::strata::stratum_store())
+        .keeping(
+            pattern_holes(module),
+            module
+                .reducts()
+                .iter()
+                .chain(module.forgets())
+                .copied()
+                .collect(),
+            module.readers().to_vec(),
+        )
 }
 
 /// How [`checking_context`] opens the checking context of a module.
@@ -4983,6 +5007,9 @@ impl Opening<'static>
 /// - executable: none — the tier is a trait object no predicate compares, and
 ///   the holes and reducts are the context's own to read.
 ///
+/// # Cost
+/// - allocation: the context, its tier and its copies of the settings, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — the judgement of a closure, the judgement of a document,
 ///   the formatter's checker, the table typed alone and each incremental pass
@@ -5006,12 +5033,7 @@ pub fn checking_context<'arena>(
         },
         Opening::Resumed(checkpoint) => CheckingContext::resume(arena, checkpoint.clone()),
     };
-    context.decide_endpoints_on(crate::tier::Emitted::boxed(), crate::tier::admitting());
-    context.keep_strata_in(crate::strata::stratum_store());
-    context.keep_pattern_holes(&settings.holes);
-    context.keep_reducts(&settings.reducts);
-    context.keep_reducts(&settings.forgets);
-    context.keep_readers(&settings.readers);
+    settings.opener.settle(&mut context);
     #[cfg(feature = "unfolding-probe")]
     crate::unfolding::attach(&mut context, &settings.names);
     context
@@ -5278,6 +5300,9 @@ pub fn adapt(
 /// - [`gandr_core_incremental::ProgramError::PositionOrder`]: the lowering
 ///   assigned positions out of order.
 ///
+/// # Cost
+/// - allocation: the items, their tags and the program's opener, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a lowered module with a refused middle declaration, an
 ///   explicit signature and an owed body; exact name keys, skipped admission
@@ -5385,19 +5410,7 @@ pub fn item_program(
         })
         .collect();
     let mut program = gandr_core_incremental::Program::new(arena, items)?;
-    let settings = ModuleSettings::of(module);
-    program.open_contexts_with(gandr_core_incremental::Opener::new(
-        move |arena, opened| match opened {
-            gandr_core_incremental::Opened::Fresh(budget) => checking_context(
-                arena,
-                Opening::Fresh(Grants::Unbounded, HostEntry::Unbounded, budget),
-                &settings,
-            ),
-            gandr_core_incremental::Opened::Resumed(checkpoint) => {
-                checking_context(arena, Opening::Resumed(checkpoint), &settings)
-            },
-        },
-    ));
+    program.open_contexts_with(module_opener(module));
     Ok(program)
 }
 

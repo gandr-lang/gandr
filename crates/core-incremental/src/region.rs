@@ -29,12 +29,14 @@
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
 use gandr_core_checker::Declaration;
 use gandr_core_term::CoreArena;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -523,27 +525,75 @@ impl Opened<'_>
     }
 }
 
-/// What opens a context: given the arena and how the pass opens it, the
-/// context.
-#[cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        trait_object,
-        reason = "#7614 gives the opener data in place of a closure"
-    )
-)]
-type Open = dyn for<'arena> Fn(&'arena mut CoreArena, Opened<'_>) -> gandr_core_checker::CheckingContext<'arena>
-    + Send
-    + Sync;
-
-/// The constructor of each checking context a pass over a program opens.
-///
-/// A front end hands the one it opens its own judgement's context with, so a
-/// pass decides each item under the module's settings, as the judgement does.
+/// An endpoint tier as its own constructor builds it, beside the policy a
+/// closed pair crosses under. A tier keeps state, so each context that an
+/// [`Opener`] opens gets a new one.
 ///
 /// # Specification
-/// - executable: none — a closure no predicate compares; [`Opener::open`]
-///   states what it gives.
+/// - executable: none — a constructor, which no predicate inspects;
+///   [`Opener::settle`] states what a context gets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Opener`].
+/// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
+#[derive(Clone, Copy, Debug)]
+pub struct Tier
+{
+    /// The tier's own constructor, which builds one tier for each context.
+    new: fn() -> Box<dyn gandr_core_checker::tier::EndpointTier>,
+    /// The policy a closed pair crosses under.
+    admitting: gandr_kernel_core::AdmissionPolicy,
+}
+
+impl Tier
+{
+    /// The tier that `new` builds, under `admitting`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        new: fn() -> Box<dyn gandr_core_checker::tier::EndpointTier>,
+        admitting: gandr_kernel_core::AdmissionPolicy,
+    ) -> Self
+    {
+        Self { new, admitting }
+    }
+}
+
+impl PartialEq for Tier
+{
+    /// Two tiers are equal when one constructor builds both under one policy.
+    /// A constructor that has two addresses compares unequal, which costs a
+    /// memo miss and never a wrong hit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        core::ptr::fn_addr_eq(self.new, other.new) && self.admitting == other.admitting
+    }
+}
+
+impl Eq for Tier
+{
+}
+
+/// The settings each checking context of a program opens under: the tier it
+/// decides closed pairs on, the store it keeps strata in, and the module's
+/// pattern holes, reducts and literal readers.
+///
+/// A front end hands the settings it opens its own judgement's context under,
+/// so a pass decides each item as the judgement does. The settings are data:
+/// a pass reads them and calls no closure.
+///
+/// # Specification
+/// - executable: none — [`Opener::settle`] states what a context gets.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a tier and a stratum store that the opener hands are read
@@ -551,31 +601,24 @@ type Open = dyn for<'arena> Fn(&'arena mut CoreArena, Opened<'_>) -> gandr_core_
 ///   a bare opener reads neither.
 /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
 /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_stratum_store_4034`
-#[derive(Clone)]
-#[repr(transparent)]
-pub struct Opener(alloc::sync::Arc<Open>);
+#[derive(Clone, Debug, Default)]
+pub struct Opener
+{
+    /// The tier each context decides closed pairs on, new for each context.
+    tier: Option<Tier>,
+    /// The store each context keeps its strata in.
+    strata: Option<Arc<dyn gandr_core_checker::ua::StratumStore>>,
+    /// The holes the module's matches were written with in place of a
+    /// pattern.
+    holes: Vec<HoleId>,
+    /// The reducts and the forgetting maps the module mints.
+    reducts: Vec<ConstantIndex>,
+    /// The literal readers the module lends.
+    readers: Vec<gandr_core_term::LiteralReader>,
+}
 
 impl Opener
 {
-    /// The opener that `open` is.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn new<Opening>(open: Opening) -> Self
-    where
-        Opening: for<'arena> Fn(
-                &'arena mut CoreArena,
-                Opened<'_>,
-            ) -> gandr_core_checker::CheckingContext<'arena>
-            + Send
-            + Sync
-            + 'static,
-    {
-        Self(alloc::sync::Arc::new(open))
-    }
-
     /// The opener of a program that no front end prepares: each context is
     /// [`Opened::bare`].
     ///
@@ -583,39 +626,154 @@ impl Opener
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn bare() -> Self
+    pub const fn bare() -> Self
     {
-        Self::new(|arena, opened| opened.bare(arena))
+        Self {
+            tier: None,
+            strata: None,
+            holes: Vec::new(),
+            reducts: Vec::new(),
+            readers: Vec::new(),
+        }
+    }
+
+    /// This opener, whose contexts also decide each closed pair on a new
+    /// tier that `tier` builds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn deciding_on(
+        mut self,
+        tier: Tier,
+    ) -> Self
+    {
+        self.tier = Some(tier);
+        self
+    }
+
+    /// This opener, whose contexts also keep their strata in `store`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keeping_strata_in(
+        mut self,
+        store: Arc<dyn gandr_core_checker::ua::StratumStore>,
+    ) -> Self
+    {
+        self.strata = Some(store);
+        self
+    }
+
+    /// This opener, whose contexts also keep `holes`, `reducts` and
+    /// `readers`: the module's pattern holes, its reducts with its forgetting
+    /// maps, and its literal readers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keeping(
+        mut self,
+        holes: Vec<HoleId>,
+        reducts: Vec<ConstantIndex>,
+        readers: Vec<gandr_core_term::LiteralReader>,
+    ) -> Self
+    {
+        self.holes = holes;
+        self.reducts = reducts;
+        self.readers = readers;
+        self
+    }
+
+    /// Hand `context` these settings: a new tier, the stratum store, the
+    /// pattern holes, the reducts and the literal readers.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `context` offers each closed pair to a new tier of
+    ///   [`Opener::deciding_on`] first, keeps its strata in the store of
+    ///   [`Opener::keeping_strata_in`], and holds each hole, reduct and reader
+    ///   of [`Opener::keeping`]; a setting the opener does not hold leaves the
+    ///   context as it was.
+    /// - panics: none.
+    /// - executable: none — the tier is a trait object no predicate compares,
+    ///   and the holes and reducts are the context's own to read.
+    ///
+    /// # Cost
+    /// - allocation: the context's tier and its copies of the settings, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Opener`].
+    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_tier_2282`
+    /// - witness: `tests::incremental::a_pass_hands_its_context_the_program_s_stratum_store_4034`
+    #[inline]
+    pub fn settle(
+        &self,
+        context: &mut gandr_core_checker::CheckingContext<'_>,
+    )
+    {
+        if let Some(tier) = self.tier {
+            context.decide_endpoints_on((tier.new)(), tier.admitting);
+        }
+        if let Some(store) = self.strata.as_ref() {
+            context.keep_strata_in(Arc::clone(store));
+        }
+        context.keep_pattern_holes(&self.holes);
+        context.keep_reducts(&self.reducts);
+        context.keep_readers(&self.readers);
     }
 
     /// The context the opener opens over `arena`, as `opened` says.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn open<'arena>(
+    ///
+    /// # Cost
+    /// - allocation: the context and its settings, setup
+    fn open<'arena>(
         &self,
         arena: &'arena mut CoreArena,
         opened: Opened<'_>,
     ) -> gandr_core_checker::CheckingContext<'arena>
     {
-        (self.0)(arena, opened)
+        let mut context = opened.bare(arena);
+        self.settle(&mut context);
+        context
     }
 }
 
-impl fmt::Debug for Opener
+impl PartialEq for Opener
 {
-    /// The opener, which prints no closure.
+    /// Two openers are equal when they hold equal tiers, one stratum store,
+    /// and equal holes, reducts and readers.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn fmt(
+    fn eq(
         &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
+        other: &Self,
+    ) -> bool
     {
-        f.write_str("Opener")
+        let strata = match (self.strata.as_ref(), other.strata.as_ref()) {
+            (Some(store), Some(theirs)) => Arc::ptr_eq(store, theirs),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        self.tier == other.tier
+            && strata
+            && self.holes == other.holes
+            && self.reducts == other.reducts
+            && self.readers == other.readers
     }
+}
+
+impl Eq for Opener
+{
 }
 
 /// The items a front end offers for one revision, in source order, over the
@@ -784,10 +942,11 @@ impl Program
     /// - requires: nothing.
     /// - ensures: every later pass opens its context with `opener`; the last
     ///   opener handed is the one kept.
-    /// - provides: the front end's hand-in of its context's constructor to the
+    /// - provides: the front end's hand-in of its context's settings to the
     ///   incremental checker, whose passes make their own contexts.
     /// - panics: none.
-    /// - executable: none — a closure no predicate compares.
+    /// - executable: none — the opener holds a tier's constructor, which no
+    ///   predicate inspects.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Opener`].
@@ -802,13 +961,23 @@ impl Program
         self.opener = opener;
     }
 
-    /// What opens each pass's context.
+    /// The context of a pass over the program, opened as `opened` says under
+    /// the program's opener and entered at its host, beside the layout the
+    /// pass reads.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) fn opener(&self) -> Opener
+    ///
+    /// # Cost
+    /// - allocation: the context, its settings and its entry, setup
+    pub(crate) fn open(
+        &mut self,
+        opened: Opened<'_>,
+    ) -> (gandr_core_checker::CheckingContext<'_>, &Layout)
     {
-        self.opener.clone()
+        let mut context = self.opener.open(&mut self.arena, opened);
+        context.enter_at(self.host.clone());
+        (context, &self.layout)
     }
 
     /// Bound the entry of every declaration each later pass judges by
@@ -836,15 +1005,6 @@ impl Program
     )
     {
         self.host = host;
-    }
-
-    /// The entry each pass's context bounds its declarations by.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(crate) const fn host(&self) -> &gandr_core_checker::worlds::HostEntry
-    {
-        &self.host
     }
 
     /// The arena, mutably, beside the layout: a pass grows the one while it

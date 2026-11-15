@@ -3368,6 +3368,9 @@ type Passed<Kept, Retired> = Polled<(Vec<Outcome>, Vec<Answer>, Kept), Retired, 
 ///   value and Data consultations separately.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the context, outcomes and supplies, growth within the items
+///
 /// # Adequacy
 /// - hypothesis: L2 — the differential suite compares the pass against the
 ///   checker's batch entry over generated programs and edit chains; L3 for the
@@ -3504,14 +3507,10 @@ where
         leading: start.answers(),
         own: Vec::with_capacity(encoded.len()),
     };
-    let opener = edited.opener();
-    let host = edited.host().clone();
-    let (arena, layout) = edited.parts_mut();
-    let mut context = match start {
-        Start::Fresh(budget) => opener.open(arena, Opened::Fresh(budget)),
-        Start::After(leading) => opener.open(arena, Opened::Resumed(&leading.context)),
+    let (mut context, layout) = match start {
+        Start::Fresh(budget) => edited.open(Opened::Fresh(budget)),
+        Start::After(leading) => edited.open(Opened::Resumed(&leading.context)),
     };
-    context.enter_at(host);
     let skip = usize::from(start.leading());
     // The module run's own schedule: the pass opens, closes and refuses whole
     // each mutual block where the judgement does.
