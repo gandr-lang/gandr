@@ -9,10 +9,14 @@
 //! `CompletionQueue` gives the ready completions, or waits for them, and
 //! marks each given one as seen when its run drops.
 //!
-//! The crate stands on liburing, the kernel's C library of the ring, as the
-//! owner's crate does. On a system other than Linux it compiles empty. So
-//! this lead names each item in code and links none: a link resolves on
-//! Linux alone.
+//! The ring stands on liburing, the kernel's C library of the ring, as the
+//! owner's older crate does. The module `base` holds the owner's newer
+//! system-call base beside it: `io_uring_setup`, `io_uring_register` and
+//! `io_uring_enter` by inline assembly, the UAPI of six architectures and
+//! the four sizes of entry. No call of the ring goes through the base yet.
+//!
+//! On a system other than Linux the crate compiles empty. So this lead names
+//! each item in code and links none: a link resolves on Linux alone.
 //!
 //! # References
 //!
