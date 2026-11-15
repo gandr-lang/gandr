@@ -1031,14 +1031,19 @@ where
 /// - hypothesis: L3 — as [`judge_laid`].
 /// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
 /// - witness: `gandr-surface-lsp::server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+///
+/// # Cost
+/// - allocation: the document's path and its lay-out, durable by the laid unit
 #[inline]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub fn lay(
+pub fn lay<Editor>(
     uri: &DocumentUri,
     text: SourceText<'_>,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
     written: Maybe<&[ImportPath], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
+where
+    Editor: Shadows,
 {
     laid_out(uri, (classify(&uri.path()), text), shadows, written)
 }
@@ -1050,15 +1055,17 @@ pub fn lay(
 /// trivial.
 #[cfg(test)]
 #[inline]
-pub fn recheck(
+pub fn recheck<Editor>(
     uri: &DocumentUri,
     session: &mut DocumentSession,
     text: SourceText<'_>,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
     verbosity: Verbosity,
     spelling: Spelling,
     caret: Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
 ) -> Rechecked
+where
+    Editor: Shadows,
 {
     let started = Instant::now();
     let laid = lay(uri, text, shadows, Maybe::Absent(written::Absent::Unread));
@@ -1479,17 +1486,23 @@ pub struct Tried
 ///   ranked in that order, each with the diagnostics a recheck of its text
 ///   publishes, and the session's next recheck is what it was before.
 /// - witness: `recheck::tests::a_trial_ranks_candidates_with_their_diagnostics`
+///
+/// # Cost
+/// - allocation: each candidate's lay-out and its diagnostics, growth within
+///   the candidates
 #[spec(ensures: |ret| ret.len() == candidates.len()
     && ret.is_sorted_by_key(|tried| tried.reached)
     && ret.iter().all(|tried| usize::from(tried.candidate) < candidates.len()))]
 #[must_use]
 #[inline]
-pub fn trial(
+pub fn trial<Editor>(
     uri: &DocumentUri,
     session: &DocumentSession,
     candidates: &[SourceText<'_>],
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Vec<Tried>
+where
+    Editor: Shadows,
 {
     let session = match *session {
         Ok(ref session) => session,
@@ -1586,16 +1599,22 @@ pub fn trial(
 /// - hypothesis: L2 — every corpus source, an importer among them, publishes
 ///   the diagnostics the walk yields for its file.
 /// - witness: `gandr-surface-lsp::tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+///
+/// # Cost
+/// - allocation: the grammar's first build and the lay-out, durable by the laid
+///   unit
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref()),
     Maybe::Absent(_) => true,
 })]
-fn laid_out(
+fn laid_out<Editor>(
     uri: &DocumentUri,
     (root, text): (SourceRoot, SourceText<'_>),
-    shadows: &dyn Shadows,
+    shadows: &Editor,
     written: Maybe<&[ImportPath], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
+where
+    Editor: Shadows,
 {
     grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {
         Maybe::Present(lay_out_written(

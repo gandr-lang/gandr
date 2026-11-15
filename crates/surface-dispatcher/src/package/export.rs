@@ -358,10 +358,15 @@ impl CanonicalValue for Export
     /// - hypothesis: L3 — an export committed into a store reads back from it,
     ///   each source's artifact intact.
     /// - witness: `tests::package::a_package_s_export_holds_what_its_check_admitted_3225`
+    ///
+    /// # Cost
+    /// - allocation: the artifacts and their sources, durable by the export
     #[inline]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
-        let opened = |reader: &mut TokenReader<'_>, expected: u8| {
+        let opened = |reader: &mut TokenReader<'_, Store>, expected: u8| {
             let position = reader.position();
             let found = reader.read_tag()?;
             if found == ConstructorTag::from(expected) {

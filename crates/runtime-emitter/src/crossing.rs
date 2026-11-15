@@ -295,7 +295,7 @@ pub fn commit<Chunks>(
     chunks: &mut Chunks,
 ) -> Result<ValueManifest, CrossingRefusal>
 where
-    Chunks: ChunkStore + ?Sized,
+    Chunks: ChunkStore,
 {
     let crossing = Crossing::of(store, value)?;
     Ok(cam_commit(chunks, &profile(params), &crossing)?)
@@ -327,12 +327,14 @@ where
 /// - witness: `tests::crossing::a_long_list_crosses`
 /// - witness: `tests::crossing::a_payload_the_codec_does_not_write_refuses_its_constructor`
 #[inline]
-pub fn deref(
+pub fn deref<Chunks>(
     manifest: &ValueManifest,
     params: TypedChunkerParams,
-    chunks: &dyn ChunkStore,
+    chunks: &Chunks,
     store: &mut Store,
 ) -> Result<HeapValueId, CrossingRefusal>
+where
+    Chunks: ChunkStore,
 {
     let crossing: Crossing<'static> = manifest.read_under(chunks, &profile(params))?;
     Ok(crossing.lay(store)?)
@@ -811,7 +813,13 @@ impl CanonicalValue for Crossing<'_>
     ///   that has one is refused at its open record.
     /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
     /// - witness: `tests::crossing::a_payload_the_codec_does_not_write_refuses_its_constructor`
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    ///
+    /// # Cost
+    /// - allocation: the nodes below the root and the open fields, growth
+    ///   within the value
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let root = Opened::read(reader)?;
         let mut fields = root.fields().0;
@@ -992,7 +1000,13 @@ impl Opened
     ///   malformed payload kind is refused at its open record.
     /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
     /// - witness: `tests::crossing::a_payload_the_codec_does_not_write_refuses_its_constructor`
-    fn read(reader: &mut TokenReader<'_>) -> Result<Node<'static>, ValueError>
+    ///
+    /// # Cost
+    /// - allocation: a suspended frame of the reader, growth within the decode
+    ///   budget
+    fn read<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Node<'static>, ValueError>
+    where
+        Store: ChunkStore,
     {
         let opened = Self {
             at: reader.position(),
@@ -1057,10 +1071,15 @@ impl Opened
     ///   malformed literal payload is refused at its open record.
     /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
     /// - witness: `tests::crossing::a_payload_the_codec_does_not_write_refuses_its_constructor`
-    fn literal(
+    ///
+    /// # Cost
+    /// - allocation: the literal's payload, durable by the literal
+    fn literal<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Literal, ValueError>
+    where
+        Store: ChunkStore,
     {
         Ok(match u8::from(self.tag) {
             INTEGER => {
@@ -1110,10 +1129,16 @@ impl Opened
     /// # Errors
     /// The reader's refusal, and this constructor's for a word wider than the
     /// host's counts.
-    fn count(
+    ///
+    /// # Cost
+    /// - allocation: a suspended frame of the reader, growth within the decode
+    ///   budget
+    fn count<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Count, ValueError>
+    where
+        Store: ChunkStore,
     {
         usize::try_from(u64::from(reader.read_word()?))
             .map(Count)
@@ -1128,10 +1153,16 @@ impl Opened
     /// # Errors
     /// The reader's refusal, and this constructor's for a word other than
     /// zero or one.
-    fn sign(
+    ///
+    /// # Cost
+    /// - allocation: a suspended frame of the reader, growth within the decode
+    ///   budget
+    fn sign<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Sign, ValueError>
+    where
+        Store: ChunkStore,
     {
         match u64::from(reader.read_word()?) {
             0_u64 => Ok(Sign::NonNegative),
@@ -1148,10 +1179,15 @@ impl Opened
     /// # Errors
     /// The reader's refusal, and this constructor's for bytes that are not
     /// UTF-8.
-    fn text(
+    ///
+    /// # Cost
+    /// - allocation: the text, durable by the literal
+    fn text<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<String, ValueError>
+    where
+        Store: ChunkStore,
     {
         let bytes = <&[u8]>::from(reader.read_bytes()?);
         core::str::from_utf8(bytes)
@@ -1167,10 +1203,15 @@ impl Opened
     /// # Errors
     /// As [`Opened::text`], and this constructor's for text that is not
     /// digits.
-    fn magnitude(
+    ///
+    /// # Cost
+    /// - allocation: the digits, durable by the literal
+    fn magnitude<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Magnitude, ValueError>
+    where
+        Store: ChunkStore,
     {
         Magnitude::from_decimal_text(self.text(reader)?).ok_or_else(|| self.refused())
     }
@@ -1183,10 +1224,15 @@ impl Opened
     /// # Errors
     /// As [`Opened::text`], and this constructor's for a label not strictly
     /// after the one before it as UTF-8 bytes.
-    fn labels(
+    ///
+    /// # Cost
+    /// - allocation: the labels, durable by the record's node
+    fn labels<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Arc<[FieldLabel]>, ValueError>
+    where
+        Store: ChunkStore,
     {
         let count = self.count(reader)?.0;
         let mut labels: Vec<FieldLabel> = Vec::new();
@@ -1222,10 +1268,15 @@ impl Opened
     /// - hypothesis: L2 — a lift at a constant level and at a join of two atoms
     ///   round-trips.
     /// - witness: `tests::crossing::every_crossing_head_commits_and_derefs_back_equal`
-    fn level(
+    ///
+    /// # Cost
+    /// - allocation: the level's atoms, durable by the lift's node
+    fn level<Store>(
         self,
-        reader: &mut TokenReader<'_>,
+        reader: &mut TokenReader<'_, Store>,
     ) -> Result<Level, ValueError>
+    where
+        Store: ChunkStore,
     {
         let constant = LevelConstant::from(u64::from(reader.read_word()?));
         let atoms = self.count(reader)?.0;

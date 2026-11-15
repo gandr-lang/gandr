@@ -170,7 +170,7 @@ struct OpenFrame
 #[spec(maintains: bool::from(self.well_formed()))]
 struct CommitSink<'store, Store>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     /// Where cut chunks are inserted, bottom-up.
     store: &'store mut Store,
@@ -196,7 +196,7 @@ where
 
 impl<'store, Store> CommitSink<'store, Store>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     /// Opens a sink over a store under a committed profile.
     ///
@@ -395,7 +395,7 @@ where
 
 impl<Store> TokenSink for CommitSink<'_, Store>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     /// Opens a constructor: a frame, a residue preimage, an open record.
     ///
@@ -740,7 +740,7 @@ pub fn cam_commit<Store, Value>(
     value: &Value,
 ) -> Result<ValueManifest, ValueError>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
     Value: CanonicalValue,
 {
     let base = profile.index_base();

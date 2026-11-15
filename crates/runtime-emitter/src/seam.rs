@@ -380,7 +380,7 @@ impl<'run> HostValues<'run>
         chunks: &mut Chunks,
     ) -> Result<ValueManifest, CrossingRefusal>
     where
-        Chunks: ChunkStore + ?Sized,
+        Chunks: ChunkStore,
     {
         crossing::commit(self.store, value, params, chunks)
     }
@@ -397,12 +397,14 @@ impl<'run> HostValues<'run>
     /// at `params`, a chunk `chunks` lacks or refuses, or an allocation the
     /// store refuses.
     #[inline]
-    pub fn deref(
+    pub fn deref<Chunks>(
         &mut self,
         manifest: &ValueManifest,
         params: TypedChunkerParams,
-        chunks: &dyn ChunkStore,
+        chunks: &Chunks,
     ) -> Result<HeapValueId, CrossingRefusal>
+    where
+        Chunks: ChunkStore,
     {
         crossing::deref(manifest, params, chunks, self.store)
     }

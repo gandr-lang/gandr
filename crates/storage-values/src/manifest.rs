@@ -1173,13 +1173,14 @@ impl ValueManifest
     #[inline]
     #[spec(ensures: |ret| self.profile == *expected
         || ret.as_ref().err() == self.profile.ensure_matches(expected).as_ref().err())]
-    pub fn read_under<Value>(
+    pub fn read_under<Value, Store>(
         &self,
-        store: &dyn ChunkStore,
+        store: &Store,
         expected: &ValueProfile,
     ) -> Result<Value, ValueError>
     where
         Value: CanonicalValue,
+        Store: ChunkStore,
     {
         self.profile.ensure_matches(expected)?;
 
@@ -1226,10 +1227,12 @@ impl ValueManifest
         .ok()
         .is_none_or(|closure| closure.digests().contains(&self.root.digest())
             && anodized::types::Spec::predicate(closure)))]
-    pub fn closure(
+    pub fn closure<Store>(
         &self,
-        store: &dyn ChunkStore,
+        store: &Store,
     ) -> Result<ValueClosure, ValueError>
+    where
+        Store: ChunkStore,
     {
         let walked = walk_closure(
             store,

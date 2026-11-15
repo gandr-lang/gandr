@@ -616,6 +616,9 @@ impl Store
     ///   commit wrote and the bytes of their files, and a chunk changed on disk
     ///   is refused by its digest.
     /// - witness: `tests::store::a_committed_value_resides_in_the_chunks_its_commit_wrote_6296`
+    ///
+    /// # Cost
+    /// - allocation: the closure's digests, durable by the residence
     #[inline]
     pub fn closure(
         &self,

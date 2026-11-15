@@ -552,7 +552,7 @@ impl<'store> Scan<'store>
 #[spec(maintains: bool::from(self.well_formed()))]
 struct Walk<'store, Store>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     /// Where chunks are loaded from, verified.
     store: &'store Store,
@@ -568,7 +568,7 @@ where
 
 impl<'store, Store> Walk<'store, Store>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     /// Whether the walk's work fits the decode budget and each counted subtree
     /// names a loaded chunk and counts its own open and close.
@@ -741,7 +741,7 @@ pub(crate) fn walk_closure<Store>(
     (classification, start): (BoundaryClassification, WalkStart),
 ) -> Result<Walked, ValueError>
 where
-    Store: ChunkStore + ?Sized,
+    Store: ChunkStore,
 {
     let mut walk = Walk {
         store,
@@ -819,11 +819,13 @@ where
     .ok()
     .is_none_or(|closure| closure.digests().contains(&pointer.digest())
         && anodized::types::Spec::predicate(closure)))]
-pub fn cam_closure(
-    store: &dyn ChunkStore,
+pub fn cam_closure<Store>(
+    store: &Store,
     pointer: ContentPtr,
     classification: BoundaryClassification,
 ) -> Result<ValueClosure, ValueError>
+where
+    Store: ChunkStore,
 {
     walk_closure(store, pointer, (classification, WalkStart::Value)).map(Walked::into_closure)
 }

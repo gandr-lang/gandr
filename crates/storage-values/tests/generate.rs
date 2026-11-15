@@ -148,10 +148,12 @@ impl Shape
         Err(error) => !Self::ALL.iter().any(|shape| shape.tag() == tag)
             && error == ValueError::UnexpectedConstructor { found: tag, position: reader.position() },
     })]
-    fn of_tag(
+    fn of_tag<Store>(
         tag: ConstructorTag,
-        reader: &TokenReader<'_>,
+        reader: &TokenReader<'_, Store>,
     ) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         Self::ALL
             .into_iter()
@@ -682,7 +684,9 @@ impl CanonicalValue for Tree
     #[spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
         || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
             && reader.spent() > spent))]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let mut items = Vec::new();
         let mut open: Vec<Owed> = Vec::new();

@@ -190,6 +190,9 @@ impl CanonicalValue for ArtifactRecordSet
     ///   place opens the retired hole tag, are each refused by name, which a
     ///   decoder trusting its stream would not.
     /// - witness: `tests::artifact_contract::a_stream_that_is_no_artifact_is_refused_off_the_value_plane`
+    ///
+    /// # Cost
+    /// - allocation: the header, the places and the records, durable by the set
     #[inline]
     #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|set| set.places.iter()
         .try_fold(0_usize, |next, place| match usize::from(place.slot) {
@@ -197,7 +200,9 @@ impl CanonicalValue for ArtifactRecordSet
             slot if slot < next => Some(next),
             _ => None,
         }) == Some(set.records.len())))]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let position = reader.position();
         let found = reader.read_tag()?;

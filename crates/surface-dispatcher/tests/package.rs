@@ -1325,11 +1325,13 @@ impl Shadows for Held
 /// # Adequacy
 /// - hypothesis: L3 — the address cases below compare the keys an edit leaves.
 /// - witness: `tests::package::an_inert_edit_leaves_the_address_and_a_content_edit_moves_it_3030`
-fn keyed(
+fn keyed<Editor>(
     grammar: &Pbg,
     source: &Path,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Vec<(ItemKey, Option<ContentKey>)>
+where
+    Editor: Shadows,
 {
     let text = shadows.shadowed(source).map_or_else(
         || std::fs::read_to_string(source).expect("the source reads"),

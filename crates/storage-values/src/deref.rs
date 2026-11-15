@@ -5,13 +5,11 @@
 //! value's own codec from the pointer's offset, the reader splicing child
 //! chunks through the same steps at each seam.
 //!
-//! # Store erasure
+//! # The store's type
 //!
-//! [`cam_deref`] takes `&dyn ChunkStore` because the reader holds one, and a
-//! value's codec must not learn where the value is stored.
-//! [`crate::cam_commit`] stays generic over its store: nothing about the
-//! value's encoding reaches the commit path's store, so there is nothing there
-//! to erase.
+//! [`cam_deref`] takes its store as a type parameter, and the reader holds it.
+//! The value's codec takes the store with the bound `Store: ChunkStore` alone,
+//! so the codec cannot learn where the value is stored.
 //!
 //! # Value validity
 //!
@@ -62,12 +60,13 @@ use crate::tokens::CanonicalValue;
 /// - witness: `tests::values::known_interior_addresses_select_distinct_values`
 /// - witness: `tests::values::a_word_is_never_read_as_a_tag`
 #[inline]
-pub fn cam_deref<Value>(
-    store: &dyn ChunkStore,
+pub fn cam_deref<Value, Store>(
+    store: &Store,
     pointer: ContentPtr,
 ) -> Result<Value, ValueError>
 where
     Value: CanonicalValue,
+    Store: ChunkStore,
 {
     let chunk = store.load(pointer.digest())?;
     let mut reader = TokenReader::over_chunk(store, chunk)?;

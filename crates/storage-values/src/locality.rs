@@ -169,12 +169,14 @@ pub fn expected_chunk_bound(
     measured.edit_depth == edit_depth
         && anodized::types::Spec::predicate(measured)
 }))]
-pub fn measure_edit(
-    store: &dyn ChunkStore,
+pub fn measure_edit<Store>(
+    store: &Store,
     before: ContentPtr,
     after: ContentPtr,
     edit_depth: EditDepth,
 ) -> Result<LocalityMeasurement, ValueError>
+where
+    Store: ChunkStore,
 {
     // The measurement counts chunks; it checks no classification's seams.
     let whole = (BoundaryClassification::EveryConstructor, WalkStart::Value);

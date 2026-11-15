@@ -1163,17 +1163,22 @@ impl Package
     /// - witness: `tests::package::every_corpus_package_s_address_digests_each_source_s_closure_at_every_width_6406`
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
     /// - witness: `tests::package::a_pointer_the_store_cannot_answer_leaves_the_dependent_unaddressed_3157`
+    ///
+    /// # Cost
+    /// - allocation: the sources, their texts and the keys of their items,
+    ///   growth within the package's sources
     #[inline]
-    pub fn identity<F>(
+    pub fn identity<F, Editor>(
         &self,
         grammar: &Arc<Pbg>,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
         lock: &Lock,
         store: &gandr_storage_store::Store,
         fork: &F,
     ) -> Result<Identity, Unaddressed>
     where
         F: Fork,
+        Editor: Shadows,
     {
         let sources: Vec<PathBuf> = core::iter::once(self.source.clone())
             .chain(modules(self.sources()).into_values())

@@ -10,10 +10,11 @@
 //! record, and returns to the parent when the child's subtree closes; a
 //! decoder sees one stream and cannot tell where the seams were.
 //!
-//! The store is `&dyn` rather than a type parameter: a reader generic over its
-//! store would push the store type into
-//! [`crate::CanonicalValue::decode_tokens`] and so into every value's codec,
-//! making a value's encoding depend on where it is stored.
+//! The store is a type parameter of the reader, and
+//! [`crate::CanonicalValue::decode_tokens`] takes it with the bound
+//! `Store: ChunkStore` alone. A codec cannot name the store's type, so a
+//! value's encoding cannot depend on where the value is stored. Each codec has
+//! one instance for each store that decodes it.
 //!
 //! # Child subtrees
 //!
@@ -44,6 +45,7 @@ use core::fmt;
 use anodized::spec;
 
 use crate::chunk::ChunkStore;
+use crate::chunk::InMemoryChunkStore;
 use crate::chunk::VerifiedChunk;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
@@ -62,11 +64,10 @@ use crate::units::TokenBody;
 use crate::units::TokenBytes;
 
 /// Where a reader's records come from beyond the body it was opened over.
-#[derive(Clone, Copy)]
-enum Source<'stream>
+enum Source<'stream, Store>
 {
     /// Child records are fetched from this store and verified.
-    Store(&'stream dyn ChunkStore),
+    Store(&'stream Store),
     /// There is no store: a child record is refused.
     Flat,
 }
@@ -150,10 +151,10 @@ pub(crate) enum StreamEnd
 /// - witness: `reader::tests::a_reader_stops_at_its_ceiling`
 #[spec(maintains: self.spent <= self.ceiling
     && (!matches!(self.source, Source::Flat) || self.suspended.is_empty()))]
-pub struct TokenReader<'stream>
+pub struct TokenReader<'stream, Store>
 {
     /// Where child chunks are fetched from, if anywhere.
-    source: Source<'stream>,
+    source: Source<'stream, Store>,
     /// The body being read.
     current: Frame<'stream>,
     /// Suspended parents, outermost first.
@@ -164,7 +165,7 @@ pub struct TokenReader<'stream>
     ceiling: DecodeWork,
 }
 
-impl fmt::Debug for TokenReader<'_>
+impl<Store> fmt::Debug for TokenReader<'_, Store>
 {
     /// Writes the reader's position without the store.
     ///
@@ -197,7 +198,23 @@ impl fmt::Debug for TokenReader<'_>
     }
 }
 
-impl<'stream> TokenReader<'stream>
+impl<'stream> TokenReader<'stream, InMemoryChunkStore>
+{
+    /// Opens a reader over a flat form. A flat form names no child chunk, so
+    /// the reader holds no store. The reader takes the type of the in-memory
+    /// store, and it never reads one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn over_flat(body: TokenBody<'stream>) -> Self
+    {
+        Self::new(Source::Flat, body, MAX_DECODE_WORK)
+    }
+}
+
+impl<'stream, Store> TokenReader<'stream, Store>
+where
+    Store: ChunkStore,
 {
     /// Opens a reader over a verified chunk whose children `store` holds,
     /// charging the chunk's verified image to the budget.
@@ -228,7 +245,7 @@ impl<'stream> TokenReader<'stream>
             && u64::from(reader.spent) == u64::try_from(chunk.image().as_ref().len()).unwrap_or(u64::MAX)
             && anodized::types::Spec::predicate(reader)))]
     pub(crate) fn over_chunk(
-        store: &'stream dyn ChunkStore,
+        store: &'stream Store,
         chunk: VerifiedChunk<'stream>,
     ) -> Result<Self, ValueError>
     {
@@ -239,21 +256,12 @@ impl<'stream> TokenReader<'stream>
         Ok(reader)
     }
 
-    /// Opens a reader over a flat form, which has no store.
-    ///
-    /// # Specification
-    /// trivial.
-    pub(crate) fn over_flat(body: TokenBody<'stream>) -> Self
-    {
-        Self::new(Source::Flat, body, MAX_DECODE_WORK)
-    }
-
     /// Opens a reader with an explicit work ceiling.
     ///
     /// # Specification
     /// trivial.
     const fn new(
-        source: Source<'stream>,
+        source: Source<'stream, Store>,
         body: TokenBody<'stream>,
         ceiling: DecodeWork,
     ) -> Self
@@ -589,6 +597,9 @@ impl<'stream> TokenReader<'stream>
     /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
     /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
     /// - witness: `reader::tests::skipping_does_not_interpret_child_records`
+    ///
+    /// # Cost
+    /// - allocation: a suspended frame, growth within the decode budget
     #[spec(ensures: |ret| ret
         .as_ref()
         .ok()
@@ -806,7 +817,7 @@ mod tests
         // Open, word, close: three records, three units.
         let body = [0x01_u8, 0x2A, 0x02, 7, 0, 0, 0, 0, 0, 0, 0, 0x05];
 
-        let mut enough = TokenReader::new(
+        let mut enough = TokenReader::<'_, InMemoryChunkStore>::new(
             Source::Flat,
             TokenBody::from(body.as_slice()),
             DecodeWork::from(3_u64),
@@ -817,7 +828,7 @@ mod tests
         assert!(anodized::types::Spec::predicate(&enough));
         assert_eq!(enough.spent(), DecodeWork::from(3_u64));
 
-        let mut short = TokenReader::new(
+        let mut short = TokenReader::<'_, InMemoryChunkStore>::new(
             Source::Flat,
             TokenBody::from(body.as_slice()),
             DecodeWork::from(2_u64),

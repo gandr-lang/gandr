@@ -1103,13 +1103,15 @@ pub fn lay_out(
     && ret.named.windows(2).all(|pair| matches!(*pair, [ref first, ref second] if first < second)))]
 #[inline]
 #[must_use]
-pub fn lay_out_shadowed(
+pub fn lay_out_shadowed<Editor>(
     grammar: &Pbg,
     path: &Path,
     root: SourceRoot,
     text: SourceText<'_>,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Laid
+where
+    Editor: Shadows,
 {
     lay_out_written(
         grammar,
@@ -1143,6 +1145,10 @@ pub fn lay_out_shadowed(
 ///   reads is laid out as when it is parsed whole, and over other imports it is
 ///   laid out as those imports name.
 /// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
+///
+/// # Cost
+/// - allocation: the graph of the import closure and the laid unit, growth
+///   within the import closure
 #[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
     && ret.paths.len() == ret.unit.sources().len()
     && ret.opened.len() == ret.paths.len()
@@ -1153,12 +1159,14 @@ pub fn lay_out_shadowed(
     })]
 #[inline]
 #[must_use]
-pub fn lay_out_written(
+pub fn lay_out_written<Editor>(
     grammar: &Pbg,
     (path, root, text): (&Path, SourceRoot, SourceText<'_>),
-    shadows: &dyn Shadows,
+    shadows: &Editor,
     written: Maybe<&[ImportPath], written::Absent>,
 ) -> Laid
+where
+    Editor: Shadows,
 {
     if !text.as_ref().contains(IMPORT) {
         return Laid::alone(path, text, (Vec::new(), Vec::new()));
@@ -1368,6 +1376,10 @@ fn within_package(
 /// - witness: `tests::walk::an_importer_is_judged_over_its_sibling`
 /// - witness: `tests::walk::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 /// - witness: `component::tests::importers_of_a_given_std_module_lay_it_apart_4856`
+///
+/// # Cost
+/// - allocation: the graph and the components, growth within the closure of the
+///   given sources
 #[spec(
     captures: [offered = given.len()],
     ensures: |ref ret| ret.placed.len() == offered
@@ -1376,13 +1388,15 @@ fn within_package(
                 && component.sources.len() == component.members.len()
                 && component.reading == reading)),
 )]
-pub fn group(
+pub fn group<Editor>(
     grammar: &Pbg,
     given: Vec<Given>,
     reading: Reading,
     apart: &BTreeSet<PathBuf>,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Grouped
+where
+    Editor: Shadows,
 {
     let mut graph = Graph {
         reading,
@@ -1524,12 +1538,17 @@ impl Graph
     /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
     /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
+    ///
+    /// # Cost
+    /// - allocation: each source read and its edges, growth within the import
+    ///   closure
     #[spec(captures: [admitted = self.read.len()], ensures: self.read.len() >= admitted)]
-    fn expand(
+    fn expand<Editor>(
         &mut self,
         grammar: &Pbg,
-        shadows: &dyn Shadows,
-    )
+        shadows: &Editor,
+    ) where
+        Editor: Shadows,
     {
         let mut next = 0_usize;
         while let Some(source) = self.read.get(next) {
@@ -1641,16 +1660,21 @@ impl Graph
     /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
     /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
     /// - witness: `component::tests::a_fixture_imports_a_strict_source_and_not_the_reverse_2767`
+    ///
+    /// # Cost
+    /// - allocation: the source that it reads, growth within the import closure
     #[spec(ensures: |ret| match ret {
         Edge::To(position) => position.0 < self.read.len(),
         Edge::Unresolved | Edge::Unlocked => true,
     })]
-    fn resolve(
+    fn resolve<Editor>(
         &mut self,
         target: &Path,
         root: SourceRoot,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
     ) -> Edge
+    where
+        Editor: Shadows,
     {
         // A source imports one under its own root, or one under the strict
         // root, which holds every declaration to checking and owing nothing
@@ -2682,10 +2706,16 @@ static FILES: Mutex<Memo<OsString, HeldFile, FILES_HELD>> = Mutex::new(Memo::new
 ///   reported.
 /// - witness: `component::tests::a_settled_file_is_read_once_per_change_776`
 /// - witness: `component::tests::a_watched_file_is_read_again_once_reported_1404`
-fn locate(
+///
+/// # Cost
+/// - allocation: the canonical path and the text held, growth within the import
+///   closure
+fn locate<Editor>(
     target: &Path,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Located
+where
+    Editor: Shadows,
 {
     {
         let mut files = FILES.lock().unwrap_or_else(PoisonError::into_inner);
@@ -3548,10 +3578,17 @@ mod tests
         );
     }
 
-    /// #1404: every file watched, none shadowed.
-    struct Watched;
+    /// #1404: none shadowed, and every file watched or none.
+    #[derive(Clone, Copy)]
+    enum Watch
+    {
+        /// Every file's changes reported.
+        Watched,
+        /// No file watched, as [`super::Unshadowed`] holds it.
+        Unwatched,
+    }
 
-    impl super::Shadows for Watched
+    impl super::Shadows for Watch
     {
         /// Nothing held.
         ///
@@ -3565,16 +3602,20 @@ mod tests
             None
         }
 
-        /// Every file's changes reported.
+        /// Every file's changes reported when watched, and as
+        /// [`super::Unshadowed`] reports them when not.
         ///
         /// # Specification
         /// trivial.
         fn freshness(
             &self,
-            _named: &Path,
+            named: &Path,
         ) -> super::Freshness
         {
-            super::Freshness::Reported
+            match *self {
+                Self::Watched => super::Freshness::Reported,
+                Self::Unwatched => super::Shadows::freshness(&super::Unshadowed, named),
+            }
         }
     }
 
@@ -3601,7 +3642,7 @@ mod tests
         let sibling = tree.0.join("base.gandr");
         // Each lay-out of the importer under `shadows`: how many files it read
         // from disk, and the sibling's text as it was read.
-        let laid = |shadows: &dyn super::Shadows| {
+        let laid = |shadows: &Watch| {
             let mut graph = super::Graph::default();
             let _importer = graph.admit(
                 (
@@ -3631,7 +3672,7 @@ mod tests
         };
         settle();
         assert_eq!(
-            laid(&Watched),
+            laid(&Watch::Watched),
             (1_usize, Some(String::from(base))),
             "a settled sibling is read once"
         );
@@ -3639,25 +3680,25 @@ mod tests
         std::fs::write(&sibling, &rewritten).expect("the sibling is rewritten");
         settle();
         assert_eq!(
-            laid(&Watched),
+            laid(&Watch::Watched),
             (0_usize, Some(String::from(base))),
             "a watched sibling is not confirmed on disk: its rewrite is not reported yet"
         );
         super::forget(&[named_path(&sibling)]);
         assert_eq!(
-            laid(&Watched),
+            laid(&Watch::Watched),
             (1_usize, Some(rewritten.clone())),
             "once reported, the rewrite is read"
         );
         assert_eq!(
-            laid(&Watched),
+            laid(&Watch::Watched),
             (0_usize, Some(rewritten)),
             "and held as it now reads"
         );
         std::fs::write(&sibling, base).expect("the sibling is written back");
         settle();
         assert_eq!(
-            laid(&super::Unshadowed),
+            laid(&Watch::Unwatched),
             (1_usize, Some(String::from(base))),
             "unwatched, the same read is confirmed on disk and read again"
         );

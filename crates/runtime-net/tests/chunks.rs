@@ -152,10 +152,12 @@ struct ImageBytes(u64);
 ///
 /// # Specification
 /// trivial.
-fn image_bytes<'digest>(
-    store: &dyn gandr_storage_values::ChunkStore,
+fn image_bytes<'digest, Store>(
+    store: &Store,
     digests: impl IntoIterator<Item = &'digest ChunkDigest>,
 ) -> ImageBytes
+where
+    Store: gandr_storage_values::ChunkStore,
 {
     ImageBytes(
         digests
