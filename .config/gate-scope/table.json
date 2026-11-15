@@ -29,7 +29,8 @@
     ],
     "corpus-tests": ["check:tests-enforcing"],
     "extension": ["check:extension", "check:input-table", "check:vscode-smoke"],
-    "prose": ["check:prose"]
+    "prose": ["check:prose"],
+    "riscv64": ["check:riscv64-ring"]
   },
   "readers": ["gandr-surface-dispatcher", "gandr-surface-evaluate"],
   "light": ["check:cases", "check:deny", "check:spec-cost-landed"],
