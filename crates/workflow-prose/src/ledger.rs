@@ -27,6 +27,10 @@ pub const HEADER: Header<'static> = Header(
 
 /// One ledger line: a finding's file, rule and sentence digest.
 ///
+/// The digest is the first sixteen hexadecimal digits of the sentence's
+/// BLAKE3 digest. Moving a sentence keeps its key, and rewording it retires
+/// the key.
+///
 /// # Specification
 /// - provides: what the ledger records of a finding.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

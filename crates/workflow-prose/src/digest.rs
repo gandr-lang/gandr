@@ -35,6 +35,25 @@ impl Digest
     {
         Self(*blake3::hash(text.0.as_bytes()).as_bytes())
     }
+
+    /// The digest that `name` writes as 64 hexadecimal digits, as the cache
+    /// names an entry's file; none for a name of another shape.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a digest's own name reads back as the digest, and a
+    ///   partial file's name reads as none.
+    /// - witness: `digest::tests::a_text_names_itself_and_a_changed_word_renames_it`
+    #[inline]
+    #[must_use]
+    pub(crate) fn named(name: Text<'_>) -> Option<Self>
+    {
+        blake3::Hash::from_hex(name.0)
+            .ok()
+            .map(|hash| Self(*hash.as_bytes()))
+    }
 }
 
 impl fmt::Display for Digest
@@ -89,5 +108,7 @@ mod tests
                 .to_hex()
                 .as_str()
         );
+        assert_eq!(Digest::named(Text(&named)), Some(held));
+        assert_eq!(Digest::named(Text(&format!("{named}.part7"))), None);
     }
 }

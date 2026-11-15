@@ -43,6 +43,19 @@ const SET_ASIDE: [&str; 4] = [
     "ledger/syntax.md",
 ];
 
+/// Which documents a listing names beside the untracked ones.
+///
+/// # Specification
+/// - provides: the one difference between [`touched`] and [`every`].
+#[derive(Clone, Copy, Debug)]
+enum Listing<'rev>
+{
+    /// Each document the working tree adds or alters against the base.
+    Changed(Base<'rev>),
+    /// Each document the tree tracks.
+    Tracked,
+}
+
 /// The documents the change touched since `base`, by path.
 ///
 /// # Specification
@@ -74,6 +87,58 @@ pub fn touched(
     base: Base<'_>,
 ) -> Result<Vec<String>, ProseError>
 {
+    listed(root, Listing::Changed(base))
+}
+
+/// Every document of the head, by path.
+///
+/// # Specification
+/// - requires: `root` is a repository checkout.
+/// - ensures: each markdown file that the tree tracks, and each untracked one
+///   that `.gitignore` admits, the paths of [`SET_ASIDE`] left out, sorted,
+///   each once.
+/// - provides: the documents whose paragraphs a prune of the parse cache keeps.
+/// - fails: [`ProseError::Io`] naming the root when git cannot list the tree.
+/// - panics: none.
+/// - executable: none — the outcome is git's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Cost
+/// - allocation: the listed paths, growth within the tree
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`touched`]; a document of the head left out removes
+///   its parse in a prune, which the next run parses again.
+/// - witness: `tests::cli::a_prune_keeps_the_head_s_parses_and_removes_the_rest`
+#[inline]
+pub fn every(root: &Path) -> Result<Vec<String>, ProseError>
+{
+    listed(root, Listing::Tracked)
+}
+
+/// The documents `listing` names under `root`, with the untracked ones.
+///
+/// # Specification
+/// - requires: as [`touched`] and [`every`].
+/// - ensures: as [`touched`] for [`Listing::Changed`], and as [`every`] for
+///   [`Listing::Tracked`].
+/// - fails: as [`touched`].
+/// - panics: none.
+/// - executable: none — the outcome is git's.
+///
+/// # Cost
+/// - allocation: git's output and the listed paths, growth within the tree
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`touched`].
+/// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+fn listed(
+    root: &Path,
+    listing: Listing<'_>,
+) -> Result<Vec<String>, ProseError>
+{
     let git = |arguments: &[&str]| {
         let refused = |message: String| ProseError::Io {
             path: root.to_owned(),
@@ -95,16 +160,19 @@ pub fn touched(
         }
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     };
-    let changed = git(&[
-        "diff",
-        "--name-only",
-        "--no-renames",
-        "--diff-filter=d",
-        "-z",
-        base.0,
-        "--",
-        "*.md",
-    ])?;
+    let named = match listing {
+        Listing::Changed(base) => git(&[
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "--diff-filter=d",
+            "-z",
+            base.0,
+            "--",
+            "*.md",
+        ])?,
+        Listing::Tracked => git(&["ls-files", "-z", "--", "*.md"])?,
+    };
     let untracked = git(&[
         "ls-files",
         "-z",
@@ -113,7 +181,7 @@ pub fn touched(
         "--",
         "*.md",
     ])?;
-    let mut paths: Vec<String> = changed
+    let mut paths: Vec<String> = named
         .split('\0')
         .chain(untracked.split('\0'))
         .filter(|path| {
