@@ -1,8 +1,9 @@
 # The structs that the positions ledger rows. Each is a struct whose one
 # field is an unsigned integer or a byte array. It is in a source of a kernel
-# or a storage crate or of the ring crate, outside its tests. Such a struct
-# gives a name to a place, a count or a digest. So a positional identity
-# cannot enter a key, a name or a byte form without one.
+# or a storage crate, of the ring crate, of the core term arena, or of the
+# dispatcher or the corpus, which compose a session's report, outside its
+# tests. Such a struct gives a name to a place, a count or a digest. So a
+# positional identity cannot enter a key, a name or a byte form without one.
 # - see: #7323
 #
 # The input is the lines `git grep -n` prints for three patterns over those

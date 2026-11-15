@@ -2196,7 +2196,7 @@ echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, 
 # the structs that `.config/positions/hits.jq` reads from them. Every finding
 # is printed before the gate fails.
 ["check:positions"]
-description = "Every positional struct of the kernel and storage crates, of the ring crate and of the core term arena has its row in the positions ledger, and every row names one"
+description = "Every positional struct of the kernel and storage crates, of the ring crate, of the core term arena and of the dispatcher and the corpus has its row in the positions ledger, and every row names one"
 tools.jq = "1.8.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -2217,6 +2217,7 @@ place='^\s*(pub(\([a-z]+\))?\s+)?struct\s+\w+(<[^>]*>)?\((pub(\([a-z]+\))?\s+)?(
 test_cfg='^\s*#\[cfg\((all\()?test\b'
 module='^\s*(pub(\([a-z]+\))?\s+)?mod\s+\w+\s*(\{.*)?$'
 git grep -n -I -P -e "$place" -e "$test_cfg" -e "$module" -- ':(glob)crates/kernel-*/src/**' ':(glob)crates/storage-*/src/**' ':(glob)crates/runtime-uring/src/**' crates/core-term/src/arena.rs \
+  ':(glob)crates/surface-dispatcher/src/**' ':(glob)crates/surface-corpus/src/**' \
   ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/*_tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' \
   | jq -R -s 'split("\n")' | jq -r -f .config/positions/hits.jq > "$fresh/hits.tsv"
 sqlite3 -bail -tabs "$db" 'CREATE TABLE hit(file TEXT, name TEXT);' ".import $fresh/hits.tsv hit"
