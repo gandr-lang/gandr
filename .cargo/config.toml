@@ -5,6 +5,15 @@
 build-dist = ["build", "--config=.cargo/config.dist.toml", "--profile=dist"]
 check-dist = ["check", "--config=.cargo/config.dist.toml", "--profile=dist"]
 
+# Cargo compares sources by checksum only with both keys: `checksum-freshness`
+# of `[unstable]` below permits it, and this key selects it. Its default is
+# `"mtime"`, so with the flag alone each unit compares dates. A CI job's
+# restamp then dates a changed source before an older restored unit, and that
+# stale unit reads as fresh.
+# - see: #3206, #7775
+[build]
+fingerprint = "content"
+
 # Each mold process uses every core. With `MOLD_JOBS=1`, concurrent links
 # take one lock of the user and run one at a time, each at full width.
 # Cargo passes this to rustc, and rustc passes it to the linker.
