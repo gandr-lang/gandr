@@ -1,0 +1,8 @@
+theory Toggle where {
+  sort T : Type;
+  oper start : T;
+}
+theory Graph where {
+  sort V : Type;
+  sort E(s : V, t : V) : Type;
+}

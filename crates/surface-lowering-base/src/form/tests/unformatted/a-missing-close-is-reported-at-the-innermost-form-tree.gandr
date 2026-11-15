@@ -1,0 +1,3 @@
+def rank() -> -F Integer {
+  match (Green : Color) {
+    | Red => return 0

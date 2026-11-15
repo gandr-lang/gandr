@@ -1,0 +1,4 @@
+{MAYBE}def annotated = (#[Some 3, None] : List(Maybe(Integer))) ;
+def signed : List(Maybe(Integer)) ;
+def signed = #[Some 3, None] ;
+def nested = (#[#[Some 3], #[], #[None]] : List(List(Maybe(Integer)))) ;

@@ -1,0 +1,58 @@
+test: store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074
+package: gandr-storage-store
+command: mise run debug:test gandr-storage-store store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074
+
+(lldb) target create "target/debug-trace/debug/deps/tests-80cc55606f63aa8a"
+Current executable set to 'target/debug-trace/debug/deps/tests-80cc55606f63aa8a' (x86_64).
+(lldb) settings set -- target.run-args  "store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-80cc55606f63aa8a`__rustc::rust_panic + 8 at panicking.rs:875:25, address = 0x000000000013e458
+(lldb) run
+
+running 1 test
+test store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074 ... 
+thread 'store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074' (3422522) panicked at crates/storage-store/tests/store.rs:272:5:
+assertion `left == right` failed: the chunk is written afresh, and the value derefs back
+  left: Err(Value(DigestMismatch { expected: 4e68a92016b8b8959a8f9b92fbc0c70dcf7d21c2db4849b9172a0bf0b9a38d56, actual: 47eb1444c86559ed7dce46b7e89a398a9093a3ea3508e93c95b9a18cec673a31 }))
+ right: Ok(Labels([[], [1], [2, 2]]))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 3422378 launched: 'target/debug-trace/debug/deps/tests-80cc55606f63aa8a' (x86_64)
+Process 3422378 stopped
+* thread #2, name = 'store::a_refuse', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555692458 tests-80cc55606f63aa8a`__rustc::rust_panic at panicking.rs:875:25
+(lldb) bt 24
+* thread #2, name = 'store::a_refuse', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555692458 tests-80cc55606f63aa8a`__rustc::rust_panic at panicking.rs:875:25
+     frame #1: 0x00005555556cbe1c tests-80cc55606f63aa8a`std::panicking::panic_with_hook at panicking.rs:839:5
+     frame #2: 0x0000555555691822 tests-80cc55606f63aa8a`std::panicking::panic_handler::{closure#0} at panicking.rs:687:13
+     frame #3: 0x0000555555686849 tests-80cc55606f63aa8a`std::sys::backtrace::__rust_end_short_backtrace::<std::panicking::panic_handler::{closure#0}, !> at backtrace.rs:182:18
+     frame #4: 0x00005555556926cd tests-80cc55606f63aa8a`__rustc::rust_begin_unwind at panicking.rs:678:5
+     frame #5: 0x00005555556bcf4c tests-80cc55606f63aa8a`core::panicking::panic_fmt at panicking.rs:80:14
+     frame #6: 0x00005555556d59ec tests-80cc55606f63aa8a`core::panicking::assert_failed_inner at panicking.rs:434:23
+     frame #7: 0x00005555556c4ae2 tests-80cc55606f63aa8a`core::panicking::assert_failed::<core::result::Result<tests::store::Labels, gandr_storage_store::store::StoreError>, core::result::Result<tests::store::Labels, gandr_storage_store::store::StoreError>>(kind=Eq, left=Err(Value(DigestMismatch{expected:{0:"Nh\xa9 \U00000016\xb8\xb8\x95\x9a\x8f\x9b\x92\xfb\xc0\xc7\r\xcf}!\xc2\xdbHI\xb9\U00000017*\v𹣍V"}, actual:{0:"G\xeb\U00000014D\xc8eY\xed}\xceF\xb7\xe8\x9a9\x8a\x90\x93\xa3\xea5\b\xe9<\x95\xb9\xa1\x8c\xecg:1"}})), right=Ok({0:size=3}), args=Some({template:{pointer:"the chunk is written afresh, and the value derefs backthe records build a treethe tree is writtenthe tree's root opens from the record planeevery leaf loads verifiedunsafe precondition(s) violated: Vec::from_raw_parts_in requires that length <= capacity\n\nThis indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: Vec::set_len requires that new_len <= capacity()\n\nThis indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: hint::assert_unchecked must never be called when the condition is false\n\nThis indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.LabelsUnsetMerkleSearchFailureContextRecordDigestBoundaryParamsprofilemask_bitsrecord_capTreeParamshash_algorithmseparator_conventionparamsrecord_countV1V2WireVersionBoundaryRecordCapUnsortedInputcurrentDuplicateKeysfirstsecondMalforme"...}, args:{pointer:{ty:{0:0}}}})) at panicking.rs:394:5
+     frame #8: 0x00005555555cc91b tests-80cc55606f63aa8a`tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074 at store.rs:272:5
+     frame #9: 0x00005555555c7637 tests-80cc55606f63aa8a`tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074::{closure#0}((null)={}) at store.rs:245:63
+     frame #10: 0x00005555555d8806 tests-80cc55606f63aa8a`<tests::store::a_refused_chunk_is_written_afresh_by_the_next_commit_4074::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #11: 0x00005555555e7f2b tests-80cc55606f63aa8a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #12: 0x00005555555e7f29 tests-80cc55606f63aa8a`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:724:18
+     frame #13: 0x00005555555f5585 tests-80cc55606f63aa8a`test::run_test_in_process::{closure#0} at lib.rs:747:74 [inlined]
+     frame #14: 0x00005555555f5580 tests-80cc55606f63aa8a`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #15: 0x00005555555f5580 tests-80cc55606f63aa8a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:575:43 [inlined]
+     frame #16: 0x00005555555f556b tests-80cc55606f63aa8a`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:543:19 [inlined]
+     frame #17: 0x00005555555f556b tests-80cc55606f63aa8a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #18: 0x00005555555f556b tests-80cc55606f63aa8a`test::run_test_in_process at lib.rs:747:27 [inlined]
+     frame #19: 0x00005555555f5556 tests-80cc55606f63aa8a`test::run_test::{closure#0} at lib.rs:668:43
+     frame #20: 0x00005555555f00e4 tests-80cc55606f63aa8a`test::run_test::{closure#1} at lib.rs:698:41 [inlined]
+     frame #21: 0x00005555555f0069 tests-80cc55606f63aa8a`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #22: 0x00005555555f86c2 tests-80cc55606f63aa8a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #23: 0x00005555555f86b3 tests-80cc55606f63aa8a`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit
