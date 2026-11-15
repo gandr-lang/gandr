@@ -100,8 +100,8 @@ use crate::decl::SealExtent;
 use crate::decl::SealScope;
 use crate::decl::StructuredName;
 use crate::encode::CONSTANT_KEY_LEN;
-use crate::encode::ConstantKey;
 use crate::encode::EncodedPrefix;
+use crate::encode::KEY_WIDTH_FLOOR;
 use crate::encode::Names;
 use crate::encode::encode_after;
 use crate::encode::encode_named;
@@ -282,8 +282,9 @@ impl Table
     }
 }
 
-/// What a decoder resolves each admission position a segment writes against:
-/// the names it was given, and the current segment's table of names.
+/// What a decoder resolves each admission position and each reference that a
+/// segment writes against: the names it was given, the current segment's table
+/// of names and imports, and where each segment read so far begins.
 ///
 /// # Specification
 /// trivial.
@@ -292,58 +293,110 @@ struct Resolver
 {
     /// The key of each place of the artifact.
     names: Names,
-    /// The keys of the current segment's table, in its order.
-    table: Vec<ConstantKey>,
+    /// The width of a key in each table of names, as the header gives it.
+    width: usize,
+    /// The place each entry of the current segment's table names, in its
+    /// order.
+    table: Vec<ConstantIndex>,
+    /// The first global index of each segment read before the current one, by
+    /// place.
+    bases: Vec<GlobalIndex>,
+    /// The current segment's first global index.
+    base: GlobalIndex,
+    /// The global index of each import of the current segment, in its order.
+    imports: Vec<GlobalIndex>,
 }
 
 impl Resolver
 {
-    /// Read the table of names that opens a segment.
+    /// Read the table of names and the imports that open a segment whose first
+    /// entry takes `base`.
     ///
     /// # Specification
-    /// - requires: `reader` stands at the start of a segment.
-    /// - ensures: the resolver holds the segment's keys in the table's order,
-    ///   and `reader` stands past the table.
+    /// - requires: `reader` stands at the start of a segment, and `base` is the
+    ///   next free index of the decoder's table.
+    /// - ensures: the resolver holds the place each entry of the segment's
+    ///   table names, in the table's order, and the global index of each
+    ///   import, and `reader` stands past both. An entry names the place of the
+    ///   one name it begins. An import reads the segment at its place: the
+    ///   place's first index and the offset, before the next segment's first
+    ///   index. `base` is the segment's base and the last of the bases from
+    ///   then on.
     /// - fails: [`DecodeError::Truncated`] when the bytes end inside the table,
-    ///   and the reader's refusal of the count.
+    ///   the reader's refusal of a count or an integer,
+    ///   [`MalformedSite::UnplacedName`] for an entry that begins no name and
+    ///   [`MalformedSite::SharedPrefix`] for one that begins two, as
+    ///   [`Self::resolve`] for an import's position, and
+    ///   [`MalformedSite::Import`] for an import that names no entry of an
+    ///   earlier segment.
     /// - panics: none.
-    /// - executable: none — the table is private state, which a clause could
-    ///   read only by reading the segment's bytes again.
+    /// - executable: none — the table, the imports and the bases are private
+    ///   state, which a clause could read only by reading the bytes again.
     ///
     /// # Cost
-    /// - allocation: the segment's table, growth within its count.
+    /// - allocation: the segment's table and imports, growth within their
+    ///   counts; its base, growth within the segments.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`decode_named`].
+    /// - hypothesis: L3 — as [`decode_named`], and a segment that reads an
+    ///   entry of the segment before it reads it through its import.
     /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    /// - witness: `encode::tests::a_segment_reads_an_earlier_entry_by_its_import_7340`
     #[inline]
     fn open(
         &mut self,
         reader: &mut ByteReader<'_>,
+        base: GlobalIndex,
     ) -> Result<(), DecodeError>
     {
         self.table.clear();
         let count = reader.read_uvarint()?;
         let mut remaining = u64::from(count);
         while remaining > 0_u64 {
-            let bytes = reader.take(ByteCount::from(CONSTANT_KEY_LEN))?;
-            let key = <[u8; CONSTANT_KEY_LEN]>::try_from(bytes.as_ref())
-                .map_err(|_short| DecodeError::Truncated)?;
-            self.table.push(ConstantKey::from(key));
+            let prefix = reader.take(ByteCount::from(self.width))?;
+            let place = self
+                .names
+                .place_of_prefix(prefix)
+                .map_err(|site| DecodeError::Malformed { site })?;
+            self.table.push(place);
             remaining = remaining.wrapping_sub(1_u64);
         }
+        self.imports.clear();
+        let count = reader.read_uvarint()?;
+        let mut remaining = u64::from(count);
+        while remaining > 0_u64 {
+            let place = usize::from(self.read(reader)?);
+            let offset = u32::from(reader.read_u32()?);
+            let unread = DecodeError::Malformed {
+                site: MalformedSite::Import,
+            };
+            let start = self.bases.get(place).copied().ok_or(unread)?;
+            let end = self
+                .bases
+                .get(place.saturating_add(1))
+                .copied()
+                .unwrap_or(base);
+            let global = u32::from(start)
+                .checked_add(offset)
+                .map(GlobalIndex::from)
+                .filter(|global| *global < end)
+                .ok_or(unread)?;
+            self.imports.push(global);
+            remaining = remaining.wrapping_sub(1_u64);
+        }
+        self.bases.push(base);
+        self.base = base;
         Ok(())
     }
 
     /// The position that `written` stands for in the current segment.
     ///
     /// One more than twice a place is that place. Twice an entry of the table
-    /// is the place that the entry's key names.
+    /// is the place that the entry names.
     ///
     /// # Specification
     /// - ensures: the place, refused as [`MalformedSite::NameEntry`] for an
-    ///   entry past the segment's table and as [`MalformedSite::UnplacedName`]
-    ///   for a key that names no place of the names given.
+    ///   entry past the segment's table.
     /// - panics: none.
     /// - executable: none — the place reads the names' private map, which a
     ///   clause would restate.
@@ -362,11 +415,8 @@ impl Resolver
         if written.checked_rem(2) == Some(1) {
             return Ok(ConstantIndex::from(half));
         }
-        let key = self.table.get(half).ok_or(DecodeError::Malformed {
+        self.table.get(half).copied().ok_or(DecodeError::Malformed {
             site: MalformedSite::NameEntry,
-        })?;
-        self.names.place(key).ok_or(DecodeError::Malformed {
-            site: MalformedSite::UnplacedName,
         })
     }
 
@@ -389,6 +439,49 @@ impl Resolver
     {
         let written = reader.read_usize()?;
         self.resolve(ConstantIndex::from(usize::from(written)))
+    }
+
+    /// The global index of the entry that a reference of the current segment
+    /// names: twice an offset from the segment's base, or one more than twice
+    /// the place of one of its imports.
+    ///
+    /// # Specification
+    /// - ensures: the base plus half an even reference, and the import that an
+    ///   odd reference names; whether the index names an entry is decided by
+    ///   the caller.
+    /// - fails: the reader's refusal of the integer, [`MalformedSite::Import`]
+    ///   for an import past the segment's imports, and
+    ///   [`MalformedSite::IndexRange`] for an offset past the index space.
+    /// - panics: none.
+    /// - executable: none — the imports and the base are private state.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a segment that reads an entry of the segment before
+    ///   it reads it through its import, and each local child by its offset.
+    /// - witness: `encode::tests::a_segment_reads_an_earlier_entry_by_its_import_7340`
+    #[inline]
+    fn reference(
+        &self,
+        reader: &mut ByteReader<'_>,
+    ) -> Result<GlobalIndex, DecodeError>
+    {
+        let word = u64::from(reader.read_uvarint()?);
+        let half = word.checked_div(2).unwrap_or_default();
+        if word.checked_rem(2) == Some(1) {
+            return usize::try_from(half)
+                .ok()
+                .and_then(|at| self.imports.get(at).copied())
+                .ok_or(DecodeError::Malformed {
+                    site: MalformedSite::Import,
+                });
+        }
+        u64::from(u32::from(self.base))
+            .checked_add(half)
+            .and_then(|at| u32::try_from(at).ok())
+            .map(GlobalIndex::from)
+            .ok_or(DecodeError::Malformed {
+                site: MalformedSite::IndexRange,
+            })
     }
 }
 
@@ -943,11 +1036,13 @@ fn decode_splitting(
     let mut reader = ByteReader::new(image);
     reader.expect_magic()?;
     reader.expect_version()?;
+    let width = usize::from(reader.read_key_width()?);
     let declared_atoms = reader.read_minted_atom_table()?;
     let count = reader.read_uvarint()?;
     let header_end = reader.position;
     let mut table = Table::new();
     table.resolver.names = names.clone();
+    table.resolver.width = width;
     let mut metas: Vec<DeclMeta> = Vec::new();
     let mut declaration_ends: Vec<ByteOffset> = Vec::new();
     let mut snapshot = None;
@@ -1198,9 +1293,10 @@ pub fn decode_keeping(
 /// - requires: nothing; image may be arbitrary or adversarial, and `prefix` was
 ///   kept by [`decode_keeping`] under names that `names` extends.
 /// - ensures: [`decode_named`]'s answer for `image`, artifact or refusal. When
-///   the image holds at least `prefix`'s declarations and its segments begin
-///   with `prefix`'s bytes, only the segments after them are decoded, budgeted,
-///   built and encoded again; otherwise the whole image is decoded.
+///   the image holds at least `prefix`'s declarations, its header gives the key
+///   width `prefix` was decoded at, and its segments begin with `prefix`'s
+///   bytes, only the segments after them are decoded, budgeted, built and
+///   encoded again. Otherwise the whole image is decoded.
 /// - provides: a commit of an editor's export whose cost is the document's
 ///   segments, and a copy of the import closure's decoded state.
 /// - fails: as [`decode`].
@@ -1215,8 +1311,9 @@ pub fn decode_keeping(
 /// # Adequacy
 /// - hypothesis: L3 — a decode resumed after a kept prefix answers, artifact or
 ///   refusal, as a whole decode does: for every split of a mixed and shared
-///   artifact, an artifact that does not lead with the prefix, a short one, a
-///   prefix seal reaching past a shorter artifact, and a non-canonical suffix.
+///   artifact, every changed byte including the key width, an artifact that
+///   does not lead with the prefix, a short one, a prefix seal reaching past a
+///   shorter artifact, and a non-canonical suffix.
 /// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
 #[inline]
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
@@ -1232,12 +1329,16 @@ pub fn decode_after(
     let mut reader = ByteReader::new(image);
     reader.expect_magic()?;
     reader.expect_version()?;
+    let width = usize::from(reader.read_key_width()?);
     let declared_atoms = reader.read_minted_atom_table()?;
     let count = reader.read_uvarint()?;
     let header_end = reader.position;
     let leading = prefix.declarations.len();
     let total = usize::try_from(u64::from(count)).unwrap_or(usize::MAX);
+    // A prefix decoded at another width reads its tables otherwise, so the
+    // decode starts over.
     let resumes = total >= leading
+        && width == prefix.table.resolver.width
         && image
             .as_ref()
             .get(usize::from(header_end) ..)
@@ -2386,6 +2487,36 @@ impl<'bytes> ByteReader<'bytes>
         }
     }
 
+    /// Read the width of a key in each table of names: a count of bytes from
+    /// one word up to a whole key.
+    ///
+    /// # Specification
+    /// - ensures: the width read, from one word up to a whole key.
+    /// - fails: the reader's refusal of the integer, and
+    ///   [`MalformedSite::KeyWidth`] for a width outside those bounds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a header whose width is below one word or past a
+    ///   whole key is refused at the width.
+    /// - witness: `decode::tests::a_key_width_outside_its_bounds_is_refused_7340`
+    #[spec(
+        ensures: |ret| ret.as_ref().ok().is_none_or(|width| (KEY_WIDTH_FLOOR ..= CONSTANT_KEY_LEN).contains(&usize::from(*width))),
+    )]
+    #[inline]
+    fn read_key_width(&mut self) -> Result<ByteCount, DecodeError>
+    {
+        let width = usize::try_from(u64::from(self.read_uvarint()?)).unwrap_or(usize::MAX);
+        if (KEY_WIDTH_FLOOR ..= CONSTANT_KEY_LEN).contains(&width) {
+            Ok(ByteCount::from(width))
+        }
+        else {
+            Err(DecodeError::Malformed {
+                site: MalformedSite::KeyWidth,
+            })
+        }
+    }
+
     /// Read the minted-atom table: a count followed by that many admission
     /// positions.
     ///
@@ -2611,46 +2742,6 @@ impl<'bytes> ByteReader<'bytes>
             })
     }
 
-    /// Read a global table index.
-    ///
-    /// # Specification
-    /// - requires: the cursor is positioned at a table index.
-    /// - ensures: on `Ok`, returns the index the bytes named; whether it names
-    ///   an entry is decided by the caller.
-    /// - provides: the typed read that keeps a table index from being crossed
-    ///   with a count at a signature.
-    /// - fails: the 32-bit read's own failures.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 compares integer reads with an independent
-    ///   division-based byte model at each seven-bit boundary; L3 pins
-    ///   truncation, redundant groups, the tenth-bit limit and narrowing
-    ///   refusal without losing consumed offsets. It does not infer
-    ///   arbitrary-input totality from a round trip.
-    /// - witness: `decode::tests::integer_fields_match_independent_boundary_bytes`
-    /// - witness: `decode::tests::an_overlong_varint_is_refused`
-    /// - witness: `decode::tests::a_truncated_varint_is_refused_as_truncation`
-    #[spec(
-        captures: start = self.position,
-        ensures: |ret| self.position >= start
-                && self.position <= self.image.length()
-                && self.position.0 <= start.0.saturating_add(11)
-                && ret.as_ref().ok().is_none_or(|value| { let value_word = u64::from(u32::from(*value));
-            self.position.0 == start.0.saturating_add(usize::try_from(64_u32.saturating_sub((value_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))
-                && ({ let scalar = value_word;
-            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
-            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
-                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) }),
-    )]
-    #[inline]
-    fn read_global(&mut self) -> Result<GlobalIndex, DecodeError>
-    {
-        let value = self.read_u32()?;
-        Ok(GlobalIndex::from(u32::from(value)))
-    }
-
     /// Read length-prefixed text through a validating UTF-8 conversion.
     ///
     /// # Specification
@@ -2777,7 +2868,8 @@ fn decode_declaration(
     table: &mut Table,
 ) -> Result<DeclMeta, DecodeError>
 {
-    table.resolver.open(reader)?;
+    let base = table.next_index();
+    table.resolver.open(reader, base)?;
     let mark = decode_admission(reader)?;
     let kind_tag = reader.next_tag()?;
     let kind = declaration_kind(kind_tag)?;
@@ -3241,7 +3333,7 @@ fn decode_root(
     required: Family,
 ) -> Result<GlobalIndex, DecodeError>
 {
-    let index = reader.read_global()?;
+    let index = table.resolver.reference(reader)?;
     let family = family_at(table, index)?;
     if family == required {
         Ok(index)
@@ -4296,6 +4388,9 @@ fn decode_higher_program(reader: &mut ByteReader<'_>) -> Result<crate::HigherPro
 ///   entry belongs to another family.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the child's index, growth within the entry's children.
+///
 /// # Adequacy
 /// - hypothesis: L3 distinguishes all four reference families, exact ordered
 ///   child appends, self and forward references, polarity refusals and complete
@@ -4327,7 +4422,7 @@ fn read_child(
     children: &mut Vec<GlobalIndex>,
 ) -> Result<DecodedNode, DecodeError>
 {
-    let index = reader.read_global()?;
+    let index = table.resolver.reference(reader)?;
     if index >= this {
         return Err(DecodeError::Malformed {
             site: MalformedSite::ChildOrder,
@@ -5639,12 +5734,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0x0A00, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x0B00, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 10 {
+            let expected = if version == 11 {
                 Ok(())
             }
             else {
@@ -5714,10 +5809,6 @@ mod tests
             let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
             reader.next_byte().expect("prefix");
             assert_eq!(reader.read_u32().map(u32::from), narrow);
-            assert_eq!(reader.position.0, end);
-            let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
-            reader.next_byte().expect("prefix");
-            assert_eq!(reader.read_global().map(u32::from), narrow);
             assert_eq!(reader.position.0, end);
             let host = usize::try_from(value).map_err(|_error| DecodeError::Malformed {
                 site: MalformedSite::IndexRange,
@@ -6109,7 +6200,7 @@ mod tests
             super::Family::Value, super::Family::CompType, super::Family::Computation])]
     fn four_family_table() -> super::Table
     {
-        let bytes = [3_u8, 0, 0x0d, 0, 7, 0, 0x13, 1, 0, 1, 9, 7, 7, 4, 0x15, 5];
+        let bytes = [3_u8, 0, 0x0d, 0, 7, 0, 0x13, 2, 0, 1, 9, 7, 7, 8, 0x15, 10];
         let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
         let mut table = super::Table::new();
         for _entry in 0_u8 .. 8 {
@@ -6147,7 +6238,7 @@ mod tests
             };
         for index in 0_u8 ..= 9 {
             let global = super::GlobalIndex::from(u32::from(index));
-            let bytes = [index];
+            let bytes = [index.saturating_mul(2)];
             let family = families
                 .get(usize::from(index).rem_euclid(4))
                 .copied()
@@ -6454,10 +6545,10 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
-            bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
+            bytes.extend_from_slice(&[0, 2, 0, 0, 0, 0]);
             bytes
         };
         let integer_cases: &[(&[u8], &[u8], super::Sign, &str)] = &[
@@ -6649,7 +6740,9 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![
+                b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 1, 0, 3, 0, 1, 2,
+            ];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -6798,11 +6891,11 @@ mod tests
             (&[3, 0], crate::types::ValueType::unit(), &[]),
             (&[4, 0], crate::types::ValueType::empty(), &[]),
             (
-                &[0x2a, 5, 1],
+                &[0x2a, 10, 2],
                 crate::types::ValueType::PathUniverse(v1, v0),
                 &[5, 1],
             ),
-            (&[0x50, 4], crate::types::ValueType::List(vt1), &[4]),
+            (&[0x50, 8], crate::types::ValueType::List(vt1), &[4]),
             (
                 &[2, 7, 0],
                 crate::types::ValueType::Universe {
@@ -6812,18 +6905,18 @@ mod tests
                 &[],
             ),
             (
-                &[3, 2, 4, 0],
+                &[3, 2, 8, 0],
                 crate::types::ValueType::Product([vt1, vt0].into()),
                 &[4, 0],
             ),
             (
-                &[4, 3, 0, 4, 4],
+                &[4, 3, 0, 8, 8],
                 crate::types::ValueType::Sum([vt0, vt1, vt1].into()),
                 &[0, 4, 4],
             ),
-            (&[5, 6], crate::types::ValueType::Thunk(ct1), &[6]),
+            (&[5, 12], crate::types::ValueType::Thunk(ct1), &[6]),
             (
-                &[6, 7, 0, 4],
+                &[6, 7, 0, 8],
                 crate::types::ValueType::Lift {
                     inner: vt1,
                     target: level.clone(),
@@ -6836,7 +6929,7 @@ mod tests
                 &[],
             ),
             (
-                &[0x19, 7, 0, 5],
+                &[0x19, 7, 0, 10],
                 crate::types::ValueType::Element {
                     code: v1,
                     target: level.clone(),
@@ -6852,7 +6945,7 @@ mod tests
                 &[],
             ),
             (
-                &[0x1e, 4, 0],
+                &[0x1e, 8, 0],
                 crate::types::ValueType::StaticPi {
                     domain: vt1,
                     codomain: vt0,
@@ -6898,9 +6991,9 @@ mod tests
             );
         }
         let comp_types: &[(&[u8], crate::types::CompType, &[u32])] = &[
-            (&[7, 4], crate::types::CompType::Returner(vt1), &[4]),
+            (&[7, 8], crate::types::CompType::Returner(vt1), &[4]),
             (
-                &[8, 4, 2],
+                &[8, 8, 4],
                 crate::types::CompType::Arrow {
                     domain: vt1,
                     codomain: ct0,
@@ -6908,7 +7001,7 @@ mod tests
                 &[4, 2],
             ),
             (
-                &[0x18, 0, 6],
+                &[0x18, 0, 12],
                 crate::types::CompType::Pi {
                     domain: vt0,
                     codomain: ct1,
@@ -6916,7 +7009,7 @@ mod tests
                 &[0, 6],
             ),
             (
-                &[0x1b, 7, 0, 5],
+                &[0x1b, 7, 0, 10],
                 crate::types::CompType::Element {
                     code: v1,
                     target: level.clone(),
@@ -6924,7 +7017,7 @@ mod tests
                 &[5],
             ),
             (
-                &[0x65, 2, 6, 2],
+                &[0x65, 2, 12, 4],
                 crate::types::CompType::With([ct1, ct0].into()),
                 &[6, 2],
             ),
@@ -6979,12 +7072,12 @@ mod tests
                 &[],
             ),
             (&[0x0d, 0], crate::term::Value::unit(), &[]),
-            (&[0x2b, 5], crate::term::Value::PathRefl(v1), &[5]),
-            (&[0x2d, 5, 1], crate::term::Value::PathProduct(v1, v0), &[
+            (&[0x2b, 10], crate::term::Value::PathRefl(v1), &[5]),
+            (&[0x2d, 10, 2], crate::term::Value::PathProduct(v1, v0), &[
                 5, 1,
             ]),
             (
-                &[0x2c, 0, 0, 4, 5, 1],
+                &[0x2c, 0, 0, 8, 10, 2],
                 crate::term::Value::PathEquiv {
                     path_type: vt1,
                     forward: v1,
@@ -7006,34 +7099,34 @@ mod tests
                 &[],
             ),
             (
-                &[0x0d, 2, 5, 1],
+                &[0x0d, 2, 10, 2],
                 crate::term::Value::Tuple([v1, v0].into()),
                 &[5, 1],
             ),
             (
-                &[0x0e, 0, 1],
+                &[0x0e, 0, 2],
                 crate::term::Value::Injection(super::Summand::from(0_usize), v0),
                 &[1],
             ),
             (
-                &[0x0e, 0x81, 1, 5],
+                &[0x0e, 0x81, 1, 10],
                 crate::term::Value::Injection(super::Summand::from(129_usize), v1),
                 &[5],
             ),
-            (&[0x0f, 7], crate::term::Value::Thunk(c1), &[7]),
-            (&[0x34, 7], crate::term::Value::Returned(c1), &[7]),
+            (&[0x0f, 14], crate::term::Value::Thunk(c1), &[7]),
+            (&[0x34, 14], crate::term::Value::Returned(c1), &[7]),
             (
-                &[0x10, 7, 0, 5],
+                &[0x10, 7, 0, 10],
                 crate::term::Value::Lift {
                     target: level,
                     body: v1,
                 },
                 &[5],
             ),
-            (&[0x1c, 4], crate::term::Value::Quote(vt1), &[4]),
-            (&[0x1d, 6], crate::term::Value::QuoteComputation(ct1), &[6]),
+            (&[0x1c, 8], crate::term::Value::Quote(vt1), &[4]),
+            (&[0x1d, 12], crate::term::Value::QuoteComputation(ct1), &[6]),
             (
-                &[0x1f, 5, 1],
+                &[0x1f, 10, 2],
                 crate::term::Value::StaticApplication(v1, v0),
                 &[5, 1],
             ),
@@ -7075,9 +7168,9 @@ mod tests
             );
         }
         let computations: &[(&[u8], crate::term::Computation, &[u32])] = &[
-            (&[0x11, 7], crate::term::Computation::Lambda(c1), &[7]),
+            (&[0x11, 14], crate::term::Computation::Lambda(c1), &[7]),
             (
-                &[0x63, 0, 7],
+                &[0x63, 0, 14],
                 crate::term::Computation::Fixpoint {
                     body: c1,
                     evidence: crate::FixpointEvidence::Partial,
@@ -7085,7 +7178,7 @@ mod tests
                 &[7],
             ),
             (
-                &[0x63, 1, 7],
+                &[0x63, 1, 14],
                 crate::term::Computation::Fixpoint {
                     body: c1,
                     evidence: crate::FixpointEvidence::StructuralDescent,
@@ -7093,7 +7186,7 @@ mod tests
                 &[7],
             ),
             (
-                &[0x63, 2, 0x81, 1, 7],
+                &[0x63, 2, 0x81, 1, 14],
                 crate::term::Computation::Fixpoint {
                     body: c1,
                     evidence: crate::FixpointEvidence::Staged {
@@ -7103,7 +7196,7 @@ mod tests
                 &[7],
             ),
             (
-                &[0x63, 4, 7],
+                &[0x63, 4, 14],
                 crate::term::Computation::Fixpoint {
                     body: c1,
                     evidence: crate::FixpointEvidence::Guarded,
@@ -7111,7 +7204,7 @@ mod tests
                 &[7],
             ),
             (
-                &[0x16, 0, 5],
+                &[0x16, 0, 10],
                 crate::term::Computation::Case {
                     scrutinee: v1,
                     branches: alloc::boxed::Box::default(),
@@ -7119,22 +7212,22 @@ mod tests
                 &[5],
             ),
             (
-                &[0x2e, 5, 1],
+                &[0x2e, 10, 2],
                 crate::term::Computation::Transport(v1, v0),
                 &[5, 1],
             ),
             (
-                &[0x12, 7, 5],
+                &[0x12, 14, 10],
                 crate::term::Computation::Application(c1, v1),
                 &[7, 5],
             ),
-            (&[0x13, 5], crate::term::Computation::Return(v1), &[5]),
-            (&[0x14, 7, 3], crate::term::Computation::Bind(c1, c0), &[
+            (&[0x13, 10], crate::term::Computation::Return(v1), &[5]),
+            (&[0x14, 14, 6], crate::term::Computation::Bind(c1, c0), &[
                 7, 3,
             ]),
-            (&[0x15, 5], crate::term::Computation::Force(v1), &[5]),
+            (&[0x15, 10], crate::term::Computation::Force(v1), &[5]),
             (
-                &[0x16, 2, 5, 7, 3],
+                &[0x16, 2, 10, 14, 6],
                 crate::term::Computation::Case {
                     scrutinee: v1,
                     branches: [c1, c0].into(),
@@ -7142,18 +7235,18 @@ mod tests
                 &[5, 7, 3],
             ),
             (
-                &[0x66, 3, 7, 3, 7],
+                &[0x66, 3, 14, 6, 14],
                 crate::term::Computation::With([c1, c0, c1].into()),
                 &[7, 3, 7],
             ),
             (&[0x66, 0], crate::term::Computation::With([].into()), &[]),
             (
-                &[0x67, 0, 7],
+                &[0x67, 0, 14],
                 crate::term::Computation::Project(crate::Component::from(0_usize), c1),
                 &[7],
             ),
             (
-                &[0x67, 2, 3],
+                &[0x67, 2, 6],
                 crate::term::Computation::Project(crate::Component::from(2_usize), c0),
                 &[3],
             ),
@@ -7540,40 +7633,40 @@ mod tests
         };
         // Each entry, the node it decodes to, and its ordered child edges.
         let entries: &[(&[u8], super::DecodedNode, &[u32])] = &[
-            (&[0x30, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+            (&[0x30, 8, 10, 2], super::DecodedNode::ValueType(vt1), &[
                 4, 5, 1,
             ]),
-            (&[0x31, 0, 0, 5], super::DecodedNode::Value(v1), &[5]),
-            (&[0x31, 0, 1, 11, 5], super::DecodedNode::Value(v1), &[5]),
-            (&[0x32, 4, 5, 1], super::DecodedNode::Computation(c1), &[
+            (&[0x31, 0, 0, 10], super::DecodedNode::Value(v1), &[5]),
+            (&[0x31, 0, 1, 11, 10], super::DecodedNode::Value(v1), &[5]),
+            (&[0x32, 8, 10, 2], super::DecodedNode::Computation(c1), &[
                 4, 5, 1,
             ]),
             (
-                &[0x33, 2, 0, 2, 0, 1, 1, 0, 5],
+                &[0x33, 2, 0, 2, 0, 1, 1, 0, 10],
                 super::DecodedNode::Value(v1),
                 &[5],
             ),
-            (&[0x34, 7], super::DecodedNode::Value(v1), &[7]),
+            (&[0x34, 14], super::DecodedNode::Value(v1), &[7]),
             (
-                &[0x35, 6, 5, 1, 5, 1],
+                &[0x35, 12, 10, 2, 10, 2],
                 super::DecodedNode::Computation(c1),
                 &[6, 5, 1, 5, 1],
             ),
-            (&[0x36, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+            (&[0x36, 8, 10, 2], super::DecodedNode::ValueType(vt1), &[
                 4, 5, 1,
             ]),
             (
-                &[0x38, 1, 1, 11, 0, 5, 1, 5],
+                &[0x38, 1, 1, 11, 0, 10, 2, 10],
                 super::DecodedNode::Value(v1),
                 &[5, 1, 5],
             ),
             (
-                &[0x39, 5, 1, 5, 1, 7],
+                &[0x39, 10, 2, 10, 2, 14],
                 super::DecodedNode::Computation(c1),
                 &[5, 1, 5, 1, 7],
             ),
             (
-                &[0x3A, 2, 3, 1, 11, 0, 0, 0, 0, 5, 5, 5, 1, 5],
+                &[0x3A, 2, 3, 1, 11, 0, 0, 0, 0, 10, 10, 10, 2, 10],
                 super::DecodedNode::Value(v1),
                 &[5, 5, 5, 1, 5],
             ),
@@ -7700,28 +7793,28 @@ mod tests
 
         // Each structural invariant refuses at its own site, minting nothing.
         let refusals: &[(&[u8], DecodeError)] = &[
-            (&[0x30, 4, 3, 1], DecodeError::Malformed {
+            (&[0x30, 8, 6, 2], DecodeError::Malformed {
                 site: MalformedSite::PathEndpoint,
             }),
-            (&[0x30, 4, 5, 2], DecodeError::Malformed {
+            (&[0x30, 8, 10, 4], DecodeError::Malformed {
                 site: MalformedSite::PathEndpoint,
             }),
-            (&[0x36, 4, 3, 1], DecodeError::Malformed {
+            (&[0x36, 8, 6, 2], DecodeError::Malformed {
                 site: MalformedSite::BridgeEndpoint,
             }),
-            (&[0x36, 4, 5, 2], DecodeError::Malformed {
+            (&[0x36, 8, 10, 4], DecodeError::Malformed {
                 site: MalformedSite::BridgeEndpoint,
             }),
-            (&[0x32, 5, 5, 1], DecodeError::Malformed {
+            (&[0x32, 10, 10, 2], DecodeError::Malformed {
                 site: MalformedSite::TransportMotive,
             }),
-            (&[0x35, 4, 5, 1, 5, 1], DecodeError::Malformed {
+            (&[0x35, 8, 10, 2, 10, 2], DecodeError::Malformed {
                 site: MalformedSite::TelescopeMotive,
             }),
-            (&[0x33, 1, 0, 1, 0, 1, 5], DecodeError::Malformed {
+            (&[0x33, 1, 0, 1, 0, 1, 10], DecodeError::Malformed {
                 site: MalformedSite::HigherLayer,
             }),
-            (&[0x33, 1, 1, 1, 0, 0, 5], DecodeError::Malformed {
+            (&[0x33, 1, 1, 1, 0, 0, 10], DecodeError::Malformed {
                 site: MalformedSite::HigherLayer,
             }),
             (
@@ -7730,25 +7823,25 @@ mod tests
                     site: MalformedSite::IndexRange,
                 },
             ),
-            (&[0x38, 1, 1, 0x7F, 0, 5, 1, 5], DecodeError::Malformed {
+            (&[0x38, 1, 1, 0x7F, 0, 10, 2, 10], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
             (
-                &[0x3A, 1, 0x81, 0x80, 0x80, 0x80, 0x10, 0, 0, 5, 5],
+                &[0x3A, 1, 0x81, 0x80, 0x80, 0x80, 0x10, 0, 0, 10, 10],
                 DecodeError::Malformed {
                     site: MalformedSite::PathEvidence,
                 },
             ),
-            (&[0x3A, 1, 1, 1, 0x7F, 0, 5, 5], DecodeError::Malformed {
+            (&[0x3A, 1, 1, 1, 0x7F, 0, 10, 10], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
-            (&[0x31, 0, 1, 0x7F, 5], DecodeError::Malformed {
+            (&[0x31, 0, 1, 0x7F, 10], DecodeError::Malformed {
                 site: MalformedSite::PathEvidence,
             }),
-            (&[0x34, 5], DecodeError::Malformed {
+            (&[0x34, 10], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x34, 6], DecodeError::Malformed {
+            (&[0x34, 12], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
         ];
@@ -7844,19 +7937,19 @@ mod tests
         // site, minting nothing.
         let mut table = four_family_table();
         let refusals: &[(&[u8], DecodeError)] = &[
-            (&[0x65, 2, 6, 3], DecodeError::Malformed {
+            (&[0x65, 2, 12, 6], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x65, 2, 2, 4], DecodeError::Malformed {
+            (&[0x65, 2, 4, 8], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x66, 2, 5, 3], DecodeError::Malformed {
+            (&[0x66, 2, 10, 6], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x66, 2, 7, 6], DecodeError::Malformed {
+            (&[0x66, 2, 14, 12], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
-            (&[0x67, 1, 5], DecodeError::Malformed {
+            (&[0x67, 1, 10], DecodeError::Malformed {
                 site: MalformedSite::Polarity,
             }),
         ];
@@ -7940,20 +8033,22 @@ mod tests
         let computation_family = super::DecodedNode::Computation(c1);
         // Each entry, the node it decodes to, and its ordered child edges.
         let entries: &[(&[u8], super::DecodedNode, &[u32])] = &[
-            (&[0x4A, 4, 5, 1], super::DecodedNode::ValueType(vt1), &[
+            (&[0x4A, 8, 10, 2], super::DecodedNode::ValueType(vt1), &[
                 4, 5, 1,
             ]),
-            (&[0x4B, 0, 0, 5], value_family, &[5]),
-            (&[0x4B, 0, 1, 11, 5], value_family, &[5]),
-            (&[0x4C, 2, 0, 1, 11, 4, 5, 1, 5], value_family, &[
+            (&[0x4B, 0, 0, 10], value_family, &[5]),
+            (&[0x4B, 0, 1, 11, 10], value_family, &[5]),
+            (&[0x4C, 2, 0, 1, 11, 8, 10, 2, 10], value_family, &[
                 4, 5, 1, 5,
             ]),
-            (&[0x4D, 4, 5, 1], value_family, &[4, 5, 1]),
-            (&[0x4E, 0, 5, 1], value_family, &[5, 1]),
-            (&[0x4E, 1, 1, 5], value_family, &[1, 5]),
-            (&[0x69, 5, 1], value_family, &[5, 1]),
-            (&[0x4F, 4, 5, 1], computation_family, &[4, 5, 1]),
-            (&[0x68, 6, 5, 1, 5, 1], computation_family, &[6, 5, 1, 5, 1]),
+            (&[0x4D, 8, 10, 2], value_family, &[4, 5, 1]),
+            (&[0x4E, 0, 10, 2], value_family, &[5, 1]),
+            (&[0x4E, 1, 2, 10], value_family, &[1, 5]),
+            (&[0x69, 10, 2], value_family, &[5, 1]),
+            (&[0x4F, 8, 10, 2], computation_family, &[4, 5, 1]),
+            (&[0x68, 12, 10, 2, 10, 2], computation_family, &[
+                6, 5, 1, 5, 1,
+            ]),
         ];
         let decompose = || vec![ConversionDecision::Decompose];
         let expected_value_types = [ValueType::Flow {
@@ -8063,30 +8158,33 @@ mod tests
         // Each structural invariant refuses at its own site, minting nothing.
         let malformed = |site| DecodeError::Malformed { site };
         let refusals: &[(&[u8], DecodeError)] = &[
-            (&[0x4A, 4, 3, 1], malformed(MalformedSite::FlowEndpoint)),
-            (&[0x4A, 4, 5, 2], malformed(MalformedSite::FlowEndpoint)),
-            (&[0x4A, 5, 5, 1], malformed(MalformedSite::Polarity)),
-            (&[0x4F, 5, 5, 1], malformed(MalformedSite::RideMotive)),
-            (&[0x4F, 4, 3, 1], malformed(MalformedSite::Polarity)),
+            (&[0x4A, 8, 6, 2], malformed(MalformedSite::FlowEndpoint)),
+            (&[0x4A, 8, 10, 4], malformed(MalformedSite::FlowEndpoint)),
+            (&[0x4A, 10, 10, 2], malformed(MalformedSite::Polarity)),
+            (&[0x4F, 10, 10, 2], malformed(MalformedSite::RideMotive)),
+            (&[0x4F, 8, 6, 2], malformed(MalformedSite::Polarity)),
             (
-                &[0x68, 4, 5, 1, 5, 1],
+                &[0x68, 8, 10, 2, 10, 2],
                 malformed(MalformedSite::TelescopeRideMotive),
             ),
-            (&[0x4B, 0, 0, 6], malformed(MalformedSite::Polarity)),
+            (&[0x4B, 0, 0, 12], malformed(MalformedSite::Polarity)),
             (
-                &[0x4B, 0, 1, 0x7F, 5],
+                &[0x4B, 0, 1, 0x7F, 10],
                 malformed(MalformedSite::PathEvidence),
             ),
             (
-                &[0x4C, 1, 1, 0x7F, 4, 5, 5],
+                &[0x4C, 1, 1, 0x7F, 8, 10, 10],
                 malformed(MalformedSite::PathEvidence),
             ),
-            (&[0x4C, 1, 0, 5, 5, 5], malformed(MalformedSite::Polarity)),
-            (&[0x4C, 1, 0, 4, 5, 6], malformed(MalformedSite::Polarity)),
-            (&[0x4D, 5, 5, 1], malformed(MalformedSite::Polarity)),
-            (&[0x4D, 4, 5, 7], malformed(MalformedSite::Polarity)),
-            (&[0x4E, 0, 5, 7], malformed(MalformedSite::Polarity)),
-            (&[0x4E, 2, 5, 1], DecodeError::UnknownTag {
+            (
+                &[0x4C, 1, 0, 10, 10, 10],
+                malformed(MalformedSite::Polarity),
+            ),
+            (&[0x4C, 1, 0, 8, 10, 12], malformed(MalformedSite::Polarity)),
+            (&[0x4D, 10, 10, 2], malformed(MalformedSite::Polarity)),
+            (&[0x4D, 8, 10, 14], malformed(MalformedSite::Polarity)),
+            (&[0x4E, 0, 10, 14], malformed(MalformedSite::Polarity)),
+            (&[0x4E, 2, 10, 2], DecodeError::UnknownTag {
                 site: TagSite::Seam,
                 tag: super::WireTag::from(2_u8),
             }),
@@ -8305,5 +8403,33 @@ mod tests
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_key_width_outside_its_bounds_is_refused_7340()
+    {
+        // An empty artifact: the magic, the version, the width, no atom and no
+        // declaration.
+        let empty = |width: u8| [b'G', b'K', b'X', b'1', 11, 0, width, 0, 0];
+        for width in [0_u8, 7, 33, 0x7F] {
+            assert_eq!(
+                super::decode(ArtifactImage::from(empty(width).as_slice())).err(),
+                Some(DecodeError::Malformed {
+                    site: MalformedSite::KeyWidth,
+                }),
+                "a width of {width} bytes is refused at the width"
+            );
+        }
+        assert!(
+            super::decode(ArtifactImage::from(empty(8).as_slice())).is_ok(),
+            "an artifact of no names takes one word"
+        );
+        assert_eq!(
+            super::decode(ArtifactImage::from(empty(9).as_slice())).err(),
+            Some(DecodeError::Malformed {
+                site: MalformedSite::NonCanonical,
+            }),
+            "a width past the least one is refused as non-canonical"
+        );
     }
 }

@@ -19,6 +19,7 @@ use core::num::NonZeroU64;
 use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
+use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeclarationBuilder;
 use gandr_kernel_term::DecodeError;
@@ -807,12 +808,12 @@ fn chain(
     chain
 }
 
-/// A chain of `count` definitions, each naming the one before it, with a unit
-/// axiom before the definition at `inserted` when one is asked: the artifact
-/// written bare, the artifact written under each declaration's name, and
-/// those names. Definition `i` is named by bytes of `i + 1`, the axiom by
-/// bytes of 200. The axiom adds no table entry, so only the places past it
-/// move.
+/// A chain of `count` definitions, each naming the one before it, with an
+/// integer axiom before the definition at `inserted` when one is asked: the
+/// artifact written bare, the artifact written under each declaration's name,
+/// and those names. Definition `i` is named by bytes of `i + 1`, the axiom by
+/// bytes of 200. The axiom writes an entry of its own, so each entry after it
+/// takes a new global index, and each place past it moves.
 ///
 /// # Specification
 /// trivial.
@@ -831,7 +832,7 @@ fn definition_chain(
     let mut previous = None;
     for index in 0 .. count {
         if inserted == Some(index) {
-            let declared = arena.value_type_unit();
+            let declared = arena.value_type_base(BaseType::Integer);
             let axiom =
                 DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), declared);
             declarations.push(MarkedDeclaration::new(
@@ -861,10 +862,13 @@ fn definition_chain(
 }
 
 /// A reference whose target an insertion moves keeps its record when the
-/// writer names its places, since its segment writes the target's name.
-/// Written bare, the same segment writes the target's place and changes with
-/// it. A named artifact cuts only under its names, and its named set reads
-/// back through the decoder under the names it holds.
+/// writer names its places, since its segment writes the target's name. The
+/// inserted axiom also writes an entry, and each later segment still keeps
+/// its bytes: it writes its own entries from its own base, and it reads the
+/// unit type through an import that names the first definition. Written bare,
+/// the same segment writes the target's place and changes with it. A named
+/// artifact cuts only under its names, and its named set reads back through
+/// the decoder under the names it holds.
 #[test]
 fn a_named_reference_keeps_its_record_past_an_insertion_7340()
 {

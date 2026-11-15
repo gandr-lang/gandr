@@ -136,7 +136,7 @@ INSERT INTO position VALUES('crates/kernel-term/src/arena.rs','ValueTypeId','','
 INSERT INTO position VALUES('crates/kernel-term/src/base.rs','Float64Literal','','none',NULL,'The bits of a literal.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','EntryOffset','','local',NULL,'The offset that a global index reads at in one of the decoder''s vectors.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','ExpandedWork','','none',NULL,'A count of expanded work.');
-INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','GlobalIndex','kernel-term::encode','owed','#7340','The artifact''s child index: an entry''s index across the segments, in the post-order of each segment before it, so a child names an entry of any earlier segment and no offset inside its own; a u32, the width of the arena id it decodes to, written as a minimal LEB128 varint.');
+INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','GlobalIndex','kernel-term::encode','kept',NULL,'The artifact''s child reference: twice an entry''s offset from the base of its own segment, or one more than twice an import''s place among the segment''s imports, each import an offset inside the segment that holds the entry, whose place the segment writes as it writes any position.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','LevelAtomOffset','','none',NULL,'A bound on the number that a level adds to its variable.');
 INSERT INTO position VALUES('crates/kernel-term/src/budget.rs','TableEntryCount','','none',NULL,'A count of table entries.');
 INSERT INTO position VALUES('crates/kernel-term/src/chunked.rs','ChunkAt','','local',NULL,'A chunk''s place in one chunked family.');

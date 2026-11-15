@@ -576,9 +576,13 @@ struct RawDeclaration
     name: Vec<Bytes>,
     /// The entries this segment introduces, already encoded.
     entries: Vec<Bytes>,
-    /// The declared-type root's global index.
+    /// The imports, already encoded: their count, then each one's position
+    /// and offset.
+    imports: Bytes,
+    /// The declared-type root's reference: twice an offset in the segment, or
+    /// one more than twice an import's place.
     root_declared: TableIndex,
-    /// The body root's global index, for a definition.
+    /// The body root's reference, for a definition.
     root_body: Option<TableIndex>,
     /// The modes-and-grades annotation slot, which must be zero to be
     /// accepted.
@@ -590,14 +594,14 @@ impl RawDeclaration
     /// A definition segment with every reserved slot empty.
     ///
     /// # Specification
-    /// - requires: nothing; entries and global roots may be deliberately
-    ///   inconsistent for refusal fixtures.
+    /// - requires: nothing; entries and roots may be deliberately inconsistent
+    ///   for refusal fixtures.
     /// - ensures: retains supplied entries and roots, with a checked mark,
-    ///   definition kind and present body. The name and reserved fields start
-    ///   empty.
-    /// - provides: a raw baseline whose roots address the cross-segment global
-    ///   index space, not necessarily this segment’s own entries. No validation
-    ///   is performed.
+    ///   definition kind and present body. The name, the imports and the
+    ///   reserved fields start empty.
+    /// - provides: a raw baseline whose roots address the segment's own entries
+    ///   or its imports, not necessarily entries that exist. No validation is
+    ///   performed.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -617,6 +621,7 @@ impl RawDeclaration
             ensures: |ret| ret.mark.0 == 0
                     && ret.kind.0 == 0
                     && ret.name.is_empty()
+                    && ret.imports.0 == [0_u8]
                     && ret.root_declared == root_declared
                     && ret.root_body == Some(root_body)
                     && ret.modes.0 == 0
@@ -635,6 +640,7 @@ impl RawDeclaration
             kind: RawByte(0),
             name: Vec::new(),
             entries,
+            imports: Bytes(vec![0]),
             root_declared,
             root_body: Some(root_body),
             modes: WireValue(0),
@@ -644,13 +650,14 @@ impl RawDeclaration
     /// An axiom segment, which carries a declared root and no body.
     ///
     /// # Specification
-    /// - requires: nothing; entries and global roots may be deliberately
-    ///   inconsistent for refusal fixtures.
+    /// - requires: nothing; entries and roots may be deliberately inconsistent
+    ///   for refusal fixtures.
     /// - ensures: retains supplied entries and roots, with a checked mark,
-    ///   axiom kind and no body. The name and reserved fields start empty.
-    /// - provides: a raw baseline whose roots address the cross-segment global
-    ///   index space, not necessarily this segment’s own entries. No validation
-    ///   is performed.
+    ///   axiom kind and no body. The name, the imports and the reserved fields
+    ///   start empty.
+    /// - provides: a raw baseline whose roots address the segment's own entries
+    ///   or its imports, not necessarily entries that exist. No validation is
+    ///   performed.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -670,6 +677,7 @@ impl RawDeclaration
             ensures: |ret| ret.mark.0 == 0
                     && ret.kind.0 == 1
                     && ret.name.is_empty()
+                    && ret.imports.0 == [0_u8]
                     && ret.root_declared == root_declared
                     && ret.root_body.is_none()
                     && ret.modes.0 == 0
@@ -687,6 +695,7 @@ impl RawDeclaration
             kind: RawByte(1),
             name: Vec::new(),
             entries,
+            imports: Bytes(vec![0]),
             root_declared,
             root_body: None,
             modes: WireValue(0),
@@ -697,10 +706,10 @@ impl RawDeclaration
     ///
     /// # Specification
     /// - requires: nothing; fields may deliberately disagree.
-    /// - ensures: returns an empty table of names, then the mark, kind, counted
-    ///   names, zero level counts, counted raw entries and declared root. A
-    ///   present body field adds its root, erasure count and three empty slots,
-    ///   regardless of the kind byte.
+    /// - ensures: returns an empty table of names, then the raw imports, then
+    ///   the mark, kind, counted names, zero level counts, counted raw entries
+    ///   and declared root. A present body field adds its root, erasure count
+    ///   and three empty slots, regardless of the kind byte.
     /// - provides: independent raw field framing for both valid and
     ///   deliberately inconsistent records. Presence of the optional body, not
     ///   validation of the kind, controls the trailing fields.
@@ -727,7 +736,7 @@ impl RawDeclaration
         )
     )]
     #[spec(
-            ensures: |ret| ret.0.first() == Some(&0_u8) && ret.0.get(1 .. 3).and_then(|header| { let segment_start = 1_usize;
+            ensures: |ret| ret.0.first() == Some(&0_u8) && ret.0.get(1 .. 1_usize.saturating_add(self.imports.0.len())) == Some(self.imports.0.as_slice()) && ret.0.get(1_usize.saturating_add(self.imports.0.len()) .. 3_usize.saturating_add(self.imports.0.len())).and_then(|header| { let segment_start = 1_usize.saturating_add(self.imports.0.len());
                  let names_count = u64::try_from(self.name.len()).unwrap_or(u64::MAX);
                 if header != [self.mark.0, self.kind.0].as_slice() || !({ let scalar = names_count;
                 let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
@@ -785,6 +794,7 @@ impl RawDeclaration
     {
         let mut out = Bytes::new();
         out.varint(WireValue(0)); // the table of names
+        out.append(&self.imports);
         out.byte(self.mark);
         out.byte(self.kind);
         out.varint(WireValue(
@@ -821,9 +831,9 @@ impl RawDeclaration
 /// # Specification
 /// - requires: nothing; every field may be inconsistent with the segments,
 ///   which is what the refusal fixtures rely on.
-/// - ensures: returns the magic, the declared version, the atom count and the
-///   atoms, then the declaration count and the segments' bytes, each opening
-///   with an empty table of names.
+/// - ensures: returns the magic, the declared version, a key width of one word,
+///   the atom count and the atoms, then the declaration count and the segments'
+///   bytes, each opening with an empty table of names and then its raw imports.
 /// - provides: the hand-built artifact for shapes a well-formed encoder cannot
 ///   produce, so a refusal can be provoked without weakening the encoder.
 /// - panics: none.
@@ -842,13 +852,14 @@ impl RawDeclaration
 #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
                 && ret.0.get(4 .. 6) == Some(version.0.to_le_bytes().as_slice())
+                && ret.0.get(6) == Some(&8_u8)
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get(6_usize .. (6_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get(7_usize .. (7_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
-            if valid_count { atoms.iter().try_fold((6_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            if valid_count { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
             |position, atom| { ({ let scalar = atom.0;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
@@ -861,7 +872,7 @@ impl RawDeclaration
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
             if valid_count { declarations.iter().try_fold(position.saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
-            |offset, declaration| { if ret.0.as_slice().get(offset) != Some(&0_u8) { return None; } let segment_start = offset.saturating_add(1);
+            |offset, declaration| { if ret.0.as_slice().get(offset) != Some(&0_u8) { return None; } let imports_end = offset.saturating_add(1).saturating_add(declaration.imports.0.len()); if ret.0.as_slice().get(offset.saturating_add(1) .. imports_end) != Some(declaration.imports.0.as_slice()) { return None; } let segment_start = imports_end;
             let header = ret.0.as_slice().get(segment_start .. segment_start.saturating_add(2))?;
             let names_count = u64::try_from(declaration.name.len()).unwrap_or(u64::MAX);
             if header != [declaration.mark.0, declaration.kind.0].as_slice() || !({ let scalar = names_count;
@@ -926,6 +937,8 @@ fn raw_artifact(
     let mut out = Bytes::new();
     out.magic();
     out.version(version);
+    // The width of a key: one word, as an artifact of no names takes.
+    out.varint(WireValue(8));
     out.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
     for &atom in atoms {
         out.varint(atom);
@@ -1887,7 +1900,7 @@ fn a_dependent_arrow_refuses_a_mis_polarized_codomain()
             entry_pi(TableIndex(0), TableIndex(0)),
             entry_unit_type(),
         ],
-        TableIndex(2),
+        TableIndex(4),
     )]);
     assert_eq!(
         Err(DecodeError::Malformed {
@@ -2044,20 +2057,20 @@ fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
     certificate.0.extend_from_slice(&[0, 1, 1]);
     let premise_offset = certificate.0.len();
     certificate.varint(WireValue(0x00FF_FFFF_FF0C));
-    certificate.0.extend_from_slice(&[2, 6, 6]);
+    certificate.0.extend_from_slice(&[4, 12, 12]);
     let mut declaration = RawDeclaration::definition(
         vec![
             entry_unit_type(),
             Bytes(vec![0x1C, 0]),    // quote Unit
-            Bytes(vec![0x2A, 1, 1]), // Path_U(Unit, Unit)
+            Bytes(vec![0x2A, 2, 2]), // Path_U(Unit, Unit)
             entry_variable(WireValue(0)),
-            Bytes(vec![0x13, 3]), // return variable
-            Bytes(vec![0x11, 4]), // lambda
-            Bytes(vec![0x0F, 5]), // thunk
+            Bytes(vec![0x13, 6]),  // return variable
+            Bytes(vec![0x11, 8]),  // lambda
+            Bytes(vec![0x0F, 10]), // thunk
             certificate,
         ],
-        TableIndex(2),
-        TableIndex(7),
+        TableIndex(4),
+        TableIndex(14),
     );
     let bytes = raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
     let artifact = decode(ArtifactImage::from(bytes.as_ref())).expect("candidate syntax decodes");
@@ -2219,15 +2232,16 @@ fn the_empty_sequence_encodes_to_a_bare_header()
 {
     let arena = TermArena::new();
     let bytes = encode(&arena, &[]);
-    // Hand check of the version field: the version is 10, which as a
-    // little-endian sixteen-bit field is the low byte 0x0A first and the
+    // Hand check of the version field: the version is 11, which as a
+    // little-endian sixteen-bit field is the low byte 0x0B first and the
     // high byte 0x00 after. The header is the four-byte magic, that
-    // two-byte field, the empty atom table as one varint zero and the
-    // declaration count as one varint zero.
+    // two-byte field, the width of a key as one varint eight, the empty atom
+    // table as one varint zero and the declaration count as one varint zero.
     assert_eq!(
-        vec![b'G', b'K', b'X', b'1', 0x0A, 0x00, 0x00, 0x00],
+        vec![b'G', b'K', b'X', b'1', 0x0B, 0x00, 0x08, 0x00, 0x00],
         Vec::from(bytes.clone()),
-        "the empty artifact is the magic, the version, an empty atom table and a zero count"
+        "the empty artifact is the magic, the version, the key width, an empty atom table and \
+         a zero count"
     );
     let artifact = decode(bytes.as_image()).expect("the empty artifact decodes");
     assert!(
@@ -2269,13 +2283,15 @@ fn each_segment_ends_where_its_bytes_end()
     );
 
     // The axiom's declared type is the definition's entry zero, so its own
-    // segment introduces no entry and its bytes still delimit it.
+    // segment introduces no entry and reads that entry through its one import:
+    // the definition's place, written bare, and offset zero.
     let definition = RawDeclaration::definition(
         vec![entry_unit_type(), entry_unit()],
         TableIndex(0),
-        TableIndex(1),
+        TableIndex(2),
     );
-    let axiom = RawDeclaration::axiom(Vec::new(), TableIndex(0));
+    let mut axiom = RawDeclaration::axiom(Vec::new(), TableIndex(1));
+    axiom.imports = Bytes(vec![1, 1, 0]);
     let first_end = header.0.len().saturating_add(definition.bytes().0.len());
     let second_end = first_end.saturating_add(axiom.bytes().0.len());
     let bytes = raw_artifact(current_version(), &[], &[definition, axiom]);
@@ -2368,12 +2384,12 @@ fn a_duplicate_entry_is_refused_as_non_canonical()
         entry_unit_type(),
         entry_unit(),
         entry_unit(),
-        entry_pair(TableIndex(1), TableIndex(2)),
+        entry_pair(TableIndex(2), TableIndex(4)),
     ];
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
         TableIndex(0),
-        TableIndex(3),
+        TableIndex(6),
     )]);
     assert_eq!(
         Err(non_canonical()),
@@ -2394,8 +2410,8 @@ fn a_mis_ordered_table_is_refused_as_non_canonical()
     ];
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
-        TableIndex(1),
         TableIndex(2),
+        TableIndex(4),
     )]);
     assert_eq!(
         Err(non_canonical()),
@@ -2410,13 +2426,13 @@ fn a_dead_entry_is_refused_as_non_canonical()
     let entries = vec![
         entry_unit_type(),
         entry_unit(),
-        entry_pair(TableIndex(1), TableIndex(1)),
+        entry_pair(TableIndex(2), TableIndex(2)),
         entry_variable(WireValue(7)),
     ];
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         entries,
         TableIndex(0),
-        TableIndex(2),
+        TableIndex(4),
     )]);
     assert_eq!(
         Err(non_canonical()),
@@ -2439,11 +2455,11 @@ fn a_decode_of_a_quote_is_refused_as_non_canonical()
     element.byte(RawByte(0x19));
     element.varint(WireValue(0));
     element.varint(WireValue(0));
-    element.varint(WireValue(1));
+    element.varint(WireValue(2));
     let entries = vec![entry_unit_type(), quote, element];
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
         entries,
-        TableIndex(2),
+        TableIndex(4),
     )]);
     assert_eq!(
         Err(non_canonical()),
@@ -2470,7 +2486,7 @@ fn a_self_or_forward_child_reference_is_refused()
     );
 
     let forward_reference = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
-        vec![entry_pair(TableIndex(1), TableIndex(1)), entry_unit()],
+        vec![entry_pair(TableIndex(2), TableIndex(2)), entry_unit()],
         TableIndex(0),
         TableIndex(0),
     )]);
@@ -2771,10 +2787,20 @@ fn a_predecessor_version_is_refused_by_name()
         "the version whose segments wrote each position as itself is refused rather than misread"
     );
 
-    let future = raw_artifact(Version(11), &[], &[]);
+    let children_by_global_index = raw_artifact(Version(10), &[], &[]);
     assert_eq!(
         Err(DecodeError::UnsupportedVersion {
-            found: FormatVersion::from(11),
+            found: FormatVersion::from(10),
+        }),
+        decode(ArtifactImage::from(children_by_global_index.as_ref())),
+        "the version whose segments wrote each child by its global index is refused rather than \
+         misread"
+    );
+
+    let future = raw_artifact(Version(12), &[], &[]);
+    assert_eq!(
+        Err(DecodeError::UnsupportedVersion {
+            found: FormatVersion::from(12),
         }),
         decode(ArtifactImage::from(future.as_ref())),
         "a later version is refused with the version it declared"
@@ -3164,7 +3190,7 @@ fn an_occupied_reserved_slot_is_refused_by_name()
     let mut graded = RawDeclaration::definition(
         vec![entry_unit_type(), entry_unit()],
         TableIndex(0),
-        TableIndex(1),
+        TableIndex(2),
     );
     graded.modes = WireValue(1);
     let bytes = raw_artifact(current_version(), &[], &[graded]);
@@ -3183,7 +3209,7 @@ fn a_child_of_the_wrong_polarity_is_refused()
     let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
         vec![entry_unit_type(), entry_pair(TableIndex(0), TableIndex(0))],
         TableIndex(0),
-        TableIndex(1),
+        TableIndex(2),
     )]);
     assert_eq!(
         Err(DecodeError::Malformed {
@@ -3219,7 +3245,7 @@ fn a_child_of_the_wrong_polarity_is_refused()
 ///   surrounding record.
 /// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 10, 0, 1, 0, 2, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 11, 0, 8, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 0, 2, 0, 0, 0, 0].as_slice(),
     )]
 fn sealed_artifact() -> EncodedArtifact
 {
@@ -3245,20 +3271,20 @@ fn sealed_artifact() -> EncodedArtifact
 
 /// The sealed artifact's bytes with its declared atom table replaced.
 ///
-/// The header the sealed artifact writes is the magic, the version, a
-/// one-byte table count and one one-byte position, so its tail begins
-/// at the eighth byte.
+/// The header the sealed artifact writes is the magic, the version, the key
+/// width, a one-byte table count and one one-byte position, so its tail
+/// begins at byte nine.
 ///
 /// # Specification
 /// - requires: nothing; `atoms` may disagree with the artifact's own
 ///   declarations, which is the point.
 /// - ensures: returns the sealed artifact's bytes with the magic, the current
-///   version, and `atoms` in place of the original header, and the original
-///   tail from the eighth byte onward.
+///   version, a key width of one word and `atoms` in place of the original
+///   header, and the original tail from byte nine onward.
 /// - provides: the artifact whose declared table is false while every other
 ///   byte is unchanged, so a refusal isolates the table rather than the
 ///   surrounding shape.
-/// - panics: panics when the sealed artifact is shorter than eight bytes, which
+/// - panics: panics when the sealed artifact is shorter than nine bytes, which
 ///   its own header precludes.
 ///
 /// # Adequacy
@@ -3273,20 +3299,21 @@ fn sealed_artifact() -> EncodedArtifact
 /// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([10_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([11_u8, 0].as_slice())
+                && ret.0.get(6) == Some(&8_u8)
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            ret.0.as_slice().get(6_usize .. (6_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            ret.0.as_slice().get(7_usize .. (7_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
-            if valid_count { atoms.iter().try_fold((6_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            if valid_count { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
             |position, atom| { ({ let scalar = atom.0;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((atom.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) }
-            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 2, 3, 0, 0, 0, 0].as_slice())),
+            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 0, 2, 0, 0, 0, 0].as_slice())),
     )]
 fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
 {
@@ -3294,11 +3321,12 @@ fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     let mut bytes = Bytes::new();
     bytes.magic();
     bytes.version(current_version());
+    bytes.varint(WireValue(8));
     bytes.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
     for &atom in atoms {
         bytes.varint(atom);
     }
-    bytes.append_tail(&original, Position(8));
+    bytes.append_tail(&original, Position(9));
     bytes
 }
 
@@ -3351,11 +3379,12 @@ fn a_sealed_artifact_round_trips_with_its_atom_table()
 fn a_seal_reaching_past_the_artifact_is_refused()
 {
     // The atom's extent is the last byte of its segment: the magic, the
-    // version, the one-entry table, the declaration count, then the
-    // segment's empty table of names, mark, kind, name, levels, entry count,
-    // the universe and integer entries, and its two roots.
+    // version, the key width, the one-entry table, the declaration count,
+    // then the segment's empty table of names, its empty imports, mark, kind,
+    // name, levels, entry count, the universe and integer entries, and its two
+    // roots.
     let mut bytes = Vec::from(sealed_artifact());
-    let extent = bytes.get_mut(23).expect("the atom's extent byte");
+    let extent = bytes.get_mut(25).expect("the atom's extent byte");
     assert_eq!(*extent, 1, "the fixture's atom holds its one member");
     *extent = 2;
     assert_eq!(
