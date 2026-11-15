@@ -28,7 +28,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_send(sqe, sockfd, buf, len, flags);
@@ -54,7 +54,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_send_bundle(sqe, sockfd, len, flags);
@@ -79,7 +79,7 @@ pub mod repr
             addr_len: u16,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_send_set_addr(sqe, dest_addr, addr_len);
@@ -109,7 +109,7 @@ pub mod repr
             zc_flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_send_zc(sqe, sockfd, buf, len, flags, zc_flags);
@@ -140,7 +140,7 @@ pub mod repr
             buf_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_send_zc_fixed(
@@ -169,7 +169,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_sendmsg(sqe, fd, msg, flags);
@@ -197,7 +197,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_sendmsg_zc(sqe, fd, msg, flags);
@@ -226,7 +226,7 @@ pub mod repr
             buf_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_sendmsg_zc_fixed(sqe, fd, msg, flags, buf_index);
@@ -257,7 +257,7 @@ pub mod repr
             addrlen: ::liburing_rs::socklen_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_sendto(sqe, sockfd, buf, len, flags, addr, addrlen);

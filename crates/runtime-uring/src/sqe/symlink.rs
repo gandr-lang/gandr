@@ -25,7 +25,7 @@ pub mod repr
             linkpath: *const ::core::ffi::c_char,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_symlink(sqe, target, linkpath);
@@ -53,7 +53,7 @@ pub mod repr
             linkpath: *const ::core::ffi::c_char,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_symlinkat(sqe, target, newdirfd, linkpath);

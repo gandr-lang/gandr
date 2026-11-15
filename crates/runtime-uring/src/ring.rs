@@ -3,6 +3,7 @@
 
 use ::bon::bon;
 use ::core::marker::PhantomData;
+use ::core::ptr::NonNull;
 use ::std::os::fd::AsRawFd as _;
 use ::std::os::fd::BorrowedFd;
 
@@ -34,7 +35,7 @@ use crate::sys::SysResult as _;
 pub struct IoUring<'fd, S = crate::sqe::kind::Sqe64, C = crate::cqe::kind::Cqe16>
 {
     /// The ring that liburing holds.
-    pub(crate) ring: ::liburing_rs::io_uring,
+    ring: ::liburing_rs::io_uring,
     /// The borrow of the shared work queue's descriptor, and the two sizes
     /// of entry.
     marker: PhantomData<(&'fd ::liburing_rs::io_uring, S, C)>,
@@ -56,6 +57,20 @@ impl<S, C> Drop for IoUring<'_, S, C>
         unsafe {
             ::liburing_rs::io_uring_queue_exit(ring);
         }
+    }
+}
+
+impl<S, C> IoUring<'_, S, C>
+{
+    /// The ring that liburing holds, for the queues and the registrar that
+    /// borrow it.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    pub(crate) fn ring(&self) -> NonNull<::liburing_rs::io_uring>
+    {
+        NonNull::from(&self.ring)
     }
 }
 
@@ -102,22 +117,26 @@ where
 {
     /// Sets up a ring of `entries` entries with the flags and the values
     /// that the builder holds. The builder's macro makes one setter for
-    /// each argument.
+    /// each argument. With `setup_mem` the rings live in the caller's
+    /// memory, which stays borrowed for the ring's life, as
+    /// `IORING_SETUP_NO_MMAP` asks.
     ///
     /// # Errors
     ///
-    /// The kernel refuses the ring or the mark against fork, and gives its
+    /// The kernel refuses the ring or the mark against fork, or the
+    /// caller's memory is too small for the rings, and the call gives the
     /// error number.
     ///
     /// # Specification
     ///
-    /// - fails: the kernel refuses the ring or the mark against fork.
+    /// - fails: the kernel refuses the ring or the mark against fork, or the
+    ///   caller's memory is too small for the rings.
     /// - executable: none — the outcome is the kernel's.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — each setup flag that the kernel takes alone gives a
-    ///   ring, and a flag that needs the caller's memory is refused with
-    ///   `ENOMEM`.
+    ///   ring, and `IORING_SETUP_NO_MMAP` with the caller's memory gives a ring
+    ///   in that memory.
     /// - witness: `ring::test::new::with_setup_sqpoll`
     /// - witness: `ring::test::new::with_setup_cqsize`
     /// - witness: `ring::test::new::with_setup_no_mmap`
@@ -131,6 +150,7 @@ where
         setup_cqsize: Option<u32>,
         #[builder(default, setters(vis = ""))] flag_setup_clamp: bool,
         setup_attach_wq: Option<BorrowedFd<'fd>>,
+        setup_mem: Option<&'fd mut [u8]>,
         #[builder(default, setters(vis = ""))] flag_setup_r_disabled: bool,
         #[builder(default, setters(vis = ""))] flag_setup_submit_all: bool,
         #[builder(default, setters(vis = ""))] flag_setup_coop_taskrun: bool,
@@ -212,12 +232,29 @@ where
         params.sq_thread_cpu = sq_thread_cpu;
         params.sq_thread_idle = sq_thread_idle;
 
-        // SAFETY: `ring` and `params` are this frame's own, and liburing
-        // fills `ring` when the answer is zero.
-        unsafe {
-            ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params)
+        if let Some(mem) = setup_mem {
+            // SAFETY: `ring` and `params` are this frame's own, `mem` stays
+            // borrowed for `'fd`, which the ring does not outlive, and
+            // liburing fills `ring` when the answer is not negative.
+            unsafe {
+                ::liburing_rs::io_uring_queue_init_mem(
+                    entries,
+                    &raw mut ring,
+                    &raw mut params,
+                    mem.as_mut_ptr().cast(),
+                    mem.len(),
+                )
+            }
+            .sys_uint()?;
         }
-        .sys_zero()?;
+        else {
+            // SAFETY: `ring` and `params` are this frame's own, and liburing
+            // fills `ring` when the answer is zero.
+            unsafe {
+                ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params)
+            }
+            .sys_zero()?;
+        }
 
         if dontfork {
             // SAFETY: `ring` is the ring that the call above set up.
@@ -650,33 +687,48 @@ pub mod test
                 .unwrap();
         }
 
-        // The kernel refuses `IORING_SETUP_NO_MMAP` with `ENOMEM` when the
-        // caller gives no memory for the rings, and the owner's test gives
-        // none. #7645 owes the mend that gives it.
+        /// The size of a block of the rings' memory: 64 KiB, a whole number
+        /// of pages for each page size up to 64 KiB.
+        const BLOCK: usize = 64 * 1024;
+
+        /// A ring of 8 entries in the caller's memory: the tail of three
+        /// blocks from the first boundary of a block, which is a page
+        /// boundary, as the kernel asks.
         #[test]
         #[cfg_attr(
             miri,
             ignore = "it sets up a ring through liburing, which Miri cannot run"
         )]
-        #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_no_mmap()
         {
-            IoUring::builder().setup_no_mmap().build().unwrap();
+            let mut mem = vec![0_u8; 3 * BLOCK];
+            let start = mem.as_ptr().align_offset(BLOCK);
+            let (_, mem) = mem.split_at_mut(start);
+            IoUring::builder()
+                .entries(8)
+                .setup_no_mmap()
+                .setup_mem(mem)
+                .build()
+                .unwrap();
         }
 
-        // `IORING_SETUP_REGISTERED_FD_ONLY` needs `IORING_SETUP_NO_MMAP`, so
-        // the kernel refuses it with `ENOMEM` as above. #7645 owes the mend.
+        /// `IORING_SETUP_REGISTERED_FD_ONLY` needs `IORING_SETUP_NO_MMAP`, so
+        /// the ring takes the caller's memory as above.
         #[test]
         #[cfg_attr(
             miri,
             ignore = "it sets up a ring through liburing, which Miri cannot run"
         )]
-        #[should_panic(expected = "Cannot allocate memory")]
         fn with_setup_registered_fd_only()
         {
+            let mut mem = vec![0_u8; 3 * BLOCK];
+            let start = mem.as_ptr().align_offset(BLOCK);
+            let (_, mem) = mem.split_at_mut(start);
             IoUring::builder()
+                .entries(8)
                 .setup_no_mmap()
                 .setup_registered_fd_only()
+                .setup_mem(mem)
                 .build()
                 .unwrap();
         }

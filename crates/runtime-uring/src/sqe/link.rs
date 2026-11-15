@@ -26,7 +26,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_link(sqe, oldpath, newpath, flags);
@@ -51,7 +51,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // liburing's signature takes a mutable pointer here, though the
             // kernel only reads it; the cast leaves when liburing
             // takes a constant pointer.
@@ -86,7 +86,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_linkat(sqe, olddfd, oldpath, newdfd, newpath, flags);

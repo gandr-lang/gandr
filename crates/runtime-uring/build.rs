@@ -29,32 +29,39 @@ fn main() -> ::std::io::Result<()>
 /// The bindgen pass over the kernel's `io_uring` header.
 mod bindgen
 {
+    /// The target's architecture, as Cargo names it in
+    /// `CARGO_CFG_TARGET_ARCH`.
+    #[repr(transparent)]
+    struct TargetArch<'arch>(&'arch str);
+
     /// The name of the variable that holds the kernel's headers for an
-    /// architecture, or none for an architecture that the script does not
-    /// name.
-    ///
-    /// # Specification
-    ///
-    /// trivial.
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            primitive_signature,
-            reason = "the owner's script maps an architecture's name to a variable's name; #7645 owes a mend in place"
-        )
-    )]
-    fn linux_headers(target_arch: &str) -> Option<&'static str>
+    /// architecture.
+    #[repr(transparent)]
+    struct HeadersVariable(&'static str);
+
+    impl TargetArch<'_>
     {
-        match target_arch {
-            "aarch64" => Some("arm64_LINUX_HEADERS"),
-            "arm" | "armv7" => Some("arm_LINUX_HEADERS"),
-            "loongarch64" => Some("loongarch_LINUX_HEADERS"),
-            "powerpc" | "powerpc64" | "powerpc64le" => Some("powerpc_LINUX_HEADERS"),
-            "riscv64" => Some("riscv_LINUX_HEADERS"),
-            "s390x" => Some("s390_LINUX_HEADERS"),
-            "x86" => Some("i386_LINUX_HEADERS"),
-            "x86_64" => Some("x86_64_LINUX_HEADERS"),
-            _ => None,
+        /// The variable that holds the kernel's headers for this
+        /// architecture, or none for an architecture that the script does
+        /// not name.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        fn linux_headers(&self) -> Option<HeadersVariable>
+        {
+            let variable = match self.0 {
+                "aarch64" => "arm64_LINUX_HEADERS",
+                "arm" | "armv7" => "arm_LINUX_HEADERS",
+                "loongarch64" => "loongarch_LINUX_HEADERS",
+                "powerpc" | "powerpc64" | "powerpc64le" => "powerpc_LINUX_HEADERS",
+                "riscv64" => "riscv_LINUX_HEADERS",
+                "s390x" => "s390_LINUX_HEADERS",
+                "x86" => "i386_LINUX_HEADERS",
+                "x86_64" => "x86_64_LINUX_HEADERS",
+                _ => return None,
+            };
+            Some(HeadersVariable(variable))
         }
     }
 
@@ -79,7 +86,7 @@ mod bindgen
 
         let target_arch =
             ::std::env::var("CARGO_CFG_TARGET_ARCH").map_err(::std::io::Error::other)?;
-        let Some(variable) = self::linux_headers(&target_arch)
+        let Some(HeadersVariable(variable)) = TargetArch(&target_arch).linux_headers()
         else {
             return Ok(());
         };

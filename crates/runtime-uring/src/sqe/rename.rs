@@ -25,7 +25,7 @@ pub mod repr
             newpath: *const ::core::ffi::c_char,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_rename(sqe, oldpath, newpath);
@@ -56,7 +56,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_renameat(sqe, olddfd, oldpath, newdfd, newpath, flags);

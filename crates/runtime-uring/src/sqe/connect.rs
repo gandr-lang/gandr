@@ -27,7 +27,7 @@ pub mod repr
             addrlen: ::liburing_rs::socklen_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_connect(sqe, fd, addr, addrlen);

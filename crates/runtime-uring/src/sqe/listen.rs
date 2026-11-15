@@ -30,7 +30,7 @@ pub mod repr
             backlog: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
 
             let fd = socket.as_raw_fd();
 
@@ -141,7 +141,7 @@ pub mod test
                 .map(Into::into)
                 .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                 .unwrap();
-            cqe.cqe.res.sys_zero().unwrap();
+            cqe.cqe().res.sys_zero().unwrap();
         }
 
         /// Runs the fixture on `ring` and checks the outcome.

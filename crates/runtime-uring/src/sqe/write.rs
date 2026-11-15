@@ -29,7 +29,7 @@ pub mod repr
             offset: u64,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_write(sqe, fd, buf, nbytes, offset);
@@ -59,7 +59,7 @@ pub mod repr
             buf_index: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_write_fixed(sqe, fd, buf, nbytes, offset, buf_index);
@@ -88,7 +88,7 @@ pub mod repr
             offset: u64,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_writev(sqe, fd, iovecs, nr_vecs, offset);
@@ -118,7 +118,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_writev2(sqe, fd, iovecs, nr_vecs, offset, flags);
@@ -149,7 +149,7 @@ pub mod repr
             buf_index: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_writev_fixed(

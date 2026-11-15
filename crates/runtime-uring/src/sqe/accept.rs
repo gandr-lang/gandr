@@ -35,7 +35,7 @@ pub mod repr
             file_index: Option<::core::ffi::c_uint>,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
 
             let fd = socket.as_raw_fd();
             // SAFETY: `addr` is the storage of a socket address, which the
@@ -48,14 +48,25 @@ pub mod repr
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
                     ::liburing_rs::io_uring_prep_accept_direct(
-                        sqe, fd, addr, addrlen, flags, file_index,
+                        sqe,
+                        fd,
+                        &raw mut *addr,
+                        &raw mut *addrlen,
+                        flags,
+                        file_index,
                     );
                 }
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
-                    ::liburing_rs::io_uring_prep_accept(sqe, fd, addr, addrlen, flags);
+                    ::liburing_rs::io_uring_prep_accept(
+                        sqe,
+                        fd,
+                        &raw mut *addr,
+                        &raw mut *addrlen,
+                        flags,
+                    );
                 }
             }
         }
@@ -85,7 +96,7 @@ pub mod repr
             direct: bool,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
 
             let fd = socket.as_raw_fd();
             // SAFETY: `addr` is the storage of a socket address, which the
@@ -98,14 +109,24 @@ pub mod repr
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
                     ::liburing_rs::io_uring_prep_multishot_accept_direct(
-                        sqe, fd, addr, addrlen, flags,
+                        sqe,
+                        fd,
+                        &raw mut *addr,
+                        &raw mut *addrlen,
+                        flags,
                     );
                 }
             }
             else {
                 // SAFETY: The enclosing method preserves the safety interface.
                 unsafe {
-                    ::liburing_rs::io_uring_prep_multishot_accept(sqe, fd, addr, addrlen, flags);
+                    ::liburing_rs::io_uring_prep_multishot_accept(
+                        sqe,
+                        fd,
+                        &raw mut *addr,
+                        &raw mut *addrlen,
+                        flags,
+                    );
                 }
             }
         }
@@ -282,7 +303,7 @@ pub mod test
                     .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                     .unwrap();
 
-                let desc = cqe.cqe.res.sys_uint().unwrap();
+                let desc = cqe.cqe().res.sys_uint().unwrap();
                 let desc = if uses_slot {
                     SlotDesc::Slot(desc)
                 }
@@ -295,8 +316,8 @@ pub mod test
 
                 descs.push(desc);
 
-                if i + 1 < clients {
-                    assert_ne!(0, cqe.cqe.flags & ::liburing_rs::IORING_CQE_F_MORE);
+                if i.checked_add(1).is_some_and(|next| next < clients) {
+                    assert_ne!(0, cqe.cqe().flags & ::liburing_rs::IORING_CQE_F_MORE);
                 }
             }
             assert_eq!(descs.len(), clients);
@@ -346,35 +367,20 @@ pub mod test
         })
     }
 
-    /// Runs the accept fixture on `ring` with these arguments.
+    /// Runs the accept fixture `fixture`, the accept's fields in one struct,
+    /// on `ring`.
     ///
     /// # Specification
     ///
     /// trivial.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the owner's fixture takes each field of the accept as its own argument; #7645 owes a mend in place"
-    )]
-    pub fn accept_with<'op, S, C>(
+    pub fn accept_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
-        socket: &SlotDesc<::socket2::Socket>,
-        addr: &'op mut ::socket2::SockAddrStorage,
-        addrlen: &'op mut ::socket2::socklen_t,
-        client_slot: Option<::core::ffi::c_uint>,
-        mode: FixtureOpMode,
-        sqe_link: Option<bool>,
-        cqe_skip: Option<bool>,
+        fixture: Fixture<'_>,
     ) where
         C: crate::cqe::Kind,
         S: crate::sqe::Kind,
     {
-        let socket = socket.as_ref();
-        crate::sqe::accept::test::Fixture::builder(socket, addr, addrlen, mode)
-            .maybe_client_slot(client_slot)
-            .maybe_sqe_link(sqe_link)
-            .maybe_cqe_skip(cqe_skip)
-            .build()
-            .run(ring);
+        fixture.run(ring);
     }
 
     #[test]
@@ -419,16 +425,17 @@ pub mod test
             .take(clients)
             .collect::<Vec<_>>();
 
-        crate::sqe::accept::test::accept_with(
-            &mut ring,
-            &socket,
+        let fixture = crate::sqe::accept::test::Fixture::builder(
+            socket.as_ref(),
             &mut addr,
             &mut addrlen,
-            client_slot,
             mode,
-            sqe_link,
-            cqe_skip,
-        );
+        )
+        .maybe_client_slot(client_slot)
+        .maybe_sqe_link(sqe_link)
+        .maybe_cqe_skip(cqe_skip)
+        .build();
+        crate::sqe::accept::test::accept_with(&mut ring, fixture);
 
         for thread in threads {
             thread.join().unwrap().unwrap();
@@ -477,16 +484,17 @@ pub mod test
             .take(clients)
             .collect::<Vec<_>>();
 
-        crate::sqe::accept::test::accept_with(
-            &mut ring,
-            &socket,
+        let fixture = crate::sqe::accept::test::Fixture::builder(
+            socket.as_ref(),
             &mut addr,
             &mut addrlen,
-            client_slot,
             mode,
-            sqe_link,
-            cqe_skip,
-        );
+        )
+        .maybe_client_slot(client_slot)
+        .maybe_sqe_link(sqe_link)
+        .maybe_cqe_skip(cqe_skip)
+        .build();
+        crate::sqe::accept::test::accept_with(&mut ring, fixture);
 
         for thread in threads {
             thread.join().unwrap().unwrap();
@@ -544,16 +552,17 @@ pub mod test
             thread.join().unwrap().unwrap();
         }
 
-        crate::sqe::accept::test::accept_with(
-            &mut ring,
-            &socket,
+        let fixture = crate::sqe::accept::test::Fixture::builder(
+            socket.as_ref(),
             &mut addr,
             &mut addrlen,
-            client_slot,
             mode,
-            sqe_link,
-            cqe_skip,
-        );
+        )
+        .maybe_client_slot(client_slot)
+        .maybe_sqe_link(sqe_link)
+        .maybe_cqe_skip(cqe_skip)
+        .build();
+        crate::sqe::accept::test::accept_with(&mut ring, fixture);
     }
 
     #[test]
@@ -601,16 +610,17 @@ pub mod test
             .take(clients)
             .collect::<Vec<_>>();
 
-        crate::sqe::accept::test::accept_with(
-            &mut ring,
-            &socket,
+        let fixture = crate::sqe::accept::test::Fixture::builder(
+            socket.as_ref(),
             &mut addr,
             &mut addrlen,
-            client_slot,
             mode,
-            sqe_link,
-            cqe_skip,
-        );
+        )
+        .maybe_client_slot(client_slot)
+        .maybe_sqe_link(sqe_link)
+        .maybe_cqe_skip(cqe_skip)
+        .build();
+        crate::sqe::accept::test::accept_with(&mut ring, fixture);
 
         for thread in threads {
             thread.join().unwrap().unwrap();
@@ -662,16 +672,17 @@ pub mod test
             .take(clients)
             .collect::<Vec<_>>();
 
-        crate::sqe::accept::test::accept_with(
-            &mut ring,
-            &socket,
+        let fixture = crate::sqe::accept::test::Fixture::builder(
+            socket.as_ref(),
             &mut addr,
             &mut addrlen,
-            client_slot,
             mode,
-            sqe_link,
-            cqe_skip,
-        );
+        )
+        .maybe_client_slot(client_slot)
+        .maybe_sqe_link(sqe_link)
+        .maybe_cqe_skip(cqe_skip)
+        .build();
+        crate::sqe::accept::test::accept_with(&mut ring, fixture);
 
         for thread in threads {
             thread.join().unwrap().unwrap();
