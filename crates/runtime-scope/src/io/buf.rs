@@ -72,6 +72,7 @@ impl Buf<'_>
     ///
     /// - hypothesis: L3 — a receive of four bytes into eight gives the four.
     /// - witness: `io::socket::test::socket::recv`
+    /// - witness: `completion::test::cqe::a_count_prefixes_the_lent_buffer`
     #[inline]
     #[must_use]
     pub fn prefix(

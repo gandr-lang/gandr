@@ -45,6 +45,7 @@ impl TryFrom<Key> for u64
     ///   and its completion names the same slot.
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
     /// - witness: `runtime::test::run::full`
+    /// - witness: `submission::test::table::a_key_round_trips_through_the_user_data`
     #[inline]
     fn try_from(key: Key) -> Result<Self, Self::Error>
     {
@@ -71,6 +72,7 @@ impl TryFrom<u64> for Key
     ///   request.
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
     /// - witness: `runtime::test::run::full`
+    /// - witness: `submission::test::table::a_key_round_trips_through_the_user_data`
     #[inline]
     fn try_from(data: u64) -> Result<Self, Self::Error>
     {
@@ -222,6 +224,7 @@ impl Table
     /// - hypothesis: L3 — a run takes every slot, is refused the next, and
     ///   takes a slot again once the held completions drop.
     /// - witness: `runtime::test::run::full`
+    /// - witness: `submission::test::table::takes_each_slot_then_refuses`
     pub fn take(&self) -> Option<Key>
     {
         let len = self.free_len.get().checked_sub(1)?;
@@ -265,6 +268,8 @@ impl Table
     ///   from the slot.
     /// - witness: `io::socket::test::socket::accept_in_flight`
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+    /// - witness: `submission::test::table::a_read_frees_its_slot`
+    /// - witness: `submission::test::table::a_completion_of_no_held_slot_is_missing`
     pub fn complete(
         &self,
         key: Key,
@@ -301,6 +306,7 @@ impl Table
     /// - hypothesis: L3 — a thousand requests read their completions, and each
     ///   frees its slot for the next.
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+    /// - witness: `submission::test::table::a_read_frees_its_slot`
     pub fn read(
         &self,
         key: Key,
@@ -332,6 +338,8 @@ impl Table
     /// - witness: `io::socket::test::socket::accept_in_flight`
     /// - witness: `io::socket::test::socket::recv_in_flight`
     /// - witness: `runtime::test::run::full`
+    /// - witness: `submission::test::table::an_abandoned_slot_frees_at_its_completion`
+    /// - witness: `completion::test::completion::a_dropped_completion_leaves_its_slot_to_the_kernel`
     pub fn abandon(
         &self,
         key: Key,
@@ -363,6 +371,90 @@ impl Table
             slot.set(Slot::Free);
             free.set(key);
             self.free_len.set(len.saturating_add(1));
+        }
+    }
+}
+
+/// The table's tests. No ring takes part, so Miri runs each one.
+#[cfg(test)]
+mod test
+{
+    use super::*;
+
+    /// The states of the table's slots.
+    mod table
+    {
+        use super::*;
+
+        #[test]
+        fn takes_each_slot_then_refuses()
+        {
+            let table = Table::new(Depth::from(2_u16));
+            let first = table.take().unwrap();
+            let second = table.take().unwrap();
+            assert_ne!(first, second);
+            assert_eq!(table.take(), None);
+            assert_eq!(table.hold(), Hold::Held);
+        }
+
+        #[test]
+        fn a_read_frees_its_slot()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let key = table.take().unwrap();
+            assert!(table.read(key).is_none());
+            assert_eq!(table.complete(key, Cqe::ZERO), Lookup::Found);
+            assert_eq!(table.hold(), Hold::Drained);
+            assert!(table.read(key).is_some());
+            assert_eq!(table.take(), Some(key));
+        }
+
+        #[test]
+        fn an_abandoned_slot_frees_at_its_completion()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let key = table.take().unwrap();
+            table.abandon(key);
+            assert_eq!(table.take(), None);
+            assert_eq!(table.hold(), Hold::Held);
+            assert_eq!(table.complete(key, Cqe::ZERO), Lookup::Found);
+            assert_eq!(table.hold(), Hold::Drained);
+            assert_eq!(table.take(), Some(key));
+        }
+
+        #[test]
+        fn a_completion_of_no_held_slot_is_missing()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let key = table.take().unwrap();
+            table.give_back(key);
+            assert_eq!(table.complete(key, Cqe::ZERO), Lookup::Missing);
+            assert_eq!(table.complete(Key(7), Cqe::ZERO), Lookup::Missing);
+            assert_eq!(table.hold(), Hold::Drained);
+        }
+
+        #[test]
+        fn the_kernel_s_slots_are_the_pending_and_the_abandoned()
+        {
+            let table = Table::new(Depth::from(3_u16));
+            let pending = table.take().unwrap();
+            let abandoned = table.take().unwrap();
+            let done = table.take().unwrap();
+            table.abandon(abandoned);
+            table.complete(done, Cqe::ZERO);
+            let held = table.in_kernel().collect::<Vec<_>>();
+            assert_eq!(held.len(), 2);
+            assert!(held.contains(&pending));
+            assert!(held.contains(&abandoned));
+        }
+
+        #[test]
+        fn a_key_round_trips_through_the_user_data()
+        {
+            let table = Table::new(Depth::from(4_u16));
+            let key = table.take().unwrap();
+            let data = u64::try_from(key).unwrap();
+            assert_eq!(Key::try_from(data), Ok(key));
         }
     }
 }

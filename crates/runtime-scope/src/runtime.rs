@@ -271,6 +271,10 @@ pub mod test
     }
 
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring of the kernel, which Miri cannot run"
+    )]
     fn new()
     {
         self::harness::new();
@@ -281,6 +285,10 @@ pub mod test
         use super::*;
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn closure()
         {
             let data = &mut vec![];
@@ -299,6 +307,10 @@ pub mod test
         /// reader, the request gives the stated result of a full table. Once
         /// the completions drop, their slots come free again.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn full()
         {
             let nop = |sqe: &mut ::gandr_runtime_uring::Sqe64<'_>| {

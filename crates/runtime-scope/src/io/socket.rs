@@ -191,6 +191,10 @@ pub(crate) mod test
         use super::*;
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn new()
         {
             crate::test::harness::runtime::new()
@@ -205,6 +209,10 @@ pub(crate) mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn bind()
         {
             let temp = ::assert_fs::TempDir::new().unwrap();
@@ -224,6 +232,10 @@ pub(crate) mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn listen()
         {
             let temp = ::assert_fs::TempDir::new().unwrap();
@@ -244,6 +256,10 @@ pub(crate) mod test
         }
 
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn accept()
         {
             let temp = ::assert_fs::TempDir::new().unwrap();
@@ -278,6 +294,10 @@ pub(crate) mod test
         /// run returns only once the kernel completes the cancel and the
         /// accept. No client connects, so only the cancel ends the accept.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn accept_in_flight()
         {
             let temp = ::assert_fs::TempDir::new().unwrap();
@@ -301,6 +321,10 @@ pub(crate) mod test
         /// A receive into a buffer that the region lends gives the bytes
         /// that the peer sent, and the buffer back.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn recv()
         {
             let (near, mut far) = ::std::os::unix::net::UnixStream::pair().unwrap();
@@ -324,6 +348,10 @@ pub(crate) mod test
         /// run returns. So the bytes that the peer sends after the run stay
         /// in the socket, and the region's buffer keeps its zeros.
         #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
         fn recv_in_flight()
         {
             let (near, mut far) = ::std::os::unix::net::UnixStream::pair().unwrap();

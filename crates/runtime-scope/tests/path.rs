@@ -99,6 +99,10 @@ mod request
     /// A thousand no-ops through the scope, after one that warms the path,
     /// make no allocation of the thread.
     #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring of the kernel, which Miri cannot run"
+    )]
     fn a_request_allocates_nothing_after_the_start()
     {
         let nop = |sqe: &mut Sqe64<'_>| {

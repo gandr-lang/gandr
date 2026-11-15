@@ -60,6 +60,10 @@ impl From<Count> for usize
 
 impl Cqe
 {
+    /// A completion whose result is zero: a count of no bytes.
+    #[cfg(test)]
+    pub(crate) const ZERO: Self = Self { res: 0 };
+
     /// The kernel's refusal that a negative result names.
     ///
     /// # Specification
@@ -84,6 +88,8 @@ impl Cqe
     /// - hypothesis: L3 — a bind and a listen on a fresh socket give no
     ///   refusal.
     /// - witness: `io::socket::test::socket::listen`
+    /// - witness: `completion::test::cqe::a_count_is_the_result`
+    /// - witness: `completion::test::cqe::a_negative_result_is_the_kernel_s_error`
     pub fn done(self) -> Result<(), RuntimeError>
     {
         if self.res.is_negative() {
@@ -108,6 +114,8 @@ impl Cqe
     ///
     /// - hypothesis: L3 — a receive of four bytes gives a count of four.
     /// - witness: `io::socket::test::socket::recv`
+    /// - witness: `completion::test::cqe::a_count_is_the_result`
+    /// - witness: `completion::test::cqe::a_negative_result_is_the_kernel_s_error`
     pub fn count(self) -> Result<Count, RuntimeError>
     {
         usize::try_from(self.res)
@@ -248,6 +256,8 @@ impl Future for Completion<'_>
     ///   thousand requests each read their completion.
     /// - witness: `runtime::test::run::full`
     /// - witness: `tests::path::request::a_request_allocates_nothing_after_the_start`
+    /// - witness: `completion::test::completion::waits_then_reads_then_refuses_a_second_read`
+    /// - witness: `completion::test::completion::a_refused_request_gives_its_reason`
     fn poll(
         self: Pin<&mut Self>,
         _cx: &mut Context<'_>,
@@ -265,6 +275,111 @@ impl Future for Completion<'_>
                 this.state = State::Read;
                 Poll::Ready(Ok(cqe))
             },
+        }
+    }
+}
+
+/// The completion's tests. No ring takes part, so Miri runs each one.
+#[cfg(test)]
+mod test
+{
+    use ::core::pin::Pin;
+    use ::core::task::Context;
+    use ::core::task::Poll;
+    use ::core::task::Waker;
+
+    use super::*;
+    use crate::io::buf::Buf;
+    use crate::submission::Depth;
+    use crate::submission::Hold;
+
+    /// The outcomes of a completion's result.
+    mod cqe
+    {
+        use super::*;
+
+        #[test]
+        fn a_count_is_the_result()
+        {
+            assert_eq!(Cqe { res: 4 }.count().map(usize::from), Ok(4));
+            assert_eq!(Cqe { res: 4 }.done(), Ok(()));
+        }
+
+        #[test]
+        fn a_negative_result_is_the_kernel_s_error()
+        {
+            let cqe = Cqe { res: -22 };
+            assert_eq!(cqe.done(), Err(RuntimeError::Kernel(Errno::INVAL)));
+            assert_eq!(
+                cqe.count().map(usize::from),
+                Err(RuntimeError::Kernel(Errno::INVAL))
+            );
+            // SAFETY: a negative result makes no descriptor, so the call
+            // takes no descriptor's ownership.
+            let descriptor = unsafe { cqe.descriptor() };
+            assert_eq!(descriptor.err(), Some(RuntimeError::Kernel(Errno::INVAL)));
+        }
+
+        #[test]
+        fn a_count_prefixes_the_lent_buffer()
+        {
+            let mut bytes = [1_u8, 2, 3, 4];
+            let got = Buf::from(&mut bytes[..]).prefix(Count(2));
+            assert_eq!(got.as_deref(), Some([1_u8, 2].as_slice()));
+            let past = Buf::from(&mut bytes[..]).prefix(Count(5));
+            assert_eq!(past, None);
+        }
+    }
+
+    /// The states of a completion over its slot.
+    mod completion
+    {
+        use super::*;
+
+        #[test]
+        fn waits_then_reads_then_refuses_a_second_read()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let key = table.take().unwrap();
+            let mut completion = Completion::new(&table, key);
+            let mut cx = Context::from_waker(Waker::noop());
+            assert!(Pin::new(&mut completion).poll(&mut cx).is_pending());
+            table.complete(key, Cqe { res: 3 });
+            let Poll::Ready(Ok(cqe)) = Pin::new(&mut completion).poll(&mut cx)
+            else {
+                panic!("the completion reads its slot once the kernel completes it");
+            };
+            assert_eq!(cqe.count().map(usize::from), Ok(3));
+            assert!(matches!(
+                Pin::new(&mut completion).poll(&mut cx),
+                Poll::Ready(Err(RuntimeError::Read))
+            ));
+            assert_eq!(table.take(), Some(key));
+        }
+
+        #[test]
+        fn a_dropped_completion_leaves_its_slot_to_the_kernel()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let key = table.take().unwrap();
+            drop(Completion::new(&table, key));
+            assert_eq!(table.take(), None);
+            assert_eq!(table.hold(), Hold::Held);
+            table.complete(key, Cqe::ZERO);
+            assert_eq!(table.hold(), Hold::Drained);
+            assert_eq!(table.take(), Some(key));
+        }
+
+        #[test]
+        fn a_refused_request_gives_its_reason()
+        {
+            let table = Table::new(Depth::from(1_u16));
+            let mut completion = Completion::refused(&table, RuntimeError::Full);
+            let mut cx = Context::from_waker(Waker::noop());
+            assert!(matches!(
+                Pin::new(&mut completion).poll(&mut cx),
+                Poll::Ready(Err(RuntimeError::Full))
+            ));
         }
     }
 }
