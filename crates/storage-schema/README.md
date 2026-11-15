@@ -73,7 +73,7 @@ assert_eq!(answer, Answer::Preimage(Box::from([joined])));
 
 ## Measurement
 
-`cargo bench -p gandr-storage-schema` times a store of 6400 parts — a cycle of 3200 vertices and 3200 edges, both arrows indexed — as the mean of one million operations. The figures are the median of five runs on one x86-64 host of 32 cores under a load of about 70, so a quiet host reads lower:
+`cargo bench -p gandr-storage-schema` times a store of 6400 parts — a cycle of 3200 vertices and 3200 edges, both arrows indexed — as the mean of one million operations. The figures are the median of five runs on one x86-64 host of 32 cores under a load of about 70. A quiet host gives smaller figures:
 
 | Operation | ns |
 | --------- | -: |
