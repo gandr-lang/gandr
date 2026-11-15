@@ -6,9 +6,8 @@
 //! one set, [`Op`]. The memory of an operation is a borrow of the scope's
 //! life, so the kernel writes only memory that the scope holds.
 
-// The runtime stands on the Linux kernel's ring: on another system the crate
-// compiles empty.
-#![cfg(target_os = "linux")]
+// Each target takes its kernel's adapter. A target with none is refused by
+// name at compile time (`adapter`).
 
 extern crate alloc;
 
@@ -29,6 +28,9 @@ mod submission;
 
 pub use crate::adapter::Adapter;
 pub use crate::adapter::Native;
+#[cfg(target_os = "macos")]
+pub use crate::adapter::kqueue::Kqueue;
+#[cfg(target_os = "linux")]
 pub use crate::adapter::uring::Uring;
 pub use crate::completion::Completion;
 pub use crate::completion::Count;

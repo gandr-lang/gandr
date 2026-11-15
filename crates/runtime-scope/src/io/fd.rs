@@ -510,6 +510,7 @@ pub(crate) mod test
 
     /// A write linked to its file's sync counts its four bytes once both
     /// complete, and the file holds them.
+    #[cfg(target_os = "linux")]
     #[test]
     #[cfg_attr(
         miri,
@@ -539,6 +540,7 @@ pub(crate) mod test
     /// A scope that ends with a linked pair in flight cancels both of its
     /// entries: the pipe is full, so the pair's write waits. The run
     /// returns, and the pipe holds only the bytes that filled it.
+    #[cfg(target_os = "linux")]
     #[test]
     #[cfg_attr(
         miri,
@@ -560,5 +562,29 @@ pub(crate) mod test
         let mut held = Vec::new();
         reader.read_to_end(&mut held).unwrap();
         assert_eq!(held, vec![0_u8; capacity]);
+    }
+
+    /// The kqueue adapter has no pool for the sync of a file, so it refuses
+    /// the linked pair by name.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn write_sync_is_refused()
+    {
+        let temp = ::assert_fs::TempDir::new().unwrap();
+        let path = temp.child("file");
+        let file = ::std::fs::File::create(&path).unwrap();
+        let mut sent = *b"data";
+        let refused = crate::test::harness::runtime::new()
+            .run(async |scope| {
+                scope
+                    .write_sync(&file, Buf::from(sent.as_mut_slice()))
+                    .await
+                    .err()
+            })
+            .unwrap();
+        assert_eq!(
+            refused,
+            Some(RuntimeError::Unsupported(crate::op::Member::WriteSync))
+        );
     }
 }

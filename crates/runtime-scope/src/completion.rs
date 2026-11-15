@@ -5,6 +5,7 @@ use ::core::marker::PhantomData;
 use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
+#[cfg(target_os = "linux")]
 use ::gandr_runtime_uring::Cqe16;
 use ::rustix::io::Errno;
 use ::std::os::fd::FromRawFd as _;
@@ -25,6 +26,7 @@ pub struct Cqe
     res: i32,
 }
 
+#[cfg(target_os = "linux")]
 impl From<Cqe16<'_>> for Cqe
 {
     /// The result of the ring's entry `cqe`.

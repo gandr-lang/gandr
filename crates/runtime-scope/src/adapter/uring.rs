@@ -16,6 +16,7 @@ use ::gandr_runtime_uring::arg::UserData;
 use ::rustix::io::Errno;
 
 use crate::adapter::Adapter;
+use crate::adapter::socket_of;
 use crate::completion::Cqe;
 use crate::error::RuntimeError;
 use crate::op::Descriptor;
@@ -203,24 +204,6 @@ fn record(
         return Err(RuntimeError::Unknown(data));
     }
     Ok(())
-}
-
-/// The socket that `fd` names, borrowed while its operation is prepared.
-///
-/// # Safety
-///
-/// - unsafe invariants: `fd` is an open descriptor that the operation borrows
-///   until its completion.
-///
-/// # Specification
-///
-/// trivial.
-unsafe fn socket_of(fd: Descriptor) -> ::std::mem::ManuallyDrop<::socket2::Socket>
-{
-    // SAFETY: the caller's invariant; the socket is never dropped, so the
-    // descriptor stays its owner's.
-    let socket = unsafe { <::socket2::Socket as ::std::os::fd::FromRawFd>::from_raw_fd(fd.into()) };
-    ::std::mem::ManuallyDrop::new(socket)
 }
 
 impl Uring

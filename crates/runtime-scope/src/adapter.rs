@@ -7,6 +7,8 @@
 //! names none and no table of methods runs: the runtime is generic in its
 //! adapter and monomorphised for the target. A test names an adapter.
 
+#[cfg(target_os = "macos")]
+pub mod kqueue;
 #[cfg(target_os = "linux")]
 pub mod uring;
 
@@ -103,11 +105,35 @@ pub trait Adapter: Sized
     ) -> Result<(), RuntimeError>;
 }
 
+/// The socket that `fd` names, borrowed while an adapter performs or
+/// prepares its operation.
+///
+/// # Safety
+///
+/// - unsafe invariants: `fd` is an open descriptor that the operation borrows
+///   until its completion.
+///
+/// # Specification
+///
+/// trivial.
+#[cfg(unix)]
+unsafe fn socket_of(fd: crate::op::Descriptor) -> ::std::mem::ManuallyDrop<::socket2::Socket>
+{
+    // SAFETY: the caller's invariant; the socket is never dropped, so the
+    // descriptor stays its owner's.
+    let socket = unsafe { <::socket2::Socket as ::std::os::fd::FromRawFd>::from_raw_fd(fd.into()) };
+    ::std::mem::ManuallyDrop::new(socket)
+}
+
 /// The adapter of the target: the kernel's ring on Linux.
 #[cfg(target_os = "linux")]
 pub type Native = uring::Uring;
 
-#[cfg(not(target_os = "linux"))]
+/// The adapter of the target: the kernel's queue of events on macOS.
+#[cfg(target_os = "macos")]
+pub type Native = kqueue::Kqueue;
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 ::core::compile_error!(
     "gandr-runtime-scope has no adapter for this target: the targets are Linux (io_uring), macOS (kqueue) and Windows (IOCP and IoRing)"
 );
