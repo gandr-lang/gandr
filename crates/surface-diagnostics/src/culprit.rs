@@ -58,22 +58,23 @@
 use core::fmt;
 
 use anodized::spec;
-use gandr_core_checker::CheckRefusal;
-use gandr_core_checker::CheckingForm;
-use gandr_core_checker::Mismatch;
+use gandr_core_checker::CheckRefusalOf;
+use gandr_core_checker::CheckingFormOf;
+use gandr_core_checker::MismatchOf;
+use gandr_core_checker::Naming;
 use gandr_core_checker::RunFault;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
-use gandr_core_checker::session::LinearityDefect;
+use gandr_core_checker::session::LinearityDefectOf;
 use gandr_core_checker::session::ProtocolDefect;
 use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::Crossed;
-use gandr_core_checker::worlds::LocatedDefect;
+use gandr_core_checker::worlds::LocatedDefectOf;
 use gandr_core_checker::worlds::Predicate;
 use gandr_core_term::compose::Form;
 use gandr_surface_corpus::CorpusRefusal;
-use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::RefusalOf;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
@@ -116,17 +117,19 @@ impl Culprit
     #[spec(ensures: |ret| !ret.0.is_empty() && !ret.0.contains(['\r', '\n']))]
     #[inline]
     #[must_use]
-    pub fn of(refusal: Refusal<'_>) -> Self
+    pub fn of<N>(refusal: RefusalOf<'_, N>) -> Self
+    where
+        N: Naming,
     {
         match refusal {
-            Refusal::Lowering(lowering) => lowered(lowering),
-            Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
+            RefusalOf::Lowering(lowering) => lowered(lowering),
+            RefusalOf::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
                 Self("an expectation the strict root refuses")
             },
-            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised { .. }) => {
+            RefusalOf::Corpus(CorpusRefusal::BoundaryUnrealised { .. }) => {
                 Self("a row the block's members do not realise")
             },
-            Refusal::Checking(checking) => checked(checking),
+            RefusalOf::Checking(checking) => checked(checking),
         }
     }
 }
@@ -359,60 +362,64 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 ///   its failure class. Other variants' wording is not pinned.
 /// - witness: `tests::diagnostics::refusals_of_one_class_label_what_their_locus_is`
 #[spec(ensures: |ret| !ret.0.is_empty())]
-fn checked(refusal: CheckRefusal) -> Culprit
+fn checked<N>(refusal: CheckRefusalOf<N>) -> Culprit
+where
+    N: Naming,
 {
     Culprit(match refusal {
-        CheckRefusal::NotADataType(_) => "not an admitted datatype",
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::AbstractKindNotUniverse(_) => {
+        CheckRefusalOf::NotADataType(_) => "not an admitted datatype",
+        CheckRefusalOf::DataKindNotUniverse(_) | CheckRefusalOf::AbstractKindNotUniverse(_) => {
             "not a value universe"
         },
-        CheckRefusal::DataFieldLevel { .. } => "above the declared universe",
-        CheckRefusal::RuleNotPresentable { .. } => "rules that do not present the datatype",
-        CheckRefusal::RuleNotRespected { .. } => "a case its datatype's rules do not admit",
-        CheckRefusal::NotApart { .. } => "a path whose endpoints are not apart",
-        CheckRefusal::LoopNotRespected { .. } => "a case its sort's loops do not admit",
-        CheckRefusal::LoopUndecided { .. } => "a case whose loop obligation ran past its budget",
-        CheckRefusal::RepresentationAboveKind { .. } => "above the abstract type's universe",
-        CheckRefusal::NotAnAbstractType(_) => "not an abstract type",
-        CheckRefusal::AtomTransport { .. } => "an identity of an atom stating no transport law",
-        CheckRefusal::BridgeAtSealedType { .. } => "a bridge reaching an atom stating no interface",
-        CheckRefusal::SealSiteRepeated(_) => "a component sealed twice",
-        CheckRefusal::BuiltinRepeated { .. } => "a built-in role marked twice",
-        CheckRefusal::BuiltinMisplaced(_) => "a built-in role on the wrong declaration",
-        CheckRefusal::BuiltinNotCanonical { .. } => "a built-in role's holder in another form",
-        CheckRefusal::DataArgumentArity(_) => "the wrong number of parameters",
-        CheckRefusal::UnknownConstructor { .. } => "no constructor of the datatype",
-        CheckRefusal::ConstructorArity(_) => "the wrong number of fields",
-        CheckRefusal::NonExhaustiveDataCase(_) => "not every constructor once",
-        CheckRefusal::UndecidedCoverage(_) => "an arm left to a pattern hole",
-        CheckRefusal::AbsentRecordField(_) => "no field of the record type",
-        CheckRefusal::AbsentTupleComponent(_) => "no component of the product type",
-        CheckRefusal::MissingRecordField { .. } => "a required field is missing",
-        CheckRefusal::PatchOutsideBase { .. } => "no field of the base record",
-        CheckRefusal::FixedFieldDiffers { .. } => "not the value its type fixes",
-        CheckRefusal::UnknownOperation { .. } => "not an operation of the interface",
-        CheckRefusal::HandlerCoverage { .. } => "not every operation once",
-        CheckRefusal::HandlerUnlawful { .. } => "not shown to satisfy a law of its theory",
-        CheckRefusal::ShiftWithoutReset { .. } => "no enclosing reset",
-        CheckRefusal::DependentStack { .. } => "its result type mentions the discharged value",
-        CheckRefusal::EffectSignatureConflict { .. } => "effect rows that disagree",
-        CheckRefusal::PathCode(_) => "not a quoted closed first-order code",
-        CheckRefusal::EndpointMismatch { .. } => "not both endpoints of the path",
-        CheckRefusal::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
-        CheckRefusal::FunextUnsupported { .. } => "functions past the first-order boundary",
-        CheckRefusal::PointwiseDistinct { .. } => "functions that differ at some input",
-        CheckRefusal::EquivUnsupported { .. } => "translators outside the rule's fragment",
-        CheckRefusal::UncertifiedStratum { .. } => "a list cell its round trip does not return",
-        CheckRefusal::OutsideFold { .. } => "a code the bridge fold has no clause for",
-        CheckRefusal::RoundTripDistinct { .. } => "translators that are not inverse",
-        CheckRefusal::NotOver { .. } => "an identity not over the path",
-        CheckRefusal::UaUncertified { stratum, .. } => match stratum {
+        CheckRefusalOf::DataFieldLevel { .. } => "above the declared universe",
+        CheckRefusalOf::RuleNotPresentable { .. } => "rules that do not present the datatype",
+        CheckRefusalOf::RuleNotRespected { .. } => "a case its datatype's rules do not admit",
+        CheckRefusalOf::NotApart { .. } => "a path whose endpoints are not apart",
+        CheckRefusalOf::LoopNotRespected { .. } => "a case its sort's loops do not admit",
+        CheckRefusalOf::LoopUndecided { .. } => "a case whose loop obligation ran past its budget",
+        CheckRefusalOf::RepresentationAboveKind { .. } => "above the abstract type's universe",
+        CheckRefusalOf::NotAnAbstractType(_) => "not an abstract type",
+        CheckRefusalOf::AtomTransport { .. } => "an identity of an atom stating no transport law",
+        CheckRefusalOf::BridgeAtSealedType { .. } => {
+            "a bridge reaching an atom stating no interface"
+        },
+        CheckRefusalOf::SealSiteRepeated(_) => "a component sealed twice",
+        CheckRefusalOf::BuiltinRepeated { .. } => "a built-in role marked twice",
+        CheckRefusalOf::BuiltinMisplaced(_) => "a built-in role on the wrong declaration",
+        CheckRefusalOf::BuiltinNotCanonical { .. } => "a built-in role's holder in another form",
+        CheckRefusalOf::DataArgumentArity(_) => "the wrong number of parameters",
+        CheckRefusalOf::UnknownConstructor { .. } => "no constructor of the datatype",
+        CheckRefusalOf::ConstructorArity(_) => "the wrong number of fields",
+        CheckRefusalOf::NonExhaustiveDataCase(_) => "not every constructor once",
+        CheckRefusalOf::UndecidedCoverage(_) => "an arm left to a pattern hole",
+        CheckRefusalOf::AbsentRecordField(_) => "no field of the record type",
+        CheckRefusalOf::AbsentTupleComponent(_) => "no component of the product type",
+        CheckRefusalOf::MissingRecordField { .. } => "a required field is missing",
+        CheckRefusalOf::PatchOutsideBase { .. } => "no field of the base record",
+        CheckRefusalOf::FixedFieldDiffers { .. } => "not the value its type fixes",
+        CheckRefusalOf::UnknownOperation { .. } => "not an operation of the interface",
+        CheckRefusalOf::HandlerCoverage { .. } => "not every operation once",
+        CheckRefusalOf::HandlerUnlawful { .. } => "not shown to satisfy a law of its theory",
+        CheckRefusalOf::ShiftWithoutReset { .. } => "no enclosing reset",
+        CheckRefusalOf::DependentStack { .. } => "its result type mentions the discharged value",
+        CheckRefusalOf::EffectSignatureConflict { .. } => "effect rows that disagree",
+        CheckRefusalOf::PathCode(_) => "not a quoted closed first-order code",
+        CheckRefusalOf::EndpointMismatch { .. } => "not both endpoints of the path",
+        CheckRefusalOf::CompoundEndpoint { .. } => "an endpoint that returns no pure value",
+        CheckRefusalOf::FunextUnsupported { .. } => "functions past the first-order boundary",
+        CheckRefusalOf::PointwiseDistinct { .. } => "functions that differ at some input",
+        CheckRefusalOf::EquivUnsupported { .. } => "translators outside the rule's fragment",
+        CheckRefusalOf::UncertifiedStratum { .. } => "a list cell its round trip does not return",
+        CheckRefusalOf::OutsideFold { .. } => "a code the bridge fold has no clause for",
+        CheckRefusalOf::RoundTripDistinct { .. } => "translators that are not inverse",
+        CheckRefusalOf::NotOver { .. } => "an identity not over the path",
+        CheckRefusalOf::UaUncertified { stratum, .. } => match stratum {
             StratumDefect::Degree { .. } => "a degree no shape of the catalogue reaches",
             StratumDefect::Condition { .. } => "a catalogue failing the corolla or Segal condition",
             StratumDefect::Allowance { .. } => "a bound past the largest the site holds",
             StratumDefect::Budget { .. } => "a catalogue past the stratum budget",
         },
-        CheckRefusal::UaInequivalent { defect, .. } => match defect {
+        CheckRefusalOf::UaInequivalent { defect, .. } => match defect {
             UaDefect::UnknownGenerator { .. } => "no generator of the description",
             UaDefect::PastTheBound { .. } => "a generator past the catalogue's bound",
             UaDefect::Cardinality { .. } => "species of different sizes at a corolla",
@@ -421,105 +428,107 @@ fn checked(refusal: CheckRefusal) -> Culprit
             UaDefect::NotNatural { .. } => "translators that break the corolla's symmetry",
             UaDefect::Stuck { .. } => "a translator that returns no element",
         },
-        CheckRefusal::ComposeUncertified { .. } | CheckRefusal::FillUncertified { .. } => {
+        CheckRefusalOf::ComposeUncertified { .. } | CheckRefusalOf::FillUncertified { .. } => {
             "a stratum the chains do not certify"
         },
-        CheckRefusal::ComposeNotAShape { pasting, .. } => match pasting.form() {
+        CheckRefusalOf::ComposeNotAShape { pasting, .. } => match pasting.form() {
             Form::Chain(_) => "a chain past its stratum",
             Form::Columns(_) => "a level-two shape past its stratum",
             Form::Tree { level, .. } if usize::from(level) <= 4 => "a pasting past its stratum",
             Form::Tree { .. } => "a pasting past level four",
         },
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Outer,
             ..
         } => "cells that do not fill the chain",
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
             defect: gandr_theory_sites::Unfilled::Profile { .. },
             ..
         } => "a 1-cell in a column of 2-cells",
-        CheckRefusal::ComposeDoesNotFill {
+        CheckRefusalOf::ComposeDoesNotFill {
             seam: gandr_core_term::compose::Seam::Column(_),
             ..
         } => "2-cells that do not fill their column",
-        CheckRefusal::NoFiller { .. } => "a square the generator does not fill",
-        CheckRefusal::GeneratorFamilyUnsupported { .. } => {
+        CheckRefusalOf::NoFiller { .. } => "a square the generator does not fill",
+        CheckRefusalOf::GeneratorFamilyUnsupported { .. } => {
             "a fill along a family with no filler yet"
         },
-        CheckRefusal::UnenclosedRun { .. } => "an effectful run with no computation to run before",
-        CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
-        CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",
-        CheckRefusal::ModelAmbiguous { .. } => "a model implicit more than one module answers",
-        CheckRefusal::TacticRefused { .. } => "a splice its tactic does not answer",
-        CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
+        CheckRefusalOf::UnenclosedRun { .. } => {
+            "an effectful run with no computation to run before"
+        },
+        CheckRefusalOf::ImplicitUnsolved { .. } => "an implicit left unsolved",
+        CheckRefusalOf::ModelUnanswered { .. } => "a model implicit no module answers",
+        CheckRefusalOf::ModelAmbiguous { .. } => "a model implicit more than one module answers",
+        CheckRefusalOf::TacticRefused { .. } => "a splice its tactic does not answer",
+        CheckRefusalOf::TypeMismatch(MismatchOf::Value { .. } | MismatchOf::Computation { .. }) => {
             "its type does not convert"
         },
-        CheckRefusal::ShapeMismatch { .. } => "its type is not of the required shape",
-        CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Hole(_),
+        CheckRefusalOf::ShapeMismatch { .. } => "its type is not of the required shape",
+        CheckRefusalOf::NotSynthesisable {
+            form: CheckingFormOf::Hole(_),
         } => "an unfilled hole",
-        CheckRefusal::NotSynthesisable { .. } => "needs a type to be checked against",
-        CheckRefusal::UnknownConstant { .. } => "no declaration with a type",
-        CheckRefusal::OutOfFragment { .. } => "no rule for this former",
-        CheckRefusal::UnboundIndex { .. } => "an unbound variable",
-        CheckRefusal::BudgetExceeded { .. } => "the judgement's allowance ran out",
-        CheckRefusal::DanglingNode { .. } => "a node the arena does not hold",
-        CheckRefusal::AdmissionOrder { .. } => "admitted out of order",
-        CheckRefusal::MachineInvariant => "the checking machine disagreed with itself",
-        CheckRefusal::SortMismatch { .. } => "a universe of the other sort",
-        CheckRefusal::LevelMismatch { .. } => "a universe at a level not admitted",
-        CheckRefusal::DependentBind { .. } => "its type mentions the bound value",
-        CheckRefusal::Undecided { .. } => "an unfolding not certified",
-        CheckRefusal::FamilyArity { .. } => "the wrong number of arguments",
-        CheckRefusal::FamilyArgumentClassifier { .. } => "outside its parameter's domain",
-        CheckRefusal::StaticLambdaArgument { .. } => "a type operator where a value is needed",
-        CheckRefusal::StaticClassifierExpected { .. } => "a type that classifies no codes",
-        CheckRefusal::NegativeOccurrence(_) => {
+        CheckRefusalOf::NotSynthesisable { .. } => "needs a type to be checked against",
+        CheckRefusalOf::UnknownConstant { .. } => "no declaration with a type",
+        CheckRefusalOf::OutOfFragment { .. } => "no rule for this former",
+        CheckRefusalOf::UnboundIndex { .. } => "an unbound variable",
+        CheckRefusalOf::BudgetExceeded { .. } => "the judgement's allowance ran out",
+        CheckRefusalOf::DanglingNode { .. } => "a node the arena does not hold",
+        CheckRefusalOf::AdmissionOrder { .. } => "admitted out of order",
+        CheckRefusalOf::MachineInvariant => "the checking machine disagreed with itself",
+        CheckRefusalOf::SortMismatch { .. } => "a universe of the other sort",
+        CheckRefusalOf::LevelMismatch { .. } => "a universe at a level not admitted",
+        CheckRefusalOf::DependentBind { .. } => "its type mentions the bound value",
+        CheckRefusalOf::Undecided { .. } => "an unfolding not certified",
+        CheckRefusalOf::FamilyArity { .. } => "the wrong number of arguments",
+        CheckRefusalOf::FamilyArgumentClassifier { .. } => "outside its parameter's domain",
+        CheckRefusalOf::StaticLambdaArgument { .. } => "a type operator where a value is needed",
+        CheckRefusalOf::StaticClassifierExpected { .. } => "a type that classifies no codes",
+        CheckRefusalOf::NegativeOccurrence(_) => {
             "the declared type under a function's domain, where no stage reaches it"
         },
-        CheckRefusal::NestedOccurrence(_) => {
+        CheckRefusalOf::NestedOccurrence(_) => {
             "the declared type inside another former, at a place it does not hold strictly positively"
         },
-        CheckRefusal::IndexOccurrence(_) => "the declared type inside an index",
-        CheckRefusal::NonUniformOccurrence(_) => "the declared type at other arguments",
-        CheckRefusal::CrossBlockReference { .. } => "names a later declaration",
-        CheckRefusal::StageNotBelow { .. } => "not below the stage its recursion wants",
-        CheckRefusal::StagesDisagree { .. } => "a stage the call's earlier arguments exclude",
-        CheckRefusal::StageNotCarried { .. } => "a path whose type is not a set",
-        CheckRefusal::SessionMismatch { defect, .. } => match defect {
+        CheckRefusalOf::IndexOccurrence(_) => "the declared type inside an index",
+        CheckRefusalOf::NonUniformOccurrence(_) => "the declared type at other arguments",
+        CheckRefusalOf::CrossBlockReference { .. } => "names a later declaration",
+        CheckRefusalOf::StageNotBelow { .. } => "not below the stage its recursion wants",
+        CheckRefusalOf::StagesDisagree { .. } => "a stage the call's earlier arguments exclude",
+        CheckRefusalOf::StageNotCarried { .. } => "a path whose type is not a set",
+        CheckRefusalOf::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => "an action the endpoint's state does not admit",
             ProtocolDefect::Label => "a label the endpoint's state does not offer",
             ProtocolDefect::Arms => "not every offered label once",
         },
-        CheckRefusal::Linearity { defect, .. } => match defect {
-            LinearityDefect::Residue { .. } => "an endpoint left unconsumed",
-            LinearityDefect::Closed { .. } => "an endpoint already closed",
-            LinearityDefect::UsedTwice { .. } => "an endpoint used twice in one action",
-            LinearityDefect::Captured { .. } => "an endpoint that may be used other than once",
-            LinearityDefect::AsValue { .. } => "an endpoint read as a value",
-            LinearityDefect::ArmsDisagree { .. } => "an arm that leaves the endpoints otherwise",
-            LinearityDefect::Unrestricted => "an endpoint outside a fork or a receive",
-            LinearityDefect::Unbound { .. } => "no endpoint bound here",
-            LinearityDefect::BufferUnreturned { .. } => "a buffer never handed back",
-            LinearityDefect::BufferReturnedTwice { .. } => "a buffer already handed back",
-            LinearityDefect::BufferRead { .. } => "a buffer read other than by its return",
-            LinearityDefect::ContinuationUnspent { .. } => {
+        CheckRefusalOf::Linearity { defect, .. } => match defect {
+            LinearityDefectOf::Residue { .. } => "an endpoint left unconsumed",
+            LinearityDefectOf::Closed { .. } => "an endpoint already closed",
+            LinearityDefectOf::UsedTwice { .. } => "an endpoint used twice in one action",
+            LinearityDefectOf::Captured { .. } => "an endpoint that may be used other than once",
+            LinearityDefectOf::AsValue { .. } => "an endpoint read as a value",
+            LinearityDefectOf::ArmsDisagree { .. } => "an arm that leaves the endpoints otherwise",
+            LinearityDefectOf::Unrestricted => "an endpoint outside a fork or a receive",
+            LinearityDefectOf::Unbound { .. } => "no endpoint bound here",
+            LinearityDefectOf::BufferUnreturned { .. } => "a buffer never handed back",
+            LinearityDefectOf::BufferReturnedTwice { .. } => "a buffer already handed back",
+            LinearityDefectOf::BufferRead { .. } => "a buffer read other than by its return",
+            LinearityDefectOf::ContinuationUnspent { .. } => {
                 "a continuation never resumed or abandoned"
             },
-            LinearityDefect::ContinuationUsedTwice { .. } => "a continuation already ended",
-            LinearityDefect::ContinuationCaptured { .. } => {
+            LinearityDefectOf::ContinuationUsedTwice { .. } => "a continuation already ended",
+            LinearityDefectOf::ContinuationCaptured { .. } => {
                 "a continuation that may be ended other than once"
             },
-            LinearityDefect::ContinuationAsValue { .. } => "a continuation read as a value",
-            LinearityDefect::LinearSlotConsumed { .. } => "a linear parameter already used",
-            LinearityDefect::LinearSlotUnconsumed { .. } => "a linear parameter left unused",
-            LinearityDefect::ShadowCaptured { .. } => {
+            LinearityDefectOf::ContinuationAsValue { .. } => "a continuation read as a value",
+            LinearityDefectOf::LinearSlotConsumed { .. } => "a linear parameter already used",
+            LinearityDefectOf::LinearSlotUnconsumed { .. } => "a linear parameter left unused",
+            LinearityDefectOf::ShadowCaptured { .. } => {
                 "a linear parameter that may be used other than once"
             },
-            LinearityDefect::ComonoidAbsent { .. } => "a binder over a qubit",
+            LinearityDefectOf::ComonoidAbsent { .. } => "a binder over a qubit",
         },
-        CheckRefusal::Access { defect, .. } => match defect {
+        CheckRefusalOf::Access { defect, .. } => match defect {
             AccessDefect::NotHeld => "no held value here",
             AccessDefect::Lent => "a held value lent to an access",
             AccessDefect::HeldCaptured { .. } => "a held value that may be held other than once",
@@ -537,7 +546,7 @@ fn checked(refusal: CheckRefusal) -> Culprit
             AccessDefect::KeptEscaped => "a value kept in the scope's own region",
             AccessDefect::Consumed => "a held value a consumed receiver already took",
         },
-        CheckRefusal::Codata { fault, .. } => match fault {
+        CheckRefusalOf::Codata { fault, .. } => match fault {
             CodataFault::Undeclared => "no codata declaration here",
             CodataFault::KindNotUniverse => "a codata kind that is no computation universe",
             CodataFault::WithoutObservations => "a codata declaration with no observation",
@@ -545,82 +554,86 @@ fn checked(refusal: CheckRefusal) -> Culprit
             CodataFault::ObservationLevel => "an observation above the declared universe",
             CodataFault::Arity => "a codata type at another arity than its declaration",
         },
-        CheckRefusal::Located { defect, .. } => match defect {
-            LocatedDefect::Immobile {
+        CheckRefusalOf::Located { defect, .. } => match defect {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Mobile,
                 ..
             } => "a value whose type holds a former that is not mobile",
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Result | Crossed::Constant,
                 predicate: Predicate::Open,
                 ..
             } => "a handle whose held value is not open",
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Capture,
                 predicate: Predicate::Mobile,
                 ..
             } => "a capture whose type holds a former that is not mobile",
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Capture,
                 predicate: Predicate::Open,
                 ..
             } => "a capture whose type holds a former that is not open",
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Homed,
                 predicate: Predicate::Mobile,
                 ..
             } => "a declaration homed where the thunk is formed, whose type is not mobile",
-            LocatedDefect::Immobile {
+            LocatedDefectOf::Immobile {
                 crossed: Crossed::Homed,
                 predicate: Predicate::Open,
                 ..
             } => "a declaration homed where the thunk is formed, whose type is not open",
-            LocatedDefect::CapabilityMissing { .. } => "no capability for the world",
-            LocatedDefect::CapabilityCaptured { .. } => "a migration that may run other than once",
-            LocatedDefect::Elsewhere { .. } => "a value bound at another world",
-            LocatedDefect::HoldElsewhere { .. } => "a hold wanted at another world",
-            LocatedDefect::OpenedElsewhere { .. } => {
+            LocatedDefectOf::CapabilityMissing { .. } => "no capability for the world",
+            LocatedDefectOf::CapabilityCaptured { .. } => {
+                "a migration that may run other than once"
+            },
+            LocatedDefectOf::Elsewhere { .. } => "a value bound at another world",
+            LocatedDefectOf::HoldElsewhere { .. } => "a hold wanted at another world",
+            LocatedDefectOf::OpenedElsewhere { .. } => {
                 "a handle opened at another world than its own"
             },
-            LocatedDefect::Unlocated => "a handle made or opened at the host's own world",
-            LocatedDefect::UndeclaredWorld { .. } => "no world declaration",
-            LocatedDefect::HostWorldUndeclared => "a world the source does not declare",
-            LocatedDefect::MarkUnfounded { .. } => "a representation that does not cross",
-            LocatedDefect::EntryNamed { .. } => "an entry named from another declaration",
-            LocatedDefect::EntryUngranted { .. } => "an entry the host did not grant",
-            LocatedDefect::NotAHandle { .. } => "not a handle at a world",
+            LocatedDefectOf::Unlocated => "a handle made or opened at the host's own world",
+            LocatedDefectOf::UndeclaredWorld { .. } => "no world declaration",
+            LocatedDefectOf::HostWorldUndeclared => "a world the source does not declare",
+            LocatedDefectOf::MarkUnfounded { .. } => "a representation that does not cross",
+            LocatedDefectOf::EntryNamed { .. } => "an entry named from another declaration",
+            LocatedDefectOf::EntryUngranted { .. } => "an entry the host did not grant",
+            LocatedDefectOf::NotAHandle { .. } => "not a handle at a world",
         },
-        CheckRefusal::CapabilityForged { .. } => "no capability hypothesis",
-        CheckRefusal::LiteralAmbiguous { .. } => "a literal two readers answer",
-        CheckRefusal::CapabilityAmplified(_) => "a capability granting less",
-        CheckRefusal::CapabilityOutsideAuthority { .. } => "an operation its capability withholds",
-        CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",
-        CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
-        CheckRefusal::OpenSessionPayload { .. } => "a session payload open over a binder",
-        CheckRefusal::UnassertedLaw { .. } => "a law the host does not assert",
-        CheckRefusal::UndischargedLaw { .. } => "a law whose sides do not convert",
-        CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
-        CheckRefusal::FootprintsOverlap { .. } => {
+        CheckRefusalOf::CapabilityForged { .. } => "no capability hypothesis",
+        CheckRefusalOf::LiteralAmbiguous { .. } => "a literal two readers answer",
+        CheckRefusalOf::CapabilityAmplified(_) => "a capability granting less",
+        CheckRefusalOf::CapabilityOutsideAuthority { .. } => {
+            "an operation its capability withholds"
+        },
+        CheckRefusalOf::CapabilityEscaped { .. } => "a capability outliving its scope",
+        CheckRefusalOf::CapabilityConsumable(_) => "a consumable capability",
+        CheckRefusalOf::OpenSessionPayload { .. } => "a session payload open over a binder",
+        CheckRefusalOf::UnassertedLaw { .. } => "a law the host does not assert",
+        CheckRefusalOf::UndischargedLaw { .. } => "a law whose sides do not convert",
+        CheckRefusalOf::CapabilityUngranted { .. } => "authority the host did not grant",
+        CheckRefusalOf::FootprintsOverlap { .. } => {
             "authority both halves of a fork hold, one to change"
         },
-        CheckRefusal::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
-        CheckRefusal::SessionNotSubtype { .. } => "a protocol that does not simulate the target",
-        CheckRefusal::SessionCodeExpected { .. } => "not a session code",
-        CheckRefusal::NonCovariantMotive { .. } => "the moving endpoint other than covariantly",
-        CheckRefusal::RideUnsupported { .. } => "a motive the ride cannot move",
-        CheckRefusal::MultiplicityUnsupported { .. } => "a multiplicity other than one",
-        CheckRefusal::RunNotAdmitted { fault, .. } => match fault {
+        CheckRefusalOf::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
+        CheckRefusalOf::SessionNotSubtype { .. } => "a protocol that does not simulate the target",
+        CheckRefusalOf::SessionCodeExpected { .. } => "not a session code",
+        CheckRefusalOf::NonCovariantMotive { .. } => "the moving endpoint other than covariantly",
+        CheckRefusalOf::RideUnsupported { .. } => "a motive the ride cannot move",
+        CheckRefusalOf::MultiplicityUnsupported { .. } => "a multiplicity other than one",
+        CheckRefusalOf::RunNotAdmitted { fault, .. } => match fault {
             RunFault::WrongDirection(_) => "a move in the other direction",
             RunFault::WrongLabel(_) => "a label the protocol does not admit here",
             RunFault::ResumeAfterEnd(_) => "a move after the run closed",
             RunFault::Incomplete(_) => "a run that stops before the protocol ends",
             RunFault::OfferNarrowed => "a run that may take an offer the target drops",
         },
-        CheckRefusal::DialogueUnmatched { .. } => "a move the other endpoint does not match",
-        CheckRefusal::DialogueInverted { .. } => "a move logged before the move it follows",
-        CheckRefusal::ForwardUnsupported { .. } => "a translator the rule cannot image",
-        CheckRefusal::Boundary { .. } => "a boundary flow running against its variance",
+        CheckRefusalOf::DialogueUnmatched { .. } => "a move the other endpoint does not match",
+        CheckRefusalOf::DialogueInverted { .. } => "a move logged before the move it follows",
+        CheckRefusalOf::ForwardUnsupported { .. } => "a translator the rule cannot image",
+        CheckRefusalOf::Boundary { .. } => "a boundary flow running against its variance",
     })
 }
 

@@ -25,6 +25,7 @@ use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_checker::worlds::Entry;
 use gandr_core_checker::worlds::Mobility;
+use gandr_core_incremental::NodeKeys;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::built_in;
@@ -396,14 +397,28 @@ where
     Roots: Rooted + Copy,
 {
     let checked = checked(source);
+    let layout = layout(&checked);
     settle(
         roots,
         &checked.arena,
         &checked.module,
         &checked.verdicts,
+        &NodeKeys::new(&checked.arena, &layout),
         &mut ran_at,
     )
     .expect("the verdicts are the module's own")
+}
+
+/// The layout of the items of `checked`, as a composition lays them out: the
+/// layout whose items name the constants that key its nodes.
+///
+/// # Specification
+/// trivial.
+#[must_use]
+pub fn layout(checked: &Checked<'_>) -> gandr_core_incremental::Layout
+{
+    gandr_surface_dispatcher::item_layout(&checked.module, &checked.arena)
+        .expect("the fixture's positions ascend")
 }
 
 /// The outcome the test runner spells for the declaration at `constant`:

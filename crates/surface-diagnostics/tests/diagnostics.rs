@@ -15,11 +15,12 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::EndpointMiss;
 use gandr_core_checker::FrameRole;
-use gandr_core_checker::Mismatch;
+use gandr_core_checker::MismatchOf;
 use gandr_core_checker::TermNode;
-use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypeNodeOf;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
@@ -441,20 +442,31 @@ enum Kept
 #[spec(ensures: |ref ret| matches!(ret.span, Maybe::Present(_)) == (kept == Kept::Primary))]
 fn force_without_rules(kept: Kept) -> Diagnostic
 {
+    let path = Path::new("force.gandr");
     let text = SourceText::from(FORCE);
-    let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
-    let Step::Source {
-        path,
-        composed:
-            Composed::Settled {
-                ref report,
-                ref origins,
-                ref spellings,
-                ref failures,
-                ..
-            },
+    let grammar = built_in().expect("the built-in grammar builds");
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the force source lowers")
+            .into_lowered()
+    else {
+        panic!("the force source is one module");
+    };
+    let (settled, admission) = gandr_surface_dispatcher::judge_member::<Evaluator>(
+        gandr_surface_corpus::CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &gandr_core_checker::HostGrant::UNBOUNDED,
+        gandr_surface_syntax::ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        ref report,
+        ref origins,
+        ref spellings,
+        ref failures,
         ..
-    } = step
+    }) = settled
     else {
         panic!("the force source settles");
     };
@@ -463,14 +475,30 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         .iter()
         .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
         .expect("one declaration refuses");
-    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusal::ShapeMismatch { at, .. })) =
+    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusalOf::ShapeMismatch { .. })) =
         declaration.produced().refusal()
     else {
         panic!("the force refuses its operand's shape");
     };
-    let TermNode::Value(value) = at
+    // The checker's own refusal and failure name their nodes by place: the
+    // record is located from them, as a composition locates it.
+    let verdicts = admission.verdicts();
+    let judged = verdicts.judged();
+    let Some(gandr_core_checker::Verdict::Refused(
+        checked @ CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(value),
+            ..
+        },
+    )) = judged
+        .binary_search_by_key(
+            &declaration.constant(),
+            gandr_core_checker::Judged::constant,
+        )
+        .ok()
+        .and_then(|at| judged.get(at))
+        .map(gandr_core_checker::Judged::verdict)
     else {
-        panic!("the operand is a value");
+        panic!("the force refuses a value operand's shape");
     };
     let mut table = OriginTable::new();
     if kept == Kept::Primary {
@@ -480,10 +508,16 @@ fn force_without_rules(kept: Kept) -> Diagnostic
         };
         table.record_value(value, origin);
     }
+    let located = gandr_surface_diagnostics::Located::of(
+        checked,
+        verdicts.failures().get(&declaration.constant()),
+        declaration.span(),
+        (&table, text),
+    );
     diagnose(path, text, Subject::Refused {
         declaration,
         refusal,
-        origins: &table,
+        located: Maybe::Present(&located),
         spellings: spellings.spelled(Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(upstream::Absent::Own),
@@ -516,7 +550,8 @@ fn a_conversion_past_its_step_budget_is_a_budget_miss_not_endpoints_apart_3139()
                 Maybe::Absent(_) => None,
             })
             .collect();
-        let [Refusal::Checking(CheckRefusal::EndpointMismatch { miss, .. })] = *refusals.as_slice()
+        let [Refusal::Checking(CheckRefusalOf::EndpointMismatch { miss, .. })] =
+            *refusals.as_slice()
         else {
             panic!("the claim alone is refused, as an endpoint mismatch: {refusals:?}");
         };
@@ -1310,7 +1345,7 @@ fn a_document_judged_after_its_closure_spells_as_the_whole_unit_776()
                 );
             }
             if let Maybe::Present(failure) = failures.get(declaration.constant()) {
-                nodes.extend(failure.hypotheses().iter().map(|&ty| TypeNode::Value(ty)));
+                nodes.extend(failure.hypotheses().iter().map(|&ty| TypeNodeOf::Value(ty)));
             }
         }
         nodes
@@ -1433,7 +1468,7 @@ fn a_sealed_type_is_spelled_by_its_path()
     else {
         panic!("the module settles");
     };
-    let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
+    let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(MismatchOf::Value {
         synthesised,
         expected,
         ..
@@ -1450,8 +1485,8 @@ fn a_sealed_type_is_spelled_by_its_path()
     };
     assert_eq!(
         (
-            spelled(TypeNode::Value(expected)),
-            spelled(TypeNode::Value(synthesised))
+            spelled(TypeNodeOf::Value(expected)),
+            spelled(TypeNodeOf::Value(synthesised))
         ),
         ("Integer".to_owned(), "Counter.T".to_owned()),
         "the atom is named as a client writes it"
@@ -1496,11 +1531,13 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
         else {
             panic!("the module settles");
         };
-        let Some(Maybe::Present(Refusal::Checking(CheckRefusal::TypeMismatch(Mismatch::Value {
-            synthesised,
-            expected,
-            ..
-        })))) = report
+        let Some(Maybe::Present(Refusal::Checking(CheckRefusalOf::TypeMismatch(
+            MismatchOf::Value {
+                synthesised,
+                expected,
+                ..
+            },
+        )))) = report
             .declarations()
             .last()
             .map(|declaration| declaration.produced().refusal())
@@ -1514,8 +1551,8 @@ fn a_refusal_spells_its_types_in_either_spelling_782()
         for (spelling, relation) in [(Spelling::Unicode, unicode), (Spelling::Ascii, ascii)] {
             assert_eq!(
                 [
-                    spelled(spelling, TypeNode::Value(expected)),
-                    spelled(spelling, TypeNode::Value(synthesised))
+                    spelled(spelling, TypeNodeOf::Value(expected)),
+                    spelled(spelling, TypeNodeOf::Value(synthesised))
                 ],
                 [String::from(relation), String::from("Integer")],
                 "{source:?} in {spelling:?}"

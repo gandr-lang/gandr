@@ -46,7 +46,10 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::ConversionCount;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Judged;
+use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
@@ -302,7 +305,7 @@ impl Exercised
     ///
     /// # Specification
     /// - requires: `report` settled `module`, or the declarations of one source
-    ///   of it, whose terms `arena` holds.
+    ///   of it, from `verdicts`, whose terms `arena` holds.
     /// - ensures: each settled declaration, read beside the lowered declaration
     ///   at its own admission position, counts once in each row it carries,
     ///   however often the row's former stands in its body; an unsettled
@@ -335,7 +338,7 @@ impl Exercised
     )]
     #[must_use]
     pub(crate) fn of(
-        arena: &CoreArena,
+        (arena, verdicts): (&CoreArena, &ModuleReport),
         module: &LoweredModule<'_>,
         report: &SettleReport<'_>,
     ) -> Self
@@ -358,7 +361,7 @@ impl Exercised
             if held.constant() == declaration.constant()
                 && declaration.settlement() == Settlement::Settled
             {
-                let carried = carried(arena, declaration, held, &mut worklist);
+                let carried = carried((arena, verdicts), declaration, held, &mut worklist);
                 exercised.absorb(&carried);
             }
         }
@@ -440,7 +443,7 @@ impl Exercised
 #[spec(ensures: |ref ret| {
     Row::ALL.into_iter().all(|row| usize::from(ret.count(row)) <= 1_usize)
         && match declaration.produced() {
-            Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => Row::ALL.into_iter().all(|row|
+            Produced::Judged(VerdictOf::Owed(_) | VerdictOf::Suspended(_)) => Row::ALL.into_iter().all(|row|
                 usize::from(ret.count(row)) == usize::from(row == Row::AddressableObligation)),
             Produced::Guarded(_) => Row::ALL.into_iter().all(|row|
                 usize::from(ret.count(row)) == 0_usize),
@@ -448,7 +451,7 @@ impl Exercised
         }
 })]
 fn carried(
-    arena: &CoreArena,
+    (arena, verdicts): (&CoreArena, &ModuleReport),
     declaration: &DeclarationReport<'_>,
     lowered: &LoweredDeclaration<'_>,
     worklist: &mut Vec<Node>,
@@ -456,20 +459,35 @@ fn carried(
 {
     let mut rows = Exercised::default();
     match declaration.produced() {
-        Produced::Judged(Verdict::Checked { body, evidence, .. }) => {
-            formers(arena, body, worklist, &mut rows);
-            bridged(evidence.conversions(), &mut rows);
-        },
-        Produced::Judged(Verdict::Synthesised { body, synthesised }) => {
-            formers(arena, body, worklist, &mut rows);
-            bridged(synthesised.conversions(), &mut rows);
-        },
-        Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+        Produced::Judged(VerdictOf::Owed(_) | VerdictOf::Suspended(_)) => {
             rows.mark(Row::AddressableObligation);
         },
-        Produced::Judged(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
+        // A settled report names nodes by their keys; the rows walk the arena
+        // from the verdict the checker gave, which names them by place.
+        Produced::Judged(
+            VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. } | VerdictOf::Refused(_),
+        ) => {
+            let judged = verdicts.judged();
+            let verdict = judged
+                .binary_search_by_key(&declaration.constant(), Judged::constant)
+                .ok()
+                .and_then(|at| judged.get(at))
+                .map(Judged::verdict);
+            match verdict {
+                Some(Verdict::Checked { body, evidence, .. }) => {
+                    formers(arena, body, worklist, &mut rows);
+                    bridged(evidence.conversions(), &mut rows);
+                },
+                Some(Verdict::Synthesised { body, synthesised }) => {
+                    formers(arena, body, worklist, &mut rows);
+                    bridged(synthesised.conversions(), &mut rows);
+                },
+                Some(Verdict::Refused(refusal)) => checking_row(refusal, lowered, &mut rows),
+                Some(Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_)) | None => {},
+            }
+        },
         Produced::Unlowered(refusal) => lowering_row(refusal, &mut rows),
-        Produced::Judged(Verdict::Data) | Produced::Guarded(_) => {},
+        Produced::Judged(VerdictOf::Data) | Produced::Guarded(_) => {},
     }
     rows
 }

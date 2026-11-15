@@ -248,19 +248,20 @@ pub fn fault(report: &mut RunReport)
 }
 
 /// The rows the settled declarations of `report` exercise, read beside the
-/// lowered `module` over `arena` (`Exercised::of`).
+/// lowered `module` over `arena` and the `verdicts` that `report` settled
+/// (`Exercised::of`).
 ///
 /// # Specification
 /// trivial.
 #[inline]
 #[must_use]
 pub fn exercised(
-    arena: &CoreArena,
+    (arena, verdicts): (&CoreArena, &gandr_core_checker::ModuleReport),
     module: &LoweredModule<'_>,
     report: &SettleReport<'_>,
 ) -> Exercised
 {
-    Exercised::of(arena, module, report)
+    Exercised::of((arena, verdicts), module, report)
 }
 
 /// How [`damage`] changes a chunk's record on disk.

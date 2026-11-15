@@ -26,7 +26,7 @@ use core::slice;
 use std::path::Path;
 
 use anodized::spec;
-use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_term::effect::Purity;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
@@ -37,6 +37,7 @@ use gandr_surface_corpus::produced_refusal;
 use gandr_surface_diagnostics::Diagnostic;
 use gandr_surface_diagnostics::Failures;
 use gandr_surface_diagnostics::Fix;
+use gandr_surface_diagnostics::Locations;
 use gandr_surface_diagnostics::PartingPair;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::SourceStart;
@@ -55,7 +56,6 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
-use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::desc_cells::CellDiagnostic;
 use gandr_surface_lowering::namespace::ShadowedBuiltin;
 use gandr_surface_pretty::Spelling;
@@ -263,8 +263,8 @@ struct Remaining<'step>
     /// Every declaration of the source, visited or not: what a refusal naming
     /// an admission position is read against.
     admitted: &'step [DeclarationReport<'step>],
-    /// The table their core nodes are located through.
-    origins: &'step OriginTable,
+    /// What their checker refusals' reports read through the origin table.
+    locations: &'step Locations,
     /// The spellings of the types their checker failures name, in each
     /// spelling.
     spellings: &'step TypeSpellings,
@@ -422,10 +422,10 @@ pub fn entries<'step, E>(
     },
     (Standing::Settled | Standing::Unsettled | Standing::Refused | Standing::Lowered,
         &Composed::Refused(expected), &Cursor::Last(Last::Source(refusal))) => refusal == expected,
-    (Standing::Lowered, &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
+    (Standing::Lowered, &Composed::Settled { ref report, ref locations, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
         &Cursor::Lowered(ref held))
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
-        &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
+        &Composed::Settled { ref report, ref locations, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
         &Cursor::Declarations(ref held)) =>
         held.leading == report.declarations().iter().filter(|declaration| lead(verb, declaration) != Lead::Rest).count()
             && held.led.is_none()
@@ -438,7 +438,7 @@ pub fn entries<'step, E>(
                 Verb::Test => held.shadowed.as_slice().is_empty() && held.inferred.as_slice().is_empty()
                     && held.runs.as_slice().is_empty() && held.deprecated.as_slice().is_empty(),
             }
-            && core::ptr::eq(core::ptr::from_ref(held.origins), core::ptr::from_ref(origins))
+            && core::ptr::eq(core::ptr::from_ref(held.locations), core::ptr::from_ref(locations))
             && core::ptr::eq(core::ptr::from_ref(held.spellings), core::ptr::from_ref(spellings))
             && core::ptr::eq(core::ptr::from_ref(held.failures), core::ptr::from_ref(failures)),
     _ => false,
@@ -471,7 +471,7 @@ fn cursor<'step>(
             | Standing::Refused),
             &Composed::Settled {
                 ref report,
-                ref origins,
+                ref locations,
                 ref spellings,
                 ref failures,
                 ref shadowed,
@@ -495,7 +495,7 @@ fn cursor<'step>(
                 led: None,
                 declarations: report.declarations().iter(),
                 admitted: report.declarations(),
-                origins,
+                locations,
                 spellings,
                 failures,
                 parted,
@@ -618,7 +618,7 @@ fn upstream<'step>(
     admitted: &'step [DeclarationReport<'step>],
 ) -> Maybe<&'step DeclarationReport<'step>, upstream::Absent>
 {
-    let Refusal::Checking(CheckRefusal::UnknownConstant { constant, .. }) = refusal
+    let Refusal::Checking(CheckRefusalOf::UnknownConstant { constant, .. }) = refusal
     else {
         return Maybe::Absent(upstream::Absent::Own);
     };
@@ -935,7 +935,7 @@ where
     /// What `declaration` prints, when its verb prints it.
     ///
     /// # Specification
-    /// - requires: the declaration, origins, spellings and failures belong to
+    /// - requires: the declaration, locations, spellings and failures belong to
     ///   this entry stream.
     /// - ensures: under [`Refusals::Every`], a settled declaration that
     ///   produced a refusal is that refusal's subject, as an unsettled one is.
@@ -1081,7 +1081,7 @@ where
         Subject::Refused {
             declaration,
             refusal,
-            origins: held.origins,
+            located: held.locations.get(declaration.constant()),
             spellings: held.spellings.spelled(self.spelling),
             failure: held.failures.get(declaration.constant()),
             upstream: upstream(refusal, held.admitted),

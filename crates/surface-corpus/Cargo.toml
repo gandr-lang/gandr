@@ -55,6 +55,7 @@ quenchant-shape.workspace = true
 
 [dev-dependencies]
 blake3.workspace = true
+gandr-core-incremental.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-storage-artifact.workspace = true

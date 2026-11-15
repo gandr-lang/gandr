@@ -305,7 +305,7 @@ use gandr_core_checker::Polled;
 use gandr_core_checker::Retirement;
 use gandr_core_checker::Taking;
 use gandr_core_checker::Unretired;
-use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_checker::bridge::Crossed;
 use gandr_core_checker::bridge::DeclarationKey;
 use gandr_core_checker::bridge::Outgrown;
@@ -1482,12 +1482,12 @@ impl<'text> Submission<'text>
                 matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted)),
                 |declaration| match declaration.produced() {
                     Produced::Judged(
-                        Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                        VerdictOf::Data | VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. },
                     ) => matches!(ret, Maybe::Present(_)),
-                    Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+                    Produced::Judged(VerdictOf::Owed(_) | VerdictOf::Suspended(_)) => {
                         matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
                     }
-                    Produced::Judged(Verdict::Refused(_))
+                    Produced::Judged(VerdictOf::Refused(_))
                     | Produced::Unlowered(_)
                     | Produced::Guarded(_) => {
                         matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
@@ -1565,13 +1565,13 @@ impl<'text> Submission<'text>
 /// - witness: `tests::session::evaluation_declines_missing_and_refused_items`
 #[spec(
     ensures: |ret| match declaration.produced() {
-    Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+    Produced::Judged(VerdictOf::Data | VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. }) => {
         matches!(ret, Maybe::Present(_))
     }
-    Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+    Produced::Judged(VerdictOf::Owed(_) | VerdictOf::Suspended(_)) => {
         matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
     }
-    Produced::Judged(Verdict::Refused(_))
+    Produced::Judged(VerdictOf::Refused(_))
     | Produced::Unlowered(_)
     | Produced::Guarded(_) => {
         matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
@@ -1585,13 +1585,13 @@ pub fn evaluate<'text>(
 ) -> Maybe<Evaluation<'text>, evaluation::Absent>
 {
     match declaration.produced() {
-        Produced::Judged(Verdict::Data | Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
-            Maybe::Present(Evaluator::evaluate(program, declaration.constant()))
-        },
-        Produced::Judged(Verdict::Owed(_) | Verdict::Suspended(_)) => {
+        Produced::Judged(
+            VerdictOf::Data | VerdictOf::Checked { .. } | VerdictOf::Synthesised { .. },
+        ) => Maybe::Present(Evaluator::evaluate(program, declaration.constant())),
+        Produced::Judged(VerdictOf::Owed(_) | VerdictOf::Suspended(_)) => {
             Maybe::Absent(evaluation::Absent::Holed)
         },
-        Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
+        Produced::Judged(VerdictOf::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
             Maybe::Absent(evaluation::Absent::Unaccepted)
         },
     }

@@ -431,6 +431,10 @@ mod tests
             &checked.arena,
             &checked.module,
             &checked.verdicts,
+            &gandr_core_incremental::NodeKeys::new(
+                &checked.arena,
+                &crate::fixture::layout(&checked),
+            ),
             &mut runner,
         )
         .expect("the fixture owns its verdicts");

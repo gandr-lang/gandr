@@ -186,6 +186,7 @@ use quenchant_shape::shape::Maybe;
 use crate::fixture::declarations;
 use crate::refusal::Refusal;
 use crate::refusal::RefusalName;
+use crate::refusal::RefusalOf;
 
 /// The corpus root a source was listed under.
 ///
@@ -573,7 +574,7 @@ fn visited(
         Class::Unrepresentable(found),
     ) => former == found,
     (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
-        refusal == mark && name == Refusal::Checking(refusal).name()
+        refusal == mark && name == RefusalOf::Checking(refusal).name()
     }
     _ => false,
 },
@@ -597,7 +598,7 @@ fn class_of(
         (Verdict::Data, &bridge::Outcome::Static) => Class::World,
         (Verdict::Suspended(_), &bridge::Outcome::Suspended) => Class::Suspended,
         (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
-            Class::Marked(Refusal::Checking(refusal).name())
+            Class::Marked(RefusalOf::Checking(refusal).name())
         },
         (
             Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),

@@ -159,11 +159,14 @@ fn each_count_decides_its_verdict()
     let kernel = readmission.export(module.structured_names());
     let keys = readmission.export_names();
     let mut program = fixture::program(&arena, &module, &verdicts);
+    let layout =
+        gandr_surface_dispatcher::item_layout(&module, &arena).expect("the positions ascend");
     let report = settle(
         CorpusRoot::Fixture,
         &arena,
         &module,
         &verdicts,
+        &gandr_core_incremental::NodeKeys::new(&arena, &layout),
         &mut Machine::new(&mut program),
     )
     .expect("the verdicts are the module's");
@@ -177,6 +180,7 @@ fn each_count_decides_its_verdict()
         origins: module.into_origins(),
         spellings: gandr_surface_diagnostics::TypeSpellings::default(),
         failures: gandr_surface_diagnostics::Failures::default(),
+        locations: gandr_surface_diagnostics::Locations::default(),
         shadowed: Vec::new(),
         inferred: Vec::new(),
         runs: Vec::new(),

@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use expect_test::expect_file;
 use gandr_core_checker::CheckRefusal;
+use gandr_core_checker::CheckRefusalOf;
 use gandr_core_checker::TermNode;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_diagnostics::Diagnostic;
@@ -294,20 +295,31 @@ fn unstyled(styled: &Rendered) -> String
 #[spec(ensures: |ref ret| matches!(ret.span, Maybe::Present(_)))]
 fn unlocated_rules() -> Diagnostic
 {
+    let path = Path::new("force.gandr");
     let text = SourceText::from(FORCE);
-    let step = unsettled(Path::new("force.gandr"), SourceRoot::Strict, text);
-    let Step::Source {
-        path,
-        composed:
-            Composed::Settled {
-                ref report,
-                ref origins,
-                ref spellings,
-                ref failures,
-                ..
-            },
+    let grammar = built_in().expect("the built-in grammar builds");
+    let gandr_surface_dispatcher::Lowered::Module { module, arena } =
+        gandr_surface_dispatcher::lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the force source lowers")
+            .into_lowered()
+    else {
+        panic!("the force source is one module");
+    };
+    let (settled, admission) = gandr_surface_dispatcher::judge_member::<Evaluator>(
+        gandr_surface_corpus::CorpusRoot::Strict,
+        (module, text),
+        arena,
+        &gandr_core_checker::HostGrant::UNBOUNDED,
+        gandr_surface_syntax::ByteOffset::from(0_usize),
+    )
+    .into_parts();
+    let Ok(Composed::Settled {
+        ref report,
+        ref origins,
+        ref spellings,
+        ref failures,
         ..
-    } = step
+    }) = settled
     else {
         panic!("the force source settles");
     };
@@ -316,14 +328,30 @@ fn unlocated_rules() -> Diagnostic
         .iter()
         .find(|declaration| matches!(declaration.produced().refusal(), Maybe::Present(_)))
         .expect("one declaration refuses");
-    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusal::ShapeMismatch { at, .. })) =
+    let Maybe::Present(refusal @ Refusal::Checking(CheckRefusalOf::ShapeMismatch { .. })) =
         declaration.produced().refusal()
     else {
         panic!("the force refuses its operand's shape");
     };
-    let TermNode::Value(value) = at
+    // The checker's own refusal and failure name their nodes by place: the
+    // record is located from them, as a composition locates it.
+    let verdicts = admission.verdicts();
+    let judged = verdicts.judged();
+    let Some(gandr_core_checker::Verdict::Refused(
+        checked @ CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(value),
+            ..
+        },
+    )) = judged
+        .binary_search_by_key(
+            &declaration.constant(),
+            gandr_core_checker::Judged::constant,
+        )
+        .ok()
+        .and_then(|at| judged.get(at))
+        .map(gandr_core_checker::Judged::verdict)
     else {
-        panic!("the operand is a value");
+        panic!("the force refuses a value operand's shape");
     };
     let mut primary = OriginTable::new();
     let Maybe::Present(origin) = origins.value(value)
@@ -331,10 +359,16 @@ fn unlocated_rules() -> Diagnostic
         panic!("the operand is recorded");
     };
     primary.record_value(value, origin);
+    let located = gandr_surface_diagnostics::Located::of(
+        checked,
+        verdicts.failures().get(&declaration.constant()),
+        declaration.span(),
+        (&primary, text),
+    );
     diagnose(path, text, Subject::Refused {
         declaration,
         refusal,
-        origins: &primary,
+        located: Maybe::Present(&located),
         spellings: spellings.spelled(gandr_surface_grammar::Spelling::Unicode),
         failure: failures.get(declaration.constant()),
         upstream: Maybe::Absent(gandr_surface_diagnostics::upstream::Absent::Own),

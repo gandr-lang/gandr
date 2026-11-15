@@ -6,7 +6,7 @@
 //! it adopts from and the import scope it resolves in.
 
 use anodized::spec;
-use gandr_core_checker::Verdict;
+use gandr_core_checker::VerdictOf;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::ContentNode;
 use gandr_core_incremental::ItemCount;
@@ -492,7 +492,7 @@ fn verdicts_keep_an_outcome_only_type_error_visible()
                 .declarations()
                 .first()
                 .map(gandr_surface_corpus::DeclarationReport::produced),
-            Some(Produced::Judged(Verdict::Refused(_)))
+            Some(Produced::Judged(VerdictOf::Refused(_)))
         ),
         "the report carries the checker's refusal: {report:?}"
     );
@@ -2009,6 +2009,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 unstatable,
                 spellings,
                 failures,
+                locations,
                 shadowed,
                 inferred,
                 runs,
@@ -2028,6 +2029,7 @@ fn an_importer_lowers_its_closure_once_1033()
                 origins: OriginTable::default(),
                 spellings,
                 failures,
+                locations,
                 shadowed,
                 inferred,
                 runs,

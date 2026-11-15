@@ -47,13 +47,16 @@ use core::fmt;
 use anodized::spec;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::Failure;
+use gandr_core_checker::FailureOf;
 use gandr_core_checker::FoldPremise;
 use gandr_core_checker::FrameRole;
+use gandr_core_checker::Keyed;
 use gandr_core_checker::Obligation;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
+use gandr_core_checker::TypeNodeOf;
 use gandr_core_checker::judged;
-use gandr_core_term::ValueTypeId;
+use gandr_core_term::key::NodeKey;
 use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
@@ -62,13 +65,12 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::location::Located;
 use crate::locus::node;
 use crate::model::Binding;
 use crate::model::DiagnosticContext;
 use crate::model::Judged;
-use crate::model::Locus;
 use crate::model::binding;
-use crate::model::context_locus;
 use crate::spelled::Spellings;
 
 /// What a rule of the checking machine was doing to the term it was pushed
@@ -292,12 +294,13 @@ pub fn sentence(role: FrameRole) -> Sentence
 }
 
 /// The contexts `failure` gives a diagnostic whose primary annotation spans
-/// `primary`, and the hypotheses in scope where it was refused, read through
-/// `origins`, `spellings` and `text`.
+/// `primary`, and the hypotheses in scope where it was refused, each binder
+/// named and each node located as `located` records, each type read through
+/// `spellings`.
 ///
 /// # Specification
-/// - requires: `origins` and `spellings` were built over the arena `failure`
-///   names; `text` is the source `origins` measures.
+/// - requires: `located` is [`Located::of`] the arena form of `failure`, and
+///   `spellings` keys the types that `failure` names.
 /// - ensures: the obligations in order, outermost first, folded as the module
 ///   states: one located context per span the text holds, at its first
 ///   obligation's place, judged as its outermost obligation there and read as
@@ -326,18 +329,19 @@ pub fn sentence(role: FrameRole) -> Sentence
     Maybe::Absent(_) => true,
 }) && ret.1.len() == failure.hypotheses().len())]
 pub fn contexts<Reason>(
-    failure: &Failure,
-    origins: &OriginTable,
+    failure: &FailureOf<Keyed>,
+    located: &Located,
     spellings: &Spellings,
-    text: SourceText<'_>,
     primary: Maybe<ByteSpan, Reason>,
 ) -> (Vec<DiagnosticContext>, Vec<Binding>)
 where
     Reason: Copy + PartialEq,
 {
     let mut contexts: Vec<DiagnosticContext> = Vec::new();
-    let mut named: Vec<Binding> = framed(failure, origins)
-        .into_iter()
+    let mut named: Vec<Binding> = located
+        .framed
+        .iter()
+        .cloned()
         .zip(failure.hypotheses())
         .map(|(name, &ty)| Binding {
             name,
@@ -345,9 +349,11 @@ where
         })
         .collect();
     named.reserve(failure.hypotheses().len().saturating_sub(named.len()));
-    for obligation in failure.obligations() {
-        let binders: Vec<Binding> = opened(obligation, origins, text)
-            .into_iter()
+    for (obligation, frame) in failure.obligations().iter().zip(&located.frames) {
+        let binders: Vec<Binding> = frame
+            .binders
+            .iter()
+            .cloned()
             .zip(obligation.binders())
             .map(|(name, &ty)| Binding {
                 name,
@@ -364,13 +370,7 @@ where
             Maybe::Absent(judged::Absent::Formed) => Judged::Formed,
         };
         let role = obligation.role();
-        let locus = match node(origins, obligation.at()) {
-            Maybe::Present(span) => match Locus::of(text, span) {
-                Maybe::Present(locus) => Maybe::Present(locus),
-                Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::OutsideText),
-            },
-            Maybe::Absent(_) => Maybe::Absent(context_locus::Absent::Unrecorded),
-        };
+        let locus = frame.locus;
         if let Maybe::Present(locus) = locus {
             if let Maybe::Present(span) = primary
                 && span == locus.span
@@ -635,10 +635,10 @@ where
 /// trivial.
 fn spelled(
     spellings: &Spellings,
-    ty: ValueTypeId,
+    ty: NodeKey,
 ) -> Maybe<String, crate::spelled::spelling::Absent>
 {
-    match spellings.get(TypeNode::Value(ty)) {
+    match spellings.get(TypeNodeOf::Value(ty)) {
         Maybe::Present(presentation) => Maybe::Present(String::from(presentation.as_ref())),
         Maybe::Absent(reason) => Maybe::Absent(reason),
     }
