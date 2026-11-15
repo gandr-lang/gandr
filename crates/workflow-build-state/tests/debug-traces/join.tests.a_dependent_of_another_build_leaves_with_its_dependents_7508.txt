@@ -1,0 +1,131 @@
+test: join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508
+package: gandr-workflow-build-state
+command: mise run debug:test gandr-workflow-build-state join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508 --break gandr_workflow_build_state::join::take$
+
+(lldb) target create "target/debug-trace/debug/build/gandr-workflow-build-state/9c870270a0ae19f7/out/gandr_workflow_build_state-9c870270a0ae19f7"
+Current executable set to 'target/debug-trace/debug/build/gandr-workflow-build-state/9c870270a0ae19f7/out/gandr_workflow_build_state-9c870270a0ae19f7' (arm64).
+(lldb) settings set -- target.run-args  "join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex gandr_workflow_build_state::join::take$
+Breakpoint 1: where = gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::take + 76 at join.rs:546:10, address = 0x0000000100049318
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = gandr_workflow_build_state-9c870270a0ae19f7`__rustc::rust_panic + 12 at panicking.rs:883:16, address = 0x00000001001142d0
+(lldb) run
+
+running 1 test
+test join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508 ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 96088 launched: 'target/debug-trace/debug/build/gandr-workflow-build-state/9c870270a0ae19f7/out/gandr_workflow_build_state-9c870270a0ae19f7' (arm64)
+Process 96088 stopped
+* thread #2, name = 'join::tests::a_dependent_of_another_build_leaves_with_its_depen', stop reason = breakpoint 1.1
+       frame #0: 0x0000000100049318 gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::take(entry="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug/build/base/00000000000000d1", shard="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug", profile="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug") at join.rs:546:10
+   543 	) -> Result<(), BuildStateError>
+   544 	{
+   545 	    let relative = entry
+-> 546 	        .strip_prefix(shard)
+    	         ^
+   547 	        .map_err(|error| BuildStateError::Io {
+   548 	            path: entry.to_owned(),
+   549 	            message: format!("not below the shard {}: {error}", shard.display()),
+(lldb) bt 24
+* thread #2, name = 'join::tests::a_dependent_of_another_build_leaves_with_its_depen', stop reason = breakpoint 1.1
+   * frame #0: 0x0000000100049318 gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::take(entry="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug/build/base/00000000000000d1", shard="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug", profile="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug") at join.rs:546:10
+     frame #1: 0x0000000100048c1c gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::join(profile="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug", shards=size=2) at join.rs:296:17
+     frame #2: 0x0000000100050250 gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508 at join.rs:827:22
+     frame #3: 0x000000010004c528 gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508::{closure#0}((null)={}) at join.rs:742:70
+     frame #4: 0x000000010005da60 gandr_workflow_build_state-9c870270a0ae19f7`<gandr_workflow_build_state::join::tests::a_dependent_of_another_build_leaves_with_its_dependents_7508::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x000000010008d798 gandr_workflow_build_state-9c870270a0ae19f7`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [opt] [inlined]
+     frame #6: 0x000000010008d790 gandr_workflow_build_state-9c870270a0ae19f7`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18 [opt]
+     frame #7: 0x0000000100098780 gandr_workflow_build_state-9c870270a0ae19f7`test::run_test_in_process::{closure#0} at lib.rs:724:74 [opt] [inlined]
+     frame #8: 0x0000000100098774 gandr_workflow_build_state-9c870270a0ae19f7`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #9: 0x0000000100098774 gandr_workflow_build_state-9c870270a0ae19f7`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [opt] [inlined]
+     frame #10: 0x0000000100098770 gandr_workflow_build_state-9c870270a0ae19f7`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [opt] [inlined]
+     frame #11: 0x0000000100098770 gandr_workflow_build_state-9c870270a0ae19f7`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [opt] [inlined]
+     frame #12: 0x0000000100098770 gandr_workflow_build_state-9c870270a0ae19f7`test::run_test_in_process at lib.rs:724:27 [opt] [inlined]
+     frame #13: 0x0000000100098764 gandr_workflow_build_state-9c870270a0ae19f7`test::run_test::{closure#0} at lib.rs:645:43 [opt]
+     frame #14: 0x0000000100093548 gandr_workflow_build_state-9c870270a0ae19f7`test::run_test::{closure#1} at lib.rs:675:41 [opt] [inlined]
+     frame #15: 0x00000001000934e4 gandr_workflow_build_state-9c870270a0ae19f7`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18 [opt]
+     frame #16: 0x000000010009ab88 gandr_workflow_build_state-9c870270a0ae19f7`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [opt] [inlined]
+     frame #17: 0x000000010009ab78 gandr_workflow_build_state-9c870270a0ae19f7`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [opt] [inlined]
+     frame #18: 0x000000010009ab78 gandr_workflow_build_state-9c870270a0ae19f7`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [opt] [inlined]
+     frame #19: 0x000000010009ab74 gandr_workflow_build_state-9c870270a0ae19f7`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [opt] [inlined]
+     frame #20: 0x000000010009ab74 gandr_workflow_build_state-9c870270a0ae19f7`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [opt] [inlined]
+     frame #21: 0x000000010009ab74 gandr_workflow_build_state-9c870270a0ae19f7`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [opt] [inlined]
+     frame #22: 0x000000010009ab64 gandr_workflow_build_state-9c870270a0ae19f7`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5 [opt]
+     frame #23: 0x00000001000f2944 gandr_workflow_build_state-9c870270a0ae19f7`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [opt] [inlined]
+(lldb) frame variable --depth 3
+(&std::path::Path) entry = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug/build/base/00000000000000d1" {
+  data_ptr = 0x0000007c84c0c3c0 {inner:{inner:{inner:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug/build/base/00000000000000d1"}}}
+  length = 113
+}
+(&std::path::Path) shard = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug" {
+  data_ptr = 0x0000000100859d20 {inner:{inner:{inner:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug"}}}
+  length = 85
+}
+(&std::path::Path) profile = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug" {
+  data_ptr = 0x0000000100859c80 {inner:{inner:{inner:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug"}}}
+  length = 83
+}
+(lldb) up
+frame #1: 0x0000000100048c1c gandr_workflow_build_state-9c870270a0ae19f7`gandr_workflow_build_state::join::join(profile="/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug", shards=size=2) at join.rs:296:17
+   293 	        let build = sources.get(index).and_then(|source| source.get(&hash));
+   294 	        if let (Some(shard), Some(build)) = (shard, build) {
+   295 	            for entry in &build.entries {
+-> 296 	                take(entry, shard, profile)?;
+    	                ^
+   297 	            }
+   298 	            joined.taken = joined.taken.saturating_add(1);
+   299 	        }
+(lldb) frame variable --depth 3
+(&std::path::Path) profile = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug" {
+  data_ptr = 0x0000000100859c80 {inner:{inner:{inner:"/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/debug"}}}
+  length = 83
+}
+(&[std::path::PathBuf]) shards = size=2 {
+  [0] = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug" {
+    inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug" {
+      inner = {inner:size=85} {...}
+    }
+  }
+  [1] = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/b/debug" {
+    inner = "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/b/debug" {
+      inner = {inner:size=85} {...}
+    }
+  }
+}
+(alloc::vec::Vec<alloc::collections::btree::map::BTreeMap<gandr_workflow_build_state::units::UnitHash, gandr_workflow_build_state::join::Build, alloc::alloc::Global>, alloc::alloc::Global>) sources = size=3 {
+  [0] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:4, keys:(…), vals:(…)}}, _marker:{}}), length:4, alloc:{value:{}}, _marker:{}}
+  [1] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:1, keys:(…), vals:(…)}}, _marker:{}}), length:1, alloc:{value:{}}, _marker:{}}
+  [2] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:4, keys:(…), vals:(…)}}, _marker:{}}), length:4, alloc:{value:{}}, _marker:{}}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_workflow_build_state::units::UnitHash, unsigned long, alloc::alloc::Global>) chosen = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:7, keys:(…), vals:(…)}}, _marker:{}}), length:7, alloc:{value:{}}, _marker:{}}
+(alloc::vec::Vec<alloc::collections::btree::map::BTreeMap<gandr_workflow_build_state::join::Value, gandr_workflow_build_state::units::UnitHash, alloc::alloc::Global>, alloc::alloc::Global>) values = size=3 {
+  [0] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:4, keys:(…), vals:(…)}}, _marker:{}}), length:4, alloc:{value:{}}, _marker:{}}
+  [1] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:1, keys:(…), vals:(…)}}, _marker:{}}), length:1, alloc:{value:{}}, _marker:{}}
+  [2] = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:4, keys:(…), vals:(…)}}, _marker:{}}), length:4, alloc:{value:{}}, _marker:{}}
+}
+(alloc::collections::btree::map::BTreeMap<gandr_workflow_build_state::units::UnitHash, alloc::vec::Vec<gandr_workflow_build_state::units::UnitHash, alloc::alloc::Global>, alloc::alloc::Global>) dependents = {root:Some({height:0, node:{pointer:{parent:None, parent_idx:{…}, len:2, keys:(…), vals:(…)}}, _marker:{}}), length:2, alloc:{value:{}}, _marker:{}}
+(alloc::collections::btree::set::BTreeSet<gandr_workflow_build_state::units::UnitHash, alloc::alloc::Global>) dropped = {map:{root:Some({height:0, node:{pointer:{…}}, _marker:{}}), length:3, alloc:{value:{}}, _marker:{}}}
+(alloc::collections::vec_deque::VecDeque<gandr_workflow_build_state::units::UnitHash, alloc::alloc::Global>) pending = size=0
+(gandr_workflow_build_state::join::Joined) joined = {restored:0, taken:0, dropped:0}
+(alloc::collections::btree::map::Iter<gandr_workflow_build_state::units::UnitHash, unsigned long>) iter = {range:{front:Some(Edge({node:{…}, idx:1, _marker:{…}})), back:Some(Root({height:0, node:{…}, _marker:{…}}))}, length:6}
+(gandr_workflow_build_state::units::UnitHash) hash = {0:209}
+(unsigned long) index = 1
+(core::option::Option<&gandr_workflow_build_state::join::Build>) restored = Some({entries:size=1, whole:Some({value:{0:21}, dependencies:size=0})}) {
+  0 = 0x0000000100859ec0 {entries:size=1, whole:Some({value:{0:21}, dependencies:size=0})}
+}
+(core::option::Option<&std::path::PathBuf>) shard = Some("/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug") {
+  0 = 0x00000001700063b0 "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug"
+}
+(core::option::Option<&gandr_workflow_build_state::join::Build>) build = Some({entries:size=1, whole:Some({value:{0:31}, dependencies:size=0})}) {
+  0 = 0x000000010085a400 {entries:size=1, whole:Some({value:{0:31}, dependencies:size=0})}
+}
+(std::path::PathBuf *) shard = 0x00000001700063b0 "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug"
+(gandr_workflow_build_state::join::Build *) build = 0x000000010085a400 {entries:size=1, whole:Some({value:{0:31}, dependencies:size=0})}
+(core::slice::iter::Iter<std::path::PathBuf>) iter = {ptr:{pointer:""}, end_or_len:"", _marker:{}}
+(std::path::PathBuf *) entry = 0x000000010085ad80 "/var/folders/yg/qk3yn35x2sx06rm95nysy_yw0000gn/T/build-state-96088/join-mixed/a/debug/build/base/00000000000000d1"

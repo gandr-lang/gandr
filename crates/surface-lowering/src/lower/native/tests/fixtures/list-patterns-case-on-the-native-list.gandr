@@ -1,0 +1,8 @@
+def empty(xs : List(Integer)) -> -F Integer { match xs { | #[] => return 0 | _ => return 1 } }
+def pair(xs : List(Integer)) -> -F Integer { match xs { | #[a, b] => return b | _ => return 0 } }
+def rest(xs : List(Integer)) -> -F List(Integer) {
+  match xs { | #[a, ..tail] => return tail | #[] => return #[] }
+}
+def whole(xs : List(Integer)) -> -F List(Integer) {
+  match xs { | all @ #[a, .._] => return all | #[] => return #[] }
+}

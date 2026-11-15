@@ -1,0 +1,4 @@
+{PRELUDE}def first(n : Nat) -> -F [Partial] Nat {{ loop {{ break(n) }} }}
+def spin(n : Nat) -> -F [Partial] Nat {{ loop {{ continue }} }}
+def after(n : Nat) -> -F [Partial] Nat {{ let m = loop {{ break(Succ n) }} ; return Succ m }}
+def after_by_hand(n : Nat) -> -F [Partial] Nat {{ loop {{ return Succ (Succ n) }} }}
