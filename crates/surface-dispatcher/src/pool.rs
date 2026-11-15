@@ -103,6 +103,7 @@ mod workers;
 
 use alloc::sync::Arc;
 use core::any::Any;
+use core::cell::Cell;
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
@@ -128,6 +129,7 @@ use gandr_core_fork::Serial;
 use gandr_kernel_core::fork::ForkWidth;
 use gandr_kernel_core::fork::Job;
 use gandr_kernel_core::fork::ObligationFork;
+use gandr_kernel_core::fork::Shell;
 use quenchant_shape::shape::Maybe;
 
 pub use self::grant::Fifo;
@@ -848,8 +850,15 @@ impl Fork for Pool
     }
 }
 
+std::thread_local! {
+    /// The shell of the worker that runs on this thread: what the kernel's
+    /// parts on this thread keep across the forks that they serve.
+    static SHELL: Cell<Shell> = const { Cell::new(Shell::EMPTY) };
+}
+
 /// The pool as the fork of a kernel check's obligations: the parts of a
-/// declaration's last drain run as [`Fork::each`] runs its items.
+/// declaration's last drain run as [`Fork::each`] runs its items, and each
+/// thread of the pool keeps the shell of its worker.
 impl ObligationFork for Pool
 {
     /// Run each part once, as [`Fork::each`] runs an item, with no state for
@@ -896,6 +905,34 @@ impl ObligationFork for Pool
             .as_ref()
             .map_or(Threads::ONE, |started| started.threads);
         ForkWidth::from(NonZeroUsize::from(threads))
+    }
+
+    /// Lend `body` the shell that the calling thread keeps: what the last part
+    /// on this thread gave back. A part that forks again on the same thread
+    /// finds the shell lent, and takes an empty one, which the outer part's
+    /// shell then replaces.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `body` runs one time, with the thread's shell, which the
+    ///   thread keeps again after it. Once the thread's locals are gone, `body`
+    ///   runs with an empty shell, which the thread does not keep.
+    /// - panics: a panic of `body`.
+    /// - executable: none — the shell's content is the kernel's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two calls on one thread find in the shell what the
+    ///   first left in it, and a call on another thread does not.
+    /// - witness: `pool::tests::a_thread_lends_its_shell_again_and_no_other_thread_reads_it`
+    #[inline]
+    fn lend_shell(
+        &self,
+        body: &mut dyn FnMut(&mut Shell),
+    )
+    {
+        let mut shell = SHELL.try_with(Cell::take).unwrap_or_default();
+        body(&mut shell);
+        let _kept = SHELL.try_with(|kept| kept.set(shell));
     }
 }
 
@@ -3978,5 +4015,58 @@ mod tests
                 "each part of the drain runs once on a pool of {threads}"
             );
         }
+    }
+
+    /// What a test leaves in a thread's shell: a count it reads back.
+    #[repr(transparent)]
+    #[derive(Debug, Default)]
+    struct Kept(usize);
+
+    /// A thread lends its shell again with what the last lend left in it. A
+    /// lend nested in another on the same thread, and a lend on another
+    /// thread, each find the shell empty.
+    #[test]
+    fn a_thread_lends_its_shell_again_and_no_other_thread_reads_it()
+    {
+        use gandr_kernel_core::fork::ObligationFork;
+
+        let pool = Pool::default();
+        let leave = |count: usize| {
+            move |shell: &mut gandr_kernel_core::fork::Shell| {
+                let mut kept = shell.take::<Kept>();
+                kept.0 = count;
+                shell.put(kept);
+            }
+        };
+        let read = || {
+            let mut found = None;
+            ObligationFork::lend_shell(&pool, &mut |shell| {
+                let kept = shell.take::<Kept>();
+                found = Some(kept.0);
+                shell.put(kept);
+            });
+            found
+        };
+        ObligationFork::lend_shell(&pool, &mut leave(7));
+        assert_eq!(read(), Some(7), "the thread lends its shell again");
+        let mut nested = None;
+        ObligationFork::lend_shell(&pool, &mut |shell| {
+            nested = read();
+            let kept = shell.take::<Kept>();
+            assert_eq!(kept.0, 7, "the outer lend holds the thread's shell");
+            shell.put(kept);
+        });
+        assert_eq!(nested, Some(0), "a nested lend finds the shell empty");
+        assert_eq!(
+            read(),
+            Some(7),
+            "the outer lend gives the thread its shell back"
+        );
+        let elsewhere = std::thread::scope(|scope| scope.spawn(read).join().unwrap());
+        assert_eq!(
+            elsewhere,
+            Some(0),
+            "another thread finds its own shell empty"
+        );
     }
 }
