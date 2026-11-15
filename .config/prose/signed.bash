@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# Reads the architect's sign-off of each named override (#7621). A body's
+# Reads the architect's sign-off of each named override. A body's
 # `prose-override:` line admits the paragraphs of a mechanical change only
-# when a comment on an issue that the body works names the line's
-# substitution and says `signed`. The comment comes from a login of the
-# signers file, with the heading that the login's comments hold, as for a
-# deletion (`.config/deletes/check.bash`). The signers are the factory's
-# state and not the tree's, so they live in
-# `$XDG_CONFIG_HOME/gandr/architects.txt`. A body with no override needs no
-# signers and reads no comment.
+# when a comment signs it. That comment is on an issue that the body works,
+# names the line's substitution and says `signed`.
+# - see: #7621
+#
+# The comment comes from a login of the signers file, with the heading that
+# the login's comments hold, as for a deletion. The signers are the factory's
+# state and not the tree's. So they live in the configuration directory. A
+# body with no override needs no signers and reads no comment.
+# - see: `.config/deletes/check.bash`, `$XDG_CONFIG_HOME/gandr/architects.txt`
 #
 # Usage: signed.bash <body>...
-# Prints each override that no sign-off holds and exits 1. Exits 2 when the
-# signers or the comments cannot be read.
+# Prints each override that no sign-off holds and exits 1. Exits 2 when it
+# cannot read the signers or the comments.
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 architects="${XDG_CONFIG_HOME:-$HOME/.config}/gandr/architects.txt"

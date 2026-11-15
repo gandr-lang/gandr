@@ -1,7 +1,7 @@
 # A borrowed `dyn io::Write` or `dyn fmt::Display` in a function's parameter,
-# alone or in a tuple, takes `impl`: the function is generic over its writer
-# or its value. A closure's parameter, a field and an array keep their form
-# for the second phase.
+# alone or in a tuple, takes `impl`. Then the function is generic over its
+# writer or its value. A closure's parameter, a field and an array keep their
+# form for the second phase.
 id: borrowed-writer-is-generic
 language: Rust
 severity: hint

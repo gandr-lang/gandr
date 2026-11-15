@@ -1,5 +1,5 @@
 # A `Vec` in a type takes the small vector over the global allocator. `N` of
-# zero is a plain heap vector of the same size, so no type grows; the census
+# zero is a plain heap vector of the same size, so no type grows. The census
 # sets a larger `N` where an inline capacity pays. A `Vec` that names its own
 # allocator is the next rule's.
 id: vec-is-small-vec

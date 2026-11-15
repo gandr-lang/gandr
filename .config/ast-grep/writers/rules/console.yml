@@ -1,7 +1,7 @@
 # A borrowed `dyn Console` in a function's parameter, alone or in a tuple,
-# takes `Streams`, the closed set of the known consoles: the run stage has one
-# instance, and each operation is one match. A field keeps its form for the
-# second phase.
+# takes `Streams`. `Streams` is the closed set of the known consoles. The run
+# stage has one instance, and each operation is one match. A field keeps its
+# form for the second phase.
 id: borrowed-console-is-the-closed-set
 language: Rust
 severity: hint

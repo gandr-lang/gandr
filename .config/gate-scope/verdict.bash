@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# The verdict of a check on a tree (#7684). A pass of a check is a record:
-# a commit with no parent, whose tree is the tree that the check passed on,
-# and whose message holds the key of the pass. The writer signs the commit
-# with the key that signs its commits. The record's ref is
+# The verdict of a check on a tree. A pass of a check is a record, a commit
+# with no parent. Its tree is the tree of the check's pass, and its
+# message holds the key of the pass. The writer signs the commit with the key
+# that signs its commits. The record's ref is
 # `refs/verdicts/<tree>/<check>/<hash>`, where <hash> is the first 16 digits
-# of the SHA-256 of the key. A lane's gate writes the record, `pr:open`
-# pushes it, and the jobs of the pull request and of the merge group read it.
-# A job that reads a record for each of its checks runs none of them.
+# of the SHA-256 of the key.
+# - see: #7684
+#
+# A lane's gate writes the record, `pr:open` pushes it, and the jobs of the
+# pull request and of the merge group read it. A job that reads a record for
+# each of its checks runs none of them.
 #
 # The key binds each input that the verdict reads (`verdicts.json` names the
 # checks and the profile of each):
@@ -21,9 +24,9 @@
 #   - `target_features`: each value of `target_feature` that a source of the
 #     tree reads, on or off under the flags of the host. A host flag such as
 #     `-Ctarget-cpu=native` changes no verdict of a tree that reads none.
-# The key leaves out the image's digest: a lane's gate runs on a host with no
-# image. The image's part in a verdict is its compiler and its policy driver,
-# and the key binds both.
+# The key omits the image's digest, because a lane's gate runs on a host with
+# no image. The image's part in a verdict is its compiler and its policy
+# driver, and the key binds both.
 #
 # Usage:
 #   verdict.bash key <check>
@@ -158,7 +161,7 @@ on_trunk() {
   [[ $status == ahead || $status == identical ]]
 }
 
-# Verifies the record <commit> against <key>. Prints nothing; the status tells.
+# Verifies the record <commit> against <key>. Prints nothing. The status tells.
 verify() {
   local commit=$1 key=$2 allowed=$3 parents body
   [[ $(git cat-file -t "$commit") == commit ]] || return 1
@@ -186,7 +189,7 @@ case ${1:-} in
     common_key=$(common)
     # A check that the gate runs by its name runs each of its `depends` too:
     # `check:landing` runs Clippy and the policy. Without the task list, the
-    # names stand as they are given.
+    # gate takes the names as the caller gives them.
     mapfile -t ran < <(mise tasks ls --json 2> /dev/null | jq -r --args '
       (map({key: .name, value: [(.depends // [])[] | if type == "array" then .[0] else . end | split(" ")[0]]}) | from_entries) as $deps
       | def ran: ., (($deps[.] // [])[] | ran); [$ARGS.positional[] | ran] | unique[]' "$@" || printf '%s\n' "$@")

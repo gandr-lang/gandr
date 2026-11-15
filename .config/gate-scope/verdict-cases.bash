@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# The records of a check's pass (#7684, `verdict.bash`), run by
-# `check:gate-scope`. Each case builds a scratch repository with a bare
-# remote, writes a record of `check:dylint` on the tree of HEAD, pushes it and
-# reads it as a runner does. A stub compiler and a fixed policy revision stand
-# for the toolchain, so no case builds or reaches the network. The image of
-# the format job holds no `ssh-keygen`, and there the cases do not run.
+# The cases of the records of a check's pass. `check:gate-scope` runs them.
+# Each case builds a scratch repository with a bare remote. It writes a record
+# of `check:dylint` on the tree of HEAD, pushes it and reads it as a runner
+# does.
+# - see: #7684, `verdict.bash`
+#
+# A stub compiler and a fixed policy revision stand for the toolchain, so no
+# case builds or reaches the network. The image of the format job holds no
+# `ssh-keygen`, and there the cases do not run.
 set -euo pipefail
 here=$(cd "${BASH_SOURCE[0]%/*}" && pwd)
 verdict=$here/verdict.bash
@@ -27,9 +30,9 @@ stub_rustc() {
   printf '%s' "$scratch/rustc-$1"
 }
 
-# A repository at `$1` with one commit on `main`, a bare remote beside it, an
-# allowed signers file that holds the scratch key, and a trunk that holds the
-# gate's base. Each run reads the whole workspace as its scope.
+# The scratch repository at `$1` holds one commit of `main`, and it has a
+# bare remote. An allowed signers file holds the scratch key, and a trunk holds
+# the gate's base. Each run reads the whole workspace as its scope.
 setup() {
   git init --quiet --bare "$1.remote"
   git init --quiet -b main "$1"
@@ -107,19 +110,20 @@ got=$(
 [[ $got == 0 ]] || fail "#7684: work that is not the tree of HEAD writes no record" "$got"
 
 # A merge group on a newer base reads the record of a base that the trunk
-# holds: the group's own `GATE_BASE` does not enter the key.
+# holds. The group's own `GATE_BASE` does not enter the key.
 got=$(setup "$scratch/trunk" && gate && GATE_BASE=0000000000000000000000000000000000000000 reads)
 [[ $got == held ]] || fail "#7684: a merge group reads a record whose base the trunk holds" "$got"
 
 got=$(setup "$scratch/off-trunk" && gate && GATE_VERDICT_TRUNK_OK=none reads)
 [[ $got == runs ]] || fail "#7684: a record whose base the trunk does not hold is refused" "$got"
 
-# An edit that keeps the size and the stamp of a file, after an index that
-# git wrote in the same second as the file: git reads the entry again by
-# content only while the copy of the index keeps the index's stamp. The
-# entry's stamp is of 2010 and the index's of 2000, so the entry is racy in
-# the index and not in a copy stamped now. The edit keeps the entry's stamp,
-# so the stat of the file matches the entry.
+# An edit that keeps the size and the stamp of a file. Before it, git writes
+# an index in the same second as the file. Git reads the entry again by
+# content only while the copy of the index keeps the index's stamp.
+#
+# The entry's stamp is of 2010 and the index's of 2000. So the entry is racy
+# in the index, and not in a copy stamped now. The edit keeps the entry's
+# stamp, so the stat of the file matches the entry.
 got=$(
   setup "$scratch/racy"
   touch -t 201001010000 file

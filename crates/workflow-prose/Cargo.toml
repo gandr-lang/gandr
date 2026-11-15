@@ -22,10 +22,10 @@ path = "src/main.rs"
 name = "tests"
 path = "tests/lib.rs"
 
-# blake3 names a finding's sentence in the ledger and a passage in the parse
-# cache and the base; clap reads the invocation; serde reads the parse
-# script's JSON and the glossary's TOML; the shape crate supplies the `Maybe`
-# a sentence without a root has.
+# blake3 names a finding's sentence in the ledger, and a passage in the parse
+# cache and the base. clap reads the invocation. serde reads the parse
+# script's JSON and the glossary's TOML. The shape crate supplies the `Maybe`
+# that a sentence without a root has.
 [dependencies]
 blake3.workspace = true
 clap.workspace = true

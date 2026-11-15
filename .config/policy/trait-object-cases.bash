@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # The policy refuses a trait object of a configured class, and a reasoned
-# `expect` at the site keeps it (#7384). `check:dylint` runs the case after
-# its own run, through its own command (`policy`). The case builds a scratch
-# workspace of five packages. Two hold one static trait object of
-# `core::fmt::Display`, and the configuration names that trait as a class.
-# The run over `trait-object-case-refused` fails and names the lint. The run
-# over `trait-object-case-kept`, whose static carries the `expect`, passes.
-# Two more hold a static `dyn Fn` and a static `dyn FnMut`, and the
-# configuration names `core::ops::Fn` and `core::ops::FnMut` as the
-# workspace does (#7386). The last holds a static `dyn std::io::Write`, and
-# the configuration names `std::io::Write` as the workspace does (#7387).
-# Each of the last three runs fails and names the lint, so a class path that
-# resolves to no trait fails the case.
+# `expect` at the site keeps it. `check:dylint` runs the case after its own
+# run, through its own command, `policy`. The case builds a scratch workspace
+# of five packages.
+# - see: #7384
+#
+# Two packages hold one static trait object of `core::fmt::Display`, and the
+# configuration names that trait as a class. The run over
+# `trait-object-case-refused` fails and names the lint. The run over
+# `trait-object-case-kept`, whose static carries the `expect`, passes.
+#
+# Two more hold a static `dyn Fn` and a static `dyn FnMut`. The configuration
+# names `core::ops::Fn` and `core::ops::FnMut` as the workspace does. The last
+# holds a static `dyn std::io::Write`, and the configuration names
+# `std::io::Write` as the workspace does. Each of the last three runs fails
+# and names the lint. So a class path that resolves to no trait fails the case.
+# - see: #7386, #7387
 set -euo pipefail
 declare -F policy > /dev/null || { echo "trait-object case: run it from check:dylint, which exports \`policy\`" >&2; exit 2; }
 scratch=$(mktemp -d)

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Prints the package arguments of the lint of the code that only an arm64
-# build compiles (#7684, `check:clippy-arch`), on one line, as `scope.bash`
-# prints them. A package is in the set when one of its Rust sources holds a
-# `cfg` or `cfg_attr` predicate that names `target_arch = "aarch64"` and not
+# build compiles. It prints them on one line, as `scope.bash` prints them. A
+# package is in the set when one of its Rust sources holds a `cfg` or
+# `cfg_attr` predicate that names `target_arch = "aarch64"` and not
 # `target_arch = "x86_64"`. A predicate that names both compiles the same on
 # the two, so the lint on x86-64 holds it. The finder reads the predicates,
-# never a list. When `GATE_SCOPE` excludes a package, the set leaves it out
-# too: the change reaches nothing of it. A set with no package prints
-# nothing, and the lint runs over nothing.
+# never a list.
+# - see: #7684, `check:clippy-arch`
+#
+# When `GATE_SCOPE` excludes a package, the set omits it too, because the
+# change reaches nothing of it. A set with no package prints nothing, and
+# the lint runs over nothing.
 #
 # Usage: arch.bash
 set -euo pipefail
@@ -15,7 +18,8 @@ root=$(git rev-parse --show-toplevel)
 packages=$(cargo metadata --format-version 1 --no-deps --locked --manifest-path "$root/Cargo.toml" \
   | jq -c --arg root "$root/" '[.packages[] | {name, dir: (.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml"))}]')
 # Each file whose predicates name `aarch64` without `x86_64`. A predicate
-# spans lines, so each file is read whole and its parentheses are matched.
+# spans lines, so the finder reads each file whole and matches its
+# parentheses.
 files=()
 while IFS= read -r file; do
   if perl -0777 -ne '

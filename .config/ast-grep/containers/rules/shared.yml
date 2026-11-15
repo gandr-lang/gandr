@@ -1,6 +1,6 @@
 # An `Arc` in a type takes the shared pointer of the kernel's data over the
-# global allocator: one count, no weak count, and `Send` and `Sync` as `Arc`
-# is.
+# global allocator. That pointer has one count and no weak count, and it is
+# `Send` and `Sync` as `Arc` is.
 id: arc-is-shared
 language: Rust
 severity: hint

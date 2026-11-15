@@ -17,7 +17,7 @@ publish.workspace = true
 bindgen = { workspace = true, default-features = true, features = ["experimental"], optional = true }
 
 # The ring is the Linux kernel's, so the crate's dependencies are Linux's
-# alone; on another system the crate compiles empty.
+# alone. On another system the crate compiles empty.
 [target.'cfg(target_os = "linux")'.dependencies]
 axboe-liburing = { workspace = true }
 bon = { workspace = true, features = ["implied-bounds"] }

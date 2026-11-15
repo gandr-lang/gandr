@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# The codemod of the writers' and consoles' wave (#7387): each `dyn io::Write`
-# and `dyn fmt::Display` behind a reference in a function's parameter takes
-# `impl`, so the function is generic over its writer or its value. Each
+# The codemod of the writers' and consoles' wave. Each `dyn io::Write` and
+# `dyn fmt::Display` behind a reference in a function's parameter takes
+# `impl`. Then the function is generic over its writer or its value. Each
 # `dyn Console` there takes `Streams<'_>`, the closed set of the known
-# consoles. The task `codemod:writers` runs it over `crates`, and the rules
-# live in `.config/ast-grep/writers`. The sites that stay are the wave's
-# second phase: a closure's parameter, a field, and an array of values of
-# different types. The task prints the count of the wave's sites before and
-# after.
+# consoles.
+# - see: #7387, `.config/ast-grep/writers`
+#
+# The task `codemod:writers` runs it over `crates`. The sites that stay are
+# the wave's second phase: a closure's parameter, a field, and an array of
+# values of different types. The task prints the count of the wave's sites
+# before and after.
 set -euo pipefail
 export LC_ALL=C
 

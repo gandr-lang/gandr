@@ -46,11 +46,12 @@ runs:
       # Composite actions have no default shell: `run` steps must name
       # their `shell:` explicitly or GitHub rejects the action at setup.
       shell: bash
-    # `.cargo/config.toml` links every Linux build with mold. The CI image
+    # The cargo configuration links every Linux build with mold. The CI image
     # carries it, and a bare Linux runner does not. So the job installs it.
-    # The liburing crate of `gandr-runtime-uring` runs bindgen in its build,
-    # so the job installs `libclang-dev` too, until #7638 takes that crate
-    # out.
+    # The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
+    # So the job installs `libclang-dev` too, until a later unit removes that
+    # crate.
+    # - see: `.cargo/config.toml`, #7638
     - name: "read the package index"
       if: ${{ inputs.install-toolchain == 'true' && runner.os == 'Linux' }}
       run: sudo apt-get update
