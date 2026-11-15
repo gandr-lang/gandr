@@ -80,18 +80,13 @@ jobs:
         run: ln -sfn "$HOME/$GANDR_RISCV64_KEPT" "$GANDR_RISCV64_TARGET_DIR"
       - name: add the riscv64 standard library
         run: rustup target add "$GANDR_RISCV64_TARGET"
-      # The archive omits `gandr-runtime-uring` and `gandr-runtime-scope`,
-      # which stands on it. The liburing crate of the ring runs bindgen 0.71.1
-      # for the target. That bindgen makes `__riscv_mc_fp_state`, the riscv64
-      # floating-point state of `ucontext_t`, 16 bytes against 528. So the
-      # layout checks refuse the build. The owner's base removes that crate,
-      # and the exclusion goes with it.
-      # - see: #7720 — the layout fault on riscv64; #7638 — the owner's base
+      # The settings of the cross build stand in one script, which
+      # `check:riscv64-ring` runs too.
+      # - see: #7720, `.config/riscv64/cross.bash`
       - name: build the test archive
         env:
           CARGO_TARGET_DIR: ${{ env.GANDR_RISCV64_TARGET_DIR }}
-          CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER: riscv64-linux-gnu-gcc
-        run: cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --exclude gandr-runtime-uring --exclude gandr-runtime-scope --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
+        run: .config/riscv64/cross.bash cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
       # The archive is zstd already, so the upload stores it as it is.
       - name: upload the test archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
