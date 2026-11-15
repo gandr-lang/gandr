@@ -142,8 +142,13 @@ impl CanonicalValue for Kept
     ///
     /// # Errors
     /// A [`ValueError`] when the stream is not one kept receipt.
+    ///
+    /// # Cost
+    /// - allocation: the receipt's records, durable by the receipt
     #[inline]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let position = reader.position();
         let found = reader.read_tag()?;

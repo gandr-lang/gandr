@@ -1809,7 +1809,9 @@ impl CanonicalValue for Stream
     ///
     /// # Specification
     /// trivial.
-    fn decode_tokens(_reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(_reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         Err(ValueError::MalformedEmission {
             fault: EmissionFault::EmptyValue,
@@ -1849,7 +1851,7 @@ fn a_stream_that_is_no_artifact_is_refused_off_the_value_plane()
         let manifest = cam_commit(&mut store, &value_profile(cuts()[1]), &stream)
             .expect("the stream is balanced");
         assert_eq!(
-            cam_deref::<ArtifactRecordSet>(&store, manifest.root()),
+            cam_deref::<ArtifactRecordSet, _>(&store, manifest.root()),
             Err(expected),
             "a stream no artifact emits is refused by name"
         );

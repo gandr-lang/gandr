@@ -115,8 +115,9 @@ fn a_word_is_never_read_as_a_tag()
     let mut store = InMemoryChunkStore::new();
     store.insert(chunk.as_verified()).expect("the chunk stores");
 
-    let refusal = cam_deref::<Fixture>(&store, ContentPtr::new(chunk.digest(), TokenOffset::ZERO))
-        .expect_err("a word is not a tag");
+    let refusal =
+        cam_deref::<Fixture, _>(&store, ContentPtr::new(chunk.digest(), TokenOffset::ZERO))
+            .expect_err("a word is not a tag");
     assert_eq!(refusal, ValueError::UnexpectedToken {
         expected: TokenKind::Open,
         found: TokenKind::Word,
@@ -209,7 +210,7 @@ fn known_interior_addresses_select_distinct_values()
     });
     for (pointer, word) in addresses.into_iter().flatten() {
         assert_eq!(
-            cam_deref::<Fixture>(&store, pointer),
+            cam_deref::<Fixture, _>(&store, pointer),
             Ok(Fixture(vec![crate::common::Node::Leaf(
                 gandr_storage_values::CanonicalWord::from(word),
             )])),

@@ -340,8 +340,13 @@ impl CanonicalValue for Identity
     ///   digests into its dependent's, which moves with the dependency's
     ///   content.
     /// - witness: `tests::package::a_dependency_s_content_edit_drifts_the_lock_until_relocked_3072`
+    ///
+    /// # Cost
+    /// - allocation: the address's bytes, durable by the address
     #[inline]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let position = reader.position();
         let found = reader.read_tag()?;

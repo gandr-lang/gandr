@@ -564,11 +564,17 @@ impl Document
     ///
     /// # Specification
     /// trivial.
-    fn hovering(
+    ///
+    /// # Cost
+    /// - allocation: the hover table when the text holds none, durable by the
+    ///   held text
+    fn hovering<Editor>(
         &self,
         uri: &DocumentUri,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
     ) -> Result<&Hovering, Unlent>
+    where
+        Editor: Shadows,
     {
         let lent = self.session();
         Ok(self.text.hovering(&uri.path(), lent.as_ref()?, shadows))
@@ -919,12 +925,17 @@ impl HeldText
     ///
     /// # Specification
     /// trivial.
-    fn hovering<Store, Blocks>(
+    ///
+    /// # Cost
+    /// - allocation: the hover table, durable by the held text
+    fn hovering<Store, Blocks, Editor>(
         &self,
         path: &Path,
         session: &Session<Store, Blocks>,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
     ) -> &Hovering
+    where
+        Editor: Shadows,
     {
         self.wanted.set(Tables::Kept);
         self.hovering.get_or_init(|| {
@@ -2295,6 +2306,9 @@ impl Workspace
     ///   the editor's signature help names, and a card again once an edit
     ///   changes the stack there.
     /// - witness: `hub::tests::an_attached_view_follows_the_stack_at_the_editors_cursor`
+    ///
+    /// # Cost
+    /// - allocation: the stack card, durable by the frame
     #[spec(ensures: |ret| ret.is_none() || self.documents.contains_key(uri))]
     #[inline]
     #[must_use]
@@ -2457,6 +2471,9 @@ impl Workspace
     ///   its judgement holds is tried once that judgement is done.
     /// - witness: `server::tests::a_workspace_tries_candidate_fills`
     /// - witness: `server::tests::a_proposal_is_kept_only_once_it_checks`
+    ///
+    /// # Cost
+    /// - allocation: each candidate's result, growth within the changes
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(version, ref tried)|
         tried.len() == changes.len() && self.documents.get(uri).is_some_and(|held| held.document.version == version)))]
     #[inline]
@@ -4678,6 +4695,9 @@ impl Server
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the lay-out and its judgement, durable by the judging
     fn relaid(
         &self,
         workspace: &mut Workspace,
@@ -6968,6 +6988,10 @@ impl Workspace
     ///   refused, and a value runs to its line.
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     /// - witness: `server::tests::a_workspace_answers_queries_off_its_documents`
+    ///
+    /// # Cost
+    /// - allocation: the run's session and its laid closure, durable by the
+    ///   prepared run
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|prepared| self.documents.get(uri)
         .is_some_and(|held| held.view(peer).version == prepared.version()))
         || ret.is_err())]
@@ -7136,6 +7160,9 @@ impl Workspace
     /// - witness: `server::tests::an_empty_range_yields_no_tokens`
     /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
     /// - witness: `server::tests::a_use_is_sent_as_what_it_refers_to`
+    ///
+    /// # Cost
+    /// - allocation: the tokens in the window, durable by the answer
     #[spec(ensures: |ret| match ret {
         Answer::Nothing => !self.documents.contains_key(uri),
         Answer::Tokens(ref tokens) => self.documents.contains_key(uri)
@@ -7426,6 +7453,9 @@ impl Workspace
     /// - witness: `server::tests::a_hover_answers_a_known_declaration`
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::a_traced_hover_shows_the_node_at_the_cursor_and_its_ancestors_6295`
+    ///
+    /// # Cost
+    /// - allocation: the hover's text, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Hover(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn hover(
@@ -7660,6 +7690,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`fills`], through the request.
     /// - witness: `server::tests::a_hole_is_offered_the_names_that_settle_it`
+    ///
+    /// # Cost
+    /// - allocation: the fixes, growth within the holes met
     #[spec(ensures: |ret| self.documents.contains_key(uri) || ret.is_empty())]
     fn hole_fills(
         &self,
@@ -7842,6 +7875,9 @@ impl Workspace
     /// - hypothesis: L3 — as [`resolved`], and an item offered in a document
     ///   since closed answers as it came.
     /// - witness: `server::tests::a_resolved_completion_reads_the_declared_head`
+    ///
+    /// # Cost
+    /// - allocation: the resolved item, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Resolved(_)))]
     fn resolve_completion(
         &self,
@@ -7919,6 +7955,9 @@ impl Workspace
     ///   symbol.
     /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
     /// - witness: `server::tests::workspace_symbols_find_the_names_no_open_closure_reaches`
+    ///
+    /// # Cost
+    /// - allocation: the names declared, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Found(ref found) if found.len() <= FOUND_HELD))]
     fn symbols(
         &self,
@@ -8028,6 +8067,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`help`], and an unknown document answers `null`.
     /// - witness: `server::tests::signature_help_answers_the_declared_head_of_the_call`
+    ///
+    /// # Cost
+    /// - allocation: the signatures, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Signatures(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn signature_help(
@@ -8076,6 +8118,9 @@ impl Workspace
     /// # Adequacy
     /// - hypothesis: L3 — as [`stack`], and an unknown document answers `null`.
     /// - witness: `server::tests::the_context_stack_agrees_with_the_hover_and_the_signature_help`
+    ///
+    /// # Cost
+    /// - allocation: the stack, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Stack(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn stack(
@@ -8124,6 +8169,9 @@ impl Workspace
     ///   `null`.
     /// - witness: `server::tests::definition_answers_what_a_use_refers_to_795`
     /// - witness: `server::tests::type_definition_answers_the_family_a_use_s_type_names_795`
+    ///
+    /// # Cost
+    /// - allocation: the links, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Links(_) | Answer::Locations(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn definition(
@@ -8588,6 +8636,9 @@ impl Workspace
     /// - witness: `server::tests::kept_proposals_reach_every_editor_surface`
     /// - witness: `server::tests::a_run_lens_runs_its_declaration_1818`
     /// - witness: `server::tests::a_shadowing_binder_shows_what_it_hides_6251`
+    ///
+    /// # Cost
+    /// - allocation: the lenses, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing)
         || matches!(ret, Answer::Lenses(ref lenses) if lenses.is_sorted_by(|earlier, later| earlier.range <= later.range)
             && lenses.iter().all(|lens| lens.data.as_ref().is_none_or(|data|
@@ -8729,6 +8780,9 @@ impl Workspace
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the command, durable by the command
     fn counted_shadowed(
         &self,
         data: &LensData,
@@ -8880,6 +8934,9 @@ impl Workspace
     /// - hypothesis: L3 — a declaring name and an imported name are prepared at
     ///   their written ranges, a keyword is not.
     /// - witness: `server::tests::a_rename_rewrites_a_name_everywhere_it_is_written`
+    ///
+    /// # Cost
+    /// - allocation: the range and its text, durable by the answer
     #[spec(ensures: |ret| matches!(ret, Answer::Nothing | Answer::Renaming(_))
         && (self.documents.contains_key(uri) || matches!(ret, Answer::Nothing)))]
     fn prepare_rename(
@@ -9119,6 +9176,10 @@ impl Workspace
     /// # Errors
     /// The first error the renamed text reports that the present text does
     /// not, when the rename is refused.
+    ///
+    /// # Cost
+    /// - allocation: the renamed text and its judgement, growth within the
+    ///   declaring source
     fn judged(
         &self,
         uri: &DocumentUri,
@@ -9842,13 +9903,18 @@ impl Judging
     ///
     /// # Specification
     /// trivial.
-    fn of(
+    ///
+    /// # Cost
+    /// - allocation: the judgement, durable by the judging
+    fn of<Editor>(
         uri: &DocumentUri,
         document: &Document,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
         (verbosity, spelling, quiet, shadowing): (Verbosity, Spelling, Duration, ShadowingSetting),
         subscription: Subscription,
     ) -> Self
+    where
+        Editor: Shadows,
     {
         let started = Instant::now();
         let caret = match document.caret {

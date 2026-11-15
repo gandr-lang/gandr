@@ -2156,6 +2156,10 @@ fn refused_member(
 ///   settle as they do alone.
 /// - witness: `tests::walk::a_source_refused_whole_refuses_only_itself_and_its_importers_1027`
 /// - witness: `tests::walk::two_sources_refused_whole_are_each_set_apart`
+///
+/// # Cost
+/// - allocation: the sources set apart and each round's grouping, growth within
+///   the component's members
 #[spec(ensures: |ref ret| ret.placed.len() == component.members.len())]
 fn part(
     grammar: &Pbg,

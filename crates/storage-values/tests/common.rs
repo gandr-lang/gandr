@@ -182,9 +182,11 @@ impl CanonicalValue for Fixture
     ///
     /// # Specification
     /// trivial.
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
-        decode_observed(reader, &mut |_reader: &TokenReader<'_>| {})
+        decode_observed(reader, &mut |_reader: &TokenReader<'_, Store>| {})
     }
 }
 
@@ -212,12 +214,13 @@ impl CanonicalValue for Fixture
 #[spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
         && reader.spent() > spent))]
-pub fn decode_observed<Observe>(
-    reader: &mut TokenReader<'_>,
+pub fn decode_observed<Observe, Store>(
+    reader: &mut TokenReader<'_, Store>,
     observe: &mut Observe,
 ) -> Result<Fixture, ValueError>
 where
-    Observe: FnMut(&TokenReader<'_>),
+    Observe: FnMut(&TokenReader<'_, Store>),
+    Store: gandr_storage_values::ChunkStore,
 {
     let mut nodes = Vec::new();
     let mut owed: Vec<u8> = Vec::new();
@@ -320,10 +323,12 @@ impl CanonicalValue for Probed
     #[spec(captures: depth = reader.seam_depth(),
         ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|value|
             anodized::types::Spec::predicate(value) && value.deepest >= depth))]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let mut deepest = reader.seam_depth();
-        let value = decode_observed(reader, &mut |reader: &TokenReader<'_>| {
+        let value = decode_observed(reader, &mut |reader: &TokenReader<'_, Store>| {
             deepest = deepest.max(reader.seam_depth());
         })?;
 
@@ -408,7 +413,9 @@ impl CanonicalValue for Embedding
             Inner::Value(ref fixture) => anodized::types::Spec::predicate(fixture),
             Inner::Pointer(_) => false,
         }))]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let tag = reader.read_tag()?;
         if u8::from(tag) != EMBED {
@@ -486,7 +493,9 @@ impl CanonicalValue for Script
     ///
     /// # Specification
     /// trivial.
-    fn decode_tokens(_reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(_reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         Err(ValueError::MalformedEmission {
             fault: EmissionFault::EmptyValue,
@@ -795,10 +804,12 @@ impl CanonicalValue for ObservedFixture
     #[spec(ensures: |ret| ret.is_err()
         || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
             && value.records.last() == Some(&(reader.position(), reader.seam_depth()))))]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let mut records = Vec::new();
-        let value = decode_observed(reader, &mut |reader: &TokenReader<'_>| {
+        let value = decode_observed(reader, &mut |reader: &TokenReader<'_, Store>| {
             records.push((reader.position(), reader.seam_depth()));
         })?;
         Ok(Self { value, records })

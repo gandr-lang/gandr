@@ -202,8 +202,13 @@ impl CanonicalValue for Kept
     ///
     /// # Errors
     /// A [`ValueError`] when the stream is not one kept stratum.
+    ///
+    /// # Cost
+    /// - allocation: the stratum's receipt, durable by the stratum
     #[inline]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let position = reader.position();
         let found = reader.read_tag()?;

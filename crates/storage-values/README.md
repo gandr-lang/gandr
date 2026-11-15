@@ -57,6 +57,7 @@ use gandr_storage_chunker::TypedChunkerParams;
 use gandr_storage_values::CanonicalValue;
 use gandr_storage_values::CanonicalWord;
 use gandr_storage_values::ChildIndexBase;
+use gandr_storage_values::ChunkStore;
 use gandr_storage_values::CodecId;
 use gandr_storage_values::CodecIdentity;
 use gandr_storage_values::CodecVersion;
@@ -90,7 +91,10 @@ impl CanonicalValue for Point {
         sink.close()
     }
 
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError> {
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: ChunkStore,
+    {
         let tag = reader.read_tag()?;
         if u8::from(tag) != POINT {
             return Err(ValueError::UnexpectedConstructor { found: tag, position: reader.position() });
@@ -115,7 +119,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     let profile = ValueProfile::new(params, codec, ChildIndexBase::Absolute);
     let mut store = InMemoryChunkStore::new();
     let manifest = cam_commit(&mut store, &profile, &point)?;
-    let decoded = cam_deref::<Point>(&store, manifest.root())?;
+    let decoded = cam_deref::<Point, _>(&store, manifest.root())?;
     assert_eq!(decoded, point);
     Ok(())
 }

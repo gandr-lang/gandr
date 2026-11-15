@@ -195,6 +195,10 @@ impl Chunks
     ///   and a value the holder lacks is answered with no part.
     /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
     /// - witness: `tests::chunks::a_value_the_holder_lacks_is_refused_by_its_first_chunk`
+    ///
+    /// # Cost
+    /// - allocation: the closures' digests and the answer's parts, growth
+    ///   within the wanted closure
     pub(super) fn answer(
         &self,
         request: &Framed,
@@ -257,6 +261,10 @@ impl Chunks
     /// - witness: `tests::chunks::a_second_fetch_carries_only_the_chunks_an_edit_changed`
     /// - witness: `tests::chunks::an_answer_that_does_not_verify_or_frame_is_refused_before_any_chunk_is_kept`
     /// - witness: `tests::chunks::a_value_the_holder_lacks_is_refused_by_its_first_chunk`
+    ///
+    /// # Cost
+    /// - allocation: the carried chunks and the closure's digests, growth
+    ///   within the answer
     pub(super) fn admit(
         &self,
         peer: NodeId,

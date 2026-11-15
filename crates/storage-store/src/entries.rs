@@ -552,7 +552,12 @@ impl CanonicalValue for Piece
 
     /// # Specification
     /// trivial.
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    ///
+    /// # Cost
+    /// - allocation: the piece's bytes, durable by the piece
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let _tag = reader.read_tag()?;
         let bytes = reader.read_bytes()?.as_ref().to_vec();
@@ -678,8 +683,13 @@ impl CanonicalValue for Output
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the root entry and the references, durable by the output
     #[inline]
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let position = reader.position();
         let found = reader.read_tag()?;

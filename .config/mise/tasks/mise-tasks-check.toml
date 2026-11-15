@@ -596,7 +596,7 @@ dishonest_spellings = [{ text = "?", crates = ["gandr_surface_pretty", "gandr_su
 presenters = [
   { enum = "gandr_surface_pretty::former::Former", functions = ["gandr_surface_pretty::walk::Walk::visit", "gandr_surface_pretty::walk::Walk::form"] },
 ]
-trait_object_classes = ["core::error::Error", "core::ops::Fn", "core::ops::FnMut", "std::io::Write", "core::fmt::Display", "gandr_surface_dispatcher::Console"]
+trait_object_classes = ["core::error::Error", "core::ops::Fn", "core::ops::FnMut", "std::io::Write", "core::fmt::Display", "gandr_surface_dispatcher::Console", "gandr_storage_values::ChunkStore", "gandr_surface_dispatcher::Shadows"]
 allocation_default_crates = []
 repeated_call_crates = []
 allocation_base_records = "{{ config_root }}/target/allocation-base"

@@ -101,10 +101,12 @@ fn fixed(kappa: Kappa) -> ValueProfile
 ///   selected grandchild and checks that both closure and embedding name the
 ///   same missing digest rather than requiring every child to be present.
 /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
-fn children(
-    store: &dyn ChunkStore,
+fn children<Store>(
+    store: &Store,
     digest: ChunkDigest,
 ) -> Vec<ContentPtr>
+where
+    Store: ChunkStore,
 {
     let body = store.load(digest).expect("the chunk is stored").body();
 

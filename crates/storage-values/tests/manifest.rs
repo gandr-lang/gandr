@@ -660,7 +660,7 @@ fn a_profile_mismatch_is_refused_before_any_chunk_is_read()
 
     for (expected, field) in cases {
         assert_eq!(
-            manifest.read_under::<Fixture>(&store, &expected),
+            manifest.read_under::<Fixture, _>(&store, &expected),
             Err(ValueError::IncompatibleProfile { field }),
             "a reader expecting another {field} is refused by name"
         );

@@ -71,7 +71,9 @@ impl CanonicalValue for Labels
 
     /// # Specification
     /// trivial.
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: gandr_storage_values::ChunkStore,
     {
         let _list = reader.read_tag()?;
         let count = u64::from(reader.read_word()?);

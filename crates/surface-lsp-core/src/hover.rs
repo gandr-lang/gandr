@@ -419,14 +419,20 @@ impl Hovering
 /// - hypothesis: L3 — as [`hovering_laid`].
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::an_imported_name_hovers_its_declaration_s_type`
+///
+/// # Cost
+/// - allocation: the lay-out of the import closure and the table, durable by
+///   the table
 #[must_use]
 #[inline]
-pub fn hovering<Store, Blocks>(
+pub fn hovering<Store, Blocks, Editor>(
     text: SourceText<'_>,
     path: &Path,
     session: &Session<Store, Blocks>,
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Hovering
+where
+    Editor: Shadows,
 {
     hovering_laid(
         text,

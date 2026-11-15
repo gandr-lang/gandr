@@ -421,7 +421,9 @@ pub trait CanonicalValue: Sized
     /// - ensures: on success the reader is positioned immediately after the
     ///   value's closing record; chunk seams are crossed by the reader, so a
     ///   value read back is not told which chunks it spanned.
-    /// - provides: the consumer half of the codec.
+    /// - provides: the consumer half of the codec. The bound `Store:
+    ///   ChunkStore` is all that the codec knows of the store, so the value's
+    ///   encoding does not depend on where the value is stored.
     /// - fails: [`ValueError`] on an unexpected record or constructor, a
     ///   truncated stream, a chunk the store cannot answer for, or a spent
     ///   decode budget.
@@ -440,7 +442,9 @@ pub trait CanonicalValue: Sized
     ///   evidence for the test codecs, not every external implementation.
     /// - witness: `tests::laws::every_generated_value_round_trips_flat`
     /// - witness: `tests::laws::every_generated_value_commits_and_derefs_back_equal`
-    fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>;
+    fn decode_tokens<Store>(reader: &mut TokenReader<'_, Store>) -> Result<Self, ValueError>
+    where
+        Store: crate::chunk::ChunkStore;
 }
 
 /// One token record, decoded or about to be written.

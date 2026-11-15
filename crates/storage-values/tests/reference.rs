@@ -397,10 +397,12 @@ pub struct Spliced
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
 #[spec(requires: pointer.offset() == TokenOffset::ZERO,
     ensures: |ret| !ret.as_ref().is_empty())]
-fn body_of(
-    store: &dyn ChunkStore,
+fn body_of<Store>(
+    store: &Store,
     pointer: ContentPtr,
 ) -> TokenBody<'_>
+where
+    Store: ChunkStore,
 {
     assert_eq!(
         pointer.offset(),
@@ -432,10 +434,12 @@ fn body_of(
 /// - witness: `tests::reference::cuts_and_splices_keep_record_coordinates`
 #[spec(requires: root.offset() == TokenOffset::ZERO,
     ensures: |ret| anodized::types::Spec::predicate(&ret))]
-pub fn splice(
-    store: &dyn ChunkStore,
+pub fn splice<Store>(
+    store: &Store,
     root: ContentPtr,
 ) -> Spliced
+where
+    Store: ChunkStore,
 {
     let mut flat = Vec::new();
     let mut chunk_starts = Vec::new();

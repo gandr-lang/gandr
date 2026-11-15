@@ -324,12 +324,12 @@ fn a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the
             "kappa {kappa}, cap {cap}: the mutated value commits anew"
         );
         assert_eq!(
-            cam_deref::<Tree>(&store, first),
+            cam_deref::<Tree, _>(&store, first),
             Ok(committed),
             "kappa {kappa}, cap {cap}: the old pointer reads the value as committed"
         );
         assert_eq!(
-            cam_deref::<Tree>(&store, second),
+            cam_deref::<Tree, _>(&store, second),
             Ok(value),
             "kappa {kappa}, cap {cap}: the new pointer reads the mutated value"
         );

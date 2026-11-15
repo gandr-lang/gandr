@@ -83,12 +83,18 @@ impl Seen
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the held text's result id, or the file's metadata, durable
+    ///   by the answer
     #[inline]
     #[must_use]
-    pub fn now(
+    pub fn now<Editor>(
         path: &Path,
-        shadows: &dyn Shadows,
+        shadows: &Editor,
     ) -> Self
+    where
+        Editor: Shadows,
     {
         if let Some(text) = shadows.shadowed(path) {
             return Self::Held(ResultId::of_json(<&str>::from(text)));
@@ -166,12 +172,14 @@ pub struct Sweep
 ///
 /// # Specification
 /// trivial.
-fn current<'reports>(
+fn current<'reports, Editor>(
     reports: &'reports BTreeMap<PathBuf, Swept>,
     path: &Path,
     rendering: (Verbosity, Spelling),
-    shadows: &dyn Shadows,
+    shadows: &Editor,
 ) -> Option<&'reports Swept>
+where
+    Editor: Shadows,
 {
     reports.get(path).filter(|swept| {
         swept.rendering == rendering
@@ -297,14 +305,15 @@ impl Sweep
     /// - allocation: the answered path, growth within the listed sources
     #[spec(ensures: |ret| ret.is_none() || matches!(self.pass, Pass::Running { .. }))]
     #[inline]
-    pub fn next<List>(
+    pub fn next<List, Editor>(
         &mut self,
         list: &List,
         rendering: (Verbosity, Spelling),
-        shadows: &dyn Shadows,
+        shadows: &Editor,
     ) -> Option<PathBuf>
     where
         List: Fn() -> Vec<PathBuf>,
+        Editor: Shadows,
     {
         let (sources, from) = match core::mem::replace(&mut self.pass, Pass::Idle) {
             Pass::Idle => (list(), 0_usize),
