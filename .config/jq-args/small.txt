@@ -16,6 +16,7 @@
 --arg before
 --arg branch
 --arg c
+--arg change
 --arg check
 --arg commit
 --arg committer

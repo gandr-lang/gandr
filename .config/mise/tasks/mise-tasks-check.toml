@@ -4054,7 +4054,7 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # The sentence rules that need a parse (#2919): a passive outside the stated
 # list, a past tense, a stack of four nouns, an `-ing` main verb and a
 # glossary word in another part of speech, over the comments of every tracked
-# `.gandr` source and the crate READMEs. A comment also keeps a body's length,
+# `.gandr` source. A comment also keeps a body's length,
 # semicolon and dash rules, a paragraph of at most five sentences, and no
 # path, issue or URL outside its `- see:` and `- owes:` lines (#4900).
 # A paper is cited as `[label]`, never by a locator or a title in prose.
@@ -4068,7 +4068,20 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # (crates/workflow-prose/README.md). spaCy parses under the venv these
 # tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
 # finding refuses, a fixed one leaves a stale line, and `--write` rewrites
-# it. The merge group runs it too (`landing-checks.yml`'s `prose-gate`, #3082): the
+# it.
+#
+# The markdown documents keep no ledger (#7621). A change answers for the
+# paragraphs it wrote since its base: `PROSE_BASE`, else the gate's
+# `GATE_BASE`, else the merge base with the trunk. Each paragraph whose
+# digest the base holds is left alone, and each other one meets every rule.
+# `PROSE_OVERRIDE` names pull request bodies, `:`-joined, whose
+# `prose-override:` lines admit the paragraphs of a mechanical change. Each
+# override needs the architect's sign-off (`.config/prose/signed.bash`). The
+# parse cache under the host's cache directory keeps each parse by its
+# passage's digest, named by spaCy's and the model's installed versions, so
+# a run whose passages it holds starts no interpreter.
+#
+# The merge group runs it too (`landing-checks.yml`'s `prose-gate`, #3082): the
 # interpreter is this task's tool, installed there by the same pins. The
 # filers' templates under `.config/issues/templates/` keep the body rules
 # with no ledger (#3591): `issue:file --template` files a mechanism's body
@@ -4077,7 +4090,7 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # dependencies, so with no `depends` a fresh install can start the venv
 # before uv is in place, and the install fails.
 ["check:prose"]
-description = "The parsed sentence rules, against the prose ledger"
+description = "The parsed sentence rules, against the prose ledger, and over each paragraph a change wrote in the markdown documents"
 tools.python = "3.15.2"
 tools."github:astral-sh/uv" = "0.13.6"
 tools."pipx:spacy" = { version = "3.8.18", depends = ["python", "github:astral-sh/uv"], uvx_args = "--python 3.15.2 --with en_core_web_sm@https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" }
@@ -4085,11 +4098,34 @@ usage = 'flag "--write" help="rewrite corpus/prose.ledger from the findings inst
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
-python="$(mise where pipx:spacy)/spacy/bin/python"
+venv="$(mise where pipx:spacy)/spacy"
+python="$venv/bin/python"
+installed=("$venv"/lib/python*/site-packages/{spacy,en_core_web_sm}-*.dist-info)
+names=("${installed[@]##*/}")
+model=$(IFS=+; echo "${names[*]%.dist-info}")
+cached=(--cache "${XDG_CACHE_HOME:-$HOME/.cache}/gandr/prose" --model "$model")
 extra=()
-if [[ ${usage_write:-false} == true ]]; then extra+=(--write); fi
-.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" "${extra[@]}"
-.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" --body .config/issues/templates/*.md
+if [[ ${usage_write:-false} == true ]]; then
+  extra+=(--write)
+else
+  base=${PROSE_BASE:-${GATE_BASE:-}}
+  if [[ -z $base ]]; then
+    source .config/pr-stack/trunk.bash
+    base=$(git merge-base "origin/$trunk" HEAD 2> /dev/null) || base=
+  fi
+  if [[ -n $base ]]; then
+    extra+=(--base "$base")
+    if [[ -n ${PROSE_OVERRIDE:-} ]]; then
+      IFS=: read -r -a bodies <<< "$PROSE_OVERRIDE"
+      .config/prose/signed.bash "${bodies[@]}"
+      extra+=(--override "${bodies[@]}")
+    fi
+  else
+    echo "check:prose: no merge base with the trunk, so no markdown document is read (#7621)" >&2
+  fi
+fi
+.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" "${cached[@]}" "${extra[@]}"
+.config/mise/scope cargo run --locked --quiet --package gandr-workflow-prose --bin prose -- --python "$python" "${cached[@]}" --body .config/issues/templates/*.md
 '''
 
 # Workflow tools are build-time policy, never package dependencies. Check

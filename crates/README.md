@@ -125,7 +125,7 @@ crates/
 ├── workflow-lane-budget/          the `lane-budget` binary: each CI lane's median job time against its budget
 ├── workflow-ledger-tasks/         the `ledger` binary: the syntax ledger written, its exemplars verified and swept, the features ledger read
 ├── workflow-parser-report/        the `parser-report` binary: the parser read on each axis a syntax candidate is measured against
-├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger
+├── workflow-prose/                the `prose` binary: the parsed sentence rules against the prose ledger and the merge base
 ├── workflow-spec-cost/            the `spec-cost` and `spec-cost-ratio` binaries: what specifications cost the tests
 ├── workflow-sweep/                the corpus sources a sweep test visits: a stated sample per pull request, all of it nightly
 └── workflow-test-timing/          the `test-timing` binary: nextest priorities from merge-queue timings

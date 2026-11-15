@@ -1,6 +1,6 @@
 //! The passages the check reads: a gandr source's comment paragraphs, a
-//! crate README's prose paragraphs, a rendered diagnostic's message, label and
-//! advice, and a pull request's or an issue's body.
+//! markdown document's prose paragraphs, a rendered diagnostic's message,
+//! label and advice, and a pull request's or an issue's body.
 //!
 //! A passage is a paragraph joined onto one line, so a sentence wrapped over
 //! several comment lines parses whole. A list item, a `- see:` reference, a
@@ -27,8 +27,9 @@ pub enum Source
 {
     /// A gandr source's comment: a `//!`, `///` or `//` paragraph.
     Comment,
-    /// A crate README's paragraph.
-    Readme,
+    /// A markdown document's paragraph: a README or another page the tree
+    /// tracks.
+    Document,
     /// A rendered diagnostic's advice.
     Diagnostic,
     /// A pull request's or an issue's body.
@@ -63,7 +64,7 @@ impl fmt::Display for Line
 
 /// Borrowed text a reader splits into passages.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct Text<'text>(pub &'text str);
 
 /// One paragraph to parse, and where it came from.
@@ -714,7 +715,7 @@ where
 ///   ending at a blank line; a heading, a table row, a list item, an indented
 ///   line, an HTML line and every line of a fenced block are not part of any
 ///   passage and end the open paragraph.
-/// - provides: the README text the sentence rules read.
+/// - provides: the document text the sentence rules read under the base.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the scan is the clause.
@@ -726,12 +727,12 @@ where
 /// - witness: `passage::tests::a_readme_keeps_its_paragraphs_alone`
 #[inline]
 #[must_use]
-pub fn readme(
+pub fn document(
     path: Text<'_>,
     text: Text<'_>,
 ) -> Vec<Passage>
 {
-    let mut paragraph = Paragraph::new(path, Source::Readme);
+    let mut paragraph = Paragraph::new(path, Source::Document);
     let mut fenced = false;
     for (index, raw) in text.0.lines().enumerate() {
         if raw.trim_start().starts_with("```") {
@@ -1166,7 +1167,7 @@ pub fn golden(
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Gathered
 {
-    /// The comment and README passages, by path then line.
+    /// The comment passages, by path then line.
     pub passages: Vec<Passage>,
     /// The head and item comments of each corpus source outside the features
     /// ledger, in path order.
@@ -1178,15 +1179,16 @@ pub struct Gathered
 /// The directory of the rendered diagnostic goldens.
 const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 
-/// Reads every tracked gandr source under `root`, every crate README under
-/// `root/crates`, and every rendered diagnostic golden.
+/// Reads every tracked gandr source under `root` and every rendered
+/// diagnostic golden.
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout.
 /// - ensures: the passages of every `.gandr` file git tracks under `root`, in
-///   path order, then of every `crates/*/README.md` in path order; the goldens
-///   of every `.txt` file under the render goldens, walked in path order.
-/// - provides: the check's whole input.
+///   path order; the goldens of every `.txt` file under the render goldens,
+///   walked in path order. A markdown document is not read here: the documents
+///   reader reads it under the base.
+/// - provides: the check's input under the ledger.
 /// - fails: [`ProseError::Io`] naming the directory or file that could not be
 ///   read, or the root whose tracked files git could not list.
 /// - panics: none.
@@ -1195,12 +1197,15 @@ const GOLDENS: &str = "crates/surface-render-terminal/tests/golden";
 /// # Errors
 /// As `fails` lists.
 ///
+/// # Cost
+/// - allocation: the passages, shapes and goldens, growth within the files
+///
 /// # Adequacy
 /// - hypothesis: L3 — a scratch repository with a tracked source outside
 ///   `corpus/`, a nested one, an untracked one, a README, a golden and a nested
-///   golden; a file skipped, an untracked one read, or one read twice or out of
-///   order changes the gathered input.
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+///   golden; a file skipped, an untracked one or the README read, or one read
+///   twice or out of order changes the gathered input.
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 #[inline]
 pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 {
@@ -1214,18 +1219,6 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
                 .push(comment_shape(Text(&key), Text(&text), &passages));
         }
         gathered.passages.extend(passages);
-    }
-    let mut readmes: Vec<_> = listed(&root.join("crates"))?
-        .into_iter()
-        .map(|crate_dir| crate_dir.join("README.md"))
-        .filter(|path| path.is_file())
-        .collect();
-    readmes.sort();
-    for path in &readmes {
-        let key = relative(root, path);
-        gathered
-            .passages
-            .extend(readme(Text(&key), Text(&read(path)?)));
     }
     let mut goldens = Vec::new();
     walk(&root.join(GOLDENS), &mut goldens)?;
@@ -1247,7 +1240,7 @@ pub fn gather(root: &Path) -> Result<Gathered, ProseError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 fn tracked(root: &Path) -> Result<Vec<String>, ProseError>
 {
     let refused = |message: String| ProseError::Io {
@@ -1282,7 +1275,7 @@ fn tracked(root: &Path) -> Result<Vec<String>, ProseError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 fn relative(
     root: &Path,
     path: &Path,
@@ -1303,7 +1296,7 @@ fn relative(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 fn read(path: &Path) -> Result<String, ProseError>
 {
     fs::read_to_string(path).map_err(|error| ProseError::Io {
@@ -1319,7 +1312,7 @@ fn read(path: &Path) -> Result<String, ProseError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 fn listed(dir: &Path) -> Result<Vec<std::path::PathBuf>, ProseError>
 {
     let io = |error: std::io::Error| ProseError::Io {
@@ -1339,7 +1332,7 @@ fn listed(dir: &Path) -> Result<Vec<std::path::PathBuf>, ProseError>
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`gather`].
-/// - witness: `passage::tests::a_root_gathers_its_sources_readmes_and_goldens`
+/// - witness: `passage::tests::a_root_gathers_its_sources_and_goldens`
 fn walk(
     dir: &Path,
     files: &mut Vec<std::path::PathBuf>,
@@ -1378,9 +1371,9 @@ mod tests
     use super::body;
     use super::comment_shape;
     use super::comments;
+    use super::document;
     use super::gather;
     use super::golden;
-    use super::readme;
 
     #[test]
     fn a_comment_run_splits_at_its_blank_lines_and_lists()
@@ -1586,7 +1579,7 @@ mod tests
     {
         let text = "# Title\n\nOne paragraph\nwrapped.\n\n```sh\nThis is code that reads like \
                     prose.\n```\n\n| a | b |\n\n- an item\n  continued\n1. numbered\n\nTwo.\n";
-        let read: Vec<String> = readme(Text("crates/x/README.md"), Text(text))
+        let read: Vec<String> = document(Text("crates/x/README.md"), Text(text))
             .into_iter()
             .map(|passage| format!("{}:{}", passage.line, passage.text))
             .collect();
@@ -1703,7 +1696,7 @@ mod tests
     }
 
     #[test]
-    fn a_root_gathers_its_sources_readmes_and_goldens()
+    fn a_root_gathers_its_sources_and_goldens()
     {
         let root = std::env::temp_dir().join(format!("workflow-prose-{}", std::process::id()));
         drop(std::fs::remove_dir_all(&root));
@@ -1751,10 +1744,9 @@ mod tests
                 "corpus/a.gandr:Ay.",
                 "corpus/ledger/features/d.gandr:Ledger.",
                 "corpus/model/b.gandr:Bee.",
-                "library/std/src/c.gandr:Sea.",
-                "crates/x/README.md:Ex."
+                "library/std/src/c.gandr:Sea."
             ],
-            "every tracked source is read, and an untracked one is not"
+            "every tracked source is read, and an untracked one and a README are not"
         );
         let shaped: Vec<&str> = gathered
             .shapes
