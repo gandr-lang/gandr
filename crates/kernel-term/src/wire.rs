@@ -805,6 +805,17 @@ impl EncodedArtifact
         Self(Vec::new())
     }
 
+    /// Empty this image and keep its capacity, so the next segment written
+    /// through it allocates nothing until it outgrows the largest before it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn clear(&mut self)
+    {
+        self.0.clear();
+    }
+
     /// Borrow these bytes for decoding or comparison.
     ///
     /// # Specification

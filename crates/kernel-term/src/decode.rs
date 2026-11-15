@@ -99,9 +99,12 @@ use crate::decl::NameSegment;
 use crate::decl::SealExtent;
 use crate::decl::SealScope;
 use crate::decl::StructuredName;
+use crate::encode::CONSTANT_KEY_LEN;
+use crate::encode::ConstantKey;
 use crate::encode::EncodedPrefix;
-use crate::encode::encode;
+use crate::encode::Names;
 use crate::encode::encode_after;
+use crate::encode::encode_named;
 use crate::encode::encode_prefix;
 use crate::encode::minted_atoms;
 use crate::error::DecodeError;
@@ -202,6 +205,8 @@ struct Table
     families: Vec<Family>,
     /// Each entry's child global indices, for the expanded-size scan.
     children: Vec<Vec<GlobalIndex>>,
+    /// What each admission position a segment writes resolves against.
+    resolver: Resolver,
 }
 
 impl Table
@@ -215,6 +220,9 @@ impl Table
     /// - provides: the accumulator one artifact's entries fill; no state from
     ///   an earlier decode is reachable from it.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the arena, the tables and the resolver, setup.
     ///
     /// # Adequacy
     /// - hypothesis: L3 distinguishes all four reference families, exact
@@ -238,6 +246,7 @@ impl Table
             nodes: Vec::new(),
             families: Vec::new(),
             children: Vec::new(),
+            resolver: Resolver::default(),
         }
     }
 
@@ -270,6 +279,116 @@ impl Table
     fn next_index(&self) -> GlobalIndex
     {
         GlobalIndex::from(u32::try_from(self.nodes.len()).unwrap_or(u32::MAX))
+    }
+}
+
+/// What a decoder resolves each admission position a segment writes against:
+/// the names it was given, and the current segment's table of names.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct Resolver
+{
+    /// The key of each place of the artifact.
+    names: Names,
+    /// The keys of the current segment's table, in its order.
+    table: Vec<ConstantKey>,
+}
+
+impl Resolver
+{
+    /// Read the table of names that opens a segment.
+    ///
+    /// # Specification
+    /// - requires: `reader` stands at the start of a segment.
+    /// - ensures: the resolver holds the segment's keys in the table's order,
+    ///   and `reader` stands past the table.
+    /// - fails: [`DecodeError::Truncated`] when the bytes end inside the table,
+    ///   and the reader's refusal of the count.
+    /// - panics: none.
+    /// - executable: none — the table is private state, which a clause could
+    ///   read only by reading the segment's bytes again.
+    ///
+    /// # Cost
+    /// - allocation: the segment's table, growth within its count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`decode_named`].
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    #[inline]
+    fn open(
+        &mut self,
+        reader: &mut ByteReader<'_>,
+    ) -> Result<(), DecodeError>
+    {
+        self.table.clear();
+        let count = reader.read_uvarint()?;
+        let mut remaining = u64::from(count);
+        while remaining > 0_u64 {
+            let bytes = reader.take(ByteCount::from(CONSTANT_KEY_LEN))?;
+            let key = <[u8; CONSTANT_KEY_LEN]>::try_from(bytes.as_ref())
+                .map_err(|_short| DecodeError::Truncated)?;
+            self.table.push(ConstantKey::from(key));
+            remaining = remaining.wrapping_sub(1_u64);
+        }
+        Ok(())
+    }
+
+    /// The position that `written` stands for in the current segment.
+    ///
+    /// One more than twice a place is that place. Twice an entry of the table
+    /// is the place that the entry's key names.
+    ///
+    /// # Specification
+    /// - ensures: the place, refused as [`MalformedSite::NameEntry`] for an
+    ///   entry past the segment's table and as [`MalformedSite::UnplacedName`]
+    ///   for a key that names no place of the names given.
+    /// - panics: none.
+    /// - executable: none — the place reads the names' private map, which a
+    ///   clause would restate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`decode_named`].
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    #[inline]
+    fn resolve(
+        &self,
+        written: ConstantIndex,
+    ) -> Result<ConstantIndex, DecodeError>
+    {
+        let written = usize::from(written);
+        let half = written.checked_div(2).unwrap_or_default();
+        if written.checked_rem(2) == Some(1) {
+            return Ok(ConstantIndex::from(half));
+        }
+        let key = self.table.get(half).ok_or(DecodeError::Malformed {
+            site: MalformedSite::NameEntry,
+        })?;
+        self.names.place(key).ok_or(DecodeError::Malformed {
+            site: MalformedSite::UnplacedName,
+        })
+    }
+
+    /// Read the position at a site of the current segment.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::resolve`] of the integer read.
+    /// - fails: the reader's refusal of the integer, and as [`Self::resolve`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::resolve`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`decode_named`].
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    #[inline]
+    fn read(
+        &self,
+        reader: &mut ByteReader<'_>,
+    ) -> Result<ConstantIndex, DecodeError>
+    {
+        let written = reader.read_usize()?;
+        self.resolve(ConstantIndex::from(usize::from(written)))
     }
 }
 
@@ -651,6 +770,9 @@ impl DecodedArtifact
 /// # Errors
 /// Any [`DecodeError`].
 ///
+/// # Cost
+/// - allocation: the decoded arena and declarations, growth within the image.
+///
 /// # Adequacy
 /// - hypothesis: L3 literal artifact fixtures and named malformed-input
 ///   boundaries observe header and segment framing, sharing, producer claims
@@ -682,17 +804,58 @@ impl DecodedArtifact
             .unwrap_or(artifact.segments.header_end) == image.length()))]
 pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 {
-    decode_splitting(image, None, None).map(|(artifact, _)| artifact)
+    decode_splitting(image, &Names::default(), None, None).map(|(artifact, _)| artifact)
 }
 
-/// [`decode`], measuring each declaration's share of the artifact.
+/// [`decode`] of an artifact whose segments name constants by their keys:
+/// each key resolves to the place that `names` gives it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`decode`], with each position a segment writes by its key
+///   resolved to the place that `names` names by that key; the canonical check
+///   re-encodes with `names`.
+/// - fails: as [`decode`]; [`MalformedSite::NameEntry`] for an entry past a
+///   segment's table, [`MalformedSite::UnplacedName`] for a key `names` holds
+///   at no one place, and [`MalformedSite::NonCanonical`] for a table that
+///   [`encode_named`] would not write.
+/// - panics: none.
+///
+/// # Errors
+/// Any [`DecodeError`].
+///
+/// # Cost
+/// - allocation: the decoded arena and declarations, growth within the image.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a named encoding decodes under its names to the sequence
+///   it encoded, and is refused under names that miss a key.
+/// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+#[inline]
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
+    artifact.metrics.table_entries() <= MAX_TABLE_ENTRIES
+        && artifact.metrics.max_declaration_expanded_work() <= MAX_EXPANDED_TERM_WORK
+        && artifact.metrics.artifact_expanded_work() <= MAX_ARTIFACT_EXPANDED_WORK
+        && artifact.segments.declaration_ends.len() == artifact.declarations.len()
+        && artifact.segments.declaration_segments().all(|span| span.start < span.end)
+        && artifact.segments.declaration_ends.last().copied()
+            .unwrap_or(artifact.segments.header_end) == image.length()))]
+pub fn decode_named(
+    image: ArtifactImage<'_>,
+    names: &Names,
+) -> Result<DecodedArtifact, DecodeError>
+{
+    decode_splitting(image, names, None, None).map(|(artifact, _)| artifact)
+}
+
+/// [`decode_named`], measuring each declaration's share of the artifact.
 ///
 /// # Specification
 /// - requires: nothing; image may be arbitrary or adversarial.
-/// - ensures: [`decode`]'s answer, artifact or refusal. On success, one measure
-///   per declaration in admission order: the subterm-table entries its segment
-///   adds, and the saturating sum of its roots' expanded work. The entries sum
-///   to the artifact's table entries.
+/// - ensures: [`decode_named`]'s answer under `names`, artifact or refusal. On
+///   success, one measure per declaration in admission order: the subterm-table
+///   entries its segment adds, and the saturating sum of its roots' expanded
+///   work. The entries sum to the artifact's table entries.
 /// - provides: each declaration's shared and unshared size, which a caller
 ///   reports beside its segment's bytes; [`decode`] pays none of it.
 /// - fails: as [`decode`].
@@ -715,11 +878,12 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
         && measures.iter().map(|measure| usize::from(measure.entries())).sum::<usize>()
             == usize::from(artifact.metrics.table_entries())))]
 pub fn decode_measured(
-    image: ArtifactImage<'_>
+    image: ArtifactImage<'_>,
+    names: &Names,
 ) -> Result<(DecodedArtifact, Vec<DeclarationMeasure>), DecodeError>
 {
     let mut measures = Vec::new();
-    let (artifact, _) = decode_splitting(image, None, Some(&mut measures))?;
+    let (artifact, _) = decode_splitting(image, names, None, Some(&mut measures))?;
     Ok((artifact, measures))
 }
 
@@ -761,6 +925,9 @@ struct Kept
 /// # Errors
 /// Any [`DecodeError`].
 ///
+/// # Cost
+/// - allocation: the decoded arena and declarations, growth within the image.
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decode`] and [`decode_after`].
 /// - witness: `decode::tests::a_decode_resumed_after_its_prefix_answers_as_a_whole_one_776`
@@ -768,6 +935,7 @@ struct Kept
     && artifact.segments.declaration_ends.len() == artifact.declarations.len()))]
 fn decode_splitting(
     image: ArtifactImage<'_>,
+    names: &Names,
     keep: Option<ConstantIndex>,
     mut measures: Option<&mut Vec<DeclarationMeasure>>,
 ) -> Result<(DecodedArtifact, Option<Kept>), DecodeError>
@@ -779,6 +947,7 @@ fn decode_splitting(
     let count = reader.read_uvarint()?;
     let header_end = reader.position;
     let mut table = Table::new();
+    table.resolver.names = names.clone();
     let mut metas: Vec<DeclMeta> = Vec::new();
     let mut declaration_ends: Vec<ByteOffset> = Vec::new();
     let mut snapshot = None;
@@ -832,7 +1001,7 @@ fn decode_splitting(
     let declarations =
         build_declarations(&mut table, &mut metas, (ConstantIndex::from(0_usize), end))?;
     check_minted_atom_table(&declared_atoms, &declarations)?;
-    if encode(&table.arena, &declarations).as_image() != image {
+    if encode_named(&table.arena, &declarations, None, &table.resolver.names).as_image() != image {
         return Err(DecodeError::Malformed {
             site: MalformedSite::NonCanonical,
         });
@@ -920,12 +1089,12 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// [`decode`] of `image`, keeping what decoding its first `end` declarations
-/// left for [`decode_after`] to resume.
+/// [`decode_named`] of `image` under `names`, keeping what decoding its first
+/// `end` declarations left for [`decode_after`] to resume.
 ///
 /// # Specification
 /// - requires: nothing; image may be arbitrary or adversarial.
-/// - ensures: [`decode`]'s answer. On success, absent as
+/// - ensures: [`decode_named`]'s answer. On success, absent as
 ///   [`decoded_prefix::Absent::Short`] when the artifact holds fewer than `end`
 ///   declarations, and as [`decoded_prefix::Absent::Unencoded`] when the
 ///   encoder keeps no encoding of them; otherwise the prefix of the first `end`
@@ -937,6 +1106,9 @@ quenchant_shape::reason_enum! {
 ///
 /// # Errors
 /// Any [`DecodeError`].
+///
+/// # Cost
+/// - allocation: the decoded arena and declarations, growth within the image.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a decode resumed after a kept prefix answers, artifact or
@@ -952,6 +1124,7 @@ quenchant_shape::reason_enum! {
 pub fn decode_keeping(
     image: ArtifactImage<'_>,
     end: ConstantIndex,
+    names: &Names,
 ) -> Result<
     (
         DecodedArtifact,
@@ -960,7 +1133,7 @@ pub fn decode_keeping(
     DecodeError,
 >
 {
-    let (artifact, kept) = decode_splitting(image, Some(end), None)?;
+    let (artifact, kept) = decode_splitting(image, names, Some(end), None)?;
     let leading = usize::from(end);
     let (Some(kept), Some(declarations), Some(ends)) = (
         kept,
@@ -970,7 +1143,7 @@ pub fn decode_keeping(
     else {
         return Ok((artifact, Maybe::Absent(decoded_prefix::Absent::Short)));
     };
-    let Maybe::Present(encoded) = encode_prefix(&kept.table.arena, declarations)
+    let Maybe::Present(encoded) = encode_prefix(&kept.table.arena, declarations, names)
     else {
         return Ok((artifact, Maybe::Absent(decoded_prefix::Absent::Unencoded)));
     };
@@ -1018,15 +1191,15 @@ pub fn decode_keeping(
     Ok((artifact, Maybe::Present(prefix)))
 }
 
-/// [`decode`] of `image`, resuming after `prefix` when `image`'s declaration
-/// segments lead with `prefix`'s.
+/// [`decode_named`] of `image` under `names`, resuming after `prefix` when
+/// `image`'s declaration segments lead with `prefix`'s.
 ///
 /// # Specification
 /// - requires: nothing; image may be arbitrary or adversarial, and `prefix` was
-///   kept by [`decode_keeping`].
-/// - ensures: [`decode`]'s answer for `image`, artifact or refusal. When the
-///   image holds at least `prefix`'s declarations and its segments begin with
-///   `prefix`'s bytes, only the segments after them are decoded, budgeted,
+///   kept by [`decode_keeping`] under names that `names` extends.
+/// - ensures: [`decode_named`]'s answer for `image`, artifact or refusal. When
+///   the image holds at least `prefix`'s declarations and its segments begin
+///   with `prefix`'s bytes, only the segments after them are decoded, budgeted,
 ///   built and encoded again; otherwise the whole image is decoded.
 /// - provides: a commit of an editor's export whose cost is the document's
 ///   segments, and a copy of the import closure's decoded state.
@@ -1035,6 +1208,9 @@ pub fn decode_keeping(
 ///
 /// # Errors
 /// Any [`DecodeError`].
+///
+/// # Cost
+/// - allocation: the decoded declarations, growth within the image.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a decode resumed after a kept prefix answers, artifact or
@@ -1050,6 +1226,7 @@ pub fn decode_keeping(
 pub fn decode_after(
     prefix: &DecodedPrefix,
     image: ArtifactImage<'_>,
+    names: &Names,
 ) -> Result<DecodedArtifact, DecodeError>
 {
     let mut reader = ByteReader::new(image);
@@ -1066,9 +1243,10 @@ pub fn decode_after(
             .get(usize::from(header_end) ..)
             .is_some_and(|rest| rest.starts_with(&prefix.segments));
     if !resumes {
-        return decode(image);
+        return decode_named(image, names);
     }
     let mut table = prefix.table.clone();
+    table.resolver.names = names.clone();
     reader.position =
         ByteOffset::from(usize::from(header_end).saturating_add(prefix.segments.len()));
     let mut declaration_ends: Vec<ByteOffset> = prefix
@@ -1113,6 +1291,7 @@ pub fn decode_after(
         &prefix.encoded,
         &table.arena,
         declarations.get(leading ..).unwrap_or_default(),
+        names,
     );
     if encoded.as_image() != image {
         return Err(DecodeError::Malformed {
@@ -1521,11 +1700,17 @@ fn computation_id_at(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the cover's steps, growth within the segment.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a covered definition's derivations round-trip.
 /// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
 #[spec(captures: before = reader.position.0, ensures: |ret| ret.as_ref().map_or(true, |cover| cover.steps().count() < reader.position.0.saturating_sub(before).saturating_add(1)))]
-fn decode_cover(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cover, DecodeError>
+fn decode_cover(
+    reader: &mut ByteReader<'_>,
+    resolver: &Resolver,
+) -> Result<crate::cover::Cover, DecodeError>
 {
     use crate::cover::Step;
     let count = usize::from(reader.read_usize()?);
@@ -1535,7 +1720,7 @@ fn decode_cover(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cover, Deco
             tags::COVER_VAR => Step::Var(usize::from(reader.read_usize()?)),
             tags::COVER_COMPOSE => Step::Compose(decode_step_id(reader)?),
             tags::COVER_SPLIT => {
-                let cases = decode_cases(reader)?;
+                let cases = decode_cases(reader, resolver)?;
                 let width = usize::from(reader.read_usize()?);
                 let mut branches = Vec::new();
                 for _ in 0 .. width {
@@ -1594,16 +1779,22 @@ fn decode_step_id(reader: &mut ByteReader<'_>) -> Result<crate::cover::StepId, D
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the cases, growth within the segment.
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`decode_cover`].
 /// - witness: `encode::tests::a_covered_definition_closes_its_segment_with_its_derivations`
 #[spec(captures: before = reader.position.0, ensures: |ret| ret.is_err() || reader.position.0 > before)]
-fn decode_cases(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cases, DecodeError>
+fn decode_cases(
+    reader: &mut ByteReader<'_>,
+    resolver: &Resolver,
+) -> Result<crate::cover::Cases, DecodeError>
 {
     use crate::cover::Cases;
     Ok(match reader.next_tag()? {
         tags::COVER_DATA => {
-            let family = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let family = resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
             let mut constructors = Vec::new();
             for _ in 0 .. count {
@@ -1614,7 +1805,7 @@ fn decode_cases(reader: &mut ByteReader<'_>) -> Result<crate::cover::Cases, Deco
             let count = usize::from(reader.read_usize()?);
             let mut loops = Vec::new();
             for _ in 0 .. count {
-                let words = ConstantIndex::from(usize::from(reader.read_usize()?));
+                let words = resolver.read(reader)?;
                 let cell = crate::CellIndex::from(usize::from(reader.read_usize()?));
                 loops.push(crate::cover::Loop::new(words, cell));
             }
@@ -2536,6 +2727,9 @@ impl<'bytes> ByteReader<'bytes>
 ///   refusals.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the declaration's nodes, growth within the segment.
+///
 /// # Adequacy
 /// - hypothesis: L3 literal artifact fixtures and named malformed-input
 ///   boundaries observe header and segment framing, sharing, producer claims
@@ -2583,6 +2777,7 @@ fn decode_declaration(
     table: &mut Table,
 ) -> Result<DeclMeta, DecodeError>
 {
+    table.resolver.open(reader)?;
     let mark = decode_admission(reader)?;
     let kind_tag = reader.next_tag()?;
     let kind = declaration_kind(kind_tag)?;
@@ -2662,7 +2857,7 @@ fn decode_declaration(
                 }
             }
             if worded {
-                let sort = ConstantIndex::from(usize::from(reader.read_usize()?));
+                let sort = table.resolver.read(reader)?;
                 // The higher kind writes how many times the point is
                 // wrapped, less one.
                 let reflexivities = if kind_tag == tags::KIND_DATA_WORDS_HIGHER {
@@ -2703,7 +2898,14 @@ fn decode_declaration(
         DeclKind::Def => {
             let body = decode_root(reader, table, Family::Value)?;
             stages = decode_stage_signature(reader)?;
-            provenance = decode_definition_slots(reader)?;
+            provenance = decode_definition_slots(reader)?
+                .into_iter()
+                .map(|written| {
+                    table
+                        .resolver
+                        .resolve(ConstantIndex::from(usize::from(written)))
+                })
+                .collect::<Result<_, _>>()?;
             // A relating definition closes with its pairs, a lawful one with
             // its pairs and then its laws, and a ruled one with both blocks
             // and then its rules. A covered one closes with the three blocks
@@ -2726,14 +2928,14 @@ fn decode_declaration(
             if kind_tag == tags::KIND_DEF_LAWFUL || ruled {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
-                    laws.push(ConstantIndex::from(usize::from(reader.read_usize()?)));
+                    laws.push(table.resolver.read(reader)?);
                 }
             }
             if ruled {
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
-                    let left = decode_operation_side(reader)?;
-                    let right = decode_operation_side(reader)?;
+                    let left = decode_operation_side(reader, &table.resolver)?;
+                    let right = decode_operation_side(reader, &table.resolver)?;
                     operation_rules.push(crate::operation_rules::OperationRule::new(left, right));
                 }
             }
@@ -2741,7 +2943,7 @@ fn decode_declaration(
                 let count = usize::from(reader.read_usize()?);
                 for _ in 0 .. count {
                     let root = decode_root(reader, table, Family::Computation)?;
-                    covers.push((root, decode_cover(reader)?));
+                    covers.push((root, decode_cover(reader, &table.resolver)?));
                 }
             }
             if held {
@@ -2961,13 +3163,17 @@ fn decode_rule_side(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the side's nodes, growth within the segment.
+///
 /// # Adequacy
 /// - hypothesis: L3 — a ruled definition's rules round-trip; an unknown node
 ///   tag refuses at its own site.
 /// - witness: `encode::tests::a_ruled_definition_closes_its_segment_with_its_rules`
 #[spec(captures: before = reader.position.0, ensures: |ret| ret.as_ref().map_or(true, |side| 1_usize.saturating_add(side.len().saturating_mul(2)) <= reader.position.0.saturating_sub(before)))]
 fn decode_operation_side(
-    reader: &mut ByteReader<'_>
+    reader: &mut ByteReader<'_>,
+    resolver: &Resolver,
 ) -> Result<alloc::boxed::Box<[crate::operation_rules::OperationNode]>, DecodeError>
 {
     let count = usize::from(reader.read_usize()?);
@@ -2977,11 +3183,11 @@ fn decode_operation_side(
         let first = usize::from(reader.read_usize()?);
         let node = match tag {
             tags::RULE_OPERATION => crate::operation_rules::OperationNode::Operation {
-                constant: ConstantIndex::from(first),
+                constant: resolver.resolve(ConstantIndex::from(first))?,
                 arity: crate::presented::FieldCount::from(usize::from(reader.read_usize()?)),
             },
             tags::RULE_CONSTRUCTOR => crate::operation_rules::OperationNode::Constructor {
-                family: ConstantIndex::from(first),
+                family: resolver.resolve(ConstantIndex::from(first))?,
                 tag: crate::term::ConstructorTag::from(usize::from(reader.read_usize()?)),
             },
             tags::RULE_RESULTS => crate::operation_rules::OperationNode::Results(
@@ -3108,6 +3314,9 @@ fn family_at(
 ///   any inline field’s named refusal.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the entry's node and children, growth within the table.
+///
 /// # Adequacy
 /// - hypothesis: L3 distinguishes all four reference families, exact ordered
 ///   child appends, self and forward references, polarity refusals and complete
@@ -3148,7 +3357,7 @@ fn decode_entry(
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
         tags::NODE_VT_DATA => {
-            let declaration = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let declaration = table.resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
             let mut arguments = Vec::new();
             for _ in 0 .. count {
@@ -3207,7 +3416,7 @@ fn decode_entry(
             )
         },
         tags::NODE_V_CONSTRUCTOR => {
-            let constructor_family = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let constructor_family = table.resolver.read(reader)?;
             let tag = crate::ConstructorTag::from(usize::from(reader.read_usize()?));
             let count = usize::from(reader.read_usize()?);
             let datatype = read_value_type(reader, table, this, &mut children)?;
@@ -3606,13 +3815,12 @@ fn decode_entry(
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         tags::NODE_VT_ABSTRACT => {
-            // The payload is an admission position, not a table index: an atom
-            // names a declaration, so resolving it is a choke point's job on
-            // replay rather than the parser's. Decode only bounds the integer.
-            let atom = reader.read_usize()?;
-            let id = table
-                .arena
-                .value_type_abstract(ConstantIndex::from(usize::from(atom)));
+            // The payload names an admission position, by the segment's table
+            // of names or bare: an atom names a declaration, so resolving it
+            // to a declaration is a choke point's job on replay rather than
+            // the parser's.
+            let atom = table.resolver.read(reader)?;
+            let id = table.arena.value_type_abstract(atom);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         tags::NODE_VT_PRODUCT => {
@@ -3737,7 +3945,7 @@ fn decode_entry(
             (DecodedNode::CompType(id), Family::CompType)
         },
         tags::NODE_CT_CODATA => {
-            let declaration = ConstantIndex::from(usize::from(reader.read_usize()?));
+            let declaration = table.resolver.read(reader)?;
             let count = usize::from(reader.read_usize()?);
             let mut arguments = Vec::new();
             for _ in 0 .. count {
@@ -3754,10 +3962,8 @@ fn decode_entry(
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_V_CONSTANT => {
-            let index = reader.read_usize()?;
-            let id = table
-                .arena
-                .value_constant(ConstantIndex::from(usize::from(index)));
+            let index = table.resolver.read(reader)?;
+            let id = table.arena.value_constant(index);
             (DecodedNode::Value(id), Family::Value)
         },
         tags::NODE_V_LITERAL => {
@@ -5433,12 +5639,12 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x0900, u16::MAX] {
+        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0x0A00, u16::MAX] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 9 {
+            let expected = if version == 10 {
                 Ok(())
             }
             else {
@@ -6248,7 +6454,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
@@ -6443,7 +6649,7 @@ mod tests
             })
         );
         let level_artifact = |level: &[u8]| {
-            let mut bytes = vec![b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 1, 0, 3, 0, 1, 2];
+            let mut bytes = vec![b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 1, 0, 3, 0, 1, 2];
             bytes.extend_from_slice(level);
             bytes.push(0);
             bytes
@@ -6625,7 +6831,7 @@ mod tests
                 &[4],
             ),
             (
-                &[0x17, 0x81, 1],
+                &[0x17, 0x83, 2],
                 crate::types::ValueType::Abstract(super::ConstantIndex::from(129_usize)),
                 &[],
             ),
@@ -6768,7 +6974,7 @@ mod tests
                 &[],
             ),
             (
-                &[0x0a, 0x81, 1],
+                &[0x0a, 0x83, 2],
                 crate::term::Value::Constant(super::ConstantIndex::from(129_usize)),
                 &[],
             ),
@@ -7949,6 +8155,55 @@ mod tests
         );
     }
 
+    /// #7340: a chain of definitions, each reading the one before it. Named,
+    /// each segment writes its read as entry 0 of its own table, so the bytes
+    /// of two reads agree while the reads differ. Each read keeps an entry of
+    /// its own, and the chain decodes to itself under its names.
+    #[test]
+    fn equal_bytes_under_two_tables_stay_two_entries_7340()
+    {
+        let mut arena = crate::TermArena::new();
+        let mut declarations = alloc::vec::Vec::new();
+        for index in 0_usize .. 3 {
+            let declared = arena.value_type_unit();
+            let body = match index.checked_sub(1) {
+                Some(place) => arena.value_constant(crate::ConstantIndex::from(place)),
+                None => arena.value_unit(),
+            };
+            let definition = crate::DeclarationBuilder::new(&mut arena).def(
+                crate::LevelSignature::monomorphic(),
+                declared,
+                body,
+            );
+            declarations.push(crate::MarkedDeclaration::new(
+                crate::AdmissionMark::Checked,
+                definition,
+            ));
+        }
+        let names = crate::Names::new(
+            (1_u8 ..= 3)
+                .map(|byte| Some(crate::ConstantKey::from([byte; crate::CONSTANT_KEY_LEN]))),
+        );
+        let bytes = crate::encode_named(&arena, &declarations, None, &names);
+        let decoded = super::decode_named(bytes.as_image(), &names).expect("the chain decodes");
+        let read = |at: usize| {
+            let marked = decoded.declarations().get(at).expect("a declaration");
+            let crate::DeclarationContent::Def { body, .. } = *marked.declaration().content()
+            else {
+                panic!("a definition");
+            };
+            decoded.arena().value(body).cloned()
+        };
+        assert_eq!(
+            (read(1), read(2)),
+            (
+                Some(crate::Value::Constant(crate::ConstantIndex::from(0_usize))),
+                Some(crate::Value::Constant(crate::ConstantIndex::from(1_usize)))
+            ),
+            "each definition reads the one before it"
+        );
+    }
+
     /// #776: a decode resumed after a kept prefix answers, artifact or refusal,
     /// as a whole decode does — at every split of a mixed and shared artifact,
     /// for an artifact that ends inside a leading seal, and for the artifact
@@ -7997,40 +8252,57 @@ mod tests
         let whole = [atom, definition, axiom, shared, open].map(|declaration| {
             crate::MarkedDeclaration::new(crate::AdmissionMark::Checked, declaration)
         });
-        let bytes = crate::encode(&arena, &whole);
-        // The atom's seal reaches past an artifact of the first two alone.
-        let short = crate::encode(&arena, whole.get(.. 2).expect("two declarations"));
-        for split in 0 ..= whole.len() {
-            let (artifact, prefix) =
-                super::decode_keeping(bytes.as_image(), crate::ConstantIndex::from(split))
-                    .expect("the artifact decodes");
-            assert_eq!(Ok(&artifact), super::decode(bytes.as_image()).as_ref());
-            let super::Maybe::Present(prefix) = prefix
-            else {
-                panic!("the first {split} declarations are kept");
-            };
-            assert_eq!(
-                super::decode_after(&prefix, bytes.as_image()),
-                Ok(artifact),
-                "resumed after {split}"
+        let named = crate::Names::new(
+            (1_u8 ..= 5)
+                .map(|byte| Some(crate::ConstantKey::from([byte; crate::CONSTANT_KEY_LEN]))),
+        );
+        for names in [crate::Names::default(), named] {
+            let bytes = crate::encode_named(&arena, &whole, None, &names);
+            // The atom's seal reaches past an artifact of the first two alone.
+            let short = crate::encode_named(
+                &arena,
+                whole.get(.. 2).expect("two declarations"),
+                None,
+                &names,
             );
-            assert_eq!(
-                super::decode_after(&prefix, short.as_image()),
-                super::decode(short.as_image()),
-                "an artifact ending inside the leading seal, after {split}"
-            );
-            let mut changed = Vec::from(bytes.as_ref());
-            for position in 0 .. changed.len() {
-                let byte = changed.get_mut(position).expect("a byte");
-                *byte ^= 1;
-                let image = ArtifactImage::from(changed.as_slice());
+            for split in 0 ..= whole.len() {
+                let (artifact, prefix) = super::decode_keeping(
+                    bytes.as_image(),
+                    crate::ConstantIndex::from(split),
+                    &names,
+                )
+                .expect("the artifact decodes");
                 assert_eq!(
-                    super::decode_after(&prefix, image),
-                    super::decode(image),
-                    "byte {position} changed, after {split}"
+                    Ok(&artifact),
+                    super::decode_named(bytes.as_image(), &names).as_ref()
                 );
-                let byte = changed.get_mut(position).expect("a byte");
-                *byte ^= 1;
+                let super::Maybe::Present(prefix) = prefix
+                else {
+                    panic!("the first {split} declarations are kept");
+                };
+                assert_eq!(
+                    super::decode_after(&prefix, bytes.as_image(), &names),
+                    Ok(artifact),
+                    "resumed after {split}"
+                );
+                assert_eq!(
+                    super::decode_after(&prefix, short.as_image(), &names),
+                    super::decode_named(short.as_image(), &names),
+                    "an artifact ending inside the leading seal, after {split}"
+                );
+                let mut changed = Vec::from(bytes.as_ref());
+                for position in 0 .. changed.len() {
+                    let byte = changed.get_mut(position).expect("a byte");
+                    *byte ^= 1;
+                    let image = ArtifactImage::from(changed.as_slice());
+                    assert_eq!(
+                        super::decode_after(&prefix, image, &names),
+                        super::decode_named(image, &names),
+                        "byte {position} changed, after {split}"
+                    );
+                    let byte = changed.get_mut(position).expect("a byte");
+                    *byte ^= 1;
+                }
             }
         }
     }

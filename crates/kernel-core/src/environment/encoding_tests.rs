@@ -111,7 +111,7 @@ fn reference_environment(
 /// - hypothesis: L3 — a definition and an axiom referent each admitted before
 ///   and after an unrelated definition.
 /// - witness: `environment::encoding_tests::a_definition_reference_reads_alike_in_either_admission_order`
-/// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
+/// - witness: `environment::encoding_tests::an_axiom_reference_reads_its_key_in_either_admission_order_7340`
 fn reference_stream(
     referent: &impl Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
@@ -147,7 +147,7 @@ fn reference_stream(
 /// - hypothesis: L3 — a definition and an axiom referent each admitted before
 ///   and after an unrelated definition, in a cold and a warm table.
 /// - witness: `environment::encoding_tests::a_goal_takes_one_name_in_either_admission_order_864`
-/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_one_name_in_either_admission_order_7340`
 fn goal_name(
     referent: &impl Fn(&mut crate::Environment) -> ConstantIndex,
     order: ReferentOrder,
@@ -189,8 +189,8 @@ fn goal_name(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the unit axiom admits in every environment.
-/// - witness: `environment::encoding_tests::an_axiom_reference_keeps_its_position`
-/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_its_position_s_name_864`
+/// - witness: `environment::encoding_tests::an_axiom_reference_reads_its_key_in_either_admission_order_7340`
+/// - witness: `environment::encoding_tests::a_goal_over_an_axiom_takes_one_name_in_either_admission_order_7340`
 fn unit_axiom(environment: &mut crate::Environment) -> ConstantIndex
 {
     let mut staging = environment.stage();
@@ -239,14 +239,16 @@ fn a_definition_reference_reads_alike_in_either_admission_order()
     );
 }
 
+/// #7340: every policy keys each admission, so an axiom's reference reads its
+/// content key and not its position, in either admission order.
 #[test]
-fn an_axiom_reference_keeps_its_position()
+fn an_axiom_reference_reads_its_key_in_either_admission_order_7340()
 {
     let first = reference_stream(&unit_axiom, ReferentOrder::First);
     let second = reference_stream(&unit_axiom, ReferentOrder::Second);
-    assert_ne!(
+    assert_eq!(
         first, second,
-        "an axiom has no body to name it by, so its reference reads its position"
+        "an axiom's reference reads its content key, not where it was admitted"
     );
 }
 
@@ -301,14 +303,16 @@ fn a_goal_takes_one_name_in_either_admission_order_864()
     );
 }
 
+/// #7340: an axiom's reference reads its content key, so a goal over it takes
+/// one name in either admission order.
 #[test]
-fn a_goal_over_an_axiom_takes_its_position_s_name_864()
+fn a_goal_over_an_axiom_takes_one_name_in_either_admission_order_7340()
 {
     let (_, first) = goal_name(&unit_axiom, ReferentOrder::First, TableState::Cold);
     let (_, second) = goal_name(&unit_axiom, ReferentOrder::Second, TableState::Cold);
-    assert_ne!(
+    assert_eq!(
         first, second,
-        "an axiom's reference reads its position, so its goal's name does too"
+        "an axiom's reference reads its content key, so its goal's name does too"
     );
 }
 

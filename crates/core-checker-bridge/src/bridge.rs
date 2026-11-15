@@ -597,6 +597,7 @@ use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstantKey;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
@@ -607,6 +608,7 @@ use gandr_kernel_term::EvaluationDialogues;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::Names;
 use gandr_kernel_term::Places;
 use gandr_kernel_term::QuantifiedStep;
 use gandr_kernel_term::RelatedEndpoints;
@@ -616,9 +618,8 @@ use gandr_kernel_term::SourceRank;
 use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::Summand;
 use gandr_kernel_term::TermArena;
-use gandr_kernel_term::encode;
 use gandr_kernel_term::encode_after;
-use gandr_kernel_term::encode_placed;
+use gandr_kernel_term::encode_named;
 use gandr_kernel_term::encode_prefix;
 use quenchant_shape::shape::Maybe;
 
@@ -1721,14 +1722,19 @@ impl Readmission
     /// - ensures: the canonical encoding of the environment's arena and the
     ///   live admitted declarations, in rank order, each marked checked and
     ///   carrying the name `names` holds at its module position, or no name
-    ///   where it holds none. Each position is written as its place in rank
-    ///   order. A declaration that did not cross, or whose entry is retired, is
-    ///   not in the artifact, and a reference in it reads the place its target
-    ///   took, never a name.
-    /// - provides: the export a reader decodes: a flattened member is named by
-    ///   its segments, and is still referred to by position.
+    ///   where it holds none. Each position is written by the content key of
+    ///   its place where [`Self::export_names`] names that place, and as its
+    ///   place in rank order otherwise. A declaration that did not cross, or
+    ///   whose entry is retired, is not in the artifact, and a reference in it
+    ///   reads the key or the place its target took, never a structured name.
+    /// - provides: the export a reader decodes under [`Self::export_names`]: a
+    ///   flattened member is named by its segments, and is still referred to by
+    ///   its key or its place.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the vacancies the check reads, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module whose first declaration is marked, whose
@@ -1768,9 +1774,14 @@ impl Readmission
     {
         let places = self.environment.places();
         let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
+        let keys = self.export_names();
         match places {
-            Maybe::Present(ref places) => encode_placed(self.environment.arena(), &marked, places),
-            Maybe::Absent(places::Absent::InOrder) => encode(self.environment.arena(), &marked),
+            Maybe::Present(ref places) => {
+                encode_named(self.environment.arena(), &marked, Some(places), &keys)
+            },
+            Maybe::Absent(places::Absent::InOrder) => {
+                encode_named(self.environment.arena(), &marked, None, &keys)
+            },
         }
     }
 
@@ -1823,6 +1834,37 @@ impl Readmission
         }
     }
 
+    /// The names the export writes each position by: the content key of each
+    /// place, when [`Self::content_names`] holds one for every place.
+    ///
+    /// # Specification
+    /// - requires: as [`export`](Self::export).
+    /// - ensures: one entry per declaration the export writes, in its order,
+    ///   each the place's content key, when every place has one; the names of
+    ///   no place otherwise, so the export writes each place bare.
+    /// - provides: the names a reader decodes the export under.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Self::content_names`], the count rests on the
+    ///   environment's places, which a clause could read only by walking it.
+    ///
+    /// # Cost
+    /// - allocation: a key for each place, growth within the export
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::content_names`]; an export decodes under
+    ///   these names to the declarations it encoded.
+    /// - witness: `bridge::tests::each_name_stands_beside_the_declaration_the_export_writes_7340`
+    #[inline]
+    #[must_use]
+    pub fn export_names(&self) -> Names
+    {
+        Names::whole(self.content_names().into_iter().map(|name| match name {
+            Maybe::Present(key) => Some(ConstantKey::from(<[u8; 32]>::from(key))),
+            Maybe::Absent(_) => None,
+        }))
+    }
+
     /// [`export`](Self::export), encoding only the declarations after the
     /// leading ones `crossed` holds when this readmission resumed them from it
     /// and `crossed` keeps their encoding; and keeping in `recorded` the
@@ -1831,9 +1873,10 @@ impl Readmission
     ///
     /// # Specification
     /// - requires: as [`export`](Self::export); `crossed` is the record
-    ///   [`readmit_resuming`] was given and `recorded` the one it answered, and
+    ///   [`readmit_resuming`] was given and `recorded` the one it answered,
     ///   `names` names the leading declarations `crossed` holds as it named
-    ///   them when their encoding was kept.
+    ///   them when their encoding was kept, and `keys` is
+    ///   [`export_names`](Self::export_names).
     /// - ensures: [`export`](Self::export)'s artifact. When `recorded` is
     ///   present and no seal among its declarations is open, it keeps their
     ///   encoding, which ends where its declarations do in the kernel, so the
@@ -1846,6 +1889,9 @@ impl Readmission
     ///   closure, which encodes the closure once.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the vacancies the check reads, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an admission of a laid-out document resumed from the
@@ -1881,6 +1927,7 @@ impl Readmission
     pub fn export_resuming(
         &self,
         mut names: BTreeMap<ConstantIndex, StructuredName>,
+        keys: &Names,
         crossed: Maybe<&Crossed, crossed::Absent>,
         recorded: &mut Maybe<Crossed, crossed::Absent>,
     ) -> EncodedArtifact
@@ -1892,7 +1939,7 @@ impl Readmission
                 record.encoded = None;
             }
             let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
-            return encode_placed(arena, &marked, placed);
+            return encode_named(arena, &marked, Some(placed), keys);
         }
         let resumable = match crossed {
             Maybe::Present(crossed) if self.resumed == crossed.readmitted.len() => {
@@ -1907,26 +1954,29 @@ impl Readmission
                     prefix,
                     arena,
                     &self.marked(&mut names, prefix.end(), &places),
+                    keys,
                 ),
-                None => encode(
+                None => encode_named(
                     arena,
                     &self.marked(&mut names, ConstantIndex::from(0_usize), &places),
+                    None,
+                    keys,
                 ),
             };
         };
         let marked = self.marked(&mut names, ConstantIndex::from(0_usize), &places);
         if let Some((leading, after)) =
             marked.split_at_checked(usize::from(record.positions.exports.len()))
-            && let Maybe::Present(prefix) = encode_prefix(arena, leading)
+            && let Maybe::Present(prefix) = encode_prefix(arena, leading, keys)
         {
-            let artifact = encode_after(&prefix, arena, after);
+            let artifact = encode_after(&prefix, arena, after, keys);
             record.encoded = Some(prefix);
             return artifact;
         }
         match resumable.and_then(|prefix| Some((prefix, marked.get(usize::from(prefix.end()) ..)?)))
         {
-            Some((prefix, after)) => encode_after(prefix, arena, after),
-            None => encode(arena, &marked),
+            Some((prefix, after)) => encode_after(prefix, arena, after, keys),
+            None => encode_named(arena, &marked, None, keys),
         }
     }
 

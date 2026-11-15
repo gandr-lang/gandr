@@ -500,6 +500,9 @@ where
 /// # Specification
 /// trivial.
 ///
+/// # Cost
+/// - allocation: the source's text and its program, growth within the source
+///
 /// # Errors
 /// [`Unran`], as [`ran_alone`].
 fn alone<E, Read>(

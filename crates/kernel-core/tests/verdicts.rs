@@ -1133,12 +1133,12 @@ fn two_axioms_of_one_type_take_two_keys_6568()
     assert_eq!(rerun(&signer, &receipt, &twice(at(1_usize))), [Recalled; 3]);
 }
 
-/// #7456: an environment that keys nothing computes each content key on
-/// demand as an admission under keys computes it. The program holds twin
-/// axioms, a reader of the second, an atom manifest at a unit, twin sorts, a
-/// type of words over the first sort with an axiom of that sort, and twin
-/// blocks. The demands run from the last constant down, so each one keys
-/// what its key reads first.
+/// #7456, #7340: an environment that rechecks keys each admission as an
+/// admission under keys keys it, and computes each content key on demand
+/// alike. The program holds twin axioms, a reader of the second, an atom
+/// manifest at a unit, twin sorts, a type of words over the first sort with an
+/// axiom of that sort, and twin blocks. The demands run from the last constant
+/// down, so each one keys what its key reads first.
 #[test]
 fn a_key_on_demand_is_the_key_of_its_admission_7456()
 {
@@ -1172,9 +1172,10 @@ fn a_key_on_demand_is_the_key_of_its_admission_7456()
             matches!(held, Maybe::Present(_)),
             "the admission under keys keys {position}: {held:?}"
         );
-        assert!(
-            matches!(rechecking.entries().content(at(position)), Maybe::Absent(_)),
-            "the recheck keys nothing at {position}"
+        assert_eq!(
+            rechecking.entries().content(at(position)),
+            held,
+            "the recheck keys {position} as the admission under keys does"
         );
         assert_eq!(
             rechecking.demanded_key(at(position), &mut demanded),

@@ -846,9 +846,10 @@ fn an_importer_is_judged_over_its_sibling()
 {
     let scratch = Scratch::new(Path::new("importers"));
     // The bytes of each declaration segment of a kernel artifact, in
-    // admission order.
-    let segments = |image: &[u8]| -> Vec<Vec<u8>> {
-        let decoded = gandr_kernel_term::decode(image.into()).expect("the kernel's export decodes");
+    // admission order, read under the names it writes.
+    let segments = |image: &[u8], keys: &gandr_kernel_term::Names| -> Vec<Vec<u8>> {
+        let decoded = gandr_kernel_term::decode_named(image.into(), keys)
+            .expect("the kernel's export decodes");
         decoded
             .segments()
             .declaration_segments()
@@ -902,6 +903,7 @@ fn an_importer_is_judged_over_its_sibling()
                         gandr_surface_dispatcher::Composed::Settled {
                             ref report,
                             kernel: Maybe::Present(ref kernel),
+                            ref keys,
                             ..
                         },
                     standing,
@@ -923,7 +925,7 @@ fn an_importer_is_judged_over_its_sibling()
                     name.unwrap_or_default(),
                     (<&str>::from(text).to_owned(), own),
                     declared,
-                    segments(kernel.as_ref()),
+                    segments(kernel.as_ref(), keys),
                 ));
                 ControlFlow::Continue(())
             });

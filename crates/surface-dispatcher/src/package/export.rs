@@ -55,7 +55,7 @@ use anodized::spec;
 use gandr_kernel_core::ArtifactRefusal;
 use gandr_kernel_core::Environment;
 use gandr_kernel_term::DecodeError;
-use gandr_kernel_term::decode;
+use gandr_kernel_term::decode_named;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::ReassembledArtifact;
@@ -255,6 +255,10 @@ impl Export
     /// - executable: none — the answer is the kernel's replay, which a
     ///   predicate could only run again.
     ///
+    /// # Cost
+    /// - allocation: each image and its replay, growth within the export
+    /// - allocation: the source's spelling, error path
+    ///
     /// # Errors
     /// [`Unreadmitted`], as above.
     ///
@@ -281,7 +285,7 @@ impl Export
                     })
             };
             let image = admitted.artifact.reassemble();
-            let (arena, marked) = decode(image.as_image())
+            let (arena, marked) = decode_named(image.as_image(), &admitted.artifact.kernel_names())
                 .map_err(|refusal| Unreadmitted::Undecoded {
                     source: source(),
                     refusal,
@@ -428,6 +432,10 @@ impl Exporting
     /// - panics: none.
     /// - executable: none — the steps are the walk's.
     ///
+    /// # Cost
+    /// - allocation: the set and the spellings, growth within the package
+    /// - allocation: the source's path, error path
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a package of three sources, two joined by an import,
     ///   exports two artifacts, the joined sources under one; a package with an
@@ -443,16 +451,17 @@ impl Exporting
         if self.broken.is_some() {
             return;
         }
-        let kernel = match *step {
+        let (kernel, keys) = match *step {
             Step::Source {
                 standing: Standing::Settled,
                 composed:
                     Composed::Settled {
                         kernel: Maybe::Present(ref kernel),
+                        ref keys,
                         ..
                     },
                 ..
-            } => kernel,
+            } => (kernel, keys),
             Step::Source { .. } => {
                 self.broken = Some(Unexported::Unsettled {
                     source: source.to_path_buf(),
@@ -482,7 +491,11 @@ impl Exporting
             admitted.sources.push(spelling);
             return;
         }
-        match ArtifactRecordSet::from_artifact(kernel.as_image()) {
+        // The set carries its names, so a reader decodes it as the kernel wrote
+        // it.
+        match ArtifactRecordSet::from_artifact(kernel.as_image(), keys)
+            .and_then(|set| set.named_by(keys))
+        {
             Ok(artifact) => {
                 let _fresh = self.seen.insert(digest, self.admitted.len());
                 self.admitted.push(Admitted {

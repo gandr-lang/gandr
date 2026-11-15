@@ -237,8 +237,10 @@ use gandr_kernel_core::ExpansionCensus;
 use gandr_kernel_core::tallied;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::EncodedArtifact;
+use gandr_kernel_term::Names;
 use gandr_kernel_term::StructuredName;
 use gandr_storage_artifact::ContentName;
+use gandr_storage_artifact::kernel_names;
 use gandr_storage_artifact::unnamed;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::DeclarationReport;
@@ -515,6 +517,10 @@ pub enum Composed<'source>
         /// once the module's admission ran; a composition read before its
         /// admission carries none.
         kernel: Maybe<EncodedArtifact, admitted::Absent>,
+        /// The names the kernel artifact writes its references by: the
+        /// content key of each of its places that has one. A composition read
+        /// before its admission holds none.
+        keys: Names,
         /// Where each declaration that crossed into the kernel stands in the
         /// kernel artifact, by its module position, when the admission was
         /// asked to record it.
@@ -586,13 +592,13 @@ impl Composed<'_>
     ///
     /// # Specification
     /// - requires: `kernel` is the export of this composition's admission,
-    ///   `positions` that admission's record of where each declaration stands,
-    ///   or why it kept none, and `declined` the declarations it declined, in
-    ///   admission order.
-    /// - ensures: a settled composition carries `kernel` and `positions`, and
-    ///   its report marks each declaration `declined` names; it is otherwise
-    ///   unchanged. A whole refusal, which offered the kernel nothing, is
-    ///   returned as it was.
+    ///   `keys` the names it writes its references by, `positions` that
+    ///   admission's record of where each declaration stands, or why it kept
+    ///   none, and `declined` the declarations it declined, in admission order.
+    /// - ensures: a settled composition carries `kernel`, `keys` and
+    ///   `positions`, and its report marks each declaration `declined` names;
+    ///   it is otherwise unchanged. A whole refusal, which offered the kernel
+    ///   nothing, is returned as it was.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -610,6 +616,7 @@ impl Composed<'_>
     pub fn admitted(
         self,
         kernel: EncodedArtifact,
+        keys: Names,
         positions: Maybe<ArtifactPositions, positioned::Absent>,
         declined: &[Declined],
     ) -> Self
@@ -648,6 +655,7 @@ impl Composed<'_>
                     unused,
                     unreached,
                     kernel: Maybe::Present(kernel),
+                    keys,
                     positions,
                     program,
                 }
@@ -739,6 +747,7 @@ impl<'source> Judged<'source>
     {
         let Resumption {
             artifact,
+            keys,
             positions,
             declined,
             ..
@@ -748,7 +757,7 @@ impl<'source> Judged<'source>
         );
         let kernel = artifact.map_err(ComposeFault::Readmission)?;
         let composed = self.settled.map_err(ComposeFault::Settle)?;
-        Ok(composed.admitted(kernel, positions, &declined))
+        Ok(composed.admitted(kernel, keys, positions, &declined))
     }
 }
 
@@ -928,6 +937,9 @@ impl Admission
     /// - fails: as [`admit_resuming`](Self::admit_resuming), in the artifact.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the records and the artifact, growth within the module
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — an admission retired part way, then resumed from its
     ///   record, exports what a whole admission exports.
@@ -992,25 +1004,10 @@ impl Admission
         };
         let positioning = self.positioning;
         Polled::Whole(match readmission {
-            Ok(readmission) => Resumption {
-                resumed: readmission.resumed(),
-                kept: readmission.kept(),
-                judged,
-                positions: match positioning {
-                    Positioning::Positioned | Positioning::Tallied => {
-                        Maybe::Present(ArtifactPositions::of(&readmission, positioning))
-                    },
-                    #[cfg(feature = "instrument")]
-                    Positioning::Metered => {
-                        Maybe::Present(ArtifactPositions::of(&readmission, positioning))
-                    },
-                    Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
-                },
-                declined: declined(&readmission),
-                tiers: tiers(&readmission),
+            Ok(readmission) => {
                 // The kernel's reasons stay the kernel's: storage records only
                 // that the kernel computes no key for the entry.
-                names: readmission
+                let names: Vec<_> = readmission
                     .content_names()
                     .into_iter()
                     .map(|name| match name {
@@ -1019,16 +1016,38 @@ impl Admission
                         },
                         Maybe::Absent(_) => Maybe::Absent(unnamed::Absent::Unkeyed),
                     })
-                    .collect(),
-                artifact: Ok(readmission.export_resuming(
-                    self.names,
-                    reuse.record(),
-                    &mut recorded,
-                )),
-                crossed: recorded,
+                    .collect();
+                let keys = kernel_names(&names);
+                Resumption {
+                    resumed: readmission.resumed(),
+                    kept: readmission.kept(),
+                    judged,
+                    positions: match positioning {
+                        Positioning::Positioned | Positioning::Tallied => {
+                            Maybe::Present(ArtifactPositions::of(&readmission, positioning))
+                        },
+                        #[cfg(feature = "instrument")]
+                        Positioning::Metered => {
+                            Maybe::Present(ArtifactPositions::of(&readmission, positioning))
+                        },
+                        Positioning::Unpositioned => Maybe::Absent(positioned::Absent::Unasked),
+                    },
+                    declined: declined(&readmission),
+                    tiers: tiers(&readmission),
+                    names,
+                    artifact: Ok(readmission.export_resuming(
+                        self.names,
+                        &keys,
+                        reuse.record(),
+                        &mut recorded,
+                    )),
+                    keys,
+                    crossed: recorded,
+                }
             },
             Err(fault) => Resumption {
                 artifact: Err(fault),
+                keys: Names::default(),
                 names: Vec::new(),
                 positions: Maybe::Absent(positioned::Absent::Disagreed),
                 declined: Vec::new(),
@@ -1080,6 +1099,9 @@ pub struct Resumption
     /// its order, as storage names it: empty when the kernel did not
     /// re-derive every declaration.
     pub names: Vec<Maybe<ContentName, unnamed::Absent>>,
+    /// The names the artifact writes its references by: the kernel's reading
+    /// of `names`, empty when the kernel did not re-derive every declaration.
+    pub keys: Names,
     /// Where each declaration that crossed stands in the artifact, when the
     /// admission was asked to record it and the kernel re-derived every one.
     pub positions: Maybe<ArtifactPositions, positioned::Absent>,
@@ -4170,6 +4192,9 @@ fn unreached_imports(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the empty names of a pending export, setup
 fn settled<'source>(
     share: Share<'source>,
     (origins, failures, program): (OriginTable, Failures, Program<'source>),
@@ -4190,6 +4215,7 @@ fn settled<'source>(
         deprecated: share.deprecated,
         parted: share.parted,
         kernel: Maybe::Absent(admitted::Absent::Pending),
+        keys: Names::default(),
         positions: Maybe::Absent(positioned::Absent::Pending),
         program,
     }
@@ -4229,6 +4255,9 @@ fn settled<'source>(
 ///   could not be built past it; otherwise a settle fault is every source's
 ///   [`ComposeFault::Settle`].
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: each source's judgement, growth within the component
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a diamond judged whole reports each source's own
@@ -4290,19 +4319,21 @@ where
             // declarations, judged as the closure's judgement judged them: its
             // readmission resumes them from the record the first such
             // admission kept.
-            let (admitted, positions, declined) = match (checking, after) {
+            let (admitted, keys, positions, declined) = match (checking, after) {
                 (Checking::After(closure), Some(boundary)) => {
                     let Resumption {
                         artifact,
+                        keys,
                         positions,
                         declined,
                         ..
                     } = admitted_after(admission, boundary, closure.judgement());
-                    (artifact, positions, declined)
+                    (artifact, keys, positions, declined)
                 },
                 (Checking::After(_) | Checking::Whole, _) => {
                     let Resumption {
                         artifact,
+                        keys,
                         positions,
                         declined,
                         ..
@@ -4310,7 +4341,7 @@ where
                         bridge::LeadingCount::NONE,
                         Maybe::Absent(bridge::crossed::Absent::Unasked),
                     );
-                    (artifact, positions, declined)
+                    (artifact, keys, positions, declined)
                 },
             };
             let composed = match admitted {
@@ -4320,7 +4351,12 @@ where
                         .into_iter()
                         .map(|held| {
                             held.map(|composed| {
-                                composed.admitted(kernel.clone(), positions.clone(), &declined)
+                                composed.admitted(
+                                    kernel.clone(),
+                                    keys.clone(),
+                                    positions.clone(),
+                                    &declined,
+                                )
                             })
                             .map_err(ComposeFault::Settle)
                         })
@@ -4328,7 +4364,7 @@ where
                     composed.push(
                         projected
                             .last
-                            .map(|composed| composed.admitted(kernel, positions, &declined))
+                            .map(|composed| composed.admitted(kernel, keys, positions, &declined))
                             .map_err(ComposeFault::Settle),
                     );
                     composed
@@ -4364,6 +4400,9 @@ where
 ///   whatever the width, and no admission copies another.
 /// - fails: as [`Admission::admit_resuming`], in the artifact.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the records and the artifact, growth within the closure
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an admission resumed from another's record exports what a

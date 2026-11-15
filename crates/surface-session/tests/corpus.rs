@@ -21,7 +21,6 @@ use std::path::PathBuf;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::MalformedSite;
-use gandr_kernel_term::decode;
 use gandr_storage_artifact::ArtifactError;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
@@ -244,11 +243,13 @@ fn submits_as_composed(
         (
             &Composed::Settled {
                 kernel: Maybe::Present(ref kernel),
+                ref keys,
                 ..
             },
             Maybe::Present(&KernelCheckpoint::Stored(ref manifest)),
         ) => assert_eq!(
-            Ok(decode(kernel.as_image()).expect("the kernel's own export decodes")),
+            Ok(gandr_kernel_term::decode_named(kernel.as_image(), keys)
+                .expect("the kernel's own export decodes")),
             session.read_kernel(manifest),
             "{}: the kernel checkpoint reads back as the export",
             path.display()

@@ -538,10 +538,11 @@ fn a_received_value_crosses_as_an_assumption_1319()
     else {
         panic!("the kernel defines the four exchanges: {outcomes:?}");
     };
-    let artifact = gandr_kernel_term::decode(
+    let artifact = gandr_kernel_term::decode_named(
         readmission
             .export(alloc::collections::BTreeMap::new())
             .as_image(),
+        &readmission.export_names(),
     )
     .expect("the readmission's artifact decodes");
     // The action each axiom a declaration rests on assumes: `receive` or

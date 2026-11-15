@@ -262,17 +262,19 @@ fn sealing_provenance_round_trips_and_cannot_be_rewritten()
         "the replayed environment re-serializes its provenance identically"
     );
     // The last segment is the identity member, ending `… | erasure 0 |
-    // modes 0 | provenance 1, 0 | directedness 0`, so its provenance entry
-    // is the artifact's second-to-last byte. Re-point it at position 1 —
-    // the seed — which the member's declared type does not project onto.
+    // modes 0 | provenance 1, 1 | directedness 0`, so its provenance entry
+    // is the artifact's second-to-last byte. The export names no place, so the
+    // entry writes position zero bare, as one more than twice zero. Re-point
+    // it at position 1 — the seed — which the member's declared type does not
+    // project onto.
     let mut rewritten = Vec::from(bytes);
     let entry = rewritten.len().saturating_sub(2);
     let slot = rewritten.get_mut(entry).expect("the provenance entry");
     assert_eq!(
-        *slot, 0,
+        *slot, 1,
         "the provenance entry names the atom at position zero"
     );
-    *slot = 1;
+    *slot = 3;
     let decoded = decode(gandr_kernel_term::ArtifactImage::from(rewritten.as_slice()))
         .expect("the provenance slot is well formed on the format plane");
     let refusal = Environment::replay(decoded.arena().clone(), decoded.declarations())

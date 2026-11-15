@@ -48,7 +48,12 @@
 //! - `vault:01a178aa-ce14-7610-bcad-5aab5f9c0b0f` — background: §
 //!   kernel-verdict-reuse — a verdict key reads each declaration's segment as
 //!   [`keyed_segment`] writes it, so the canonical bytes are the key's input.
+//! - `vault:01a178ab-17e5-7352-bc0b-3caa7f1e476c` — newest: §
+//!   storage-programme-gluing — a reference names its target by content, so
+//!   [`encode_named`] writes each named place by its content key. The offset
+//!   inside a content piece is owed.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -112,6 +117,24 @@ use crate::wire::WireUsize;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct EncodedEntry(EncodedArtifact);
 
+/// An entry's bytes beside the key of each named place the bytes write, in the
+/// order they write them: what the content deduplication compares. The bytes
+/// write each named place by its first place among those keys, and never by
+/// its segment's table of names. So equal content in two segments is one
+/// entry, and equal bytes that name two places stay two.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct EntryContent
+{
+    /// The entry's bytes, each named place written by its first place among
+    /// `names`.
+    bytes: EncodedEntry,
+    /// The key of each named place the bytes write, in order.
+    names: Box<[ConstantKey]>,
+}
+
 /// What an encoding of a sequence's leading declarations assigned, frozen for
 /// every encoding that resumes after them.
 ///
@@ -132,8 +155,8 @@ struct Assigned
 {
     /// Arena node to its assigned global index.
     by_node: BTreeMap<AnyNode, GlobalIndex>,
-    /// Encoded entry bytes to their global index.
-    by_content: BTreeMap<EncodedEntry, GlobalIndex>,
+    /// Entry content to its global index.
+    by_content: BTreeMap<EntryContent, GlobalIndex>,
     /// The next free global index.
     next: GlobalIndex,
 }
@@ -173,9 +196,9 @@ struct Interner
     /// Arena node to its assigned global index: the sharing-aware memo, so an
     /// in-arena shared node is walked once.
     by_node: BTreeMap<AnyNode, GlobalIndex>,
-    /// Encoded entry bytes to their global index: the content deduplication, so
+    /// Entry content to its global index: the content deduplication, so
     /// structurally equal nodes collapse.
-    by_content: BTreeMap<EncodedEntry, GlobalIndex>,
+    by_content: BTreeMap<EntryContent, GlobalIndex>,
     /// The next free global index.
     next: GlobalIndex,
     /// How the segments write an admission position.
@@ -186,18 +209,73 @@ struct Interner
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 enum Positions
 {
-    /// Each position as itself, as the export format writes it.
-    #[default]
-    Raw,
+    /// Each position as an artifact's segment writes it: by the key of its
+    /// place in the segment's table of names, or by its place.
+    Artifact(Placing),
     /// Each position by where the segment first names it, so the bytes read
     /// no admission order.
     Ordinal(Ordinals),
-    /// Each position as its place in rank order, as the export of a kept
-    /// environment writes it.
-    Placed(Places),
+}
+
+impl Default for Positions
+{
+    /// Each position as its own place, with no place named.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the empty names, setup.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::Artifact(Placing::default())
+    }
+}
+
+/// How an artifact's segments write each admission position.
+///
+/// A position stands at its place: the position itself, or its place in rank
+/// order in the export of a kept environment. A place that `names` names is
+/// written as twice the entry of its key in the segment's table of names. Any
+/// other place is written as one more than twice the place.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct Placing
+{
+    /// The place of each position in rank order; none when each position is
+    /// its own place.
+    places: Option<Places>,
+    /// The key of each place.
+    names: Names,
+    /// The keys the current segment names, first named first.
+    table: Vec<ConstantKey>,
+    /// Each of them, to its entry in `table`.
+    entries: BTreeMap<ConstantKey, usize>,
+    /// The keys the entry being written names, in order.
+    named: Vec<ConstantKey>,
+    /// How the entry being written names a key.
+    naming: EntryNaming,
+}
+
+/// How an entry being written names a key.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum EntryNaming
+{
+    /// By its entry in the segment's table of names, as the segment writes it.
+    #[default]
+    Table,
+    /// By its first place among the entry's own keys, as the content
+    /// deduplication compares it; the segment's table stays as it is.
+    Local,
 }
 
 /// The place of each live admission position in rank order: what the export
@@ -274,6 +352,200 @@ impl Places
     }
 }
 
+/// The width of a [`ConstantKey`]: a whole content key.
+pub const CONSTANT_KEY_LEN: usize = 32;
+
+/// The content key of a constant, as the table of names at the head of a
+/// segment holds it.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ConstantKey([u8; CONSTANT_KEY_LEN]);
+
+impl From<[u8; CONSTANT_KEY_LEN]> for ConstantKey
+{
+    /// The key with these bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: [u8; CONSTANT_KEY_LEN]) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl From<ConstantKey> for [u8; CONSTANT_KEY_LEN]
+{
+    /// The key's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(key: ConstantKey) -> Self
+    {
+        key.0
+    }
+}
+
+impl AsRef<[u8]> for ConstantKey
+{
+    /// The key's bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        &self.0
+    }
+}
+
+/// The key of each place of an artifact: what its segments write in the
+/// place of an admission position.
+///
+/// A key names the first place that holds it. A later place that holds the
+/// same key is not named, so the segments write it by the place itself, and a
+/// place never loses its key to a place after it.
+///
+/// # Specification
+/// - requires: built by [`Names::new`].
+/// - ensures: answers each place the key that names it alone, and each such key
+///   its place.
+/// - panics: none.
+/// - executable: none — the fields are private and set only by [`Names::new`],
+///   whose specification states them.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_named`].
+/// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Names
+{
+    /// The key of each place as given, a repeat included.
+    keys: Arc<[Option<ConstantKey>]>,
+    /// Each key, to the first place that holds it.
+    places: Arc<BTreeMap<ConstantKey, ConstantIndex>>,
+}
+
+impl Names
+{
+    /// The names of an artifact whose place `n` has the `n`th of `keys`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each place is named by its key unless an earlier place holds
+    ///   the same key; no other place is named. Each place's key is held as
+    ///   given.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the names hold private maps, which a clause would
+    ///   restate.
+    ///
+    /// # Cost
+    /// - allocation: the keys and their first places, growth within the places.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`encode_named`].
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    #[inline]
+    #[must_use]
+    pub fn new<Keys>(keys: Keys) -> Self
+    where
+        Keys: IntoIterator<Item = Option<ConstantKey>>,
+    {
+        let keys: Arc<[Option<ConstantKey>]> = keys.into_iter().collect();
+        let mut places = BTreeMap::new();
+        for (place, key) in keys.iter().enumerate() {
+            if let Some(key) = *key {
+                let _first = places
+                    .entry(key)
+                    .or_insert_with(|| ConstantIndex::from(place));
+            }
+        }
+        Self {
+            keys,
+            places: Arc::new(places),
+        }
+    }
+
+    /// The names of an artifact whose place `n` has the `n`th of `keys`, when
+    /// every place has a key; otherwise no place is named.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Names::new`] of `keys` when each holds a key, and the names
+    ///   of no place when one holds none.
+    /// - provides: the names an export writes. A store keeps an artifact named
+    ///   whole or bare, so a writer names each place or none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as [`Names::new`].
+    ///
+    /// # Cost
+    /// - allocation: the keys and their first places, growth within the places.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an export with a place the kernel keys not writes
+    ///   every place bare, and one with every place keyed names each.
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    #[inline]
+    #[must_use]
+    pub fn whole<Keys>(keys: Keys) -> Self
+    where
+        Keys: IntoIterator<Item = Option<ConstantKey>>,
+    {
+        keys.into_iter()
+            .collect::<Option<Vec<ConstantKey>>>()
+            .map_or_else(Self::default, |keys| Self::new(keys.into_iter().map(Some)))
+    }
+
+    /// The key of each place as given, a repeat included.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keys(&self) -> &[Option<ConstantKey>]
+    {
+        &self.keys
+    }
+
+    /// The key that names `place` alone, if one does.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn key(
+        &self,
+        place: ConstantIndex,
+    ) -> Option<ConstantKey>
+    {
+        self.keys
+            .get(usize::from(place))
+            .copied()
+            .flatten()
+            .filter(|key| self.places.get(key) == Some(&place))
+    }
+
+    /// The place that `key` names, if it names one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn place(
+        &self,
+        key: &ConstantKey,
+    ) -> Option<ConstantIndex>
+    {
+        self.places.get(key).copied()
+    }
+}
+
 /// The positions a keyed segment names, in the order it first names them,
 /// and the mutual block whose members it names by their place in it.
 ///
@@ -295,20 +567,27 @@ impl Positions
     /// The position a segment writes for `position`.
     ///
     /// # Specification
-    /// - ensures: `position` itself under [`Positions::Raw`]; its place under
-    ///   [`Positions::Placed`], and `position` itself for a position with no
-    ///   place; under [`Positions::Ordinal`], one more than twice its place in
-    ///   the block for a member of the block, and twice the place the segment
-    ///   first names it at for any other position.
+    /// - ensures: under [`Positions::Artifact`], twice the entry of the key of
+    ///   its place in the segment's table when the names name that place, and
+    ///   one more than twice its place otherwise; its place is its place in
+    ///   rank order, or `position` itself for a position with no place. Under
+    ///   [`Positions::Ordinal`], one more than twice its place in the block for
+    ///   a member of the block, and twice the place the segment first names it
+    ///   at for any other position.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the place depends on the positions the segment
+    /// - executable: none — the entry depends on the positions the segment
     ///   named before.
     ///
+    /// # Cost
+    /// - allocation: the ordinals and the table, growth within the segment.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`keyed_segment`].
+    /// - hypothesis: L3 — as [`keyed_segment`], [`encode_placed`] and
+    ///   [`encode_named`].
     /// - witness: `encode::tests::a_keyed_segment_writes_no_admission_order_6568`
     /// - witness: `encode::tests::a_placed_encoding_writes_each_position_as_its_place_6845`
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
     #[inline]
     fn rename(
         &mut self,
@@ -316,8 +595,7 @@ impl Positions
     ) -> ConstantIndex
     {
         let ordinals = match *self {
-            Self::Raw => return position,
-            Self::Placed(ref places) => return places.place(position).unwrap_or(position),
+            Self::Artifact(ref mut placing) => return placing.rename(position),
             Self::Ordinal(ref mut ordinals) => ordinals,
         };
         if ordinals.block.contains(&position) {
@@ -330,6 +608,125 @@ impl Positions
             ordinals.named.push(position);
         }
         ConstantIndex::from(place.saturating_mul(2))
+    }
+
+    /// Start a segment: its table of names holds no key yet.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn open_segment(&mut self)
+    {
+        if let Self::Artifact(ref mut placing) = *self {
+            placing.table.clear();
+            placing.entries.clear();
+        }
+    }
+
+    /// The keys the current segment names, first named first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn table(&self) -> &[ConstantKey]
+    {
+        match *self {
+            Self::Artifact(ref placing) => &placing.table,
+            Self::Ordinal(_) => &[],
+        }
+    }
+
+    /// Start an entry: it names no key yet. An entry under
+    /// [`EntryNaming::Local`] writes each key by its first place among the
+    /// entry's own keys and adds nothing to its segment's table, as the
+    /// content deduplication compares it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn open_entry(
+        &mut self,
+        naming: EntryNaming,
+    )
+    {
+        if let Self::Artifact(ref mut placing) = *self {
+            placing.named.clear();
+            placing.naming = naming;
+        }
+    }
+
+    /// The keys the entry being written names, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn entry_names(&self) -> &[ConstantKey]
+    {
+        match *self {
+            Self::Artifact(ref placing) => &placing.named,
+            Self::Ordinal(_) => &[],
+        }
+    }
+}
+
+impl Placing
+{
+    /// The writing of each position at its place in `places`, with no place
+    /// named.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the empty names, setup.
+    #[inline]
+    fn placed(places: &Places) -> Self
+    {
+        Self {
+            places: Some(places.clone()),
+            ..Self::default()
+        }
+    }
+
+    /// The position a segment writes for `position`, as
+    /// [`Positions::rename`] states it for [`Positions::Artifact`].
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the table and the entry's keys, growth within the segment.
+    #[inline]
+    fn rename(
+        &mut self,
+        position: ConstantIndex,
+    ) -> ConstantIndex
+    {
+        let place = self
+            .places
+            .as_ref()
+            .and_then(|places| places.place(position))
+            .unwrap_or(position);
+        let Some(key) = self.names.key(place)
+        else {
+            return ConstantIndex::from(usize::from(place).saturating_mul(2).saturating_add(1));
+        };
+        let entry = if self.naming == EntryNaming::Local {
+            self.named
+                .iter()
+                .position(|named| *named == key)
+                .unwrap_or(self.named.len())
+        }
+        else {
+            let next = self.table.len();
+            let entry = *self.entries.entry(key).or_insert(next);
+            if entry == next {
+                self.table.push(key);
+            }
+            entry
+        };
+        self.named.push(key);
+        ConstantIndex::from(entry.saturating_mul(2))
     }
 }
 
@@ -370,7 +767,7 @@ impl Interner
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
             next: GlobalIndex::default(),
-            positions: Positions::Raw,
+            positions: Positions::default(),
         }
     }
 
@@ -405,7 +802,7 @@ impl Interner
             base: Some(base),
             by_node: BTreeMap::new(),
             by_content: BTreeMap::new(),
-            positions: Positions::Raw,
+            positions: Positions::default(),
         }
     }
 
@@ -476,7 +873,7 @@ impl Interner
     #[inline]
     fn content(
         &self,
-        entry: &EncodedEntry,
+        entry: &EntryContent,
     ) -> Option<GlobalIndex>
     {
         self.by_content
@@ -536,7 +933,7 @@ pub fn encode(
     declarations: &[MarkedDeclaration],
 ) -> EncodedArtifact
 {
-    encode_sequence(arena, declarations, Positions::Raw)
+    encode_sequence(arena, declarations, Positions::default())
 }
 
 /// [`encode`] of `declarations`, the live entries of a kept environment in
@@ -571,7 +968,55 @@ pub fn encode_placed(
     places: &Places,
 ) -> EncodedArtifact
 {
-    encode_sequence(arena, declarations, Positions::Placed(places.clone()))
+    encode_sequence(
+        arena,
+        declarations,
+        Positions::Artifact(Placing::placed(places)),
+    )
+}
+
+/// [`encode`] of `declarations`, or [`encode_placed`] with `places`, with each
+/// position whose place `names` names written by its key.
+///
+/// # Specification
+/// - requires: as [`encode`]; with `places`, as [`encode_placed`]; `names`
+///   holds the key of each place in the order of `declarations`.
+/// - ensures: the bytes [`encode`] writes, or [`encode_placed`] with `places`,
+///   except at each position whose place `names` names: there the segment
+///   writes twice the entry of the place's key in its table of names, and its
+///   table holds each key it names, first named first.
+/// - provides: segments whose bytes read the keys of the constants they name,
+///   and no admission position of a named constant.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+///
+/// # Cost
+/// - allocation: the artifact's bytes, growth within the declarations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sequence whose two constants are named writes each
+///   reference by its key, and the same sequence with one more declaration
+///   before them writes the segments that read them byte for byte.
+/// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+#[inline]
+#[must_use]
+#[spec(ensures: |ret| ret.as_image().as_ref().starts_with(tags::MAGIC.as_slice()))]
+pub fn encode_named(
+    arena: &TermArena,
+    declarations: &[MarkedDeclaration],
+    places: Option<&Places>,
+    names: &Names,
+) -> EncodedArtifact
+{
+    encode_sequence(
+        arena,
+        declarations,
+        Positions::Artifact(Placing {
+            places: places.cloned(),
+            names: names.clone(),
+            ..Placing::default()
+        }),
+    )
 }
 
 /// [`encode`] of `declarations`, with each admission position written as
@@ -607,6 +1052,7 @@ fn encode_sequence(
         positions,
         ..Interner::new()
     };
+    let mut scratch = EncodedArtifact::new();
     for (position, declaration) in declarations.iter().enumerate() {
         let remaining = SealExtent::from(
             declarations
@@ -614,7 +1060,14 @@ fn encode_sequence(
                 .saturating_sub(position)
                 .saturating_sub(1),
         );
-        encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
+        encode_segment(
+            &mut out,
+            &mut scratch,
+            arena,
+            &mut interner,
+            declaration,
+            remaining,
+        );
     }
     out
 }
@@ -689,10 +1142,13 @@ quenchant_shape::reason_enum! {
 /// - fails: never within [`encode`]'s domain.
 /// - panics: none within that domain.
 ///
+/// # Cost
+/// - allocation: the segments and the interner, growth within the prefix.
+///
 /// # Adequacy
 /// - hypothesis: L3 — every split of mixed and shared sequences, resumed after
-///   its prefix, writes the whole encoding's bytes; a prefix with an open seal
-///   is refused.
+///   its prefix, writes the whole encoding's bytes, bare or under names; a
+///   prefix with an open seal is refused.
 /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
 /// - witness: `encode::tests::a_prefix_with_an_open_seal_is_not_encoded_776`
 #[inline]
@@ -707,6 +1163,7 @@ quenchant_shape::reason_enum! {
 pub fn encode_prefix(
     arena: &TermArena,
     declarations: &[MarkedDeclaration],
+    names: &Names,
 ) -> Maybe<EncodedPrefix, encoded_prefix::Absent>
 {
     if declarations.iter().any(|marked| {
@@ -721,11 +1178,19 @@ pub fn encode_prefix(
         return Maybe::Absent(encoded_prefix::Absent::OpenSeal);
     }
     let mut segments = EncodedArtifact::new();
-    let mut interner = Interner::new();
+    let mut interner = Interner {
+        positions: Positions::Artifact(Placing {
+            names: names.clone(),
+            ..Placing::default()
+        }),
+        ..Interner::new()
+    };
+    let mut scratch = EncodedArtifact::new();
     for declaration in declarations {
         // No seal is open, so no segment reads how many declarations follow.
-        encode_declaration(
+        encode_segment(
             &mut segments,
+            &mut scratch,
             arena,
             &mut interner,
             declaration,
@@ -746,18 +1211,22 @@ pub fn encode_prefix(
 ///
 /// # Specification
 /// - requires: `prefix` was encoded by [`encode_prefix`] over an arena whose
-///   nodes `arena` holds at the same ids, and `after` follows the declarations
-///   it encoded; the sequence is in [`encode`]'s domain.
-/// - ensures: [`encode`]'s bytes for the whole sequence: its header, then
-///   `prefix`'s segments, then `after`'s.
+///   nodes `arena` holds at the same ids, and under `names` for its places, and
+///   `after` follows the declarations it encoded; the sequence is in
+///   [`encode`]'s domain.
+/// - ensures: [`encode_named`]'s bytes under `names` for the whole sequence:
+///   its header, then `prefix`'s segments, then `after`'s.
 /// - provides: an encoding whose cost is `after`'s, and a copy of `prefix`'s
 ///   bytes.
 /// - fails: never within [`encode`]'s domain.
 /// - panics: none within that domain.
 ///
+/// # Cost
+/// - allocation: the artifact's bytes, growth within the declarations.
+///
 /// # Adequacy
 /// - hypothesis: L3 — every split of mixed and shared sequences, resumed after
-///   its prefix, writes the whole encoding's bytes.
+///   its prefix, writes the whole encoding's bytes, bare or under names.
 /// - witness: `encode::tests::an_encoding_resumed_after_its_prefix_writes_the_whole_encoding_776`
 #[inline]
 #[must_use]
@@ -767,6 +1236,7 @@ pub fn encode_after(
     prefix: &EncodedPrefix,
     arena: &TermArena,
     after: &[MarkedDeclaration],
+    names: &Names,
 ) -> EncodedArtifact
 {
     let mut out = EncodedArtifact::new();
@@ -789,11 +1259,62 @@ pub fn encode_after(
     )));
     out.put_image(prefix.segments.as_image());
     let mut interner = Interner::after(Arc::clone(&prefix.assigned));
+    interner.positions = Positions::Artifact(Placing {
+        names: names.clone(),
+        ..Placing::default()
+    });
+    let mut scratch = EncodedArtifact::new();
     for (position, declaration) in after.iter().enumerate() {
         let remaining = SealExtent::from(after.len().saturating_sub(position).saturating_sub(1));
-        encode_declaration(&mut out, arena, &mut interner, declaration, remaining);
+        encode_segment(
+            &mut out,
+            &mut scratch,
+            arena,
+            &mut interner,
+            declaration,
+            remaining,
+        );
     }
     out
+}
+
+/// Write `declaration`'s segment to `out`: the table of the names it reads,
+/// then the declaration as [`encode_declaration`] writes it, by way of
+/// `scratch`.
+///
+/// # Specification
+/// - requires: as [`encode_declaration`].
+/// - ensures: `out` gains the count of the keys the declaration names, each key
+///   first named first, then the declaration's bytes; `scratch` holds those
+///   bytes.
+/// - provides: the table a decoder reads before any position of the segment.
+/// - fails: never within [`encode`]'s domain.
+/// - panics: none within that domain.
+/// - executable: none — the bytes are [`encode_declaration`]'s, which a clause
+///   would restate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`encode_named`].
+/// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+#[inline]
+fn encode_segment(
+    out: &mut EncodedArtifact,
+    scratch: &mut EncodedArtifact,
+    arena: &TermArena,
+    interner: &mut Interner,
+    declaration: &MarkedDeclaration,
+    remaining: SealExtent,
+)
+{
+    scratch.clear();
+    interner.positions.open_segment();
+    encode_declaration(scratch, arena, interner, declaration, remaining);
+    let table = interner.positions.table();
+    out.put_uvarint(WireU64::from(WireUsize::from(table.len())));
+    for key in table {
+        out.put_image(ArtifactImage::from(key.as_ref()));
+    }
+    out.put_image(scratch.as_image());
 }
 
 /// One declaration's segment as a verdict key reads it.
@@ -897,7 +1418,7 @@ pub fn keyed_segment(
     );
     let named = match interner.positions {
         Positions::Ordinal(ordinals) => ordinals.named,
-        Positions::Raw | Positions::Placed(_) => Vec::new(),
+        Positions::Artifact(_) => Vec::new(),
     };
     Maybe::Present(KeyedSegment { image, named })
 }
@@ -1052,6 +1573,9 @@ fn encode_minted_atom_table(
 ///   literal segment fixtures observe field order and slot framing.
 /// - fails: never.
 /// - panics: none within the acyclic domain.
+///
+/// # Cost
+/// - allocation: the segment's entries, growth within the declaration.
 ///
 /// # Adequacy
 /// - hypothesis: L3 compares a mixed abstract-type, definition and axiom
@@ -1311,17 +1835,12 @@ fn encode_declaration(
         // type rather than believing them.
         encode_stage_signature(out, declaration.stages());
         out.put_uvarint(WireU64::from(0_u64));
-        if matches!(interner.positions, Positions::Raw) {
-            encode_sealing_provenance(out, declaration.provenance());
-        }
-        else {
-            let renamed: Vec<ConstantIndex> = declaration
-                .provenance()
-                .iter()
-                .map(|&atom| interner.positions.rename(atom))
-                .collect();
-            encode_sealing_provenance(out, &renamed);
-        }
+        let renamed: Vec<ConstantIndex> = declaration
+            .provenance()
+            .iter()
+            .map(|&atom| interner.positions.rename(atom))
+            .collect();
+        encode_sealing_provenance(out, &renamed);
         out.put_uvarint(WireU64::from(0_u64));
     }
     // The relating block closes a definition's segment: a pair count of at
@@ -1795,6 +2314,9 @@ fn encode_sealing_provenance(
 ///   Tree-map lookups and byte-key comparisons add logarithmic and
 ///   payload-dependent costs; shared subgraphs are not expanded.
 ///
+/// # Cost
+/// - allocation: the entries and the memos, growth within the root's nodes.
+///
 /// # Adequacy
 /// - hypothesis: L3 observes exact segment entries, assigned indices and memo
 ///   state across repeated ids, distinct equal nodes, a new parent, a second
@@ -1867,18 +2389,31 @@ fn intern(
                 .iter()
                 .map(|&child| interner.node(child).unwrap_or_default()),
         );
+        interner.positions.open_entry(EntryNaming::Local);
         let encoded = encode_entry(arena, node, &child_globals, &mut interner.positions);
-        let deduplicated = interner.content(&encoded);
-        let global = if let Some(global) = deduplicated {
+        let content = EntryContent {
+            bytes: encoded,
+            names: Box::from(interner.positions.entry_names()),
+        };
+        let global = if let Some(global) = interner.content(&content) {
             global
         }
         else {
+            // An entry that names a key writes it by its segment's table.
+            let written = if content.names.is_empty() {
+                content.bytes.clone()
+            }
+            else {
+                interner.positions.open_entry(EntryNaming::Table);
+                encode_entry(arena, node, &child_globals, &mut interner.positions)
+            };
             let assigned = interner.next;
             interner.next = interner.next.next();
-            let _prior = interner.by_content.insert(encoded.clone(), assigned);
-            segment.push(encoded);
+            segment.push(written);
+            let _prior = interner.by_content.insert(content, assigned);
             assigned
         };
+        interner.positions.open_entry(EntryNaming::Table);
         interner.assign(node, global);
     }
     interner.node(root).unwrap_or_default()
@@ -2940,7 +3475,7 @@ mod tests
                     &arena,
                     node,
                     &[],
-                    &mut super::Positions::Raw
+                    &mut super::Positions::default()
                 ))
                 .is_err()
             );
@@ -3183,10 +3718,11 @@ mod tests
                 &[],
                 &[0x09, 0x80, 0x80, 1],
             ),
+            // A position is written bare, as one more than twice itself.
             (
                 AnyNode::Value(arena.value_constant(ConstantIndex::from(129_usize))),
                 &[],
-                &[0x0a, 0x81, 1],
+                &[0x0a, 0x83, 2],
             ),
             (AnyNode::Value(arena.value_unit()), &[], &[0x0d, 0]),
             (
@@ -3286,7 +3822,7 @@ mod tests
             (
                 AnyNode::ValueType(arena.value_type_abstract(ConstantIndex::from(129_usize))),
                 &[],
-                &[0x17, 0x81, 1],
+                &[0x17, 0x83, 2],
             ),
             (
                 AnyNode::CompType(arena.comp_type_pi(t0, k1)),
@@ -3396,7 +3932,7 @@ mod tests
         ];
         for &(node, children, expected) in cases {
             assert_eq!(
-                super::encode_entry(&arena, node, children, &mut super::Positions::Raw)
+                super::encode_entry(&arena, node, children, &mut super::Positions::default())
                     .0
                     .as_image()
                     .as_ref(),
@@ -3575,11 +4111,12 @@ mod tests
         // The atom is open, so it is written closed after the two declarations
         // that follow it; its segment carries the universe and the integer
         // representation as entries, then its kind root, its representation
-        // root and that extent.
+        // root and that extent. Each segment opens with an empty table of
+        // names, and the definition reads the atom bare, as 2 * 0 + 1.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 1, 0, 3, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0, 1,
-            2, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 0, 0x1c, 2, 0, 3, 0, 0, 0, 0, 0, 1,
-            0, 0, 0, 0, 2,
+            b'G', b'K', b'X', b'1', 10, 0, 1, 0, 3, 0, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00, 0x00, 0,
+            1, 2, 0, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 1, 0x1c, 2, 0, 3, 0, 0, 0, 0,
+            0, 0, 1, 0, 0, 0, 0, 2,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -3628,8 +4165,8 @@ mod tests
         // and the four empty slots; then one pair, its two roots and its two
         // decision words.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1, 0,
-            1, 0, 0, 0, 0, 1, 1, 2, 2, 0x0B, 0x0E,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D, 1, 1,
+            0, 1, 0, 0, 0, 0, 1, 1, 2, 2, 0x0B, 0x0E,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -3654,8 +4191,8 @@ mod tests
         // A relating kind closing with no pair decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
-            0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            0, 0, 0,
         ];
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(empty.as_slice())),
@@ -3676,7 +4213,7 @@ mod tests
         );
         // The plain kind over the same bytes leaves the pair unread.
         let mut plain = expected;
-        if let Some(kind) = plain.get_mut(9) {
+        if let Some(kind) = plain.get_mut(10) {
             *kind = 0;
         }
         assert_eq!(
@@ -3701,10 +4238,11 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, definition)];
         // The lawful kind, then the plain definition's fields: the unit type
         // and the unit as entries, the declared and body roots and the four
-        // empty slots; then no related pair, and the two laws in written order.
+        // empty slots; then no related pair, and the two laws in written order,
+        // each bare: 2 * 5 + 1 and 2 * 2 + 1.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
-            0, 0, 2, 5, 2,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            0, 0, 0, 2, 11, 5,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -3721,8 +4259,8 @@ mod tests
         // A lawful kind closing with no law decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0, 0,
-            0, 0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
+            0, 0, 0, 0,
         ];
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(empty.as_slice())),
@@ -3733,7 +4271,7 @@ mod tests
         // The relating kind over the same bytes reads the pair count and leaves
         // the laws unread.
         let mut relating = expected;
-        if let Some(kind) = relating.get_mut(9) {
+        if let Some(kind) = relating.get_mut(10) {
             *kind = 7;
         }
         assert_eq!(
@@ -3783,8 +4321,8 @@ mod tests
         // slot: two binders, the second below the first, and two marks, each
         // its binder, its depth and its path; then the three other slots.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 2, 0, 1,
-            2, 0, 1, 2, 0, 1, 1, 0, 1, 1, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 2, 0,
+            1, 2, 0, 1, 2, 0, 1, 1, 0, 1, 1, 0, 0, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -3800,7 +4338,7 @@ mod tests
             plain,
         )]);
         assert_eq!(
-            plain.as_image().as_ref().get(20 ..),
+            plain.as_image().as_ref().get(21 ..),
             Some(&[0_u8, 0, 0, 0][..])
         );
         // A bound naming no earlier binder, and a mark naming a binder the
@@ -3809,7 +4347,7 @@ mod tests
             site: crate::error::MalformedSite::StageSignature,
         });
         for slot in [&[1_u8, 1][..], &[1_u8, 0, 1, 1, 0, 0][..]] {
-            let mut forged = expected.get(.. 20).unwrap_or_default().to_vec();
+            let mut forged = expected.get(.. 21).unwrap_or_default().to_vec();
             forged.extend_from_slice(slot);
             forged.extend_from_slice(&[0, 0, 0]);
             assert_eq!(
@@ -3854,10 +4392,11 @@ mod tests
         // The ruled kind, then the plain definition's fields; then no related
         // pair, no law, and the one rule: its left side, an operation at 0 of
         // arity 1 and variable 0, and its right side, constructor 1 of the
-        // declaration at 3 and a results tuple of 4.
+        // declaration at 3 and a results tuple of 4. Each position is bare:
+        // 2 * 0 + 1 and 2 * 3 + 1.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
-            0, 0, 0, 0, 1, 2, 2, 0, 1, 1, 0, 2, 0, 3, 1, 3, 4,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 1, 2, 2, 1, 1, 1, 0, 2, 0, 7, 1, 3, 4,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(
@@ -3883,8 +4422,8 @@ mod tests
         // A ruled kind closing with no rule decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0, 0,
-            0, 0, 0, 0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(empty.as_slice())),
@@ -3895,7 +4434,7 @@ mod tests
         );
         // A node tag outside the alphabet refuses at its own site.
         let mut unknown = expected;
-        if let Some(tag) = unknown.get_mut(28) {
+        if let Some(tag) = unknown.get_mut(29) {
             *tag = 9;
         }
         assert!(
@@ -3978,7 +4517,7 @@ mod tests
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
         assert_eq!(
-            image.as_ref().get(9).copied(),
+            image.as_ref().get(10).copied(),
             Some(u8::from(crate::KIND_DEF_COVERED)),
             "the covered kind follows the header and the mark"
         );
@@ -4008,7 +4547,7 @@ mod tests
         // The cover block ends the segment, so the first step's tag stands
         // where the derivation's own bytes begin.
         let mut alone = super::EncodedArtifact::new();
-        super::encode_cover(&mut alone, &cover, &mut super::Positions::Raw);
+        super::encode_cover(&mut alone, &cover, &mut super::Positions::default());
         let first_step = image
             .as_ref()
             .len()
@@ -4057,9 +4596,9 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, codata)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
-        // The kind follows the header, the empty atom table and the admission
-        // mark.
-        let kind_at = 9;
+        // The kind follows the header, the empty atom table, the segment's
+        // empty table of names and the admission mark.
+        let kind_at = 10;
         assert_eq!(
             image.as_ref().get(kind_at).copied(),
             Some(u8::from(crate::tags::KIND_CODATA))
@@ -4136,7 +4675,7 @@ mod tests
                 let bytes = super::encode(&arena, &declarations);
                 let image = bytes.as_image().as_ref().to_vec();
                 assert_eq!(
-                    image.get(9).copied(),
+                    image.get(10).copied(),
                     Some(u8::from(crate::tags::KIND_LITERAL_IDENTITY))
                 );
                 let (base_at, polarity_at) = (image.len() - 2, image.len() - 1);
@@ -4242,8 +4781,8 @@ mod tests
         // parameter, three constructors of arity zero, one and one; then two
         // rules, each two sides of a node count and tagged nodes.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
-            0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0, 0, 0,
+            3, 0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -4263,8 +4802,8 @@ mod tests
         // A presented kind closing with no rule decodes to a free type, whose
         // canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
-            0, 1, 1, 1, 1, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0, 0, 0,
+            3, 0, 1, 1, 1, 1, 0,
         ];
         assert_eq!(
             crate::decode::decode(ArtifactImage::from(empty.as_slice())),
@@ -4275,7 +4814,7 @@ mod tests
         // A node tag outside the constructor and variable alphabet is refused
         // at the rule-node site.
         let mut unknown = expected;
-        if let Some(node) = unknown.get_mut(32) {
+        if let Some(node) = unknown.get_mut(33) {
             *node = 2;
         }
         assert_eq!(
@@ -4287,7 +4826,7 @@ mod tests
         );
         // The plain kind over the same bytes leaves the rules unread.
         let mut plain = expected;
-        if let Some(kind) = plain.get_mut(9) {
+        if let Some(kind) = plain.get_mut(10) {
             *kind = 6;
         }
         assert_eq!(
@@ -4333,9 +4872,9 @@ mod tests
         // circle writes them; then the sort's position, one cell, and its two
         // endpoints, each the one constructor `base`.
         let expected = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
-            0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0, 0, 1, 1,
-            0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0, 0,
+            0, 3, 0, 1, 1, 1, 1, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0, 1,
+            1, 1, 0, 0, 1, 0, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(bytes.as_image().as_ref(), expected);
@@ -4358,8 +4897,8 @@ mod tests
         // Words whose rules were dropped still decode, to be refused by the
         // kernel against the mint, and keep their canonical bytes.
         let dropped = [
-            b'G', b'K', b'X', b'1', 9, 0, 0, 1, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 0, 0, 0, 0, 3,
-            0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0,
+            b'G', b'K', b'X', b'1', 10, 0, 0, 1, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0, 0,
+            0, 3, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 0,
         ];
         let decoded = crate::decode::decode(ArtifactImage::from(dropped.as_slice()))
             .expect("a rule count of none decodes under the words kind");
@@ -4400,7 +4939,7 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, data)];
         let bytes = super::encode(&arena, &declarations);
         assert_eq!(
-            bytes.as_image().as_ref().get(9),
+            bytes.as_image().as_ref().get(10),
             Some(&u8::from(super::tags::KIND_DATA_WORDS_HIGHER))
         );
         let decoded = crate::decode::decode(bytes.as_image())
@@ -4442,9 +4981,9 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, atom)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
-        // The kind follows the header, the one-entry atom table and the
-        // admission mark.
-        let kind_at = 10;
+        // The kind follows the header, the one-entry atom table, the segment's
+        // empty table of names and the admission mark.
+        let kind_at = 11;
         assert_eq!(
             image.as_ref().get(kind_at).copied(),
             Some(u8::from(crate::tags::KIND_ABSTRACT_INTERFACED))
@@ -4514,7 +5053,7 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, atom)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
-        let kind_at = 10;
+        let kind_at = 11;
         assert_eq!(
             image.as_ref().get(kind_at).copied(),
             Some(u8::from(crate::tags::KIND_ABSTRACT_LAWFUL))
@@ -4628,7 +5167,7 @@ mod tests
             // one leaves out as a count of none, and the segment closes with
             // the role's tag.
             let mut expected = unmarked;
-            if let Some(byte) = expected.get_mut(9) {
+            if let Some(byte) = expected.get_mut(10) {
                 *byte = u8::from(kind);
             }
             expected.extend_from_slice(counts);
@@ -4695,7 +5234,7 @@ mod tests
         // The coinductive datatype writes its own kind where the inductive one
         // writes its kind, and every other byte is the same.
         let mut expected = least.clone();
-        if let Some(byte) = expected.get_mut(9) {
+        if let Some(byte) = expected.get_mut(10) {
             *byte = u8::from(crate::tags::KIND_DATA_COINDUCTIVE);
         }
         assert_eq!(greatest, expected, "the mark is the kind byte alone");
@@ -4745,7 +5284,7 @@ mod tests
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
         assert_eq!(
-            image.as_ref().get(9).copied(),
+            image.as_ref().get(10).copied(),
             Some(u8::from(crate::tags::KIND_DATA_INDEXED))
         );
         let decoded = crate::decode::decode(ArtifactImage::from(image.as_ref()))
@@ -4776,7 +5315,7 @@ mod tests
         );
         // The plain kind over the same bytes leaves the indices unread.
         let mut plain = image.as_ref().to_vec();
-        if let Some(kind) = plain.get_mut(9) {
+        if let Some(kind) = plain.get_mut(10) {
             *kind = u8::from(crate::tags::KIND_DATA);
         }
         assert_eq!(
@@ -4897,12 +5436,26 @@ mod tests
             MarkedDeclaration::new(AdmissionMark::UncheckedBypass, definition),
             MarkedDeclaration::new(AdmissionMark::Checked, axiom),
         ];
-        let prefixes: Vec<_> = (0 ..= leading.len())
-            .map(|split| {
-                match super::encode_prefix(&arena, leading.get(.. split).expect("a split")) {
-                    super::Maybe::Present(prefix) => prefix,
-                    super::Maybe::Absent(absent) => panic!("no seal is open: {absent:?}"),
-                }
+        let named = super::Names::new(
+            (1_u8 ..= 6)
+                .map(|byte| Some(super::ConstantKey::from([byte; super::CONSTANT_KEY_LEN]))),
+        );
+        let namings = [super::Names::default(), named];
+        let prefixes: Vec<Vec<_>> = namings
+            .iter()
+            .map(|names| {
+                (0 ..= leading.len())
+                    .map(|split| {
+                        match super::encode_prefix(
+                            &arena,
+                            leading.get(.. split).expect("a split"),
+                            names,
+                        ) {
+                            super::Maybe::Present(prefix) => prefix,
+                            super::Maybe::Absent(absent) => panic!("no seal is open: {absent:?}"),
+                        }
+                    })
+                    .collect()
             })
             .collect();
         // Built after the prefixes were encoded, as an editor's admission
@@ -4932,14 +5485,16 @@ mod tests
                 MarkedDeclaration::new(AdmissionMark::Checked, open),
             ])
             .collect();
-        let expected = super::encode(&arena, &whole);
-        for prefix in &prefixes {
-            let end = usize::from(prefix.end());
-            assert_eq!(
-                super::encode_after(prefix, &arena, whole.get(end ..).expect("a split")),
-                expected,
-                "resumed after {end} declarations"
-            );
+        for (names, prefixes) in namings.iter().zip(&prefixes) {
+            let expected = super::encode_named(&arena, &whole, None, names);
+            for prefix in prefixes {
+                let end = usize::from(prefix.end());
+                assert_eq!(
+                    super::encode_after(prefix, &arena, whole.get(end ..).expect("a split"), names),
+                    expected,
+                    "resumed after {end} declarations"
+                );
+            }
         }
     }
 
@@ -4960,7 +5515,7 @@ mod tests
         );
         let leading = [MarkedDeclaration::new(AdmissionMark::Checked, open)];
         assert!(matches!(
-            super::encode_prefix(&arena, &leading),
+            super::encode_prefix(&arena, &leading, &super::Names::default()),
             super::Maybe::Absent(super::encoded_prefix::Absent::OpenSeal)
         ));
     }
@@ -5099,6 +5654,147 @@ mod tests
             super::encode(&kept, &ranked).as_image().as_ref(),
             expected.as_image().as_ref(),
             "the kept sequence written by position is not the fresh one"
+        );
+    }
+
+    /// #7340: a named encoding writes each named place by its key in its
+    /// segment's table. `c` reads `a` and `b`; a second sequence admits `z`
+    /// before them. Named, the two write `c`'s segment byte for byte, and each
+    /// decodes under its names to the sequence it encoded. Bare, `c`'s
+    /// segments differ, so the test can fail. Names that miss a key refuse the
+    /// bytes, and a key two places hold names the first of them alone. Names
+    /// built whole name every place when each has a key, and none otherwise.
+    #[test]
+    fn a_named_encoding_writes_each_named_place_by_its_key_7340()
+    {
+        let named = |declaration: Declaration, name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.named(StructuredName::from(alloc::vec![segment])),
+            )
+        };
+        let unit = |arena: &mut TermArena, name: &str| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let declared = builder.arena().value_type_unit();
+            let body = builder.arena().value_unit();
+            named(
+                builder.def(LevelSignature::monomorphic(), declared, body),
+                name,
+            )
+        };
+        let pair = |arena: &mut TermArena, first: usize, second: usize| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let unit = builder.arena().value_type_unit();
+            let declared = builder.arena().value_type_product(&[unit, unit]);
+            let left = builder.arena().value_constant(ConstantIndex::from(first));
+            let right = builder.arena().value_constant(ConstantIndex::from(second));
+            let body = builder.arena().value_tuple(&[left, right]);
+            named(
+                builder.def(LevelSignature::monomorphic(), declared, body),
+                "c",
+            )
+        };
+        let key = |byte: u8| super::ConstantKey::from([byte; super::CONSTANT_KEY_LEN]);
+        let mut arena = TermArena::new();
+        let short = [
+            unit(&mut arena, "a"),
+            unit(&mut arena, "b"),
+            pair(&mut arena, 0, 1),
+        ];
+        let long = [
+            unit(&mut arena, "z"),
+            unit(&mut arena, "a"),
+            unit(&mut arena, "b"),
+            pair(&mut arena, 1, 2),
+        ];
+        let short_names = super::Names::new([Some(key(1)), Some(key(2)), Some(key(3))]);
+        let long_names =
+            super::Names::new([Some(key(9)), Some(key(1)), Some(key(2)), Some(key(3))]);
+        let last = |image: &super::EncodedArtifact, names: &super::Names| {
+            let decoded = crate::decode_named(image.as_image(), names).expect("the bytes decode");
+            let span = decoded
+                .segments()
+                .declaration_segments()
+                .last()
+                .expect("a last segment");
+            let bytes = image
+                .as_image()
+                .as_ref()
+                .get(usize::from(span.start) .. usize::from(span.end))
+                .expect("the segment's bytes")
+                .to_vec();
+            (decoded, bytes)
+        };
+        let short_named = super::encode_named(&arena, &short, None, &short_names);
+        let long_named = super::encode_named(&arena, &long, None, &long_names);
+        let (short_decoded, short_last) = last(&short_named, &short_names);
+        let (long_decoded, long_last) = last(&long_named, &long_names);
+        assert_eq!(
+            short_last, long_last,
+            "a declaration before the two it reads leaves its segment as it was"
+        );
+        assert_eq!(
+            super::encode_named(
+                short_decoded.arena(),
+                short_decoded.declarations(),
+                None,
+                &short_names
+            ),
+            short_named,
+            "the decoded sequence re-encodes to its bytes"
+        );
+        assert_eq!(
+            long_decoded.declarations().len(),
+            4,
+            "the longer sequence decodes whole"
+        );
+        let short_bare = super::encode(&arena, &short);
+        let long_bare = super::encode(&arena, &long);
+        let (_, short_bare_last) = last(&short_bare, &super::Names::default());
+        let (_, long_bare_last) = last(&long_bare, &super::Names::default());
+        assert_ne!(
+            short_bare_last, long_bare_last,
+            "by position, the insertion moves the segment's bytes"
+        );
+        assert_eq!(
+            crate::decode_named(
+                short_named.as_image(),
+                &super::Names::new([Some(key(1)), Some(key(4)), Some(key(3))])
+            )
+            .err(),
+            Some(crate::DecodeError::Malformed {
+                site: crate::MalformedSite::UnplacedName,
+            }),
+            "names that miss a key the segment holds refuse the bytes"
+        );
+        let shared = super::Names::new([Some(key(1)), Some(key(1)), Some(key(3))]);
+        assert_eq!(
+            (
+                shared.key(ConstantIndex::from(0_usize)),
+                shared.key(ConstantIndex::from(1_usize)),
+                shared.place(&key(1))
+            ),
+            (Some(key(1)), None, Some(ConstantIndex::from(0_usize))),
+            "a key two places hold names the first of them alone"
+        );
+        assert_eq!(
+            super::encode_named(&arena, &short, None, &shared),
+            super::encode_named(
+                &arena,
+                &short,
+                None,
+                &super::Names::new([Some(key(1)), None, Some(key(3))])
+            ),
+            "a later place whose key an earlier place holds is written bare"
+        );
+        assert_eq!(
+            (
+                super::Names::whole([Some(key(1)), Some(key(2)), Some(key(3))]),
+                super::Names::whole([Some(key(1)), None, Some(key(3))])
+            ),
+            (short_names, super::Names::default()),
+            "whole names name each place, or none when one place has no key"
         );
     }
 }

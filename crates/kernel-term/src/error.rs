@@ -357,6 +357,11 @@ pub enum MalformedSite
     NonCanonical,
     /// Bytes remained after a complete artifact was decoded.
     TrailingBytes,
+    /// A position named an entry past its segment's table of names.
+    NameEntry,
+    /// A segment's table of names held a key that names no one place of the
+    /// names the decoder was given.
+    UnplacedName,
 }
 
 impl fmt::Display for MalformedSite
@@ -418,6 +423,8 @@ impl fmt::Display for MalformedSite
             },
             Self::NonCanonical => "the bytes were not the canonical encoding",
             Self::TrailingBytes => "bytes remained after a complete artifact",
+            Self::NameEntry => "a position named an entry past its segment's table of names",
+            Self::UnplacedName => "a segment's table of names held a key that names no place",
         })
     }
 }

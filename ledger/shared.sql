@@ -50,6 +50,8 @@ INSERT INTO shared VALUES('crates/kernel-term/src/chunked.rs','Chunk.entries','c
 INSERT INTO shared VALUES('crates/kernel-term/src/chunked.rs','ChunkedMap.chunks','copied whole','#7405','A write beside a clone copies the list of chunks whole, one entry for each chunk of the map.');
 INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','EncodedPrefix.assigned','read only',NULL,'The frozen assignments of an encoded prefix, which each encoding that resumes it reads and none writes.');
 INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Interner.base','layered',NULL,'The frozen assignments that an interner continues, below the maps of what it assigns itself.');
+INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Names.keys','read only',NULL,'The key of each place of an artifact, which its export writes once and each read of it shares.');
+INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Names.places','read only',NULL,'The first place of each key, which the names write once and each read of them shares.');
 INSERT INTO shared VALUES('crates/kernel-term/src/encode.rs','Places.0','read only',NULL,'The admission place of each position, which its encoding writes once.');
 INSERT INTO shared VALUES('crates/kernel-term/src/operation_rules.rs','OperationRules.0','read only',NULL,'The rules of an operation, which its declaration writes once.');
 INSERT INTO shared VALUES('crates/kernel-term/src/presented.rs','Presentation.cells','read only',NULL,'The free cells of a presentation, which its declaration writes once.');

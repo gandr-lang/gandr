@@ -440,7 +440,11 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// admits the formers of several results: [`NODE_CT_RETURNS`],
 /// [`NODE_C_RETURN_ALL`] and [`NODE_C_BIND_ALL`]. Version nine gives
 /// [`NODE_V_CONSTRUCTOR`] an inline family before its ordinal: the position of
-/// the data family that declares the constructor.
+/// the data family that declares the constructor. Version ten opens each
+/// declaration's segment with its table of names: a count, then each key of a
+/// constant the segment names, first named first, in 32 bytes. Each admission
+/// position that a segment writes is twice the entry of its key in that table,
+/// or one more than twice the position for a constant the table does not name.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -463,7 +467,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(9);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(10);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);

@@ -178,10 +178,11 @@ fn data_declarations_and_refusals_agree_with_kernel()
     let family = gandr_kernel_term::StructuredName::from(vec![
         gandr_kernel_term::NameSegment::from_text(String::from("Unit1")).unwrap(),
     ]);
-    let artifact = gandr_kernel_term::decode(
+    let artifact = gandr_kernel_term::decode_named(
         crossed
             .export(BTreeMap::from([(first, family.clone())]))
             .as_image(),
+        &crossed.export_names(),
     )
     .unwrap();
     assert_eq!(
@@ -4834,9 +4835,11 @@ fn an_indexed_family_stands_at_its_indices_in_both_checkers()
     let family = gandr_kernel_term::StructuredName::from(vec![
         gandr_kernel_term::NameSegment::from_text(String::from("Count")).unwrap(),
     ]);
-    let artifact =
-        gandr_kernel_term::decode(crossed.export(BTreeMap::from([(count, family)])).as_image())
-            .unwrap();
+    let artifact = gandr_kernel_term::decode_named(
+        crossed.export(BTreeMap::from([(count, family)])).as_image(),
+        &crossed.export_names(),
+    )
+    .unwrap();
     let gandr_kernel_term::DeclarationContent::Data {
         ref indices,
         ref results,
