@@ -11,7 +11,6 @@ publish.workspace = true
 # The runtime stands on the Linux kernel's ring, so the crate's dependencies
 # are Linux's alone; on another system the crate compiles empty.
 [target.'cfg(target_os = "linux")'.dependencies]
-anyhow = { workspace = true }
 gandr-runtime-uring = { workspace = true }
 libc = { workspace = true }
 pin-project-lite = { workspace = true }

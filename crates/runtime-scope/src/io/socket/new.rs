@@ -8,6 +8,7 @@ use ::socket2::Type;
 use ::std::os::fd::FromRawFd as _;
 
 use crate::completion::Completion;
+use crate::error::RuntimeError;
 use crate::io::socket::Socket;
 use crate::scope::Scope;
 
@@ -42,7 +43,7 @@ impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
 }
 impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env>
 {
-    type Output = ::anyhow::Result<Socket<'tsk, 'env>>;
+    type Output = Result<Socket<'tsk, 'env>, RuntimeError>;
 
     fn poll(
         mut self: Pin<&mut Self>,
@@ -53,9 +54,7 @@ impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env>
         let cqe = ready!(this.cqe.poll(cx))?;
 
         if cqe.result().is_negative() {
-            let code = cqe.result().abs();
-            let err = ::std::io::Error::from_raw_os_error(code);
-            return Poll::Ready(Err(err.into()));
+            return Poll::Ready(Err(RuntimeError::completion(cqe.result())));
         }
 
         let fd = cqe.result();

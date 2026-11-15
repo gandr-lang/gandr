@@ -17,12 +17,14 @@ extern crate alloc;
 
 mod buf;
 mod completion;
+mod error;
 pub mod io;
 pub mod net;
 mod runtime;
 mod scope;
 mod submission;
 
+pub use crate::error::RuntimeError;
 pub use crate::runtime::Runtime;
 
 #[cfg(test)]

@@ -1,9 +1,9 @@
-use ::anyhow::anyhow;
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 
+use crate::error::RuntimeError;
 use crate::submission::Table;
 
 /// The kernel's completion of one operation, copied out of the ring.
@@ -90,7 +90,7 @@ impl Drop for Completion<'_>
 
 impl Future for Completion<'_>
 {
-    type Output = ::anyhow::Result<Cqe>;
+    type Output = Result<Cqe, RuntimeError>;
 
     fn poll(
         self: Pin<&mut Self>,
@@ -99,8 +99,8 @@ impl Future for Completion<'_>
     {
         let this = self.get_mut();
         match this.state {
-            State::Full => Poll::Ready(Err(anyhow!("submission queue full"))),
-            State::Read => Poll::Ready(Err(anyhow!("completion polled after its result"))),
+            State::Full => Poll::Ready(Err(RuntimeError::Full)),
+            State::Read => Poll::Ready(Err(RuntimeError::Read)),
             State::Waiting(key) => {
                 let Some(cqe) = this.table.read(key)
                 else {

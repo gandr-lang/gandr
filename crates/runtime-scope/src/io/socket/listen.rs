@@ -5,6 +5,7 @@ use ::core::task::ready;
 use ::gandr_runtime_uring::SlotDesc;
 
 use crate::completion::Completion;
+use crate::error::RuntimeError;
 use crate::scope::Scope;
 
 ::pin_project_lite::pin_project! {
@@ -36,7 +37,7 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
 }
 impl Future for OpSocketListen<'_, '_, '_>
 {
-    type Output = ::anyhow::Result<()>;
+    type Output = Result<(), RuntimeError>;
 
     fn poll(
         mut self: Pin<&mut Self>,
@@ -47,9 +48,7 @@ impl Future for OpSocketListen<'_, '_, '_>
         let cqe = ready!(this.rsp.poll(cx))?;
 
         if cqe.result().is_negative() {
-            let code = cqe.result().abs();
-            let err = ::std::io::Error::from_raw_os_error(code);
-            return Poll::Ready(Err(err.into()));
+            return Poll::Ready(Err(RuntimeError::completion(cqe.result())));
         }
 
         Poll::Ready(Ok(()))

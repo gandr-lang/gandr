@@ -101,7 +101,7 @@ pub(crate) mod test
         fn new()
         {
             crate::test::harness::runtime::new()
-                .run(async |scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     drop(socket);
@@ -115,7 +115,7 @@ pub(crate) mod test
         fn bind()
         {
             crate::test::harness::runtime::new()
-                .run(async |scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
                     let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
@@ -134,7 +134,7 @@ pub(crate) mod test
         fn listen()
         {
             crate::test::harness::runtime::new()
-                .run(async |scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
                     let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
@@ -166,7 +166,7 @@ pub(crate) mod test
                 }
             });
             crate::test::harness::runtime::new()
-                .run(async |scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> Result<(), crate::RuntimeError> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     let addr = ::socket2::SockAddr::unix(&path)?;

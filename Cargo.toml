@@ -245,16 +245,6 @@ rev = "666f60b58e1996e116f96cee889aba57cd189160"
 default-features = false
 features = ["anodized"]
 
-# A dynamic error for the scoped runtime, as the owner's crate has it. A
-# mend of #7652 puts the runtime's typed errors in its place.
-# features:
-# - none: the runtime uses the default-off surface.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.anyhow]
-version = "1.0.99"
-default-features = false
-
 # The snapshot of a store's roots that its readers load with no lock: the
 # register, the one writer of the roots, swaps in a new snapshot at each
 # drain, and a reader keeps the one it loaded. The choice, its alternatives

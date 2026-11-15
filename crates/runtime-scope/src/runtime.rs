@@ -1,10 +1,10 @@
-use ::anyhow::anyhow;
 use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
 use ::gandr_runtime_uring::IoUring;
 
 use crate::completion::Cqe;
+use crate::error::RuntimeError;
 use crate::scope::Scope;
 use crate::submission::Table;
 
@@ -16,12 +16,14 @@ pub struct Runtime
 
 impl Runtime
 {
-    const IO_URING_ENTRIES: u32 = 4096;
+    const IO_URING_ENTRIES: u16 = 4096;
 
     #[inline]
-    pub fn new() -> ::anyhow::Result<Self>
+    pub fn new() -> Result<Self, RuntimeError>
     {
-        let io = IoUring::builder().entries(Self::IO_URING_ENTRIES).build()?;
+        let io = IoUring::builder()
+            .entries(u32::from(Self::IO_URING_ENTRIES))
+            .build()?;
         Ok(Self { io })
     }
 
@@ -35,12 +37,12 @@ impl Runtime
     pub fn run<'env, T, F>(
         self,
         start: F,
-    ) -> ::anyhow::Result<T>
+    ) -> Result<T, RuntimeError>
     where
         F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
         let io = RefCell::new(self.io);
-        let depth = usize::try_from(Self::IO_URING_ENTRIES)?;
+        let depth = usize::from(Self::IO_URING_ENTRIES);
         let table = Table::new(depth);
 
         let scope = Scope::new(&io, &table);
@@ -75,7 +77,7 @@ impl Runtime
 pub fn reap(
     io: &RefCell<IoUring<'static>>,
     table: &Table,
-) -> ::anyhow::Result<()>
+) -> Result<(), RuntimeError>
 {
     let mut io = io.borrow_mut();
     let (mut squ, mut cqu) = io.queues();
@@ -84,9 +86,10 @@ pub fn reap(
     // Process newly completed tasks.
     for cqe in cqu.ready() {
         // Cross-reference the task against the CQE user_data.
-        let key = usize::try_from(cqe.user_data())?;
+        let data = cqe.user_data();
+        let key = usize::try_from(data).map_err(|_overflow| RuntimeError::Unknown(data))?;
         if !table.complete(key, Cqe::new(cqe.res(), cqe.flags())) {
-            return Err(anyhow!("task lookup failed: {key}"));
+            return Err(RuntimeError::Unknown(data));
         }
     }
     Ok(())
@@ -126,7 +129,7 @@ pub mod test
             crate::test::harness::runtime::new()
                 .run(async |scope| {
                     data.push(0u8);
-                    Ok::<_, ::anyhow::Error>(())
+                    Ok::<_, RuntimeError>(())
                 })
                 .unwrap()
                 .unwrap();
@@ -146,14 +149,14 @@ pub mod test
                     sqe.prep_nop();
                 }
             };
-            let depth = usize::try_from(Runtime::IO_URING_ENTRIES).unwrap();
+            let depth = usize::from(Runtime::IO_URING_ENTRIES);
             crate::test::harness::runtime::new()
                 .run(async |scope| {
                     let held = ::core::iter::repeat_with(|| scope.request(nop))
                         .take(depth)
                         .collect::<Vec<_>>();
-                    let error = scope.request(nop).await.err().unwrap();
-                    assert_eq!(error.to_string(), "submission queue full");
+                    let error = scope.request(nop).await.err();
+                    assert_eq!(error, Some(RuntimeError::Full));
                     drop(held);
                     scope.request(nop).await.unwrap();
                 })
