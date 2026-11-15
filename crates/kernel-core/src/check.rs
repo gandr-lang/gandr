@@ -9205,20 +9205,14 @@ where
     Ok(())
 }
 
-/// One run of obligations of a forked drain, with the state its check runs
-/// on: a clone of the arena, and overlays of the memo and of the session.
+/// One run of obligations of a forked drain, with the overlays of the memo
+/// and of the session its check runs through. It checks on the shell of the
+/// worker that runs it, in a clone of the drain's frozen arena there.
 ///
 /// # Specification
 /// trivial.
-struct DrainPart<'part>
+struct DrainPart
 {
-    /// The judgement of the drain, which forks no further.
-    judgement: Judgement<'part>,
-    /// Set by the first part that refuses: a part that has not started then
-    /// does not start, since the drain checks serially after.
-    refused: &'part AtomicBool,
-    /// A clone of the drain's frozen arena, which the part mints into.
-    arena: TermArena,
     /// An overlay of the drain's memo.
     memo: DefaultMemo,
     /// An overlay of the drain's session.
@@ -9229,36 +9223,75 @@ struct DrainPart<'part>
     owed: Vec<CodeObligation>,
     /// What the part checked.
     ledger: DrainLedger,
+    /// Where the part's clone of the drain's arena stood when the part
+    /// ended, once it ran.
+    clone: Option<CloneMark>,
     /// The part's answer, once it ran.
     answer: Option<Result<(), KernelError>>,
 }
 
-impl crate::fork::Job for DrainPart<'_>
+/// What each part of one forked drain reads of its drain.
+#[derive(Clone, Copy)]
+struct DrainFrame<'frame>
 {
-    /// Drain the part's run of obligations, and every obligation they owe.
+    /// The judgement of the drain, which forks no further.
+    judgement: Judgement<'frame>,
+    /// The fork, which lends each part its worker's shell.
+    fork: &'frame dyn crate::fork::ObligationFork,
+    /// Set by the first part that refuses: a part that has not started then
+    /// does not start, since the drain checks serially after.
+    refused: &'frame AtomicBool,
+    /// The drain's frozen arena, which each part clones.
+    arena: &'frame TermArena,
+}
+
+/// A drain part as the fork runs it, beside the drain it reads.
+struct DrainRun<'run>
+{
+    /// The part.
+    part: &'run mut DrainPart,
+    /// The drain.
+    frame: DrainFrame<'run>,
+}
+
+impl crate::fork::Job for DrainRun<'_>
+{
+    /// Drain the part's run of obligations, and every obligation they owe,
+    /// on the shell of the worker that runs it, and give the shell back
+    /// empty.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn run(&mut self)
     {
-        if self.answer.is_some() || self.refused.load(Ordering::Relaxed) {
+        let Self {
+            ref mut part,
+            frame,
+        } = *self;
+        if part.answer.is_some() || frame.refused.load(Ordering::Relaxed) {
             return;
         }
-        let owed = core::mem::take(&mut self.owed);
-        let answer = drain_into(
-            &mut self.arena,
-            self.judgement,
-            &mut self.memo,
-            &mut self.session,
-            &mut self.census,
-            owed,
-            (&mut self.ledger, &mut Continuation::default()),
-        );
-        if answer.is_err() {
-            self.refused.store(true, Ordering::Relaxed);
-        }
-        self.answer = Some(answer);
+        frame.fork.lend_shell(&mut |shell| {
+            let mut worker = shell.take::<WorkerShell>();
+            worker.arena.clone_from(frame.arena);
+            let answer = drain_into(
+                &mut worker.arena,
+                frame.judgement,
+                &mut part.memo,
+                &mut part.session,
+                &mut part.census,
+                core::mem::take(&mut part.owed),
+                (&mut part.ledger, &mut worker.continuation),
+            );
+            part.clone = Some(worker.arena.clone_mark());
+            worker.arena.vacate();
+            shell.put(worker);
+            if answer.is_err() {
+                frame.refused.store(true, Ordering::Relaxed);
+            }
+            part.answer = Some(answer);
+        });
     }
 }
 
@@ -9313,7 +9346,7 @@ where
         return Ok(None);
     }
     let run = owed.len().div_ceil(runs);
-    let mut memos = Vec::with_capacity(runs);
+    let mut memos: PartList<DefaultMemo> = PartList::new();
     for _run in owed.chunks(run) {
         let Some(child) = memo.fork_child()
         else {
@@ -9326,27 +9359,40 @@ where
     // A part forks no further.
     let unforked = judgement.forking(None);
     let refused = AtomicBool::new(false);
-    let mut parts: Vec<DrainPart<'_>> = owed
+    let mut parts: PartList<DrainPart> = owed
         .chunks(run)
         .rev()
         .zip(memos)
         .map(|(obligations, part_memo)| DrainPart {
-            judgement: unforked,
-            refused: &refused,
-            arena: arena.clone(),
             memo: part_memo,
             session: session.fork(arena),
             census: ExpansionCensus::new(),
             owed: obligations.to_vec(),
             ledger: DrainLedger::default(),
+            clone: None,
             answer: None,
         })
         .collect();
-    let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
-        .iter_mut()
-        .map(|part| -> &mut dyn crate::fork::Job { part })
-        .collect();
-    fork.run_jobs(&mut jobs);
+    {
+        let shared = DrainFrame {
+            judgement: unforked,
+            fork,
+            refused: &refused,
+            arena,
+        };
+        let mut runs: PartList<DrainRun<'_>> = parts
+            .iter_mut()
+            .map(|part| DrainRun {
+                part,
+                frame: shared,
+            })
+            .collect();
+        let mut jobs: PartList<&mut dyn crate::fork::Job> = runs
+            .iter_mut()
+            .map(|run| -> &mut dyn crate::fork::Job { run })
+            .collect();
+        fork.run_jobs(jobs.as_mut_slice());
+    }
     let passed = parts
         .iter()
         .try_fold(usize::from(session.drained()), |sum, part| {
@@ -9361,8 +9407,8 @@ where
     }
     // A reader that names nodes by their positions forgets each part's own
     // before any fold, so a refused fold leaves none of them behind.
-    for part in &parts {
-        arena.dropped(part.arena.clone_mark());
+    for clone in parts.iter().filter_map(|part| part.clone) {
+        arena.dropped(clone);
     }
     let mut ledger = DrainLedger::default();
     for part in parts {
@@ -9408,6 +9454,14 @@ where
     }
     Ok(passed.then_some(ledger))
 }
+
+/// How many parts a fork's lists hold in place before they take a block.
+/// The frames of the kept workload fork two to four goals.
+const INLINE_PARTS: usize = 4;
+
+/// A list of one fork's parts, or of what each part holds or runs: up to
+/// [`INLINE_PARTS`] in place, so a fork of that many allocates no list.
+type PartList<Item> = gandr_kernel_data::SmallVec<Item, INLINE_PARTS, alloc::alloc::Global>;
 
 /// The fewest sibling goals of one frame that a check forks.
 const FORKED_SIBLINGS: usize = 2;
@@ -9475,12 +9529,12 @@ struct Siblings<'frame>
     parameters: KeptParameters,
 }
 
-/// The structures that a worker of a frame's fork keeps across the sibling
-/// parts it runs, of one fork and of the forks after it: the lists of its
-/// clone of the frame's arena, the frame stack, the context and the stages. A
-/// part fills them from its frame and empties them when it ends, so the
+/// The structures that a worker of a fork keeps across the parts it runs, of
+/// a frame's fork or of a drain's, and of the forks after it: the lists of its
+/// clone of the forked arena, the frame stack, the context and the stages. A
+/// part fills them from what it forks and empties them when it ends, so the
 /// worker's next part fills them with no allocation. The memo overlay and the
-/// session child are each goal's own, so a goal's census is the same whatever
+/// session child are each part's own, so a goal's census is the same whatever
 /// worker runs it.
 ///
 /// # Specification
@@ -9488,7 +9542,7 @@ struct Siblings<'frame>
 #[derive(Debug, Default)]
 struct WorkerShell
 {
-    /// The lists of the part's clone of the frame's frozen arena.
+    /// The lists of the part's clone of the forked arena.
     arena: TermArena,
     /// The part's frame stack and the stacks its frames name.
     continuation: Continuation,
@@ -9705,7 +9759,7 @@ where
         ..
     } = recording;
     let &Siblings { goals, field, .. } = frame;
-    let mut memos = Vec::with_capacity(goals.len());
+    let mut memos: PartList<DefaultMemo> = PartList::new();
     for _goal in goals {
         let Some(child) = memo.fork_child()
         else {
@@ -9717,7 +9771,7 @@ where
     arena.freeze();
     let refused = AtomicBool::new(false);
     // The serial run checks the goals last first, as the frame pops them.
-    let mut parts: Vec<SiblingPart> = goals
+    let mut parts: PartList<SiblingPart> = goals
         .iter()
         .rev()
         .zip(memos)
@@ -9740,18 +9794,18 @@ where
             arena,
             siblings: frame,
         };
-        let mut runs: Vec<SiblingRun<'_>> = parts
+        let mut runs: PartList<SiblingRun<'_>> = parts
             .iter_mut()
             .map(|part| SiblingRun {
                 part,
                 frame: shared,
             })
             .collect();
-        let mut jobs: Vec<&mut dyn crate::fork::Job> = runs
+        let mut jobs: PartList<&mut dyn crate::fork::Job> = runs
             .iter_mut()
             .map(|run| -> &mut dyn crate::fork::Job { run })
             .collect();
-        fork.run_jobs(&mut jobs);
+        fork.run_jobs(jobs.as_mut_slice());
     }
     let passed = parts.iter().all(|part| matches!(part.answer, Some(Ok(()))));
     if !passed {
@@ -12822,9 +12876,9 @@ mod tests
 
     extern crate std;
 
-    /// Runs the parts of a frame in order, on the calling thread, and keeps
-    /// one shell across them and across the checks it serves, as one worker
-    /// of the pool keeps its own.
+    /// Runs the parts of a frame or of a drain in order, on the calling
+    /// thread, and keeps one shell across them and across the checks it
+    /// serves, as one worker of the pool keeps its own.
     ///
     /// # Specification
     /// trivial.
@@ -12872,11 +12926,11 @@ mod tests
     }
 
     /// A declaration's last drain gives the verdict of the serial drain at
-    /// each order of its parts: in order, last first, at once, and not run at
-    /// all. A refusing part sends the check back to the serial drain, and a
-    /// passing fork expands no less than the serial check. A drain of 64
-    /// obligations or more forks into one run for each worker, and a smaller
-    /// drain does not fork.
+    /// each order of its parts: in order, last first, at once, on one shell
+    /// that each part leaves to the next, and not run at all. A refusing part
+    /// sends the check back to the serial drain, and a passing fork expands no
+    /// less than the serial check. A drain of 64 obligations or more forks
+    /// into one run for each worker, and a smaller drain does not fork.
     #[test]
     fn a_forked_drain_gives_the_serial_verdict_at_each_order()
     {
@@ -12949,6 +13003,9 @@ mod tests
                 .sum::<u64>();
             (verdict, goals)
         };
+        // One shell serves each check, so a part finds what the parts of the
+        // checks before it left.
+        let kept = Kept::default();
         for (declaration, parts, passes) in [
             (&passing, 4_usize, true),
             (&refusing, 4, false),
@@ -12957,8 +13014,8 @@ mod tests
             let (serial, serial_goals) = check(declaration, None);
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
             let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
-            let forks: [&dyn crate::fork::ObligationFork; 5] =
-                [&InOrder, &Backwards, &Threads, &Idle, &counting];
+            let forks: [&dyn crate::fork::ObligationFork; 6] =
+                [&InOrder, &Backwards, &Threads, &kept, &Idle, &counting];
             for fork in forks {
                 let (forked, forked_goals) = check(declaration, Some(fork));
                 assert_eq!(forked, serial, "a fork gives the serial verdict");
