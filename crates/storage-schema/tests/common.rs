@@ -11,6 +11,7 @@ use gandr_storage_schema::Presentation;
 use gandr_storage_schema::Row;
 use gandr_storage_schema::Schema;
 use gandr_storage_schema::Store;
+use gandr_storage_schema::Writer;
 use gandr_storage_schema::keyed;
 
 /// The graph schema's presentation: vertices with a text label, edges with
@@ -64,6 +65,15 @@ pub fn reflexive(refl: Indexing) -> Schema
 pub fn params() -> TreeParams
 {
     TreeParams::default()
+}
+
+/// The writer every fixture mints as.
+///
+/// # Specification
+/// trivial.
+pub fn writer() -> Writer
+{
+    Writer::from(0_u16)
 }
 
 /// A store's object by name.
@@ -137,14 +147,15 @@ impl ThreePath
     /// trivial.
     pub fn new() -> Self
     {
-        let mut store = Store::new(graph(), params()).expect("the parameters are supported");
+        let mut store =
+            Store::new(graph(), params(), writer()).expect("the parameters are supported");
         let vertex = object(&store, &Name("V"));
         let edge = object(&store, &Name("E"));
         let src = arrow(&store, &Name("src"));
         let tgt = arrow(&store, &Name("tgt"));
         let label = attribute(&store, &Name("label"));
 
-        let mut vertices = [PartKey::FIRST; 3];
+        let mut vertices = [PartKey::default(); 3];
         for (slot, text) in vertices.iter_mut().zip(["one", "two", "three"]) {
             *slot = store
                 .add_part(
@@ -232,14 +243,15 @@ impl Keyed
     pub fn new() -> Self
     {
         let schema = keyed::schema().expect("the keyed schema presents");
-        let mut store = Store::new(schema, params()).expect("the parameters are supported");
+        let mut store =
+            Store::new(schema, params(), writer()).expect("the parameters are supported");
         let table = |store: &Store, name| object(store, &Name(name));
         let to = |store: &Store, name| arrow(store, &Name(name));
         let field = |store: &Store, name| attribute(store, &Name(name));
         let number = |value: u64| AttributeValue::from(value.to_le_bytes().to_vec());
         let bytes = |value: &[u8]| AttributeValue::from(value);
 
-        let mut tasks = [PartKey::FIRST; 2];
+        let mut tasks = [PartKey::default(); 2];
         for (slot, (name, standing)) in tasks
             .iter_mut()
             .zip([("alpha", Self::OPEN), ("beta", Self::CLOSED)])
@@ -252,7 +264,7 @@ impl Keyed
         }
         let [alpha, beta] = tasks;
 
-        let mut attempts = [PartKey::FIRST; 3];
+        let mut attempts = [PartKey::default(); 3];
         for (slot, (task, ordinal)) in attempts.iter_mut().zip([(alpha, 1), (alpha, 2), (beta, 1)])
         {
             let row = Row::new()
@@ -264,7 +276,7 @@ impl Keyed
         }
         let [first, second, third] = attempts;
 
-        let mut moves = [PartKey::FIRST; 4];
+        let mut moves = [PartKey::default(); 4];
         let made = [
             (first, 0, "receipt a1/0"),
             (first, 1, "receipt a1/1"),
@@ -290,7 +302,7 @@ impl Keyed
             .add_part(table(&store, "Refusal"), &row)
             .expect("a refusal");
 
-        let mut subjects = [PartKey::FIRST; 2];
+        let mut subjects = [PartKey::default(); 2];
         for (slot, digest) in subjects
             .iter_mut()
             .zip([&Self::DIGEST[..], &Self::REVISION[..]])
@@ -303,7 +315,7 @@ impl Keyed
 
         let [digest, revision] = subjects;
         let [m0, m1, _, m3] = moves;
-        let mut namings = [PartKey::FIRST; 3];
+        let mut namings = [PartKey::default(); 3];
         let named = [
             (m0, digest, alpha, 0x01_u8),
             (m1, revision, alpha, 0x02_u8),

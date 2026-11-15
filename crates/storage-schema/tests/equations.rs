@@ -14,6 +14,7 @@ use crate::common::object;
 use crate::common::params;
 use crate::common::reflexive;
 use crate::common::scan;
+use crate::common::writer;
 
 /// A reflexive graph holding two vertices, each with its own loop.
 ///
@@ -21,15 +22,16 @@ use crate::common::scan;
 /// trivial.
 fn two_loops(refl: Indexing) -> (Store, [PartKey; 2], [PartKey; 2])
 {
-    let mut store = Store::new(reflexive(refl), params()).expect("the parameters are supported");
+    let mut store =
+        Store::new(reflexive(refl), params(), writer()).expect("the parameters are supported");
     let vertex = object(&store, &Name("V"));
     let edge = object(&store, &Name("E"));
     let src = arrow(&store, &Name("src"));
     let tgt = arrow(&store, &Name("tgt"));
     let loop_of = arrow(&store, &Name("refl"));
 
-    let mut vertices = [PartKey::FIRST; 2];
-    let mut loops = [PartKey::FIRST; 2];
+    let mut vertices = [PartKey::default(); 2];
+    let mut loops = [PartKey::default(); 2];
     let mut edit = store.edit();
     for (vertex_slot, loop_slot) in vertices.iter_mut().zip(loops.iter_mut()) {
         let at = edit.add_part(vertex).expect("a vertex is minted");
@@ -50,8 +52,8 @@ fn two_loops(refl: Indexing) -> (Store, [PartKey; 2], [PartKey; 2])
 #[test]
 fn a_loop_that_leaves_its_vertex_is_refused_by_equation()
 {
-    let mut store =
-        Store::new(reflexive(Indexing::Indexed), params()).expect("the parameters are supported");
+    let mut store = Store::new(reflexive(Indexing::Indexed), params(), writer())
+        .expect("the parameters are supported");
     let vertex = object(&store, &Name("V"));
     let edge = object(&store, &Name("E"));
     let src = arrow(&store, &Name("src"));
@@ -77,7 +79,7 @@ fn a_loop_that_leaves_its_vertex_is_refused_by_equation()
     });
     assert_eq!(
         refusal.to_string(),
-        "equation `refl_src` fails at `V` part 1: the left side reaches 0, the right 1"
+        "equation `refl_src` fails at `V` part 0:1: the left side reaches 0:0, the right 0:1"
     );
     assert_eq!(
         store.liveness(vertex, one),
@@ -231,15 +233,21 @@ fn an_abandoned_edit_leaves_no_part_and_no_reused_key()
 
     let mut edit = store.edit();
     let next = edit.add_part(vertex).expect("a vertex is minted");
+    let offset = |part: PartKey| u64::from(part.offset());
     assert_eq!(
-        u64::from(dropped),
-        u64::from(abandoned).saturating_add(1),
+        offset(dropped),
+        offset(abandoned).saturating_add(1),
         "keys advance"
     );
     assert_eq!(
-        u64::from(next),
-        u64::from(dropped).saturating_add(1),
+        offset(next),
+        offset(dropped).saturating_add(1),
         "and are never reused"
+    );
+    assert_eq!(
+        [abandoned, dropped, next].map(PartKey::writer),
+        [writer(); 3],
+        "in the store's writer's region"
     );
     edit.abandon();
     assert_eq!(

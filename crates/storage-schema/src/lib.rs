@@ -41,25 +41,31 @@
 //! with one fixed schema whose identifier checks show in its measurements,
 //! where a schema type would move them to compile time.
 //!
-//! **Choice: counter-minted stable keys.** Each table mints keys from a
-//! monotone counter — never reused, never renumbered, committed in the
-//! manifest so a reopened store continues it, and advanced even by an edit
-//! that is then abandoned. A key names one part for the store's whole life,
-//! so an arrow cell, an index entry or a proof that names a part goes on
-//! naming it whatever else is deleted.
+//! **Choice: stable keys that each writer mints in its own region.** A key is
+//! a [`Writer`]'s region and a [`PartOffset`] inside it, packed in one `u64`:
+//! sixteen bits of writer above forty-eight of offset. Each writer mints its
+//! offsets from a monotone counter. A key is never reused or renumbered, and
+//! an edit that is then abandoned still advances the counter. The manifest
+//! commits each writer's counter, so a reopened store continues it. A key
+//! names one part for the store's whole life. So an arrow cell, an index entry
+//! or a proof that names a part goes on naming it, whatever else is deleted.
+//! Two writers mint apart with no shared counter, and [`Store::glue`] joins
+//! their stores by a union of their regions, with no renumbering.
 //!
 //! **Alternatives.** Positional identifiers — the part's index in a dense
 //! table, renumbered on delete — make every delete rewrite every reference
 //! past it, every hash over those references, and every proof a reader
 //! held; they are what this crate replaces. Content-derived keys make two
 //! parts with equal contents one part, and make setting an arrow change the
-//! part's key and with it every key that refers to it.
+//! part's key and with it every key that refers to it. One counter for each
+//! table makes the key read the order of all mints of the table, so two
+//! writers need one shared counter, or a renumbering to glue.
 //!
-//! **Reversal.** Identity depends on mint order: two stores holding
-//! isomorphic contents minted in different orders have different roots, and
-//! dense columns follow the counter, not the live count. A workload where
-//! that difference, or the memory of a long-deleted range, costs more than
-//! the hash rewrite positional identifiers would need is the reversal; an
+//! **Reversal.** Identity depends on mint order inside one region: two stores
+//! holding isomorphic contents minted in different orders have different
+//! roots, and dense runs follow each counter, not the live count. A workload
+//! where that difference, or the memory of a long-deleted range, costs more
+//! than the hash rewrite positional identifiers would need is the reversal; an
 //! explicit compaction that returns its renumbering is the economy ceiling
 //! before it.
 //!
@@ -150,10 +156,13 @@ pub use crate::manifest::TableRoot;
 pub use crate::migrate::MapBuilder;
 pub use crate::migrate::MapError;
 pub use crate::migrate::SchemaMap;
+pub use crate::parts::Counter;
 pub use crate::parts::LiveParts;
 pub use crate::parts::Liveness;
 pub use crate::parts::PartCount;
 pub use crate::parts::PartKey;
+pub use crate::parts::PartOffset;
+pub use crate::parts::Writer;
 pub use crate::schema::Arrow;
 pub use crate::schema::ArrowId;
 pub use crate::schema::Attribute;

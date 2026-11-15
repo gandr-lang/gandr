@@ -17,7 +17,7 @@ The record plane under the C-set discipline: a schema of objects, total arrows, 
 
 **Why.** Indexes kept as hand-encoded key families leave their invariants to convention: nothing stops a delete from leaving a reference dangling, or two keys that should agree from disagreeing. Stated as a schema, every reference is a total arrow the store checks, every agreement is an equation the store checks, and a preimage is a lookup with a proof that it is complete.
 
-**How.** Parts are keyed by a per-table monotone counter and deleted by clearing a bit in the table's live set, so nothing is ever renumbered and a key names one part for the store's whole life. An `Edit` collects mutations, refuses each dangling reference by name as it is made, and on `finish` checks completeness and then every equation whose value the edit could have changed, found by walking equation paths backward through the kept inverses; a refused or dropped edit rolls back. `Store::pull_back` migrates a store along a `SchemaMap` whose equations are checked once, on the map.
+**How.** A part's key is a writer's region and an offset, which the writer mints from its own monotone counter. A part is deleted by clearing a bit in its table's live set, so nothing is ever renumbered and a key names one part for the store's whole life. Two writers mint apart, and `Store::glue` joins their stores by a union of their regions. An `Edit` collects mutations, refuses each dangling reference by name as it is made, and on `finish` checks completeness and then every equation whose value the edit could have changed, found by walking equation paths backward through the kept inverses; a refused or dropped edit rolls back. `Store::pull_back` migrates a store along a `SchemaMap` whose equations are checked once, on the map.
 
 ## References
 
@@ -29,14 +29,15 @@ The record plane under the C-set discipline: a schema of objects, total arrows, 
 
 - `Presentation` and `Schema`: validated, order-independent schemas with a canonical image, `Schema::decode` of exactly that image, and lookups that refuse an unknown name or ordinal by kind.
 - `Store`: reads of liveness, arrow targets, attribute values and indexed preimages; `Edit` transactions and one-step `add_part`, `set_arrow`, `set_value` and `delete_part`, each refusing by name with a `Refusal`.
-- `Store::commit` and `Store::open`: one record tree per table in any `BlockStore`, one `StoreManifest` binding the schema identity, the record plane's parameters and every table's counter and root; reopening refuses records that are not canonical, a dangling arrow and a broken equation.
+- `Store::commit` and `Store::open`: one record tree per table in any `BlockStore`, one `StoreManifest` binding the schema identity, the record plane's parameters, each writer's counter of each table and each table's root; reopening refuses records that are not canonical, a key that its writer's counter has not minted, a writer the manifest does not name, a dangling arrow and a broken equation.
+- `Store::glue`: the union of two writers' stores of one schema, with no key renumbered; a region that the two stores hold apart is refused by name.
 - `Store::prove` and `Proof::verify`: a `Question` answered against a `StoreRoot` alone. `Proof::encode` and `Proof::decode` carry a proof to a reader on another endpoint; the reader supplies the question, and the image carries only what the reader can't derive.
 - `SchemaMap` and `Store::pull_back`: the Δ migration, keys and counters kept.
 - `keyed`: a factory's dialogue, project and provenance indexes as one schema, with the equation that holds a naming's task to its move's.
 
 ## Expected features
 
-Attribute values are canonical bytes the caller chooses; the store compares and indexes them as bytes. A store answers proofs for its last commit. Columns are dense by key, so memory follows each table's counter rather than its live count.
+Attribute values are canonical bytes the caller chooses; the store compares and indexes them as bytes. A store answers proofs for its last commit. Each column holds one dense run for each writer, so memory follows each writer's counter rather than its live count.
 
 ## Examples
 
@@ -44,7 +45,7 @@ Refuse the dangling reference, then prove a preimage:
 
 ```rust
 use gandr_storage_records::{InMemoryBlockStore, TreeParams};
-use gandr_storage_schema::{Answer, Indexing, Presentation, Question, Refusal, Row, Schema, Store};
+use gandr_storage_schema::{Answer, Indexing, Presentation, Question, Refusal, Row, Schema, Store, Writer};
 
 let schema = Schema::present(
     &Presentation::new()
@@ -53,7 +54,7 @@ let schema = Schema::present(
         .arrow("src", "E", "V", Indexing::Indexed)
         .arrow("tgt", "E", "V", Indexing::Indexed),
 )?;
-let mut store = Store::new(schema, TreeParams::default())?;
+let mut store = Store::new(schema, TreeParams::default(), Writer::from(0))?;
 let (vertex, edge) = (store.schema().object("V")?, store.schema().object("E")?);
 let (src, tgt) = (store.schema().arrow("src")?, store.schema().arrow("tgt")?);
 
@@ -72,15 +73,16 @@ assert_eq!(answer, Answer::Preimage(Box::from([joined])));
 
 ## Measurement
 
-`cargo bench -p gandr-storage-schema` times a store of 6400 parts — a cycle of 3200 vertices and 3200 edges, both arrows indexed — as the mean of one million operations on one x86-64 desktop:
+`cargo bench -p gandr-storage-schema` times a store of 6400 parts — a cycle of 3200 vertices and 3200 edges, both arrows indexed — as the mean of one million operations. The figures are the median of five runs on one x86-64 host of 32 cores under a load of about 70. A quiet host gives smaller figures:
 
 | Operation | ns |
 | --------- | -: |
-| indexed preimage lookup, borrowed | 29 |
-| indexed preimage lookup, copied out | 31 |
-| insert-and-remove round trip of an edge | 298 |
-| insert-and-remove round trip of a mark, no equation | 330 |
-| the same, with an equation checked on each insert | 467 |
+| indexed preimage lookup, borrowed | 7 |
+| indexed preimage lookup, copied out | 21 |
+| arrow cell read | 9 |
+| insert-and-remove round trip of an edge | 311 |
+| insert-and-remove round trip of a mark, no equation | 317 |
+| the same, with an equation checked on each insert | 491 |
 
 ## Where the detail lives
 

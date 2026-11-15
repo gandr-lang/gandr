@@ -13,7 +13,7 @@
 //! # What the pull-back preserves
 //!
 //! Keys: a part of `C` at `a` is the part of `D` at `F(a)` under the same
-//! key, and each table keeps its counter, so a key minted after migration is
+//! key, and each table keeps its counters, so a key minted after migration is
 //! never one minted before it. Referential integrity: a followed path from a
 //! live part reaches a live part. Equations: the map's check below admits
 //! only images that hold in every store of `D`, so the pulled-back store

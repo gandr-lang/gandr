@@ -17,6 +17,7 @@ use crate::common::arrow;
 use crate::common::attribute;
 use crate::common::object;
 use crate::common::params;
+use crate::common::writer;
 
 #[test]
 fn deleting_the_middle_vertex_refuses_by_name()
@@ -40,7 +41,7 @@ fn deleting_the_middle_vertex_refuses_by_name()
     });
     assert_eq!(
         refusal.to_string(),
-        "`V` part 0 is referred to by `src` of part 0, so it is not deleted"
+        "`V` part 0:0 is referred to by `src` of part 0:0, so it is not deleted"
     );
 
     let refusal = store
@@ -224,7 +225,7 @@ fn a_reference_to_a_dead_part_is_refused_by_name()
         object: "V".into(),
         part: spare,
     });
-    assert_eq!(refusal.to_string(), "`V` part 3 is not live");
+    assert_eq!(refusal.to_string(), "`V` part 0:3 is not live");
     assert_eq!(store.target(tgt, first), Ok(two), "the arrow is unchanged");
 
     store
@@ -302,7 +303,7 @@ fn an_abandoned_delete_rejoins_the_inverse_it_shared()
         .attribute_type("Text")
         .attribute("tag", "V", "Text", Indexing::Indexed);
     let schema = Schema::present(&presentation).expect("the tagged schema presents");
-    let mut store = Store::new(schema, params()).expect("the parameters are supported");
+    let mut store = Store::new(schema, params(), writer()).expect("the parameters are supported");
     let vertex = object(&store, &Name("V"));
     let tag = attribute(&store, &Name("tag"));
     let shared = AttributeValue::from(&b"shared"[..]);

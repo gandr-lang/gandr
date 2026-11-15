@@ -12,22 +12,28 @@
 //! Every live part has every arrow and every attribute of its table set, and
 //! every set arrow reaches a live part: the reads below never meet a dangling
 //! reference, and the edits in [`edit`] refuse, by name, anything that would
-//! make one. A column slot of a dead part keeps its last value and is never
+//! make one. A column cell of a dead part keeps its last value and is never
 //! read: liveness gates every read.
+//!
+//! A store mints its parts as one [`Writer`], in that writer's region of each
+//! table. [`Store::glue`] takes another writer's store into this one by a union
+//! of their regions. A region that both stores hold must agree in both, so
+//! the glue renumbers no part and changes no cell.
 //!
 //! # Economy
 //!
-//! Columns are dense vectors indexed by key, so their memory follows each
-//! table's counter, not its live count; a table that mints and deletes
-//! without bound grows without bound. The ceiling is the record's own
-//! answer: an explicit compaction that returns its renumbering, run where the
-//! renumbering's hash rewrite is acceptable.
+//! Each column holds one dense run for each writer, indexed by offset, so its
+//! memory follows each writer's counter, not the live count; a writer that
+//! mints and deletes without bound grows its runs without bound. The ceiling
+//! is the record's own answer: an explicit compaction that returns its
+//! renumbering, run where the renumbering's hash rewrite is acceptable.
 
 pub mod edit;
 pub mod layout;
 pub mod prove;
 mod pull;
 
+use alloc::borrow::Cow;
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -41,12 +47,16 @@ use crate::error::Refusal;
 use crate::error::StoreError;
 use crate::manifest::StoreManifest;
 use crate::manifest::StoreRoot;
+use crate::parts::Agreement;
+use crate::parts::Holding;
 use crate::parts::LiveParts;
 use crate::parts::Liveness;
 use crate::parts::PartCount;
 use crate::parts::PartKey;
 use crate::parts::PartSet;
-use crate::parts::Slot;
+use crate::parts::Region;
+use crate::parts::Segments;
+use crate::parts::Writer;
 use crate::schema::ArrowId;
 use crate::schema::AttributeId;
 use crate::schema::Indexing;
@@ -170,8 +180,8 @@ impl Row
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ArrowColumn
 {
-    /// Each source slot's target.
-    targets: Vec<PartKey>,
+    /// Each source part's target.
+    targets: Segments<PartKey>,
     /// The inverse.
     index: ArrowIndex,
 }
@@ -182,16 +192,16 @@ enum ArrowIndex
 {
     /// The schema declares none.
     Undeclared,
-    /// For each target slot, the sorted live sources mapping to it.
-    Kept(Vec<Vec<PartKey>>),
+    /// For each target part, the sorted live sources mapping to it.
+    Kept(Segments<Vec<PartKey>>),
 }
 
 /// One attribute's column and, when declared, its inverse.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ValueColumn
 {
-    /// Each part slot's value.
-    values: Vec<AttributeValue>,
+    /// Each part's value.
+    values: Segments<AttributeValue>,
     /// The inverse.
     index: ValueIndex,
 }
@@ -256,6 +266,8 @@ pub struct Store
     schema: Schema,
     /// The record plane's parameters every table tree is built under.
     params: TreeParams,
+    /// The writer whose region this store mints in.
+    writer: Writer,
     /// Each object's parts.
     tables: Box<[PartSet]>,
     /// Each arrow's column.
@@ -268,17 +280,22 @@ pub struct Store
 
 impl Store
 {
-    /// An empty store of a schema.
+    /// An empty store of a schema, minting as `writer`.
     ///
     /// # Specification
-    /// - ensures: on success every table is empty with its counter at
-    ///   [`PartKey::FIRST`], and [`Store::root`] names the empty store.
+    /// - ensures: on success every table is empty and holds no region, the
+    ///   store mints as `writer`, and [`Store::root`] names the empty store.
+    ///   The root does not depend on `writer`.
     /// - fails: [`StoreError::Records`] when the record plane does not support
     ///   `params`.
     /// - panics: none.
     ///
     /// # Errors
     /// [`StoreError::Records`]: unsupported parameters.
+    ///
+    /// # Cost
+    /// - allocation: one part set, column and empty tree for each object, arrow
+    ///   and attribute of the schema, setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a new store reads no part in any table, and two new
@@ -287,11 +304,12 @@ impl Store
     #[inline]
     #[spec(
         captures: identity = schema.identity(),
-        ensures: |ret| ret.as_ref().map_or(true, |store| store.manifest().schema() == identity),
+        ensures: |ret| ret.as_ref().map_or(true, |store| store.manifest().schema() == identity && store.writer == writer),
     )]
     pub fn new(
         schema: Schema,
         params: TreeParams,
+        writer: Writer,
     ) -> Result<Self, StoreError>
     {
         params.ensure_supported()?;
@@ -301,11 +319,11 @@ impl Store
             .arrows()
             .map(|arrow| {
                 let index = match schema.arrow_at(arrow).map(crate::schema::Arrow::indexing) {
-                    Ok(Indexing::Indexed) => ArrowIndex::Kept(Vec::new()),
+                    Ok(Indexing::Indexed) => ArrowIndex::Kept(Segments::new()),
                     Ok(Indexing::Unindexed) | Err(_) => ArrowIndex::Undeclared,
                 };
                 ArrowColumn {
-                    targets: Vec::new(),
+                    targets: Segments::new(),
                     index,
                 }
             })
@@ -321,7 +339,7 @@ impl Store
                     Ok(Indexing::Unindexed) | Err(_) => ValueIndex::Undeclared,
                 };
                 ValueColumn {
-                    values: Vec::new(),
+                    values: Segments::new(),
                     index,
                 }
             })
@@ -334,12 +352,13 @@ impl Store
         let manifest = StoreManifest::over(
             &schema,
             params,
-            trees.iter().map(|tree| (PartKey::FIRST, tree)),
+            trees.iter().map(|tree| (core::iter::empty(), tree)),
         )?;
 
         Ok(Self {
             schema,
             params,
+            writer,
             tables,
             arrows,
             values,
@@ -371,6 +390,17 @@ impl Store
     pub const fn params(&self) -> TreeParams
     {
         self.params
+    }
+
+    /// The writer whose region this store mints in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn writer(&self) -> Writer
+    {
+        self.writer
     }
 
     /// The manifest of the last commit.
@@ -535,11 +565,10 @@ impl Store
         let object = self.schema.attribute_at(attribute)?.object();
         self.ensure_live(object, part)?;
         let column = self.value_column(attribute)?;
-        let slot = self.slot(object, part)?;
         column
             .values
-            .get(usize::from(slot))
-            .ok_or_else(|| self.not_live(object, part))
+            .cell(part)
+            .map_err(|_unaddressable| self.not_live(object, part))
     }
 
     /// The live parts an indexed arrow takes to one live part, ascending.
@@ -560,6 +589,9 @@ impl Store
     ///
     /// # Errors
     /// [`Refusal::Schema`], [`Refusal::NotIndexed`] or [`Refusal::NotLive`].
+    ///
+    /// # Cost
+    /// - allocation: the arrow's name in a refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L2 — after every edit of the equation and keyed fixtures
@@ -584,8 +616,7 @@ impl Store
             });
         };
         self.ensure_live(spec.target(), target)?;
-        let slot = self.slot(spec.target(), target)?;
-        Ok(index.get(usize::from(slot)).map_or(&[], |sources| sources))
+        Ok(index.cell(target).map_or(&[], |sources| sources))
     }
 
     /// The live parts an indexed attribute gives one value, ascending.
@@ -657,6 +688,206 @@ impl Store
                 self.check(equation, part)?;
             }
         }
+        Ok(())
+    }
+
+    /// Takes `other`, a store of the same schema, into this one by a union
+    /// of their regions.
+    ///
+    /// # Specification
+    /// - ensures: on success each table holds each region that it held and each
+    ///   region of `other`. A region of a writer that this store has not seen
+    ///   comes with its parts, its cells and its inverse entries, under the
+    ///   keys that `other` minted. No key is renumbered, and this store's
+    ///   writer and its last commit stay. A table that takes a region is stale.
+    /// - fails: [`StoreError::SchemaMismatch`] and
+    ///   [`StoreError::ProfileMismatch`] when `other` is of another schema or
+    ///   other boundary parameters. [`StoreError::Refused`] carrying
+    ///   [`Refusal::Disagreed`] names the table and the writer of a region that
+    ///   both stores hold apart: another counter, other live parts, or another
+    ///   cell of a live part. A refused glue changes nothing.
+    /// - panics: none.
+    /// - executable: none — the union is observed through each read of the
+    ///   glued store; the witnesses compare each part with its source.
+    /// - intension: one comparison of each shared region's parts and cells,
+    ///   then one copy of each run that a new region brings.
+    ///
+    /// # Errors
+    /// [`StoreError::SchemaMismatch`], [`StoreError::ProfileMismatch`] or
+    /// [`StoreError::Refused`] with [`Refusal::Disagreed`].
+    ///
+    /// # Cost
+    /// - allocation: the copies of the new regions, their runs and their
+    ///   inverse entries, growth within the parts of the glued stores
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — two writers' stores glue to the union of their
+    ///   parts in either order, to one root, with every cell and inverse read
+    ///   back; two writers that share a base glue over it; an edit of the
+    ///   shared base by one of them refuses the glue by name and changes
+    ///   nothing; another schema is refused.
+    /// - witness: `tests::glue::two_writers_glue_to_the_union_of_their_parts`
+    /// - witness: `tests::glue::two_writers_that_share_a_base_glue_over_it`
+    /// - witness: `tests::glue::two_stores_that_disagree_on_a_shared_region_do_not_glue`
+    #[inline]
+    pub fn glue(
+        &mut self,
+        other: &Self,
+    ) -> Result<(), StoreError>
+    {
+        if other.schema.identity() != self.schema.identity() {
+            return Err(StoreError::SchemaMismatch {
+                expected: self.schema.identity(),
+                found: other.schema.identity(),
+            });
+        }
+        if other.params.boundary_commitment() != self.params.boundary_commitment() {
+            return Err(StoreError::ProfileMismatch);
+        }
+        for object in self.schema.objects() {
+            let ours = self.table(object)?;
+            for (writer, region) in other.table(object)?.regions() {
+                if let Holding::Held(held) = ours.holding(writer) {
+                    self.agree(other, object, writer, (held, region))?;
+                }
+            }
+        }
+        for object in other.schema.objects() {
+            for (writer, region) in other.table(object)?.regions() {
+                if matches!(self.table(object)?.holding(writer), Holding::Unseen) {
+                    self.adopt(other, object, writer, region)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuses two copies of one writer's region of a table that differ.
+    ///
+    /// # Specification
+    /// - requires: `other` is of this store's schema, and both regions are
+    ///   `writer`'s region of `object`, `ours` from this store and `theirs`
+    ///   from `other`.
+    /// - ensures: success exactly when the two copies have one counter and one
+    ///   set of live parts, and each arrow and attribute of each live part
+    ///   holds one cell in both stores.
+    /// - fails: [`Refusal::Disagreed`] naming the table and the writer.
+    /// - panics: none.
+    /// - executable: none — the answer is the comparison itself; the glue
+    ///   witnesses observe both outcomes.
+    ///
+    /// # Errors
+    /// [`Refusal::Disagreed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a shared base agrees, and a value changed in one copy
+    ///   of it is refused.
+    /// - witness: `tests::glue::two_writers_that_share_a_base_glue_over_it`
+    /// - witness: `tests::glue::two_stores_that_disagree_on_a_shared_region_do_not_glue`
+    #[inline]
+    fn agree(
+        &self,
+        other: &Self,
+        object: ObjectId,
+        writer: Writer,
+        (ours, theirs): (&Region, &Region),
+    ) -> Result<(), Refusal>
+    {
+        let disagreed = || match self.object_name(object) {
+            Ok(name) => Refusal::Disagreed {
+                object: name,
+                writer,
+            },
+            Err(refusal) => refusal,
+        };
+        if ours.agreement(theirs) == Agreement::Differs {
+            return Err(disagreed());
+        }
+        for part in theirs.parts(writer) {
+            for &arrow in self.schema.outgoing(object) {
+                let mine = self.cell(arrow, part)?;
+                let other_target = other.cell(arrow, part)?;
+                if mine != other_target {
+                    return Err(disagreed());
+                }
+            }
+            for &attribute in self.schema.fields(object) {
+                let mine = self.value_column(attribute)?.values.cell(part);
+                let other_value = other.value_column(attribute)?.values.cell(part);
+                if mine != other_value {
+                    return Err(disagreed());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes `other`'s region of a writer that this store has not seen, with
+    /// its cells and its inverse entries.
+    ///
+    /// # Specification
+    /// - requires: `other` is of this store's schema, `region` is its region of
+    ///   `writer` in `object`, and this store holds no region of `writer` in
+    ///   `object`.
+    /// - ensures: on success the table holds the region; each column of the
+    ///   table holds `other`'s run of the writer; each kept inverse lists the
+    ///   region's live parts under their cells; the table is stale.
+    /// - fails: [`Refusal::Schema`] for an arrow or attribute outside the
+    ///   schema, and [`Refusal::NotLive`] for a live part of `other` with no
+    ///   cell, which a store outside an edit never holds.
+    /// - panics: none.
+    /// - executable: none — the region and the runs are copied whole; the glue
+    ///   witness reads each cell and each inverse back.
+    ///
+    /// # Errors
+    /// [`Refusal::Schema`] or [`Refusal::NotLive`].
+    ///
+    /// # Cost
+    /// - allocation: the copies of the region, its runs and its inverse
+    ///   entries, growth within the parts of the glued stores
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every cell and inverse of the glued store equals the
+    ///   source store's for each part.
+    /// - witness: `tests::glue::two_writers_glue_to_the_union_of_their_parts`
+    #[inline]
+    fn adopt(
+        &mut self,
+        other: &Self,
+        object: ObjectId,
+        writer: Writer,
+        region: &Region,
+    ) -> Result<(), Refusal>
+    {
+        if let Some(table) = self.tables.get_mut(usize::from(object)) {
+            table.adopt(writer, region);
+        }
+        for &arrow in other.schema.outgoing(object) {
+            let theirs = other.arrow_column(arrow)?;
+            if let Some(column) = self.arrows.get_mut(usize::from(arrow)) {
+                column.targets.adopt(&theirs.targets, writer);
+            }
+        }
+        for &attribute in other.schema.fields(object) {
+            let theirs = other.value_column(attribute)?;
+            if let Some(column) = self.values.get_mut(usize::from(attribute)) {
+                column.values.adopt(&theirs.values, writer);
+            }
+        }
+        for part in region.parts(writer) {
+            for &arrow in other.schema.outgoing(object) {
+                let target = other.cell(arrow, part)?;
+                if let Some(column) = self.arrows.get_mut(usize::from(arrow)) {
+                    column.index_insert(target, part);
+                }
+            }
+            for &attribute in other.schema.fields(object) {
+                if let Some(column) = self.values.get_mut(usize::from(attribute)) {
+                    column.index_insert_slot(part);
+                }
+            }
+        }
+        self.touch(object);
         Ok(())
     }
 
@@ -745,11 +976,15 @@ impl Store
     /// - panics: none.
     /// - executable: none — the scan arm is the reference the indexed arm is
     ///   checked against, so a predicate would only repeat it.
-    /// - intension: an indexed arrow costs one lookup and a copy of the
-    ///   preimage; an unindexed one scans every live source.
+    /// - intension: an indexed arrow costs one lookup and borrows the preimage;
+    ///   an unindexed one scans every live source.
     ///
     /// # Errors
     /// [`Refusal::Schema`].
+    ///
+    /// # Cost
+    /// - allocation: the referrers of an unindexed arrow, growth within the
+    ///   source table's live parts
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the defect fixture refuses a delete through an
@@ -764,16 +999,12 @@ impl Store
         arrow: ArrowId,
         target: PartKey,
         unset: &BTreeSet<(ArrowId, PartKey)>,
-    ) -> Result<Vec<PartKey>, Refusal>
+    ) -> Result<Cow<'_, [PartKey]>, Refusal>
     {
         let source = self.schema.arrow_at(arrow)?.source();
         let column = self.arrow_column(arrow)?;
         if let ArrowIndex::Kept(ref index) = column.index {
-            let Ok(slot) = target.slot()
-            else {
-                return Ok(Vec::new());
-            };
-            return Ok(index.get(usize::from(slot)).cloned().unwrap_or_default());
+            return Ok(Cow::Borrowed(index.cell(target).map_or(&[], Vec::as_slice)));
         }
 
         // economy: an unindexed arrow is scanned whole; declaring its index
@@ -788,7 +1019,7 @@ impl Store
                 found.push(part);
             }
         }
-        Ok(found)
+        Ok(Cow::Owned(found))
     }
 
     /// An arrow's cell at a part, read without a liveness check.
@@ -817,12 +1048,11 @@ impl Store
     {
         let source = self.schema.arrow_at(arrow)?.source();
         let column = self.arrow_column(arrow)?;
-        let slot = self.slot(source, part)?;
         column
             .targets
-            .get(usize::from(slot))
+            .cell(part)
             .copied()
-            .ok_or_else(|| self.not_live(source, part))
+            .map_err(|_unaddressable| self.not_live(source, part))
     }
 
     /// Refuses a part that is not live.
@@ -874,33 +1104,6 @@ impl Store
         }
     }
 
-    /// A part's column slot.
-    ///
-    /// # Specification
-    /// - ensures: on success the slot the key's cells occupy.
-    /// - fails: [`Refusal::NotLive`] for a key beyond what this target can
-    ///   index.
-    /// - panics: none.
-    /// - executable: none — the slot is the key's value.
-    ///
-    /// # Errors
-    /// [`Refusal::NotLive`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — every read of the keyed round trip resolves its slot
-    ///   here.
-    /// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
-    #[inline]
-    fn slot(
-        &self,
-        object: ObjectId,
-        part: PartKey,
-    ) -> Result<Slot, Refusal>
-    {
-        part.slot()
-            .map_err(|_unaddressable| self.not_live(object, part))
-    }
-
     /// One table's parts.
     ///
     /// # Specification
@@ -924,7 +1127,7 @@ impl Store
         self.schema.object_name(object)?;
         self.tables
             .get(usize::from(object))
-            .ok_or_else(|| self.not_live(object, PartKey::FIRST))
+            .ok_or_else(|| self.not_live(object, PartKey::default()))
     }
 
     /// One arrow's column.
@@ -937,6 +1140,9 @@ impl Store
     ///
     /// # Errors
     /// [`Refusal::Schema`].
+    ///
+    /// # Cost
+    /// - allocation: the arrow's name in a refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an arrow ordinal past the schema is refused.
@@ -965,6 +1171,9 @@ impl Store
     ///
     /// # Errors
     /// [`Refusal::Schema`].
+    ///
+    /// # Cost
+    /// - allocation: the attribute's name in a refusal, error path
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an attribute ordinal past the schema is refused.
@@ -1020,30 +1229,6 @@ impl Store
     ) -> Result<Name, Refusal>
     {
         Ok(self.schema.object_name(object)?.clone())
-    }
-}
-
-/// Grows a column so a slot exists, filling with a placeholder.
-///
-/// # Specification
-/// - ensures: the column holds the slot; existing cells are unchanged.
-/// - panics: none.
-/// - executable: none — `T` carries no bound a predicate could compare with.
-///
-/// # Adequacy
-/// - hypothesis: L2 — every add in the fixtures writes through a slot this
-///   grows, and the round trip reads each back.
-/// - witness: `tests::keyed::the_fixture_round_trips_through_the_block_store`
-#[inline]
-fn ensure_slot<T>(
-    column: &mut Vec<T>,
-    slot: Slot,
-) where
-    T: Default + Clone,
-{
-    let wanted = usize::from(slot).saturating_add(1_usize);
-    if column.len() < wanted {
-        column.resize(wanted, T::default());
     }
 }
 
@@ -1105,12 +1290,9 @@ impl ArrowColumn
     )
     {
         if let ArrowIndex::Kept(ref mut index) = self.index
-            && let Ok(slot) = target.slot()
+            && let Ok(list) = index.ensure(target)
         {
-            ensure_slot(index, slot);
-            if let Some(list) = index.get_mut(usize::from(slot)) {
-                insert_sorted(list, source);
-            }
+            insert_sorted(list, source);
         }
     }
 
@@ -1126,8 +1308,7 @@ impl ArrowColumn
     )
     {
         if let ArrowIndex::Kept(ref mut index) = self.index
-            && let Ok(slot) = target.slot()
-            && let Some(list) = index.get_mut(usize::from(slot))
+            && let Ok(list) = index.cell_mut(target)
         {
             remove_sorted(list, source);
         }
@@ -1173,18 +1354,21 @@ impl ValueColumn
         }
     }
 
-    /// Lists a part in the inverse under the value at its slot.
+    /// Lists a part in the inverse under the value of its cell.
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a new value's entry in the inverse, growth within the
+    ///   attribute's values
     #[inline]
     fn index_insert_slot(
         &mut self,
-        slot: Slot,
         part: PartKey,
     )
     {
-        if let Some(value) = self.values.get(usize::from(slot))
+        if let Ok(value) = self.values.cell(part)
             && let ValueIndex::Kept(ref mut index) = self.index
         {
             if let Some(list) = index.get_mut(value) {
@@ -1196,18 +1380,17 @@ impl ValueColumn
         }
     }
 
-    /// Takes a part out of the inverse's list under the value at its slot.
+    /// Takes a part out of the inverse's list under the value of its cell.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn index_remove_slot(
         &mut self,
-        slot: Slot,
         part: PartKey,
     )
     {
-        if let Some(value) = self.values.get(usize::from(slot))
+        if let Ok(value) = self.values.cell(part)
             && let ValueIndex::Kept(ref mut index) = self.index
             && let Some(list) = index.get_mut(value)
         {

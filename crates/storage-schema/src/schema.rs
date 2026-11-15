@@ -1716,10 +1716,7 @@ impl Schema
     {
         self.objects
             .get(object.0)
-            .ok_or(SchemaError::UnknownOrdinal {
-                kind: ElementKind::Object,
-                ordinal: Ordinal(object.0),
-            })
+            .ok_or_else(|| unknown_ordinal(ElementKind::Object, Ordinal(object.0)))
     }
 
     /// The name of an attribute type.
@@ -1745,10 +1742,7 @@ impl Schema
     {
         self.attribute_types
             .get(ty.0)
-            .ok_or(SchemaError::UnknownOrdinal {
-                kind: ElementKind::AttributeType,
-                ordinal: Ordinal(ty.0),
-            })
+            .ok_or_else(|| unknown_ordinal(ElementKind::AttributeType, Ordinal(ty.0)))
     }
 
     /// One arrow.
@@ -1772,10 +1766,9 @@ impl Schema
         arrow: ArrowId,
     ) -> Result<&Arrow, SchemaError>
     {
-        self.arrows.get(arrow.0).ok_or(SchemaError::UnknownOrdinal {
-            kind: ElementKind::Arrow,
-            ordinal: Ordinal(arrow.0),
-        })
+        self.arrows
+            .get(arrow.0)
+            .ok_or_else(|| unknown_ordinal(ElementKind::Arrow, Ordinal(arrow.0)))
     }
 
     /// One attribute.
@@ -1801,10 +1794,7 @@ impl Schema
     {
         self.attributes
             .get(attribute.0)
-            .ok_or(SchemaError::UnknownOrdinal {
-                kind: ElementKind::Attribute,
-                ordinal: Ordinal(attribute.0),
-            })
+            .ok_or_else(|| unknown_ordinal(ElementKind::Attribute, Ordinal(attribute.0)))
     }
 
     /// One equation.
@@ -1830,10 +1820,7 @@ impl Schema
     {
         self.equations
             .get(equation.0)
-            .ok_or(SchemaError::UnknownOrdinal {
-                kind: ElementKind::Equation,
-                ordinal: Ordinal(equation.0),
-            })
+            .ok_or_else(|| unknown_ordinal(ElementKind::Equation, Ordinal(equation.0)))
     }
 
     /// The arrows leaving an object, in ordinal order; empty out of range.
@@ -1944,6 +1931,23 @@ impl From<ElementCount> for usize
 fn identity_of(image: SchemaImage<'_>) -> SchemaIdentity
 {
     SchemaIdentity(*blake3::hash(image.0).as_bytes())
+}
+
+/// The refusal of an ordinal past the schema's elements of `kind`.
+///
+/// It stays out of line and cold. So a lookup that finds its element makes
+/// no refusal and drops none.
+///
+/// # Specification
+/// trivial.
+#[cold]
+#[inline(never)]
+fn unknown_ordinal(
+    kind: ElementKind,
+    ordinal: Ordinal,
+) -> SchemaError
+{
+    SchemaError::UnknownOrdinal { kind, ordinal }
 }
 
 /// An owned canonical schema image.

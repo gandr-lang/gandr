@@ -2339,10 +2339,13 @@ INSERT INTO purpose VALUES('storage-schema','manifest::TableRoot','struct','One 
 INSERT INTO purpose VALUES('storage-schema','migrate::MapBuilder','struct','A schema map being stated by names.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','migrate::MapError','enum','Every way a schema map is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','migrate::SchemaMap','struct','A checked schema map `F: C → D`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-schema','parts::Counter','struct','The next offset that one writer''s counter mints in one table.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','parts::LiveParts','struct','The live keys of one table, ascending.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','parts::Liveness','enum','Whether a key names a live part.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','parts::PartCount','struct','How many parts a table holds or has minted.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('storage-schema','parts::PartKey','struct','A part''s stable key within its table.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-schema','parts::PartKey','struct','A part''s stable key: its writer''s region and its offset inside it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-schema','parts::PartOffset','struct','A part''s place inside its writer''s region.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('storage-schema','parts::Writer','struct','The region of one writer: the producer that mints parts into a store.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','schema::Arrow','struct','One arrow of a presented schema.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','schema::ArrowId','struct','An arrow of a schema: one total foreign key, by its ordinal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('storage-schema','schema::Attribute','struct','One attribute of a presented schema.',NULL,'fits','sound',NULL);

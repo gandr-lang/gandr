@@ -9,9 +9,10 @@ use gandr_storage_records::RecordTree;
 use gandr_storage_records::TreeParams;
 use gandr_storage_schema::Answer;
 use gandr_storage_schema::AttributeValue;
+use gandr_storage_schema::Counter;
 use gandr_storage_schema::Liveness;
 use gandr_storage_schema::ManifestFault;
-use gandr_storage_schema::PartKey;
+use gandr_storage_schema::PartOffset;
 use gandr_storage_schema::Proof;
 use gandr_storage_schema::ProofFault;
 use gandr_storage_schema::ProofImage;
@@ -30,6 +31,7 @@ use crate::common::attribute;
 use crate::common::graph;
 use crate::common::object;
 use crate::common::params;
+use crate::common::writer;
 
 /// The keyed fixture with its refusal deleted, committed.
 ///
@@ -66,10 +68,10 @@ fn answer(
 #[test]
 fn an_empty_store_has_a_root_that_names_its_schema()
 {
-    let first = Store::new(graph(), params()).expect("a graph store");
-    let second = Store::new(graph(), params()).expect("another graph store");
+    let first = Store::new(graph(), params(), writer()).expect("a graph store");
+    let second = Store::new(graph(), params(), writer()).expect("another graph store");
     let schema = keyed::schema().expect("the keyed schema presents");
-    let other = Store::new(schema.clone(), params()).expect("a keyed store");
+    let other = Store::new(schema.clone(), params(), writer()).expect("a keyed store");
     assert_eq!(first.root(), second.root(), "one schema, one empty root");
     assert_ne!(first.root(), other.root(), "another schema, another root");
     assert_eq!(
@@ -353,7 +355,7 @@ fn a_value_preimage_excludes_a_value_it_prefixes()
 #[test]
 fn a_table_lies_on_the_record_plane_as_documented()
 {
-    let mut store = Store::new(graph(), params()).expect("a graph store");
+    let mut store = Store::new(graph(), params(), writer()).expect("a graph store");
     let vertex = object(&store, &Name("V"));
     let edge = object(&store, &Name("E"));
     let src = arrow(&store, &Name("src"));
@@ -379,10 +381,15 @@ fn a_table_lies_on_the_record_plane_as_documented()
         .expect("the graph commits");
     assert_eq!(usize::from(src), 0, "`src` sorts first");
     assert_eq!(usize::from(tgt), 1);
-    assert_eq!(u64::from(joined), 0);
+    assert_eq!(
+        u64::from(joined),
+        0,
+        "writer zero's first key is the offset zero"
+    );
 
     // The edge table, written out by hand: the part, both cells, and the
-    // inverse entry of the indexed `src`.
+    // inverse entry of the indexed `src`. A key of writer zero has the bits
+    // of its offset alone, so these bytes do not name the writer.
     let records = [
         Record::new(vec![0x00, 0, 0, 0, 0, 0, 0, 0, 0], Vec::new()),
         Record::new(vec![0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], vec![
@@ -411,7 +418,11 @@ fn a_table_lies_on_the_record_plane_as_documented()
         "the edge table's tree"
     );
     assert_eq!(table.records(), expected.root().record_count());
-    assert_eq!(table.next(), PartKey::from(1_u64), "the edge counter");
+    assert_eq!(
+        table.counters(),
+        [Counter::new(writer(), PartOffset::from(1_u64))],
+        "the edge counter"
+    );
 
     // The vertex table: two parts and two label cells, no inverse.
     let records = [

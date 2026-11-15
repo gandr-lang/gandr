@@ -276,8 +276,10 @@ INSERT INTO position VALUES('crates/storage-schema/src/manifest.rs','StoreRoot',
 INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','BitIndex','','local',NULL,'A bit''s place in one word of a bit set.');
 INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','BitMask','','none',NULL,'A mask.');
 INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','PartCount','','none',NULL,'A count of parts.');
-INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','PartKey','storage-schema::store','owed','#7344','A part''s key, which its table mints from a counter in increasing order.');
-INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','Slot','','local',NULL,'A part''s place in one column in memory, which the layout derives from its key.');
+INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','PartKey','storage-schema::store','kept',NULL,'A part''s name for the store''s whole life: its writer''s region above its offset, which no other writer''s mint enters.');
+INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','PartOffset','storage-schema::store','kept',NULL,'A part''s place inside its writer''s region, which that writer''s counter mints and no other writer''s mint enters.');
+INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','Slot','','local',NULL,'A part''s place in its writer''s run of one column in memory, which the layout derives from its offset.');
+INSERT INTO position VALUES('crates/storage-schema/src/parts.rs','Writer','','none',NULL,'A name of a writer, which its caller chooses.');
 INSERT INTO position VALUES('crates/storage-schema/src/schema.rs','ArrowId','storage-schema::store','kept',NULL,'An arrow''s ordinal inside one schema, which the schema''s identity names.');
 INSERT INTO position VALUES('crates/storage-schema/src/schema.rs','AttributeId','storage-schema::store','kept',NULL,'An attribute''s ordinal inside one schema, which the schema''s identity names.');
 INSERT INTO position VALUES('crates/storage-schema/src/schema.rs','AttributeTypeId','','local',NULL,'An attribute type''s ordinal inside one schema, which no record of the store writes.');

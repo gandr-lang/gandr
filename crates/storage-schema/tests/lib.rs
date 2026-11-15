@@ -11,6 +11,8 @@ mod defect;
 #[cfg(test)]
 mod equations;
 #[cfg(test)]
+mod glue;
+#[cfg(test)]
 mod keyed;
 #[cfg(test)]
 mod migrate;

@@ -15,11 +15,13 @@ use gandr_storage_schema::Indexing;
 use gandr_storage_schema::LayoutFault;
 use gandr_storage_schema::ManifestImage;
 use gandr_storage_schema::PartKey;
+use gandr_storage_schema::PartOffset;
 use gandr_storage_schema::Refusal;
 use gandr_storage_schema::Row;
 use gandr_storage_schema::Store;
 use gandr_storage_schema::StoreError;
 use gandr_storage_schema::StoreManifest;
+use gandr_storage_schema::Writer;
 use gandr_storage_schema::keyed;
 
 use crate::common::Keyed;
@@ -28,6 +30,7 @@ use crate::common::arrow;
 use crate::common::attribute;
 use crate::common::object;
 use crate::common::params;
+use crate::common::writer;
 
 /// Every record a committed table holds, loaded from the block store.
 ///
@@ -76,15 +79,15 @@ fn doctored(
     tree.write_to(blocks).expect("the doctored tree is written");
 
     let mut image = manifest.encode().as_ref().to_vec();
-    let entry = entry_of(manifest, table).0;
+    let counts = counts_of(manifest, table).0;
     let count = u64::from(tree.root().record_count()).to_le_bytes();
     image
-        .get_mut(entry.saturating_add(8) ..)
+        .get_mut(counts ..)
         .and_then(|rest| rest.get_mut(.. 8))
         .expect("the record count")
         .copy_from_slice(&count);
     image
-        .get_mut(entry.saturating_add(16) ..)
+        .get_mut(counts.saturating_add(8) ..)
         .and_then(|rest| rest.get_mut(.. 32))
         .expect("the root node")
         .copy_from_slice(tree.root_node_hash().as_ref());
@@ -92,8 +95,9 @@ fn doctored(
         .expect("the doctored manifest decodes")
 }
 
-/// Where a table's 48-byte entry starts in a manifest image: the entries
-/// close the image, in table order.
+/// Where a table's entry starts in a manifest image: the entries close the
+/// image, in table order. An entry is its count of counters, its counters,
+/// its record count and its root node, 48 bytes and 10 for each counter.
 ///
 /// # Specification
 /// trivial.
@@ -103,14 +107,38 @@ fn entry_of(
 ) -> Offset
 {
     let length = manifest.encode().as_ref().len();
-    manifest
+    let from = manifest
         .tables()
-        .len()
-        .checked_sub(table.0)
-        .and_then(|after| after.checked_mul(48))
-        .and_then(|tail| length.checked_sub(tail))
+        .iter()
+        .skip(table.0)
+        .map(|entry| entry.counters().len().saturating_mul(10).saturating_add(48))
+        .fold(0_usize, usize::saturating_add);
+    length
+        .checked_sub(from)
         .map(Offset)
         .expect("the table has an entry")
+}
+
+/// Where a table's record count starts in a manifest image: past the
+/// entry's count of counters and its counters.
+///
+/// # Specification
+/// trivial.
+fn counts_of(
+    manifest: &StoreManifest,
+    table: Table,
+) -> Offset
+{
+    let counters = manifest
+        .tables()
+        .get(table.0)
+        .map_or(0_usize, |entry| entry.counters().len());
+    let Offset(entry) = entry_of(manifest, table);
+    Offset(
+        entry
+            .saturating_add(8)
+            .saturating_add(counters.saturating_mul(10)),
+    )
 }
 
 /// A byte offset into a manifest image.
@@ -207,8 +235,8 @@ fn the_fixture_round_trips_through_the_block_store()
     let manifest = StoreManifest::decode(ManifestImage::from(image.as_ref()))
         .expect("the manifest round-trips");
     let schema = keyed::schema().expect("the keyed schema presents");
-    let mut reopened =
-        Store::open(schema.clone(), params(), &manifest, &blocks).expect("the fixture reopens");
+    let mut reopened = Store::open(schema.clone(), params(), writer(), &manifest, &blocks)
+        .expect("the fixture reopens");
     assert_eq!(reopened.root(), root, "one root");
 
     for table in schema.objects() {
@@ -371,7 +399,7 @@ fn a_doctored_table_is_refused_on_reopening()
             .root_node(),
     );
     let reopen = |manifest: &StoreManifest, blocks: &InMemoryBlockStore| {
-        Store::open(schema.clone(), params(), manifest, blocks).err()
+        Store::open(schema.clone(), params(), writer(), manifest, blocks).err()
     };
     let be4 = |value: Table| {
         let mut bytes = u32::try_from(value.0).expect("fits a u32").to_le_bytes();
@@ -463,6 +491,8 @@ fn a_doctored_table_is_refused_on_reopening()
         "a naming without its role"
     );
 
+    let stranger =
+        PartKey::new(Writer::from(7_u16), PartOffset::FIRST).expect("the first offset fits a key");
     let past_counter = [
         (
             Vec::new(),
@@ -488,10 +518,16 @@ fn a_doctored_table_is_refused_on_reopening()
             LayoutFault::Counter,
             "an attribute cell past the counter",
         ),
+        (
+            [&[0x00_u8][..], &be8(stranger)].concat(),
+            Vec::new(),
+            LayoutFault::Writer,
+            "a part of a writer that the manifest does not name",
+        ),
     ];
-    for (key, value, fault, why) in past_counter {
+    for (doctored_key, value, fault, why) in past_counter {
         let mut records = original.clone();
-        records.push(Record::new(key, value));
+        records.push(Record::new(doctored_key, value));
         let refused = doctored(&manifest, table, &mut records, &mut blocks);
         assert_eq!(
             reopen(&refused, &blocks),
@@ -506,7 +542,7 @@ fn a_doctored_table_is_refused_on_reopening()
     let mut records = original;
     let recounted = doctored(&manifest, table, &mut records, &mut blocks);
     let mut image = recounted.encode().as_ref().to_vec();
-    let at = entry_of(&recounted, table).0.saturating_add(8);
+    let at = counts_of(&recounted, table).0;
     if let Some(byte) = image.get_mut(at) {
         *byte = byte.wrapping_add(1);
     }
