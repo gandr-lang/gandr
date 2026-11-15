@@ -1,0 +1,7 @@
+def seat : ?String >> rec turn => +{
+  report : !String >> &{next : turn, retire : end},
+  handoff : !Integer >> end
+};
+def ticker : rec t => !Integer >> (t);
+def choose : +{ok : !Integer >> end};
+def menu : &{get : !Integer >> end, put : ?String >> end};

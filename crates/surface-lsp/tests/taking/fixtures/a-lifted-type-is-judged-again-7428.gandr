@@ -1,0 +1,4 @@
+/// A type of the lowest universe at the universe above it. The judgement
+/// records the lift, a table that a checkpoint does not keep yet.
+def raised : Type[+, 1];
+def raised = Integer;

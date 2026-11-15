@@ -1,0 +1,15 @@
+{NAT}def succeeded(n : Nat) -> -F Nat {{ return Succ n }}
+def succeeded_bare(n : Nat) -> -F Nat {{ Succ n }}
+def arms(m : Nat) -> -F Nat {{ match m {{ | Zero => return m | Succ(p) => return p }} }}
+def arms_bare(m : Nat) -> -F Nat {{ match m {{ | Zero => m | Succ(p) => p }} }}
+def early(k : Nat) -> -F Nat {{ match k {{ | Zero => return k | Succ(j) => {{ let q = match j {{ | Zero => return j | Succ(r) => pure r }} ; pure q }} }} }}
+def computed(n : Nat) -> -F Nat {{ return succeeded n }}
+def stated(n : Nat) -> -F Nat {{ return n ; }}
+def grouped(n : Nat) -> -F Nat {{ return (Succ n) }}
+def quoted(t : Type) -> -F Type {{ return (+U (t -> -F t)) }}
+def held(c : Nat) -> -F Nat {{ match c {{ | Zero => return c | Succ(s) => return s }} ; }}
+def holed(n : Nat) -> -F Nat {{ return ?h }}
+@[ explicit_exits ]
+def asked(n : Nat) -> -F Nat {{ return n }}
+@[ explicit_exits, explicit_exits ]
+def refused(n : Nat) -> -F Nat {{ return n }}

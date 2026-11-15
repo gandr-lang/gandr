@@ -1,0 +1,2 @@
+data Inner : Type where { | No : Inner | Yes : (n : Integer) --> Inner }
+data Outer : Type where { | None : Outer | Some : (i : Inner) --> Outer }
