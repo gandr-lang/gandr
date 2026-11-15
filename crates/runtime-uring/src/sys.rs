@@ -1,11 +1,10 @@
 //! The answer of a liburing call as a result: a negative answer is an error
 //! number.
 
-// The files `sys/sys_x86_64.rs`, `sys/sys_aarch64.rs` and
-// `sys/sys_riscv64.rs` hold the older build script's declarations of the
-// kernel's `io_uring` header. The owner's newer build script writes the
-// base's files under `base/sys/linux/uapi/arch` instead, so no script writes
-// these three now, and no module includes them.
+// The crate's declarations of the kernel's `io_uring` header are the base's
+// files under `base/sys/linux/uapi/arch`, one for each of six architectures,
+// which the build script makes. #7692 owes the check of them against one
+// pinned kernel.
 
 use crate::arg::Answer;
 
