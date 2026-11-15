@@ -1632,11 +1632,15 @@ jobs:
       # check that this job runs (#7684, `.config/gate-scope/verdict.bash`).
       # A record that binds this run's key holds, and the check does not run
       # again. The key reads the scope against the record's base, which the
-      # trunk must hold.
+      # trunk must hold. The integration cycle reads the records too (#7703):
+      # its tree is the head of `landing`, the tree of the last merge group,
+      # and a group of depth one holds the tree that the lane's gate passed.
+      # A held cycle job hands no Clippy state and no policy state on to main,
+      # and the next run that lints writes them.
       - &read-verdicts
         name: read the records of the lane's gate
         id: verdict
-        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request') }}
+        if: ${{ needs.prepare.outputs.lints == 'true' && (github.event_name == 'merge_group' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' && inputs.cycle) }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
