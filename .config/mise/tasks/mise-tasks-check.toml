@@ -2905,10 +2905,15 @@ run = ".config/rust-clippy/cases.bash"
 # is unpacked (#3206): `.config/build-state/restamp.bash` runs each case in
 # `.config/build-state/restamp.json` in a scratch repository and compares the
 # paths still dated now, those a build script watching them reads as changed.
+#
+# A second runner builds a scratch crate under this tree's Cargo
+# configuration, and it restamps the crate's sources as CI does. Cargo must
+# build the unit again where a source changes after it.
+# - see: .config/build-state/freshness.bash, #7775
 ["check:build-state"]
-description = "A restored build state dates only the sources it was built from to before its build"
+description = "A restored build state dates only the sources it was built from to before its build, and Cargo builds a unit again where its source changes"
 tools.jq = "1.8.1"
-run = ".config/build-state/restamp.bash"
+run = [".config/build-state/restamp.bash", ".config/build-state/freshness.bash"]
 
 # The records a pull request's recovery sweep holds (#5864):
 # `.config/recovery/change-cases.bash` commits each shape of a change in a
