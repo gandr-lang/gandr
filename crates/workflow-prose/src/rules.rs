@@ -28,6 +28,7 @@ use crate::passage::Opened;
 use crate::passage::Passage;
 use crate::passage::Placed;
 use crate::passage::References;
+use crate::passage::Rules;
 use crate::passage::Source;
 use crate::passage::Text;
 use crate::passage::WhatLine;
@@ -597,12 +598,15 @@ fn after(
 ///   or `relcl`, or it is the `conj` of a verb. [`Rule::Phrasal`] when a token
 ///   in prose is `prt` and its head is a verb. [`Rule::Glossary`] when a token
 ///   in prose has a lemma the glossary holds and a coarse tag its part of
-///   speech does not admit. A `source` of [`Source::Comment`] adds the rules
-///   [`clauses`] states after these.
+///   speech does not admit. A `source` whose [`Source::rules`] are
+///   [`Rules::Comment`] adds the rules [`clauses`] states after these.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the walk is the clause.
+///
+/// # Cost
+/// - allocation: the rules the sentence breaks, growth within the sentence
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each rule's sentence and a twin it must pass; a dropped
@@ -679,7 +683,7 @@ fn broken(
     if perfect || modal_passive {
         rules.push(Rule::Complex);
     }
-    if source == Source::Body {
+    if source.rules() == Rules::Body {
         rules.extend(clauses(readings, sentence));
         return rules;
     }
@@ -724,7 +728,7 @@ fn broken(
     if misused {
         rules.push(Rule::Glossary);
     }
-    if source == Source::Comment {
+    if source.rules() == Rules::Comment {
         rules.extend(clauses(readings, sentence));
     }
     rules
@@ -934,6 +938,10 @@ fn walled(
 /// - panics: none.
 /// - executable: none — the walk is the clause.
 ///
+/// # Cost
+/// - allocation: the findings and the text of each finding's sentence,
+///   diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — as the private rules; a comment of six sentences, one
 ///   naming an issue, and a body naming one; a wall at five, or a reference
@@ -949,7 +957,7 @@ pub fn sentences(
 ) -> Vec<Finding>
 {
     let readings = readings(Text(&passage.text));
-    let comment = passage.source == Source::Comment;
+    let comment = passage.source.rules() == Rules::Comment;
     let mut findings = Vec::new();
     let mut found = |rule: Rule, sentence: &str| {
         findings.push(Finding {
@@ -1692,10 +1700,17 @@ mod tests
     fn a_comment_holds_the_body_rules_its_references_and_walls()
     {
         let terms = |count: usize| vec!["term"; count].join(" ");
+        for source in [Source::Comment, Source::Hash] {
+            assert_eq!(
+                commented(Text(&format!("Reads {}.", terms(25))), source),
+                [Rule::Length],
+                "a {source:?} comment's sentence holds the body's length"
+            );
+        }
         assert_eq!(
-            commented(Text(&format!("Reads {}.", terms(25))), Source::Comment),
-            [Rule::Length],
-            "a comment's sentence holds the body's length"
+            commented(Text(&format!("Reads {}.", terms(25))), Source::Document),
+            [],
+            "a document's sentence holds no length"
         );
         for reference in [
             "Reads the term (#12).",
@@ -1710,11 +1725,13 @@ mod tests
             "Reads the case (Levy, \"Call-By-Push-Value\", 2003) now.",
             "Reads the attribute (after `#[doc]`, _The Rust Reference_) now.",
         ] {
-            assert_eq!(
-                commented(Text(reference), Source::Comment),
-                [Rule::InlineReference],
-                "{reference:?} names a reference in a comment"
-            );
+            for source in [Source::Comment, Source::Hash] {
+                assert_eq!(
+                    commented(Text(reference), source),
+                    [Rule::InlineReference],
+                    "{reference:?} names a reference in a {source:?} comment"
+                );
+            }
             assert_eq!(
                 commented(Text(reference), Source::Body),
                 [],
@@ -1751,7 +1768,18 @@ mod tests
             "a parse split inside a code span ends no sentence"
         );
         let six = format!("{five} Reads six.");
-        assert_eq!(commented(Text(&six), Source::Comment), [Rule::Wall]);
+        for source in [Source::Comment, Source::Hash] {
+            assert_eq!(
+                commented(Text(&six), source),
+                [Rule::Wall],
+                "six sentences are a wall in a {source:?} comment"
+            );
+        }
+        assert_eq!(
+            commented(Text(&six), Source::Document),
+            [],
+            "a document keeps no wall rule"
+        );
         assert_eq!(
             commented(Text(&six), Source::Body),
             [],

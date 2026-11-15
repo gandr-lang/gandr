@@ -495,8 +495,8 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
         String::from_utf8_lossy(&written.stdout),
         "crates/x/README.md:4: STE-3.2: \"The kernel reduced the term.\" — state it in the \
          present tense\nprose: parsed 3 passage(s) of 16 word(s) afresh, of 3 read; 0 parse(s) \
-         not kept in the cache\nprose: 2 document(s) touched since HEAD: 1 paragraph(s) kept from \
-         the base, 2 written and judged\n"
+         not kept in the cache\nprose: 2 file(s) touched since HEAD: 1 paragraph(s) kept from the \
+         base, 2 written and judged; 0 line(s) of commented-out code left out\n"
     );
     assert_eq!(
         std::fs::read_to_string(root.join("input.json")).unwrap(),
@@ -515,11 +515,71 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
     assert_eq!(fixed.status.code(), Some(0_i32));
     assert!(
         String::from_utf8_lossy(&fixed.stdout).ends_with(
-            "prose: 2 document(s) touched since HEAD: 1 paragraph(s) kept from the base, 2 \
-             written and judged\nprose: 1 findings, every one in the ledger\n"
+            "prose: 2 file(s) touched since HEAD: 1 paragraph(s) kept from the base, 2 written \
+             and judged; 0 line(s) of commented-out code left out\nprose: 1 findings, every one \
+             in the ledger\n"
         ),
         "{}",
         String::from_utf8_lossy(&fixed.stdout)
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_hash_comment_answers_for_the_paragraphs_its_change_wrote()
+{
+    let root = scratch!("hash", "The kernel reduces the term.", "", PRESENT);
+    assert!(run!(root, ["--write"], "").status.success());
+    put!(
+        root,
+        ".config/mise/tasks/t.toml",
+        "# Kept paragraph one.\n[tasks.x]\nrun = '''\n# Old comment of the script.\n'''\n"
+    );
+    put!(
+        root,
+        "crates/x/proptest-regressions/a.txt",
+        "# Seeds that proptest wrote.\n"
+    );
+    git!(root, ["add", "."]);
+    git!(root, ["commit", "--quiet", "-m", "base"]);
+    put!(
+        root,
+        ".config/mise/tasks/t.toml",
+        "# Kept paragraph\n# one.\n[tasks.x]\nrun = '''\n# The kernel reduced the term.\ncat \
+         <<EOF\n# The data reduced it.\nEOF\n# old_flag = true\n'''\n"
+    );
+    put!(
+        root,
+        ".github/workflows/w.yml",
+        "# The workflow reads the term.\non: push\n"
+    );
+    put!(
+        root,
+        "crates/x/proptest-regressions/a.txt",
+        "# The seeds reduced it.\n"
+    );
+    put!(
+        root,
+        "scripts/new",
+        "#!/usr/bin/env bash\n# shellcheck disable=SC2034\n# The new script reads the term.\nset \
+         -e\n"
+    );
+    put!(root, "parse.json", joined!(PAST, PRESENT, PRESENT, PRESENT));
+    let written = run!(root, ["--base", "HEAD"], "");
+    assert_eq!(String::from_utf8_lossy(&written.stderr), "");
+    assert_eq!(written.status.code(), Some(1_i32));
+    assert_eq!(
+        String::from_utf8_lossy(&written.stdout),
+        ".config/mise/tasks/t.toml:5: STE-3.2: \"The kernel reduced the term.\" — state it in the \
+         present tense\nprose: parsed 4 passage(s) of 21 word(s) afresh, of 4 read; 0 parse(s) \
+         not kept in the cache\nprose: 3 file(s) touched since HEAD: 1 paragraph(s) kept from the \
+         base, 3 written and judged; 1 line(s) of commented-out code left out\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("input.json")).unwrap(),
+        r#"["The kernel reduced the term.","The workflow reads the term.","The new script reads the term.","The kernel reduces the term."]"#,
+        "the written comments parse first; the re-wrapped comment, the heredoc's data, the \
+         commented-out key, the shebang, the directive and proptest's seeds never parse"
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -563,9 +623,9 @@ fn an_override_admits_its_substitution_and_counts_it()
         String::from_utf8_lossy(&claimed.stdout),
         format!(
             "prose: `{line}` admits 1 paragraph(s) of the 2 it claims\nprose: parsed 2 passage(s) \
-             of 11 word(s) afresh, of 2 read; 0 parse(s) not kept in the cache\nprose: 1 \
-             document(s) touched since HEAD: 0 paragraph(s) kept from the base, 1 written and \
-             judged\n"
+             of 11 word(s) afresh, of 2 read; 0 parse(s) not kept in the cache\nprose: 2 file(s) \
+             touched since HEAD: 0 paragraph(s) kept from the base, 1 written and judged; 0 \
+             line(s) of commented-out code left out\n"
         ),
         "the reworded paragraph parses, and the count admitted differs from the count claimed"
     );

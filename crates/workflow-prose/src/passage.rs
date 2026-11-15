@@ -1,6 +1,9 @@
-//! The passages the check reads: a gandr source's comment paragraphs, a
-//! markdown document's prose paragraphs, a rendered diagnostic's message,
-//! label and advice, and a pull request's or an issue's body.
+//! The passages that the check reads, one paragraph each.
+//!
+//! The sources are a gandr source's comment paragraphs, a markdown document's
+//! prose paragraphs, and the `#` comments of a task, a script, a workflow or a
+//! manifest ([`hash`]). A rendered diagnostic's message, label and advice, and
+//! a pull request's or an issue's body, are passages too.
 //!
 //! A passage is a paragraph joined onto one line, so a sentence wrapped over
 //! several comment lines parses whole. A list item, a `- see:` reference, a
@@ -18,10 +21,12 @@ use std::path::Path;
 
 use crate::error::ProseError;
 
+pub mod hash;
+
 /// Where a passage was read from.
 ///
 /// # Specification
-/// - provides: the four kinds of text the check reads.
+/// - provides: the five kinds of text the check reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Source
 {
@@ -30,10 +35,93 @@ pub enum Source
     /// A markdown document's paragraph: a README or another page the tree
     /// tracks.
     Document,
+    /// A `#` comment's paragraph in a task, a script, a workflow or a
+    /// manifest.
+    Hash,
     /// A rendered diagnostic's advice.
     Diagnostic,
     /// A pull request's or an issue's body.
     Body,
+}
+
+/// The rules that bind a passage of a source past the rules of every
+/// sentence.
+///
+/// # Specification
+/// - provides: the one choice of the rule set that [`crate::rules`] applies.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Rules
+{
+    /// A comment's: one clause to a sentence, no inline reference and the wall
+    /// of words.
+    Comment,
+    /// A body's: one clause to a sentence and the length of a procedure.
+    Body,
+    /// None past the rules of every sentence: a document's and a diagnostic's.
+    Sentence,
+}
+
+/// Where the debt of a source's passages stands.
+///
+/// # Specification
+/// - provides: which passages a run judges against the ledger, and which
+///   against the merge base.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Debt
+{
+    /// The committed ledger names it: a gandr comment's and a diagnostic's.
+    Ledger,
+    /// The merge base's paragraphs hold it: a passage that the base holds word
+    /// for word is no finding.
+    Base,
+    /// No debt stands: each finding of a body refuses.
+    Absent,
+}
+
+impl Source
+{
+    /// The rules that bind a passage of this source past the rules of every
+    /// sentence.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `#` comment's long sentence, inline reference and
+    ///   wall are findings, and a document's are none; a `#` comment read as a
+    ///   document loses the findings.
+    /// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
+    #[inline]
+    #[must_use]
+    pub const fn rules(self) -> Rules
+    {
+        match self {
+            Self::Comment | Self::Hash => Rules::Comment,
+            Self::Body => Rules::Body,
+            Self::Document | Self::Diagnostic => Rules::Sentence,
+        }
+    }
+
+    /// Where the debt of this source's passages stands.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a changed task file's new paragraph is written and
+    ///   judged with no ledger; a `#` comment read as a ledgered source prints
+    ///   no finding of a written paragraph.
+    /// - witness: `tests::cli::a_hash_comment_answers_for_the_paragraphs_its_change_wrote`
+    #[inline]
+    #[must_use]
+    pub const fn debt(self) -> Debt
+    {
+        match self {
+            Self::Comment | Self::Diagnostic => Debt::Ledger,
+            Self::Document | Self::Hash => Debt::Base,
+            Self::Body => Debt::Absent,
+        }
+    }
 }
 
 /// A one-based line number in a file.

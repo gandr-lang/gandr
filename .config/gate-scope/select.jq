@@ -49,6 +49,14 @@
 # `check:gate-scope` holds each row to the paths that its check reads
 # (`reads.jq`).
 #
+# Each row of the table's `adds` maps paths to groups. A path takes the groups
+# of its `adds` rows beside the groups of its first row. These rows give
+# `check:prose` the files whose `#` comments it reads. They map a file by its
+# extension or its name, as the reader names its syntax, and a script with no
+# extension by its directory. So a crate's `Cargo.toml` runs the Rust wall and
+# the prose check, and a task file runs the prose check alone.
+# - see: #7623 — the `#` comments under the prose gate's rule
+#
 # Input:
 #   tasks     every `check:*` task's name
 #   changed   the paths the change touches
@@ -71,7 +79,7 @@ include "rows";
 | ([.changed[] as $path
     | (if $table.comments != null and ($path | IN($comments[])) then $table.comments
        else first($table.paths[] | select(mapped(.; $path)) | .groups) // $every
-       end)[]]
+       end)[], (($table.adds // [])[] | select(mapped(.; $path)) | .groups[])]
    | unique) as $chosen
 | ([$table.groups[][]] | unique) as $grouped
 | ($table.reads.checks // {}) as $rows

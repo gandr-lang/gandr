@@ -429,5 +429,24 @@
     { "path": "tombi.toml", "groups": [] },
     { "path": "treefmt.toml", "groups": [] },
     { "path": "typos.toml", "groups": [] }
+  ],
+  "adds": [
+    { "path": "**.toml", "groups": ["prose"] },
+    { "path": "**.bash", "groups": ["prose"] },
+    { "path": "**.sh", "groups": ["prose"] },
+    { "path": "**.yml", "groups": ["prose"] },
+    { "path": "**.yaml", "groups": ["prose"] },
+    { "path": "**.jq", "groups": ["prose"] },
+    { "path": "**.py", "groups": ["prose"] },
+    { "path": "**.awk", "groups": ["prose"] },
+    { "path": "**Dockerfile", "groups": ["prose"] },
+    { "path": "**.txt", "groups": ["prose"] },
+    { "path": "**.tsv", "groups": ["prose"] },
+    { "path": ".config/mise/", "groups": ["prose"] },
+    { "path": ".config/local-paths/", "groups": ["prose"] },
+    { "path": ".config/debug/", "groups": ["prose"] },
+    { "path": "crates/*/tests/fakes/**", "groups": ["prose"] },
+    { "path": ".actrc", "groups": ["prose"] },
+    { "path": ".gitignore", "groups": ["prose"] }
   ]
 }
