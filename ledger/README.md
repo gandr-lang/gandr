@@ -7,7 +7,7 @@ The language surface and its features, each checked by the gates. The syntax led
 - `syntax.md`: the syntax ledger, for reading. Every rule of the built-in grammar, grouped by sort: its form spelled from its tiles and holes, its precedence group, node kind, admission and highlight roles, each committed rule linking its exemplar; then the internal rules, which no source molds, each with its reason, and every registered attribute with its payload and exemplar. The header names the grammar's fingerprint.
 - `syntax.json`: the same rows, for machines. Each form is a tree whose tiles carry the mold the grammar's build assigned them, their tile kind, their spelling and their role; one rule or attribute per line.
 - `features.sql`: the features ledger, the `sqlite3` dump of one table of what gandr implements, partly implements, plans and declines, each row with its evidence: the schema first, then one `INSERT` per row in `id` order. `features.db` is built from it and never tracked.
-- `crates.dot`: the per-crate map, one node per crate, clustered by category, each concern drawn as a dashed overlay through its crates; § Map below draws the category map, in the layering order of `crates/README.md` § Layering. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
+- `crates.dot`: the per-crate map, one node per crate, clustered by category, each concern drawn as a dashed overlay through its crates; [`crates/README.md` § Map](../crates/README.md#map) draws the category map, in the layering order of `crates/README.md` § Layering. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
 - `concerns.sql`: a concern is an interface that cuts across crates. The file records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. `mise run check:crate-map` also fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
 - `purposes.sql`: says what each library's public items, modules and root are for, with a naming and a documentation verdict, its schema defining each column. `mise run purposes:list <crate>` prints a crate's entries beside their rows; `mise run check:purposes` fails while a rowed crate has an item with no row, a row names no item, or an entry carries a concern that no site of it in `concerns.sql` covers. A site covers its module, the modules below it and their items; a site at the empty module covers its whole crate.
 - `positions.sql`: classes each struct of the kernel and storage crates whose one field is an unsigned integer or a byte array, outside their tests, and each such struct of the core term arena, whose ids a session's report holds: there a place, a count or a digest takes a name. A row names the key, the name or the byte form that writes the struct, and its class: `kept`, a place inside a piece that its content names; `owed`, a place relative to an order of admission or of mints, with the issue whose unit removes it; `local`, a place that none writes; `none`, no place. Its schema defines each column. `mise run check:positions` fails while such a struct has no row or a row names none, and `mise run ledger:positions` normalizes the file.
@@ -24,37 +24,7 @@ How each row is read off the grammar, the notation a form is spelled in, why a r
 
 ## Map
 
-An arrow is one category's dependencies on another, labelled with the count of `[dependencies]` edges between their crates. Dev and build dependencies are not counted.
-
-<!-- crate-map:begin -->
-```mermaid
-flowchart BT
-  theory
-  kernel
-  core
-  storage
-  runtime
-  surface
-  workflow
-  kernel -->|5| theory
-  core -->|12| theory
-  core -->|33| kernel
-  storage -->|6| theory
-  storage -->|1| kernel
-  runtime -->|1| theory
-  runtime -->|2| kernel
-  runtime -->|5| core
-  runtime -->|3| storage
-  surface -->|37| theory
-  surface -->|28| kernel
-  surface -->|45| core
-  surface -->|12| storage
-  surface -->|6| runtime
-  workflow -->|1| theory
-  workflow -->|2| core
-  workflow -->|18| surface
-```
-<!-- crate-map:end -->
+The category map is [`crates/README.md` § Map](../crates/README.md#map), and the per-crate map is [`crates.dot`](crates.dot).
 
 ## Presented spaces
 
