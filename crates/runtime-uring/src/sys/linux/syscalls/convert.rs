@@ -78,12 +78,14 @@ where
 }
 
 #[inline]
-pub(crate) fn ret_c_uint(raw: RetReg<R0>) -> crate::io::Result<::core::ffi::c_uint> {
+pub(crate) fn ret_c_uint(raw: RetReg<R0>) -> crate::io::Result<::core::ffi::c_uint>
+{
     try_decode_c_uint(raw)
 }
 
 #[inline]
-pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::io::Result<OwnedFd> {
+pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::io::Result<OwnedFd>
+{
     let raw_fd = unsafe { try_decode_raw_fd(raw) }?;
     let own_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
     Ok(own_fd)

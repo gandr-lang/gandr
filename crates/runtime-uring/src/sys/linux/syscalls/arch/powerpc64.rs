@@ -23,7 +23,12 @@ use crate::sys::linux::syscalls::registers::RetReg;
 use crate::sys::linux::syscalls::registers::SyscallNumber;
 
 #[inline]
-pub(crate) unsafe fn syscall2(nr: SyscallNumber<'_>, a0: ArgReg<'_, A0>, a1: ArgReg<'_, A1>) -> RetReg<R0> {
+pub(crate) unsafe fn syscall2(
+    nr: SyscallNumber<'_>,
+    a0: ArgReg<'_, A0>,
+    a1: ArgReg<'_, A1>,
+) -> RetReg<R0>
+{
     let r0;
     let nr = unsafe { nr.into_asm() };
     let a0 = unsafe { a0.into_asm() };
@@ -59,7 +64,8 @@ pub(crate) unsafe fn syscall4_readonly(
     a1: ArgReg<'_, A1>,
     a2: ArgReg<'_, A2>,
     a3: ArgReg<'_, A3>,
-) -> RetReg<R0> {
+) -> RetReg<R0>
+{
     let r0;
     let nr = unsafe { nr.into_asm() };
     let a0 = unsafe { a0.into_asm() };
@@ -99,7 +105,8 @@ pub(crate) unsafe fn syscall6(
     a3: ArgReg<'_, A3>,
     a4: ArgReg<'_, A4>,
     a5: ArgReg<'_, A5>,
-) -> RetReg<R0> {
+) -> RetReg<R0>
+{
     let r0;
     let nr = unsafe { nr.into_asm() };
     let a0 = unsafe { a0.into_asm() };

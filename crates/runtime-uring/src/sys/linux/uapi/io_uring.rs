@@ -22,7 +22,11 @@ use crate::sys::linux::uapi::arch::io_uring_params;
 
 /// # Errors
 #[inline]
-pub fn io_uring_setup(entries: u32, params: &mut io_uring_params) -> crate::io::Result<OwnedFd> {
+pub fn io_uring_setup(
+    entries: u32,
+    params: &mut io_uring_params,
+) -> crate::io::Result<OwnedFd>
+{
     let nr = SyscallNumber::new(__NR_io_uring_setup);
     let entries = c_uint(entries);
     let params = by_mut(params);
@@ -37,7 +41,8 @@ pub unsafe fn io_uring_register(
     opcode: u32,
     arg: *const ::core::ffi::c_void,
     nr_args: u32,
-) -> crate::io::Result<u32> {
+) -> crate::io::Result<u32>
+{
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
         let fd = fd.as_raw_fd();
@@ -62,7 +67,8 @@ pub unsafe fn io_uring_register_with(
     flags: u32,
     arg: *const ::core::ffi::c_void,
     nr_args: u32,
-) -> crate::io::Result<u32> {
+) -> crate::io::Result<u32>
+{
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
         let fd = fd.as_raw_fd();
@@ -91,7 +97,8 @@ pub unsafe fn io_uring_enter(
     flags: u32,
     arg: *const ::core::ffi::c_void,
     size: usize,
-) -> crate::io::Result<u32> {
+) -> crate::io::Result<u32>
+{
     let nr = SyscallNumber::new(__NR_io_uring_enter);
     let fd = {
         let fd = fd.as_raw_fd();

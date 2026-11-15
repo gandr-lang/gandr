@@ -47,19 +47,37 @@ pub(crate) struct A6(());
 #[cfg(target_arch = "x86")]
 pub(crate) struct SocketArg;
 
-pub(crate) trait ArgNumber: private::ArgNumber {}
-impl ArgNumber for A0 {}
-impl ArgNumber for A1 {}
-impl ArgNumber for A2 {}
-impl ArgNumber for A3 {}
-impl ArgNumber for A4 {}
-impl ArgNumber for A5 {}
+pub(crate) trait ArgNumber: private::ArgNumber
+{
+}
+impl ArgNumber for A0
+{
+}
+impl ArgNumber for A1
+{
+}
+impl ArgNumber for A2
+{
+}
+impl ArgNumber for A3
+{
+}
+impl ArgNumber for A4
+{
+}
+impl ArgNumber for A5
+{
+}
 
 // Return value numbers.
 pub(crate) struct R0(());
 
-pub(crate) trait RetNumber: private::RetNumber {}
-impl RetNumber for R0 {}
+pub(crate) trait RetNumber: private::RetNumber
+{
+}
+impl RetNumber for R0
+{
+}
 
 #[must_use]
 #[repr(transparent)]
@@ -76,7 +94,8 @@ where
     Num: ArgNumber,
 {
     #[inline]
-    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque {
+    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque
+    {
         self.raw
     }
 }
@@ -96,7 +115,8 @@ where
     Num: RetNumber,
 {
     #[inline]
-    pub(crate) const unsafe fn from_asm(raw: *mut Opaque) -> Self {
+    pub(crate) const unsafe fn from_asm(raw: *mut Opaque) -> Self
+    {
         Self {
             raw,
             marker: PhantomData,
@@ -104,14 +124,16 @@ where
     }
 
     #[inline]
-    pub(crate) fn decode_usize(self) -> usize {
-        debug_assert!(!(-4095..0).contains(&(self.raw as isize)));
+    pub(crate) fn decode_usize(self) -> usize
+    {
+        debug_assert!(!(-4095 .. 0).contains(&(self.raw as isize)));
 
         self.raw as usize
     }
 
     #[inline]
-    pub(crate) fn decode_raw_fd(self) -> RawFd {
+    pub(crate) fn decode_raw_fd(self) -> RawFd
+    {
         let bits = self.decode_usize();
         let raw = bits as RawFd;
         debug_assert_eq!(raw as usize, bits);
@@ -119,7 +141,8 @@ where
     }
 
     #[inline]
-    pub(crate) fn decode_c_uint(self) -> ::core::ffi::c_uint {
+    pub(crate) fn decode_c_uint(self) -> ::core::ffi::c_uint
+    {
         let bits = self.decode_usize();
         let uint = bits as ::core::ffi::c_uint;
         debug_assert_eq!(uint as usize, bits);
@@ -127,24 +150,29 @@ where
     }
 
     #[inline]
-    pub(crate) fn decode_error_code(self) -> u16 {
-        debug_assert!((-4095..0).contains(&(self.raw as isize)));
+    pub(crate) fn decode_error_code(self) -> u16
+    {
+        debug_assert!((-4095 .. 0).contains(&(self.raw as isize)));
         self.raw as u16
     }
 
-    pub(crate) fn errno_contains(&self) -> bool {
+    pub(crate) fn errno_contains(&self) -> bool
+    {
         Errno::contains(self.raw as isize)
     }
 }
 
 #[repr(transparent)]
-pub(crate) struct SyscallNumber<'arg> {
+pub(crate) struct SyscallNumber<'arg>
+{
     pub(crate) val: usize,
     marker: PhantomData<&'arg ()>,
 }
 
-impl SyscallNumber<'_> {
-    pub(crate) const fn new(val: u32) -> Self {
+impl SyscallNumber<'_>
+{
+    pub(crate) const fn new(val: u32) -> Self
+    {
         let val = val as usize;
         SyscallNumber {
             val,
@@ -153,21 +181,43 @@ impl SyscallNumber<'_> {
     }
 
     #[inline]
-    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque {
+    pub(crate) const unsafe fn into_asm(self) -> *mut Opaque
+    {
         self.val as usize as *mut Opaque
     }
 }
 
-mod private {
-    pub trait ArgNumber {}
-    impl self::ArgNumber for super::A0 {}
-    impl self::ArgNumber for super::A1 {}
-    impl self::ArgNumber for super::A2 {}
-    impl self::ArgNumber for super::A3 {}
-    impl self::ArgNumber for super::A4 {}
-    impl self::ArgNumber for super::A5 {}
-    impl self::ArgNumber for super::R0 {}
+mod private
+{
+    pub trait ArgNumber
+    {
+    }
+    impl self::ArgNumber for super::A0
+    {
+    }
+    impl self::ArgNumber for super::A1
+    {
+    }
+    impl self::ArgNumber for super::A2
+    {
+    }
+    impl self::ArgNumber for super::A3
+    {
+    }
+    impl self::ArgNumber for super::A4
+    {
+    }
+    impl self::ArgNumber for super::A5
+    {
+    }
+    impl self::ArgNumber for super::R0
+    {
+    }
 
-    pub trait RetNumber {}
-    impl self::RetNumber for super::R0 {}
+    pub trait RetNumber
+    {
+    }
+    impl self::RetNumber for super::R0
+    {
+    }
 }
