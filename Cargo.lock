@@ -1650,12 +1650,12 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "assert_fs",
- "io-uring",
- "kanal",
+ "gandr-runtime-uring",
  "libc",
  "oneshot",
  "pin-project-lite",
  "predicates",
+ "rustix",
  "slab",
  "socket2",
 ]
@@ -3397,17 +3397,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "io-uring"
-version = "0.7.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "878c26bc5e45fe089ce2ca25689260c152a87ce1d7de2ca86101efeea6973932"
-dependencies = [
- "bitflags",
- "cfg-if",
- "libc",
-]
-
-[[package]]
 name = "ipconfig"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3716,16 +3705,6 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3953adf0cd667798b396c2fa13552d6d9b3269d7dd1154c4c416442d1ff574"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]

@@ -28,13 +28,12 @@ impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
         protocol: Option<Protocol>,
     ) -> Self
     {
-        let domain = i32::from(domain);
-        let ty = i32::from(ty);
-        let protocol = protocol.map_or(0i32, i32::from);
-
-        let op = ::io_uring::opcode::Socket::new(domain, ty, protocol);
-        let sqe = op.build();
-        let cqe = scope.request(sqe);
+        let cqe = scope.request(|sqe| {
+            let flags = ::rustix::net::SocketFlags::empty();
+            // SAFETY: a socket's creation reads no pointer and names no
+            // descriptor.
+            unsafe { sqe.prep_socket(domain, ty, protocol, flags, None) };
+        });
 
         Self { scope, cqe }
     }

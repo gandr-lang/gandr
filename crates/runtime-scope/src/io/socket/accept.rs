@@ -2,11 +2,10 @@ use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
+use ::gandr_runtime_uring::SlotDesc;
 use ::socket2::SockAddr;
 use ::socket2::SockAddrStorage;
 use ::socket2::socklen_t;
-use ::std::os::fd::AsRawFd as _;
-use ::std::os::fd::BorrowedFd;
 use ::std::os::fd::FromRawFd as _;
 
 use crate::completion::Completion;
@@ -19,7 +18,7 @@ pub struct OpSocketAccept<'tsk, 'env: 'tsk, 'fd> {
     scope: &'tsk Scope<'tsk, 'env>,
     #[pin]
     rsp: Completion<'tsk>,
-    fd: BorrowedFd<'fd>,
+    socket: &'fd ::socket2::Socket,
     addr: Pin<Box<(SockAddrStorage, socklen_t)>>,
 }
 }
@@ -27,7 +26,7 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
 {
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
-        fd: BorrowedFd<'fd>,
+        socket: &'fd ::socket2::Socket,
     ) -> Self
     {
         #[expect(clippy::as_conversions, reason = "size_of")]
@@ -36,19 +35,18 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
 
         let mut addr = Box::new((SockAddrStorage::zeroed(), STORAGE_SIZE));
 
-        let op = {
-            let fd = ::io_uring::types::Fd(fd.as_raw_fd());
-            let addrlen = &raw mut addr.1;
-            let addr = (&raw mut addr.0).cast();
-            ::io_uring::opcode::Accept::new(fd, addr, addrlen)
-        };
-        let sqe = op.build();
-        let rsp = scope.request(sqe);
+        let rsp = scope.request(|sqe| {
+            let (storage, len) = &mut *addr;
+            let flags = ::rustix::net::SocketFlags::empty();
+            // SAFETY: the operation holds `socket` and the boxed address until
+            // its completion.
+            unsafe { sqe.prep_accept(SlotDesc::Desc(socket), storage, len, flags, None) };
+        });
 
         Self {
             scope,
             rsp,
-            fd,
+            socket,
             addr: Pin::new(addr),
         }
     }

@@ -12,11 +12,11 @@ publish.workspace = true
 # are Linux's alone; on another system the crate compiles empty.
 [target.'cfg(target_os = "linux")'.dependencies]
 anyhow = { workspace = true }
-io-uring = { workspace = true }
-kanal = { workspace = true }
+gandr-runtime-uring = { workspace = true }
 libc = { workspace = true }
 oneshot = { workspace = true }
 pin-project-lite = { workspace = true }
+rustix = { workspace = true, features = ["net"] }
 slab = { workspace = true }
 socket2 = { workspace = true }
 

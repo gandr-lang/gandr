@@ -2,10 +2,8 @@ use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
+use ::gandr_runtime_uring::SlotDesc;
 use ::socket2::SockAddr;
-use ::socket2::SockAddrStorage;
-use ::std::os::fd::AsRawFd as _;
-use ::std::os::fd::BorrowedFd;
 
 use crate::completion::Completion;
 use crate::scope::Scope;
@@ -16,34 +14,30 @@ pub struct OpSocketBind<'tsk, 'env: 'tsk, 'fd> {
     scope: &'tsk Scope<'tsk, 'env>,
     #[pin]
     rsp: Completion<'tsk>,
-    fd: BorrowedFd<'fd>,
-    addr: Pin<Box<SockAddrStorage>>,
+    socket: &'fd ::socket2::Socket,
+    addr: Pin<Box<SockAddr>>,
 }
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
 {
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
-        fd: BorrowedFd<'fd>,
+        socket: &'fd ::socket2::Socket,
         addr: SockAddr,
     ) -> Self
     {
-        let addrlen = addr.len();
-        let mut addr = Box::new(addr.as_storage());
-        let op = {
-            let fd = ::io_uring::types::Fd(fd.as_raw_fd());
-            // SAFETY:
-            let addr = unsafe { addr.view_as::<::libc::sockaddr>() };
-            ::io_uring::opcode::Bind::new(fd, addr, addrlen)
-        };
-        let sqe = op.build();
-        let rsp = scope.request(sqe);
+        let addr = Box::pin(addr);
+        let rsp = scope.request(|sqe| {
+            // SAFETY: the operation holds `socket` and the boxed `addr` until
+            // its completion.
+            unsafe { sqe.prep_bind(SlotDesc::Desc(socket), &addr) };
+        });
 
         Self {
             scope,
             rsp,
-            fd,
-            addr: Pin::new(addr),
+            socket,
+            addr,
         }
     }
 }

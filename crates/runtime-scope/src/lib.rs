@@ -22,9 +22,6 @@ mod submission;
 
 pub use crate::runtime::Runtime;
 
-type Receiver<T> = ::kanal::Receiver<T>;
-type Sender<T> = ::kanal::AsyncSender<T>;
-
 #[cfg(test)]
 pub(crate) mod test
 {

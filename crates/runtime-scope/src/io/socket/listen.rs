@@ -2,8 +2,7 @@ use ::core::pin::Pin;
 use ::core::task::Context;
 use ::core::task::Poll;
 use ::core::task::ready;
-use ::std::os::fd::AsRawFd as _;
-use ::std::os::fd::BorrowedFd;
+use ::gandr_runtime_uring::SlotDesc;
 
 use crate::completion::Completion;
 use crate::scope::Scope;
@@ -14,25 +13,23 @@ pub struct OpSocketListen<'tsk, 'env: 'tsk, 'fd> {
     scope: &'tsk Scope<'tsk, 'env>,
     #[pin]
     rsp: Completion<'tsk>,
-    fd: BorrowedFd<'fd>,
+    socket: &'fd ::socket2::Socket,
 }
 }
 impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
 {
     pub(crate) fn new(
         scope: &'tsk Scope<'tsk, 'env>,
-        fd: BorrowedFd<'fd>,
+        socket: &'fd ::socket2::Socket,
         backlog: ::core::ffi::c_int,
     ) -> Self
     {
-        let op = {
-            let fd = ::io_uring::types::Fd(fd.as_raw_fd());
-            ::io_uring::opcode::Listen::new(fd, backlog)
-        };
-        let sqe = op.build();
-        let rsp = scope.request(sqe);
+        let rsp = scope.request(|sqe| {
+            // SAFETY: the operation holds `socket` until its completion.
+            unsafe { sqe.prep_listen(SlotDesc::Desc(socket), backlog) };
+        });
 
-        Self { scope, rsp, fd }
+        Self { scope, rsp, socket }
     }
 }
 impl Future for OpSocketListen<'_, '_, '_>

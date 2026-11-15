@@ -1,18 +1,17 @@
 use ::anyhow::anyhow;
+use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
-use ::io_uring::IoUring;
+use ::gandr_runtime_uring::IoUring;
 use ::slab::Slab;
 
-use crate::Receiver;
-use crate::Sender;
+use crate::completion::Cqe;
 use crate::scope::Scope;
-use crate::submission::Submission;
 
 #[non_exhaustive]
 pub struct Runtime
 {
-    io: IoUring,
+    io: IoUring<'static>,
 }
 
 impl Runtime
@@ -21,7 +20,7 @@ impl Runtime
 
     pub fn new() -> ::anyhow::Result<Self>
     {
-        let io = IoUring::new(4096)?;
+        let io = IoUring::builder().entries(4096).build()?;
         Ok(Self { io })
     }
 
@@ -32,19 +31,17 @@ impl Runtime
     }
 
     pub fn run<'env, T, F>(
-        mut self,
+        self,
         start: F,
     ) -> ::anyhow::Result<T>
     where
         F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
-        let (req_tx, req_rx) = ::kanal::unbounded();
-        let mut tasks = Slab::default();
+        let io = RefCell::new(self.io);
+        let tasks = RefCell::new(Slab::default());
 
-        let scope = Scope::new(req_tx.to_async());
+        let scope = Scope::new(&io, &tasks);
         let mut future = pin!(start(&scope));
-
-        let (sub, mut squ, mut cqu) = self.io.split();
 
         loop {
             // Check if the main future is ready.
@@ -57,39 +54,32 @@ impl Runtime
                 // main future which is the only entrypoint to
                 // start the runtime. Thus the main future always depends on all
                 // received tasks.
-                debug_assert_eq!(tasks.len(), 0, "tasks remaining");
+                debug_assert_eq!(tasks.borrow().len(), 0, "tasks remaining");
 
                 // Return immediately if the future is ready. See above.
                 return Ok(val);
             }
 
-            // Process newly submitted tasks.
-            while let Ok(Some(task)) = req_rx.try_recv_realtime() {
-                // SAFETY: [`Task`] SQEs are constructed such that they respect
-                // io_uring safety.
-                unsafe { squ.push(&task.sqe) }?;
-                tasks.insert(task);
-            }
-
-            // Synchronize SQE/CQE queues and submit and wait for at least one
-            // completion.
-            squ.sync();
-            sub.submit_and_wait(1)?;
-            cqu.sync();
+            // Submit the entries that the scope prepared and wait for at
+            // least one completion.
+            let mut io = io.borrow_mut();
+            let (mut squ, mut cqu) = io.queues();
+            squ.submit_and_wait(1)?;
 
             // Process newly completed tasks.
-            for cqe in cqu.by_ref() {
+            for cqe in cqu.ready() {
                 // Cross-reference the task against the CQE user_data.
                 let key = usize::try_from(cqe.user_data())?;
 
                 // Remove the task since it's completed.
                 let task = tasks
+                    .borrow_mut()
                     .try_remove(key)
                     .ok_or_else(|| anyhow!("task lookup failed: {key}"))?;
 
                 // Forward the CQE to the future's resolver.
                 task.cqe_tx
-                    .send(cqe)
+                    .send(Cqe::new(cqe.res(), cqe.flags()))
                     .map_err(|_err| anyhow!("failed to send cqe result for task: {key}"))?;
             }
         }

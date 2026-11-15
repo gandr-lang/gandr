@@ -1,35 +1,55 @@
+use ::core::cell::RefCell;
 use ::core::marker::PhantomData;
+use ::gandr_runtime_uring::IoUring;
+use ::gandr_runtime_uring::Sqe64;
+use ::slab::Slab;
 
-use crate::Sender;
 use crate::completion::Completion;
 use crate::submission::Submission;
 
 pub struct Scope<'tsk, 'env: 'tsk>
 {
-    req_tx: Sender<Submission>,
+    io: &'tsk RefCell<IoUring<'static>>,
+    tasks: &'tsk RefCell<Slab<Submission>>,
     phd_env: PhantomData<&'env mut &'env ()>,
     phd_tsk: PhantomData<&'tsk mut &'tsk ()>,
 }
 
 impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
 {
-    pub(crate) fn new(req_tx: Sender<Submission>) -> Self
+    pub(crate) fn new(
+        io: &'tsk RefCell<IoUring<'static>>,
+        tasks: &'tsk RefCell<Slab<Submission>>,
+    ) -> Self
     {
         Self {
-            req_tx,
+            io,
+            tasks,
             phd_tsk: PhantomData,
             phd_env: PhantomData,
         }
     }
 
-    pub fn request(
+    /// Prepares the next free entry of the ring with `prep`, and gives the
+    /// completion of its operation. The run loop submits the entry.
+    pub fn request<P>(
         &'tsk self,
-        sqe: ::io_uring::squeue::Entry,
+        prep: P,
     ) -> Completion<'tsk>
+    where
+        P: for<'sq> FnOnce(&mut Sqe64<'sq>),
     {
+        let mut io = self.io.borrow_mut();
+        let mut sq = io.squeue();
+        let Some(mut sqe) = sq.get_sqe()
+        else {
+            return Completion::full();
+        };
+        prep(&mut sqe);
         let (cqe_tx, cqe_rx) = ::oneshot::channel();
-        let sqe = Submission::new(sqe, cqe_tx);
-        let sqe = self.req_tx.send(sqe);
-        Completion::new(sqe, cqe_rx)
+        let key = self.tasks.borrow_mut().insert(Submission::new(cqe_tx));
+        // SAFETY: the user data is a number that the kernel only hands back.
+        unsafe { sqe.set_data64(key as u64) };
+        Completion::new(cqe_rx)
     }
 }

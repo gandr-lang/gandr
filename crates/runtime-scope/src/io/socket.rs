@@ -7,7 +7,6 @@ use ::socket2::Domain;
 use ::socket2::Protocol;
 use ::socket2::SockAddr;
 use ::socket2::Type;
-use ::std::os::fd::AsFd as _;
 
 use crate::io::socket::accept::OpSocketAccept;
 use crate::io::socket::bind::OpSocketBind;
@@ -43,8 +42,7 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     ) -> OpSocketBind<'tsk, 'env, '_>
     {
         let scope = self.scope;
-        let fd = self.inner.as_fd();
-        OpSocketBind::new(scope, fd, addr)
+        OpSocketBind::new(scope, &self.inner, addr)
     }
 
     #[must_use]
@@ -54,16 +52,14 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
     ) -> OpSocketListen<'tsk, 'env, '_>
     {
         let scope = self.scope;
-        let fd = self.inner.as_fd();
-        OpSocketListen::new(scope, fd, backlog)
+        OpSocketListen::new(scope, &self.inner, backlog)
     }
 
     #[must_use]
     pub fn accept(&self) -> OpSocketAccept<'tsk, 'env, '_>
     {
         let scope = self.scope;
-        let fd = self.inner.as_fd();
-        OpSocketAccept::new(scope, fd)
+        OpSocketAccept::new(scope, &self.inner)
     }
 }
 

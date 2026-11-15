@@ -741,6 +741,13 @@ path = "crates/runtime-net"
 [workspace.dependencies.gandr-runtime-stencils]
 path = "crates/runtime-stencils"
 
+# The kernel's ring, the one that the tree holds: the scoped runtime's
+# submissions and completions.
+# consumers:
+# - runtime-scope
+[workspace.dependencies.gandr-runtime-uring]
+path = "crates/runtime-uring"
+
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
 # consumers:
@@ -1576,16 +1583,6 @@ default-features = false
 version = "1.10.1"
 default-features = false
 
-# The ring under the owner's scoped runtime as the owner's crate stands on
-# it. A mend of #7652 puts `gandr-runtime-uring` in its place.
-# features:
-# - none: the runtime needs no optional feature.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.io-uring]
-version = "0.7.10"
-default-features = false
-
 # QUIC endpoints dialed by public key: the host's `Net` interface, one
 # connection and one bidirectional stream per opened stream, TLS 1.3 binding
 # each to the key its dialer named. The version is the one domhringr pins.
@@ -1621,17 +1618,6 @@ features = ["key"]
 [workspace.dependencies.iroh-mdns-address-lookup]
 version = "=0.6.1"
 default-features = false
-
-# The scoped runtime's channel of requests, as the owner's crate has it. A
-# mend of #7652 puts a bounded queue of slots in its place.
-# features:
-# - async: the scope's sender awaits.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.kanal]
-version = "0.1.1"
-default-features = false
-features = ["async"]
 
 # The C library's raw bindings: the emitter's executable regions — `MAP_JIT`
 # and the per-thread write toggle on macOS, a `memfd` mapped twice on Linux,
@@ -2089,6 +2075,7 @@ default-features = false
 #   watch borrow, and `std::io::Error` from `io::Errno`
 # - thread: `thread::futex`
 # consumers:
+# - runtime-scope: `net`, for the flags of a socket and of an accept
 # - runtime-uring: `net`, for its network tests' sockets
 # - surface-dispatcher (Linux)
 [workspace.dependencies.rustix]
