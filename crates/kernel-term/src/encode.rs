@@ -1418,12 +1418,17 @@ fn encode_sequence(
     out.put_version(tags::FORMAT_VERSION);
     let width = positions.width();
     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(width))));
-    encode_minted_atom_table(&mut out, declarations);
-    out.put_uvarint(WireU64::from(WireUsize::from(declarations.len())));
     let mut interner = Interner {
         positions,
         ..Interner::new()
     };
+    encode_minted_atom_table(
+        &mut out,
+        &mut interner.positions,
+        minted_places(declarations, ConstantIndex::from(0_usize)),
+        width,
+    );
+    out.put_uvarint(WireU64::from(WireUsize::from(declarations.len())));
     let mut scratch = EncodedArtifact::new();
     for (position, declaration) in declarations.iter().enumerate() {
         let remaining = SealExtent::from(
@@ -1625,18 +1630,21 @@ pub fn encode_after(
     out.put_version(tags::FORMAT_VERSION);
     let width = names.width();
     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(width))));
-    let minted = minted_atoms(after);
-    out.put_uvarint(WireU64::from(WireUsize::from(
-        prefix.atoms.len().saturating_add(minted.len()),
-    )));
-    for atom in &prefix.atoms {
-        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(*atom))));
-    }
-    for atom in minted {
-        out.put_uvarint(WireU64::from(WireUsize::from(
-            prefix.count.saturating_add(usize::from(atom)),
-        )));
-    }
+    let mut interner = Interner::after(Arc::clone(&prefix.assigned));
+    interner.positions = Positions::Artifact(Placing {
+        names: names.clone(),
+        ..Placing::default()
+    });
+    encode_minted_atom_table(
+        &mut out,
+        &mut interner.positions,
+        prefix
+            .atoms
+            .iter()
+            .map(|&atom| ConstantIndex::from(usize::from(atom)))
+            .chain(minted_places(after, prefix.end())),
+        width,
+    );
     out.put_uvarint(WireU64::from(WireUsize::from(
         prefix.count.saturating_add(after.len()),
     )));
@@ -1654,11 +1662,6 @@ pub fn encode_after(
         ));
         (keys_from, rests_from) = (keys_to, rests_to);
     }
-    let mut interner = Interner::after(Arc::clone(&prefix.assigned));
-    interner.positions = Positions::Artifact(Placing {
-        names: names.clone(),
-        ..Placing::default()
-    });
     let mut scratch = EncodedArtifact::new();
     for (position, declaration) in after.iter().enumerate() {
         let remaining = SealExtent::from(after.len().saturating_sub(position).saturating_sub(1));
@@ -1918,6 +1921,9 @@ pub fn keyed_segment(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the positions of the atoms, growth within the declarations.
+///
 /// # Adequacy
 /// - hypothesis: L3 compares a mixed abstract-type, definition and axiom
 ///   sequence with a literal whole-artifact fixture, including names, admission
@@ -1939,70 +1945,92 @@ pub fn keyed_segment(
 )))]
 pub fn minted_atoms(declarations: &[MarkedDeclaration]) -> Vec<MintedAtom>
 {
-    declarations
-        .iter()
-        .enumerate()
-        .filter_map(|(position, declaration)| {
-            matches!(
-                *declaration.declaration().content(),
-                DeclarationContent::AbstractType { .. }
-            )
-            .then_some(MintedAtom::from(position))
-        })
+    minted_places(declarations, ConstantIndex::from(0_usize))
+        .map(|place| MintedAtom::from(usize::from(place)))
         .collect()
 }
 
-/// Write the minted-atom table: a count followed by ascending admission
-/// positions.
+/// The place of each abstract-type declaration among `declarations`, the first
+/// of which stands at `first`, in order.
+///
+/// # Specification
+/// trivial.
+#[inline]
+fn minted_places(
+    declarations: &[MarkedDeclaration],
+    first: ConstantIndex,
+) -> impl Iterator<Item = ConstantIndex> + Clone + '_
+{
+    declarations
+        .iter()
+        .enumerate()
+        .filter(|entry| {
+            matches!(
+                *entry.1.declaration().content(),
+                DeclarationContent::AbstractType { .. }
+            )
+        })
+        .map(move |entry| ConstantIndex::from(usize::from(first).saturating_add(entry.0)))
+}
+
+/// Write the minted-atom table: the count of `atoms`, then, when it holds an
+/// atom, a table of names and each atom's place as a segment writes a
+/// position.
 ///
 /// The table is deliberately derivable from the declarations that follow it.
 /// That is not redundancy for its own sake: a table the decoder can recompute
 /// is a table the decoder can *refute*, and refutability is the whole
 /// difference between freshness as a checked property and freshness as
-/// something the producer asserts.
+/// something the producer asserts. An atom whose place the names name is
+/// written by its key, so an insertion before it leaves its bytes.
 ///
 /// # Specification
-/// - requires: `declarations` are in admission order.
-/// - ensures: appends the number of minted atoms and then their admission
-///   positions in ascending order.
+/// - requires: `atoms` are the places of the abstract types of the sequence,
+///   ascending, and `width` is at most a whole key.
+/// - ensures: appends the count of `atoms`. When the count is above zero, it
+///   then appends the table of the keys of the named atoms at `width`, and each
+///   atom's place as [`Positions::name_place`] writes it, in order.
 /// - provides: the table a decoder recomputes and compares, which is what makes
 ///   freshness a checked property rather than a producer's assertion.
 /// - panics: none.
+/// - executable: none — a written place depends on the table, which a clause
+///   would restate.
+///
+/// # Cost
+/// - allocation: the table of the atoms' keys, growth within the atoms.
 ///
 /// # Adequacy
 /// - hypothesis: L3 compares a mixed abstract-type, definition and axiom
-///   sequence with a literal whole-artifact fixture, including names, admission
-///   marks, shared globals, root order and reserved slots. A separate position
-///   model and a nonempty provenance fixture distinguish declaration positions
-///   from table indices and preserve claimed order. Existing refusal and
-///   differently shared fixtures cover table disagreements and canonical
-///   deduplication. The finite examples do not prove typing, provenance truth
-///   or independent correctness through round-trip self-agreement.
+///   sequence with a literal whole-artifact fixture, bare and under names. A
+///   named atom past an insertion keeps its bytes. Existing refusal fixtures
+///   cover table disagreements.
 /// - witness: `encode::tests::declaration_sequences_match_literal_segment_fixtures`
 /// - witness: `encode::tests::atom_positions_and_provenance_preserve_sequence_identity`
-#[spec(
-    captures: start = out.as_image().as_ref().len(),
-    ensures: |ret| { let image = out.as_image();
-        let bytes = image.as_ref();
-        let (count, fields) = declarations.iter().enumerate().filter(|&(_, declaration)| matches!(*declaration.declaration().content(), DeclarationContent::AbstractType { .. })).fold((0_usize, 0_usize),
-        |(count, fields), (position, _)| (count.saturating_add(1), fields.saturating_add(usize::try_from(64_u32.saturating_sub((u64::try_from(position).unwrap_or(u64::MAX)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))));
-        let count = u64::try_from(count).unwrap_or(u64::MAX);
-        bytes.len() == start.saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(fields)
-            && ({ let scalar = count;
-        let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-        bytes.get((start) .. (start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
-        u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
-            && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) },
-)]
-fn encode_minted_atom_table(
+/// - witness: `encode::tests::a_named_atom_keeps_its_table_past_an_insertion_7340`
+#[inline]
+fn encode_minted_atom_table<Atoms>(
     out: &mut EncodedArtifact,
-    declarations: &[MarkedDeclaration],
-)
+    positions: &mut Positions,
+    atoms: Atoms,
+    width: ByteCount,
+) where
+    Atoms: Iterator<Item = ConstantIndex> + Clone,
 {
-    let atoms = minted_atoms(declarations);
-    out.put_uvarint(WireU64::from(WireUsize::from(atoms.len())));
-    for atom in atoms {
-        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(atom))));
+    let count = atoms.clone().count();
+    out.put_uvarint(WireU64::from(WireUsize::from(count)));
+    if count == 0 {
+        return;
+    }
+    // Naming an atom's place may add its key to the table, so each atom is
+    // named before the table is written.
+    positions.open_segment();
+    for place in atoms.clone() {
+        let _entry = positions.name_place(place);
+    }
+    put_table(out, positions.table(), width);
+    for place in atoms {
+        let written = positions.name_place(place);
+        out.put_uvarint(WireU64::from(WireUsize::from(usize::from(written))));
     }
 }
 
@@ -4666,7 +4694,7 @@ mod tests
         // place zero, and the axiom imports the abstract type from offset zero
         // of place one, each place written bare.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 1, 0, 3, 0, 0, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 1, 0, 1, 3, 0, 0, 0, 2, 0, 0, 0, 2, 0x02, 0, 0, 0x00,
             0x00, 0, 2, 2, 0, 1, 1, 0, 1, 0, 2, 1, b'a', 2, 0xc3, 0xa9, 0, 0, 2, 0x17, 1, 0x1c, 0,
             1, 2, 0, 0, 0, 0, 0, 1, 3, 0, 0, 1, 0, 0, 0, 0, 1,
         ];
@@ -4717,7 +4745,7 @@ mod tests
         // and the four empty slots; then one pair, its two roots and its two
         // decision words.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 7, 0, 0, 0, 3, 0x03, 0, 0x0D, 0, 0x0D,
             1, 2, 0, 2, 0, 0, 0, 0, 1, 2, 4, 2, 0x0B, 0x0E,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -4743,7 +4771,7 @@ mod tests
         // A relating kind closing with no pair decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 7, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
             0, 0, 0, 0, 0,
         ];
         assert_eq!(
@@ -4793,7 +4821,7 @@ mod tests
         // empty slots; then no related pair, and the two laws in written order,
         // each bare: 2 * 5 + 1 and 2 * 2 + 1.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
             0, 0, 0, 0, 0, 2, 11, 5,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -4811,7 +4839,7 @@ mod tests
         // A lawful kind closing with no law decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 9, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
             0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
@@ -4873,7 +4901,7 @@ mod tests
         // slot: two binders, the second below the first, and two marks, each
         // its binder, its depth and its path; then the three other slots.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0, 2,
             2, 0, 1, 2, 0, 1, 2, 0, 1, 1, 0, 1, 1, 0, 0, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -4947,7 +4975,7 @@ mod tests
         // declaration at 3 and a results tuple of 4. Each position is bare:
         // 2 * 0 + 1 and 2 * 3 + 1.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0,
             2, 0, 0, 0, 0, 0, 0, 1, 2, 2, 1, 1, 1, 0, 2, 0, 7, 1, 3, 4,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -4974,7 +5002,7 @@ mod tests
         // A ruled kind closing with no rule decodes to a plain definition,
         // whose canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 0x0E, 0, 0, 0, 2, 0x03, 0, 0x0D, 0, 0,
             2, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
@@ -5333,7 +5361,7 @@ mod tests
         // parameter, three constructors of arity zero, one and one; then two
         // rules, each two sides of a node count and tagged nodes.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0,
             0, 0, 3, 0, 1, 2, 1, 2, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1, 0,
         ];
         let bytes = super::encode(&arena, &declarations);
@@ -5354,7 +5382,7 @@ mod tests
         // A presented kind closing with no rule decodes to a free type, whose
         // canonical bytes carry the plain kind.
         let empty = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1, 0,
             0, 0, 3, 0, 1, 2, 1, 2, 0,
         ];
         assert_eq!(
@@ -5424,7 +5452,7 @@ mod tests
         // circle writes them; then the sort's position, one cell, and its two
         // endpoints, each the one constructor `base`.
         let expected = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1,
             0, 0, 0, 3, 0, 1, 2, 1, 2, 2, 3, 0, 1, 0, 2, 1, 0, 1, 1, 0, 3, 0, 2, 0, 1, 1, 0, 1, 1,
             0, 1, 1, 1, 0, 0, 1, 0, 0,
         ];
@@ -5449,7 +5477,7 @@ mod tests
         // Words whose rules were dropped still decode, to be refused by the
         // kernel against the mint, and keep their canonical bytes.
         let dropped = [
-            b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1,
+            b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 10, 0, 0, 0, 2, 0x02, 0, 0, 0x5D, 1,
             0, 0, 0, 3, 0, 1, 2, 1, 2, 0, 1, 1, 1, 0, 0, 1, 0, 0,
         ];
         let decoded = crate::decode::decode(ArtifactImage::from(dropped.as_slice()))
@@ -5533,9 +5561,10 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, atom)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
-        // The kind follows the header, the one-entry atom table, the segment's
-        // empty table of names, its empty imports and the admission mark.
-        let kind_at = 13;
+        // The kind follows the header, the one-entry atom table with its empty
+        // table of names, the segment's empty table of names, its empty
+        // imports and the admission mark.
+        let kind_at = 14;
         assert_eq!(
             image.as_ref().get(kind_at).copied(),
             Some(u8::from(crate::tags::KIND_ABSTRACT_INTERFACED))
@@ -5605,7 +5634,7 @@ mod tests
         let declarations = [MarkedDeclaration::new(AdmissionMark::Checked, atom)];
         let bytes = super::encode(&arena, &declarations);
         let image = bytes.as_image();
-        let kind_at = 13;
+        let kind_at = 14;
         assert_eq!(
             image.as_ref().get(kind_at).copied(),
             Some(u8::from(crate::tags::KIND_ABSTRACT_LAWFUL))
@@ -5881,6 +5910,7 @@ mod tests
     #[test]
     fn atom_positions_and_provenance_preserve_sequence_identity()
     {
+        let mut positions = super::Positions::default();
         for mask in 0_u8 .. 64 {
             let mut arena = TermArena::new();
             let kind = arena.value_type_universe(GroundSort::Value, Level::zero());
@@ -5923,17 +5953,26 @@ mod tests
             );
             let mut out = EncodedArtifact::new();
             out.put_image(ArtifactImage::from([0xde_u8, 0xad].as_slice()));
-            super::encode_minted_atom_table(&mut out, &declarations);
+            super::encode_minted_atom_table(
+                &mut out,
+                &mut positions,
+                super::minted_places(&declarations, ConstantIndex::from(0_usize)),
+                super::ByteCount::from(super::KEY_WIDTH_FLOOR),
+            );
+            // With no names the table is empty, and each atom at the place p
+            // is written as 2p + 1.
             let mut bytes = alloc::vec![
                 0xde_u8,
                 0xad,
                 u8::try_from(expected.len()).expect("at most six atoms")
             ];
-            bytes.extend(
-                expected
-                    .into_iter()
-                    .map(|position| u8::try_from(position).expect("six positions")),
-            );
+            if !expected.is_empty() {
+                bytes.push(0);
+                bytes.extend(expected.into_iter().map(|position| {
+                    u8::try_from(position.saturating_mul(2).saturating_add(1))
+                        .expect("six positions")
+                }));
+            }
             assert_eq!(out.as_image().as_ref(), bytes.as_slice());
         }
         for (provenance, expected) in [
@@ -6471,6 +6510,113 @@ mod tests
                 site: crate::MalformedSite::UnplacedName,
             }),
             "an entry that begins no name is refused"
+        );
+    }
+
+    /// A named atom stands in the header's atom table by its key. An axiom
+    /// inserted before it leaves that table and the atom's segment byte for
+    /// byte, its seal included. Bare, the atom's place moves with the
+    /// insertion, so the test can fail. Each artifact decodes to its atoms.
+    #[test]
+    fn a_named_atom_keeps_its_table_past_an_insertion_7340()
+    {
+        let atom = |arena: &mut TermArena| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let kind = builder
+                .arena()
+                .value_type_universe(GroundSort::Value, Level::zero());
+            let integer = builder.arena().value_type_base(BaseType::Integer);
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                builder.abstract_type(
+                    LevelSignature::monomorphic(),
+                    kind,
+                    integer,
+                    super::SealScope::Closed(super::SealExtent::from(1_usize)),
+                ),
+            )
+        };
+        let member = |arena: &mut TermArena| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let declared = builder.arena().value_type_unit();
+            let body = builder.arena().value_unit();
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                builder.def(LevelSignature::monomorphic(), declared, body),
+            )
+        };
+        // The inserted axiom shares no node with the atom or its member, so
+        // neither of them imports from it.
+        let inserted = |arena: &mut TermArena| {
+            let mut builder = DeclarationBuilder::new(arena);
+            let declared = builder.arena().value_type_base(BaseType::String);
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                builder.axiom(LevelSignature::monomorphic(), declared),
+            )
+        };
+        let key = |byte: u8| super::ConstantKey::from([byte; super::CONSTANT_KEY_LEN]);
+        let mut arena = TermArena::new();
+        let short = [atom(&mut arena), member(&mut arena)];
+        let long = [inserted(&mut arena), atom(&mut arena), member(&mut arena)];
+        let short_names = super::Names::new([Some(key(1)), Some(key(2))]);
+        let long_names = super::Names::new([Some(key(9)), Some(key(1)), Some(key(2))]);
+        // The atom table follows the magic, the version and the width.
+        let table_at = crate::tags::MAGIC.len().saturating_add(3);
+        let header = |image: &super::EncodedArtifact, length: usize| {
+            image
+                .as_image()
+                .as_ref()
+                .get(table_at .. table_at.saturating_add(length))
+                .expect("the atom table")
+                .to_vec()
+        };
+        // One atom, a table of its key cut to one word, then the atom as twice
+        // its entry in that table.
+        let mut keyed = alloc::vec![1_u8, 1];
+        keyed.extend_from_slice(&[1_u8; 8]);
+        keyed.push(0);
+        let short_named = super::encode_named(&arena, &short, None, &short_names);
+        let long_named = super::encode_named(&arena, &long, None, &long_names);
+        assert_eq!(
+            (header(&short_named, 11), header(&long_named, 11)),
+            (keyed.clone(), keyed),
+            "an insertion before a named atom leaves its entry in the atom table"
+        );
+        let segment = |image: &super::EncodedArtifact, names: &super::Names, at: usize| {
+            let decoded = crate::decode_named(image.as_image(), names).expect("the bytes decode");
+            let span = decoded
+                .segments()
+                .declaration_segments()
+                .nth(at)
+                .expect("the atom's segment");
+            let bytes = image
+                .as_image()
+                .as_ref()
+                .get(usize::from(span.start) .. usize::from(span.end))
+                .expect("the segment's bytes")
+                .to_vec();
+            (super::minted_atoms(decoded.declarations()), bytes)
+        };
+        let (short_atoms, short_segment) = segment(&short_named, &short_names, 0);
+        let (long_atoms, long_segment) = segment(&long_named, &long_names, 1);
+        assert_eq!(
+            short_segment, long_segment,
+            "the atom's segment, its seal's extent included, keeps its bytes"
+        );
+        assert_eq!(
+            (short_atoms, long_atoms),
+            (super::minted_atoms(&short), super::minted_atoms(&long)),
+            "each artifact decodes to its atoms"
+        );
+        // Bare, the table is empty and the atom is its place p as 2p + 1.
+        assert_eq!(
+            (
+                header(&super::encode(&arena, &short), 3),
+                header(&super::encode(&arena, &long), 3)
+            ),
+            (alloc::vec![1_u8, 0, 1], alloc::vec![1_u8, 0, 3]),
+            "bare, the atom's place moves with the insertion"
         );
     }
 

@@ -1669,11 +1669,16 @@ mod kernel_generative_distinctness
     /// The offset of the header's minted-atom count: past the four-byte magic,
     /// the two-byte version and the one-byte key width.
     const MINTED_ATOM_TABLE_COUNT_OFFSET: usize = 7;
-    /// The offset of the table's entry for the first application's atom, past
-    /// the count and the argument's entry, each one byte in the functor pair.
-    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 9;
-    /// The offset of the table's entry for the second application's atom.
-    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 10;
+    /// The width of each key in the functor pair's tables: one word, since its
+    /// keys stay apart in their first word.
+    const KEY_WIDTH: usize = 8;
+    /// The offset of the atom table's entry for the argument's atom, past the
+    /// count, the count of the table's keys and the three keys.
+    const SEED_ENTRY_OFFSET: usize = 33;
+    /// The offset of the atom table's entry for the first application's atom.
+    const FIRST_APPLICATION_ENTRY_OFFSET: usize = 34;
+    /// The offset of the atom table's entry for the second application's atom.
+    const SECOND_APPLICATION_ENTRY_OFFSET: usize = 35;
 
     /// The classic functor pair exported: `Seed` sealed, then `MkCounter`
     /// applied to it twice, as `A` and as `B`.
@@ -1732,12 +1737,34 @@ mod kernel_generative_distinctness
         else {
             panic!("three atoms");
         };
-        let entry = |position: usize| u8::try_from(position).expect("a one-byte position");
+        // The table names each atom by its key, one word wide, and each atom's
+        // position is twice its entry in that table.
+        let mut table = alloc::vec![3_u8, 3];
+        for position in [seed, first, second] {
+            let key = exported
+                .keys
+                .key(ConstantIndex::from(position))
+                .expect("each atom of the pair has a key");
+            table.extend_from_slice(key.as_ref().get(.. KEY_WIDTH).expect("a word of the key"));
+        }
+        table.extend_from_slice(&[0, 2, 4]);
         let image = Vec::from(exported.artifact);
         assert_eq!(
+            image
+                .get(MINTED_ATOM_TABLE_COUNT_OFFSET.saturating_sub(1))
+                .copied(),
+            u8::try_from(KEY_WIDTH).ok(),
+            "the functor pair's keys stay apart in one word"
+        );
+        assert_eq!(
             image.get(MINTED_ATOM_TABLE_COUNT_OFFSET ..= SECOND_APPLICATION_ENTRY_OFFSET),
-            Some([3_u8, entry(seed), entry(first), entry(second)].as_slice()),
-            "the header's table carries each atom once, at its own position"
+            Some(table.as_slice()),
+            "the header's table names each atom once, by its own key"
+        );
+        assert_eq!(
+            image.get(SEED_ENTRY_OFFSET).copied(),
+            Some(0),
+            "the argument's atom is the table's first entry"
         );
         let mut seeds = Vec::new();
         for (instance, own, other) in [("A", first, second), ("B", second, first)] {
