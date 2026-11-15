@@ -105,14 +105,15 @@ impl From<LevelParamCount> for u32
     }
 }
 
-/// The admission position of one minted atom, as the artifact's minted-atom
-/// table records it.
+/// The admission position of one minted atom, as the decoder reads it from the
+/// artifact's minted-atom table.
 ///
 /// A bare index would be the wrong type here even though the representation is
 /// the same integer: the table's entries are positions in an admission
 /// sequence, and the reader compares them against positions it re-derived. The
 /// wrapper is what stops one being crossed with a subterm-table index or a byte
-/// offset at a signature.
+/// offset at a signature. The table writes each atom's place as a segment
+/// writes a position: by its key when the place has one.
 ///
 /// # Specification
 /// - requires: all host admission positions are representable.

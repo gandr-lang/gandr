@@ -309,6 +309,50 @@ struct Resolver
 
 impl Resolver
 {
+    /// Read a table of names: its count, then the first `width` bytes of each
+    /// key, each resolved to the one place whose key it begins.
+    ///
+    /// # Specification
+    /// - requires: `reader` stands at the start of a table.
+    /// - ensures: the resolver holds the place each entry names, in the table's
+    ///   order, and `reader` stands past the table.
+    /// - fails: [`DecodeError::Truncated`] when the bytes end inside the table,
+    ///   the reader's refusal of the count, [`MalformedSite::UnplacedName`] for
+    ///   an entry that begins no name and [`MalformedSite::SharedPrefix`] for
+    ///   one that begins two.
+    /// - panics: none.
+    /// - executable: none — the table is private state, which a clause could
+    ///   read only by reading the bytes again.
+    ///
+    /// # Cost
+    /// - allocation: the table, growth within its count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::open`] for a segment's table, and as
+    ///   [`ByteReader::read_minted_atom_table`] for the header's.
+    /// - witness: `encode::tests::a_named_encoding_writes_each_named_place_by_its_key_7340`
+    /// - witness: `encode::tests::a_named_atom_keeps_its_table_past_an_insertion_7340`
+    #[inline]
+    fn read_table(
+        &mut self,
+        reader: &mut ByteReader<'_>,
+    ) -> Result<(), DecodeError>
+    {
+        self.table.clear();
+        let count = reader.read_uvarint()?;
+        let mut remaining = u64::from(count);
+        while remaining > 0_u64 {
+            let prefix = reader.take(ByteCount::from(self.width))?;
+            let place = self
+                .names
+                .place_of_prefix(prefix)
+                .map_err(|site| DecodeError::Malformed { site })?;
+            self.table.push(place);
+            remaining = remaining.wrapping_sub(1_u64);
+        }
+        Ok(())
+    }
+
     /// Read the table of names and the imports that open a segment whose first
     /// entry takes `base`.
     ///
@@ -349,18 +393,7 @@ impl Resolver
         base: GlobalIndex,
     ) -> Result<(), DecodeError>
     {
-        self.table.clear();
-        let count = reader.read_uvarint()?;
-        let mut remaining = u64::from(count);
-        while remaining > 0_u64 {
-            let prefix = reader.take(ByteCount::from(self.width))?;
-            let place = self
-                .names
-                .place_of_prefix(prefix)
-                .map_err(|site| DecodeError::Malformed { site })?;
-            self.table.push(place);
-            remaining = remaining.wrapping_sub(1_u64);
-        }
+        self.read_table(reader)?;
         self.imports.clear();
         let count = reader.read_uvarint()?;
         let mut remaining = u64::from(count);
@@ -1037,12 +1070,12 @@ fn decode_splitting(
     reader.expect_magic()?;
     reader.expect_version()?;
     let width = usize::from(reader.read_key_width()?);
-    let declared_atoms = reader.read_minted_atom_table()?;
-    let count = reader.read_uvarint()?;
-    let header_end = reader.position;
     let mut table = Table::new();
     table.resolver.names = names.clone();
     table.resolver.width = width;
+    let declared_atoms = reader.read_minted_atom_table(&mut table.resolver)?;
+    let count = reader.read_uvarint()?;
+    let header_end = reader.position;
     let mut metas: Vec<DeclMeta> = Vec::new();
     let mut declaration_ends: Vec<ByteOffset> = Vec::new();
     let mut snapshot = None;
@@ -1330,7 +1363,12 @@ pub fn decode_after(
     reader.expect_magic()?;
     reader.expect_version()?;
     let width = usize::from(reader.read_key_width()?);
-    let declared_atoms = reader.read_minted_atom_table()?;
+    let mut header = Resolver {
+        names: names.clone(),
+        width,
+        ..Resolver::default()
+    };
+    let declared_atoms = reader.read_minted_atom_table(&mut header)?;
     let count = reader.read_uvarint()?;
     let header_end = reader.position;
     let leading = prefix.declarations.len();
@@ -2517,17 +2555,19 @@ impl<'bytes> ByteReader<'bytes>
         }
     }
 
-    /// Read the minted-atom table: a count followed by that many admission
-    /// positions.
+    /// Read the minted-atom table: a count, then, when it holds an atom, a
+    /// table of names and each atom's position, which `resolver` resolves as
+    /// a segment's position.
     ///
-    /// Only the integers are read here; the table's truth is decided once the
+    /// Only the positions are read here; the table's truth is decided once the
     /// declarations have been decoded independently, because a claim checked
     /// against nothing is not checked. No capacity is reserved from the
     /// declared count. Allocation follows only positions actually decoded
     /// before a refusal.
     ///
     /// # Specification
-    /// - requires: the cursor is positioned at the minted-atom table.
+    /// - requires: the cursor is positioned at the minted-atom table, and
+    ///   `resolver` holds the artifact's names and the header's width.
     /// - ensures: on `Ok`, returns exactly the declared number of admission
     ///   positions, in the order the bytes carry them, and advances past the
     ///   table.
@@ -2536,41 +2576,41 @@ impl<'bytes> ByteReader<'bytes>
     ///   reserved from the declared count; storage grows only after a position
     ///   has been decoded.
     /// - fails: [`DecodeError::Truncated`] when the bytes run out;
-    ///   [`DecodeError::Malformed`] at the varint or index-range site.
+    ///   [`DecodeError::Malformed`] at the varint or index-range site, and as
+    ///   [`Resolver::read_table`] and [`Resolver::read`].
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the atoms and the table, growth within their counts.
     ///
     /// # Adequacy
     /// - hypothesis: L3 uses literal record bytes with empty and nonempty
     ///   names, Unicode, out-of-order provenance, occupied reserved slots,
     ///   invalid UTF-8 and maximal declared counts. It checks exact values,
     ///   refusal sites and cursor positions; it does not claim name
-    ///   normalization, atom truth or typing.
+    ///   normalization, atom truth or typing. A named atom reads its place by
+    ///   its key.
     /// - witness: `decode::tests::counted_records_validate_content_and_consumption`
+    /// - witness: `encode::tests::a_named_atom_keeps_its_table_past_an_insertion_7340`
     #[spec(
         captures: start = self.position,
-        ensures: |ret| self.position >= start
-                && self.position <= self.image.length()
-                && ret.as_ref().ok().is_none_or(|atoms| { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
-            ({ let scalar = count;
-            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            self.image.as_ref().get((start.0) .. (start.0).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
-            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
-                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
-                && atoms.iter().try_fold((start.0).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
-            |position, &atom| { let ordinal = u64::try_from(usize::from(atom)).unwrap_or(u64::MAX);
-            ({ let scalar = ordinal;
-            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
-            self.image.as_ref().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
-            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
-                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((ordinal).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) == Some(self.position.0) }),
+        ensures: |ret| self.position >= start && self.position <= self.image.length()
+            && (ret.is_err() || (self.position > start)),
     )]
-    fn read_minted_atom_table(&mut self) -> Result<Vec<MintedAtom>, DecodeError>
+    fn read_minted_atom_table(
+        &mut self,
+        resolver: &mut Resolver,
+    ) -> Result<Vec<MintedAtom>, DecodeError>
     {
         let count = self.read_uvarint()?;
         let mut atoms: Vec<MintedAtom> = Vec::new();
         let mut remaining = u64::from(count);
+        if remaining == 0_u64 {
+            return Ok(atoms);
+        }
+        resolver.read_table(self)?;
         while remaining > 0_u64 {
-            let atom = self.read_usize()?;
+            let atom = resolver.read(self)?;
             atoms.push(MintedAtom::from(usize::from(atom)));
             remaining = remaining.wrapping_sub(1_u64);
         }
@@ -5734,12 +5774,28 @@ mod tests
             })
         );
         assert_eq!(foreign.position.0, 4);
-        for version in [0_u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x0B00, u16::MAX] {
+        for version in [
+            0_u16,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            0x0C00,
+            u16::MAX,
+        ] {
             let mut image = magic.to_vec();
             image.extend_from_slice(&version.to_le_bytes());
             let mut reader = ByteReader::new(ArtifactImage::from(image.as_slice()));
             reader.expect_magic().expect("valid header");
-            let expected = if version == 11 {
+            let expected = if version == 12 {
                 Ok(())
             }
             else {
@@ -6057,11 +6113,15 @@ mod tests
     #[test]
     fn counted_records_validate_content_and_consumption()
     {
-        let positions = [3_u8, 0x81, 1, 0, 0x80, 1, 0x55];
-        let mut reader = ByteReader::new(ArtifactImage::from(positions.as_slice()));
-        let atoms = reader.read_minted_atom_table().expect("well-framed claims");
+        // Three atoms at no key: an empty table, then each place p as 2p + 1.
+        let table = [3_u8, 0, 0x83, 2, 1, 0x81, 2, 0x55];
+        let mut reader = ByteReader::new(ArtifactImage::from(table.as_slice()));
+        let atoms = reader
+            .read_minted_atom_table(&mut super::Resolver::default())
+            .expect("well-framed claims");
         assert!(atoms.into_iter().map(usize::from).eq([129_usize, 0, 128]));
-        assert_eq!(reader.position.0, 6);
+        assert_eq!(reader.position.0, 7);
+        let positions = [3_u8, 0x81, 1, 0, 0x80, 1, 0x55];
         let mut reader = ByteReader::new(ArtifactImage::from(positions.as_slice()));
         let atoms = super::decode_sealing_provenance(&mut reader).expect("well-framed claims");
         assert!(atoms.into_iter().map(usize::from).eq([129_usize, 0, 128]));
@@ -6163,7 +6223,10 @@ mod tests
         let maximal_count = [0xff_u8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1];
         let image = ArtifactImage::from(maximal_count.as_slice());
         let mut reader = ByteReader::new(image);
-        assert_eq!(reader.read_minted_atom_table(), Err(DecodeError::Truncated));
+        assert_eq!(
+            reader.read_minted_atom_table(&mut super::Resolver::default()),
+            Err(DecodeError::Truncated)
+        );
         assert_eq!(reader.position.0, 10);
         let mut reader = ByteReader::new(image);
         assert_eq!(
@@ -6545,7 +6608,7 @@ mod tests
     {
         let literal_artifact = |base: u8, literal: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
+                b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, base, 0x0c,
             ];
             bytes.extend_from_slice(literal);
             bytes.extend_from_slice(&[0, 2, 0, 0, 0, 0]);
@@ -6741,7 +6804,7 @@ mod tests
         );
         let level_artifact = |level: &[u8]| {
             let mut bytes = vec![
-                b'G', b'K', b'X', b'1', 11, 0, 8, 0, 1, 0, 0, 0, 1, 0, 3, 0, 1, 2,
+                b'G', b'K', b'X', b'1', 12, 0, 8, 0, 1, 0, 0, 0, 1, 0, 3, 0, 1, 2,
             ];
             bytes.extend_from_slice(level);
             bytes.push(0);
@@ -8410,7 +8473,7 @@ mod tests
     {
         // An empty artifact: the magic, the version, the width, no atom and no
         // declaration.
-        let empty = |width: u8| [b'G', b'K', b'X', b'1', 11, 0, width, 0, 0];
+        let empty = |width: u8| [b'G', b'K', b'X', b'1', 12, 0, width, 0, 0];
         for width in [0_u8, 7, 33, 0x7F] {
             assert_eq!(
                 super::decode(ArtifactImage::from(empty(width).as_slice())).err(),

@@ -832,8 +832,9 @@ impl RawDeclaration
 /// - requires: nothing; every field may be inconsistent with the segments,
 ///   which is what the refusal fixtures rely on.
 /// - ensures: returns the magic, the declared version, a key width of one word,
-///   the atom count and the atoms, then the declaration count and the segments'
-///   bytes, each opening with an empty table of names and then its raw imports.
+///   the atom count, then, when it holds an atom, an empty table of names and
+///   the atoms, then the declaration count and the segments' bytes, each
+///   opening with an empty table of names and then its raw imports.
 /// - provides: the hand-built artifact for shapes a well-formed encoder cannot
 ///   produce, so a refusal can be provoked without weakening the encoder.
 /// - panics: none.
@@ -859,7 +860,7 @@ impl RawDeclaration
             ret.0.as_slice().get(7_usize .. (7_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
-            if valid_count { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            if valid_count && (atoms.is_empty() || ret.0.as_slice().get((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) == Some(&0_u8)) { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(usize::from(!atoms.is_empty())),
             |position, atom| { ({ let scalar = atom.0;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
@@ -940,6 +941,10 @@ fn raw_artifact(
     // The width of a key: one word, as an artifact of no names takes.
     out.varint(WireValue(8));
     out.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
+    if !atoms.is_empty() {
+        // The atom table's table of names, empty: each atom is a bare place.
+        out.varint(WireValue(0));
+    }
     for &atom in atoms {
         out.varint(atom);
     }
@@ -2232,13 +2237,13 @@ fn the_empty_sequence_encodes_to_a_bare_header()
 {
     let arena = TermArena::new();
     let bytes = encode(&arena, &[]);
-    // Hand check of the version field: the version is 11, which as a
-    // little-endian sixteen-bit field is the low byte 0x0B first and the
+    // Hand check of the version field: the version is 12, which as a
+    // little-endian sixteen-bit field is the low byte 0x0C first and the
     // high byte 0x00 after. The header is the four-byte magic, that
     // two-byte field, the width of a key as one varint eight, the empty atom
     // table as one varint zero and the declaration count as one varint zero.
     assert_eq!(
-        vec![b'G', b'K', b'X', b'1', 0x0B, 0x00, 0x08, 0x00, 0x00],
+        vec![b'G', b'K', b'X', b'1', 0x0C, 0x00, 0x08, 0x00, 0x00],
         Vec::from(bytes.clone()),
         "the empty artifact is the magic, the version, the key width, an empty atom table and \
          a zero count"
@@ -2797,10 +2802,20 @@ fn a_predecessor_version_is_refused_by_name()
          misread"
     );
 
-    let future = raw_artifact(Version(12), &[], &[]);
+    let atoms_by_position = raw_artifact(Version(11), &[], &[]);
     assert_eq!(
         Err(DecodeError::UnsupportedVersion {
-            found: FormatVersion::from(12),
+            found: FormatVersion::from(11),
+        }),
+        decode(ArtifactImage::from(atoms_by_position.as_ref())),
+        "the version whose header wrote each atom by its admission position is refused rather \
+         than misread"
+    );
+
+    let future = raw_artifact(Version(13), &[], &[]);
+    assert_eq!(
+        Err(DecodeError::UnsupportedVersion {
+            found: FormatVersion::from(13),
         }),
         decode(ArtifactImage::from(future.as_ref())),
         "a later version is refused with the version it declared"
@@ -3245,7 +3260,7 @@ fn a_child_of_the_wrong_polarity_is_refused()
 ///   surrounding record.
 /// - witness: `tests::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
 #[spec(
-        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 11, 0, 8, 1, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 0, 2, 0, 0, 0, 0].as_slice(),
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 12, 0, 8, 1, 0, 1, 2, 0, 0, 0, 2, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0x0d, 0, 0, 2, 0, 0, 0, 0].as_slice(),
     )]
 fn sealed_artifact() -> EncodedArtifact
 {
@@ -3272,19 +3287,21 @@ fn sealed_artifact() -> EncodedArtifact
 /// The sealed artifact's bytes with its declared atom table replaced.
 ///
 /// The header the sealed artifact writes is the magic, the version, the key
-/// width, a one-byte table count and one one-byte position, so its tail
-/// begins at byte nine.
+/// width, a one-byte atom count, the atom table's empty table of names and one
+/// one-byte position, so its tail begins at byte ten. Each of `atoms` is a
+/// position as a segment writes it: `2p + 1` for the bare place `p`.
 ///
 /// # Specification
 /// - requires: nothing; `atoms` may disagree with the artifact's own
 ///   declarations, which is the point.
 /// - ensures: returns the sealed artifact's bytes with the magic, the current
 ///   version, a key width of one word and `atoms` in place of the original
-///   header, and the original tail from byte nine onward.
+///   header, after an empty table of names when it holds an atom, and the
+///   original tail from byte ten onward.
 /// - provides: the artifact whose declared table is false while every other
 ///   byte is unchanged, so a refusal isolates the table rather than the
 ///   surrounding shape.
-/// - panics: panics when the sealed artifact is shorter than nine bytes, which
+/// - panics: panics when the sealed artifact is shorter than ten bytes, which
 ///   its own header precludes.
 ///
 /// # Adequacy
@@ -3299,7 +3316,7 @@ fn sealed_artifact() -> EncodedArtifact
 /// - witness: `tests::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
 #[spec(
         ensures: |ret| ret.0.starts_with(b"GKX1")
-                && ret.0.get(4 .. 6) == Some([11_u8, 0].as_slice())
+                && ret.0.get(4 .. 6) == Some([12_u8, 0].as_slice())
                 && ret.0.get(6) == Some(&8_u8)
                 && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
             let valid_count = { let scalar = count;
@@ -3307,7 +3324,7 @@ fn sealed_artifact() -> EncodedArtifact
             ret.0.as_slice().get(7_usize .. (7_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
             u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
                 && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
-            if valid_count { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            if valid_count && (atoms.is_empty() || ret.0.as_slice().get((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) == Some(&0_u8)) { atoms.iter().try_fold((7_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)).saturating_add(usize::from(!atoms.is_empty())),
             |position, atom| { ({ let scalar = atom.0;
             let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
             ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
@@ -3323,10 +3340,13 @@ fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     bytes.version(current_version());
     bytes.varint(WireValue(8));
     bytes.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
+    if !atoms.is_empty() {
+        bytes.varint(WireValue(0));
+    }
     for &atom in atoms {
         bytes.varint(atom);
     }
-    bytes.append_tail(&original, Position(9));
+    bytes.append_tail(&original, Position(10));
     bytes
 }
 
@@ -3379,12 +3399,12 @@ fn a_sealed_artifact_round_trips_with_its_atom_table()
 fn a_seal_reaching_past_the_artifact_is_refused()
 {
     // The atom's extent is the last byte of its segment: the magic, the
-    // version, the key width, the one-entry table, the declaration count,
-    // then the segment's empty table of names, its empty imports, mark, kind,
-    // name, levels, entry count, the universe and integer entries, and its two
-    // roots.
+    // version, the key width, the one-entry atom table with its empty table of
+    // names, the declaration count, then the segment's empty table of names,
+    // its empty imports, mark, kind, name, levels, entry count, the universe
+    // and integer entries, and its two roots.
     let mut bytes = Vec::from(sealed_artifact());
-    let extent = bytes.get_mut(25).expect("the atom's extent byte");
+    let extent = bytes.get_mut(26).expect("the atom's extent byte");
     assert_eq!(*extent, 1, "the fixture's atom holds its one member");
     *extent = 2;
     assert_eq!(
@@ -3399,7 +3419,8 @@ fn a_seal_reaching_past_the_artifact_is_refused()
 #[test]
 fn a_minted_atom_table_claiming_an_absent_atom_is_rejected()
 {
-    let bytes = raw_artifact(current_version(), &[WireValue(0)], &[]);
+    // One atom at the bare place zero, in an artifact of no declaration.
+    let bytes = raw_artifact(current_version(), &[WireValue(1)], &[]);
     assert_eq!(
         Err(refuted_atom_table()),
         decode(ArtifactImage::from(bytes.as_ref())),
@@ -3410,7 +3431,8 @@ fn a_minted_atom_table_claiming_an_absent_atom_is_rejected()
 #[test]
 fn a_minted_atom_table_with_a_repeat_is_refused()
 {
-    let bytes = sealed_with_atom_table(&[WireValue(0), WireValue(0)]);
+    // The bare place zero, twice.
+    let bytes = sealed_with_atom_table(&[WireValue(1), WireValue(1)]);
     assert_eq!(
         Err(refuted_atom_table()),
         decode(ArtifactImage::from(bytes.as_ref())),
@@ -3432,7 +3454,8 @@ fn a_minted_atom_table_omitting_an_atom_is_refused()
 #[test]
 fn a_minted_atom_table_naming_a_definition_is_refused()
 {
-    let bytes = sealed_with_atom_table(&[WireValue(1)]);
+    // The bare place one, which holds the definition.
+    let bytes = sealed_with_atom_table(&[WireValue(3)]);
     assert_eq!(
         Err(refuted_atom_table()),
         decode(ArtifactImage::from(bytes.as_ref())),

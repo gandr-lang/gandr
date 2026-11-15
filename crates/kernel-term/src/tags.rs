@@ -452,7 +452,10 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// then for each entry of an earlier segment that it reads, that segment's
 /// position, written as the segment writes any position, and the entry's
 /// offset inside it. A child or a root is twice its offset from the segment's
-/// first entry, or one more than twice its import's place.
+/// first entry, or one more than twice its import's place. Version twelve
+/// writes the minted-atom table as a segment writes its positions: the count
+/// of the atoms, then, when it holds one, a table of names and each atom's
+/// position. So an atom whose place has a key stands in the header by that key.
 ///
 /// A refusal names the version it met rather than guessing at it, which is
 /// what makes an older reader meeting a newer artifact stop with an accurate
@@ -475,7 +478,7 @@ pub const MAGIC: [u8; 4] = *b"GKX1";
 /// - witness: `tests::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
 /// - witness: `tags::tests::the_frozen_block_keeps_its_order_around_the_retired_tags`
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
-pub const FORMAT_VERSION: FormatVersion = FormatVersion(11);
+pub const FORMAT_VERSION: FormatVersion = FormatVersion(12);
 
 /// Admission mark: admitted through the checked choke point.
 pub const ADMISSION_CHECKED: WireTag = WireTag(0);

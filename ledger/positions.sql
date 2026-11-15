@@ -145,8 +145,8 @@ INSERT INTO position VALUES('crates/kernel-term/src/cover.rs','ArmCount','','non
 INSERT INTO position VALUES('crates/kernel-term/src/cover.rs','BranchCount','','none',NULL,'A count of branches.');
 INSERT INTO position VALUES('crates/kernel-term/src/cover.rs','StepId','kernel-term::encode','kept',NULL,'A step''s id inside one cover, which the segment of its declaration writes.');
 INSERT INTO position VALUES('crates/kernel-term/src/decl.rs','LevelParamCount','','none',NULL,'A count of level parameters.');
-INSERT INTO position VALUES('crates/kernel-term/src/decl.rs','MintedAtom','kernel-term::encode','owed','#7340','The header of an artifact writes each minted atom by the admission position of its type.');
-INSERT INTO position VALUES('crates/kernel-term/src/decl.rs','SealExtent','kernel-term::encode','owed','#7340','A sealing provenance writes the extent of its seal, counted in the admission order.');
+INSERT INTO position VALUES('crates/kernel-term/src/decl.rs','MintedAtom','','local',NULL,'An atom''s admission position, which the decoder compares with the positions it derives, while the header writes the atom''s place as a segment writes a position.');
+INSERT INTO position VALUES('crates/kernel-term/src/decl.rs','SealExtent','kernel-term::encode','kept',NULL,'A count of the admissions after its own atom, a member''s place inside the seal, so an insertion outside the seal leaves it.');
 INSERT INTO position VALUES('crates/kernel-term/src/encode.rs','ConstantKey','','none',NULL,'A digest of a constant''s content, as the table of names at the head of a segment holds it.');
 INSERT INTO position VALUES('crates/kernel-term/src/identity.rs','HigherDepth','','none',NULL,'A count of layers.');
 INSERT INTO position VALUES('crates/kernel-term/src/identity.rs','LayerPosition','kernel-term::encode','kept',NULL,'A layer''s place inside one higher-field program, which the evidence of a term writes.');
