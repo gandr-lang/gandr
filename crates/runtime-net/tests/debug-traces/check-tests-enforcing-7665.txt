@@ -1,0 +1,13 @@
+command: mise run check:tests-enforcing, with GATE_SCOPE=--package gandr-runtime-net, beside a process that holds 27000 loopback ephemeral ports and takes each port that is freed
+issue: #7665
+before: 213efac389
+exit: 100
+        FAIL [  30.197s] (16/16) gandr-runtime-net::tests net::a_network_binds_on_its_first_operation
+    thread '<unnamed>' (2860316) panicked at crates/runtime-net/tests/net.rs:34:44:
+    the dialer's stream arrives: Bind { reason: "Failed to bind sockets" }
+    thread 'net::a_network_binds_on_its_first_operation' (2860278) panicked at crates/runtime-net/tests/net.rs:41:14:
+    the network bound and is reached: Connect { peer: NodeId(PublicKey(9a6160628087398fc7fbf1edbec902eed91d4e01befd9670c08635395f2eb26d)), reason: "timed out" }
+     Summary [  30.269s] 16 tests run: 15 passed, 1 failed, 0 skipped
+error: test run failed
+after: e12893484a
+exit: 0

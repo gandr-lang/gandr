@@ -1,0 +1,334 @@
+test: highlight::corpus_roles_match_the_golden
+package: gandr-surface-grammar
+command: mise run debug:test gandr-surface-grammar highlight::corpus_roles_match_the_golden
+
+(lldb) target create "target/debug-trace/debug/build/gandr-surface-grammar/dc2ccabb130a358a/out/tests-dc2ccabb130a358a"
+Current executable set to 'target/debug-trace/debug/build/gandr-surface-grammar/dc2ccabb130a358a/out/tests-dc2ccabb130a358a' (x86_64).
+(lldb) settings set -- target.run-args  "highlight::corpus_roles_match_the_golden" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --name rust_panic
+Breakpoint 1: where = tests-dc2ccabb130a358a`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000006af948
+(lldb) run
+
+running 1 test
+test highlight::corpus_roles_match_the_golden ... 
+
+[1m[91merror[97m: expect test failed[0m
+   [1m[34m-->[0m crates/surface-grammar/tests/highlight/fixture/model/universe/match-at-type.roles
+
+You can update all `expect!` tests by running:
+
+    env UPDATE_EXPECT=1 cargo test
+
+To update a single test, place the cursor on `expect` token and use `run` feature of rust-analyzer.
+
+[1mExpect[0m:
+----
+
+----
+
+[1mActual[0m:
+----
+0..52 Comment "//! This fixture writes a `match` in a type\'s place."
+53..56 Comment "//!"
+57..135 Comment "//! The checker expands a call in a type, and the printer then writes the code"
+136..212 Comment "//! of the decode as a `match`. So the reader takes that `match` back, as it"
+213..230 Comment "//! takes a call."
+231..234 Comment "//!"
+235..310 Comment "//! The type is the decode of the code that the match returns. A match on a"
+311..390 Comment "//! constructor reduces to the type that its arm returns. A match on a variable"
+391..468 Comment "//! stays stuck, and its decode stays with it. Each arm returns its code with"
+469..536 Comment "//! `pure`. A `return` needs a body, and a type\'s place is no body."
+537..540 Comment "//!"
+541..557 Comment "//! - see: #7564"
+559..590 Comment "/// A flag that selects a type."
+591..595 Keyword "data"
+596..600 Type "Flag"
+601..602 Other ":"
+603..607 TypeBuiltin "Type"
+608..613 Keyword "where"
+613..613 Other ""
+616..648 Comment "/// This flag selects `Integer`."
+651..652 Other "|"
+653..656 Constructor "Yes"
+657..658 Other ":"
+659..663 Type "Flag"
+666..695 Comment "/// This flag selects `Unit`."
+698..699 Other "|"
+700..702 Constructor "No"
+703..704 Other ":"
+705..709 Type "Flag"
+709..709 Other ""
+711..786 Comment "/// The `flagged` function takes a value whose type is a match on the flag."
+787..790 Keyword "def"
+791..798 FunctionDef "flagged"
+798..799 Other "("
+799..800 VariableParam "f"
+801..802 Other ":"
+803..807 Type "Flag"
+807..808 Other ","
+809..810 VariableParam "x"
+811..812 Other ":"
+813..818 Keyword "match"
+819..820 Variable "f"
+821..823 Operator "->"
+824..826 Keyword "-F"
+827..831 TypeBuiltin "Type"
+832..833 Other "{"
+834..835 Other "|"
+836..839 Constructor "Yes"
+840..842 Operator "=>"
+843..847 Keyword "pure"
+848..855 Constructor "Integer"
+856..857 Other "|"
+858..860 Constructor "No"
+861..863 Operator "=>"
+864..868 Keyword "pure"
+869..873 Constructor "Unit"
+874..875 Other "}"
+875..876 Other ")"
+877..879 Operator "->"
+880..884 TypeBuiltin "Unit"
+885..886 Other "="
+889..891 Other "*{"
+891..892 Other "}"
+892..892 Other ""
+894..969 Comment "/// At `Yes` the match reduces to `Integer`, so an integer is the argument."
+970..973 Keyword "def"
+974..979 FunctionDef "atYes"
+979..980 Other "("
+980..981 Other ")"
+982..984 Operator "->"
+985..989 TypeBuiltin "Unit"
+990..991 Other "="
+994..1001 Variable "flagged"
+1002..1002 Other ""
+1002..1005 Constructor "Yes"
+1006..1006 Other ""
+1006..1007 Number "7"
+1007..1007 Other ""
+1009..1087 Comment "/// The `keptStuck` function returns its argument at the stuck match, which is"
+1088..1113 Comment "/// also its result type."
+1114..1117 Keyword "def"
+1118..1127 FunctionDef "keptStuck"
+1127..1128 Other "("
+1131..1132 VariableParam "f"
+1133..1134 Other ":"
+1135..1139 Type "Flag"
+1139..1140 Other ","
+1143..1144 VariableParam "x"
+1145..1146 Other ":"
+1147..1152 Keyword "match"
+1153..1154 Variable "f"
+1155..1157 Operator "->"
+1158..1160 Keyword "-F"
+1161..1165 TypeBuiltin "Type"
+1166..1167 Other "{"
+1168..1169 Other "|"
+1170..1173 Constructor "Yes"
+1174..1176 Operator "=>"
+1177..1181 Keyword "pure"
+1182..1189 Constructor "Integer"
+1190..1191 Other "|"
+1192..1194 Constructor "No"
+1195..1197 Operator "=>"
+1198..1202 Keyword "pure"
+1203..1207 Constructor "Unit"
+1208..1209 Other "}"
+1210..1211 Other ")"
+1212..1214 Operator "->"
+1215..1220 Keyword "match"
+1221..1222 Variable "f"
+1223..1225 Operator "->"
+1226..1228 Keyword "-F"
+1229..1233 TypeBuiltin "Type"
+1234..1235 Other "{"
+1236..1237 Other "|"
+1238..1241 Constructor "Yes"
+1242..1244 Operator "=>"
+1245..1249 Keyword "pure"
+1250..1257 Constructor "Integer"
+1258..1259 Other "|"
+1260..1262 Constructor "No"
+1263..1265 Operator "=>"
+1266..1270 Keyword "pure"
+1271..1275 Constructor "Unit"
+1276..1277 Other "}"
+1278..1279 Other "="
+1282..1283 Variable "x"
+1283..1283 Other ""
+
+----
+
+[1mDiff[0m:
+----
+[4m[32m0..52 Comment "//! This fixture writes a `match` in a type\'s place."
+53..56 Comment "//!"
+57..135 Comment "//! The checker expands a call in a type, and the printer then writes the code"
+136..212 Comment "//! of the decode as a `match`. So the reader takes that `match` back, as it"
+213..230 Comment "//! takes a call."
+231..234 Comment "//!"
+235..310 Comment "//! The type is the decode of the code that the match returns. A match on a"
+311..390 Comment "//! constructor reduces to the type that its arm returns. A match on a variable"
+391..468 Comment "//! stays stuck, and its decode stays with it. Each arm returns its code with"
+469..536 Comment "//! `pure`. A `return` needs a body, and a type\'s place is no body."
+537..540 Comment "//!"
+541..557 Comment "//! - see: #7564"
+559..590 Comment "/// A flag that selects a type."
+591..595 Keyword "data"
+596..600 Type "Flag"
+601..602 Other ":"
+603..607 TypeBuiltin "Type"
+608..613 Keyword "where"
+613..613 Other ""
+616..648 Comment "/// This flag selects `Integer`."
+651..652 Other "|"
+653..656 Constructor "Yes"
+657..658 Other ":"
+659..663 Type "Flag"
+666..695 Comment "/// This flag selects `Unit`."
+698..699 Other "|"
+700..702 Constructor "No"
+703..704 Other ":"
+705..709 Type "Flag"
+709..709 Other ""
+711..786 Comment "/// The `flagged` function takes a value whose type is a match on the flag."
+787..790 Keyword "def"
+791..798 FunctionDef "flagged"
+798..799 Other "("
+799..800 VariableParam "f"
+801..802 Other ":"
+803..807 Type "Flag"
+807..808 Other ","
+809..810 VariableParam "x"
+811..812 Other ":"
+813..818 Keyword "match"
+819..820 Variable "f"
+821..823 Operator "->"
+824..826 Keyword "-F"
+827..831 TypeBuiltin "Type"
+832..833 Other "{"
+834..835 Other "|"
+836..839 Constructor "Yes"
+840..842 Operator "=>"
+843..847 Keyword "pure"
+848..855 Constructor "Integer"
+856..857 Other "|"
+858..860 Constructor "No"
+861..863 Operator "=>"
+864..868 Keyword "pure"
+869..873 Constructor "Unit"
+874..875 Other "}"
+875..876 Other ")"
+877..879 Operator "->"
+880..884 TypeBuiltin "Unit"
+885..886 Other "="
+889..891 Other "*{"
+891..892 Other "}"
+892..892 Other ""
+894..969 Comment "/// At `Yes` the match reduces to `Integer`, so an integer is the argument."
+970..973 Keyword "def"
+974..979 FunctionDef "atYes"
+979..980 Other "("
+980..981 Other ")"
+982..984 Operator "->"
+985..989 TypeBuiltin "Unit"
+990..991 Other "="
+994..1001 Variable "flagged"
+1002..1002 Other ""
+1002..1005 Constructor "Yes"
+1006..1006 Other ""
+1006..1007 Number "7"
+1007..1007 Other ""
+1009..1087 Comment "/// The `keptStuck` function returns its argument at the stuck match, which is"
+1088..1113 Comment "/// also its result type."
+1114..1117 Keyword "def"
+1118..1127 FunctionDef "keptStuck"
+1127..1128 Other "("
+1131..1132 VariableParam "f"
+1133..1134 Other ":"
+1135..1139 Type "Flag"
+1139..1140 Other ","
+1143..1144 VariableParam "x"
+1145..1146 Other ":"
+1147..1152 Keyword "match"
+1153..1154 Variable "f"
+1155..1157 Operator "->"
+1158..1160 Keyword "-F"
+1161..1165 TypeBuiltin "Type"
+1166..1167 Other "{"
+1168..1169 Other "|"
+1170..1173 Constructor "Yes"
+1174..1176 Operator "=>"
+1177..1181 Keyword "pure"
+1182..1189 Constructor "Integer"
+1190..1191 Other "|"
+1192..1194 Constructor "No"
+1195..1197 Operator "=>"
+1198..1202 Keyword "pure"
+1203..1207 Constructor "Unit"
+1208..1209 Other "}"
+1210..1211 Other ")"
+1212..1214 Operator "->"
+1215..1220 Keyword "match"
+1221..1222 Variable "f"
+1223..1225 Operator "->"
+1226..1228 Keyword "-F"
+1229..1233 TypeBuiltin "Type"
+1234..1235 Other "{"
+1236..1237 Other "|"
+1238..1241 Constructor "Yes"
+1242..1244 Operator "=>"
+1245..1249 Keyword "pure"
+1250..1257 Constructor "Integer"
+1258..1259 Other "|"
+1260..1262 Constructor "No"
+1263..1265 Operator "=>"
+1266..1270 Keyword "pure"
+1271..1275 Constructor "Unit"
+1276..1277 Other "}"
+1278..1279 Other "="
+1282..1283 Variable "x"
+1283..1283 Other ""
+[0m
+----
+
+warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 528816 launched: 'target/debug-trace/debug/build/gandr-surface-grammar/dc2ccabb130a358a/out/tests-dc2ccabb130a358a' (x86_64)
+Process 528816 stopped
+* thread #2, name = 'highlight::corp', stop reason = breakpoint 1.1
+       frame #0: 0x0000555555c03948 tests-dc2ccabb130a358a`__rustc::rust_panic at panicking.rs:883:16
+(lldb) bt 24
+* thread #2, name = 'highlight::corp', stop reason = breakpoint 1.1
+   * frame #0: 0x0000555555c03948 tests-dc2ccabb130a358a`__rustc::rust_panic at panicking.rs:883:16
+     frame #1: 0x0000555555c203c2 tests-dc2ccabb130a358a`std::panicking::resume_unwind at panicking.rs:874:5
+     frame #2: 0x0000555555c20049 tests-dc2ccabb130a358a`std::panic::resume_unwind at panic.rs:391:5
+     frame #3: 0x00005555558c24c5 tests-dc2ccabb130a358a`<expect_test::Runtime>::panic(self={help_printed:true, per_file:size=0}, position="crates/surface-grammar/tests/highlight/fixture/model/universe/match-at-type.roles", expected="", actual="0..52 Comment \"//! This fixture writes a `match` in a type\\'s place.\"\n53..56 Comment \"//!\"\n57..135 Comment \"//! The checker expands a call in a type, and the printer then writes the code\"\n136..212 Comment \"//! of the decode as a `match`. So the reader takes that `match` back, as it\"\n213..230 Comment \"//! takes a call.\"\n231..234 Comment \"//!\"\n235..310 Comment \"//! The type is the decode of the code that the match returns. A match on a\"\n311..390 Comment \"//! constructor reduces to the type that its arm returns. A match on a variable\"\n391..468 Comment \"//! stays stuck, and its decode stays with it. Each arm returns its code with\"\n469..536 Comment \"//! `pure`. A `return` needs a body, and a type\\'s place is no body.\"\n537..540 Comment \"//!\"\n541..557 Comment \"//! - see: #7564\"\n559..590 Comment \"/// A flag that selects a type.\"\n591..595 Keyword \"data\"\n596..600 Type \"Flag\"\n601..602 Other \":\"\n603..607 TypeBuiltin \"Type\"\n608..613 Keyword \"where\"\n613..613 Other \"\"\n616..648 Comment \"/// This flag selects `Integer`.\"\n651..652 Other \"|\"\n653..656 Constructor \"Yes\"\n657..658 Other \":\"\n659..663 Type \"Flag\"\n666..695 Comment \"/// This flag selects `Unit`.\"\n698..699 Other \"|\"\n700..702 Constructor \"No\"\n703..704 Other \":\"\n705..709 Type \"Flag\"\n709..709 Other \"\"\n711..786 Comment \"/// The `flagged` function takes a value whose type is a match on the flag.\"\n787..790 Keyword \"def\"\n791..798 FunctionDef \"flagged\"\n798..799 Other \"(\"\n799..800 VariableParam \"f\"\n801..802 Other \":\"\n803..807 Type \"Flag\"\n807..808 Other \",\"\n809..810 VariableParam \"x\"\n811..812 Other \":\"\n813..818 Keyword \"match\"\n819..820 Variable \"f\"\n821..823 Operator \"->\"\n824..826 Keyword \"-F\"\n827..831 TypeBuiltin \"Type\"\n832..833 Other \"{\"\n834..835 Other \"|\"\n836..839 Constructor \"Yes\"\n840..842 Operator \"=>\"\n843..847 Keyword \"pure\"\n848..855 Constructor \"Integer\"\n856..857 Other \"|\"\n858..860 Constructor \"No\"\n861..863 Operator \"=>\"\n864..868 Keyword \"pure\"\n869..873 Constructor \"Unit\"\n874..875 Other \"}\"\n875..876 Other \")\"\n877..879 Operator \"->\"\n880..884 TypeBuiltin \"Unit\"\n885..886 Other \"=\"\n889..891 Other \"*{\"\n891..892 Other \"}\"\n892..892 Other \"\"\n894..969 Comment \"/// At `Yes` the match reduces to `Integer`, so an integer is the argument.\"\n970..973 Keyword \"def\"\n974..979 FunctionDef \"atYes\"\n979..980 Other \"(\"\n980..981 Other \")\"\n982..984 Operator \"->\"\n985..989 TypeBuiltin \"Unit\"\n990..991 Other \"=\"\n994..1001 Variable \"flagged\"\n1002..1002 Other \"\"\n1002..1005 Constructor \"Yes\"\n1006..1006 Other \"\"\n1006..1007 Number \"7\"\n1007..1007 Other \"\"\n1009..1087 Comment \"/// The `keptStuck` function returns its argument at the stuck match, which is\"\n1088..1113 Comment \"/// also its result type.\"\n1114..1117 Keyword \"def\"\n1118..1127 FunctionDef \"keptStuck\"\n1127..1128 Other \"(\"\n1131..1132 VariableParam \"f\"\n1133..1134 Other \":\"\n1135..1139 Type \"Flag\"\n1139..1140 Other \",\"\n1143..1144 VariableParam \"x\"\n1145..1146 Other \":\"\n1147..1152 Keyword \"match\"\n1153..1154 Variable \"f\"\n1155..1157 Operator \"->\"\n1158..1160 Keyword \"-F\"\n1161..1165 TypeBuiltin \"Type\"\n1166..1167 Other \"{\"\n1168..1169 Other \"|\"\n1170..1173 Constructor \"Yes\"\n1174..1176 Operator \"=>\"\n1177..1181 Keyword \"pure\"\n1182..1189 Constructor \"Integer\"\n1190..1191 Other \"|\"\n1192..1194 Constructor \"No\"\n1195..1197 Operator \"=>\"\n1198..1202 Keyword \"pure\"\n1203..1207 Constructor \"Unit\"\n1208..1209 Other \"}\"\n1210..1211 Other \")\"\n1212..1214 Operator \"->\"\n1215..1220 Keyword \"match\"\n1221..1222 Variable \"f\"\n1223..1225 Operator \"->\"\n1226..1228 Keyword \"-F\"\n1229..1233 TypeBuiltin \"Type\"\n1234..1235 Other \"{\"\n1236..1237 Other \"|\"\n1238..1241 Constructor \"Yes\"\n1242..1244 Operator \"=>\"\n1245..1249 Keyword \"pure\"\n1250..1257 Constructor \"Integer\"\n1258..1259 Other \"|\"\n1260..1262 Constructor \"No\"\n1263..1265 Operator \"=>\"\n1266..1270 Keyword \"pure\"\n1271..1275 Constructor \"Unit\"\n1276..1277 Other \"}\"\n1278..1279 Other \"=\"\n1282..1283 Variable \"x\"\n1283..1283 Other \"\"\n") at lib.rs:527:9
+     frame #4: 0x00005555558c2688 tests-dc2ccabb130a358a`<expect_test::Runtime>::fail_file(expect={path:"crates/surface-grammar/tests/highlight/fixture/model/universe/match-at-type.roles", position:"crates/surface-grammar/tests/highlight.rs"}, expected="", actual="0..52 Comment \"//! This fixture writes a `match` in a type\\'s place.\"\n53..56 Comment \"//!\"\n57..135 Comment \"//! The checker expands a call in a type, and the printer then writes the code\"\n136..212 Comment \"//! of the decode as a `match`. So the reader takes that `match` back, as it\"\n213..230 Comment \"//! takes a call.\"\n231..234 Comment \"//!\"\n235..310 Comment \"//! The type is the decode of the code that the match returns. A match on a\"\n311..390 Comment \"//! constructor reduces to the type that its arm returns. A match on a variable\"\n391..468 Comment \"//! stays stuck, and its decode stays with it. Each arm returns its code with\"\n469..536 Comment \"//! `pure`. A `return` needs a body, and a type\\'s place is no body.\"\n537..540 Comment \"//!\"\n541..557 Comment \"//! - see: #7564\"\n559..590 Comment \"/// A flag that selects a type.\"\n591..595 Keyword \"data\"\n596..600 Type \"Flag\"\n601..602 Other \":\"\n603..607 TypeBuiltin \"Type\"\n608..613 Keyword \"where\"\n613..613 Other \"\"\n616..648 Comment \"/// This flag selects `Integer`.\"\n651..652 Other \"|\"\n653..656 Constructor \"Yes\"\n657..658 Other \":\"\n659..663 Type \"Flag\"\n666..695 Comment \"/// This flag selects `Unit`.\"\n698..699 Other \"|\"\n700..702 Constructor \"No\"\n703..704 Other \":\"\n705..709 Type \"Flag\"\n709..709 Other \"\"\n711..786 Comment \"/// The `flagged` function takes a value whose type is a match on the flag.\"\n787..790 Keyword \"def\"\n791..798 FunctionDef \"flagged\"\n798..799 Other \"(\"\n799..800 VariableParam \"f\"\n801..802 Other \":\"\n803..807 Type \"Flag\"\n807..808 Other \",\"\n809..810 VariableParam \"x\"\n811..812 Other \":\"\n813..818 Keyword \"match\"\n819..820 Variable \"f\"\n821..823 Operator \"->\"\n824..826 Keyword \"-F\"\n827..831 TypeBuiltin \"Type\"\n832..833 Other \"{\"\n834..835 Other \"|\"\n836..839 Constructor \"Yes\"\n840..842 Operator \"=>\"\n843..847 Keyword \"pure\"\n848..855 Constructor \"Integer\"\n856..857 Other \"|\"\n858..860 Constructor \"No\"\n861..863 Operator \"=>\"\n864..868 Keyword \"pure\"\n869..873 Constructor \"Unit\"\n874..875 Other \"}\"\n875..876 Other \")\"\n877..879 Operator \"->\"\n880..884 TypeBuiltin \"Unit\"\n885..886 Other \"=\"\n889..891 Other \"*{\"\n891..892 Other \"}\"\n892..892 Other \"\"\n894..969 Comment \"/// At `Yes` the match reduces to `Integer`, so an integer is the argument.\"\n970..973 Keyword \"def\"\n974..979 FunctionDef \"atYes\"\n979..980 Other \"(\"\n980..981 Other \")\"\n982..984 Operator \"->\"\n985..989 TypeBuiltin \"Unit\"\n990..991 Other \"=\"\n994..1001 Variable \"flagged\"\n1002..1002 Other \"\"\n1002..1005 Constructor \"Yes\"\n1006..1006 Other \"\"\n1006..1007 Number \"7\"\n1007..1007 Other \"\"\n1009..1087 Comment \"/// The `keptStuck` function returns its argument at the stuck match, which is\"\n1088..1113 Comment \"/// also its result type.\"\n1114..1117 Keyword \"def\"\n1118..1127 FunctionDef \"keptStuck\"\n1127..1128 Other \"(\"\n1131..1132 VariableParam \"f\"\n1133..1134 Other \":\"\n1135..1139 Type \"Flag\"\n1139..1140 Other \",\"\n1143..1144 VariableParam \"x\"\n1145..1146 Other \":\"\n1147..1152 Keyword \"match\"\n1153..1154 Variable \"f\"\n1155..1157 Operator \"->\"\n1158..1160 Keyword \"-F\"\n1161..1165 TypeBuiltin \"Type\"\n1166..1167 Other \"{\"\n1168..1169 Other \"|\"\n1170..1173 Constructor \"Yes\"\n1174..1176 Operator \"=>\"\n1177..1181 Keyword \"pure\"\n1182..1189 Constructor \"Integer\"\n1190..1191 Other \"|\"\n1192..1194 Constructor \"No\"\n1195..1197 Operator \"=>\"\n1198..1202 Keyword \"pure\"\n1203..1207 Constructor \"Unit\"\n1208..1209 Other \"}\"\n1210..1211 Other \")\"\n1212..1214 Operator \"->\"\n1215..1220 Keyword \"match\"\n1221..1222 Variable \"f\"\n1223..1225 Operator \"->\"\n1226..1228 Keyword \"-F\"\n1229..1233 TypeBuiltin \"Type\"\n1234..1235 Other \"{\"\n1236..1237 Other \"|\"\n1238..1241 Constructor \"Yes\"\n1242..1244 Operator \"=>\"\n1245..1249 Keyword \"pure\"\n1250..1257 Constructor \"Integer\"\n1258..1259 Other \"|\"\n1260..1262 Constructor \"No\"\n1263..1265 Operator \"=>\"\n1266..1270 Keyword \"pure\"\n1271..1275 Constructor \"Unit\"\n1276..1277 Other \"}\"\n1278..1279 Other \"=\"\n1282..1283 Variable \"x\"\n1283..1283 Other \"\"\n") at lib.rs:492:12
+     frame #5: 0x00005555558c21cf tests-dc2ccabb130a358a`<expect_test::ExpectFile>::assert_eq(self={path:"crates/surface-grammar/tests/highlight/fixture/model/universe/match-at-type.roles", position:"crates/surface-grammar/tests/highlight.rs"}, actual="0..52 Comment \"//! This fixture writes a `match` in a type\\'s place.\"\n53..56 Comment \"//!\"\n57..135 Comment \"//! The checker expands a call in a type, and the printer then writes the code\"\n136..212 Comment \"//! of the decode as a `match`. So the reader takes that `match` back, as it\"\n213..230 Comment \"//! takes a call.\"\n231..234 Comment \"//!\"\n235..310 Comment \"//! The type is the decode of the code that the match returns. A match on a\"\n311..390 Comment \"//! constructor reduces to the type that its arm returns. A match on a variable\"\n391..468 Comment \"//! stays stuck, and its decode stays with it. Each arm returns its code with\"\n469..536 Comment \"//! `pure`. A `return` needs a body, and a type\\'s place is no body.\"\n537..540 Comment \"//!\"\n541..557 Comment \"//! - see: #7564\"\n559..590 Comment \"/// A flag that selects a type.\"\n591..595 Keyword \"data\"\n596..600 Type \"Flag\"\n601..602 Other \":\"\n603..607 TypeBuiltin \"Type\"\n608..613 Keyword \"where\"\n613..613 Other \"\"\n616..648 Comment \"/// This flag selects `Integer`.\"\n651..652 Other \"|\"\n653..656 Constructor \"Yes\"\n657..658 Other \":\"\n659..663 Type \"Flag\"\n666..695 Comment \"/// This flag selects `Unit`.\"\n698..699 Other \"|\"\n700..702 Constructor \"No\"\n703..704 Other \":\"\n705..709 Type \"Flag\"\n709..709 Other \"\"\n711..786 Comment \"/// The `flagged` function takes a value whose type is a match on the flag.\"\n787..790 Keyword \"def\"\n791..798 FunctionDef \"flagged\"\n798..799 Other \"(\"\n799..800 VariableParam \"f\"\n801..802 Other \":\"\n803..807 Type \"Flag\"\n807..808 Other \",\"\n809..810 VariableParam \"x\"\n811..812 Other \":\"\n813..818 Keyword \"match\"\n819..820 Variable \"f\"\n821..823 Operator \"->\"\n824..826 Keyword \"-F\"\n827..831 TypeBuiltin \"Type\"\n832..833 Other \"{\"\n834..835 Other \"|\"\n836..839 Constructor \"Yes\"\n840..842 Operator \"=>\"\n843..847 Keyword \"pure\"\n848..855 Constructor \"Integer\"\n856..857 Other \"|\"\n858..860 Constructor \"No\"\n861..863 Operator \"=>\"\n864..868 Keyword \"pure\"\n869..873 Constructor \"Unit\"\n874..875 Other \"}\"\n875..876 Other \")\"\n877..879 Operator \"->\"\n880..884 TypeBuiltin \"Unit\"\n885..886 Other \"=\"\n889..891 Other \"*{\"\n891..892 Other \"}\"\n892..892 Other \"\"\n894..969 Comment \"/// At `Yes` the match reduces to `Integer`, so an integer is the argument.\"\n970..973 Keyword \"def\"\n974..979 FunctionDef \"atYes\"\n979..980 Other \"(\"\n980..981 Other \")\"\n982..984 Operator \"->\"\n985..989 TypeBuiltin \"Unit\"\n990..991 Other \"=\"\n994..1001 Variable \"flagged\"\n1002..1002 Other \"\"\n1002..1005 Constructor \"Yes\"\n1006..1006 Other \"\"\n1006..1007 Number \"7\"\n1007..1007 Other \"\"\n1009..1087 Comment \"/// The `keptStuck` function returns its argument at the stuck match, which is\"\n1088..1113 Comment \"/// also its result type.\"\n1114..1117 Keyword \"def\"\n1118..1127 FunctionDef \"keptStuck\"\n1127..1128 Other \"(\"\n1131..1132 VariableParam \"f\"\n1133..1134 Other \":\"\n1135..1139 Type \"Flag\"\n1139..1140 Other \",\"\n1143..1144 VariableParam \"x\"\n1145..1146 Other \":\"\n1147..1152 Keyword \"match\"\n1153..1154 Variable \"f\"\n1155..1157 Operator \"->\"\n1158..1160 Keyword \"-F\"\n1161..1165 TypeBuiltin \"Type\"\n1166..1167 Other \"{\"\n1168..1169 Other \"|\"\n1170..1173 Constructor \"Yes\"\n1174..1176 Operator \"=>\"\n1177..1181 Keyword \"pure\"\n1182..1189 Constructor \"Integer\"\n1190..1191 Other \"|\"\n1192..1194 Constructor \"No\"\n1195..1197 Operator \"=>\"\n1198..1202 Keyword \"pure\"\n1203..1207 Constructor \"Unit\"\n1208..1209 Other \"}\"\n1210..1211 Other \")\"\n1212..1214 Operator \"->\"\n1215..1220 Keyword \"match\"\n1221..1222 Variable \"f\"\n1223..1225 Operator \"->\"\n1226..1228 Keyword \"-F\"\n1229..1233 TypeBuiltin \"Type\"\n1234..1235 Other \"{\"\n1236..1237 Other \"|\"\n1238..1241 Constructor \"Yes\"\n1242..1244 Operator \"=>\"\n1245..1249 Keyword \"pure\"\n1250..1257 Constructor \"Integer\"\n1258..1259 Other \"|\"\n1260..1262 Constructor \"No\"\n1263..1265 Operator \"=>\"\n1266..1270 Keyword \"pure\"\n1271..1275 Constructor \"Unit\"\n1276..1277 Other \"}\"\n1278..1279 Other \"=\"\n1282..1283 Variable \"x\"\n1283..1283 Other \"\"\n") at lib.rs:441:9
+     frame #6: 0x000055555581f79e tests-dc2ccabb130a358a`tests::highlight::corpus_roles_match_the_golden at highlight.rs:425:38
+     frame #7: 0x000055555581374d tests-dc2ccabb130a358a`tests::highlight::corpus_roles_match_the_golden::{closure#0}((null)={}) at highlight.rs:385:39
+     frame #8: 0x0000555555836426 tests-dc2ccabb130a358a`<tests::highlight::corpus_roles_match_the_golden::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #9: 0x000055555587674b tests-dc2ccabb130a358a`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #10: 0x0000555555876749 tests-dc2ccabb130a358a`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #11: 0x0000555555883925 tests-dc2ccabb130a358a`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #12: 0x0000555555883920 tests-dc2ccabb130a358a`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #13: 0x0000555555883920 tests-dc2ccabb130a358a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #14: 0x000055555588390b tests-dc2ccabb130a358a`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #15: 0x000055555588390b tests-dc2ccabb130a358a`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #16: 0x000055555588390b tests-dc2ccabb130a358a`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #17: 0x00005555558838f6 tests-dc2ccabb130a358a`test::run_test::{closure#0} at lib.rs:645:43
+     frame #18: 0x000055555587e314 tests-dc2ccabb130a358a`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #19: 0x000055555587e299 tests-dc2ccabb130a358a`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #20: 0x00005555558869b2 tests-dc2ccabb130a358a`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #21: 0x00005555558869a3 tests-dc2ccabb130a358a`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #22: 0x00005555558869a3 tests-dc2ccabb130a358a`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #23: 0x0000555555886993 tests-dc2ccabb130a358a`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+(lldb) frame variable --depth 3
+error: no variable information is available in debug info for this compile unit

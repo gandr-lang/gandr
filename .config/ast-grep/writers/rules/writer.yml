@@ -1,0 +1,23 @@
+# A borrowed `dyn io::Write` or `dyn fmt::Display` in a function's parameter,
+# alone or in a tuple, takes `impl`. Then the function is generic over its
+# writer or its value. A closure's parameter, a field and an array keep their
+# form for the second phase.
+id: borrowed-writer-is-generic
+language: Rust
+severity: hint
+message: a function takes its writer or its displayed value as a generic, not a trait object
+rule:
+  pattern:
+    context: "fn f(writer: &dyn $TRAIT) {}"
+    selector: dynamic_type
+  regex: ^dyn (?:(?:core|std)::)?(?:(?:io|fmt)::)?(?:Write|Display)\b
+  inside:
+    kind: reference_type
+    inside:
+      kind: parameter
+      stopBy:
+        not:
+          kind: tuple_type
+      inside:
+        kind: parameters
+fix: impl $TRAIT
