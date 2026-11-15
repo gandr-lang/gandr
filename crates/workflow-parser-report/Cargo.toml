@@ -1,0 +1,58 @@
+[package]
+name = "gandr-workflow-parser-report"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Reads the parser on each axis a syntax candidate is measured against"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "parser", "report"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The report, built only with the `census` feature: without it the molder
+# keeps no census, and the binary has nothing to count.
+[[bin]]
+name = "parser-report"
+path = "src/main.rs"
+required-features = ["census"]
+
+# The report reads the corpus that the sweeps list, molds it with the parser
+# and counts the molder's decisions. Its recovery axis reads the recovery sweep
+# of the ledger tasks. Its latency workload types into a language-server
+# session through the language server's client, as the driver's benchmark
+# report does, and its incremental workload parses each revision through the
+# session's form store, on the serial fork. Each dependency is optional:
+# `census` turns all of them on with the binary.
+[dependencies]
+gandr-core-fork = { workspace = true, optional = true }
+gandr-surface-grammar = { workspace = true, optional = true }
+gandr-surface-lsp = { workspace = true, features = ["client"], optional = true }
+gandr-surface-parser = { workspace = true, optional = true }
+gandr-surface-session = { workspace = true, optional = true }
+gandr-surface-syntax = { workspace = true, optional = true }
+gandr-workflow-ledger-tasks = { workspace = true, optional = true }
+gandr-workflow-sweep = { workspace = true, optional = true }
+quenchant-shape = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[features]
+default = []
+# The report: the molder keeps its census of decisions.
+census = [
+  "dep:gandr-core-fork",
+  "dep:gandr-surface-grammar",
+  "dep:gandr-surface-lsp",
+  "dep:gandr-surface-parser",
+  "dep:gandr-surface-session",
+  "dep:gandr-surface-syntax",
+  "dep:gandr-workflow-ledger-tasks",
+  "dep:gandr-workflow-sweep",
+  "dep:quenchant-shape",
+  "dep:serde_json",
+  "gandr-surface-parser/census",
+]
+
+[lints]
+workspace = true

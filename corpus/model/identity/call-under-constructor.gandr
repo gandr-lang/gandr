@@ -1,0 +1,28 @@
+/// This source states a recursive path with a call under
+/// an integer constructor.
+///
+/// Integer rules can reduce the constructor to the call beneath it.
+/// A recursive transport remains neutral on its path.
+/// The integers and their sum follow cubical Agda's `Cubical/Data/Int`.
+///
+/// The kernel reads each endpoint through the integer rules.
+/// The checker rejects a zero arm that gives the wrong endpoint.
+///
+/// - see: #424 — `underSuccessor`
+import "./circle-base.gandr";
+import "./int-sum.gandr";
+
+/// The integer rules reduce the endpoint at `P(x)` to `plus(Z, x)`.
+def rec underSuccessor(b : Int) -> Path[.A = Int](S (plus Z b), S b) =
+  match b where
+    | Z => Path.here (S Z)
+    | S(x) => Path.ap up (underSuccessor[<] x)
+    | P(x) => Path.ap down (underSuccessor[<] x)
+
+/// The checker refuses the zero arm because `S(Z)` has no path to `Z`.
+@[refuses("EndpointMismatch")]
+def rec offByOne(b : Int) -> Path[.A = Int](S (plus Z b), b) =
+  match b where
+    | Z => Path.here (S Z)
+    | S(x) => Path.ap up (offByOne[<] x)
+    | P(x) => Path.ap down (offByOne[<] x)

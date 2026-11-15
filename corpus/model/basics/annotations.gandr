@@ -1,0 +1,82 @@
+// This source shows type annotations on values.
+//
+// An annotation `(e : T)` sets a value's type.
+// A definition without a signature declares its value at `T`.
+// A body returns its value at `-F T`, whether it writes `return` or a
+// tail takes it.
+//
+// The checker ascribes annotations at pairs, scrutinees, arguments,
+// heads and signatures.
+// A bind tuple uses its annotated pattern product.
+//
+// - see: #1107
+// - see: #1543
+// - see: #2168 — `injected`, `falsity`
+
+/// `three` declares an integer by annotation alone.
+def three = (3 : Integer);
+
+/// A pair the annotation states the product of.
+def paired = (*{3, "three"} : Integer * String);
+
+/// A value run as an annotated `pure`, then annotated where the body ends.
+def ran() -> Integer =
+  let n = (3 : Integer)
+  (n : Integer)
+
+/// The annotated value a tail takes the `return` of.
+def tailed(n : Integer) -> Integer =
+  (n + 1 : Integer)
+
+/// This pair annotates only its first component.
+/// The checker ascribes that component as `Integer`.
+@[runs("*{3, 1}")]
+def pair = *{(3 : Integer), 1};
+
+/// An annotation beside the signature it agrees with.
+def signed : Integer = (3 : Integer);
+
+/// This match annotates its scrutinee with the sum type.
+def chosen(b : Bool) -> Integer =
+  match (b : Bool) where
+    | true => 1
+    | false => 2
+
+/// A component of a pair a bind runs, annotated where the kernel synthesises
+/// the pair's type.
+@[runs("2")]
+def bound() -> Integer =
+  let *{b, n} = *{(true : Bool), 2};
+  n
+
+/// The kernel synthesises the pair type.
+/// The annotation ascribes the otherwise untyped injection under its sum label.
+@[runs("2")]
+def injected() -> Integer =
+  let *{b, n} = *{(+{.yes = *{}} : +{yes : Unit, no : Unit}), 2};
+  n
+
+/// This injection writes the second `Bool` summand.
+/// The annotation makes it read as `false`.
+@[runs("2")]
+def falsity() -> Integer =
+  let *{b, n} = *{(+{.1 = *{}} : Bool), 2};
+  n
+
+/// `doubled` accepts an annotated argument.
+def doubled(n : Integer) -> Integer { n + n }
+
+/// An argument annotated with the parameter's type.
+@[runs("6")]
+def called() -> Integer { doubled (3 : Integer) }
+
+/// The function an application forces, annotated with its type at the head.
+@[runs("6")]
+def headed() -> Integer { (doubled : Integer -> Integer) 3 }
+
+/// This bind runs a pair.
+/// Its annotated pattern binds both names under the product type.
+@[runs("1")]
+def split() -> Integer =
+  let *{y, z} : Integer * Integer = *{1, 2};
+  y

@@ -1,0 +1,43 @@
+/// The object types.
+data ObjTy : Type where
+  /// The base type.
+  | Base : ObjTy
+  /// The functions from `dom` to `cod`.
+  | Arr : (dom : ObjTy, cod : ObjTy) --> ObjTy
+
+/// The contexts, the last entry outermost.
+data Ctx : Type where
+  /// The empty context.
+  | Empty : Ctx
+  /// The context `gamma` and one more entry of type `a`.
+  | Extend : (gamma : Ctx, a : ObjTy) --> Ctx
+
+/// A variable of type `a` in the context `gamma`.
+data Var : (gamma : Ctx, a : ObjTy) --> Type where
+  /// The variable of the last entry.
+  | Here : (gamma : Ctx, a : ObjTy) --> Var(Extend(gamma, a), a)
+
+/// The neutral terms and the normal forms, each over the other.
+rec {
+  /// A variable under applications.
+  data Ne : (gamma : Ctx, a : ObjTy) --> Type where {
+    /// A variable.
+    | NVar : (gamma : Ctx, a : ObjTy, x : Var gamma a) --> Ne gamma a
+    /// A neutral applied to a normal form.
+    | NApp : (
+      gamma : Ctx,
+      a : ObjTy,
+      b : ObjTy,
+      t : Ne(gamma, Arr a b),
+      u : Nf gamma a
+    ) --> Ne gamma b
+  }
+  /// A term with no redex.
+  data Nf : (gamma : Ctx, a : ObjTy) --> Type where
+    /// A neutral at the base type.
+    | NNe : (gamma : Ctx, t : Ne gamma Base) --> Nf gamma Base
+}
+
+/// The newest variable as a normal form, a reader of both members.
+def newest() -> Nf (Extend Empty Base) Base =
+  NNe (Extend Empty Base) (NVar (Extend Empty Base) Base (Here Empty Base))

@@ -1,0 +1,3 @@
+import "./base.gandr";
+rule Inv.four : inv (inv (inv (inv x))) <=> x;
+def again = Inv.four;
