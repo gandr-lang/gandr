@@ -22,8 +22,12 @@
 
 // The ring is the Linux kernel's: on another system the crate compiles empty.
 #![cfg(target_os = "linux")]
+// The base's entries on powerpc64 use inline assembly, which is unstable on
+// that architecture. The build script names the cfg that turns the feature on.
+#![cfg_attr(asm_experimental_arch, feature(asm_experimental_arch))]
 
 pub mod arg;
+pub mod base;
 pub mod cqe;
 mod cqueue;
 mod fd;

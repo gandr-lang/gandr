@@ -1,25 +1,11 @@
-#![cfg_attr(
-    test,
-    allow(
-        clippy::as_conversions,
-        clippy::indexing_slicing,
-        clippy::items_after_statements,
-        clippy::let_unit_value,
-        clippy::panic_in_result_fn,
-        clippy::too_many_arguments,
-        clippy::unwrap_used,
-        clippy::undocumented_unsafe_blocks,
-        reason = "cfg(test)"
-    )
-)]
-#![allow(clippy::missing_docs_in_private_items, reason = "WIP")]
-#![allow(clippy::missing_safety_doc, reason = "WIP")]
-// #![allow(unused, reason = "WIP")]
-
-// Features
-#![cfg_attr(asm_experimental_arch, feature(asm_experimental_arch))]
-
-//! TODO
+//! The owner's system-call base: the kernel's `io_uring` interface with no C
+//! library. It issues `io_uring_setup`, `io_uring_register` and
+//! `io_uring_enter` through inline assembly on five architectures. It holds
+//! the kernel's UAPI declarations of six architectures, as the build script
+//! makes them, and the four sizes of the ring's entries.
+//!
+//! The ring of this crate stands on the liburing crate, and no call of the
+//! ring goes through the base yet.
 
 #[cfg(not(target_os = "linux"))]
 compile_error!("This crate is not supported on the target OS.");
@@ -33,8 +19,6 @@ compile_error!("This crate is not supported on the target OS.");
     any(target_arch = "x86", target_arch = "x86_64"),
 )))]
 compile_error!("This crate is not supported on the target architecture.");
-
-extern crate alloc;
 
 mod io;
 mod io_uring;
