@@ -2,15 +2,15 @@ use ::core::cell::RefCell;
 use ::core::marker::PhantomData;
 use ::gandr_runtime_uring::IoUring;
 use ::gandr_runtime_uring::Sqe64;
-use ::slab::Slab;
 
 use crate::completion::Completion;
-use crate::submission::Submission;
+use crate::runtime::reap;
+use crate::submission::Table;
 
 pub struct Scope<'tsk, 'env: 'tsk>
 {
     io: &'tsk RefCell<IoUring<'static>>,
-    tasks: &'tsk RefCell<Slab<Submission>>,
+    table: &'tsk Table,
     phd_env: PhantomData<&'env mut &'env ()>,
     phd_tsk: PhantomData<&'tsk mut &'tsk ()>,
 }
@@ -19,14 +19,31 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
 {
     pub(crate) fn new(
         io: &'tsk RefCell<IoUring<'static>>,
-        tasks: &'tsk RefCell<Slab<Submission>>,
+        table: &'tsk Table,
     ) -> Self
     {
         Self {
             io,
-            tasks,
+            table,
             phd_tsk: PhantomData,
             phd_env: PhantomData,
+        }
+    }
+
+    /// A free slot of the table. When every slot is taken and the kernel
+    /// holds some of their operations, the caller waits for a drain: the
+    /// ring completes at least one, and its slot may come free. Gives
+    /// nothing when no slot comes free.
+    fn slot(&self) -> Option<usize>
+    {
+        loop {
+            if let Some(key) = self.table.take() {
+                return Some(key);
+            }
+            if self.table.held() == 0 {
+                return None;
+            }
+            reap(self.io, self.table).ok()?;
         }
     }
 
@@ -39,21 +56,24 @@ impl<'tsk, 'env: 'tsk> Scope<'tsk, 'env>
     where
         P: for<'sq> FnOnce(&mut Sqe64<'sq>),
     {
+        let Some(key) = self.slot()
+        else {
+            return Completion::full(self.table);
+        };
         let mut io = self.io.borrow_mut();
         let mut sq = io.squeue();
         let Some(mut sqe) = sq.get_sqe()
         else {
-            return Completion::full();
+            self.table.give_back(key);
+            return Completion::full(self.table);
         };
         prep(&mut sqe);
-        let (cqe_tx, cqe_rx) = ::oneshot::channel();
-        let key = self.tasks.borrow_mut().insert(Submission::new(cqe_tx));
-        // A key of the slab fits the user data on every Linux target.
+        // A key of the table fits the user data on every Linux target.
         let data = u64::try_from(key).unwrap_or(u64::MAX);
         // SAFETY: the user data is a number that the kernel only hands back.
         unsafe {
             sqe.set_data64(data);
         }
-        Completion::new(cqe_rx)
+        Completion::new(self.table, key)
     }
 }

@@ -1652,11 +1652,9 @@ dependencies = [
  "assert_fs",
  "gandr-runtime-uring",
  "libc",
- "oneshot",
  "pin-project-lite",
  "predicates",
  "rustix",
- "slab",
  "socket2",
 ]
 
@@ -4461,12 +4459,6 @@ dependencies = [
  "critical-section",
  "portable-atomic",
 ]
-
-[[package]]
-name = "oneshot"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
 
 [[package]]
 name = "opaque-debug"

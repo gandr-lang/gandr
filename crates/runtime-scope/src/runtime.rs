@@ -3,10 +3,10 @@ use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
 use ::gandr_runtime_uring::IoUring;
-use ::slab::Slab;
 
 use crate::completion::Cqe;
 use crate::scope::Scope;
+use crate::submission::Table;
 
 #[non_exhaustive]
 pub struct Runtime
@@ -16,12 +16,12 @@ pub struct Runtime
 
 impl Runtime
 {
-    const IO_URING_ENTRIES: usize = 4096;
+    const IO_URING_ENTRIES: u32 = 4096;
 
     #[inline]
     pub fn new() -> ::anyhow::Result<Self>
     {
-        let io = IoUring::builder().entries(4096).build()?;
+        let io = IoUring::builder().entries(Self::IO_URING_ENTRIES).build()?;
         Ok(Self { io })
     }
 
@@ -40,9 +40,10 @@ impl Runtime
         F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
         let io = RefCell::new(self.io);
-        let tasks = RefCell::new(Slab::default());
+        let depth = usize::try_from(Self::IO_URING_ENTRIES)?;
+        let table = Table::new(depth);
 
-        let scope = Scope::new(&io, &tasks);
+        let scope = Scope::new(&io, &table);
         let mut future = pin!(start(&scope));
 
         loop {
@@ -56,36 +57,39 @@ impl Runtime
                 // main future which is the only entrypoint to
                 // start the runtime. Thus the main future always depends on all
                 // received tasks.
-                debug_assert_eq!(tasks.borrow().len(), 0, "tasks remaining");
+                debug_assert_eq!(table.held(), 0, "tasks remaining");
 
                 // Return immediately if the future is ready. See above.
                 return Ok(val);
             }
 
-            // Submit the entries that the scope prepared and wait for at
-            // least one completion.
-            let mut io = io.borrow_mut();
-            let (mut squ, mut cqu) = io.queues();
-            squ.submit_and_wait(1)?;
-
-            // Process newly completed tasks.
-            for cqe in cqu.ready() {
-                // Cross-reference the task against the CQE user_data.
-                let key = usize::try_from(cqe.user_data())?;
-
-                // Remove the task since it's completed.
-                let task = tasks
-                    .borrow_mut()
-                    .try_remove(key)
-                    .ok_or_else(|| anyhow!("task lookup failed: {key}"))?;
-
-                // Forward the CQE to the future's resolver.
-                task.cqe_tx
-                    .send(Cqe::new(cqe.res(), cqe.flags()))
-                    .map_err(|_err| anyhow!("failed to send cqe result for task: {key}"))?;
-            }
+            // Submit the entries that the scope prepared, wait for at least
+            // one completion, and record each in its slot.
+            reap(&io, &table)?;
         }
     }
+}
+
+/// Submits the prepared entries, waits for at least one completion, and
+/// records each ready completion in its slot of `table`.
+pub fn reap(
+    io: &RefCell<IoUring<'static>>,
+    table: &Table,
+) -> ::anyhow::Result<()>
+{
+    let mut io = io.borrow_mut();
+    let (mut squ, mut cqu) = io.queues();
+    squ.submit_and_wait(1)?;
+
+    // Process newly completed tasks.
+    for cqe in cqu.ready() {
+        // Cross-reference the task against the CQE user_data.
+        let key = usize::try_from(cqe.user_data())?;
+        if !table.complete(key, Cqe::new(cqe.res(), cqe.flags())) {
+            return Err(anyhow!("task lookup failed: {key}"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -127,6 +131,33 @@ pub mod test
                 .unwrap()
                 .unwrap();
             assert_eq!(data.as_slice(), &[0u8]);
+        }
+
+        /// A request past the table's depth waits for a drain. When the
+        /// drain frees no slot, because every completion still waits for its
+        /// reader, the request gives the stated result of a full table. Once
+        /// the completions drop, their slots come free again.
+        #[test]
+        fn full()
+        {
+            let nop = |sqe: &mut ::gandr_runtime_uring::Sqe64<'_>| {
+                // SAFETY: a no-op reads no pointer and names no descriptor.
+                unsafe {
+                    sqe.prep_nop();
+                }
+            };
+            let depth = usize::try_from(Runtime::IO_URING_ENTRIES).unwrap();
+            crate::test::harness::runtime::new()
+                .run(async |scope| {
+                    let held = ::core::iter::repeat_with(|| scope.request(nop))
+                        .take(depth)
+                        .collect::<Vec<_>>();
+                    let error = scope.request(nop).await.err().unwrap();
+                    assert_eq!(error.to_string(), "submission queue full");
+                    drop(held);
+                    scope.request(nop).await.unwrap();
+                })
+                .unwrap();
         }
     }
 }

@@ -1,12 +1,13 @@
 use ::anyhow::anyhow;
 use ::core::marker::PhantomData;
 use ::core::pin::Pin;
-use ::core::pin::pin;
 use ::core::task::Context;
 use ::core::task::Poll;
-use ::core::task::ready;
+
+use crate::submission::Table;
 
 /// The kernel's completion of one operation, copied out of the ring.
+#[derive(Clone, Copy)]
 pub struct Cqe
 {
     res: i32,
@@ -23,40 +24,66 @@ impl Cqe
         Self { res, flags }
     }
 
-    pub const fn result(&self) -> i32
+    pub const fn result(self) -> i32
     {
         self.res
     }
 
-    pub const fn flags(&self) -> u32
+    pub const fn flags(self) -> u32
     {
         self.flags
     }
 }
 
+/// Where a completion stands.
+enum State
+{
+    /// The table had no free slot for the request.
+    Full,
+    /// The operation holds slot `key`.
+    Waiting(usize),
+    /// The completion gave its result.
+    Read,
+}
+
 pub struct Completion<'tsk>
 {
-    cqe: Option<::oneshot::Receiver<Cqe>>,
+    table: &'tsk Table,
+    state: State,
     phd_tsk: PhantomData<&'tsk mut &'tsk ()>,
 }
 
-impl Completion<'_>
+impl<'tsk> Completion<'tsk>
 {
-    pub(crate) const fn new(cqe: ::oneshot::Receiver<Cqe>) -> Self
+    pub(crate) const fn new(
+        table: &'tsk Table,
+        key: usize,
+    ) -> Self
     {
-        let cqe = Some(cqe);
         Completion {
-            cqe,
+            table,
+            state: State::Waiting(key),
             phd_tsk: PhantomData,
         }
     }
 
-    /// The completion of a request that found the submission queue full.
-    pub(crate) const fn full() -> Self
+    /// The completion of a request that found no free slot.
+    pub(crate) const fn full(table: &'tsk Table) -> Self
     {
         Completion {
-            cqe: None,
+            table,
+            state: State::Full,
             phd_tsk: PhantomData,
+        }
+    }
+}
+
+impl Drop for Completion<'_>
+{
+    fn drop(&mut self)
+    {
+        if let State::Waiting(key) = self.state {
+            self.table.abandon(key);
         }
     }
 }
@@ -67,16 +94,21 @@ impl Future for Completion<'_>
 
     fn poll(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
     ) -> Poll<Self::Output>
     {
         let this = self.get_mut();
-        let Some(cqe) = this.cqe.as_mut()
-        else {
-            return Poll::Ready(Err(anyhow!("submission queue full")));
-        };
-        let cqe = pin!(cqe);
-        let cqe = ready!(cqe.poll(cx)).map_err(|_err| anyhow!("value sender disconnected"))?;
-        Poll::Ready(Ok(cqe))
+        match this.state {
+            State::Full => Poll::Ready(Err(anyhow!("submission queue full"))),
+            State::Read => Poll::Ready(Err(anyhow!("completion polled after its result"))),
+            State::Waiting(key) => {
+                let Some(cqe) = this.table.read(key)
+                else {
+                    return Poll::Pending;
+                };
+                this.state = State::Read;
+                Poll::Ready(Ok(cqe))
+            },
+        }
     }
 }

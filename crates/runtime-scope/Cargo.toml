@@ -14,10 +14,8 @@ publish.workspace = true
 anyhow = { workspace = true }
 gandr-runtime-uring = { workspace = true }
 libc = { workspace = true }
-oneshot = { workspace = true }
 pin-project-lite = { workspace = true }
 rustix = { workspace = true, features = ["net"] }
-slab = { workspace = true }
 socket2 = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]

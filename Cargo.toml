@@ -1769,17 +1769,6 @@ version = "0.40.0"
 default-features = false
 features = ["elf", "macho", "read_core"]
 
-# The scoped runtime's channel of one completion, as the owner's crate has
-# it. A mend of #7652 puts the slot's completion in its place.
-# features:
-# - async: the completion's receiver awaits.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.oneshot]
-version = "0.1.11"
-default-features = false
-features = ["async"]
-
 # The index of a host's chunk holder and of a store plane, from a digest to its
 # slot in the arena, read and written with no lock. A read happens after the
 # write that it reads, so a reader that finds a slot reads the whole image.
@@ -2169,16 +2158,6 @@ features = ["alloc", "derive"]
 version = "1.0.151"
 default-features = false
 features = ["alloc"]
-
-# The scoped runtime's table of requests in flight, as the owner's crate has
-# it. A mend of #7652 puts a table of slots of the ring's depth in its place.
-# features:
-# - none: the runtime uses the default-off surface.
-# consumers:
-# - runtime-scope
-[workspace.dependencies.slab]
-version = "0.4.11"
-default-features = false
 
 # Sockets with their options, as the uring crate's network tests open them.
 # features:
