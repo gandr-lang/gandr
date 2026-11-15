@@ -237,7 +237,10 @@ pub fn cut(
     text: Text<'_>,
 ) -> Cut
 {
-    if path.0.ends_with(".rs") {
+    if std::path::Path::new(path.0)
+        .extension()
+        .is_some_and(|extension| extension == "rs")
+    {
         passage::rust::comments(path, text)
     }
     else {

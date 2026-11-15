@@ -270,8 +270,7 @@ fn opening(text: Text<'_>) -> Opening
     };
     let text = text.0;
     let (word, after) = text.split_at_checked(named(text)).unwrap_or((text, ""));
-    let keyword =
-        KEYWORDS.contains(&word) && !after.starts_with(|c: char| c == '-' || c == '\'' || c == '’');
+    let keyword = KEYWORDS.contains(&word) && !after.starts_with(['-', '\'', '’']);
     let method = after.strip_prefix('.').is_some_and(|rest| {
         let end = named(rest);
         end > 0
