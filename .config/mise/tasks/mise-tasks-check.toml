@@ -710,12 +710,19 @@ directory = "{{ config_root }}/target/embedded-sources"
 # stamp holds the version of Dylint, and a run under another version starts
 # from an empty `target/dylint` too. A state with no second stamp keeps its
 # units and takes the stamp.
+# The run loads the library from a checkout of the pinned revision under the
+# cache directory, and not from the git entry of the workspace metadata. To
+# resolve a git entry, Dylint writes a dummy crate into each checkout of that
+# repository in the shared cargo home. Another gate's cargo that reads one of
+# those checkouts then fails.
+# - see: #7492, `.config/policy/library.bash`
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 rustup component add rustc-dev llvm-tools
 toolchain=$(rustup show active-toolchain | awk '{print $1}')
 revision=$(mise run --quiet workflow:revision)
+library=$(.config/policy/library.bash "$revision")
 dylint=$(cargo dylint --version)
 if [ "$(cat target/dylint/quenchant-revision 2> /dev/null)" != "$revision" ] \
   || { [ -e target/dylint/dylint-version ] && [ "$(cat target/dylint/dylint-version)" != "$dylint" ]; }; then
@@ -726,7 +733,7 @@ fi
 printf '%s\n' "$dylint" > target/dylint/dylint-version
 # The policy over the packages that the arguments select, in a gate slot.
 policy() {
-  local -a run=(.config/mise/scope cargo dylint --lib quenchant_dylints -- "$@" --all-targets --config 'resolver.feature-unification="workspace"')
+  local -a run=(.config/mise/scope cargo dylint --path "$library" --pattern crates/quenchant-dylints -- "$@" --all-targets --config 'resolver.feature-unification="workspace"')
   local channel
   if [ ! -x "${DYLINT_DRIVER_PATH:-$HOME/.dylint_drivers}/$toolchain/dylint-driver" ]; then
     channel=$(sed -n 's/^channel = "\([^"]*\)".*/\1/p' rust-toolchain.toml)
@@ -734,7 +741,7 @@ policy() {
   fi
   .config/mise/gated "${run[@]}"
 }
-export toolchain
+export toolchain library
 export -f policy
 # The library case builds nothing, so it runs before the policy run.
 .config/policy/library-cases.bash
@@ -1246,7 +1253,9 @@ exit "$status"
 #     with the clause held;
 #   - with `base.rs` back, it obliges nothing.
 # The builds keep their target under `target/obligations`, so a cached run
-# compiles nothing but the one-line change.
+# compiles nothing but the one-line change. The run loads the policy library
+# from the checkout of its pinned revision, as `check:dylint` does.
+# - see: #7492
 ["check:obligations"]
 description = "The re-verification lane obliges the recorded change, holds it once ticked and obliges nothing without it"
 depends = ["check:dylint", "workflow:install"]
@@ -1291,10 +1300,11 @@ for built in "$target"/dylint/dylint/target/*/ "$target/rustdoc"; do
   [[ -d $built ]] || continue
   cargo clean --manifest-path "$repository/Cargo.toml" --target-dir "$built" --package obligations-case --quiet
 done
+library=$(.config/policy/library.bash "$(mise run --quiet workflow:revision)")
 DYLINT_TOML=$(printf '[quenchant-dylints]\nevidence_directory = "%s"\n' "$target/records") \
   CARGO_TARGET_DIR="$target/dylint" \
   CARGO_ENCODED_RUSTFLAGS=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no' \
-  cargo dylint --manifest-path "$repository/Cargo.toml" --lib quenchant_dylints --no-deps -- --lib --quiet
+  cargo dylint --manifest-path "$repository/Cargo.toml" --path "$library" --pattern crates/quenchant-dylints --no-deps -- --lib --quiet
 RUSTDOCFLAGS="-Z unstable-options --output-format json" CARGO_TARGET_DIR="$target/rustdoc" \
   cargo doc --manifest-path "$repository/Cargo.toml" --no-deps --document-private-items --offline --quiet
 printf '## What\n\nThe recorded change.\n' > "$scratch/body.md"

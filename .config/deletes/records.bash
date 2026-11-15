@@ -81,6 +81,8 @@ source "$records_here/../toolchain/tree.bash"
 records_floor_kib=$((2 * 1024 * 1024))
 records_bound_kib=
 records_rustflags=$'--cfg=quenchant_compiler_policy\x1f-Zalways-encode-mir\x1f-Zinline-mir=no'
+# The checkout of the library's revision, which `records_stamp` names.
+records_library_root=
 
 # A copy on one host clones.
 records_clone() {
@@ -440,15 +442,24 @@ records_evict() {
 # then loads a library without the lints that its crates expect (#7384). So
 # `dylint` of the records target holds a stamp of the revision that it
 # builds, as `check:dylint` does, and a run under another revision starts
-# from an empty `dylint`.
+# from an empty `dylint`. The stamp also names the checkout of that revision,
+# from which the run loads the library.
+# - see: #7492, `.config/policy/library.bash`
 records_stamp() {
   local revision stamp=$records_target/dylint/quenchant-revision
   revision=$(records_run cargo metadata --no-deps --locked --format-version 1 \
     | jq -r '[.metadata.dylint.libraries[]? | select(.pattern == "crates/quenchant-dylints") | .rev] | first // empty') || return
+  [[ -n $revision ]] || return 1
+  records_library_root=$(records_library "$revision") || return
   [[ $(cat "$stamp" 2> /dev/null) != "$revision" ]] || return 0
   rm -rf "$records_target/dylint"
   mkdir -p "$records_target/dylint"
   printf '%s\n' "$revision" > "$stamp"
+}
+
+# The root of a checkout of quenchant at revision `$1`.
+records_library() {
+  "$records_here/../policy/library.bash" "$1"
 }
 
 # Builds the records of package `$1` into `$records_work/records`, with the
@@ -468,7 +479,8 @@ records_build() {
     [[ -d $dir ]] || continue
     records_run cargo clean --quiet -p "$1" --target-dir "$dir" 2>> "$records_work/dylint.log" || return
   done
-  records_run cargo dylint --lib quenchant_dylints -- "${args[@]}" --all-targets --locked --quiet --message-format=json \
+  records_run cargo dylint --path "$records_library_root" --pattern crates/quenchant-dylints \
+    -- "${args[@]}" --all-targets --locked --quiet --message-format=json \
     > "$records_work/messages.json" 2>> "$records_work/dylint.log"
 }
 
