@@ -1,0 +1,17 @@
+error[NonUniformResult]: this generator's result does not apply its family to the family's parameters, then one term for each index
+   ╭▸ corpus/pathological/data/head-uniformity.gandr:16:10
+   │
+16 │   | Mk : Bad(Integer)
+   │          ━━━━━━━━━━━━ a result off the family's parameters
+   │
+   ├ note: `Bad` is refused with NonUniformResult, as its expectation states
+   ╰ help: declare each parameter a generator instantiates as an index, as in `data Fixed : (a : Type, n : Nat) --> Type[+, 1]`
+
+error[NonUniformResult]: this generator's result does not apply its family to the family's parameters, then one term for each index
+   ╭▸ corpus/pathological/data/head-uniformity.gandr:22:33
+   │
+22 │   | MkSwap : (x : a, y : b) --> Swap(b, a)
+   │                                 ━━━━━━━━━━ a result off the family's parameters
+   │
+   ├ note: `Swap` is refused with NonUniformResult, as its expectation states
+   ╰ help: declare each parameter a generator instantiates as an index, as in `data Fixed : (a : Type, n : Nat) --> Type[+, 1]`

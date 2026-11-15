@@ -1,0 +1,4 @@
+module Evolution where {
+  type Old = +{ report : !String. end };
+  type New = +{ report : !String. end, pause : end };
+  type Same = +{ report : !String. end };

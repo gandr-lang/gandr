@@ -1,0 +1,4 @@
+import "./seven.gandr";
+import "./eight.gandr";
+def value : Integer;
+def value = seven;

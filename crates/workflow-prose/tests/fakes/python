@@ -1,0 +1,9 @@
+#!/bin/sh
+# A stand-in for the spaCy venv's interpreter: it drains the passages it is
+# fed and prints the parse the case wrote, or fails as asked.
+cat >/dev/null
+if [ "$FAKE_PYTHON_MODE" = fail ]; then
+  echo "ModuleNotFoundError: No module named 'spacy'" >&2
+  exit 1
+fi
+cat "$FAKE_PYTHON_OUTPUT"

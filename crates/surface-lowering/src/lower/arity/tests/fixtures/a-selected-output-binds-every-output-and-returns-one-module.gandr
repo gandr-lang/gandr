@@ -1,0 +1,3 @@
+def divmod(m : Integer, n : Integer) -> (q : Integer, r : Integer) { (m, n) }
+def half(n : Integer) -> Integer { (divmod n n).q }
+def rest(n : Integer) -> Integer { (divmod n n).r }

@@ -1,0 +1,7 @@
+import std.reals ;
+def counted(text : String) -> [std.reals.Eff] Integer =
+  let restored = std.reals.restore text
+  let counters = std.reals.report restored
+  match counters where
+    | #[quanta, .._] => quanta
+    | _ => 0
