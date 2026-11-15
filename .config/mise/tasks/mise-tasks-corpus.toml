@@ -237,6 +237,75 @@ mv "$written" "$config"
 echo "store:profile: $config holds $line under [store]"
 '''
 
+# The width of the host's counter is the count of concurrent compile jobs at
+# which the wall of a fixed batch stops its fall. The batch builds
+# `gandr-kernel-core` and its closure from clean in a scratch target
+# directory with `cargo build --jobs <n>`. The counts go from the host's
+# physical cores to its logical CPUs, in steps of a quarter of the physical
+# count. The width is the last step that cuts the wall by a fiftieth at least.
+# - see: #7706
+#
+# The task writes the width as `compile_width` in the `[host]` table of the
+# user's configuration. The hub reads that table when it sets the counter.
+# The width is a fact of the host, so it never lands in the tree. A host with
+# no line takes its logical count. Run the task on an idle host, because the
+# load of other runs reads as the cores' measure.
+# - see: `gandr/config.toml` under the XDG configuration directory
+["host:compile-width"]
+description = "Measure the count of concurrent compile jobs at which a fixed batch's wall stops falling and write it as the host's compile_width in the user's configuration"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $(uname -s) == Darwin ]]; then
+  physical=$(sysctl -n hw.physicalcpu)
+  logical=$(sysctl -n hw.logicalcpu)
+else
+  physical=$(lscpu --parse=core,socket | awk '!/^#/' | sort --unique | awk 'END { print NR }')
+  logical=$(nproc)
+fi
+step=$(( physical / 4 > 0 ? physical / 4 : 1 ))
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+# Cargo fetches the sources and the registry once, before any timed build.
+cargo fetch --locked --quiet
+width=$physical
+best=
+jobs=$physical
+while (( jobs <= logical )); do
+  rm -rf "$scratch/target"
+  started=${EPOCHREALTIME/./}
+  .config/mise/scope cargo build --locked --quiet --package gandr-kernel-core --jobs "$jobs" \
+    --target-dir "$scratch/target"
+  wall=$(( (${EPOCHREALTIME/./} - started) / 1000 ))
+  echo "host:compile-width: $jobs jobs, ${wall} ms"
+  if [[ -n $best ]] && (( wall * 50 > best * 49 )); then
+    break
+  fi
+  width=$jobs
+  best=$wall
+  if (( jobs < logical && jobs + step > logical )); then jobs=$logical; else jobs=$(( jobs + step )); fi
+done
+line="compile_width = $width"
+home=${XDG_CONFIG_HOME:-}
+[[ $home == /* ]] || home=${HOME:?}/.config
+config=$home/gandr/config.toml
+mkdir -p "${config%/*}"
+touch "$config"
+written=$(mktemp "${config%/*}/config.toml.XXXXXX")
+trap 'rm -rf "$scratch"; rm -f "$written"' EXIT
+# Replace the key in the `[host]` table. With no key, add it at the table's
+# head. With no table, add the table at the file's end.
+awk -v line="$line" '
+  /^\[host\][[:space:]]*$/ { print; print line; table = 1; done = 1; next }
+  /^\[/ { table = 0 }
+  table && /^compile_width[[:space:]]*=/ { next }
+  { print }
+  END { if (!done) { print ""; print "[host]"; print line } }
+' "$config" > "$written"
+mv "$written" "$config"
+echo "host:compile-width: $config holds $line under [host], of $physical physical and $logical logical"
+'''
+
 # Catt's wall time on one example, the oracle the rows at dimension 3 are read
 # against (#3833). Catt is the repository `thibautbenjamin/catt` at the
 # revision below, built once into the user's cache with an opam root of its

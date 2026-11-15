@@ -155,6 +155,7 @@ use alloc::collections::BTreeSet;
 use core::cell::OnceCell;
 use core::fmt;
 use core::num::NonZeroU64;
+use core::num::NonZeroUsize;
 #[cfg(unix)]
 use core::time::Duration;
 use std::io;
@@ -172,6 +173,7 @@ use gandr_surface_agentic::Retries;
 use gandr_surface_dispatcher::Presentation;
 use gandr_surface_dispatcher::PresentationFault;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::presented;
 
 /// Whose recorded kernel verdicts a `check` believes.
@@ -938,6 +940,51 @@ impl Configuration
             }),
         }
     }
+
+    /// The tokens of the host's counter, as the user's configuration file
+    /// names them: the count of concurrent compile jobs at which the probe of
+    /// the host's setup measured a fixed batch's wall to stop falling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`compile_width_parsed`] reads the file's document at the
+    ///   logical CPUs that the process may run on; none when no directory is
+    ///   named or no file is there.
+    /// - provides: the width every hub sets the host's counter to.
+    /// - fails: a file that exists and cannot be read, and the faults of
+    ///   [`compile_width_parsed`].
+    /// - panics: none.
+    /// - executable: none — the result depends on the environment and the file
+    ///   system.
+    ///
+    /// # Errors
+    /// [`TableFault`], naming the file.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a width, no table, no key, a zero, a count past the
+    ///   logical CPUs, a word and a misshapen table are each read.
+    /// - witness: `config::tests::a_counter_width_is_read_and_a_bad_one_refused_7706`
+    ///
+    /// # Cost
+    /// - allocation: the read of the CPUs that the process may run on, setup
+    /// - allocation: the path and the words of a fault, diagnostic
+    pub fn compile_width(&self) -> Result<Option<Threads>, TableFault>
+    {
+        match *self.read() {
+            Read::Absent => Ok(None),
+            Read::Parsed {
+                ref path,
+                ref document,
+            } => compile_width_parsed(path, document.as_ref(), Threads::logical()),
+            Read::Unreadable {
+                ref path,
+                ref error,
+            } => Err(TableFault {
+                path: path.clone(),
+                why: format!("cannot be read: {error}"),
+            }),
+        }
+    }
 }
 
 /// The kernel policy `read`, the contents of `path` parsed as TOML, names.
@@ -1275,6 +1322,76 @@ fn seal_parsed(
     }
 }
 
+/// The width of the host's counter that `read`, the contents of `path` parsed
+/// as TOML, names, on a host of `logical` logical CPUs.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `host.compile_width`, a whole number from 1 to `logical`, as that
+///   count; a document with no `host` table or no key as none. Text that is not
+///   TOML, a `host` that is not a table and a width that is no whole number
+///   from 1 to `logical` are each a [`TableFault`].
+/// - provides: the reading of the table, apart from reading the file.
+/// - fails: the faults the ensures clause names.
+/// - panics: none.
+/// - executable: none — the clauses relate the document's text to the width it
+///   names, which the result alone does not carry.
+///
+/// # Errors
+/// [`TableFault`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a width, no table, no key, a zero, a count past the
+///   logical CPUs, a word and a misshapen table are each read.
+/// - witness: `config::tests::a_counter_width_is_read_and_a_bad_one_refused_7706`
+///
+/// # Cost
+/// - allocation: the path and the words of a fault, diagnostic
+fn compile_width_parsed(
+    path: &Path,
+    read: Result<&toml::Table, &toml::de::Error>,
+    logical: Threads,
+) -> Result<Option<Threads>, TableFault>
+{
+    let fault = |why: String| TableFault {
+        path: path.to_path_buf(),
+        why,
+    };
+    let table = match read {
+        Ok(table) => table,
+        Err(error) => return Err(fault(format!("not TOML: {}", error.message()))),
+    };
+    let host = match table.get("host") {
+        None => return Ok(None),
+        Some(&toml::Value::Table(ref host)) => host,
+        Some(other) => {
+            return Err(fault(format!(
+                "`host` is of type {}, not a table",
+                other.type_str()
+            )));
+        },
+    };
+    let most = NonZeroUsize::from(logical);
+    match host.get("compile_width") {
+        None => Ok(None),
+        Some(&toml::Value::Integer(number)) => usize::try_from(number)
+            .ok()
+            .and_then(NonZeroUsize::new)
+            .filter(|&width| width <= most)
+            .map(|width| Some(Threads::from(width)))
+            .ok_or_else(|| {
+                fault(format!(
+                    "`host.compile_width` is {number}; it is a whole number from 1 to {most}, \
+                     the logical CPUs"
+                ))
+            }),
+        Some(other) => Err(fault(format!(
+            "`host.compile_width` is {}; it is a whole number",
+            described(other)
+        ))),
+    }
+}
+
 /// What a setting holds, in words: a string as itself, quoted; any other
 /// value by its type.
 ///
@@ -1354,6 +1471,7 @@ mod tests
 {
     use alloc::collections::BTreeSet;
     use core::num::NonZeroU64;
+    use core::num::NonZeroUsize;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -1361,9 +1479,11 @@ mod tests
     use gandr_storage_store::Seal;
     use gandr_storage_store::SealBytes;
     use gandr_surface_dispatcher::RealsProfile;
+    use gandr_surface_dispatcher::Threads;
 
     use super::Kernel;
     use super::checkpointed;
+    use super::compile_width_parsed;
     #[cfg(unix)]
     use super::deliveries_parsed;
     use super::kernel_parsed;
@@ -1679,6 +1799,57 @@ mod tests
         assert_eq!(
             refused("store = 1\n"),
             "/c/gandr/config.toml: `store` is of type integer, not a table"
+        );
+    }
+
+    /// #7706: the width of the host's counter reads as the `[host]` table
+    /// names it, none with no table or no key, and a width that is no count
+    /// from 1 to the logical CPUs is refused by name.
+    #[test]
+    fn a_counter_width_is_read_and_a_bad_one_refused_7706()
+    {
+        let logical = Threads::from(NonZeroUsize::new(32).expect("32 is above zero"));
+        let read = |text: &str| {
+            compile_width_parsed(
+                Path::new("/c/gandr/config.toml"),
+                toml::from_str(text).as_ref(),
+                logical,
+            )
+        };
+        let width = |text: &str| match read(text) {
+            Ok(width) => width,
+            Err(fault) => panic!("{text:?} is read: {fault}"),
+        };
+        assert_eq!(width(""), None);
+        assert_eq!(width("[host]\n"), None);
+        assert_eq!(
+            width("[host]\ncompile_width = 24\n"),
+            Some(Threads::from(
+                NonZeroUsize::new(24).expect("24 is above zero")
+            ))
+        );
+        assert_eq!(width("[host]\ncompile_width = 32\n"), Some(logical));
+        let refused = |text: &str| match read(text) {
+            Err(fault) => fault.to_string(),
+            Ok(width) => panic!("{text:?} is refused: {width:?}"),
+        };
+        assert_eq!(
+            refused("[host]\ncompile_width = 0\n"),
+            "/c/gandr/config.toml: `host.compile_width` is 0; it is a whole number from 1 to 32, \
+             the logical CPUs"
+        );
+        assert_eq!(
+            refused("[host]\ncompile_width = 33\n"),
+            "/c/gandr/config.toml: `host.compile_width` is 33; it is a whole number from 1 to \
+             32, the logical CPUs"
+        );
+        assert_eq!(
+            refused("[host]\ncompile_width = \"wide\"\n"),
+            "/c/gandr/config.toml: `host.compile_width` is `wide`; it is a whole number"
+        );
+        assert_eq!(
+            refused("host = 1\n"),
+            "/c/gandr/config.toml: `host` is of type integer, not a table"
         );
     }
 

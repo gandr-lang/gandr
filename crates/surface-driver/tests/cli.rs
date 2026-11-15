@@ -3801,6 +3801,69 @@ fn tokens_runs_a_command_on_a_fifo_of_its_own_7688()
     );
 }
 
+/// #7706: a hub whose host's profile names `host.compile_width` sets the
+/// host's counter to that width, and a hub whose profile names none sets it to
+/// the logical CPUs, read by a process that joins the counter.
+#[cfg(unix)]
+#[test]
+fn the_hub_sets_the_counter_to_the_profile_s_width_7706()
+{
+    use std::ffi::OsStr;
+
+    use gandr_surface_dispatcher::Class;
+    use gandr_surface_dispatcher::Host;
+    use gandr_surface_dispatcher::Threads;
+
+    let width = |name: &str, profile: Option<&str>| {
+        // The name is short: a socket path must fit the platform's limit.
+        let scratch = Scratch::new(Path::new(name));
+        let home = scratch.0.join("config");
+        std::fs::create_dir_all(home.join("gandr")).expect("the configuration directory opens");
+        if let Some(profile) = profile {
+            std::fs::write(home.join("gandr").join("config.toml"), profile)
+                .expect("the profile is written");
+        }
+        let socket = scratch.0.join("hub.sock");
+        let mut hub = gandr(&[
+            OsStr::new("serve"),
+            OsStr::new("--socket"),
+            socket.as_os_str(),
+            OsStr::new("--no-toolset"),
+        ])
+        .env("XDG_CONFIG_HOME", &home)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the hub starts");
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(20);
+        let joined = loop {
+            match Host::join(&scratch.0, Class::Batch) {
+                Maybe::Present(host) => break Some(host),
+                Maybe::Absent(_) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(core::time::Duration::from_millis(20));
+                },
+                Maybe::Absent(_) => break None,
+            }
+        };
+        let read = joined.map(|host| host.width());
+        drop(hub.kill());
+        drop(hub.wait());
+        read
+    };
+    assert_eq!(
+        width("wid", Some("[host]\ncompile_width = 3\n")),
+        Some(Threads::from(
+            core::num::NonZeroUsize::new(3).expect("3 is above zero")
+        )),
+        "the hub sets the counter to the width that the profile names"
+    );
+    assert_eq!(
+        width("wnp", None),
+        Some(Threads::logical()),
+        "a hub whose profile names no width sets the counter to the logical CPUs"
+    );
+}
+
 #[test]
 fn serve_offers_the_toolset_by_default()
 {

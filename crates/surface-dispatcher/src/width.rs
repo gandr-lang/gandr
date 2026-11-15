@@ -64,6 +64,18 @@ impl Threads
 {
     /// One thread.
     pub const ONE: Self = Self(NonZeroUsize::MIN);
+
+    /// The logical CPUs that the process may run on, at least one: the width
+    /// of the host's counter where the host's profile names none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn logical() -> Self
+    {
+        available()
+    }
 }
 
 impl From<NonZeroUsize> for Threads

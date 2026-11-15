@@ -396,6 +396,7 @@ where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
+    let width = workspace.counter_width();
     let workspace = Arc::new(Mutex::new(workspace));
     let disk = match Disk::new() {
         Ok(disk) => Some(disk),
@@ -406,8 +407,12 @@ where
     };
     let disk = Arc::new(Mutex::new(disk));
     // The hub owns the host's counter beside its socket, and reaps it on its
-    // idle tick.
-    let tokens = match socket.parent().map(HostCounter::open) {
+    // idle tick. A hub that finds no counter sets it to the width that the
+    // host's profile names, else the logical count (#7706).
+    let tokens = match socket
+        .parent()
+        .map(|directory| HostCounter::with(directory, width))
+    {
         Some(Ok(tokens)) => Some(tokens),
         Some(Err(error)) => {
             drop(writeln!(log, "the hub owns no host's counter: {error}"));
