@@ -1,0 +1,27 @@
+// A program reading a line through `std` and answering on one of two streams.
+//
+// `main` is handed the ambient authority and opens the console from it, so
+// all three standard streams cross from that one capability. Nothing reaches
+// them through the ambient interfaces.
+//
+// `read_line` keeps the line's newline, so `yes` arrives as `"yes\n"`. `gandr
+// run answer.gandr` prints `agreed` on standard output for it, and `declined`
+// on standard error for anything else.
+//
+// - see: `../../../library/std/src/io.gandr` — `print`, `eprint` and
+//   `read_line`
+// - see: #2970 — `std.authority` and `std.io`
+
+// The authority `main` is handed, and the console it opens.
+import std.authority (Authority, console);
+// The three standard streams, each through the console.
+import std.io (print, eprint, read_line);
+
+/// The entry: it reads one line and answers it.
+def main(authority : Authority) -> [std.io.Console.Eff, std.io.Stderr.Eff, std.io.Stdin.Eff] Unit =
+  let answer = read_line (console authority)
+  if answer == "yes\n" {
+    print (console authority) "agreed"
+  } else {
+    eprint (console authority) "declined"
+  }
