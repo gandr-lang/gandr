@@ -1,11 +1,9 @@
 use ::anyhow::anyhow;
-use ::core::pin::Pin;
 use ::core::pin::pin;
 use ::core::task::Poll;
 use ::io_uring::IoUring;
 use ::slab::Slab;
 
-use crate::BoxFuture;
 use crate::Receiver;
 use crate::Sender;
 use crate::scope::Scope;
@@ -33,28 +31,18 @@ impl Runtime
         ::core::task::Context::from_waker(waker)
     }
 
-    pub fn run_box<'env, T, F>(
-        mut self,
-        start: F,
-    ) -> ::anyhow::Result<T>
-    where
-        F: for<'tsk> FnOnce(&'tsk Scope<'tsk, 'env>) -> Pin<Box<dyn Future<Output = T> + 'tsk>>,
-    {
-        self.run(start)
-    }
-
     pub fn run<'env, T, F>(
         mut self,
         start: F,
     ) -> ::anyhow::Result<T>
     where
-        F: RuntimeClosure<'env, T>,
+        F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
         let (req_tx, req_rx) = ::kanal::unbounded();
         let mut tasks = Slab::default();
 
         let scope = Scope::new(req_tx.to_async());
-        let mut future = pin!(start.call(&scope));
+        let mut future = pin!(start(&scope));
 
         let (sub, mut squ, mut cqu) = self.io.split();
 
@@ -108,29 +96,6 @@ impl Runtime
     }
 }
 
-pub trait RuntimeClosure<'env, T>
-{
-    #[expect(async_fn_in_trait, reason = "trustme")]
-    async fn call<'tsk>(
-        self,
-        scope: &'tsk Scope<'tsk, 'env>,
-    ) -> T;
-}
-
-impl<'env, T, F> RuntimeClosure<'env, T> for F
-where
-    F: for<'tsk> FnOnce(&'tsk Scope<'tsk, 'env>) -> Pin<Box<dyn Future<Output = T> + 'tsk>>,
-{
-    #[expect(clippy::future_not_send, reason = "trustme")]
-    async fn call<'tsk>(
-        self,
-        scope: &'tsk Scope<'tsk, 'env>,
-    ) -> T
-    {
-        self(scope).await
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test
 {
@@ -159,59 +124,14 @@ pub(crate) mod test
         use super::*;
 
         #[test]
-        fn box_dyn()
+        fn closure()
         {
             let data = &mut vec![];
             crate::test::harness::runtime::new()
-                .run_box(|scope| {
-                    Box::pin(async {
-                        data.push(0u8);
-                        Ok::<_, ::anyhow::Error>(())
-                    })
-                })
-                .unwrap()
-                .unwrap();
-            assert_eq!(data.as_slice(), &[0u8]);
-        }
-
-        #[test]
-        fn r#struct()
-        {
-            struct Closure<'env>
-            {
-                data: &'env mut Vec<u8>,
-            }
-            impl<'env> RuntimeClosure<'env, ::anyhow::Result<()>> for Closure<'env>
-            {
-                async fn call<'tsk>(
-                    self,
-                    scope: &'tsk Scope<'tsk, 'env>,
-                ) -> ::anyhow::Result<()>
-                {
-                    self.data.push(0u8);
+                .run(async |scope| {
+                    data.push(0u8);
                     Ok::<_, ::anyhow::Error>(())
-                }
-            }
-            let data = &mut vec![];
-            let cb = Closure { data };
-            crate::test::harness::runtime::new()
-                .run(cb)
-                .unwrap()
-                .unwrap();
-            assert_eq!(data.as_slice(), &[0u8]);
-        }
-
-        #[test]
-        fn r#macro()
-        {
-            let data = &mut vec![];
-            crate::test::harness::runtime::new()
-                .run(
-                    crate::async_scope!(self { data: &'env mut Vec<u8> } |scope| -> ::anyhow::Result<()> {
-                        self.data.push(0u8);
-                        Ok::<_, ::anyhow::Error>(())
-                    }),
-                )
+                })
                 .unwrap()
                 .unwrap();
             assert_eq!(data.as_slice(), &[0u8]);

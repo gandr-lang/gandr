@@ -15,17 +15,13 @@ extern crate alloc;
 mod buf;
 mod completion;
 pub mod io;
-pub mod macros;
 pub mod net;
 mod runtime;
 mod scope;
 mod submission;
 
-use ::core::pin::Pin;
-
 pub use crate::runtime::Runtime;
 
-type BoxFuture<'future, T> = Pin<Box<dyn Future<Output = T> + 'future>>;
 type Receiver<T> = ::kanal::Receiver<T>;
 type Sender<T> = ::kanal::AsyncSender<T>;
 

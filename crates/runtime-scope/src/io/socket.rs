@@ -98,18 +98,17 @@ pub(crate) mod test
         use ::std::path::Path;
 
         use super::*;
-        use crate::runtime::RuntimeClosure;
 
         #[test]
         fn new()
         {
             crate::test::harness::runtime::new()
-                .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> ::anyhow::Result<()> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
                     drop(socket);
                     Ok(())
-                }))
+                })
                 .unwrap()
                 .unwrap();
         }
@@ -118,7 +117,7 @@ pub(crate) mod test
         fn bind()
         {
             crate::test::harness::runtime::new()
-                .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> ::anyhow::Result<()> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
                     let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
@@ -128,7 +127,7 @@ pub(crate) mod test
                     socket.bind(addr).await?;
                     path.assert(::predicates::path::exists());
                     Ok(())
-                }))
+                })
                 .unwrap()
                 .unwrap();
         }
@@ -137,7 +136,7 @@ pub(crate) mod test
         fn listen()
         {
             crate::test::harness::runtime::new()
-                .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> ::anyhow::Result<()> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
                     let path = temp.child("socket");
                     let socket = crate::test::harness::io::socket::new(scope);
@@ -149,7 +148,7 @@ pub(crate) mod test
                     let backlog = ::libc::SOMAXCONN;
                     socket.listen(backlog).await?;
                     Ok(())
-                }))
+                })
                 .unwrap()
                 .unwrap();
         }
@@ -169,19 +168,17 @@ pub(crate) mod test
                 }
             });
             crate::test::harness::runtime::new()
-                .run(crate::async_scope!(self {
-                    path: ::assert_fs::fixture::ChildPath,
-                } |scope| -> ::anyhow::Result<()> {
+                .run(async |scope| -> ::anyhow::Result<()> {
                     let socket = crate::test::harness::io::socket::new(scope);
                     let socket = socket.await?;
-                    let addr = ::socket2::SockAddr::unix(&self.path)?;
+                    let addr = ::socket2::SockAddr::unix(&path)?;
                     socket.bind(addr).await?;
                     let backlog = ::libc::SOMAXCONN;
                     socket.listen(backlog).await?;
                     let (socket, sockaddr) = socket.accept().await?;
                     drop((socket, sockaddr));
                     Ok(())
-                }))
+                })
                 .unwrap()
                 .unwrap();
             connector.join().unwrap();
