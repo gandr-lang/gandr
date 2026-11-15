@@ -38,11 +38,19 @@
           "why": "it sets up a ring of the kernel, which Miri cannot run"
         },
         {
+          "test": "path::request::a_later_run_allocates_nothing",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
           "test": "path::request::a_request_allocates_nothing_after_the_start",
           "why": "it sets up a ring of the kernel, which Miri cannot run"
         },
         {
           "test": "runtime::test::new",
+          "why": "it sets up a ring of the kernel, which Miri cannot run"
+        },
+        {
+          "test": "runtime::test::run::again",
           "why": "it sets up a ring of the kernel, which Miri cannot run"
         },
         {

@@ -19,25 +19,38 @@ use crate::submission::Key;
 use crate::submission::Lookup;
 use crate::submission::Table;
 
-/// The runtime: the kernel's ring, which one run of a scope drives.
-#[repr(transparent)]
+/// The runtime: the kernel's ring and the table of its operations, which
+/// each run of a scope drives in turn.
 #[non_exhaustive]
 pub struct Runtime
 {
     /// The kernel's ring.
-    io: IoUring<'static>,
+    io: RefCell<IoUring<'static>>,
+    /// The table of the operations in flight: one slot for each entry of the
+    /// ring.
+    table: Table,
+    /// Whether a run failed, so that the kernel can hold its operations.
+    spent: Spent,
+}
+
+/// Whether a run of the runtime failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spent
+{
+    /// Each run so far ended with the table drained.
+    No,
+    /// A run failed, and the kernel can hold its operations.
+    Yes,
 }
 
 impl Runtime
 {
-    /// The count of the ring's entries, and of the table's slots.
-    const IO_URING_ENTRIES: u16 = 4096;
-
-    /// A runtime on a new ring of the kernel.
+    /// A runtime on a new ring of the kernel of `depth` entries, with a
+    /// table of `depth` slots.
     ///
     /// # Specification
     ///
-    /// - provides: a runtime whose ring has `IO_URING_ENTRIES` entries.
+    /// - provides: a runtime whose ring has `depth` entries.
     /// - fails: the kernel's error when it refuses the ring.
     /// - panics: none.
     /// - executable: none — the ring is the kernel's, and the call holds
@@ -53,13 +66,21 @@ impl Runtime
     /// - [`RuntimeError::Kernel`] when the kernel refuses the ring.
     /// - [`RuntimeError::Ring`] when the ring's crate refuses it with no error
     ///   number.
+    ///
+    /// # Cost
+    ///
+    /// - allocation: the table's slots, setup
     #[inline]
-    pub fn new() -> Result<Self, RuntimeError>
+    pub fn with_depth(depth: Depth) -> Result<Self, RuntimeError>
     {
         let io = IoUring::builder()
-            .entries(Count(u32::from(Self::IO_URING_ENTRIES)))
+            .entries(Count(u32::from(u16::from(depth))))
             .build()?;
-        Ok(Self { io })
+        Ok(Self {
+            io: RefCell::new(io),
+            table: Table::new(depth),
+            spent: Spent::No,
+        })
     }
 
     /// A context whose waker does nothing: the run loop polls the scope's
@@ -75,15 +96,19 @@ impl Runtime
     }
 
     /// Runs the scope's future that `start` makes, and ends the scope with
-    /// it.
+    /// it. A later run uses the same ring and table.
     ///
     /// # Specification
     ///
-    /// - ensures: after the run, the kernel holds no operation of the scope,
-    ///   and no completion of the scope waits in the ring.
+    /// - requires: no earlier run failed.
+    /// - ensures: after a run that gives `Ok`, the kernel holds no operation of
+    ///   the scope, no completion of the scope waits in the ring, and the
+    ///   runtime takes a later run. After a run that gives `Err`, the runtime
+    ///   is spent.
     /// - provides: the future's output.
-    /// - fails: the kernel's error when a submission, a wait or a cancel fails,
-    ///   and `Unknown` when a completion names no slot.
+    /// - fails: `Spent` when an earlier run failed; the kernel's error when a
+    ///   submission, a wait or a cancel fails; and `Unknown` when a completion
+    ///   names no slot.
     /// - panics: none.
     /// - executable: none — the kernel's state of the ring is not a value that
     ///   the call can read.
@@ -91,32 +116,63 @@ impl Runtime
     /// # Adequacy
     ///
     /// - hypothesis: L3 — a scope whose future returns while an accept or a
-    ///   receive stays in the kernel ends with the table drained.
+    ///   receive stays in the kernel ends with the table drained, and a second
+    ///   run on the same runtime finds each slot free.
     /// - witness: `io::socket::test::socket::accept_in_flight`
     /// - witness: `io::socket::test::socket::recv_in_flight`
     /// - witness: `runtime::test::run::closure`
+    /// - witness: `runtime::test::run::again`
+    /// - witness: `tests::path::request::a_later_run_allocates_nothing`
     ///
     /// # Errors
     ///
+    /// - [`RuntimeError::Spent`] when an earlier run failed.
     /// - [`RuntimeError::Kernel`] when a submission, a wait or a cancel fails.
     /// - [`RuntimeError::Unknown`] when a completion names no slot.
     /// - [`RuntimeError::Full`] when the queue has no room for a cancel.
-    ///
-    /// # Cost
-    ///
-    /// - allocation: the table's slots, setup
     #[inline]
     pub fn run<'env, T, F>(
-        self,
+        &mut self,
         start: F,
     ) -> Result<T, RuntimeError>
     where
         F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
     {
-        let io = RefCell::new(self.io);
-        let table = Table::new(Depth::from(Self::IO_URING_ENTRIES));
+        if self.spent == Spent::Yes {
+            return Err(RuntimeError::Spent);
+        }
+        let ran = Self::drive(&self.io, &self.table, start);
+        if ran.is_err() {
+            self.spent = Spent::Yes;
+        }
+        ran
+    }
 
-        let scope = Scope::new(&io, &table);
+    /// Drives the scope's future on `io` and `table` to its end.
+    ///
+    /// # Specification
+    ///
+    /// - ensures: on `Ok`, the kernel holds no operation of the scope.
+    /// - provides: the future's output.
+    /// - fails: the kernel's error, `Unknown` or `Full`, as `run` states.
+    /// - panics: none.
+    /// - executable: none — the kernel's state of the ring is not a value that
+    ///   the call can read.
+    ///
+    /// # Adequacy
+    ///
+    /// - hypothesis: L3 — the run's witnesses drive each scope through it.
+    /// - witness: `runtime::test::run::closure`
+    /// - witness: `io::socket::test::socket::accept_in_flight`
+    fn drive<'env, T, F>(
+        io: &RefCell<IoUring<'static>>,
+        table: &Table,
+        start: F,
+    ) -> Result<T, RuntimeError>
+    where
+        F: for<'tsk> AsyncFnOnce(&'tsk Scope<'tsk, 'env>) -> T,
+    {
+        let scope = Scope::new(io, table);
         let mut future = pin!(start(&scope));
 
         loop {
@@ -125,13 +181,13 @@ impl Runtime
                 // operation that the kernel still holds is cancelled, and
                 // the run waits for every completion before it returns, so
                 // the kernel holds no operation of the scope after the run.
-                end(&io, &table)?;
+                end(io, table)?;
                 return Ok(val);
             }
 
             // Submit the entries that the scope prepared, wait for at least
             // one completion, and record each in its slot.
-            reap(&io, &table)?;
+            reap(io, table)?;
         }
     }
 }
@@ -262,14 +318,30 @@ pub mod test
     {
         use super::*;
 
-        /// A runtime on a new ring of the kernel.
+        /// The depth of the tests' rings.
+        pub const DEPTH: u16 = 4096;
+
+        /// A runtime on a new ring of the kernel of `DEPTH` entries.
         ///
         /// # Specification
         ///
         /// trivial.
         pub fn new() -> Runtime
         {
-            Runtime::new().unwrap()
+            Runtime::with_depth(Depth::from(DEPTH)).unwrap()
+        }
+
+        /// A request of a no-op.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        pub fn nop(sqe: &mut ::gandr_runtime_uring::Sqe64<'_>)
+        {
+            // SAFETY: a no-op reads no pointer and names no descriptor.
+            unsafe {
+                sqe.prep_nop();
+            }
         }
     }
 
@@ -316,13 +388,8 @@ pub mod test
         )]
         fn full()
         {
-            let nop = |sqe: &mut ::gandr_runtime_uring::Sqe64<'_>| {
-                // SAFETY: a no-op reads no pointer and names no descriptor.
-                unsafe {
-                    sqe.prep_nop();
-                }
-            };
-            let depth = usize::from(Runtime::IO_URING_ENTRIES);
+            use crate::test::harness::runtime::nop;
+            let depth = usize::from(crate::test::harness::runtime::DEPTH);
             crate::test::harness::runtime::new()
                 .run(async |scope| {
                     let held = ::core::iter::repeat_with(|| scope.request(nop))
@@ -334,6 +401,35 @@ pub mod test
                     scope.request(nop).await.unwrap();
                 })
                 .unwrap();
+        }
+
+        /// Each run of one runtime finds every slot of its table free: the
+        /// table takes `depth` requests and refuses the next, and each of
+        /// the `depth` completes. The second run reads the same.
+        #[test]
+        #[cfg_attr(
+            miri,
+            ignore = "it sets up a ring of the kernel, which Miri cannot run"
+        )]
+        fn again()
+        {
+            use crate::test::harness::runtime::nop;
+            let depth = 4_u16;
+            let mut runtime = Runtime::with_depth(Depth::from(depth)).unwrap();
+            for _round in 0 .. 2_u8 {
+                runtime
+                    .run(async |scope| {
+                        let held = ::core::iter::repeat_with(|| scope.request(nop))
+                            .take(usize::from(depth))
+                            .collect::<Vec<_>>();
+                        let error = scope.request(nop).await.err();
+                        assert_eq!(error, Some(RuntimeError::Full));
+                        for completion in held {
+                            completion.await.unwrap();
+                        }
+                    })
+                    .unwrap();
+            }
         }
     }
 }
