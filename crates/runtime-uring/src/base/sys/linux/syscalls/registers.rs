@@ -14,6 +14,13 @@ use core::marker::PhantomData;
 
 use ::std::os::fd::RawFd;
 
+use crate::arg::Answer;
+use crate::arg::Code;
+use crate::arg::Count;
+use crate::arg::Fd;
+use crate::arg::Flags;
+use crate::arg::Holds;
+use crate::arg::Len;
 use crate::base::sys::linux::errno::Errno;
 
 // use super::c;
@@ -25,21 +32,108 @@ use crate::base::sys::linux::errno::Errno;
 #[repr(transparent)]
 pub struct Opaque(::core::ffi::c_void);
 
+/// A machine word that a register of a system call holds, with no
+/// provenance: a number that the kernel reads.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Word(pub usize);
+
+impl From<Count<::core::ffi::c_uint>> for Word
+{
+    /// The count `value`, widened to a word as the kernel reads an
+    /// `unsigned int`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(value: Count<::core::ffi::c_uint>) -> Self
+    {
+        Self(usize::try_from(value.0).unwrap_or(usize::MAX))
+    }
+}
+
+impl From<Code<::core::ffi::c_uint>> for Word
+{
+    /// The code `value`, widened to a word as the kernel reads an
+    /// `unsigned int`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(value: Code<::core::ffi::c_uint>) -> Self
+    {
+        Self(usize::try_from(value.0).unwrap_or(usize::MAX))
+    }
+}
+
+impl From<Flags<::core::ffi::c_uint>> for Word
+{
+    /// The flags `value`, widened to a word as the kernel reads an
+    /// `unsigned int`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(value: Flags<::core::ffi::c_uint>) -> Self
+    {
+        Self(usize::try_from(value.0).unwrap_or(usize::MAX))
+    }
+}
+
+impl From<Fd> for Word
+{
+    /// The bits of the descriptor `value`, widened to a word as the kernel
+    /// reads an `unsigned int`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(value: Fd) -> Self
+    {
+        Self(usize::try_from(value.0.cast_unsigned()).unwrap_or(usize::MAX))
+    }
+}
+
+impl From<Len<usize>> for Word
+{
+    /// The length `value` in bytes, as the kernel reads a `size_t`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(value: Len<usize>) -> Self
+    {
+        Self(value.0)
+    }
+}
+
 // Argument numbers.
 /// The first argument of a system call.
+#[repr(transparent)]
 pub struct A0(());
 /// The second argument of a system call.
+#[repr(transparent)]
 pub struct A1(());
 /// The third argument of a system call.
+#[repr(transparent)]
 pub struct A2(());
 /// The fourth argument of a system call.
+#[repr(transparent)]
 pub struct A3(());
 /// The fifth argument of a system call.
+#[repr(transparent)]
 pub struct A4(());
 /// The sixth argument of a system call.
+#[repr(transparent)]
 pub struct A5(());
 /// The seventh argument of a system call, which MIPS alone has.
 #[cfg(any(target_arch = "mips", target_arch = "mips32r6"))]
+#[repr(transparent)]
 pub struct A6(());
 /// The socket argument of a system call on x86.
 #[cfg(target_arch = "x86")]
@@ -70,6 +164,7 @@ impl ArgNumber for A5
 
 // Return value numbers.
 /// The register that a system call answers in.
+#[repr(transparent)]
 pub struct R0(());
 
 /// The index of the register that a system call answers in.
@@ -171,14 +266,14 @@ where
     ///
     /// trivial.
     #[inline]
-    pub fn decode_usize(self) -> usize
+    pub fn decode_usize(self) -> Answer<usize>
     {
         debug_assert!(
             !(-4095 .. 0).contains(&self.raw.addr().cast_signed()),
             "the answer names no error"
         );
 
-        self.raw.addr()
+        Answer(self.raw.addr())
     }
 
     /// The answer as a descriptor. A descriptor that the kernel answers fits
@@ -188,12 +283,12 @@ where
     ///
     /// trivial.
     #[inline]
-    pub fn decode_raw_fd(self) -> RawFd
+    pub fn decode_raw_fd(self) -> Fd
     {
-        let bits = self.decode_usize();
+        let Answer(bits) = self.decode_usize();
         let raw = RawFd::try_from(bits);
         debug_assert!(raw.is_ok(), "the descriptor fits 31 bits");
-        raw.unwrap_or(RawFd::MAX)
+        Fd(raw.unwrap_or(RawFd::MAX))
     }
 
     /// The answer as a count. A count that the kernel answers fits 32 bits,
@@ -203,12 +298,12 @@ where
     ///
     /// trivial.
     #[inline]
-    pub fn decode_c_uint(self) -> ::core::ffi::c_uint
+    pub fn decode_c_uint(self) -> Answer<::core::ffi::c_uint>
     {
-        let bits = self.decode_usize();
+        let Answer(bits) = self.decode_usize();
         let uint = ::core::ffi::c_uint::try_from(bits);
         debug_assert!(uint.is_ok(), "the count fits 32 bits");
-        uint.unwrap_or(::core::ffi::c_uint::MAX)
+        Answer(uint.unwrap_or(::core::ffi::c_uint::MAX))
     }
 
     /// The error number that the answer names, in the encoded form of
@@ -219,14 +314,14 @@ where
     ///
     /// trivial.
     #[inline]
-    pub fn decode_error_code(self) -> u16
+    pub fn decode_error_code(self) -> Code<u16>
     {
         debug_assert!(
             (-4095 .. 0).contains(&self.raw.addr().cast_signed()),
             "the answer names an error"
         );
         let errno = self.raw.addr().cast_signed().unsigned_abs();
-        u16::try_from(errno).unwrap_or(u16::MAX).wrapping_neg()
+        Code(u16::try_from(errno).unwrap_or(u16::MAX).wrapping_neg())
     }
 
     /// Whether the answer names an error.
@@ -235,9 +330,9 @@ where
     ///
     /// trivial.
     #[inline]
-    pub fn errno_contains(&self) -> bool
+    pub fn errno_contains(&self) -> Holds
     {
-        Errno::contains(self.raw.addr().cast_signed())
+        Errno::contains(Answer(self.raw.addr().cast_signed()))
     }
 }
 
@@ -264,9 +359,9 @@ impl SyscallNumber<'_>
         reason = "a const fn cannot call `usize::from`, and a u32 widens into a usize whole on each 64-bit target of the base"
     )]
     #[inline]
-    pub const fn new(val: u32) -> Self
+    pub const fn new(val: Code<u32>) -> Self
     {
-        let val = val as usize;
+        let val = val.0 as usize;
         SyscallNumber {
             val,
             marker: PhantomData,

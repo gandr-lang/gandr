@@ -3,8 +3,9 @@
 
 use ::std::os::fd::FromRawFd as _;
 use ::std::os::fd::OwnedFd;
-use ::std::os::fd::RawFd;
 
+use crate::arg::Answer;
+use crate::arg::Fd;
 use crate::base::sys::linux::errno::Errno;
 use crate::base::sys::linux::syscalls::registers::ArgNumber;
 use crate::base::sys::linux::syscalls::registers::ArgReg;
@@ -12,6 +13,7 @@ use crate::base::sys::linux::syscalls::registers::Opaque;
 use crate::base::sys::linux::syscalls::registers::R0;
 use crate::base::sys::linux::syscalls::registers::RetNumber;
 use crate::base::sys::linux::syscalls::registers::RetReg;
+use crate::base::sys::linux::syscalls::registers::Word;
 
 /// The argument whose register holds `raw`.
 ///
@@ -38,44 +40,40 @@ where
 ///
 /// trivial.
 #[inline]
-pub const unsafe fn raw_fd<'arg, Num>(fd: RawFd) -> ArgReg<'arg, Num>
+pub unsafe fn raw_fd<'arg, Num>(fd: Fd) -> ArgReg<'arg, Num>
 where
     Num: ArgNumber,
 {
-    let fd = fd.cast_unsigned();
-    c_uint(fd)
+    pass_usize(Word::from(fd))
 }
 
-/// The number `val` as an argument: a pointer with no provenance.
+/// The word `val` as an argument: a pointer with no provenance.
 ///
 /// # Specification
 ///
 /// trivial.
 #[inline]
-pub const fn pass_usize<'arg, Num>(val: usize) -> ArgReg<'arg, Num>
+pub const fn pass_usize<'arg, Num>(val: Word) -> ArgReg<'arg, Num>
 where
     Num: ArgNumber,
 {
-    let val = ::core::ptr::without_provenance_mut(val);
+    let val = ::core::ptr::without_provenance_mut(val.0);
     raw_arg(val)
 }
 
-/// The number `val` as an argument.
+/// The 32-bit value `val` as an argument: a count, a code or a set of flags,
+/// widened to a word.
 ///
 /// # Specification
 ///
 /// trivial.
-#[expect(
-    clippy::as_conversions,
-    reason = "a const fn cannot call `usize::from`, and a c_uint widens into a usize whole on each 64-bit target of the base"
-)]
 #[inline]
-pub const fn c_uint<'arg, Num>(val: ::core::ffi::c_uint) -> ArgReg<'arg, Num>
+pub fn c_uint<'arg, Num, Val>(val: Val) -> ArgReg<'arg, Num>
 where
     Num: ArgNumber,
+    Val: Into<Word>,
 {
-    let val = val as usize;
-    pass_usize(val)
+    pass_usize(val.into())
 }
 
 /// The place of `ptr` as an argument, which the kernel may write for the
@@ -136,7 +134,7 @@ where
 /// - witness: `base::io_uring::test::register`
 /// - witness: `base::io_uring::test::enter`
 #[inline]
-pub fn ret_c_uint(raw: RetReg<R0>) -> crate::base::io::Result<::core::ffi::c_uint>
+pub fn ret_c_uint(raw: RetReg<R0>) -> crate::base::io::Result<Answer<::core::ffi::c_uint>>
 {
     try_decode_c_uint(raw)
 }
@@ -170,7 +168,7 @@ pub fn ret_c_uint(raw: RetReg<R0>) -> crate::base::io::Result<::core::ffi::c_uin
 pub unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::base::io::Result<OwnedFd>
 {
     // SAFETY: the caller gives the answer of a call that gives a descriptor.
-    let raw_fd = unsafe { try_decode_raw_fd(raw) }?;
+    let Fd(raw_fd) = unsafe { try_decode_raw_fd(raw) }?;
     // SAFETY: the kernel answers a new descriptor, which nothing else owns.
     let own_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
     Ok(own_fd)
@@ -195,11 +193,13 @@ pub unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::base::io::Result<OwnedFd>
 /// - witness: `base::io_uring::test::register`
 /// - witness: `base::io_uring::test::enter`
 #[inline]
-pub fn try_decode_c_uint<Num>(raw: RetReg<Num>) -> crate::base::io::Result<::core::ffi::c_uint>
+pub fn try_decode_c_uint<Num>(
+    raw: RetReg<Num>
+) -> crate::base::io::Result<Answer<::core::ffi::c_uint>>
 where
     Num: RetNumber,
 {
-    if raw.errno_contains() {
+    if raw.errno_contains().0 {
         return Err(Errno::from_encoded(raw.decode_error_code()));
     }
     Ok(raw.decode_c_uint())
@@ -228,11 +228,11 @@ where
 /// - witness: `base::io_uring::test::setup`
 /// - witness: `base::io_uring::test::setup_refuses_no_entries`
 #[inline]
-pub unsafe fn try_decode_raw_fd<Num>(raw: RetReg<Num>) -> crate::base::io::Result<RawFd>
+pub unsafe fn try_decode_raw_fd<Num>(raw: RetReg<Num>) -> crate::base::io::Result<Fd>
 where
     Num: RetNumber,
 {
-    if raw.errno_contains() {
+    if raw.errno_contains().0 {
         return Err(Errno::from_encoded(raw.decode_error_code()));
     }
     Ok(raw.decode_raw_fd())

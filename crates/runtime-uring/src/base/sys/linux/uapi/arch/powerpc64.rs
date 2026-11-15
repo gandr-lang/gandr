@@ -29,7 +29,15 @@
 #![expect(clippy::use_self, reason = "bindgen")]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
+    expect(primitive_signature, reason = "bindgen")
+)]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
     expect(raw_pointer_through_reference, reason = "bindgen")
+)]
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(single_field_struct_needs_transparent_repr, reason = "bindgen")
 )]
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",

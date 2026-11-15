@@ -3,15 +3,27 @@
 //! target's headers variable set, it makes the kernel's declarations for the
 //! target's architecture under `src/base/sys/linux/uapi/arch`.
 
-// The script's helpers take the names that Cargo and the kernel give as
-// strings. #7717 gives each a newtype, as it does for the crate's preparers.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    expect(
-        primitive_signature,
-        reason = "the helpers take the names that Cargo and the kernel give as strings; #7717 owes each mend"
-    )
-)]
+/// A name that Cargo or the kernel gives: of a cfg, a feature, a variable or
+/// an architecture.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Name<'name>(&'name str);
+
+/// A directory that a variable names: the kernel's headers or the manifest's.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Dir<'dir>(&'dir str);
+
+/// A text that the script owns: the value of a variable, or a name that the
+/// script makes.
+#[repr(transparent)]
+#[derive(Debug)]
+struct Owned(String);
+
+/// The answer of a predicate.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Holds(bool);
 
 /// Runs the script.
 ///
@@ -50,14 +62,15 @@ fn main() -> ::std::io::Result<()>
 fn run() -> ::std::io::Result<()>
 {
     println!("cargo::rustc-check-cfg=cfg(asm_experimental_arch)");
-    if !crate::target::os::is_linux()? {
+    if !crate::target::os::is_linux()?.0 {
         return Ok(());
     }
 
     let config = crate::config::Config::new()?;
     crate::target::check()?;
 
-    if let Some(linux_headers_dir) = config.linux_headers_dir.as_deref() {
+    if let Some(Owned(ref linux_headers_dir)) = config.linux_headers_dir {
+        let linux_headers_dir = Dir(linux_headers_dir);
         crate::cargo::rerun(linux_headers_dir);
         #[cfg(feature = "bindgen")]
         crate::bindgen::bind(&config, linux_headers_dir)?;
@@ -71,6 +84,8 @@ fn run() -> ::std::io::Result<()>
 mod bindgen
 {
     use ::std::path::Path;
+
+    use crate::Dir;
 
     /// The wrapper header that bindgen reads: each kernel header whose
     /// declarations the base names.
@@ -112,14 +127,14 @@ mod bindgen
     /// - witness: `base::io_uring::test::setup`
     pub fn bind(
         config: &crate::config::Config,
-        linux_headers_dir: &str,
+        linux_headers_dir: Dir<'_>,
     ) -> ::std::io::Result<()>
     {
-        let header = Path::new(linux_headers_dir).join("include/linux/io_uring.h");
+        let header = Path::new(linux_headers_dir.0).join("include/linux/io_uring.h");
         if !header.is_file() {
             let msg = format!(
-                "{} names {linux_headers_dir}, which holds no include/linux/io_uring.h",
-                config.linux_headers_env
+                "{} names {}, which holds no include/linux/io_uring.h",
+                config.linux_headers_env.0, linux_headers_dir.0
             );
             return Err(::std::io::Error::other(msg));
         }
@@ -141,7 +156,7 @@ mod bindgen
     /// # Cost
     ///
     /// - allocation: the builder and its options, setup
-    fn builder(linux_headers: &str) -> ::bindgen::Builder
+    fn builder(linux_headers: Dir<'_>) -> ::bindgen::Builder
     {
         ::bindgen::Builder::default()
             // rustc lints
@@ -173,7 +188,9 @@ mod bindgen
             .raw_line(r#"#![expect(clippy::use_self, reason = "bindgen")]"#)
 
             // quenchant lints
+            .raw_line(r#"#![cfg_attr(dylint_lib = "quenchant_dylints", expect(primitive_signature, reason = "bindgen"))]"#)
             .raw_line(r#"#![cfg_attr(dylint_lib = "quenchant_dylints", expect(raw_pointer_through_reference, reason = "bindgen"))]"#)
+            .raw_line(r#"#![cfg_attr(dylint_lib = "quenchant_dylints", expect(single_field_struct_needs_transparent_repr, reason = "bindgen"))]"#)
             .raw_line(r#"#![cfg_attr(dylint_lib = "quenchant_dylints", expect(specification_present, reason = "bindgen"))]"#)
             // The safety lint runs before `cfg_attr` expands, so only a plain
             // attribute reaches it. rustc alone does not know its name.
@@ -182,7 +199,7 @@ mod bindgen
 
             // compiler configuration
             .header_contents("wrapper.h", HEADER)
-            .clang_arg(format!("-I{linux_headers}/include"))
+            .clang_arg(format!("-I{}/include", linux_headers.0))
 
             // code-gen configuration
             .use_core()
@@ -225,9 +242,16 @@ mod bindgen
 /// What the script reads from Cargo and says to it.
 mod cargo
 {
+    use crate::Dir;
+    use crate::Name;
+    use crate::Owned;
+
     /// The cfgs that Cargo sets for the target.
     pub mod cfg
     {
+        use crate::Holds;
+        use crate::Name;
+
         /// Whether Cargo sets the cfg `cfg`.
         ///
         /// # Specification
@@ -237,11 +261,11 @@ mod cargo
         /// # Cost
         ///
         /// - allocation: the variable's name, setup
-        pub fn has(cfg: &str) -> bool
+        pub fn has(cfg: Name<'_>) -> Holds
         {
-            let cfg = cfg.to_uppercase();
+            let cfg = cfg.0.to_uppercase();
             let cfg = format!("CARGO_CFG_{cfg}");
-            crate::cargo::var(&cfg).is_ok()
+            Holds(crate::cargo::var(Name(&cfg)).is_ok())
         }
 
         /// Turns the cfg `feature` on for the crate, which the build must set.
@@ -259,13 +283,13 @@ mod cargo
         ///
         /// - hypothesis: L2 — as [`main`](crate::main).
         /// - witness: `base::io_uring::test::setup`
-        pub fn r#use(feature: &str) -> ::std::io::Result<()>
+        pub fn r#use(feature: Name<'_>) -> ::std::io::Result<()>
         {
-            if !crate::cargo::cfg::has(feature) {
-                let msg = format!("Required feature must be enabled with --cfg={feature}");
+            if !crate::cargo::cfg::has(feature).0 {
+                let msg = format!("Required feature must be enabled with --cfg={}", feature.0);
                 return Err(::std::io::Error::other(msg));
             }
-            println!("cargo:rustc-cfg={feature}");
+            println!("cargo:rustc-cfg={}", feature.0);
             Ok(())
         }
     }
@@ -273,6 +297,9 @@ mod cargo
     /// The features that Cargo turns on for the crate.
     pub mod feature
     {
+        use crate::Holds;
+        use crate::Name;
+
         /// Whether Cargo turns the feature `feature` on.
         ///
         /// # Specification
@@ -286,11 +313,11 @@ mod cargo
             dead_code,
             reason = "the owner's script names it, and no step reads it yet"
         )]
-        pub fn has(feature: &str) -> bool
+        pub fn has(feature: Name<'_>) -> Holds
         {
-            let feature = feature.to_uppercase();
+            let feature = feature.0.to_uppercase();
             let feature = format!("CARGO_FEATURE_{feature}");
-            crate::cargo::var(&feature).is_ok()
+            Holds(crate::cargo::var(Name(&feature)).is_ok())
         }
     }
 
@@ -300,11 +327,14 @@ mod cargo
     /// # Specification
     ///
     /// trivial.
-    pub fn rerun(linux_headers_dir: &str)
+    pub fn rerun(linux_headers_dir: Dir<'_>)
     {
         println!("cargo::rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
         println!("cargo::rerun-if-env-changed=CARGO_MANIFEST_DIR");
-        println!("cargo::rerun-if-changed={linux_headers_dir}/include/linux/io_uring.h");
+        println!(
+            "cargo::rerun-if-changed={}/include/linux/io_uring.h",
+            linux_headers_dir.0
+        );
     }
 
     /// The value of the variable `var` that Cargo sets.
@@ -322,10 +352,10 @@ mod cargo
     ///
     /// - hypothesis: L2 — as [`main`](crate::main).
     /// - witness: `base::io_uring::test::setup`
-    pub fn var(var: &str) -> ::std::io::Result<String>
+    pub fn var(var: Name<'_>) -> ::std::io::Result<Owned>
     {
-        ::std::env::var(var).map_err(|_err| {
-            let msg = format!(r#"Environment variable not found: "{var}""#);
+        ::std::env::var(var.0).map(Owned).map_err(|_err| {
+            let msg = format!(r#"Environment variable not found: "{}""#, var.0);
             ::std::io::Error::other(msg)
         })
     }
@@ -335,6 +365,10 @@ mod cargo
 mod config
 {
     use ::std::path::PathBuf;
+
+    use crate::Dir;
+    use crate::Name;
+    use crate::Owned;
 
     /// The target's architecture, its file of declarations, and the
     /// variable and directory of its headers.
@@ -364,9 +398,9 @@ mod config
             not(feature = "bindgen"),
             expect(dead_code, reason = "the bindgen pass alone reads it")
         )]
-        pub linux_headers_env: String,
+        pub linux_headers_env: Owned,
         /// The directory of the target's headers, when the variable is set.
-        pub linux_headers_dir: Option<String>,
+        pub linux_headers_dir: Option<Owned>,
         /// Whether the target needs the asm feature: powerpc does.
         pub req_feature_experimental_asm: bool,
     }
@@ -394,14 +428,14 @@ mod config
         {
             let target_arch =
                 ::std::env::var("CARGO_CFG_TARGET_ARCH").map_err(::std::io::Error::other)?;
-            let linux_arch = crate::linux::arch(&target_arch)?;
+            let linux_arch = crate::linux::arch(Name(&target_arch))?;
             let linux_headers_env = crate::linux::headers::env(linux_arch);
-            let linux_headers_dir = crate::linux::headers::path(&linux_headers_env);
+            let linux_headers_dir = crate::linux::headers::path(Name(&linux_headers_env.0));
 
             let manifest_dir =
                 ::std::env::var("CARGO_MANIFEST_DIR").map_err(::std::io::Error::other)?;
-            let target_arch_dir = crate::target::arch::dir(&manifest_dir);
-            let target_arch_mod = crate::target::arch::r#mod(&target_arch_dir, &target_arch);
+            let target_arch_dir = crate::target::arch::dir(Dir(&manifest_dir));
+            let target_arch_mod = crate::target::arch::r#mod(&target_arch_dir, Name(&target_arch));
 
             let req_feature_experimental_asm = ["powerpc", "powerpc64"].contains(&&*target_arch);
 
@@ -437,7 +471,7 @@ mod config
             crate::target::os::check()?;
 
             if self.req_feature_experimental_asm {
-                crate::cargo::cfg::r#use("asm_experimental_arch")?;
+                crate::cargo::cfg::r#use(Name("asm_experimental_arch"))?;
             }
 
             Ok(())
@@ -448,6 +482,8 @@ mod config
 /// The kernel's names of the architectures and of their headers.
 mod linux
 {
+    use crate::Name;
+
     /// The kernel's name of the architecture that Cargo names `target_arch`.
     ///
     /// # Specification
@@ -463,19 +499,19 @@ mod linux
     ///
     /// - hypothesis: L2 — as [`main`](crate::main).
     /// - witness: `base::io_uring::test::setup`
-    pub fn arch(target_arch: &str) -> ::std::io::Result<&'static str>
+    pub fn arch(target_arch: Name<'_>) -> ::std::io::Result<Name<'static>>
     {
-        match target_arch {
-            "aarch64" => Ok("arm64"),
-            "arm" | "armv7" => Ok("arm"),
-            "loongarch64" => Ok("loongarch"),
-            "powerpc" | "powerpc64" | "powerpc64le" => Ok("powerpc"),
-            "riscv64" => Ok("riscv"),
-            "s390x" => Ok("s390"),
-            "x86" => Ok("i386"),
-            "x86_64" => Ok("x86_64"),
-            _ => {
-                let msg = format!("Unsupported target arch: \"{target_arch}\"");
+        match target_arch.0 {
+            "aarch64" => Ok(Name("arm64")),
+            "arm" | "armv7" => Ok(Name("arm")),
+            "loongarch64" => Ok(Name("loongarch")),
+            "powerpc" | "powerpc64" | "powerpc64le" => Ok(Name("powerpc")),
+            "riscv64" => Ok(Name("riscv")),
+            "s390x" => Ok(Name("s390")),
+            "x86" => Ok(Name("i386")),
+            "x86_64" => Ok(Name("x86_64")),
+            unknown => {
+                let msg = format!("Unsupported target arch: \"{unknown}\"");
                 Err(::std::io::Error::other(msg))
             },
         }
@@ -484,6 +520,9 @@ mod linux
     /// The variable of each architecture's headers.
     pub mod headers
     {
+        use crate::Name;
+        use crate::Owned;
+
         /// The name of the variable of the headers of `linux_arch`.
         ///
         /// # Specification
@@ -493,9 +532,9 @@ mod linux
         /// # Cost
         ///
         /// - allocation: the variable's name, setup
-        pub fn env(linux_arch: &str) -> String
+        pub fn env(linux_arch: Name<'_>) -> Owned
         {
-            format!("{linux_arch}_LINUX_HEADERS")
+            Owned(format!("{}_LINUX_HEADERS", linux_arch.0))
         }
 
         /// The directory that the variable `linux_headers_env` names, when it
@@ -508,10 +547,10 @@ mod linux
         /// # Cost
         ///
         /// - allocation: the directory's name, setup
-        pub fn path(linux_headers_env: &str) -> Option<String>
+        pub fn path(linux_headers_env: Name<'_>) -> Option<Owned>
         {
-            println!("cargo::rerun-if-env-changed={linux_headers_env}");
-            ::std::env::var(linux_headers_env).ok()
+            println!("cargo::rerun-if-env-changed={}", linux_headers_env.0);
+            ::std::env::var(linux_headers_env.0).ok().map(Owned)
         }
     }
 }
@@ -562,6 +601,9 @@ mod target
         use ::std::path::Path;
         use ::std::path::PathBuf;
 
+        use crate::Dir;
+        use crate::Name;
+
         /// Checks the target's architecture: each architecture passes for now.
         ///
         /// # Specification
@@ -586,9 +628,9 @@ mod target
         /// # Cost
         ///
         /// - allocation: the path, setup
-        pub fn dir(manifest_dir: &str) -> PathBuf
+        pub fn dir(manifest_dir: Dir<'_>) -> PathBuf
         {
-            PathBuf::from(manifest_dir).join("src/base/sys/linux/uapi/arch")
+            PathBuf::from(manifest_dir.0).join("src/base/sys/linux/uapi/arch")
         }
 
         /// The file of the declarations of `target_arch` under `arch_dir`.
@@ -602,16 +644,19 @@ mod target
         /// - allocation: the path, setup
         pub fn r#mod(
             arch_dir: &Path,
-            target_arch: &str,
+            target_arch: Name<'_>,
         ) -> PathBuf
         {
-            arch_dir.join(format!("{target_arch}.rs"))
+            arch_dir.join(format!("{}.rs", target_arch.0))
         }
     }
 
     /// The target's system.
     pub mod os
     {
+        use crate::Holds;
+        use crate::Name;
+
         /// Whether the target's system is Linux.
         ///
         /// # Specification
@@ -623,9 +668,10 @@ mod target
         ///
         /// - hypothesis: L2 — as [`main`](crate::main).
         /// - witness: `base::io_uring::test::setup`
-        pub fn is_linux() -> ::std::io::Result<bool>
+        pub fn is_linux() -> ::std::io::Result<Holds>
         {
-            Ok(crate::cargo::var("CARGO_CFG_TARGET_OS")? == "linux")
+            let target_os = crate::cargo::var(Name("CARGO_CFG_TARGET_OS"))?;
+            Ok(Holds(target_os.0 == "linux"))
         }
 
         /// Checks that the target's system is Linux.
@@ -645,8 +691,8 @@ mod target
         /// - witness: `base::io_uring::test::setup`
         pub fn check() -> ::std::io::Result<()>
         {
-            let var = "CARGO_CFG_TARGET_OS";
-            match crate::cargo::var(var)?.as_str() {
+            let var = Name("CARGO_CFG_TARGET_OS");
+            match crate::cargo::var(var)?.0.as_str() {
                 "linux" => Ok(()),
                 target_os => {
                     let msg = format!(r#"Unsupported target OS: "{target_os}""#);

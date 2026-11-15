@@ -1,5 +1,9 @@
 //! The error number that the kernel answers.
 
+use crate::arg::Answer;
+use crate::arg::Code;
+use crate::arg::Holds;
+
 /// An error number that the kernel answers, in its encoded form: the number
 /// negated in 16 bits, as an answer from -4095 to -1 holds it in its low
 /// bits.
@@ -16,9 +20,9 @@ impl Errno
     ///
     /// trivial.
     #[inline]
-    pub const fn from_encoded(encoded: u16) -> Self
+    pub const fn from_encoded(encoded: Code<u16>) -> Self
     {
-        Self(encoded)
+        Self(encoded.0)
     }
 
     /// Whether the answer `val` names an error: an answer from -4095 to -1.
@@ -26,9 +30,9 @@ impl Errno
     /// # Specification
     ///
     /// trivial.
-    pub const fn contains(val: isize) -> bool
+    pub const fn contains(val: Answer<isize>) -> Holds
     {
-        -4095 <= val && val < 0
+        Holds(-4095 <= val.0 && val.0 < 0)
     }
 
     /// The error number, as the standard library's errors take it.
@@ -40,9 +44,9 @@ impl Errno
         clippy::as_conversions,
         reason = "a const fn cannot call `i32::from`, and a u16 widens into an i32 whole"
     )]
-    pub const fn into_raw_os_error(self) -> i32
+    pub const fn into_raw_os_error(self) -> Code<i32>
     {
-        self.0.wrapping_neg() as i32
+        Code(self.0.wrapping_neg() as i32)
     }
 
     // pub(crate) const fn from_raw_os_error(raw: i32) -> Self {
@@ -66,7 +70,7 @@ impl From<Errno> for ::std::io::Error
     #[inline]
     fn from(value: Errno) -> Self
     {
-        let code = value.into_raw_os_error();
+        let Code(code) = value.into_raw_os_error();
         Self::from_raw_os_error(code)
     }
 }

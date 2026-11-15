@@ -5,6 +5,12 @@ use ::std::os::fd::AsRawFd as _;
 use ::std::os::fd::BorrowedFd;
 use ::std::os::fd::OwnedFd;
 
+use crate::arg::Answer;
+use crate::arg::Code;
+use crate::arg::Count;
+use crate::arg::Fd;
+use crate::arg::Flags;
+use crate::arg::Len;
 use crate::base::sys::linux::syscalls::convert::by_mut;
 use crate::base::sys::linux::syscalls::convert::c_uint;
 use crate::base::sys::linux::syscalls::convert::pass_usize;
@@ -44,11 +50,11 @@ use crate::base::sys::linux::uapi::arch::io_uring_params;
 /// - witness: `base::io_uring::test::setup`
 #[inline]
 pub fn io_uring_setup(
-    entries: u32,
+    entries: Count<u32>,
     params: &mut io_uring_params,
 ) -> crate::base::io::Result<OwnedFd>
 {
-    let nr = SyscallNumber::new(__NR_io_uring_setup);
+    let nr = SyscallNumber::new(Code(__NR_io_uring_setup));
     let entries = c_uint(entries);
     let params = by_mut(params);
     // SAFETY: `params` names one `io_uring_params` that the borrow keeps
@@ -84,14 +90,14 @@ pub fn io_uring_setup(
 #[inline]
 pub unsafe fn io_uring_register(
     fd: BorrowedFd<'_>,
-    opcode: u32,
+    opcode: Code<u32>,
     arg: *const ::core::ffi::c_void,
-    nr_args: u32,
-) -> crate::base::io::Result<u32>
+    nr_args: Count<u32>,
+) -> crate::base::io::Result<Answer<u32>>
 {
-    let nr = SyscallNumber::new(__NR_io_uring_register);
+    let nr = SyscallNumber::new(Code(__NR_io_uring_register));
     let fd = {
-        let fd = fd.as_raw_fd();
+        let fd = Fd(fd.as_raw_fd());
         // SAFETY: the borrow keeps the ring's descriptor open for the call.
         unsafe { raw_fd(fd) }
     };
@@ -136,21 +142,21 @@ pub unsafe fn io_uring_register(
 #[inline]
 pub unsafe fn io_uring_register_with(
     fd: BorrowedFd<'_>,
-    opcode: u32,
-    flags: u32,
+    opcode: Code<u32>,
+    flags: Flags<u32>,
     arg: *const ::core::ffi::c_void,
-    nr_args: u32,
-) -> crate::base::io::Result<u32>
+    nr_args: Count<u32>,
+) -> crate::base::io::Result<Answer<u32>>
 {
-    let nr = SyscallNumber::new(__NR_io_uring_register);
+    let nr = SyscallNumber::new(Code(__NR_io_uring_register));
     let fd = {
-        let fd = fd.as_raw_fd();
+        let fd = Fd(fd.as_raw_fd());
         // SAFETY: the borrow keeps the ring's descriptor open for the call,
         // or the caller gives the ring's registered index.
         unsafe { raw_fd(fd) }
     };
     let opcode = {
-        let opcode = opcode | flags;
+        let opcode = Code(opcode.0 | flags.0);
         c_uint(opcode)
     };
     let arg = {
@@ -194,16 +200,16 @@ pub unsafe fn io_uring_register_with(
 #[inline]
 pub unsafe fn io_uring_enter(
     fd: BorrowedFd<'_>,
-    to_submit: u32,
-    min_complete: u32,
-    flags: u32,
+    to_submit: Count<u32>,
+    min_complete: Count<u32>,
+    flags: Flags<u32>,
     arg: *const ::core::ffi::c_void,
-    size: usize,
-) -> crate::base::io::Result<u32>
+    size: Len<usize>,
+) -> crate::base::io::Result<Answer<u32>>
 {
-    let nr = SyscallNumber::new(__NR_io_uring_enter);
+    let nr = SyscallNumber::new(Code(__NR_io_uring_enter));
     let fd = {
-        let fd = fd.as_raw_fd();
+        let fd = Fd(fd.as_raw_fd());
         // SAFETY: the borrow keeps the ring's descriptor open for the call.
         unsafe { raw_fd(fd) }
     };
@@ -215,7 +221,7 @@ pub unsafe fn io_uring_enter(
         let arg = arg.cast();
         raw_arg(arg)
     };
-    let size = pass_usize(size);
+    let size = pass_usize(size.into());
     // SAFETY: the caller's invariants hold for the entries, the mappings and
     // the extended argument.
     let result = unsafe { syscall6(nr, fd, to_submit, min_complete, flags, arg, size) };

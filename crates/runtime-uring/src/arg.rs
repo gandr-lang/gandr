@@ -104,8 +104,9 @@ pub struct Cpu(pub u32);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Millis(pub u32);
 
-/// The answer of a liburing call, in the C type `N`: zero or more is
-/// success, and a negative answer is its error number.
+/// The answer of a liburing call or of a system call of the base, in the C
+/// type `N`: zero or more is success, and a negative answer is its error
+/// number. A decoder of the base gives it only for a success.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Answer<N>(pub N);
