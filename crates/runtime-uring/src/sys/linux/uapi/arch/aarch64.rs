@@ -34,19 +34,16 @@ impl<T> __IncompleteArrayField<T>
     {
         __IncompleteArrayField(::core::marker::PhantomData, [])
     }
-
     #[inline]
     pub fn as_ptr(&self) -> *const T
     {
         self as *const _ as *const T
     }
-
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut T
     {
         self as *mut _ as *mut T
     }
-
     #[inline]
     pub unsafe fn as_slice(
         &self,
@@ -55,7 +52,6 @@ impl<T> __IncompleteArrayField<T>
     {
         unsafe { ::core::slice::from_raw_parts(self.as_ptr(), len) }
     }
-
     #[inline]
     pub unsafe fn as_mut_slice(
         &mut self,
@@ -84,13 +80,11 @@ impl<T> __BindgenUnionField<T>
     {
         __BindgenUnionField(::core::marker::PhantomData)
     }
-
     #[inline]
     pub unsafe fn as_ref(&self) -> &T
     {
         unsafe { ::core::mem::transmute(self) }
     }
-
     #[inline]
     pub unsafe fn as_mut(&mut self) -> &mut T
     {
@@ -148,15 +142,313 @@ impl<T> ::core::cmp::PartialEq for __BindgenUnionField<T>
 impl<T> ::core::cmp::Eq for __BindgenUnionField<T>
 {
 }
+pub const __NR_munmap: u32 = 215;
+pub const __NR_mmap: u32 = 222;
+pub const __NR_madvise: u32 = 233;
 pub const __NR_io_uring_setup: u32 = 425;
 pub const __NR_io_uring_enter: u32 = 426;
 pub const __NR_io_uring_register: u32 = 427;
+pub const O_NONBLOCK: u32 = 2048;
+pub const O_CLOEXEC: u32 = 524288;
+pub const PROT_READ: u32 = 1;
+pub const PROT_WRITE: u32 = 2;
+pub const MAP_ANONYMOUS: u32 = 32;
+pub const MAP_POPULATE: u32 = 32768;
+pub const MAP_HUGETLB: u32 = 262144;
+pub const MADV_DONTFORK: u32 = 10;
+pub const MAP_SHARED: u32 = 1;
+pub const MAP_HUGE_SHIFT: u32 = 26;
+pub const MAP_HUGE_2MB: u32 = 1409286144;
+pub const AT_FDCWD: i32 = -100;
+pub const IORING_ZCRX_AREA_SHIFT: u32 = 48;
+pub const IORING_RW_ATTR_FLAG_PI: u32 = 1;
+pub const IORING_FILE_INDEX_ALLOC: i32 = -1;
+pub const IORING_SETUP_IOPOLL: u32 = 1;
+pub const IORING_SETUP_SQPOLL: u32 = 2;
+pub const IORING_SETUP_SQ_AFF: u32 = 4;
+pub const IORING_SETUP_CQSIZE: u32 = 8;
+pub const IORING_SETUP_CLAMP: u32 = 16;
+pub const IORING_SETUP_ATTACH_WQ: u32 = 32;
+pub const IORING_SETUP_R_DISABLED: u32 = 64;
+pub const IORING_SETUP_SUBMIT_ALL: u32 = 128;
+pub const IORING_SETUP_COOP_TASKRUN: u32 = 256;
+pub const IORING_SETUP_TASKRUN_FLAG: u32 = 512;
+pub const IORING_SETUP_SQE128: u32 = 1024;
+pub const IORING_SETUP_CQE32: u32 = 2048;
+pub const IORING_SETUP_SINGLE_ISSUER: u32 = 4096;
+pub const IORING_SETUP_DEFER_TASKRUN: u32 = 8192;
+pub const IORING_SETUP_NO_MMAP: u32 = 16384;
+pub const IORING_SETUP_REGISTERED_FD_ONLY: u32 = 32768;
+pub const IORING_SETUP_NO_SQARRAY: u32 = 65536;
+pub const IORING_SETUP_HYBRID_IOPOLL: u32 = 131072;
+pub const IORING_SETUP_CQE_MIXED: u32 = 262144;
+pub const IORING_SETUP_SQE_MIXED: u32 = 524288;
+pub const IORING_SETUP_SQ_REWIND: u32 = 1048576;
+pub const IORING_URING_CMD_FIXED: u32 = 1;
+pub const IORING_URING_CMD_MULTISHOT: u32 = 2;
+pub const IORING_URING_CMD_MASK: u32 = 3;
+pub const IORING_FSYNC_DATASYNC: u32 = 1;
+pub const IORING_TIMEOUT_ABS: u32 = 1;
+pub const IORING_TIMEOUT_UPDATE: u32 = 2;
+pub const IORING_TIMEOUT_BOOTTIME: u32 = 4;
+pub const IORING_TIMEOUT_REALTIME: u32 = 8;
+pub const IORING_LINK_TIMEOUT_UPDATE: u32 = 16;
+pub const IORING_TIMEOUT_ETIME_SUCCESS: u32 = 32;
+pub const IORING_TIMEOUT_MULTISHOT: u32 = 64;
+pub const IORING_TIMEOUT_IMMEDIATE_ARG: u32 = 128;
+pub const IORING_TIMEOUT_CLOCK_MASK: u32 = 12;
+pub const IORING_TIMEOUT_UPDATE_MASK: u32 = 18;
+pub const SPLICE_F_FD_IN_FIXED: u32 = 2147483648;
+pub const IORING_POLL_ADD_MULTI: u32 = 1;
+pub const IORING_POLL_UPDATE_EVENTS: u32 = 2;
+pub const IORING_POLL_UPDATE_USER_DATA: u32 = 4;
+pub const IORING_POLL_ADD_LEVEL: u32 = 8;
+pub const IORING_ASYNC_CANCEL_ALL: u32 = 1;
+pub const IORING_ASYNC_CANCEL_FD: u32 = 2;
+pub const IORING_ASYNC_CANCEL_ANY: u32 = 4;
+pub const IORING_ASYNC_CANCEL_FD_FIXED: u32 = 8;
+pub const IORING_ASYNC_CANCEL_USERDATA: u32 = 16;
+pub const IORING_ASYNC_CANCEL_OP: u32 = 32;
+pub const IORING_RECVSEND_POLL_FIRST: u32 = 1;
+pub const IORING_RECV_MULTISHOT: u32 = 2;
+pub const IORING_RECVSEND_FIXED_BUF: u32 = 4;
+pub const IORING_SEND_ZC_REPORT_USAGE: u32 = 8;
+pub const IORING_RECVSEND_BUNDLE: u32 = 16;
+pub const IORING_SEND_VECTORIZED: u32 = 32;
+pub const IORING_NOTIF_USAGE_ZC_COPIED: u32 = 2147483648;
+pub const IORING_ACCEPT_MULTISHOT: u32 = 1;
+pub const IORING_ACCEPT_DONTWAIT: u32 = 2;
+pub const IORING_ACCEPT_POLL_FIRST: u32 = 4;
+pub const IORING_MSG_RING_CQE_SKIP: u32 = 1;
+pub const IORING_MSG_RING_FLAGS_PASS: u32 = 2;
+pub const IORING_FIXED_FD_NO_CLOEXEC: u32 = 1;
+pub const IORING_NOP_INJECT_RESULT: u32 = 1;
+pub const IORING_NOP_FILE: u32 = 2;
+pub const IORING_NOP_FIXED_FILE: u32 = 4;
+pub const IORING_NOP_FIXED_BUFFER: u32 = 8;
+pub const IORING_NOP_TW: u32 = 16;
+pub const IORING_NOP_CQE32: u32 = 32;
+pub const IORING_CQE_F_BUFFER: u32 = 1;
+pub const IORING_CQE_F_MORE: u32 = 2;
+pub const IORING_CQE_F_SOCK_NONEMPTY: u32 = 4;
+pub const IORING_CQE_F_NOTIF: u32 = 8;
+pub const IORING_CQE_F_BUF_MORE: u32 = 16;
+pub const IORING_CQE_F_SKIP: u32 = 32;
+pub const IORING_CQE_F_32: u32 = 32768;
+pub const IORING_CQE_BUFFER_SHIFT: u32 = 16;
+pub const IORING_OFF_SQ_RING: u32 = 0;
+pub const IORING_OFF_CQ_RING: u32 = 134217728;
+pub const IORING_OFF_SQES: u32 = 268435456;
+pub const IORING_OFF_PBUF_RING: u32 = 2147483648;
+pub const IORING_OFF_PBUF_SHIFT: u32 = 16;
+pub const IORING_OFF_MMAP_MASK: u32 = 4160749568;
+pub const IORING_SQ_NEED_WAKEUP: u32 = 1;
+pub const IORING_SQ_CQ_OVERFLOW: u32 = 2;
+pub const IORING_SQ_TASKRUN: u32 = 4;
+pub const IORING_CQ_EVENTFD_DISABLED: u32 = 1;
+pub const IORING_ENTER_GETEVENTS: u32 = 1;
+pub const IORING_ENTER_SQ_WAKEUP: u32 = 2;
+pub const IORING_ENTER_SQ_WAIT: u32 = 4;
+pub const IORING_ENTER_EXT_ARG: u32 = 8;
+pub const IORING_ENTER_REGISTERED_RING: u32 = 16;
+pub const IORING_ENTER_ABS_TIMER: u32 = 32;
+pub const IORING_ENTER_EXT_ARG_REG: u32 = 64;
+pub const IORING_ENTER_NO_IOWAIT: u32 = 128;
+pub const IORING_FEAT_SINGLE_MMAP: u32 = 1;
+pub const IORING_FEAT_NODROP: u32 = 2;
+pub const IORING_FEAT_SUBMIT_STABLE: u32 = 4;
+pub const IORING_FEAT_RW_CUR_POS: u32 = 8;
+pub const IORING_FEAT_CUR_PERSONALITY: u32 = 16;
+pub const IORING_FEAT_FAST_POLL: u32 = 32;
+pub const IORING_FEAT_POLL_32BITS: u32 = 64;
+pub const IORING_FEAT_SQPOLL_NONFIXED: u32 = 128;
+pub const IORING_FEAT_EXT_ARG: u32 = 256;
+pub const IORING_FEAT_NATIVE_WORKERS: u32 = 512;
+pub const IORING_FEAT_RSRC_TAGS: u32 = 1024;
+pub const IORING_FEAT_CQE_SKIP: u32 = 2048;
+pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
+pub const IORING_FEAT_REG_REG_RING: u32 = 8192;
+pub const IORING_FEAT_RECVSEND_BUNDLE: u32 = 16384;
+pub const IORING_FEAT_MIN_TIMEOUT: u32 = 32768;
+pub const IORING_FEAT_RW_ATTR: u32 = 65536;
+pub const IORING_FEAT_NO_IOWAIT: u32 = 131072;
+pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
+pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
+pub const IORING_TIMESTAMP_HW_SHIFT: u32 = 16;
+pub const IORING_TIMESTAMP_TYPE_SHIFT: u32 = 17;
+pub const P_ALL: u32 = 0;
+pub const P_PID: u32 = 1;
+pub const P_PGID: u32 = 2;
+pub const P_PIDFD: u32 = 3;
 pub type __u8 = ::core::ffi::c_uchar;
 pub type __u16 = ::core::ffi::c_ushort;
 pub type __s32 = ::core::ffi::c_int;
 pub type __u32 = ::core::ffi::c_uint;
+pub type __s64 = ::core::ffi::c_longlong;
 pub type __u64 = ::core::ffi::c_ulonglong;
+pub type __kernel_long_t = ::core::ffi::c_long;
+pub type __kernel_ulong_t = ::core::ffi::c_ulong;
+pub type __kernel_mode_t = ::core::ffi::c_uint;
+pub type __kernel_pid_t = ::core::ffi::c_int;
+pub type __kernel_uid32_t = ::core::ffi::c_uint;
+pub type __kernel_size_t = __kernel_ulong_t;
+pub type __kernel_off_t = __kernel_long_t;
 pub type __kernel_time64_t = ::core::ffi::c_longlong;
+pub type __kernel_clock_t = __kernel_long_t;
+pub type __kernel_timer_t = ::core::ffi::c_int;
+pub type __poll_t = ::core::ffi::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct open_how
+{
+    pub flags: __u64,
+    pub mode: __u64,
+    pub resolve: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of open_how"][::core::mem::size_of::<open_how>() - 24usize];
+    ["Alignment of open_how"][::core::mem::align_of::<open_how>() - 8usize];
+    ["Offset of field: open_how::flags"][::core::mem::offset_of!(open_how, flags) - 0usize];
+    ["Offset of field: open_how::mode"][::core::mem::offset_of!(open_how, mode) - 8usize];
+    ["Offset of field: open_how::resolve"][::core::mem::offset_of!(open_how, resolve) - 16usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_zcrx_rqe
+{
+    pub off: __u64,
+    pub len: __u32,
+    pub __pad: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_zcrx_rqe"][::core::mem::size_of::<io_uring_zcrx_rqe>() - 16usize];
+    ["Alignment of io_uring_zcrx_rqe"][::core::mem::align_of::<io_uring_zcrx_rqe>() - 8usize];
+    ["Offset of field: io_uring_zcrx_rqe::off"]
+        [::core::mem::offset_of!(io_uring_zcrx_rqe, off) - 0usize];
+    ["Offset of field: io_uring_zcrx_rqe::len"]
+        [::core::mem::offset_of!(io_uring_zcrx_rqe, len) - 8usize];
+    ["Offset of field: io_uring_zcrx_rqe::__pad"]
+        [::core::mem::offset_of!(io_uring_zcrx_rqe, __pad) - 12usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_zcrx_cqe
+{
+    pub off: __u64,
+    pub __pad: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_zcrx_cqe"][::core::mem::size_of::<io_uring_zcrx_cqe>() - 16usize];
+    ["Alignment of io_uring_zcrx_cqe"][::core::mem::align_of::<io_uring_zcrx_cqe>() - 8usize];
+    ["Offset of field: io_uring_zcrx_cqe::off"]
+        [::core::mem::offset_of!(io_uring_zcrx_cqe, off) - 0usize];
+    ["Offset of field: io_uring_zcrx_cqe::__pad"]
+        [::core::mem::offset_of!(io_uring_zcrx_cqe, __pad) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_zcrx_offsets
+{
+    pub head: __u32,
+    pub tail: __u32,
+    pub rqes: __u32,
+    pub __resv2: __u32,
+    pub __resv: [__u64; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_zcrx_offsets"][::core::mem::size_of::<io_uring_zcrx_offsets>() - 32usize];
+    ["Alignment of io_uring_zcrx_offsets"]
+        [::core::mem::align_of::<io_uring_zcrx_offsets>() - 8usize];
+    ["Offset of field: io_uring_zcrx_offsets::head"]
+        [::core::mem::offset_of!(io_uring_zcrx_offsets, head) - 0usize];
+    ["Offset of field: io_uring_zcrx_offsets::tail"]
+        [::core::mem::offset_of!(io_uring_zcrx_offsets, tail) - 4usize];
+    ["Offset of field: io_uring_zcrx_offsets::rqes"]
+        [::core::mem::offset_of!(io_uring_zcrx_offsets, rqes) - 8usize];
+    ["Offset of field: io_uring_zcrx_offsets::__resv2"]
+        [::core::mem::offset_of!(io_uring_zcrx_offsets, __resv2) - 12usize];
+    ["Offset of field: io_uring_zcrx_offsets::__resv"]
+        [::core::mem::offset_of!(io_uring_zcrx_offsets, __resv) - 16usize];
+};
+pub const io_uring_zcrx_area_flags_IORING_ZCRX_AREA_DMABUF: io_uring_zcrx_area_flags = 1;
+pub type io_uring_zcrx_area_flags = ::core::ffi::c_uint;
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_zcrx_area_reg
+{
+    pub addr: __u64,
+    pub len: __u64,
+    pub rq_area_token: __u64,
+    pub flags: __u32,
+    pub dmabuf_fd: __u32,
+    pub __resv2: [__u64; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_zcrx_area_reg"][::core::mem::size_of::<io_uring_zcrx_area_reg>() - 48usize];
+    ["Alignment of io_uring_zcrx_area_reg"]
+        [::core::mem::align_of::<io_uring_zcrx_area_reg>() - 8usize];
+    ["Offset of field: io_uring_zcrx_area_reg::addr"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, addr) - 0usize];
+    ["Offset of field: io_uring_zcrx_area_reg::len"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, len) - 8usize];
+    ["Offset of field: io_uring_zcrx_area_reg::rq_area_token"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, rq_area_token) - 16usize];
+    ["Offset of field: io_uring_zcrx_area_reg::flags"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, flags) - 24usize];
+    ["Offset of field: io_uring_zcrx_area_reg::dmabuf_fd"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, dmabuf_fd) - 28usize];
+    ["Offset of field: io_uring_zcrx_area_reg::__resv2"]
+        [::core::mem::offset_of!(io_uring_zcrx_area_reg, __resv2) - 32usize];
+};
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_zcrx_ifq_reg
+{
+    pub if_idx: __u32,
+    pub if_rxq: __u32,
+    pub rq_entries: __u32,
+    pub flags: __u32,
+    pub area_ptr: __u64,
+    pub region_ptr: __u64,
+    pub offsets: io_uring_zcrx_offsets,
+    pub zcrx_id: __u32,
+    pub rx_buf_len: __u32,
+    pub event_desc: __u64,
+    pub __resv: [__u64; 2usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_zcrx_ifq_reg"][::core::mem::size_of::<io_uring_zcrx_ifq_reg>() - 96usize];
+    ["Alignment of io_uring_zcrx_ifq_reg"]
+        [::core::mem::align_of::<io_uring_zcrx_ifq_reg>() - 8usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::if_idx"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, if_idx) - 0usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::if_rxq"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, if_rxq) - 4usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::rq_entries"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, rq_entries) - 8usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::flags"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, flags) - 12usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::area_ptr"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, area_ptr) - 16usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::region_ptr"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, region_ptr) - 24usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::offsets"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, offsets) - 32usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::zcrx_id"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, zcrx_id) - 64usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::rx_buf_len"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, rx_buf_len) - 68usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::event_desc"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, event_desc) - 72usize];
+    ["Offset of field: io_uring_zcrx_ifq_reg::__resv"]
+        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, __resv) - 80usize];
+};
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct __kernel_timespec
@@ -678,7 +970,9 @@ pub const io_uring_op_IORING_OP_EPOLL_WAIT: io_uring_op = 59;
 pub const io_uring_op_IORING_OP_READV_FIXED: io_uring_op = 60;
 pub const io_uring_op_IORING_OP_WRITEV_FIXED: io_uring_op = 61;
 pub const io_uring_op_IORING_OP_PIPE: io_uring_op = 62;
-pub const io_uring_op_IORING_OP_LAST: io_uring_op = 63;
+pub const io_uring_op_IORING_OP_NOP128: io_uring_op = 63;
+pub const io_uring_op_IORING_OP_URING_CMD128: io_uring_op = 64;
+pub const io_uring_op_IORING_OP_LAST: io_uring_op = 65;
 pub type io_uring_op = ::core::ffi::c_uint;
 pub const io_uring_msg_ring_flags_IORING_MSG_DATA: io_uring_msg_ring_flags = 0;
 pub const io_uring_msg_ring_flags_IORING_MSG_SEND_FD: io_uring_msg_ring_flags = 1;
@@ -853,7 +1147,10 @@ pub const io_uring_register_op_IORING_REGISTER_SEND_MSG_RING: io_uring_register_
 pub const io_uring_register_op_IORING_REGISTER_ZCRX_IFQ: io_uring_register_op = 32;
 pub const io_uring_register_op_IORING_REGISTER_RESIZE_RINGS: io_uring_register_op = 33;
 pub const io_uring_register_op_IORING_REGISTER_MEM_REGION: io_uring_register_op = 34;
-pub const io_uring_register_op_IORING_REGISTER_LAST: io_uring_register_op = 35;
+pub const io_uring_register_op_IORING_REGISTER_QUERY: io_uring_register_op = 35;
+pub const io_uring_register_op_IORING_REGISTER_ZCRX_CTRL: io_uring_register_op = 36;
+pub const io_uring_register_op_IORING_REGISTER_BPF_FILTER: io_uring_register_op = 37;
+pub const io_uring_register_op_IORING_REGISTER_LAST: io_uring_register_op = 38;
 pub const io_uring_register_op_IORING_REGISTER_USE_REGISTERED_RING: io_uring_register_op =
     2147483648;
 pub type io_uring_register_op = ::core::ffi::c_uint;
@@ -880,6 +1177,8 @@ const _: () = {
     ["Offset of field: io_uring_files_update::fds"]
         [::core::mem::offset_of!(io_uring_files_update, fds) - 8usize];
 };
+pub const IORING_MEM_REGION_TYPE_USER: _bindgen_ty_1 = 1;
+pub type _bindgen_ty_1 = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct io_uring_region_desc
@@ -908,6 +1207,8 @@ const _: () = {
     ["Offset of field: io_uring_region_desc::__resv"]
         [::core::mem::offset_of!(io_uring_region_desc, __resv) - 32usize];
 };
+pub const IORING_MEM_REGION_REG_WAIT_ARG: _bindgen_ty_2 = 1;
+pub type _bindgen_ty_2 = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct io_uring_mem_region_reg
@@ -1114,6 +1415,78 @@ impl Default for io_uring_restriction
     }
 }
 #[repr(C)]
+pub struct io_uring_task_restriction
+{
+    pub flags: __u16,
+    pub nr_res: __u16,
+    pub resv: [__u32; 3usize],
+    pub __bindgen_anon_1: io_uring_task_restriction__bindgen_ty_1,
+}
+#[repr(C)]
+pub struct io_uring_task_restriction__bindgen_ty_1
+{
+    pub __empty_restrictions: io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1,
+    pub restrictions: __IncompleteArrayField<io_uring_restriction>,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1 {}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::size_of::<io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1>() - 0usize];
+    ["Alignment of io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::align_of::<io_uring_task_restriction__bindgen_ty_1__bindgen_ty_1>() - 1usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_task_restriction__bindgen_ty_1"]
+        [::core::mem::size_of::<io_uring_task_restriction__bindgen_ty_1>() - 0usize];
+    ["Alignment of io_uring_task_restriction__bindgen_ty_1"]
+        [::core::mem::align_of::<io_uring_task_restriction__bindgen_ty_1>() - 4usize];
+    ["Offset of field: io_uring_task_restriction__bindgen_ty_1::__empty_restrictions"][::core::mem::offset_of!(
+        io_uring_task_restriction__bindgen_ty_1,
+        __empty_restrictions
+    ) - 0usize];
+    ["Offset of field: io_uring_task_restriction__bindgen_ty_1::restrictions"]
+        [::core::mem::offset_of!(io_uring_task_restriction__bindgen_ty_1, restrictions) - 0usize];
+};
+impl Default for io_uring_task_restriction__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_task_restriction"]
+        [::core::mem::size_of::<io_uring_task_restriction>() - 16usize];
+    ["Alignment of io_uring_task_restriction"]
+        [::core::mem::align_of::<io_uring_task_restriction>() - 4usize];
+    ["Offset of field: io_uring_task_restriction::flags"]
+        [::core::mem::offset_of!(io_uring_task_restriction, flags) - 0usize];
+    ["Offset of field: io_uring_task_restriction::nr_res"]
+        [::core::mem::offset_of!(io_uring_task_restriction, nr_res) - 2usize];
+    ["Offset of field: io_uring_task_restriction::resv"]
+        [::core::mem::offset_of!(io_uring_task_restriction, resv) - 4usize];
+};
+impl Default for io_uring_task_restriction
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct io_uring_clock_register
 {
@@ -1131,6 +1504,9 @@ const _: () = {
     ["Offset of field: io_uring_clock_register::__resv"]
         [::core::mem::offset_of!(io_uring_clock_register, __resv) - 4usize];
 };
+pub const IORING_REGISTER_SRC_REGISTERED: _bindgen_ty_3 = 1;
+pub const IORING_REGISTER_DST_REPLACE: _bindgen_ty_3 = 2;
+pub type _bindgen_ty_3 = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct io_uring_clone_buffers
@@ -1293,7 +1669,8 @@ pub struct io_uring_buf_reg
     pub ring_entries: __u32,
     pub bgid: __u16,
     pub flags: __u16,
-    pub resv: [__u64; 3usize],
+    pub min_left: __u32,
+    pub resv: [__u32; 5usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
@@ -1307,8 +1684,10 @@ const _: () = {
         [::core::mem::offset_of!(io_uring_buf_reg, bgid) - 12usize];
     ["Offset of field: io_uring_buf_reg::flags"]
         [::core::mem::offset_of!(io_uring_buf_reg, flags) - 14usize];
+    ["Offset of field: io_uring_buf_reg::min_left"]
+        [::core::mem::offset_of!(io_uring_buf_reg, min_left) - 16usize];
     ["Offset of field: io_uring_buf_reg::resv"]
-        [::core::mem::offset_of!(io_uring_buf_reg, resv) - 16usize];
+        [::core::mem::offset_of!(io_uring_buf_reg, resv) - 20usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
@@ -1378,6 +1757,8 @@ pub const io_uring_register_restriction_op_IORING_RESTRICTION_SQE_FLAGS_REQUIRED
 pub const io_uring_register_restriction_op_IORING_RESTRICTION_LAST:
     io_uring_register_restriction_op = 4;
 pub type io_uring_register_restriction_op = ::core::ffi::c_uint;
+pub const IORING_REG_WAIT_TS: _bindgen_ty_4 = 1;
+pub type _bindgen_ty_4 = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct io_uring_reg_wait
@@ -1513,6 +1894,7 @@ pub const io_uring_socket_op_SOCKET_URING_OP_SIOCOUTQ: io_uring_socket_op = 1;
 pub const io_uring_socket_op_SOCKET_URING_OP_GETSOCKOPT: io_uring_socket_op = 2;
 pub const io_uring_socket_op_SOCKET_URING_OP_SETSOCKOPT: io_uring_socket_op = 3;
 pub const io_uring_socket_op_SOCKET_URING_OP_TX_TIMESTAMP: io_uring_socket_op = 4;
+pub const io_uring_socket_op_SOCKET_URING_OP_GETSOCKNAME: io_uring_socket_op = 5;
 pub type io_uring_socket_op = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
@@ -1530,135 +1912,747 @@ const _: () = {
         [::core::mem::offset_of!(io_timespec, tv_nsec) - 8usize];
 };
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
-pub struct io_uring_zcrx_rqe
+#[derive(Debug, Copy, Clone)]
+pub struct iovec
 {
-    pub off: __u64,
-    pub len: __u32,
-    pub __pad: __u32,
+    pub iov_base: *mut ::core::ffi::c_void,
+    pub iov_len: __kernel_size_t,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of io_uring_zcrx_rqe"][::core::mem::size_of::<io_uring_zcrx_rqe>() - 16usize];
-    ["Alignment of io_uring_zcrx_rqe"][::core::mem::align_of::<io_uring_zcrx_rqe>() - 8usize];
-    ["Offset of field: io_uring_zcrx_rqe::off"]
-        [::core::mem::offset_of!(io_uring_zcrx_rqe, off) - 0usize];
-    ["Offset of field: io_uring_zcrx_rqe::len"]
-        [::core::mem::offset_of!(io_uring_zcrx_rqe, len) - 8usize];
-    ["Offset of field: io_uring_zcrx_rqe::__pad"]
-        [::core::mem::offset_of!(io_uring_zcrx_rqe, __pad) - 12usize];
+    ["Size of iovec"][::core::mem::size_of::<iovec>() - 16usize];
+    ["Alignment of iovec"][::core::mem::align_of::<iovec>() - 8usize];
+    ["Offset of field: iovec::iov_base"][::core::mem::offset_of!(iovec, iov_base) - 0usize];
+    ["Offset of field: iovec::iov_len"][::core::mem::offset_of!(iovec, iov_len) - 8usize];
 };
+impl Default for iovec
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct io_uring_zcrx_cqe
+pub struct statx_timestamp
 {
-    pub off: __u64,
-    pub __pad: __u64,
+    pub tv_sec: __s64,
+    pub tv_nsec: __u32,
+    pub __reserved: __s32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of io_uring_zcrx_cqe"][::core::mem::size_of::<io_uring_zcrx_cqe>() - 16usize];
-    ["Alignment of io_uring_zcrx_cqe"][::core::mem::align_of::<io_uring_zcrx_cqe>() - 8usize];
-    ["Offset of field: io_uring_zcrx_cqe::off"]
-        [::core::mem::offset_of!(io_uring_zcrx_cqe, off) - 0usize];
-    ["Offset of field: io_uring_zcrx_cqe::__pad"]
-        [::core::mem::offset_of!(io_uring_zcrx_cqe, __pad) - 8usize];
+    ["Size of statx_timestamp"][::core::mem::size_of::<statx_timestamp>() - 16usize];
+    ["Alignment of statx_timestamp"][::core::mem::align_of::<statx_timestamp>() - 8usize];
+    ["Offset of field: statx_timestamp::tv_sec"]
+        [::core::mem::offset_of!(statx_timestamp, tv_sec) - 0usize];
+    ["Offset of field: statx_timestamp::tv_nsec"]
+        [::core::mem::offset_of!(statx_timestamp, tv_nsec) - 8usize];
+    ["Offset of field: statx_timestamp::__reserved"]
+        [::core::mem::offset_of!(statx_timestamp, __reserved) - 12usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct io_uring_zcrx_offsets
+pub struct statx
 {
-    pub head: __u32,
-    pub tail: __u32,
-    pub rqes: __u32,
-    pub __resv2: __u32,
-    pub __resv: [__u64; 2usize],
+    pub stx_mask: __u32,
+    pub stx_blksize: __u32,
+    pub stx_attributes: __u64,
+    pub stx_nlink: __u32,
+    pub stx_uid: __u32,
+    pub stx_gid: __u32,
+    pub stx_mode: __u16,
+    pub __spare0: [__u16; 1usize],
+    pub stx_ino: __u64,
+    pub stx_size: __u64,
+    pub stx_blocks: __u64,
+    pub stx_attributes_mask: __u64,
+    pub stx_atime: statx_timestamp,
+    pub stx_btime: statx_timestamp,
+    pub stx_ctime: statx_timestamp,
+    pub stx_mtime: statx_timestamp,
+    pub stx_rdev_major: __u32,
+    pub stx_rdev_minor: __u32,
+    pub stx_dev_major: __u32,
+    pub stx_dev_minor: __u32,
+    pub stx_mnt_id: __u64,
+    pub stx_dio_mem_align: __u32,
+    pub stx_dio_offset_align: __u32,
+    pub stx_subvol: __u64,
+    pub stx_atomic_write_unit_min: __u32,
+    pub stx_atomic_write_unit_max: __u32,
+    pub stx_atomic_write_segments_max: __u32,
+    pub stx_dio_read_offset_align: __u32,
+    pub stx_atomic_write_unit_max_opt: __u32,
+    pub __spare2: [__u32; 1usize],
+    pub __spare3: [__u64; 8usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of io_uring_zcrx_offsets"][::core::mem::size_of::<io_uring_zcrx_offsets>() - 32usize];
-    ["Alignment of io_uring_zcrx_offsets"]
-        [::core::mem::align_of::<io_uring_zcrx_offsets>() - 8usize];
-    ["Offset of field: io_uring_zcrx_offsets::head"]
-        [::core::mem::offset_of!(io_uring_zcrx_offsets, head) - 0usize];
-    ["Offset of field: io_uring_zcrx_offsets::tail"]
-        [::core::mem::offset_of!(io_uring_zcrx_offsets, tail) - 4usize];
-    ["Offset of field: io_uring_zcrx_offsets::rqes"]
-        [::core::mem::offset_of!(io_uring_zcrx_offsets, rqes) - 8usize];
-    ["Offset of field: io_uring_zcrx_offsets::__resv2"]
-        [::core::mem::offset_of!(io_uring_zcrx_offsets, __resv2) - 12usize];
-    ["Offset of field: io_uring_zcrx_offsets::__resv"]
-        [::core::mem::offset_of!(io_uring_zcrx_offsets, __resv) - 16usize];
+    ["Size of statx"][::core::mem::size_of::<statx>() - 256usize];
+    ["Alignment of statx"][::core::mem::align_of::<statx>() - 8usize];
+    ["Offset of field: statx::stx_mask"][::core::mem::offset_of!(statx, stx_mask) - 0usize];
+    ["Offset of field: statx::stx_blksize"][::core::mem::offset_of!(statx, stx_blksize) - 4usize];
+    ["Offset of field: statx::stx_attributes"]
+        [::core::mem::offset_of!(statx, stx_attributes) - 8usize];
+    ["Offset of field: statx::stx_nlink"][::core::mem::offset_of!(statx, stx_nlink) - 16usize];
+    ["Offset of field: statx::stx_uid"][::core::mem::offset_of!(statx, stx_uid) - 20usize];
+    ["Offset of field: statx::stx_gid"][::core::mem::offset_of!(statx, stx_gid) - 24usize];
+    ["Offset of field: statx::stx_mode"][::core::mem::offset_of!(statx, stx_mode) - 28usize];
+    ["Offset of field: statx::__spare0"][::core::mem::offset_of!(statx, __spare0) - 30usize];
+    ["Offset of field: statx::stx_ino"][::core::mem::offset_of!(statx, stx_ino) - 32usize];
+    ["Offset of field: statx::stx_size"][::core::mem::offset_of!(statx, stx_size) - 40usize];
+    ["Offset of field: statx::stx_blocks"][::core::mem::offset_of!(statx, stx_blocks) - 48usize];
+    ["Offset of field: statx::stx_attributes_mask"]
+        [::core::mem::offset_of!(statx, stx_attributes_mask) - 56usize];
+    ["Offset of field: statx::stx_atime"][::core::mem::offset_of!(statx, stx_atime) - 64usize];
+    ["Offset of field: statx::stx_btime"][::core::mem::offset_of!(statx, stx_btime) - 80usize];
+    ["Offset of field: statx::stx_ctime"][::core::mem::offset_of!(statx, stx_ctime) - 96usize];
+    ["Offset of field: statx::stx_mtime"][::core::mem::offset_of!(statx, stx_mtime) - 112usize];
+    ["Offset of field: statx::stx_rdev_major"]
+        [::core::mem::offset_of!(statx, stx_rdev_major) - 128usize];
+    ["Offset of field: statx::stx_rdev_minor"]
+        [::core::mem::offset_of!(statx, stx_rdev_minor) - 132usize];
+    ["Offset of field: statx::stx_dev_major"]
+        [::core::mem::offset_of!(statx, stx_dev_major) - 136usize];
+    ["Offset of field: statx::stx_dev_minor"]
+        [::core::mem::offset_of!(statx, stx_dev_minor) - 140usize];
+    ["Offset of field: statx::stx_mnt_id"][::core::mem::offset_of!(statx, stx_mnt_id) - 144usize];
+    ["Offset of field: statx::stx_dio_mem_align"]
+        [::core::mem::offset_of!(statx, stx_dio_mem_align) - 152usize];
+    ["Offset of field: statx::stx_dio_offset_align"]
+        [::core::mem::offset_of!(statx, stx_dio_offset_align) - 156usize];
+    ["Offset of field: statx::stx_subvol"][::core::mem::offset_of!(statx, stx_subvol) - 160usize];
+    ["Offset of field: statx::stx_atomic_write_unit_min"]
+        [::core::mem::offset_of!(statx, stx_atomic_write_unit_min) - 168usize];
+    ["Offset of field: statx::stx_atomic_write_unit_max"]
+        [::core::mem::offset_of!(statx, stx_atomic_write_unit_max) - 172usize];
+    ["Offset of field: statx::stx_atomic_write_segments_max"]
+        [::core::mem::offset_of!(statx, stx_atomic_write_segments_max) - 176usize];
+    ["Offset of field: statx::stx_dio_read_offset_align"]
+        [::core::mem::offset_of!(statx, stx_dio_read_offset_align) - 180usize];
+    ["Offset of field: statx::stx_atomic_write_unit_max_opt"]
+        [::core::mem::offset_of!(statx, stx_atomic_write_unit_max_opt) - 184usize];
+    ["Offset of field: statx::__spare2"][::core::mem::offset_of!(statx, __spare2) - 188usize];
+    ["Offset of field: statx::__spare3"][::core::mem::offset_of!(statx, __spare3) - 192usize];
 };
-pub const io_uring_zcrx_area_flags_IORING_ZCRX_AREA_DMABUF: io_uring_zcrx_area_flags = 1;
-pub type io_uring_zcrx_area_flags = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct io_uring_zcrx_area_reg
+pub struct epoll_event
 {
-    pub addr: __u64,
-    pub len: __u64,
-    pub rq_area_token: __u64,
+    pub events: __poll_t,
+    pub data: __u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of epoll_event"][::core::mem::size_of::<epoll_event>() - 16usize];
+    ["Alignment of epoll_event"][::core::mem::align_of::<epoll_event>() - 8usize];
+    ["Offset of field: epoll_event::events"][::core::mem::offset_of!(epoll_event, events) - 0usize];
+    ["Offset of field: epoll_event::data"][::core::mem::offset_of!(epoll_event, data) - 8usize];
+};
+/// struct futex_waitv - A waiter for vectorized wait
+/// @val:	Expected value at uaddr
+/// @uaddr:	User address to wait on
+/// @flags:	Flags for this waiter
+/// @__reserved:	Reserved member to preserve data alignment. Should be 0.
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct futex_waitv
+{
+    pub val: __u64,
+    pub uaddr: __u64,
     pub flags: __u32,
-    pub dmabuf_fd: __u32,
-    pub __resv2: [__u64; 2usize],
+    pub __reserved: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of io_uring_zcrx_area_reg"][::core::mem::size_of::<io_uring_zcrx_area_reg>() - 48usize];
-    ["Alignment of io_uring_zcrx_area_reg"]
-        [::core::mem::align_of::<io_uring_zcrx_area_reg>() - 8usize];
-    ["Offset of field: io_uring_zcrx_area_reg::addr"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, addr) - 0usize];
-    ["Offset of field: io_uring_zcrx_area_reg::len"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, len) - 8usize];
-    ["Offset of field: io_uring_zcrx_area_reg::rq_area_token"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, rq_area_token) - 16usize];
-    ["Offset of field: io_uring_zcrx_area_reg::flags"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, flags) - 24usize];
-    ["Offset of field: io_uring_zcrx_area_reg::dmabuf_fd"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, dmabuf_fd) - 28usize];
-    ["Offset of field: io_uring_zcrx_area_reg::__resv2"]
-        [::core::mem::offset_of!(io_uring_zcrx_area_reg, __resv2) - 32usize];
+    ["Size of futex_waitv"][::core::mem::size_of::<futex_waitv>() - 24usize];
+    ["Alignment of futex_waitv"][::core::mem::align_of::<futex_waitv>() - 8usize];
+    ["Offset of field: futex_waitv::val"][::core::mem::offset_of!(futex_waitv, val) - 0usize];
+    ["Offset of field: futex_waitv::uaddr"][::core::mem::offset_of!(futex_waitv, uaddr) - 8usize];
+    ["Offset of field: futex_waitv::flags"][::core::mem::offset_of!(futex_waitv, flags) - 16usize];
+    ["Offset of field: futex_waitv::__reserved"]
+        [::core::mem::offset_of!(futex_waitv, __reserved) - 20usize];
+};
+pub type __kernel_sa_family_t = ::core::ffi::c_ushort;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct __kernel_sockaddr_storage
+{
+    pub __bindgen_anon_1: __kernel_sockaddr_storage__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union __kernel_sockaddr_storage__bindgen_ty_1
+{
+    pub __bindgen_anon_1: __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
+    pub __align: *mut ::core::ffi::c_void,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1
+{
+    pub ss_family: __kernel_sa_family_t,
+    pub __data: [::core::ffi::c_char; 126usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1"][::core::mem::size_of::<
+        __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
+    >() - 128usize];
+    ["Alignment of __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::align_of::<__kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1>() - 2usize];
+    ["Offset of field: __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1::ss_family"][::core::mem::offset_of!(
+        __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
+        ss_family
+    )
+        - 0usize];
+    ["Offset of field: __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1::__data"][::core::mem::offset_of!(
+        __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1,
+        __data
+    ) - 2usize];
+};
+impl Default for __kernel_sockaddr_storage__bindgen_ty_1__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __kernel_sockaddr_storage__bindgen_ty_1"]
+        [::core::mem::size_of::<__kernel_sockaddr_storage__bindgen_ty_1>() - 128usize];
+    ["Alignment of __kernel_sockaddr_storage__bindgen_ty_1"]
+        [::core::mem::align_of::<__kernel_sockaddr_storage__bindgen_ty_1>() - 8usize];
+    ["Offset of field: __kernel_sockaddr_storage__bindgen_ty_1::__align"]
+        [::core::mem::offset_of!(__kernel_sockaddr_storage__bindgen_ty_1, __align) - 0usize];
+};
+impl Default for __kernel_sockaddr_storage__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __kernel_sockaddr_storage"]
+        [::core::mem::size_of::<__kernel_sockaddr_storage>() - 128usize];
+    ["Alignment of __kernel_sockaddr_storage"]
+        [::core::mem::align_of::<__kernel_sockaddr_storage>() - 8usize];
+};
+impl Default for __kernel_sockaddr_storage
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sockaddr_un
+{
+    pub sun_family: __kernel_sa_family_t,
+    pub sun_path: [::core::ffi::c_char; 108usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of sockaddr_un"][::core::mem::size_of::<sockaddr_un>() - 110usize];
+    ["Alignment of sockaddr_un"][::core::mem::align_of::<sockaddr_un>() - 2usize];
+    ["Offset of field: sockaddr_un::sun_family"]
+        [::core::mem::offset_of!(sockaddr_un, sun_family) - 0usize];
+    ["Offset of field: sockaddr_un::sun_path"]
+        [::core::mem::offset_of!(sockaddr_un, sun_path) - 2usize];
+};
+impl Default for sockaddr_un
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union sigval
+{
+    pub sival_int: ::core::ffi::c_int,
+    pub sival_ptr: *mut ::core::ffi::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of sigval"][::core::mem::size_of::<sigval>() - 8usize];
+    ["Alignment of sigval"][::core::mem::align_of::<sigval>() - 8usize];
+    ["Offset of field: sigval::sival_int"][::core::mem::offset_of!(sigval, sival_int) - 0usize];
+    ["Offset of field: sigval::sival_ptr"][::core::mem::offset_of!(sigval, sival_ptr) - 0usize];
+};
+impl Default for sigval
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub type sigval_t = sigval;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union __sifields
+{
+    pub _kill: __sifields__bindgen_ty_1,
+    pub _timer: __sifields__bindgen_ty_2,
+    pub _rt: __sifields__bindgen_ty_3,
+    pub _sigchld: __sifields__bindgen_ty_4,
+    pub _segfault: __sifields__bindgen_ty_5,
+    pub _sigpoll: __sifields__bindgen_ty_6,
+    pub _sigsys: __sifields__bindgen_ty_7,
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct __sifields__bindgen_ty_1
+{
+    pub _pid: __kernel_pid_t,
+    pub _uid: __kernel_uid32_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_1"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_1>() - 8usize];
+    ["Alignment of __sifields__bindgen_ty_1"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_1>() - 4usize];
+    ["Offset of field: __sifields__bindgen_ty_1::_pid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_1, _pid) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_1::_uid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_1, _uid) - 4usize];
+};
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct __sifields__bindgen_ty_2
+{
+    pub _tid: __kernel_timer_t,
+    pub _overrun: ::core::ffi::c_int,
+    pub _sigval: sigval_t,
+    pub _sys_private: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_2"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_2>() - 24usize];
+    ["Alignment of __sifields__bindgen_ty_2"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_2>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_2::_tid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_2, _tid) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_2::_overrun"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_2, _overrun) - 4usize];
+    ["Offset of field: __sifields__bindgen_ty_2::_sigval"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_2, _sigval) - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_2::_sys_private"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_2, _sys_private) - 16usize];
+};
+impl Default for __sifields__bindgen_ty_2
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct __sifields__bindgen_ty_3
+{
+    pub _pid: __kernel_pid_t,
+    pub _uid: __kernel_uid32_t,
+    pub _sigval: sigval_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_3"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_3>() - 16usize];
+    ["Alignment of __sifields__bindgen_ty_3"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_3>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_3::_pid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_3, _pid) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_3::_uid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_3, _uid) - 4usize];
+    ["Offset of field: __sifields__bindgen_ty_3::_sigval"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_3, _sigval) - 8usize];
+};
+impl Default for __sifields__bindgen_ty_3
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct __sifields__bindgen_ty_4
+{
+    pub _pid: __kernel_pid_t,
+    pub _uid: __kernel_uid32_t,
+    pub _status: ::core::ffi::c_int,
+    pub _utime: __kernel_clock_t,
+    pub _stime: __kernel_clock_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_4"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_4>() - 32usize];
+    ["Alignment of __sifields__bindgen_ty_4"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_4>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_4::_pid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_4, _pid) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_4::_uid"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_4, _uid) - 4usize];
+    ["Offset of field: __sifields__bindgen_ty_4::_status"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_4, _status) - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_4::_utime"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_4, _utime) - 16usize];
+    ["Offset of field: __sifields__bindgen_ty_4::_stime"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_4, _stime) - 24usize];
+};
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct __sifields__bindgen_ty_5
+{
+    pub _addr: *mut ::core::ffi::c_void,
+    pub __bindgen_anon_1: __sifields__bindgen_ty_5__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union __sifields__bindgen_ty_5__bindgen_ty_1
+{
+    pub _trapno: ::core::ffi::c_int,
+    pub _addr_lsb: ::core::ffi::c_short,
+    pub _addr_bnd: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1,
+    pub _addr_pkey: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2,
+    pub _perf: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1
+{
+    pub _dummy_bnd: [::core::ffi::c_char; 8usize],
+    pub _lower: *mut ::core::ffi::c_void,
+    pub _upper: *mut ::core::ffi::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1>() - 24usize];
+    ["Alignment of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1::_dummy_bnd"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1,
+        _dummy_bnd
+    )
+        - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1::_lower"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1,
+        _lower
+    ) - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1::_upper"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1,
+        _upper
+    ) - 16usize];
+};
+impl Default for __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2
+{
+    pub _dummy_pkey: [::core::ffi::c_char; 8usize],
+    pub _pkey: __u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2>() - 12usize];
+    ["Alignment of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2>() - 4usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2::_dummy_pkey"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2,
+        _dummy_pkey
+    )
+        - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2::_pkey"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_2,
+        _pkey
+    ) - 8usize];
 };
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
-pub struct io_uring_zcrx_ifq_reg
+pub struct __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3
 {
-    pub if_idx: __u32,
-    pub if_rxq: __u32,
-    pub rq_entries: __u32,
-    pub flags: __u32,
-    pub area_ptr: __u64,
-    pub region_ptr: __u64,
-    pub offsets: io_uring_zcrx_offsets,
-    pub zcrx_id: __u32,
-    pub __resv2: __u32,
-    pub __resv: [__u64; 3usize],
+    pub _data: ::core::ffi::c_ulong,
+    pub _type: __u32,
+    pub _flags: __u32,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of io_uring_zcrx_ifq_reg"][::core::mem::size_of::<io_uring_zcrx_ifq_reg>() - 96usize];
-    ["Alignment of io_uring_zcrx_ifq_reg"]
-        [::core::mem::align_of::<io_uring_zcrx_ifq_reg>() - 8usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::if_idx"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, if_idx) - 0usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::if_rxq"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, if_rxq) - 4usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::rq_entries"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, rq_entries) - 8usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::flags"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, flags) - 12usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::area_ptr"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, area_ptr) - 16usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::region_ptr"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, region_ptr) - 24usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::offsets"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, offsets) - 32usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::zcrx_id"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, zcrx_id) - 64usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::__resv2"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, __resv2) - 68usize];
-    ["Offset of field: io_uring_zcrx_ifq_reg::__resv"]
-        [::core::mem::offset_of!(io_uring_zcrx_ifq_reg, __resv) - 72usize];
+    ["Size of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3>() - 16usize];
+    ["Alignment of __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3::_data"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3,
+        _data
+    ) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3::_type"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3,
+        _type
+    ) - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3::_flags"][::core::mem::offset_of!(
+        __sifields__bindgen_ty_5__bindgen_ty_1__bindgen_ty_3,
+        _flags
+    ) - 12usize];
 };
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_5__bindgen_ty_1"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_5__bindgen_ty_1>() - 24usize];
+    ["Alignment of __sifields__bindgen_ty_5__bindgen_ty_1"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_5__bindgen_ty_1>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1::_trapno"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5__bindgen_ty_1, _trapno) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1::_addr_lsb"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5__bindgen_ty_1, _addr_lsb) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1::_addr_bnd"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5__bindgen_ty_1, _addr_bnd) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1::_addr_pkey"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5__bindgen_ty_1, _addr_pkey) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_5__bindgen_ty_1::_perf"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5__bindgen_ty_1, _perf) - 0usize];
+};
+impl Default for __sifields__bindgen_ty_5__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_5"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_5>() - 32usize];
+    ["Alignment of __sifields__bindgen_ty_5"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_5>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_5::_addr"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_5, _addr) - 0usize];
+};
+impl Default for __sifields__bindgen_ty_5
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct __sifields__bindgen_ty_6
+{
+    pub _band: ::core::ffi::c_long,
+    pub _fd: ::core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_6"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_6>() - 16usize];
+    ["Alignment of __sifields__bindgen_ty_6"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_6>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_6::_band"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_6, _band) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_6::_fd"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_6, _fd) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct __sifields__bindgen_ty_7
+{
+    pub _call_addr: *mut ::core::ffi::c_void,
+    pub _syscall: ::core::ffi::c_int,
+    pub _arch: ::core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields__bindgen_ty_7"]
+        [::core::mem::size_of::<__sifields__bindgen_ty_7>() - 16usize];
+    ["Alignment of __sifields__bindgen_ty_7"]
+        [::core::mem::align_of::<__sifields__bindgen_ty_7>() - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_7::_call_addr"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_7, _call_addr) - 0usize];
+    ["Offset of field: __sifields__bindgen_ty_7::_syscall"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_7, _syscall) - 8usize];
+    ["Offset of field: __sifields__bindgen_ty_7::_arch"]
+        [::core::mem::offset_of!(__sifields__bindgen_ty_7, _arch) - 12usize];
+};
+impl Default for __sifields__bindgen_ty_7
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of __sifields"][::core::mem::size_of::<__sifields>() - 32usize];
+    ["Alignment of __sifields"][::core::mem::align_of::<__sifields>() - 8usize];
+    ["Offset of field: __sifields::_kill"][::core::mem::offset_of!(__sifields, _kill) - 0usize];
+    ["Offset of field: __sifields::_timer"][::core::mem::offset_of!(__sifields, _timer) - 0usize];
+    ["Offset of field: __sifields::_rt"][::core::mem::offset_of!(__sifields, _rt) - 0usize];
+    ["Offset of field: __sifields::_sigchld"]
+        [::core::mem::offset_of!(__sifields, _sigchld) - 0usize];
+    ["Offset of field: __sifields::_segfault"]
+        [::core::mem::offset_of!(__sifields, _segfault) - 0usize];
+    ["Offset of field: __sifields::_sigpoll"]
+        [::core::mem::offset_of!(__sifields, _sigpoll) - 0usize];
+    ["Offset of field: __sifields::_sigsys"][::core::mem::offset_of!(__sifields, _sigsys) - 0usize];
+};
+impl Default for __sifields
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct siginfo
+{
+    pub __bindgen_anon_1: siginfo__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union siginfo__bindgen_ty_1
+{
+    pub __bindgen_anon_1: siginfo__bindgen_ty_1__bindgen_ty_1,
+    pub _si_pad: [::core::ffi::c_int; 32usize],
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct siginfo__bindgen_ty_1__bindgen_ty_1
+{
+    pub si_signo: ::core::ffi::c_int,
+    pub si_errno: ::core::ffi::c_int,
+    pub si_code: ::core::ffi::c_int,
+    pub _sifields: __sifields,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of siginfo__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::size_of::<siginfo__bindgen_ty_1__bindgen_ty_1>() - 48usize];
+    ["Alignment of siginfo__bindgen_ty_1__bindgen_ty_1"]
+        [::core::mem::align_of::<siginfo__bindgen_ty_1__bindgen_ty_1>() - 8usize];
+    ["Offset of field: siginfo__bindgen_ty_1__bindgen_ty_1::si_signo"]
+        [::core::mem::offset_of!(siginfo__bindgen_ty_1__bindgen_ty_1, si_signo) - 0usize];
+    ["Offset of field: siginfo__bindgen_ty_1__bindgen_ty_1::si_errno"]
+        [::core::mem::offset_of!(siginfo__bindgen_ty_1__bindgen_ty_1, si_errno) - 4usize];
+    ["Offset of field: siginfo__bindgen_ty_1__bindgen_ty_1::si_code"]
+        [::core::mem::offset_of!(siginfo__bindgen_ty_1__bindgen_ty_1, si_code) - 8usize];
+    ["Offset of field: siginfo__bindgen_ty_1__bindgen_ty_1::_sifields"]
+        [::core::mem::offset_of!(siginfo__bindgen_ty_1__bindgen_ty_1, _sifields) - 16usize];
+};
+impl Default for siginfo__bindgen_ty_1__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of siginfo__bindgen_ty_1"][::core::mem::size_of::<siginfo__bindgen_ty_1>() - 128usize];
+    ["Alignment of siginfo__bindgen_ty_1"]
+        [::core::mem::align_of::<siginfo__bindgen_ty_1>() - 8usize];
+    ["Offset of field: siginfo__bindgen_ty_1::_si_pad"]
+        [::core::mem::offset_of!(siginfo__bindgen_ty_1, _si_pad) - 0usize];
+};
+impl Default for siginfo__bindgen_ty_1
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of siginfo"][::core::mem::size_of::<siginfo>() - 128usize];
+    ["Alignment of siginfo"][::core::mem::align_of::<siginfo>() - 8usize];
+};
+impl Default for siginfo
+{
+    fn default() -> Self
+    {
+        let mut s = ::core::mem::MaybeUninit::<Self>::uninit();
+        unsafe {
+            ::core::ptr::write_bytes(s.as_mut_ptr(), 0, 1);
+            s.assume_init()
+        }
+    }
+}
+pub type siginfo_t = siginfo;
