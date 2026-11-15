@@ -51,6 +51,16 @@ impl Table
         self.held.get()
     }
 
+    /// The keys of the slots whose operations the kernel holds.
+    pub fn in_kernel(&self) -> impl Iterator<Item = usize> + '_
+    {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|&(_key, slot)| matches!(slot.get(), Slot::Pending | Slot::Abandoned))
+            .map(|(key, _slot)| key)
+    }
+
     /// Takes a free slot for an operation, or gives nothing when every slot
     /// is taken.
     pub fn take(&self) -> Option<usize>

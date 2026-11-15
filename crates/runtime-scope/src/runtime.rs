@@ -2,6 +2,7 @@ use ::core::cell::RefCell;
 use ::core::pin::pin;
 use ::core::task::Poll;
 use ::gandr_runtime_uring::IoUring;
+use ::rustix::io::Errno;
 
 use crate::completion::Cqe;
 use crate::error::RuntimeError;
@@ -51,17 +52,11 @@ impl Runtime
         loop {
             // Check if the main future is ready.
             if let Poll::Ready(val) = future.as_mut().poll(&mut Self::noop_cx()) {
-                // The main future never reaches `Poll::Ready` if there are
-                // tasks remaining as `Poll::Pending`. This is
-                // because tasks are not received by the runtime unless
-                // the spawned future is awaited in some enclosing future.
-                // Eventually this enclosing future must be the
-                // main future which is the only entrypoint to
-                // start the runtime. Thus the main future always depends on all
-                // received tasks.
-                debug_assert_eq!(table.held(), 0, "tasks remaining");
-
-                // Return immediately if the future is ready. See above.
+                // The main future is ready, and the scope ends with it. Each
+                // operation that the kernel still holds is cancelled, and
+                // the run waits for every completion before it returns, so
+                // the kernel holds no operation of the scope after the run.
+                end(&io, &table)?;
                 return Ok(val);
             }
 
@@ -70,6 +65,46 @@ impl Runtime
             reap(&io, &table)?;
         }
     }
+}
+
+/// The user data of a cancel's own completion, which names no slot.
+const CANCEL: u64 = u64::MAX;
+
+/// Ends a scope: submits a cancel for each operation that the kernel holds,
+/// then drains every completion, two for each cancel.
+fn end(
+    io: &RefCell<IoUring<'static>>,
+    table: &Table,
+) -> Result<(), RuntimeError>
+{
+    if table.held() == 0 {
+        return Ok(());
+    }
+    {
+        let mut ring = io.borrow_mut();
+        let mut squ = ring.squeue();
+        // The kernel takes every prepared entry, so the queue has room for a
+        // cancel of each slot that the table holds.
+        squ.submit()?;
+        for key in table.in_kernel() {
+            let data = u64::try_from(key).map_err(|_overflow| RuntimeError::Unknown(CANCEL))?;
+            let mut sqe = squ.get_sqe().ok_or(RuntimeError::Full)?;
+            // SAFETY: a cancel by user data reads no pointer and names no
+            // descriptor.
+            unsafe {
+                sqe.prep_cancel64(data, 0);
+            }
+            // SAFETY: the user data is a number that the kernel only hands
+            // back.
+            unsafe {
+                sqe.set_data64(CANCEL);
+            }
+        }
+    }
+    while table.held() > 0 {
+        reap(io, table)?;
+    }
+    Ok(())
 }
 
 /// Submits the prepared entries, waits for at least one completion, and
@@ -85,8 +120,20 @@ pub fn reap(
 
     // Process newly completed tasks.
     for cqe in cqu.ready() {
-        // Cross-reference the task against the CQE user_data.
         let data = cqe.user_data();
+        if data == CANCEL {
+            // A cancel finds its operation, or finds it already complete or
+            // past the point of a cancel; the operation's own completion
+            // follows in each case. Any other refusal is the kernel's error.
+            let res = cqe.res();
+            if res.is_negative() {
+                let errno = Errno::from_raw_os_error(res.saturating_neg());
+                if errno != Errno::NOENT && errno != Errno::ALREADY {
+                    return Err(RuntimeError::Kernel(errno));
+                }
+            }
+            continue;
+        }
         let key = usize::try_from(data).map_err(|_overflow| RuntimeError::Unknown(data))?;
         if !table.complete(key, Cqe::new(cqe.res(), cqe.flags())) {
             return Err(RuntimeError::Unknown(data));

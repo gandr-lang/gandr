@@ -181,5 +181,29 @@ pub(crate) mod test
                 .unwrap();
             connector.join().unwrap();
         }
+
+        /// A scope that ends with an accept in flight cancels it, and the
+        /// run returns only once the kernel completes the cancel and the
+        /// accept. No client connects, so only the cancel ends the accept.
+        #[test]
+        fn accept_in_flight()
+        {
+            let temp = ::assert_fs::TempDir::new().unwrap();
+            let path = temp.child("socket");
+            crate::test::harness::runtime::new()
+                .run(async |scope| -> Result<(), crate::RuntimeError> {
+                    let socket = crate::test::harness::io::socket::new(scope);
+                    let socket = socket.await?;
+                    let addr = ::socket2::SockAddr::unix(&path)?;
+                    socket.bind(addr).await?;
+                    let backlog = ::libc::SOMAXCONN;
+                    socket.listen(backlog).await?;
+                    let accept = socket.accept();
+                    drop(accept);
+                    Ok(())
+                })
+                .unwrap()
+                .unwrap();
+        }
     }
 }
