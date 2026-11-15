@@ -4,6 +4,75 @@
 //! quotes is a quotation, which the tense rule leaves alone. Each finding
 //! names its rule, and the rule's fix is the line
 //! `crates/workflow-prose/README.md` § Rules states.
+//!
+//! # Issue 9
+//!
+//! The gate is ASD-STE100 with unrestricted technical vocabulary. A finding
+//! names the rule it holds. A reader checks a rule the parse cannot read.
+//!
+//! | Item | Gate |
+//! | ---- | ---- |
+//! | 1.1 | review: no dictionary in the tree |
+//! | 1.2 | partial: `STE-1.2` |
+//! | 1.3 | review: meaning needs a reader |
+//! | 1.4 | review: a dictionary form is not in the tree |
+//! | 1.5 | review: a technical category needs an owner |
+//! | 1.6 | review: a technical noun needs an owner |
+//! | 1.7 | partial: `STE-1.2` |
+//! | 1.8 | review: a subject field needs an owner |
+//! | 1.9 | review: ease needs a reader |
+//! | 1.10 | review: no slang list in the tree |
+//! | 1.11 | review: identity needs the document |
+//! | 1.12 | review: a technical verb needs an owner |
+//! | 1.13 | partial: `STE-1.2` |
+//! | 1.14 | review: no spelling map in the tree |
+//! | 2.1 | gated: `STE-2.1` |
+//! | 2.2 | review: first form needs document order |
+//! | 3.1 | review: a dictionary form is not in the tree |
+//! | 3.2 | partial: `STE-3.2` reads the past, the future and the progressive |
+//! | 3.3 | review: an adjectival `-ing` needs a reader |
+//! | 3.4 | partial: `STE-3.4` reads the perfect and a passive after a modal |
+//! | 3.5 | partial: `STE-3.5` |
+//! | 3.6 | partial: `STE-3.6` |
+//! | 3.7 | partial: `STE-1.2` |
+//! | 4.1 | partial: `STE-4.1` reads a dash before a clause |
+//! | 4.2 | review: a contraction needs a reader |
+//! | 4.3 | partial: `STE-4.3` reads a reference in comment prose |
+//! | 4.4 | review: topic relation needs a reader |
+//! | 4.5 | review: article use needs a reader |
+//! | 5.1 | gated: `STE-5.1` |
+//! | 5.2 | partial: `STE-5.2` reads two imperatives joined by `and` or a comma, and a reader admits two acts at the same time |
+//! | 5.3 | partial: `STE-5.3` |
+//! | 5.4 | review: a condition's relevance needs a reader |
+//! | 5.5 | review: a note's command needs a reader |
+//! | 6.1 | review: information order needs a reader |
+//! | 6.2 | review: logical structure needs a reader |
+//! | 6.3 | gated: `STE-6.3` |
+//! | 6.4 | partial: `STE-6.4` reads the four paragraphs of a corpus head |
+//! | 6.5 | partial: `STE-6.5` reads the length of a head's first sentence |
+//! | 6.6 | partial: `STE-6.6` holds five sentences, and two in an item comment |
+//! | 7.1 | review: a safety heading needs a reader |
+//! | 7.2 | review: a safety block needs a reader |
+//! | 7.3 | review: a risk needs a reader |
+//! | 8.1 | gated: `STE-8.1` |
+//! | 8.2 | review: related words need a reader |
+//! | 8.3 | review: a parenthesis needs a reader |
+//! | 8.4 | review: a colon in a count needs a reader |
+//! | 8.5 | review: a parenthesis in a count needs a reader |
+//! | 8.6 | review: a token class in a count needs a reader |
+//! | 8.7 | review: a hyphen in a count needs a reader |
+//! | 9.1 | review: a replacement needs an earlier text |
+//! | 9.2 | review: a sense needs a dictionary |
+//! | 9.3 | partial: `STE-9.3` reads a verb with a particle |
+//! | 9.4 | review: style needs the document |
+//! | GR-1 | review: `that` needs a reader |
+//! | GR-2 | review: `with` needs a reader |
+//! | GR-3 | review: a pronoun needs a reader |
+//! | GR-4 | review: `this` needs a reader |
+//! | GR-5 | review: a false friend needs a reader |
+//! | GR-6 | review: no abbreviation list in the tree |
+//! | GR-7 | review: no inclusive-language list in the tree |
+//! | GR-8 | review: a possessive needs a reader |
 
 extern crate alloc;
 
@@ -597,8 +666,8 @@ fn after(
 ///   or `relcl`, or it is the `conj` of a verb. [`Rule::Phrasal`] when a token
 ///   in prose is `prt` and its head is a verb. [`Rule::Glossary`] when a token
 ///   in prose has a lemma the glossary holds and a coarse tag its part of
-///   speech does not admit. A `source` of [`Source::Comment`] adds the rules
-///   [`clauses`] states after these.
+///   speech does not admit. A `source` of [`Source::Comment`] or
+///   [`Source::Rust`] adds the rules [`clauses`] states after these.
 /// - provides: the verdict of one sentence.
 /// - fails: never.
 /// - panics: none.
@@ -724,7 +793,7 @@ fn broken(
     if misused {
         rules.push(Rule::Glossary);
     }
-    if source == Source::Comment {
+    if matches!(source, Source::Comment | Source::Rust) {
         rules.extend(clauses(readings, sentence));
     }
     rules
@@ -926,9 +995,11 @@ fn walled(
 ///   passage's source, in sentence order, each naming the passage's path and
 ///   line and the sentence's text. A comment's sentence that names a path, an
 ///   issue, a URL, a paper's locator or a paper's title ([`referenced`]) adds
-///   [`Rule::InlineReference`] after its other rules; a comment paragraph of
-///   more than five sentences that end in prose ([`walled`]) adds one
-///   [`Rule::Wall`] last, naming the whole paragraph.
+///   [`Rule::InlineReference`] after its other rules; in a Rust comment the
+///   rule reads the sentence's prose alone, without its code spans
+///   ([`uncoded`]). A comment paragraph of more than five sentences that end in
+///   prose ([`walled`]) adds one [`Rule::Wall`] last, naming the whole
+///   paragraph.
 /// - provides: the sentence rules over one passage.
 /// - fails: never.
 /// - panics: none.
@@ -949,7 +1020,7 @@ pub fn sentences(
 ) -> Vec<Finding>
 {
     let readings = readings(Text(&passage.text));
-    let comment = passage.source == Source::Comment;
+    let comment = matches!(passage.source, Source::Comment | Source::Rust);
     let mut findings = Vec::new();
     let mut found = |rule: Rule, sentence: &str| {
         findings.push(Finding {
@@ -962,7 +1033,10 @@ pub fn sentences(
     for sentence in sentences {
         let mut rules = broken(&readings, sentence, glossary, passage.source);
         let text = spoken(passage, sentence);
-        if comment {
+        if passage.source == Source::Rust {
+            rules.extend(referenced(Text(&uncoded(Text(&text)))));
+        }
+        else if comment {
             rules.extend(referenced(Text(&text)));
         }
         for rule in rules {
@@ -973,6 +1047,32 @@ pub fn sentences(
         found(wall, &passage.text);
     }
     findings
+}
+
+/// `text` without its code spans, so the code of a Rust comment names no
+/// reference.
+///
+/// # Specification
+/// trivial.
+///
+/// # Cost
+/// - allocation: the prose of the sentence, growth within the sentence
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path inside backticks in a Rust comment names nothing,
+///   and an issue outside them names one; a span kept or prose dropped changes
+///   the verdict.
+/// - witness: `rules::tests::a_comment_holds_the_body_rules_its_references_and_walls`
+fn uncoded(text: Text<'_>) -> String
+{
+    text.0
+        .split('`')
+        .step_by(2)
+        .fold(String::new(), |mut prose, part| {
+            prose.push_str(part);
+            prose.push(' ');
+            prose
+        })
 }
 
 /// The head and item findings of `shapes`, read over the parsed `passages`.
@@ -1692,11 +1792,13 @@ mod tests
     fn a_comment_holds_the_body_rules_its_references_and_walls()
     {
         let terms = |count: usize| vec!["term"; count].join(" ");
-        assert_eq!(
-            commented(Text(&format!("Reads {}.", terms(25))), Source::Comment),
-            [Rule::Length],
-            "a comment's sentence holds the body's length"
-        );
+        for source in [Source::Comment, Source::Rust] {
+            assert_eq!(
+                commented(Text(&format!("Reads {}.", terms(25))), source),
+                [Rule::Length],
+                "a comment's sentence holds the body's length"
+            );
+        }
         for reference in [
             "Reads the term (#12).",
             "Reads `crates/workflow-prose/src/rules.rs` today.",
@@ -1719,6 +1821,17 @@ mod tests
                 commented(Text(reference), Source::Body),
                 [],
                 "{reference:?} stands in a body"
+            );
+            let coded = reference == "Reads `crates/workflow-prose/src/rules.rs` today.";
+            assert_eq!(
+                commented(Text(reference), Source::Rust),
+                if coded {
+                    vec![]
+                }
+                else {
+                    vec![Rule::InlineReference]
+                },
+                "{reference:?} in a Rust comment names a reference outside its code alone"
             );
         }
         for plain in [
@@ -1752,6 +1865,7 @@ mod tests
         );
         let six = format!("{five} Reads six.");
         assert_eq!(commented(Text(&six), Source::Comment), [Rule::Wall]);
+        assert_eq!(commented(Text(&six), Source::Rust), [Rule::Wall]);
         assert_eq!(
             commented(Text(&six), Source::Body),
             [],

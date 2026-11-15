@@ -13,6 +13,11 @@
 //! the body rules read them. The census and the syntax pages are written by
 //! their generators, whose own sources hold the words. An untracked markdown
 //! file is a document too, so a new page meets the rules before its commit.
+//!
+//! Each Rust source is a document too, tracked or not, and [`passage::rust`]
+//! cuts its comments into paragraphs. The same base and the same rules hold
+//! them. The reader counts the code lines in comments, and the run reports the
+//! count.
 
 use std::io::Read as _;
 use std::io::Write as _;
@@ -22,6 +27,7 @@ use std::process::Stdio;
 
 use crate::error::ProseError;
 use crate::passage;
+use crate::passage::Cut;
 use crate::passage::Passage;
 use crate::passage::Text;
 
@@ -60,10 +66,10 @@ enum Listing<'rev>
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout that holds `base`.
-/// - ensures: each markdown file that the working tree adds or alters against
-///   `base`, and each untracked one that `.gitignore` admits, the paths of
-///   [`SET_ASIDE`] left out, sorted, each once. A file the change deletes is
-///   not listed.
+/// - ensures: each markdown file and Rust source that the working tree adds or
+///   alters against `base`, and each untracked one that `.gitignore` admits,
+///   the paths of [`SET_ASIDE`] left out, sorted, each once. A file the change
+///   deletes is not listed.
 /// - provides: the documents whose paragraphs the check reads.
 /// - fails: [`ProseError::Io`] naming the root when git cannot list the change,
 ///   as for a base the clone does not hold.
@@ -81,6 +87,7 @@ enum Listing<'rev>
 ///   an untracked page, deletes a page and alters an issue template; a deleted
 ///   page listed, the new page missed or the template read changes the list.
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+/// - witness: `tests::cli::a_rust_comment_answers_for_the_paragraphs_its_change_wrote`
 #[inline]
 pub fn touched(
     root: &Path,
@@ -94,9 +101,9 @@ pub fn touched(
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout.
-/// - ensures: each markdown file that the tree tracks, and each untracked one
-///   that `.gitignore` admits, the paths of [`SET_ASIDE`] left out, sorted,
-///   each once.
+/// - ensures: each markdown file and Rust source that the tree tracks, and each
+///   untracked one that `.gitignore` admits, the paths of [`SET_ASIDE`] left
+///   out, sorted, each once.
 /// - provides: the documents whose paragraphs a prune of the parse cache keeps.
 /// - fails: [`ProseError::Io`] naming the root when git cannot list the tree.
 /// - panics: none.
@@ -170,8 +177,9 @@ fn listed(
             base.0,
             "--",
             "*.md",
+            "*.rs",
         ])?,
-        Listing::Tracked => git(&["ls-files", "-z", "--", "*.md"])?,
+        Listing::Tracked => git(&["ls-files", "-z", "--", "*.md", "*.rs"])?,
     };
     let untracked = git(&[
         "ls-files",
@@ -180,6 +188,7 @@ fn listed(
         "--exclude-standard",
         "--",
         "*.md",
+        "*.rs",
     ])?;
     let mut paths: Vec<String> = named
         .split('\0')
@@ -202,13 +211,50 @@ fn listed(
     Ok(paths)
 }
 
+/// The passages of the document at `path`, whose text is `text`, by the kind
+/// of the document.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`passage::rust::comments`] of a path that ends in `.rs`, and the
+///   paragraphs of [`passage::document`] with no code line for any other path.
+/// - provides: one reader of a document for the head, the base and a prune.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the cut is the clause.
+///
+/// # Cost
+/// - allocation: the passages, growth within the document
+///
+/// # Adequacy
+/// - hypothesis: L3 — a change that alters a markdown page and a Rust source;
+///   either read by the other reader changes the passages that parse.
+/// - witness: `tests::cli::a_rust_comment_answers_for_the_paragraphs_its_change_wrote`
+#[inline]
+#[must_use]
+pub fn cut(
+    path: Text<'_>,
+    text: Text<'_>,
+) -> Cut
+{
+    if path.0.ends_with(".rs") {
+        passage::rust::comments(path, text)
+    }
+    else {
+        Cut {
+            passages: passage::document(path, text),
+            code: 0,
+        }
+    }
+}
+
 /// The paragraphs that `base` holds of each document in `paths`.
 ///
 /// # Specification
 /// - requires: `root` is a repository checkout that holds `base`.
-/// - ensures: the passages [`passage::document`] reads from each path's blob at
-///   `base`, in the order of `paths`; a path that `base` lacks gives none. One
-///   `git cat-file --batch` reads every blob.
+/// - ensures: the passages [`cut`] reads from each path's blob at `base`, in
+///   the order of `paths`; a path that `base` lacks gives none. One `git
+///   cat-file --batch` reads every blob.
 /// - provides: the paragraphs the change did not write, and the text each
 ///   override changes.
 /// - fails: [`ProseError::Io`] naming the root when git cannot start, exits
@@ -228,6 +274,7 @@ fn listed(
 ///   paragraph the change did not write, and a head paragraph read as the
 ///   base's admits a written one.
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+/// - witness: `tests::cli::a_rust_comment_answers_for_the_paragraphs_its_change_wrote`
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
@@ -315,10 +362,7 @@ pub fn held(
         let blob = rest
             .get(.. size)
             .ok_or_else(|| refused(format!("the blob of {path} ends early")))?;
-        passages.extend(passage::document(
-            Text(path),
-            Text(&String::from_utf8_lossy(blob)),
-        ));
+        passages.extend(cut(Text(path), Text(&String::from_utf8_lossy(blob))).passages);
         rest = rest.get(size.saturating_add(1) ..).unwrap_or_default();
     }
     Ok(passages)

@@ -496,7 +496,7 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
         "crates/x/README.md:4: STE-3.2: \"The kernel reduced the term.\" — state it in the \
          present tense\nprose: parsed 3 passage(s) of 16 word(s) afresh, of 3 read; 0 parse(s) \
          not kept in the cache\nprose: 2 document(s) touched since HEAD: 1 paragraph(s) kept from \
-         the base, 2 written and judged\n"
+         the base, 2 written and judged, 0 code line(s) in comments skipped\n"
     );
     assert_eq!(
         std::fs::read_to_string(root.join("input.json")).unwrap(),
@@ -516,10 +516,51 @@ fn a_document_answers_for_the_paragraphs_its_change_wrote()
     assert!(
         String::from_utf8_lossy(&fixed.stdout).ends_with(
             "prose: 2 document(s) touched since HEAD: 1 paragraph(s) kept from the base, 2 \
-             written and judged\nprose: 1 findings, every one in the ledger\n"
+             written and judged, 0 code line(s) in comments skipped\nprose: 1 findings, every \
+             one in the ledger\n"
         ),
         "{}",
         String::from_utf8_lossy(&fixed.stdout)
+    );
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_rust_comment_answers_for_the_paragraphs_its_change_wrote()
+{
+    let root = scratch!("rust", "The kernel reduces the term.", "", PRESENT);
+    assert!(run!(root, ["--write"], "").status.success());
+    put!(
+        root,
+        "crates/x/src/lib.rs",
+        "//! Kept paragraph one.\n//!\n//! Old paragraph.\n\n/// - ensures: the old clause.\nfn \
+         x() {}\n"
+    );
+    git!(root, ["add", "."]);
+    git!(root, ["commit", "--quiet", "-m", "base"]);
+    put!(
+        root,
+        "crates/x/src/lib.rs",
+        "//! Kept paragraph\n//! one.\n//!\n//! The kernel reduced the term.\n\n/// - ensures: the \
+         kernel reduced it.\n/// ```\n/// The kernel reduced it.\n/// ```\nfn x() {}\n// let y = \
+         1;\n// y.push(2);\nconst Z: &str = \"// The kernel reduced it.\";\n"
+    );
+    put!(root, "parse.json", joined!(PAST, PRESENT));
+    let written = run!(root, ["--base", "HEAD"], "");
+    assert_eq!(String::from_utf8_lossy(&written.stderr), "");
+    assert_eq!(written.status.code(), Some(1_i32));
+    assert_eq!(
+        String::from_utf8_lossy(&written.stdout),
+        "crates/x/src/lib.rs:4: STE-3.2: \"The kernel reduced the term.\" — state it in the \
+         present tense\nprose: parsed 2 passage(s) of 10 word(s) afresh, of 2 read; 0 parse(s) \
+         not kept in the cache\nprose: 1 document(s) touched since HEAD: 1 paragraph(s) kept \
+         from the base, 1 written and judged, 2 code line(s) in comments skipped\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("input.json")).unwrap(),
+        r#"["The kernel reduced the term.","The kernel reduces the term."]"#,
+        "the written paragraph parses, and the kept paragraph, the clause, the fence, the code in \
+         a comment and the string never parse"
     );
     std::fs::remove_dir_all(&root).unwrap();
 }
@@ -565,7 +606,7 @@ fn an_override_admits_its_substitution_and_counts_it()
             "prose: `{line}` admits 1 paragraph(s) of the 2 it claims\nprose: parsed 2 passage(s) \
              of 11 word(s) afresh, of 2 read; 0 parse(s) not kept in the cache\nprose: 1 \
              document(s) touched since HEAD: 0 paragraph(s) kept from the base, 1 written and \
-             judged\n"
+             judged, 0 code line(s) in comments skipped\n"
         ),
         "the reworded paragraph parses, and the count admitted differs from the count claimed"
     );

@@ -1,11 +1,14 @@
-//! **Prose**: the sentence rules that need a parse. They hold over the corpus
-//! comments and the rendered diagnostics with the committed debt in a ledger,
-//! over the paragraphs a change writes in the markdown documents with no debt,
-//! and over a pull request's or an issue's body with none.
+//! **Prose**: the sentence rules that need a parse. They bind the corpus
+//! comments and the rendered diagnostics, with the committed debt in a ledger.
+//! They bind the paragraphs that a change writes in the markdown documents and
+//! the Rust comments, with no debt. They bind a pull request's or an issue's
+//! body too.
 //!
 //! - [`passage`] reads the text: a corpus source's `///` paragraphs, a
 //!   document's prose paragraphs, a rendered diagnostic's headline, label and
 //!   advice, and a body's paragraphs and list items.
+//! - [`passage::rust`] cuts the comments of a Rust source into paragraphs and
+//!   list items, and it counts the code lines in them.
 //! - [`documents`] lists the documents a change touched since the merge base
 //!   and reads the paragraphs the base holds of them. A paragraph whose digest
 //!   the base holds is one the change did not write.

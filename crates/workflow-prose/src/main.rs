@@ -14,6 +14,10 @@
 //! passage's digest, so a passage parses once. `prose --python PATH --body
 //! FILE` judges the one body in `FILE` under the body rules, with no ledger.
 //!
+//! With `--base REV`, a Rust source is a document too. The run reads the
+//! comments of each Rust source that the change touched, and it reports the
+//! code lines in them that it skips.
+//!
 //! # Exit codes
 //!
 //! - `0`: every finding is in the ledger, every ledger line is a finding, no
@@ -111,7 +115,7 @@ struct Cli
     width: Option<NonZeroUsize>,
 }
 
-/// The paragraphs a change wrote in the markdown documents.
+/// The paragraphs that a change writes in the documents.
 ///
 /// # Specification
 /// - provides: what the documents reader hands the parse, and the counts the
@@ -127,6 +131,8 @@ struct Written
     passages: Vec<Passage>,
     /// The body's overrides, each with the count it admitted.
     overrides: Vec<Override>,
+    /// The code lines in the comments of the touched Rust sources.
+    code: usize,
 }
 
 /// What a run concluded.
@@ -358,14 +364,14 @@ fn width(cli: &Cli) -> Width
     )
 }
 
-/// The digest of each passage of the head: the passages a run read, and each
-/// paragraph of every markdown document.
+/// The digest of each passage of the head: the passages that a run reads, and
+/// each paragraph of every document.
 ///
 /// # Specification
 /// - requires: `cli.root` is a repository checkout.
 /// - ensures: the digests of `inputs`, with those of the paragraphs that
-///   [`passage::document`] reads from each document [`documents::every`] lists;
-///   no paragraph parses.
+///   [`documents::cut`] reads from each document [`documents::every`] lists; no
+///   paragraph parses.
 /// - provides: what a prune keeps.
 /// - fails: every refusal of [`documents::every`]; [`ProseError::Io`] for a
 ///   document that cannot be read.
@@ -400,7 +406,8 @@ fn head(
             message: error.to_string(),
         })?;
         held.extend(
-            passage::document(Text(&path), Text(&text))
+            documents::cut(Text(&path), Text(&text))
+                .passages
                 .iter()
                 .map(|passage| Digest::of(Text(&passage.text))),
         );
@@ -408,15 +415,15 @@ fn head(
     Ok(held)
 }
 
-/// The paragraphs a change wrote since `base` in the markdown documents it
-/// touched, the overrides of `cli.overrides` applied.
+/// The paragraphs that a change writes since `base` in the documents it
+/// touches, with the overrides of `cli.overrides` applied.
 ///
 /// # Specification
 /// - requires: `cli.root` is a repository checkout that holds `base`.
-/// - ensures: the documents [`documents::touched`] lists, each read at the
-///   head; the paragraphs whose digest no paragraph of [`documents::held`]
-///   shares, less those [`mechanical::admit`] admits; each override with its
-///   admitted count.
+/// - ensures: the documents [`documents::touched`] lists, each read at the head
+///   and cut by [`documents::cut`]; the paragraphs whose digest no paragraph of
+///   [`documents::held`] shares, less those [`mechanical::admit`] admits; each
+///   override with its admitted count; the code lines of the cuts at the head.
 /// - provides: the paragraphs [`run`] parses and judges with no ledger.
 /// - fails: every refusal of [`documents::touched`] and [`documents::held`];
 ///   [`ProseError::Io`] for a document or a body that cannot be read;
@@ -438,6 +445,7 @@ fn head(
 ///   refused changes the output.
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::an_override_admits_its_substitution_and_counts_it`
+/// - witness: `tests::cli::a_rust_comment_answers_for_the_paragraphs_its_change_wrote`
 fn written(
     cli: &Cli,
     base: Base<'_>,
@@ -445,13 +453,16 @@ fn written(
 {
     let touched = documents::touched(&cli.root, base)?;
     let mut head = Vec::new();
+    let mut code = 0_usize;
     for path in &touched {
         let full = cli.root.join(path);
         let text = std::fs::read_to_string(&full).map_err(|error| ProseError::Io {
             path: full.clone(),
             message: error.to_string(),
         })?;
-        head.extend(passage::document(Text(path), Text(&text)));
+        let cut = documents::cut(Text(path), Text(&text));
+        head.extend(cut.passages);
+        code = code.saturating_add(cut.code);
     }
     let base_passages = documents::held(&cli.root, base, &touched)?;
     let held: HashSet<Digest> = base_passages
@@ -485,11 +496,12 @@ fn written(
         held: held_count,
         passages,
         overrides,
+        code,
     })
 }
 
-/// Gathers, parses, judges and compares with the ledger, or writes it; with
-/// a base, judges the paragraphs a change wrote in the markdown documents.
+/// Gathers, parses, judges and compares with the ledger, or writes it. With a
+/// base, it judges the paragraphs that a change writes in the documents.
 ///
 /// # Specification
 /// - requires: `cli.python` can import spaCy and `en_core_web_sm` when a
@@ -501,8 +513,10 @@ fn written(
 ///   written paragraph is printed as its parse arrives, before the ledger's
 ///   verdict, and each override is printed with the count it admits beside the
 ///   count it claims. The run prints the passages and words it parsed afresh,
-///   and the outcome is agreed exactly when no finding, stale line or differing
-///   count was printed. The written paragraphs, the ledger's passages and the
+///   and with `--base` the documents touched, the paragraphs kept and written
+///   and the code lines in the comments of the touched Rust sources. The
+///   outcome is agreed exactly when no finding, stale line or differing count
+///   was printed. The written paragraphs, the ledger's passages and the
 ///   diagnostics' advice parse in one [`parse::parse`], in that order. With
 ///   `--prune`, the cache keeps only the parses of [`head`] after the parse,
 ///   and the run prints what the prune kept and removed.
@@ -527,6 +541,7 @@ fn written(
 /// - witness: `tests::cli::a_new_finding_is_refused_with_its_fix`
 /// - witness: `tests::cli::a_stale_line_is_refused_and_written_away_5007`
 /// - witness: `tests::cli::a_document_answers_for_the_paragraphs_its_change_wrote`
+/// - witness: `tests::cli::a_rust_comment_answers_for_the_paragraphs_its_change_wrote`
 /// - witness: `tests::cli::a_prune_keeps_the_head_s_parses_and_removes_the_rest`
 fn run(cli: &Cli) -> Result<Outcome, ProseError>
 {
@@ -571,7 +586,7 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         &cache,
         width(cli),
         |passage, sentences| {
-            if passage.source == Source::Document {
+            if matches!(passage.source, Source::Document | Source::Rust) {
                 for finding in rules::sentences(passage, sentences, &glossary) {
                     print(&mut out, &finding)?;
                     refused = true;
@@ -669,10 +684,11 @@ fn run(cli: &Cli) -> Result<Outcome, ProseError>
         writeln!(
             out,
             "prose: {} document(s) touched since {base}: {} paragraph(s) kept from the base, {} \
-             written and judged",
+             written and judged, {} code line(s) in comments skipped",
             written.touched,
             written.held,
-            written.passages.len()
+            written.passages.len(),
+            written.code
         )
         .map_err(output)?;
     }

@@ -1,6 +1,6 @@
 # gandr-workflow-prose
 
-The sentence rules that need a parse, held over the comments of every tracked gandr source and the rendered diagnostics against a committed ledger of debt, and over each paragraph that a change writes in the markdown documents.
+The sentence rules that need a parse, which bind the comments of every tracked gandr source and the rendered diagnostics against a committed ledger of debt, and each paragraph that a change writes in the markdown documents and the Rust comments.
 
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
@@ -22,7 +22,7 @@ The sentence rules that need a parse, held over the comments of every tracked ga
 
 - `prose --python PATH` compares the findings under the current directory with `corpus/prose.ledger`; `--root DIR` names another repository root.
 - `--write` writes the ledger from the findings instead.
-- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document, with no ledger. [`documents`](src/documents.rs) names the documents it reads and those it leaves out.
+- `--base REV` judges each paragraph that the change wrote since `REV` in a markdown document or in a Rust source's comments, with no ledger. [`documents`](src/documents.rs) names the documents it reads and those it leaves out. [`passage::rust`](src/passage/rust.rs) states the parts of a Rust comment that hold no prose, and the run reports the code lines in comments that it skips.
 - `--override FILE...` reads the `prose-override:` lines of pull request bodies, and [`mechanical`](src/mechanical.rs) states their form and their check. `check:prose` reads the architect's sign-off of each override.
 - `--cache DIR --model NAME` keeps each parse by its passage's digest, so a run parses only the texts that the cache misses. `--prune` removes each parse that the head does not hold, and `--width N` bounds the interpreters of a cold parse.
 - `prose --python PATH --body FILE...` judges the bodies in the files in one parse. [`passage::body`](src/passage.rs) states a body's passages and the lines it leaves unread.
@@ -54,73 +54,9 @@ Each finding prints its file, the line its passage starts on, the rule, the sent
 
 A comment keeps every rule but `STE-5.3`. `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6` bind a corpus source outside the features ledger. A library source and a fixture keep the other comment rules. A document and a diagnostic keep `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-2.1`, `STE-3.5`, `STE-9.3` and `STE-1.2`. A body keeps `STE-3.6`, `STE-3.2`, `STE-3.4`, `STE-6.3`, `STE-5.1`, `STE-5.2`, `STE-8.1` and `STE-4.1`. `STE-5.3` binds a diagnostic, and `STE-5.2` binds its `help:` line.
 
-### Issue 9
+A Rust comment keeps the comment rules but `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6`. `STE-4.3` reads its prose alone, because text inside backticks is code there.
 
-The gate is ASD-STE100 with unrestricted technical vocabulary. A finding names the rule it holds. A reader checks a rule the parse cannot read.
-
-| Item | Gate |
-| ---- | ---- |
-| 1.1 | review: no dictionary in the tree |
-| 1.2 | partial: `STE-1.2` |
-| 1.3 | review: meaning needs a reader |
-| 1.4 | review: a dictionary form is not in the tree |
-| 1.5 | review: a technical category needs an owner |
-| 1.6 | review: a technical noun needs an owner |
-| 1.7 | partial: `STE-1.2` |
-| 1.8 | review: a subject field needs an owner |
-| 1.9 | review: ease needs a reader |
-| 1.10 | review: no slang list in the tree |
-| 1.11 | review: identity needs the document |
-| 1.12 | review: a technical verb needs an owner |
-| 1.13 | partial: `STE-1.2` |
-| 1.14 | review: no spelling map in the tree |
-| 2.1 | gated: `STE-2.1` |
-| 2.2 | review: first form needs document order |
-| 3.1 | review: a dictionary form is not in the tree |
-| 3.2 | partial: `STE-3.2` reads the past, the future and the progressive |
-| 3.3 | review: an adjectival `-ing` needs a reader |
-| 3.4 | partial: `STE-3.4` reads the perfect and a passive after a modal |
-| 3.5 | partial: `STE-3.5` |
-| 3.6 | partial: `STE-3.6` |
-| 3.7 | partial: `STE-1.2` |
-| 4.1 | partial: `STE-4.1` reads a dash before a clause |
-| 4.2 | review: a contraction needs a reader |
-| 4.3 | partial: `STE-4.3` reads a reference in comment prose |
-| 4.4 | review: topic relation needs a reader |
-| 4.5 | review: article use needs a reader |
-| 5.1 | gated: `STE-5.1` |
-| 5.2 | partial: `STE-5.2` reads two imperatives joined by `and` or a comma, and a reader admits two acts at the same time |
-| 5.3 | partial: `STE-5.3` |
-| 5.4 | review: a condition's relevance needs a reader |
-| 5.5 | review: a note's command needs a reader |
-| 6.1 | review: information order needs a reader |
-| 6.2 | review: logical structure needs a reader |
-| 6.3 | gated: `STE-6.3` |
-| 6.4 | partial: `STE-6.4` reads the four paragraphs of a corpus head |
-| 6.5 | partial: `STE-6.5` reads the length of a head's first sentence |
-| 6.6 | partial: `STE-6.6` holds five sentences, and two in an item comment |
-| 7.1 | review: a safety heading needs a reader |
-| 7.2 | review: a safety block needs a reader |
-| 7.3 | review: a risk needs a reader |
-| 8.1 | gated: `STE-8.1` |
-| 8.2 | review: related words need a reader |
-| 8.3 | review: a parenthesis needs a reader |
-| 8.4 | review: a colon in a count needs a reader |
-| 8.5 | review: a parenthesis in a count needs a reader |
-| 8.6 | review: a token class in a count needs a reader |
-| 8.7 | review: a hyphen in a count needs a reader |
-| 9.1 | review: a replacement needs an earlier text |
-| 9.2 | review: a sense needs a dictionary |
-| 9.3 | partial: `STE-9.3` reads a verb with a particle |
-| 9.4 | review: style needs the document |
-| GR-1 | review: `that` needs a reader |
-| GR-2 | review: `with` needs a reader |
-| GR-3 | review: a pronoun needs a reader |
-| GR-4 | review: `this` needs a reader |
-| GR-5 | review: a false friend needs a reader |
-| GR-6 | review: no abbreviation list in the tree |
-| GR-7 | review: no inclusive-language list in the tree |
-| GR-8 | review: a possessive needs a reader |
+[`rules`](src/rules.rs) maps each item of ASD-STE100 issue 9 to its gate.
 
 The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
 
@@ -142,7 +78,7 @@ cargo nextest run -p gandr-workflow-prose
 
 ## Where the detail lives
 
-The crate docs in `src/lib.rs` state the boundaries. `passage` reads the text, `documents` lists the touched documents and reads the base's paragraphs, `mechanical` reads and applies an override, `parse` runs the script, `cache` keeps a parse by its `digest`, `rules` states each rule's clause, `glossary` reads the glossary, and `ledger` keys a finding. `gandr-workflow-debt-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
+The crate docs in `src/lib.rs` state the boundaries. `passage` reads the text, `passage::rust` cuts a Rust source's comments, `documents` lists the touched documents and reads the base's paragraphs, `mechanical` reads and applies an override, `parse` runs the script, `cache` keeps a parse by its `digest`, `rules` states each rule's clause, `glossary` reads the glossary, and `ledger` keys a finding. `gandr-workflow-debt-ledger` reads the ledger, compares the findings with it and writes it. `blake3` digests a sentence and a passage; `serde_json` and `toml` read the parse and the glossary.
 
 ## References
 

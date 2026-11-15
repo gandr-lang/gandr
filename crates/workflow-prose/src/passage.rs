@@ -8,6 +8,9 @@
 //! indented continuation are not paragraphs and are left out: their fragments
 //! are not sentences. A body is the exception: each of its list items is a
 //! passage of its own.
+//!
+//! [`rust`] cuts a Rust source's comments. There each list item is a passage
+//! of its own, as in a body.
 
 extern crate alloc;
 
@@ -18,10 +21,12 @@ use std::path::Path;
 
 use crate::error::ProseError;
 
+pub mod rust;
+
 /// Where a passage was read from.
 ///
 /// # Specification
-/// - provides: the four kinds of text the check reads.
+/// - provides: the five kinds of text the check reads.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Source
 {
@@ -30,6 +35,9 @@ pub enum Source
     /// A markdown document's paragraph: a README or another page the tree
     /// tracks.
     Document,
+    /// A Rust source's comment: a `///`, `//!` or `//` paragraph, or a list
+    /// item.
+    Rust,
     /// A rendered diagnostic's advice.
     Diagnostic,
     /// A pull request's or an issue's body.
@@ -82,6 +90,21 @@ pub struct Passage
     pub source: Source,
     /// The paragraph, its lines joined by single spaces.
     pub text: String,
+}
+
+/// The passages a reader cuts from one file, and the code lines in its
+/// comments that the reader skips.
+///
+/// # Specification
+/// - provides: what a reader hands the parse, and the count of code lines that
+///   the run reports.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Cut
+{
+    /// The passages, in the order of the file.
+    pub passages: Vec<Passage>,
+    /// The code lines in comments that the reader skips.
+    pub code: usize,
 }
 
 /// Whether a corpus source opens on a comment run.
