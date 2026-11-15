@@ -16,6 +16,14 @@ publish.workspace = true
 [build-dependencies]
 bindgen = { workspace = true, default-features = true, features = ["experimental"], optional = true }
 
+# On riscv64 the liburing crate makes its bindings with the bindgen command.
+# The library form of bindgen 0.71.1 gives the floating-point state of
+# `ucontext_t` 16 bytes against 528, so the layout checks refuse the build.
+# The command reads that state whole. `BINDGEN_PATH` names the command.
+# - see: #7720, `.config/riscv64/cross.bash`
+[target.'cfg(all(target_os = "linux", target_arch = "riscv64"))'.dependencies]
+axboe-liburing = { workspace = true, features = ["bindgen-cli"] }
+
 # The ring is the Linux kernel's, so the crate's dependencies are Linux's
 # alone. On another system the crate compiles empty.
 [target.'cfg(target_os = "linux")'.dependencies]
