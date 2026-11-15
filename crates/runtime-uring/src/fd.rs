@@ -28,6 +28,7 @@ where
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd
     {
         match *self {
@@ -44,6 +45,7 @@ impl<T> From<T> for SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     fn from(value: T) -> Self
     {
         Self::Desc(value)
@@ -57,6 +59,7 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     pub fn as_deref(&self) -> SlotDesc<&<T as Deref>::Target>
     where
         T: Deref,
@@ -72,6 +75,7 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     pub const fn as_ref(&self) -> SlotDesc<&T>
     {
         match *self {
@@ -85,6 +89,7 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     pub const fn is_desc(&self) -> Holds
     {
         Holds(matches!(self, &Self::Desc(..)))
@@ -95,6 +100,7 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
+    #[inline]
     pub const fn is_slot(&self) -> Holds
     {
         Holds(matches!(self, &Self::Slot(..)))

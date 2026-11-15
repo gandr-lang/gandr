@@ -36,6 +36,7 @@ pub(crate) mod sys;
 pub use crate::cqe::repr::Cqe16;
 pub use crate::cqe::repr::Cqe32;
 pub use crate::cqueue::CompletionQueue;
+pub use crate::fd::SlotDesc;
 pub use crate::registrar::Registrar;
 pub use crate::ring::IoUring;
 pub use crate::ring::IoUringBuilder;

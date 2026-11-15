@@ -396,6 +396,43 @@ pub mod repr
         {
             self.cqe
         }
+
+        /// The operation's result: a count or a descriptor when it is not
+        /// negative, and the negated error number when it is.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn res(&self) -> i32
+        {
+            self.cqe.res
+        }
+
+        /// The user data that the operation's entry carries.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn user_data(&self) -> u64
+        {
+            self.cqe.user_data
+        }
+
+        /// The kernel's flags of the completion.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        #[inline]
+        pub const fn flags(&self) -> u32
+        {
+            self.cqe.flags
+        }
     }
 
     /// An entry of 32 bytes, borrowed from the completion queue.
