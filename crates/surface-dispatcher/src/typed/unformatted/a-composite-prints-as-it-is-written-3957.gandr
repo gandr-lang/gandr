@@ -1,0 +1,16 @@
+def agrees(
+  A : Type,
+  x : A,
+  y : A,
+  z : A,
+  w : A,
+  p : Path[.A = A](x, y),
+  q : Path[.A = A](y, z),
+  r : Path[.A = A](z, w)
+) -> Path[.A = Path[.A = A](x, w)](compose[5, 7] (chain 3) (p, q, r), Path.step (Path.step p q) r) {
+  Path.here (Path.step (Path.step p q) r)
+}
+
+def alone(A : Type, x : A, y : A, p : Path[.A = A](x, y)) -> Path[.A = Path[.A = A](x, y)](compose[0, 0] (chain 1) p, p) {
+  Path.here p
+}

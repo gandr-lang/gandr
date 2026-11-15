@@ -1,0 +1,49 @@
+[
+  {
+    "name": "#3576: a period across a month's end reads every day, the 30th and 31st among them, and the month before since's",
+    "input": { "since": "2026-09-28", "until": "2026-10-02" },
+    "output": {
+      "days": ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"],
+      "previous": { "since": "2026-08-01", "until": "2026-08-31" }
+    }
+  },
+  {
+    "name": "#3576: a month's first day reads one day, and the month before ends on its own last day",
+    "input": { "since": "2026-03-01", "until": "2026-03-01" },
+    "output": {
+      "days": ["2026-03-01"],
+      "previous": { "since": "2026-02-01", "until": "2026-02-28" }
+    }
+  },
+  {
+    "name": "#3576: January's month before is the previous year's December",
+    "input": { "since": "2027-01-01", "until": "2027-01-02" },
+    "output": {
+      "days": ["2027-01-01", "2027-01-02"],
+      "previous": { "since": "2026-12-01", "until": "2026-12-31" }
+    }
+  },
+  {
+    "name": "#3576: a leap year's February ends on the 29th",
+    "input": { "since": "2028-03-05", "until": "2028-03-05" },
+    "output": {
+      "days": ["2028-03-05"],
+      "previous": { "since": "2028-02-01", "until": "2028-02-29" }
+    }
+  },
+  {
+    "name": "#3576: a day that is no calendar day is refused, not carried into the next month",
+    "input": { "since": "2026-09-31", "until": "2026-10-02" },
+    "fails": true
+  },
+  {
+    "name": "#3576: a date not written YYYY-MM-DD is refused",
+    "input": { "since": "2026-10-1", "until": "2026-10-02" },
+    "fails": true
+  },
+  {
+    "name": "#3576: a period that ends before it starts is refused",
+    "input": { "since": "2026-10-02", "until": "2026-10-01" },
+    "fails": true
+  }
+]
