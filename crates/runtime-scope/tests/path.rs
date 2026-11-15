@@ -18,10 +18,25 @@ use ::std::alloc::System;
 /// The system's allocator, which counts each allocation of a thread.
 struct Counting;
 
-// SAFETY: each method forwards to the system's allocator with the caller's
-// arguments, and the count touches no memory of the allocation.
+/// The allocator face of the count: each call goes to the system's
+/// allocator.
+///
+/// # Safety
+/// - unsafe invariants: each method forwards to the system's allocator with the
+///   caller's arguments, so each block is a block of the system's allocator.
+///   The count touches no memory of a block.
+// SAFETY: the invariants above hold: each body calls `System` with its own
+// arguments, and the count is a cell of the thread.
 unsafe impl GlobalAlloc for Counting
 {
+    /// A block of `layout` from the system's allocator, counted.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Safety
+    /// - unsafe invariants: the caller's, as `GlobalAlloc::alloc` states; the
+    ///   body passes them to `System` whole.
     unsafe fn alloc(
         &self,
         layout: Layout,
@@ -32,6 +47,14 @@ unsafe impl GlobalAlloc for Counting
         unsafe { System.alloc(layout) }
     }
 
+    /// The block back to the system's allocator.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Safety
+    /// - unsafe invariants: the caller's, as `GlobalAlloc::dealloc` states; the
+    ///   body passes them to `System` whole.
     unsafe fn dealloc(
         &self,
         ptr: *mut u8,
@@ -43,6 +66,14 @@ unsafe impl GlobalAlloc for Counting
         unsafe { System.dealloc(ptr, layout) }
     }
 
+    /// The block grown or shrunk by the system's allocator, counted.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Safety
+    /// - unsafe invariants: the caller's, as `GlobalAlloc::realloc` states; the
+    ///   body passes them to `System` whole.
     unsafe fn realloc(
         &self,
         ptr: *mut u8,

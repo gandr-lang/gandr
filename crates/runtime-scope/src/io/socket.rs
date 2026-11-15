@@ -170,8 +170,7 @@ pub(crate) mod test
         ///
         /// # Cost
         ///
-        /// - allocation: the buffer's bytes in the region, the test's lent
-        ///   memory
+        /// - allocation: the buffer's bytes in the region, setup
         pub fn lend<'region>(
             region: &'region ::gandr_kernel_data::Region<'_, (), ::alloc::alloc::Global>
         ) -> Buf<'region>
