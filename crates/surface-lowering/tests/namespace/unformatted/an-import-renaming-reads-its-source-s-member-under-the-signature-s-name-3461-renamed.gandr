@@ -1,0 +1,2 @@
+import "./base.gandr"{import} : Older renaming {{ reply as answer, label as tag }} ;
+def relayed = {read} ;

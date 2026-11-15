@@ -1,0 +1,26 @@
+--- base
++++ theirs
+@@ -142,6 +142,7 @@
+   { rule = "host_escape", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+   { rule = "if_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
+   { rule = "import_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
++  { rule = "index_expression", reason = "sugar the lowering elaborates away: a view method's body `self[e]` answers the place's index `e`, the term the printer writes, and the lowering refuses an index anywhere else (`OutOfFragment`)" },
+   { rule = "instantiation.direction.descent", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+   { rule = "instantiation.direction.productivity", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+   { rule = "instantiation.explicit", reason = "a recursive call's claim: the lowering consumes it into the recursion check, and core's call keeps no claim" },
+@@ -154,6 +155,7 @@
+   { rule = "literal_pattern", reason = "a pattern: core keeps none; a case keeps an arm's constructor or summand and its binders, written as `constructor_pattern`, `labelled_sum_pattern`, `telescope_pattern` and `identifier.pattern`" },
+   { rule = "manifest_sort", reason = "a binding read only as a `manifest_type`'s right operand: the lowering files its sort against the model type, so no core node carries it" },
+   { rule = "manifest_type", reason = "sugar the lowering elaborates away: a manifest model type lowers to the record of the theory's other components, which the printer writes as `telescope_type`" },
++  { rule = "moded_type", reason = "a deduced receiver's mode: the lowering erases the mode variable from the telescope and reads `self`'s type plain, and refuses a moded type anywhere else (`StrayReceiverMode`), so no core type carries it" },
+   { rule = "module_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+   { rule = "module_definition_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+   { rule = "module_type_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+@@ -180,6 +182,7 @@
+   { rule = "union_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
+   { rule = "variable_expansion", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+   { rule = "variable_name", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
++  { rule = "view_expression", reason = "sugar the lowering elaborates away: `s.f(…) as w { … }` lowers to the access of the place the method answers, which the printer writes as `access_expression`" },
+   { rule = "wildcard", reason = "the lowering reads `_` as an unnamed binder, and the printer names every binder it opens" },
+   { rule = "world_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+ ]
