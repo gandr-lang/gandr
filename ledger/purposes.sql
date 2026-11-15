@@ -2705,6 +2705,7 @@ INSERT INTO purpose VALUES('surface-dispatcher','package::Differing','enum','Wha
 INSERT INTO purpose VALUES('surface-dispatcher','package::Field','enum','A field of the `Package` model a manifest records.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Held','trait','A file the checker writes from a model: its opening line, its render, and how reconciling answers an absent, edited or differing file.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Identity','struct','What a package is: its address over its dependencies'' addresses, and the key of the paths its root exports.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','package::Library','enum','What a package is to the checker by its model''s name: the standard library, or another package.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::MANIFEST','constant','The file name of the manifest the checker writes beside a package''s source.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::Manifest','struct','What a package''s model states for its manifest: its name, its version and the inert fields beside them, and its modules.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','package::ManifestFault','enum','Why a manifest was not reconciled: it was edited by hand, or could not be read or written.',NULL,'fits','sound',NULL);

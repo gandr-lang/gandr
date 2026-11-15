@@ -155,6 +155,9 @@ pub const MANIFEST: &str = "package.gandr.toml";
 /// under, as a model writes it.
 const SOURCES: &str = "sources";
 
+/// The `Package` model's field naming the package, as a model writes it.
+const NAME: &str = "name";
+
 /// The line that opens a manifest the checker wrote.
 const WRITTEN: &str = "# Written by `gandr check` from the package's `Package` model: edit the \
                        model, not this file.";
@@ -165,6 +168,16 @@ const WORKSPACE_WRITTEN: &str = "# Written by `gandr check` from the workspace's
 
 /// The prefix of the header line that carries the digest of the body.
 const DIGEST: &str = "# blake3: ";
+
+/// What a package is to the checker, by its model's name (#7635).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Library
+{
+    /// The standard library: its model writes `def name = "std";`.
+    Standard,
+    /// A package named otherwise, or named nowhere.
+    Other,
+}
 
 /// A package: its package source, the root its manifest is written at, and
 /// the directory its modules sit under.
@@ -182,6 +195,9 @@ pub struct Package
     /// The string literal the model's `sources` writes, as discovery read it
     /// off the package source's tokens; none when it writes none.
     stated: Option<PathBuf>,
+    /// The string literal the model's `name` writes, as discovery read it off
+    /// the same tokens; none when it writes none.
+    name: Option<String>,
 }
 
 impl Package
@@ -196,14 +212,19 @@ impl Package
     ///   a directory, else the directory holding it — that holds [`PACKAGE`]
     ///   names the package: that directory is its root and that file its
     ///   package source. Its sources are the directory the string literal its
-    ///   model's `sources` writes names below the root, read as
-    ///   [`stated_sources`] reads it, when that path stays inside the root; the
-    ///   root itself otherwise. Each path is canonical. `Unpackaged` when no
-    ///   directory up to the filesystem's root holds one, or `from` cannot be
+    ///   model's `sources` writes names below the root, read as [`Stated::of`]
+    ///   reads it, when that path stays inside the root; the root itself
+    ///   otherwise. Its name is the literal its model's `name` writes, read in
+    ///   the same scan. Each path is canonical. `Unpackaged` when no directory
+    ///   up to the filesystem's root holds one, or `from` cannot be
     ///   canonicalized.
     /// - provides: the root search every verb run without a path reads.
     /// - fails: an unpackaged path is the typed absence.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the canonical path, the package's paths and its name,
+    ///   setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a leaf two directories below a package's `src`, the
@@ -239,9 +260,11 @@ impl Package
         for directory in start.ancestors() {
             let source = directory.join(PACKAGE);
             if source.is_file() {
-                let stated = std::fs::read_to_string(&source)
-                    .ok()
-                    .and_then(|text| stated_sources(SourceFragment::from(text.as_str())));
+                let Stated {
+                    sources: stated,
+                    name,
+                } = std::fs::read_to_string(&source)
+                    .map_or_default(|text| Stated::of(SourceFragment::from(text.as_str())));
                 let sources = stated
                     .as_deref()
                     .and_then(|stated| inside(directory, stated))
@@ -251,6 +274,7 @@ impl Package
                     source,
                     sources,
                     stated,
+                    name,
                 });
             }
         }
@@ -303,6 +327,23 @@ impl Package
     pub fn stated(&self) -> Option<&Path>
     {
         self.stated.as_deref()
+    }
+
+    /// What the package is to the checker: the standard library when its
+    /// model writes `def name = "std";`, wherever the package stands (#7635).
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn library(&self) -> Library
+    {
+        if self.name.as_deref() == Some(lock::STANDARD) {
+            Library::Standard
+        }
+        else {
+            Library::Other
+        }
     }
 
     /// The path of the package's manifest, [`MANIFEST`] at its root.
@@ -364,86 +405,131 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// The string literal `source`, a package source, writes for its `Package`
-/// model's `sources`, as a path: the string after `def sources =` directly in
-/// the block of the module named `Package`, the module [`Manifest::of`]
-/// reads each field of. The block is braced or laid out: the labeler writes a
-/// laid-out block's brackets as tokens of their own, which spell nothing.
-/// None when that module writes none, or writes an escape.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: read off the labeler's tokens, the spaces and comments skipped,
-///   the first `def sources = "<text>"` at depth one of the block after the
-///   first `module Package`, braced or laid out; its `<text>` as written, empty
-///   for `""`; none when the string holds an escape or the form is another.
-/// - provides: the directory discovery reads before any source is checked.
-/// - fails: never; an unread field is none.
-/// - panics: none.
-/// - executable: none — the clause restates the scan.
-///
-/// # Adequacy
-/// - hypothesis: L3 — `src`, `.` and the empty string read as written, in a
-///   braced block and in a laid-out one; a computed `sources`, an escaped one
-///   and one in a nested module read none.
-/// - witness: `tests::package::a_model_s_sources_is_the_literal_discovery_reads_4916`
-fn stated_sources(source: SourceFragment<'_>) -> Option<PathBuf>
+/// The string literals a package source writes for the fields of its
+/// `Package` model that discovery reads before any source is checked.
+#[derive(Debug, Default)]
+struct Stated
 {
-    let tokens: Vec<(Lexeme, &str)> = label(source)
-        .iter()
-        .filter(|token| token.lexeme != Lexeme::Space)
-        .map(|token| (token.lexeme, <&str>::from(token.text(&source))))
-        .collect();
-    let spelled = |at: usize| tokens.get(at).map(|&(_, spelled)| spelled);
-    let opens = |at: usize| {
-        tokens
-            .get(at)
-            .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutOpen || spelled == "{")
-    };
-    let closes = |at: usize| {
-        tokens
-            .get(at)
-            .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutClose || spelled == "}")
-    };
-    let named = (0 .. tokens.len()).find(|&at| {
-        spelled(at) == Some("module") && spelled(at.saturating_add(1)) == Some("Package")
-    })?;
-    let open = (named .. tokens.len()).find(|&at| opens(at))?;
-    let mut depth = 0_usize;
-    for at in open .. tokens.len() {
-        if opens(at) {
-            depth = depth.saturating_add(1);
-            continue;
-        }
-        if closes(at) {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                return None;
+    /// What the model's `sources` writes, as a path.
+    sources: Option<PathBuf>,
+    /// What the model's `name` writes.
+    name: Option<String>,
+}
+
+impl Stated
+{
+    /// The string literals `source`, a package source, writes for its
+    /// `Package` model's `sources` and `name`: for each, the string after
+    /// `def <field> =` directly in the block of the module named `Package`, the
+    /// module [`Manifest::of`] reads each field of. The block is braced or laid
+    /// out: the labeler writes a laid-out block's brackets as tokens of their
+    /// own, which spell nothing. None for a field that module writes no string
+    /// for, or writes an escape in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: read off the labeler's tokens, the spaces and comments
+    ///   skipped, for each field the first `def <field> = "<text>"` at depth
+    ///   one of the block after the first `module Package`, braced or laid out;
+    ///   its `<text>` as written, empty for `""`; none when the string holds an
+    ///   escape or the form is another.
+    /// - provides: the directory and the name discovery reads before any source
+    ///   is checked.
+    /// - fails: never; an unread field is none.
+    /// - panics: none.
+    /// - executable: none — the clause restates the scan.
+    ///
+    /// # Cost
+    /// - allocation: the package source's tokens, setup
+    /// - allocation: the stated sources and name, setup
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `src`, `.` and the empty string read as written, in a
+    ///   braced block and in a laid-out one; a computed `sources`, an escaped
+    ///   one and one in a nested module read none; the standard library's model
+    ///   reads its name `std`.
+    /// - witness: `tests::package::a_model_s_sources_is_the_literal_discovery_reads_4916`
+    /// - witness: `tests::package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635`
+    fn of(source: SourceFragment<'_>) -> Self
+    {
+        let tokens: Vec<(Lexeme, &str)> = label(source)
+            .iter()
+            .filter(|token| token.lexeme != Lexeme::Space)
+            .map(|token| (token.lexeme, <&str>::from(token.text(&source))))
+            .collect();
+        let spelled = |at: usize| tokens.get(at).map(|&(_, spelled)| spelled);
+        let opens = |at: usize| {
+            tokens
+                .get(at)
+                .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutOpen || spelled == "{")
+        };
+        let closes = |at: usize| {
+            tokens
+                .get(at)
+                .is_some_and(|&(lexeme, spelled)| lexeme == Lexeme::LayoutClose || spelled == "}")
+        };
+        let literal = |quoted: usize| match (
+            tokens.get(quoted),
+            tokens.get(quoted.saturating_add(1)),
+            tokens.get(quoted.saturating_add(2)),
+        ) {
+            (Some(&(Lexeme::Quote, _)), Some(&(Lexeme::Quote, _)), _) => Some(""),
+            (
+                Some(&(Lexeme::Quote, _)),
+                Some(&(Lexeme::StringFragment, written)),
+                Some(&(Lexeme::Quote, _)),
+            ) => Some(written),
+            _ => None,
+        };
+        let mut stated = Self::default();
+        let Some(named) = (0 .. tokens.len()).find(|&at| {
+            spelled(at) == Some("module") && spelled(at.saturating_add(1)) == Some("Package")
+        })
+        else {
+            return stated;
+        };
+        let Some(open) = (named .. tokens.len()).find(|&at| opens(at))
+        else {
+            return stated;
+        };
+        let (mut sources_read, mut name_read) = (false, false);
+        let mut depth = 0_usize;
+        for at in open .. tokens.len() {
+            if opens(at) {
+                depth = depth.saturating_add(1);
+                continue;
             }
-            continue;
-        }
-        if spelled(at) == Some("def")
-            && depth == 1
-            && spelled(at.saturating_add(1)) == Some(SOURCES)
-            && spelled(at.saturating_add(2)) == Some("=")
-        {
+            if closes(at) {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+                continue;
+            }
+            if spelled(at) != Some("def")
+                || depth != 1
+                || spelled(at.saturating_add(2)) != Some("=")
+            {
+                continue;
+            }
             let quoted = at.saturating_add(3);
-            return match (
-                tokens.get(quoted),
-                tokens.get(quoted.saturating_add(1)),
-                tokens.get(quoted.saturating_add(2)),
-            ) {
-                (Some(&(Lexeme::Quote, _)), Some(&(Lexeme::Quote, _)), _) => Some(PathBuf::new()),
-                (
-                    Some(&(Lexeme::Quote, _)),
-                    Some(&(Lexeme::StringFragment, written)),
-                    Some(&(Lexeme::Quote, _)),
-                ) => Some(PathBuf::from(written)),
-                _ => None,
-            };
+            match spelled(at.saturating_add(1)) {
+                Some(SOURCES) if !sources_read => {
+                    sources_read = true;
+                    stated.sources = literal(quoted).map(PathBuf::from);
+                },
+                Some(NAME) if !name_read => {
+                    name_read = true;
+                    stated.name = literal(quoted).map(String::from);
+                },
+                _ => {},
+            }
+            if sources_read && name_read {
+                break;
+            }
         }
+        stated
     }
-    None
 }
 
 /// The directory `stated`, a relative path, names below `root`; none when it

@@ -168,6 +168,7 @@ use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::memo::Memo;
+use crate::package::Library;
 use crate::package::Package;
 use crate::package::lock;
 use crate::package::lock::Coordinate;
@@ -483,6 +484,9 @@ impl ImportPath
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
     ///
+    /// # Cost
+    /// - allocation: the named file's path, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a module path imported from a source under `src/text`
     ///   names its file under the package's sources, `src`, and a quoted path
@@ -537,8 +541,11 @@ impl ImportPath
                 }
             },
             ImportBase::Root => match Package::discover(directory) {
-                Maybe::Present(package) => self.in_package(package.sources()),
-                Maybe::Absent(_) => self.in_package(directory),
+                Maybe::Present(package) => {
+                    let standard = (package.library() == Library::Standard).then_some(&package);
+                    self.in_package(package.sources(), standard)
+                },
+                Maybe::Absent(_) => self.in_package(directory, None),
             },
         }
     }
@@ -567,27 +574,38 @@ impl ImportPath
 
     /// The file the module path names under `sources`: under them when its
     /// head names a source or a directory there, else under the standard
-    /// library for `std`.
+    /// library for `std`: `standard` itself when the importer stands in it
+    /// (#7635), else the standard library [`lock::standard`] names.
     ///
     /// # Specification
     /// - requires: the path's file is a module path's file, `hello.gandr` or
-    ///   `hello/text/greet.gandr`.
+    ///   `hello/text/greet.gandr`; `standard` is the importer's package when
+    ///   [`Package::library`] names it [`Library::Standard`], and none
+    ///   otherwise.
     /// - ensures: [`Named::File`] of the file under `sources` when its head —
     ///   the first segment, the stem of a file alone — names a `.gandr` file or
-    ///   a directory there; else [`Named::File`] of [`lock::standard`]'s file
-    ///   for the head `std`; [`Named::Unlocked`] of the file under `sources`
+    ///   a directory there; else, for the head `std`, [`Named::File`] of the
+    ///   file in `standard` when it is some, and of [`lock::standard`]'s file
+    ///   when it names one; [`Named::Unlocked`] of the file under `sources`
     ///   otherwise.
     /// - provides: the one rule a module path's head reads.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause reads the file system again.
     ///
+    /// # Cost
+    /// - allocation: the named file's path, setup
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the witnesses of [`ImportPath::resolved`].
+    /// - hypothesis: L3 — the witnesses of [`ImportPath::resolved`], and a copy
+    ///   of the standard library elsewhere, whose `std.rand` import reads the
+    ///   copy's own `rand.gandr`.
     /// - witness: `tests::package::a_lock_is_written_once_and_reads_alike_from_anywhere_3072`
+    /// - witness: `tests::package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635`
     fn in_package(
         &self,
         sources: &Path,
+        standard: Option<&Package>,
     ) -> Named
     {
         let local = sources.join(&self.file);
@@ -606,10 +624,13 @@ impl ImportPath
         if sources.join(head).with_extension("gandr").exists() || sources.join(head).is_dir() {
             return Named::File(local);
         }
-        (head == lock::STANDARD)
-            .then(|| lock::standard(rest))
-            .flatten()
-            .map_or(Named::Unlocked(local), Named::File)
+        if head != lock::STANDARD {
+            return Named::Unlocked(local);
+        }
+        standard.map_or_else(
+            || lock::standard(rest).map_or(Named::Unlocked(local), Named::File),
+            |own| Named::File(lock::within(own, rest)),
+        )
     }
 }
 
@@ -1245,38 +1266,54 @@ impl Laid
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the source's name and its home, setup
 fn sourced(
     source: UnitSource,
     path: &Path,
 ) -> UnitSource
 {
-    match lock::standard_module(path) {
+    let package = match Package::discover(path) {
+        Maybe::Present(package) => Some(package),
+        Maybe::Absent(_) => None,
+    };
+    match package
+        .as_ref()
+        .and_then(|package| lock::standard_module_of(package, path))
+    {
         Some(module) => {
             let module = SurfaceName::from(module.as_str());
             source.named(module).homed(module)
         },
         None => source.named(SurfaceName::from(
-            within_package(path).to_string_lossy().as_ref(),
+            within_package(path, package.as_ref())
+                .to_string_lossy()
+                .as_ref(),
         )),
     }
 }
 
-/// The path of the file at the canonical `path` below the root of the
-/// package [`Package::discover`] finds from it. A source in no package is the
-/// root module of its own, as an import resolves it, so its path within its
-/// package is its file's name.
+/// The path of the file at the canonical `path` below the root of
+/// `package`, the package [`Package::discover`] finds from it. A source in no
+/// package is the root module of its own, as an import resolves it, so its
+/// path within its package is its file's name.
 ///
 /// # Specification
 /// trivial.
-fn within_package(path: &Path) -> PathBuf
+///
+/// # Cost
+/// - allocation: the path below the package's root, setup
+fn within_package(
+    path: &Path,
+    package: Option<&Package>,
+) -> PathBuf
 {
     let own = || path.file_name().map_or_else(PathBuf::new, PathBuf::from);
-    match Package::discover(path) {
-        Maybe::Present(package) => path
-            .strip_prefix(package.root())
-            .map_or_else(|_outside| own(), Path::to_path_buf),
-        Maybe::Absent(_) => own(),
-    }
+    package.map_or_else(own, |package| {
+        path.strip_prefix(package.root())
+            .map_or_else(|_outside| own(), Path::to_path_buf)
+    })
 }
 
 /// The sources `given`, in the order given, grouped into the import-connected
