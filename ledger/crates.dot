@@ -74,6 +74,7 @@ digraph crates {
     "runtime-emitter";
     "runtime-net";
     "runtime-stencils";
+    "runtime-uring";
   }
   subgraph "cluster_surface" {
     label = "surface";

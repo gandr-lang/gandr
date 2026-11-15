@@ -80,11 +80,16 @@ jobs:
         run: ln -sfn "$HOME/$GANDR_RISCV64_KEPT" "$GANDR_RISCV64_TARGET_DIR"
       - name: add the riscv64 standard library
         run: rustup target add "$GANDR_RISCV64_TARGET"
+      # The archive leaves out `gandr-runtime-uring`. Its liburing crate runs
+      # bindgen for the target, and bindgen sizes the riscv64 floating-point
+      # state of `ucontext_t` wrong (`__riscv_mc_fp_state` 16 bytes against
+      # 528), so its layout checks refuse the build. #7638 takes that crate
+      # out, and the exclusion leaves with it (#7633).
       - name: build the test archive
         env:
           CARGO_TARGET_DIR: ${{ env.GANDR_RISCV64_TARGET_DIR }}
           CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER: riscv64-linux-gnu-gcc
-        run: cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
+        run: cargo nextest archive --manifest-path "$GANDR_RISCV64_SOURCE/Cargo.toml" --workspace --exclude gandr-runtime-uring --target "$GANDR_RISCV64_TARGET" --profile riscv64 --archive-file "$RUNNER_TEMP/$GANDR_RISCV64_ARCHIVE"
       # The archive is zstd already, so the upload stores it as it is.
       - name: upload the test archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -181,7 +181,14 @@ jobs:
     # placement compile and run only there, and this run covers them.
     runs-on: ubuntu-latest
     permissions: *image-read-permissions
-    container: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+    # The tests of `gandr-runtime-uring` set up an `io_uring` ring, and
+    # Docker's default seccomp profile refuses `io_uring_setup` with EPERM.
+    # Docker reads a profile only from a file on the host, before the
+    # checkout, so no file of the tree can reach it. The jobs that run the
+    # crate's tests drop the filter, and only they do (#7633).
+    container:
+      image: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
+      options: --security-opt seccomp=unconfined
     timeout-minutes: 45
     strategy:
       fail-fast: false

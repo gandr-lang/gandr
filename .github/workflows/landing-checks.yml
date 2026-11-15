@@ -1207,7 +1207,14 @@ jobs:
     if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
-    container: *ci-image # zizmor: ignore[unpinned-images]
+    # The tests of `gandr-runtime-uring` set up an `io_uring` ring, and
+    # Docker's default seccomp profile refuses `io_uring_setup` with EPERM.
+    # Docker reads a profile only from a file on the host, before the
+    # checkout, so no file of the tree can reach it. The jobs that run the
+    # crate's tests drop the filter, and only they do (#7633).
+    container: &ci-test-image
+      image: *ci-image # zizmor: ignore[unpinned-images]
+      options: --security-opt seccomp=unconfined
     timeout-minutes: 30
     strategy: &enforcing-shards
       fail-fast: false
@@ -1936,7 +1943,7 @@ jobs:
       contents: read
       packages: read
       actions: read
-    container: *ci-image # zizmor: ignore[unpinned-images]
+    container: *ci-test-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 15
     outputs:
       comment: ${{ steps.changed.outcome == 'success' }}
@@ -2041,7 +2048,7 @@ jobs:
       issues: write
       packages: read
       actions: read
-    container: *ci-image # zizmor: ignore[unpinned-images]
+    container: *ci-test-image # zizmor: ignore[unpinned-images]
     timeout-minutes: 14
     env:
       CI_BUILD_STATE: cargo-test-plain-only

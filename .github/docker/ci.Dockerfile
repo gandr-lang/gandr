@@ -25,8 +25,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 # mold, which `.cargo/config.toml` names for every Linux build. git2's
 # openssl-sys needs pkg-config and libssl-dev. Cargo Git sources need git.
 # The coverage upload verifies the Codecov uploader's signature with gpg.
+# The liburing crate of `gandr-runtime-uring` runs bindgen in its build, which
+# needs libclang-dev, until #7638 takes that crate out.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git build-essential mold pkg-config libssl-dev zstd gpg \
+    && apt-get install -y --no-install-recommends ca-certificates curl git build-essential mold pkg-config libssl-dev zstd gpg libclang-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build tools as UID 1000. Job steps run as root to write runner-owned mounts.
