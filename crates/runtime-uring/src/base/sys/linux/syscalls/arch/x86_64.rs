@@ -2,16 +2,16 @@
 
 use core::arch::asm;
 
-use crate::sys::linux::syscalls::registers::A0;
-use crate::sys::linux::syscalls::registers::A1;
-use crate::sys::linux::syscalls::registers::A2;
-use crate::sys::linux::syscalls::registers::A3;
-use crate::sys::linux::syscalls::registers::A4;
-use crate::sys::linux::syscalls::registers::A5;
-use crate::sys::linux::syscalls::registers::ArgReg;
-use crate::sys::linux::syscalls::registers::R0;
-use crate::sys::linux::syscalls::registers::RetReg;
-use crate::sys::linux::syscalls::registers::SyscallNumber;
+use crate::base::sys::linux::syscalls::registers::A0;
+use crate::base::sys::linux::syscalls::registers::A1;
+use crate::base::sys::linux::syscalls::registers::A2;
+use crate::base::sys::linux::syscalls::registers::A3;
+use crate::base::sys::linux::syscalls::registers::A4;
+use crate::base::sys::linux::syscalls::registers::A5;
+use crate::base::sys::linux::syscalls::registers::ArgReg;
+use crate::base::sys::linux::syscalls::registers::R0;
+use crate::base::sys::linux::syscalls::registers::RetReg;
+use crate::base::sys::linux::syscalls::registers::SyscallNumber;
 
 #[inline]
 pub(crate) unsafe fn syscall2(
@@ -26,10 +26,12 @@ pub(crate) unsafe fn syscall2(
     let a1 = unsafe { a1.into_asm() };
     unsafe {
         asm!(
-            "ecall",
-            in("a7") nr,
-            inlateout("a0") a0 => r0,
-            in("a1") a1,
+            "syscall",
+            inlateout("rax") nr => r0,
+            in("rdi") a0,
+            in("rsi") a1,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }
@@ -53,12 +55,14 @@ pub(crate) unsafe fn syscall4_readonly(
     let a3 = unsafe { a3.into_asm() };
     unsafe {
         asm!(
-            "ecall",
-            in("a7") nr,
-            inlateout("a0") a0 => r0,
-            in("a1") a1,
-            in("a2") a2,
-            in("a3") a3,
+            "syscall",
+            inlateout("rax") nr => r0,
+            in("rdi") a0,
+            in("rsi") a1,
+            in("rdx") a2,
+            in("r10") a3,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags, readonly)
         );
     }
@@ -86,14 +90,16 @@ pub(crate) unsafe fn syscall6(
     let a5 = unsafe { a5.into_asm() };
     unsafe {
         asm!(
-            "ecall",
-            in("a7") nr,
-            inlateout("a0") a0 => r0,
-            in("a1") a1,
-            in("a2") a2,
-            in("a3") a3,
-            in("a4") a4,
-            in("a5") a5,
+            "syscall",
+            inlateout("rax") nr => r0,
+            in("rdi") a0,
+            in("rsi") a1,
+            in("rdx") a2,
+            in("r10") a3,
+            in("r8") a4,
+            in("r9") a5,
+            lateout("rcx") _,
+            lateout("r11") _,
             options(nostack, preserves_flags)
         );
     }

@@ -11,16 +11,16 @@
 
 use core::arch::asm;
 
-use crate::sys::linux::syscalls::registers::A0;
-use crate::sys::linux::syscalls::registers::A1;
-use crate::sys::linux::syscalls::registers::A2;
-use crate::sys::linux::syscalls::registers::A3;
-use crate::sys::linux::syscalls::registers::A4;
-use crate::sys::linux::syscalls::registers::A5;
-use crate::sys::linux::syscalls::registers::ArgReg;
-use crate::sys::linux::syscalls::registers::R0;
-use crate::sys::linux::syscalls::registers::RetReg;
-use crate::sys::linux::syscalls::registers::SyscallNumber;
+use crate::base::sys::linux::syscalls::registers::A0;
+use crate::base::sys::linux::syscalls::registers::A1;
+use crate::base::sys::linux::syscalls::registers::A2;
+use crate::base::sys::linux::syscalls::registers::A3;
+use crate::base::sys::linux::syscalls::registers::A4;
+use crate::base::sys::linux::syscalls::registers::A5;
+use crate::base::sys::linux::syscalls::registers::ArgReg;
+use crate::base::sys::linux::syscalls::registers::R0;
+use crate::base::sys::linux::syscalls::registers::RetReg;
+use crate::base::sys::linux::syscalls::registers::SyscallNumber;
 
 #[inline]
 pub(crate) unsafe fn syscall2(

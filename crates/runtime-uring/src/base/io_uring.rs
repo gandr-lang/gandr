@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod test
 {
-    use crate::sys::linux::uapi::arch::io_uring_params;
-    use crate::sys::linux::uapi::io_uring::io_uring_setup;
+    use crate::base::sys::linux::uapi::arch::io_uring_params;
+    use crate::base::sys::linux::uapi::io_uring::io_uring_setup;
 
     #[test]
     fn setup() -> std::io::Result<()>

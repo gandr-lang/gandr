@@ -10,13 +10,13 @@ use ::std::os::fd::FromRawFd as _;
 use ::std::os::fd::OwnedFd;
 use ::std::os::fd::RawFd;
 
-use crate::sys::linux::errno::Errno;
-use crate::sys::linux::syscalls::registers::ArgNumber;
-use crate::sys::linux::syscalls::registers::ArgReg;
-use crate::sys::linux::syscalls::registers::Opaque;
-use crate::sys::linux::syscalls::registers::R0;
-use crate::sys::linux::syscalls::registers::RetNumber;
-use crate::sys::linux::syscalls::registers::RetReg;
+use crate::base::sys::linux::errno::Errno;
+use crate::base::sys::linux::syscalls::registers::ArgNumber;
+use crate::base::sys::linux::syscalls::registers::ArgReg;
+use crate::base::sys::linux::syscalls::registers::Opaque;
+use crate::base::sys::linux::syscalls::registers::R0;
+use crate::base::sys::linux::syscalls::registers::RetNumber;
+use crate::base::sys::linux::syscalls::registers::RetReg;
 
 #[inline]
 pub(crate) const fn raw_arg<'arg, Num>(raw: *mut Opaque) -> ArgReg<'arg, Num>
@@ -78,13 +78,13 @@ where
 }
 
 #[inline]
-pub(crate) fn ret_c_uint(raw: RetReg<R0>) -> crate::io::Result<::core::ffi::c_uint>
+pub(crate) fn ret_c_uint(raw: RetReg<R0>) -> crate::base::io::Result<::core::ffi::c_uint>
 {
     try_decode_c_uint(raw)
 }
 
 #[inline]
-pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::io::Result<OwnedFd>
+pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::base::io::Result<OwnedFd>
 {
     let raw_fd = unsafe { try_decode_raw_fd(raw) }?;
     let own_fd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
@@ -92,7 +92,7 @@ pub(crate) unsafe fn ret_owned_fd(raw: RetReg<R0>) -> crate::io::Result<OwnedFd>
 }
 
 #[inline]
-pub(crate) fn try_decode_c_uint<Num>(raw: RetReg<Num>) -> crate::io::Result<::core::ffi::c_uint>
+pub(crate) fn try_decode_c_uint<Num>(raw: RetReg<Num>) -> crate::base::io::Result<::core::ffi::c_uint>
 where
     Num: RetNumber,
 {
@@ -103,7 +103,7 @@ where
 }
 
 #[inline]
-pub(crate) unsafe fn try_decode_raw_fd<Num>(raw: RetReg<Num>) -> crate::io::Result<RawFd>
+pub(crate) unsafe fn try_decode_raw_fd<Num>(raw: RetReg<Num>) -> crate::base::io::Result<RawFd>
 where
     Num: RetNumber,
 {

@@ -4,28 +4,28 @@ use ::std::os::fd::AsRawFd as _;
 use ::std::os::fd::BorrowedFd;
 use ::std::os::fd::OwnedFd;
 
-use crate::sys::linux::syscalls::convert::by_mut;
-use crate::sys::linux::syscalls::convert::c_uint;
-use crate::sys::linux::syscalls::convert::pass_usize;
-use crate::sys::linux::syscalls::convert::raw_arg;
-use crate::sys::linux::syscalls::convert::raw_fd;
-use crate::sys::linux::syscalls::convert::ret_c_uint;
-use crate::sys::linux::syscalls::convert::ret_owned_fd;
-use crate::sys::linux::syscalls::registers::SyscallNumber;
-use crate::sys::linux::syscalls::strategy::syscall2;
-use crate::sys::linux::syscalls::strategy::syscall4_readonly;
-use crate::sys::linux::syscalls::strategy::syscall6;
-use crate::sys::linux::uapi::arch::__NR_io_uring_enter;
-use crate::sys::linux::uapi::arch::__NR_io_uring_register;
-use crate::sys::linux::uapi::arch::__NR_io_uring_setup;
-use crate::sys::linux::uapi::arch::io_uring_params;
+use crate::base::sys::linux::syscalls::convert::by_mut;
+use crate::base::sys::linux::syscalls::convert::c_uint;
+use crate::base::sys::linux::syscalls::convert::pass_usize;
+use crate::base::sys::linux::syscalls::convert::raw_arg;
+use crate::base::sys::linux::syscalls::convert::raw_fd;
+use crate::base::sys::linux::syscalls::convert::ret_c_uint;
+use crate::base::sys::linux::syscalls::convert::ret_owned_fd;
+use crate::base::sys::linux::syscalls::registers::SyscallNumber;
+use crate::base::sys::linux::syscalls::strategy::syscall2;
+use crate::base::sys::linux::syscalls::strategy::syscall4_readonly;
+use crate::base::sys::linux::syscalls::strategy::syscall6;
+use crate::base::sys::linux::uapi::arch::__NR_io_uring_enter;
+use crate::base::sys::linux::uapi::arch::__NR_io_uring_register;
+use crate::base::sys::linux::uapi::arch::__NR_io_uring_setup;
+use crate::base::sys::linux::uapi::arch::io_uring_params;
 
 /// # Errors
 #[inline]
 pub fn io_uring_setup(
     entries: u32,
     params: &mut io_uring_params,
-) -> crate::io::Result<OwnedFd>
+) -> crate::base::io::Result<OwnedFd>
 {
     let nr = SyscallNumber::new(__NR_io_uring_setup);
     let entries = c_uint(entries);
@@ -41,7 +41,7 @@ pub unsafe fn io_uring_register(
     opcode: u32,
     arg: *const ::core::ffi::c_void,
     nr_args: u32,
-) -> crate::io::Result<u32>
+) -> crate::base::io::Result<u32>
 {
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
@@ -67,7 +67,7 @@ pub unsafe fn io_uring_register_with(
     flags: u32,
     arg: *const ::core::ffi::c_void,
     nr_args: u32,
-) -> crate::io::Result<u32>
+) -> crate::base::io::Result<u32>
 {
     let nr = SyscallNumber::new(__NR_io_uring_register);
     let fd = {
@@ -97,7 +97,7 @@ pub unsafe fn io_uring_enter(
     flags: u32,
     arg: *const ::core::ffi::c_void,
     size: usize,
-) -> crate::io::Result<u32>
+) -> crate::base::io::Result<u32>
 {
     let nr = SyscallNumber::new(__NR_io_uring_enter);
     let fd = {

@@ -324,7 +324,7 @@ mod target
 
         pub fn dir(manifest_dir: &str) -> PathBuf
         {
-            PathBuf::from(manifest_dir).join("src/sys/linux/uapi/arch")
+            PathBuf::from(manifest_dir).join("src/base/sys/linux/uapi/arch")
         }
 
         pub fn r#mod(
