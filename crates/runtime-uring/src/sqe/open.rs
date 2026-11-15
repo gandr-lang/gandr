@@ -26,7 +26,7 @@ pub mod repr
             mode: ::liburing_rs::mode_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_open(sqe, path, flags, mode);
@@ -53,7 +53,7 @@ pub mod repr
             file_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_open_direct(sqe, path, flags, mode, file_index);
@@ -82,7 +82,7 @@ pub mod repr
             mode: ::liburing_rs::mode_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_openat(sqe, dfd, path, flags, mode);
@@ -109,7 +109,7 @@ pub mod repr
             how: *const ::liburing_rs::open_how,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // liburing's signature takes a mutable pointer here, though the
             // kernel only reads it; the cast leaves when liburing
             // takes a constant pointer.
@@ -142,7 +142,7 @@ pub mod repr
             file_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // liburing's signature takes a mutable pointer here, though the
             // kernel only reads it; the cast leaves when liburing
             // takes a constant pointer.
@@ -176,7 +176,7 @@ pub mod repr
             file_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_openat_direct(sqe, dfd, path, flags, mode, file_index);

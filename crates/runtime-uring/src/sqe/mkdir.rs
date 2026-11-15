@@ -25,7 +25,7 @@ pub mod repr
             mode: ::liburing_rs::mode_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_mkdir(sqe, path, mode);
@@ -53,7 +53,7 @@ pub mod repr
             mode: ::liburing_rs::mode_t,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_mkdirat(sqe, dfd, path, mode);

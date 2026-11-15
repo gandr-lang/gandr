@@ -29,7 +29,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_recv(sqe, sockfd, buf, len, flags);
@@ -58,7 +58,7 @@ pub mod repr
             flags: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_recv_multishot(sqe, sockfd, buf, len, flags);
@@ -86,7 +86,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_recvmsg(sqe, fd, msg, flags);
@@ -114,7 +114,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_recvmsg_multishot(sqe, fd, msg, flags);

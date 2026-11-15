@@ -26,7 +26,7 @@ pub mod repr
             offset: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // liburing's signature takes a mutable pointer here, though the
             // kernel only reads it; the cast leaves when liburing
             // takes a constant pointer.

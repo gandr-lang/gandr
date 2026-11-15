@@ -4,6 +4,7 @@ A Rust crate for the Linux Userspace API.
 
 <!-- toc -->
 - [Synopsis](#synopsis)
+- [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
@@ -19,9 +20,13 @@ A Rust crate for the Linux Userspace API.
 
 **How.** `IoUring` sets up a ring through `IoUringBuilder`. The builder takes each setup flag at most once, and it fixes the sizes of the two kinds of entry in the ring's type. `SubmissionQueue` gives free entries, and a preparer method of `Sqe64` fills each one. `CompletionQueue` gives the ready completions, or waits for them, and marks each given one as seen when its run drops. The crate calls liburing, the kernel's C library of the ring, for each step.
 
+## References
+
+- `vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160` — anchor: the IO layer's design (§ io-layer-crate) — the owner's crate, copied whole and mended in place, with its build script and the made declarations of each architecture.
+
 ## Provided features
 
-- `IoUring::new` sets up a ring of 4096 entries. `IoUring::builder` sets up a ring with the flags and the values that the caller names. These include polling, a polling thread and its core, the size of the completion queue and a shared work queue. They include a single issuer and deferred task work too.
+- `IoUring::new` sets up a ring of 4096 entries. `IoUring::builder` sets up a ring with the flags and the values that the caller names. These include polling, a polling thread and its core, the size of the completion queue and a shared work queue. They include a single issuer and deferred task work too. With `setup_mem`, the rings live in memory that the caller gives.
 - `IoUring::squeue`, `IoUring::cqueue` and `IoUring::queues` borrow the queues. `IoUring::registrar` borrows the registrar, and `IoUring::ring_fd` the ring's own descriptor.
 - `SubmissionQueue::get_sqe` and `SubmissionQueue::get_sqes` give free entries. `SubmissionQueue::submit` and `SubmissionQueue::submit_and_wait` submit them.
 - `Sqe64` and `Sqe128` hold one preparer for each operation of liburing. The operations include read, write, sync, open, close, accept, connect, send, receive, poll, timeout, cancel, futex, splice, statx and the extended attributes. `Sqe64::set_flags` puts the entry's flags in place. `Sqe64::set_data` and `Sqe64::set_data64` put its user data in place.

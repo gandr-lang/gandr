@@ -24,7 +24,7 @@ pub mod repr
             len: ::core::ffi::c_longlong,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_ftruncate(sqe, fd, len);

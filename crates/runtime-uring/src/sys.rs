@@ -1,6 +1,12 @@
 //! The answer of a liburing call as a result: a negative answer is an error
 //! number.
 
+// The files `sys/sys_x86_64.rs`, `sys/sys_aarch64.rs` and
+// `sys/sys_riscv64.rs` hold bindgen's declarations of the kernel's
+// `io_uring` header. `build.rs` writes them when the feature `bindgen` is on
+// and the target's headers variable names a directory. No module includes
+// them yet: #7638 includes them as the kernel's types when liburing leaves.
+
 /// The answer of a liburing call, read as a result.
 pub trait SysResult: self::private::SysResult
 {

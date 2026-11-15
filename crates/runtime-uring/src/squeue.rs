@@ -12,9 +12,22 @@ use crate::sys::SysResult as _;
 pub struct SubmissionQueue<'ring, S>
 {
     /// The ring that liburing holds.
-    pub(crate) ring: NonNull<::liburing_rs::io_uring>,
+    ring: NonNull<::liburing_rs::io_uring>,
     /// The borrow of the ring.
     marker: PhantomData<&'ring mut IoUring<'static, S, crate::cqe::kind::Cqe16>>,
+}
+
+impl<S> SubmissionQueue<'_, S>
+{
+    /// The ring that liburing holds, for a run of free entries.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    pub(crate) const fn ring(&self) -> NonNull<::liburing_rs::io_uring>
+    {
+        self.ring
+    }
 }
 
 impl<'ring, S> SubmissionQueue<'ring, S>
@@ -28,7 +41,7 @@ where
     /// trivial.
     pub(crate) fn new<C>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
-        let ring = NonNull::from(&ring.ring);
+        let ring = ring.ring();
         Self {
             ring,
             marker: PhantomData,
@@ -235,12 +248,8 @@ pub mod test
                 let mut ring = builder.entries(1).build().unwrap();
                 let mut squeue = ring.squeue();
                 let len = 1u32;
-                let sqes = squeue.get_sqes(1).unwrap();
-                let mut num = 0u32;
-                for _ in sqes {
-                    num += 1;
-                }
-                assert_eq!(num, len);
+                let num = squeue.get_sqes(len).unwrap().count();
+                assert_eq!(num, usize::try_from(len).unwrap());
             }
 
             /// A check of the submission queue of a ring that `builder` sets
@@ -259,12 +268,8 @@ pub mod test
                 let mut ring = builder.entries(1024).build().unwrap();
                 let mut squeue = ring.squeue();
                 let len = 256u32;
-                let sqes = squeue.get_sqes(len).unwrap();
-                let mut num = 0u32;
-                for _ in sqes {
-                    num += 1;
-                }
-                assert_eq!(num, len);
+                let num = squeue.get_sqes(len).unwrap().count();
+                assert_eq!(num, usize::try_from(len).unwrap());
             }
         }
     }

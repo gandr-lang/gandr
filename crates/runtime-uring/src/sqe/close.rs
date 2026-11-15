@@ -23,7 +23,7 @@ pub mod repr
             fd: ::core::ffi::c_int,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_close(sqe, fd);
@@ -48,7 +48,7 @@ pub mod repr
             file_index: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_close_direct(sqe, file_index);

@@ -30,7 +30,7 @@ pub mod repr
             file_index: Option<::core::ffi::c_uint>,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             let domain = domain.into();
             let r#type = r#type.into();
             let protocol = protocol.map_or_default(Into::into);
@@ -213,7 +213,7 @@ pub mod test
                 .map(Into::<crate::Cqe16<'_>>::into)
                 .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                 .unwrap();
-            let desc = cqe.cqe.res.sys_uint().unwrap();
+            let desc = cqe.cqe().res.sys_uint().unwrap();
 
             if uses_slot {
                 SlotDesc::Slot(desc)

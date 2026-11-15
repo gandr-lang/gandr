@@ -13,26 +13,25 @@
 //! owner's crate does. On a system other than Linux it compiles empty. So
 //! this lead names each item in code and links none: a link resolves on
 //! Linux alone.
+//!
+//! # References
+//!
+//! - `vault:01a1d8c5-08cb-7e12-a5d5-9a2ad3279160` — anchor: the owner's crate,
+//!   copied whole and mended in place, with its build script and the made
+//!   declarations of each architecture.
 
 // The ring is the Linux kernel's: on another system the crate compiles empty.
 #![cfg(target_os = "linux")]
-// The owner's text as it stands meets the wall at these sites; the rule of
-// the port forbids a rewrite, and #7645 owes a mend in place for each:
-// 347 preparer arguments of the kernel's C types, 16 fields that the ring's
-// modules read across modules, 15 counters, 8 references made raw by
-// coercion, and 38 structs that the builder's macro makes.
-#![expect(
-    clippy::arithmetic_side_effects,
-    clippy::field_scoped_visibility_modifiers,
-    reason = "the owner's text, kept as it stands; #7645 owes each mend in place"
-)]
+// The preparers take the kernel's C types as liburing names them, and the
+// builder's macro makes a struct for each argument of the ring's builder and
+// of four test fixtures, which the source cannot mark. #7717 gives each
+// argument a newtype and owns the builders' structs.
 #![cfg_attr(
     dylint_lib = "quenchant_dylints",
     expect(
         primitive_signature,
-        raw_pointer_through_reference,
         single_field_struct_needs_transparent_repr,
-        reason = "the owner's text, kept as it stands; #7645 owes each mend in place"
+        reason = "the preparers take the kernel's C types, and the builder's macro makes structs that the source cannot mark; #7717 owes each mend"
     )
 )]
 

@@ -73,7 +73,7 @@ impl<'sq, 'ring, S> Sqes<'sq, S>
         len: u32,
     ) -> Self
     {
-        let ring = sq.ring;
+        let ring = sq.ring();
         Self {
             ring,
             rem: len,
@@ -96,10 +96,7 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
-        if self.rem == 0 {
-            return None;
-        }
-        self.rem -= 1;
+        self.rem = self.rem.checked_sub(1)?;
         // SAFETY: `ring` is the live ring that the run borrows, and the
         // queue had `rem` free entries when the run began.
         unsafe { self::get_sqe_raw::<S>(self.ring) }
@@ -208,13 +205,15 @@ impl<'sq> From<self::repr::Sqe128<'sq>> for self::repr::Sqe64<'sq>
     ///
     /// trivial.
     #[inline]
-    fn from(value: self::repr::Sqe128<'sq>) -> Self
+    fn from(mut value: self::repr::Sqe128<'sq>) -> Self
     {
-        let sqe = ::core::ptr::from_mut(value.sqe).cast();
+        let sqe = ::core::ptr::from_mut(value.sqe()).cast();
         // SAFETY: an entry of 128 bytes starts with the fields of an entry of
         // 64 bytes, and the borrow moves from `value` to the result.
         let sqe = unsafe { &mut *sqe };
-        Self { sqe }
+        // SAFETY: `sqe` is the entry of `value`, whose borrow of the
+        // submission queue moves to the result for `'sq`.
+        unsafe { Self::new(sqe) }
     }
 }
 
@@ -259,7 +258,7 @@ pub mod repr
     pub struct Sqe64<'sq>
     {
         /// The entry that liburing holds.
-        pub(crate) sqe: &'sq mut ::liburing_rs::io_uring_sqe,
+        sqe: &'sq mut ::liburing_rs::io_uring_sqe,
     }
     impl<'sq> Sqe64<'sq>
     {
@@ -278,6 +277,17 @@ pub mod repr
         {
             Self { sqe }
         }
+
+        /// The entry that liburing holds, for the preparers of the
+        /// operations.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        pub(crate) const fn sqe(&mut self) -> &mut ::liburing_rs::io_uring_sqe
+        {
+            self.sqe
+        }
     }
 
     /// An entry of 128 bytes, borrowed from the submission queue.
@@ -285,7 +295,7 @@ pub mod repr
     pub struct Sqe128<'sq>
     {
         /// The entry that liburing holds.
-        pub(crate) sqe: &'sq mut ::liburing_rs::io_uring_sqe,
+        sqe: &'sq mut ::liburing_rs::io_uring_sqe,
     }
     impl<'sq> Sqe128<'sq>
     {
@@ -305,6 +315,17 @@ pub mod repr
         {
             Self { sqe }
         }
+
+        /// The entry that liburing holds, for the preparers of the
+        /// operations.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        pub(crate) const fn sqe(&mut self) -> &mut ::liburing_rs::io_uring_sqe
+        {
+            self.sqe
+        }
     }
     impl<'sq> Deref for Sqe128<'sq>
     {
@@ -318,7 +339,7 @@ pub mod repr
         #[inline]
         fn deref(&self) -> &Self::Target
         {
-            let ptr = <*const Self>::cast(self);
+            let ptr = (&raw const *self).cast::<Self::Target>();
             // SAFETY: both types are transparent over the same borrow of an
             // entry, so the cast keeps the layout.
             unsafe { &*ptr }
@@ -334,7 +355,7 @@ pub mod repr
         #[inline]
         fn deref_mut(&mut self) -> &mut Self::Target
         {
-            let ptr = <*mut Self>::cast(self);
+            let ptr = (&raw mut *self).cast::<Self::Target>();
             // SAFETY: both types are transparent over the same borrow of an
             // entry, so the cast keeps the layout.
             unsafe { &mut *ptr }

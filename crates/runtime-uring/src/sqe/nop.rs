@@ -22,7 +22,7 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_nop(&mut self)
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_nop(sqe);
@@ -52,6 +52,6 @@ pub mod repr
 
 //         let mut cq = ring.cqueue();
 //         let cqe = cq.wait(1).unwrap().next().unwrap().into();
-//         assert_eq!(cqe.cqe.user_data, REQ_NOP);
+//         assert_eq!(cqe.cqe().user_data, REQ_NOP);
 //     }
 // }

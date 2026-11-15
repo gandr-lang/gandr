@@ -30,7 +30,7 @@ pub mod repr
             statxbuf: *mut ::liburing_rs::statx,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_statx(sqe, dfd, path, flags, mask, statxbuf);

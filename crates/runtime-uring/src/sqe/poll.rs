@@ -24,7 +24,7 @@ pub mod repr
             poll_mask: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_poll_add(sqe, fd, poll_mask);
@@ -49,7 +49,7 @@ pub mod repr
             poll_mask: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_poll_multishot(sqe, fd, poll_mask);
@@ -74,7 +74,7 @@ pub mod repr
             user_data: u64,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_poll_remove(sqe, user_data);
@@ -102,7 +102,7 @@ pub mod repr
             flags: ::core::ffi::c_uint,
         )
         {
-            let sqe = &raw mut *self.sqe;
+            let sqe = &raw mut *self.sqe();
             // SAFETY: The enclosing method preserves the safety interface.
             unsafe {
                 ::liburing_rs::io_uring_prep_poll_update(

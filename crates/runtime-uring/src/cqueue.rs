@@ -15,7 +15,7 @@ use crate::sys::SysResult as _;
 pub struct CompletionQueue<'ring, C = Cqe16>
 {
     /// The ring that liburing holds.
-    pub(crate) ring: NonNull<::liburing_rs::io_uring>,
+    ring: NonNull<::liburing_rs::io_uring>,
     /// The borrow of the ring.
     marker: PhantomData<&'ring mut IoUring<'static, Sqe64, C>>,
 }
@@ -30,7 +30,7 @@ where
     /// trivial.
     pub(crate) fn new<S>(ring: &'ring IoUring<'_, S, C>) -> Self
     {
-        let ring = NonNull::from(&ring.ring);
+        let ring = ring.ring();
         Self {
             ring,
             marker: PhantomData,
@@ -252,6 +252,43 @@ pub mod test
                 let num = sq.submit_and_wait(num).unwrap();
                 let count = cq.wait(2).unwrap().count();
                 assert_eq!(count, usize::try_from(num).unwrap());
+            }
+
+            /// A wait for two completions on a ring of entries of 32 bytes
+            /// gives each completion's own data in order: the run steps one
+            /// entry of 32 bytes, never 16.
+            #[test]
+            #[cfg_attr(
+                miri,
+                ignore = "it sets up a ring through liburing, which Miri cannot run"
+            )]
+            fn two_of_32_bytes()
+            {
+                let mut ring = IoUring::builder().setup_cqe32().build().unwrap();
+                let (mut sq, mut cq) = ring.queues();
+
+                for data in [1, 2] {
+                    let mut sqe = sq.get_sqe().unwrap();
+                    // SAFETY: a no-op reads no pointer and names no
+                    // descriptor.
+                    unsafe {
+                        sqe.prep_nop();
+                    }
+                    // SAFETY: the data is a plain number, which the kernel
+                    // gives back unread.
+                    unsafe {
+                        sqe.set_data64(data);
+                    }
+                }
+
+                let num = sq.submit_and_wait(2).unwrap();
+                assert_eq!(num, 2);
+                let data = cq
+                    .wait(2)
+                    .unwrap()
+                    .map(|cqe| cqe.cqe().user_data)
+                    .collect::<Vec<_>>();
+                assert_eq!(data, [1, 2]);
             }
         }
     }

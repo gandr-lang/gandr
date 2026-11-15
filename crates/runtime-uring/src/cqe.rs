@@ -3,7 +3,6 @@
 
 use ::core::marker::PhantomData;
 use ::core::mem::MaybeUninit;
-use ::core::num::NonZero;
 use ::core::ptr::NonNull;
 
 /// The completions that are ready now, each given once. The drop marks the
@@ -79,6 +78,9 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
+        // The run gives at most the queue's entries, so `seen` stays within
+        // 32 bits, and past them the run ends.
+        let seen = self.seen.checked_add(1)?;
         let mut cqe = MaybeUninit::<C::Repr<'cq>>::uninit();
         // SAFETY: the iterator is liburing's over this ring, and `cqe` has
         // room for one pointer to a completion.
@@ -87,7 +89,7 @@ where
         } {
             return None;
         }
-        self.seen += 1;
+        self.seen = seen;
         // SAFETY: liburing wrote the completion's pointer when it answered
         // true.
         Some(unsafe { cqe.assume_init() })
@@ -101,7 +103,9 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
-        let min = self.iter.tail - self.iter.head;
+        // The ring's head and tail run free and wrap, so their distance is
+        // the wrapping difference, as liburing and the kernel read it.
+        let min = self.iter.tail.wrapping_sub(self.iter.head);
         #[expect(
             clippy::as_conversions,
             reason = "usize is at least 32 bits on supported platforms"
@@ -189,12 +193,10 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
-        if self.left == 0 {
-            return None;
-        }
-
-        self.left -= 1;
-        self.seen += 1;
+        let left = self.left.checked_sub(1)?;
+        let seen = self.seen.checked_add(1)?;
+        self.left = left;
+        self.seen = seen;
 
         // SAFETY: the wait gave `left` completions in a row from `cqe_ptr`.
         let cqe = unsafe { self.cqe_ptr.as_ref() };
@@ -202,15 +204,12 @@ where
         // `C` names.
         let cqe = unsafe { C::new(cqe) };
 
-        // The step is one entry of 16 bytes. A ring with entries of 32 bytes
-        // needs a step of 32 bytes; the owner's list of open work names
-        // this check, and #7645 owes it.
-        self.cqe_ptr = self.cqe_ptr.map_addr(|addr| {
-            let res = usize::from(addr) + size_of::<::liburing_rs::io_uring_cqe>();
-            // SAFETY: the address of an entry of the ring is not zero, and
-            // the next one is above it.
-            unsafe { NonZero::new_unchecked(res) }
-        });
+        // The step is one entry of the ring's size: 16 bytes, or 32 bytes for
+        // a ring set up with entries of 32 bytes.
+        // SAFETY: the wait gave `left` entries in a row, so the next entry
+        // lies in the ring's array of entries, or one past its end after the
+        // last.
+        self.cqe_ptr = unsafe { self.cqe_ptr.byte_add(C::STEP) };
 
         Some(cqe)
     }
@@ -305,26 +304,33 @@ impl<'cq> From<self::repr::Cqe32<'cq>> for self::repr::Cqe16<'cq>
     #[inline]
     fn from(value: self::repr::Cqe32<'cq>) -> Self
     {
-        let cqe = ::core::ptr::from_ref(value.cqe).cast();
+        let cqe = ::core::ptr::from_ref(value.cqe()).cast();
         // SAFETY: an entry of 32 bytes starts with the fields of an entry of
         // 16 bytes, and the borrow moves from `value` to the result.
         let cqe = unsafe { &*cqe };
-        Self { cqe }
+        // SAFETY: `cqe` is the entry of `value`, which the kernel posted and
+        // the ring has not yet marked as seen.
+        unsafe { Self::new(cqe) }
     }
 }
 
 /// The seal: no type outside the crate is a size of entry.
 mod sealed
 {
-    /// The sealed trait.
+    /// The sealed trait, with the step from one entry of the ring to the
+    /// next.
     pub trait Kind
     {
+        /// The size of one entry of the ring, in bytes.
+        const STEP: usize;
     }
     impl Kind for super::kind::Cqe16
     {
+        const STEP: usize = size_of::<::liburing_rs::io_uring_cqe>();
     }
     impl Kind for super::kind::Cqe32
     {
+        const STEP: usize = size_of::<[::liburing_rs::io_uring_cqe; 2]>();
     }
 }
 
@@ -355,7 +361,7 @@ pub mod repr
     pub struct Cqe16<'cq>
     {
         /// The entry that liburing holds.
-        pub(crate) cqe: &'cq ::liburing_rs::io_uring_cqe,
+        cqe: &'cq ::liburing_rs::io_uring_cqe,
     }
     impl<'cq> Cqe16<'cq>
     {
@@ -375,6 +381,19 @@ pub mod repr
         {
             Self { cqe }
         }
+
+        /// The entry that liburing holds, for the tests that read a
+        /// completion's fields.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[cfg(test)]
+        #[must_use]
+        pub(crate) const fn cqe(&self) -> &'cq ::liburing_rs::io_uring_cqe
+        {
+            self.cqe
+        }
     }
 
     /// An entry of 32 bytes, borrowed from the completion queue.
@@ -382,7 +401,7 @@ pub mod repr
     pub struct Cqe32<'cq>
     {
         /// The entry that liburing holds.
-        pub(crate) cqe: &'cq ::liburing_rs::io_uring_cqe,
+        cqe: &'cq ::liburing_rs::io_uring_cqe,
     }
     impl<'cq> Cqe32<'cq>
     {
@@ -403,6 +422,18 @@ pub mod repr
         {
             Self { cqe }
         }
+
+        /// The entry that liburing holds, for the conversion between the
+        /// two sizes of entry.
+        ///
+        /// # Specification
+        ///
+        /// trivial.
+        #[must_use]
+        pub(crate) const fn cqe(&self) -> &'cq ::liburing_rs::io_uring_cqe
+        {
+            self.cqe
+        }
     }
     impl<'cq> Deref for Cqe32<'cq>
     {
@@ -416,7 +447,7 @@ pub mod repr
         #[inline]
         fn deref(&self) -> &Self::Target
         {
-            let ptr = <*const Self>::cast(self);
+            let ptr = (&raw const *self).cast::<Self::Target>();
             // SAFETY: both types are transparent over the same borrow of an
             // entry, so the cast keeps the layout.
             unsafe { &*ptr }
@@ -432,7 +463,7 @@ pub mod repr
         #[inline]
         fn deref_mut(&mut self) -> &mut Self::Target
         {
-            let ptr = <*mut Self>::cast(self);
+            let ptr = (&raw mut *self).cast::<Self::Target>();
             // SAFETY: both types are transparent over the same borrow of an
             // entry, so the cast keeps the layout.
             unsafe { &mut *ptr }
