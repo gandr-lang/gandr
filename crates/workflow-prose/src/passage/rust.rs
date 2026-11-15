@@ -7,6 +7,8 @@
 //! strings, the characters and the block comments of the source, so a `//`
 //! inside a string opens no comment.
 //!
+//! # Boundaries
+//!
 //! No passage holds these parts:
 //!
 //! - A fenced code block, from a line that opens with three backticks to the
@@ -447,12 +449,23 @@ mod tests
     use super::Text;
     use super::comments;
 
-    /// The line and the text of each passage of `text`, and the count of code
+    /// The line and the text of each passage of a cut, and its count of code
     /// lines.
+    #[derive(Debug, Eq, PartialEq)]
+    struct Read
+    {
+        /// Each passage's line and text, in order.
+        passages: Vec<(String, String)>,
+        /// The code lines in comments.
+        code: usize,
+    }
+
+    /// The cut of `text` as its lines and texts. Each passage is a Rust
+    /// comment of the one path.
     ///
     /// # Specification
     /// trivial.
-    fn read(text: Text<'_>) -> (Vec<(String, String)>, usize)
+    fn read(text: Text<'_>) -> Read
     {
         let cut = comments(Text("crates/a/src/lib.rs"), text);
         assert!(
@@ -461,25 +474,25 @@ mod tests
                 .all(|passage| passage.source == Source::Rust
                     && passage.path == "crates/a/src/lib.rs")
         );
-        (
-            cut.passages
+        Read {
+            passages: cut
+                .passages
                 .iter()
                 .map(|passage| (passage.line.to_string(), passage.text.clone()))
                 .collect(),
-            cut.code,
-        )
+            code: cut.code,
+        }
     }
 
-    /// Owned copies of the pairs of line and text `pairs`.
-    ///
-    /// # Specification
-    /// trivial.
-    fn owned<const N: usize>(pairs: [(&str, &str); N]) -> Vec<(String, String)>
-    {
-        pairs
-            .into_iter()
-            .map(|(line, text)| (line.to_owned(), text.to_owned()))
-            .collect()
+    /// The read that a test expects: each pair of line and text, and the count
+    /// of code lines.
+    macro_rules! expected {
+        ([$(($line:literal, $text:literal)),* $(,)?], $code:literal) => {
+            Read {
+                passages: vec![$(($line.to_owned(), $text.to_owned())),*],
+                code: $code,
+            }
+        };
     }
 
     #[test]
@@ -498,15 +511,15 @@ fn x() {}
 ";
         assert_eq!(
             read(Text(text)),
-            (
-                owned([
+            expected!(
+                [
                     ("1", "The first paragraph wraps here."),
                     ("4", "the prose of the item."),
                     ("5", "a plain item continues here."),
                     ("7", "The last paragraph."),
                     ("8", "Inner."),
                     ("9", "Line."),
-                ]),
+                ],
                 0
             )
         );
@@ -547,7 +560,10 @@ fn x() {}
 */
 fn x() {}
 "#;
-        assert_eq!(read(Text(text)), (owned([("3", "The body is prose.")]), 0));
+        assert_eq!(
+            read(Text(text)),
+            expected!([("3", "The body is prose.")], 0)
+        );
     }
 
     #[test]
@@ -572,12 +588,12 @@ let z = 3; // The note after code.
 ";
         assert_eq!(
             read(Text(text)),
-            (
-                owned([
+            expected!(
+                [
                     ("4", "The prose returns, and let it wrap."),
                     ("14", "self-check holds."),
                     ("16", "The note after code."),
-                ]),
+                ],
                 8
             )
         );
@@ -604,13 +620,13 @@ let g = "\"// The kernel reduced it.";
 "###;
         assert_eq!(
             read(Text(text)),
-            (
-                owned([
+            expected!(
+                [
                     ("5", "The note after a quote character."),
                     ("9", "The note after a lifetime."),
                     ("13", "The doc after the block."),
                     ("14", "The note after a byte."),
-                ]),
+                ],
                 0
             )
         );

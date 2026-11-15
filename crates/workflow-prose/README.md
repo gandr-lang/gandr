@@ -56,7 +56,7 @@ A comment keeps every rule but `STE-5.3`. `STE-6.4`, `STE-6.5` and the item limi
 
 A Rust comment keeps the comment rules but `STE-6.4`, `STE-6.5` and the item limit of `STE-6.6`. `STE-4.3` reads its prose alone, because text inside backticks is code there.
 
-[`rules`](src/rules.rs) maps each item of ASD-STE100 issue 9 to its gate.
+The doc of `Rule` in [`rules`](src/rules.rs) maps each item of ASD-STE100 issue 9 to its gate.
 
 The small English model misreads some technical sentences. A misreading is debt like any other finding: reword the sentence so the parse reads it, or leave the line in the ledger.
 
