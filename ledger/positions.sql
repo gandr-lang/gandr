@@ -215,6 +215,8 @@ INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Cpu','','local',N
 INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Millis','','none',NULL,'A time in milliseconds, a budget.');
 INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','UserData','','none',NULL,'A carrier of the caller''s words, which the kernel copies to the completion.');
 INSERT INTO position VALUES('crates/runtime-uring/src/arg.rs','Value','','none',NULL,'A value that the kernel compares with a futex''s word.');
+INSERT INTO position VALUES('crates/runtime-uring/src/base/sys/linux/errno.rs','Errno','','none',NULL,'A tag: the error number that the kernel answers.');
+INSERT INTO position VALUES('crates/runtime-uring/src/base/sys/linux/syscalls/registers.rs','Word','','none',NULL,'A carrier of a machine word of a system call.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactIdentity','','none',NULL,'A digest of an artifact.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','ArtifactManifestVersion','','none',NULL,'A version of the manifest.');
 INSERT INTO position VALUES('crates/storage-artifact/src/manifest.rs','FieldBytes','','none',NULL,'A carrier of the bytes of a field.');
