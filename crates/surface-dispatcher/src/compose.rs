@@ -4086,7 +4086,7 @@ fn share<'source>(
 /// dropped whatever the judgement made of their declaration: accepted, owed,
 /// suspended or refused. The one binder such an opener could hold that may
 /// not be dropped is a consumable capability, which never forms: the checker
-/// refuses its type as [`CheckRefusal::CapabilityConsumable`], and a
+/// refuses its type as [`CheckRefusalOf::CapabilityConsumable`], and a
 /// declaration so refused answers nothing. Nor does one the lowering refused
 /// or the corpus guarded. Both halves of an answered declaration are read. A
 /// use is a written variable, or a name the lowering resolved to the binder: a
@@ -4097,7 +4097,8 @@ fn share<'source>(
 ///   whose every opener is a lambda or a bind, `own` holds of it, no written
 ///   variable and no binder resolution reads it, and it lies within a half of a
 ///   declaration `report` reports as judged, other than refused as
-///   [`CheckRefusal::CapabilityConsumable`]; the spans ascend without repeats.
+///   [`CheckRefusalOf::CapabilityConsumable`]; the spans ascend without
+///   repeats.
 /// - fails: never.
 /// - panics: none.
 /// - intension: one pass over the module's declarations, binders, bindings and

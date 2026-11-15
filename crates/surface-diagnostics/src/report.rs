@@ -883,7 +883,7 @@ impl Report<'_>
     /// - requires: `span` and `contexts` are the report's primary span and
     ///   contexts.
     /// - ensures: when the subject is a refused declaration that rests on no
-    ///   upstream refusal, its refusal is a [`CheckRefusal::ShapeMismatch`]
+    ///   upstream refusal, its refusal is a [`CheckRefusalOf::ShapeMismatch`]
     ///   that wants a thunk or an arrow, its innermost context synthesises the
     ///   head of an application that starts at `span` and runs past it, and
     ///   `span` lies on one line: the repair [`juxtaposed`] names at `span`,
