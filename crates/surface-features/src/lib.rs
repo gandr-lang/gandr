@@ -282,6 +282,34 @@ pub struct Feature
     since: Option<String>,
 }
 
+/// The value of a cell: the closed set of the kinds a row holds.
+#[derive(Clone, Copy)]
+enum Shown<'row>
+{
+    /// A column of text.
+    Text(&'row str),
+    /// The `status` column.
+    Status(Status),
+}
+
+impl fmt::Display for Shown<'_>
+{
+    /// Writes the value as the dump writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Text(text) => f.write_str(text),
+            Self::Status(ref status) => status.fmt(f),
+        }
+    }
+}
+
 /// One column of a row and its value, `None` where the row holds `NULL`.
 #[derive(Clone, Copy)]
 struct Cell<'row>
@@ -289,7 +317,7 @@ struct Cell<'row>
     /// The column's name.
     column: &'static str,
     /// The value.
-    value: Option<&'row dyn fmt::Display>,
+    value: Option<Shown<'row>>,
 }
 
 impl Feature
@@ -303,76 +331,55 @@ impl Feature
         [
             Cell {
                 column: "id",
-                value: Some(&self.id),
+                value: Some(Shown::Text(&self.id)),
             },
             Cell {
                 column: "area",
-                value: Some(&self.area),
+                value: Some(Shown::Text(&self.area)),
             },
             Cell {
                 column: "name",
-                value: Some(&self.name),
+                value: Some(Shown::Text(&self.name)),
             },
             Cell {
                 column: "parent",
-                value: self
-                    .parent
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.parent.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "status",
-                value: Some(&self.status),
+                value: Some(Shown::Status(self.status)),
             },
             Cell {
                 column: "notability",
-                value: Some(&self.notability),
+                value: Some(Shown::Text(&self.notability)),
             },
             Cell {
                 column: "compared_to",
-                value: self
-                    .compared_to
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.compared_to.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "line",
-                value: Some(&self.line),
+                value: Some(Shown::Text(&self.line)),
             },
             Cell {
                 column: "crate",
-                value: self
-                    .crates
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.crates.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "corpus",
-                value: self
-                    .corpus
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.corpus.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "exemplar",
-                value: self
-                    .exemplar
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.exemplar.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "issue",
-                value: self
-                    .issue
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.issue.as_deref().map(Shown::Text),
             },
             Cell {
                 column: "since",
-                value: self
-                    .since
-                    .as_ref()
-                    .map(|value| -> &dyn fmt::Display { value }),
+                value: self.since.as_deref().map(Shown::Text),
             },
         ]
     }
@@ -391,6 +398,10 @@ impl Feature
     /// - hypothesis: L3 — a row with and without its optional columns is read
     ///   back from its object.
     /// - witness: `tests::a_row_is_its_object`
+    ///
+    /// # Cost
+    /// - allocation: the object and each value's text, growth within the row's
+    ///   columns
     #[spec(ensures: |ret| ret.get("id").and_then(Value::as_str) == Some(self.id.as_str())
         && ret.get("status").and_then(Value::as_str).and_then(|spelling| spelling.parse::<Status>().ok())
             == Some(self.status))]

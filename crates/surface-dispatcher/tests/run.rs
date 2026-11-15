@@ -43,6 +43,7 @@ use gandr_surface_dispatcher::Script;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::SourceFault;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Unrunnable;
 use gandr_surface_dispatcher::WorldBinding;
 use gandr_surface_dispatcher::WorldBindingError;
@@ -167,9 +168,13 @@ fn ran_text(text: SourceText<'_>) -> Ran<'_>
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
-    let (_composed, ran) =
-        run_source::<Evaluator>(&grammar, text, &mut lowerings, &mut Captured::default())
-            .expect("the source composes");
+    let (_composed, ran) = run_source::<Evaluator>(
+        &grammar,
+        text,
+        &mut lowerings,
+        &mut Streams::Captured(&mut Captured::default()),
+    )
+    .expect("the source composes");
     ran
 }
 
@@ -201,7 +206,7 @@ fn assert_runs_to(
 )
 {
     let mut script = Script::new(path.to_path_buf());
-    let actual = script.run::<Evaluator>(&mut Captured::default());
+    let actual = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     assert_eq!(
         actual.status(),
         expected_status,
@@ -306,7 +311,7 @@ fn a_script_compares_through_the_prelude_s_eq_2302()
             SourceText::from(text.as_str()),
         );
         let mut script = Script::new(file.0.clone());
-        let run = script.run::<Evaluator>(&mut Captured::default());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
         assert!(
             matches!(
                 run,
@@ -347,7 +352,7 @@ fn a_script_runs_through_what_it_imports_2970()
         SourceText::from(text.as_str()),
     );
     let mut script = Script::new(importer.0.clone());
-    let run = script.run::<Evaluator>(&mut Captured::default());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     assert!(
         matches!(
             run,
@@ -375,7 +380,7 @@ fn a_script_passes_its_arguments_to_its_entry_1881()
         let mut script = Script::new(file.0.clone());
         let count = u8::try_from(arguments.len()).expect("a few arguments");
         script.pass(arguments);
-        let run = script.run::<Evaluator>(&mut Captured::default());
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
         assert!(
             matches!(
                 run,
@@ -401,7 +406,7 @@ fn run_source_file_reports_the_path_of_an_absent_file()
     ));
     drop(std::fs::remove_file(&absent));
     let mut script = Script::new(absent.clone());
-    let run = script.run::<Evaluator>(&mut Captured::default());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     assert_eq!(
         run.status(),
         RunStatus::Unreached,
@@ -488,7 +493,7 @@ fn a_script_pings_over_its_network_3186()
         script.pass(vec![peer.to_string()]);
         script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
         let mut console = Captured::default();
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         assert!(
             matches!(
                 run,
@@ -517,7 +522,7 @@ fn a_script_pings_over_its_network_3186()
     );
     let mut script = Script::new(stray.0.clone());
     script.network(Net::new(Binding::new(Secret::generate()).at(loopback)));
-    let run = script.run::<Evaluator>(&mut Captured::default());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     assert!(
         matches!(run, ScriptRun::Source {
             ran: Ran::Entered {
@@ -548,7 +553,7 @@ fn a_script_encloses_the_square_root_of_two_5700()
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/reals/sqrt-two.gandr");
     let mut console = Captured::default();
     let mut script = Script::new(exemplar);
-    let run = script.run::<Evaluator>(&mut console);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
     assert!(
         matches!(
             run,
@@ -612,7 +617,7 @@ fn a_script_encloses_the_square_root_of_two_5700()
         );
         let mut console = Captured::default();
         let mut script = Script::new(scratch.0.clone());
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         assert!(
             matches!(run, ScriptRun::Source {
                 ran: Ran::Entered {
@@ -642,7 +647,7 @@ fn a_script_draws_fair_bits_5707()
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/model/probability/draws.gandr");
     let mut console = Captured::default();
     let mut script = Script::new(exemplar);
-    let run = script.run::<Evaluator>(&mut console);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
     assert!(
         matches!(
             run,
@@ -689,7 +694,7 @@ fn a_script_draws_fair_bits_5707()
         );
         let mut console = Captured::default();
         let mut script = Script::new(scratch.0.clone());
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         assert!(
             matches!(run, ScriptRun::Source {
                 ran: Ran::Entered {
@@ -728,7 +733,7 @@ fn a_script_s_profile_bounds_its_run_5704()
         let mut console = Captured::default();
         let mut script = Script::new(scratch.0.clone());
         script.reals(profile);
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         let exited = matches!(
             run,
             ScriptRun::Source {
@@ -796,7 +801,7 @@ fn a_script_decides_comparisons_through_reals_5703()
     ] {
         let mut console = Captured::default();
         let mut script = Script::new(reals.join(exemplar));
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         assert!(
             matches!(
                 run,
@@ -827,7 +832,7 @@ fn a_script_decides_comparisons_through_reals_5703()
         );
         let mut console = Captured::default();
         let mut script = Script::new(scratch.0.clone());
-        let run = script.run::<Evaluator>(&mut console);
+        let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
         let exited = matches!(run, ScriptRun::Source {
             ran: Ran::Entered {
                 entered: Entered::Exited(_),
@@ -976,7 +981,7 @@ fn binding(
 /// trivial.
 fn exited(script: &mut Script) -> Option<ExitStatus>
 {
-    match script.run::<Evaluator>(&mut Captured::default()) {
+    match script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default())) {
         ScriptRun::Source {
             ran:
                 Ran::Entered {
@@ -1047,7 +1052,7 @@ fn a_world_no_binding_names_is_refused_before_the_run()
         Peer::new(Secret::generate().node_id()).at(SocketAddr::from((Ipv4Addr::LOCALHOST, 4433)));
     let mut script = Script::new(model());
     script.bindings(bindings(&WorldName::from("near"), &elsewhere));
-    let run = script.run::<Evaluator>(&mut Captured::default());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     assert!(
         matches!(
             run,
@@ -1104,7 +1109,7 @@ fn hosted(
     script.bindings(bindings(world, peer));
     script.hosting(migrations);
     let mut console = Captured::default();
-    let run = script.run::<Evaluator>(&mut console);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
     assert!(
         matches!(
             run,
@@ -1212,7 +1217,7 @@ fn a_second_migration_of_an_edited_list_fetches_what_changed_3365()
         binding(&WorldName::from("seat"), &peer),
         binding(&WorldName::from("gate"), &gatekeeper),
     ]));
-    let run = script.run::<Evaluator>(&mut Captured::default());
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()));
     let ScriptRun::Source { ref ran, .. } = run
     else {
         panic!("the source runs: {run:?}");
@@ -1266,7 +1271,7 @@ fn a_host_prints_the_line_its_migration_prints_3546()
     ));
     script.bindings(bindings(&far, &peer));
     let mut console = Captured::default();
-    let run = script.run::<Evaluator>(&mut console);
+    let run = script.run::<Evaluator>(&mut Streams::Captured(&mut console));
     let ScriptRun::Source { ref ran, .. } = run
     else {
         panic!("the source runs: {run:?}");

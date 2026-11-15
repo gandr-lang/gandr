@@ -1651,20 +1651,17 @@ mod tests
             assert!(rendered.contains(&class.to_string()));
         }
         assert_ne!(Seal::Sealed.to_string(), Seal::Unsealed.to_string());
-        let formats: [&dyn fmt::Display; 7_usize] = [
-            &Seal::Sealed,
-            &Seal::Unsealed,
-            &tally.declarations,
-            &tally.refusals,
-            &tally,
-            &report,
-            &tally.fixtures,
+        let written = [
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", Seal::Sealed)),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", Seal::Unsealed)),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", tally.declarations)),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", tally.refusals)),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{tally}")),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{report}")),
+            fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{}", tally.fixtures)),
         ];
-        for value in formats {
-            assert_eq!(
-                fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{value}")),
-                Err(fmt::Error)
-            );
+        for each in written {
+            assert_eq!(each, Err(fmt::Error));
         }
     }
 

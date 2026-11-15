@@ -433,7 +433,7 @@ fn rows(
     forms: FormCount,
     repeats: Repeats,
     selected: &Selected,
-    out: &mut dyn Write,
+    out: &mut impl Write,
 ) -> Result<(), Failure>
 {
     let mut generated = module(forms, root);
@@ -644,7 +644,7 @@ fn memory(
 /// trivial.
 fn memory_rows(
     counts: &[AllocationInfo; 4],
-    out: &mut dyn Write,
+    out: &mut impl Write,
 ) -> io::Result<()>
 {
     let [lowered, ..] = *counts;

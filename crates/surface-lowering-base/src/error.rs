@@ -3409,11 +3409,18 @@ mod tests
     {
         use alloc::string::ToString as _;
 
-        let render = |each: &[&dyn core::fmt::Display]| {
+        /// Each of `each` as it displays, in order.
+        ///
+        /// # Specification
+        /// trivial.
+        fn render<Shown>(each: &[Shown]) -> alloc::vec::Vec<alloc::string::String>
+        where
+            Shown: core::fmt::Display,
+        {
             each.iter()
                 .map(alloc::string::ToString::to_string)
                 .collect::<alloc::vec::Vec<_>>()
-        };
+        }
         assert_apart(&render(&[
             &FragmentSort::Module,
             &FragmentSort::Declaration,

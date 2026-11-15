@@ -8,6 +8,7 @@ use gandr_surface_dispatcher::ExitStatus;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::RunStatus;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::run_source;
 use gandr_surface_evaluate::Evaluator;
 use gandr_surface_grammar::built_in;
@@ -39,7 +40,7 @@ fn each_kind_of_source_has_its_status()
             &grammar,
             SourceText::from(source),
             &mut lowerings,
-            &mut Captured::default(),
+            &mut Streams::Captured(&mut Captured::default()),
         )
         .expect("the source composes");
         assert_eq!(ran.status(), status, "`{source}` runs as pinned: {ran:?}");
@@ -50,7 +51,7 @@ fn each_kind_of_source_has_its_status()
         &grammar,
         SourceText::from(r#"def answer : Integer ; def answer = "forty-two" ;"#),
         &mut lowerings,
-        &mut Captured::default(),
+        &mut Streams::Captured(&mut Captured::default()),
     )
     .expect("the source composes");
     assert_eq!(ran, Ran::Refused, "a refused source runs nothing");
@@ -62,7 +63,7 @@ fn each_kind_of_source_has_its_status()
             &grammar,
             SourceText::from(source),
             &mut lowerings,
-            &mut Captured::default(),
+            &mut Streams::Captured(&mut Captured::default()),
         )
         .expect("the source composes");
         assert_eq!(
@@ -87,7 +88,7 @@ fn a_source_declaring_main_runs_its_entry_1881()
             "script/fixtures/a-source-declaring-main-runs-its-entry-1881.gandr"
         )),
         &mut lowerings,
-        &mut Captured::default(),
+        &mut Streams::Captured(&mut Captured::default()),
     )
     .expect("the source composes");
     let Ran::Entered { target, entered } = ran
@@ -103,7 +104,7 @@ fn a_source_declaring_main_runs_its_entry_1881()
         &grammar,
         SourceText::from("def main() -> -F Integer { ? }\n"),
         &mut lowerings,
-        &mut Captured::default(),
+        &mut Streams::Captured(&mut Captured::default()),
     )
     .expect("the source composes");
     let Ran::Entered {
@@ -127,7 +128,7 @@ fn run_source_counts_lowerings_with_saturation()
             &grammar,
             SourceText::from("// nothing to run"),
             &mut lowerings,
-            &mut Captured::default(),
+            &mut Streams::Captured(&mut Captured::default()),
         )
         .expect("an empty program composes");
         assert_eq!(Ran::NoProgram, ran);

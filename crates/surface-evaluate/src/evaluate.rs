@@ -194,7 +194,6 @@ use gandr_surface_corpus::Runner;
 use gandr_surface_corpus::TracedRun;
 use gandr_surface_corpus::Undistributed;
 use gandr_surface_dispatcher::Captured;
-use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::DeclaredRun;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Entry;
@@ -208,6 +207,7 @@ use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::RealsProfile;
 use gandr_surface_dispatcher::SealedRun;
 use gandr_surface_dispatcher::Slot;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Terminal;
 use gandr_surface_dispatcher::Unfinished;
 use gandr_surface_dispatcher::Unrunnable;
@@ -297,12 +297,12 @@ enum Hosting<'run>
     Bare,
     /// A console each `Console.print` writes its line to before the run
     /// resumes.
-    Printing(&'run mut dyn Console),
+    Printing(Streams<'run>),
     /// As [`Self::Printing`], each channel's play appended to the trace.
-    Traced(&'run mut dyn Console, &'run mut Trace),
+    Traced(Streams<'run>, &'run mut Trace),
     /// As [`Self::Printing`], each `Rand.draw` answered from the exact
     /// model's path, and the ready tasks switched in the order given.
-    Drawing(&'run mut dyn Console, &'run mut rand::Draws, TaskOrder),
+    Drawing(Streams<'run>, &'run mut rand::Draws, TaskOrder),
 }
 
 impl Hosting<'_>
@@ -319,21 +319,23 @@ impl Hosting<'_>
         store: &'run mut Store,
     ) -> (
         RunInputs<'run, 'run>,
-        Option<&'run mut dyn Console>,
+        Option<Streams<'run>>,
         Option<(&'run mut rand::Draws, TaskOrder)>,
     )
     {
         match *self {
             Self::Bare => (RunInputs::new(store), None, None),
-            Self::Printing(ref mut console) => (RunInputs::new(store), Some(&mut **console), None),
+            Self::Printing(ref mut console) => {
+                (RunInputs::new(store), Some(console.reborrow()), None)
+            },
             Self::Traced(ref mut console, ref mut trace) => (
                 RunInputs::new(store).traced(trace),
-                Some(&mut **console),
+                Some(console.reborrow()),
                 None,
             ),
             Self::Drawing(ref mut console, ref mut draws, order) => (
                 RunInputs::new(store),
-                Some(&mut **console),
+                Some(console.reborrow()),
                 Some((&mut **draws, order)),
             ),
         }
@@ -546,7 +548,7 @@ impl<'source> Machine<'_, 'source>
     pub fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>
     {
         let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
@@ -558,7 +560,7 @@ impl<'source> Machine<'_, 'source>
             returned,
             forced,
             Choice::Policy,
-            Hosting::Printing(console),
+            Hosting::Printing(console.reborrow()),
         )
         .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
@@ -604,7 +606,7 @@ impl<'source> Machine<'_, 'source>
                 .terminal(
                     (returned, forced),
                     Choice::Policy,
-                    (&mut store, Hosting::Printing(console)),
+                    (&mut store, Hosting::Printing(Streams::Captured(console))),
                 ),
         };
         match ran {
@@ -637,7 +639,7 @@ impl<'source> Machine<'_, 'source>
     pub fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>
     {
@@ -650,7 +652,7 @@ impl<'source> Machine<'_, 'source>
             returned,
             forced,
             Choice::Policy,
-            Hosting::Traced(console, trace),
+            Hosting::Traced(console.reborrow(), trace),
         )
         .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
@@ -792,7 +794,7 @@ impl<'source> Machine<'_, 'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
@@ -804,7 +806,7 @@ impl<'source> Machine<'_, 'source>
             returned,
             forced,
             Choice::Tier(engine.tier()),
-            Hosting::Printing(console),
+            Hosting::Printing(console.reborrow()),
         )
     }
 
@@ -1093,7 +1095,7 @@ impl<'source> Machine<'_, 'source>
                     returned,
                     forced,
                     Choice::Policy,
-                    Hosting::Drawing(&mut captured, &mut draws, order),
+                    Hosting::Drawing(Streams::Captured(&mut captured), &mut draws, order),
                 )
                 .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)));
             if let Some(drawn) = draws.past() {
@@ -1235,6 +1237,11 @@ impl<'source> Machine<'_, 'source>
     ///   core term is the normaliser's answer.
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `gandr-surface-dispatcher::tests::differential::a_transport_along_an_inline_equivalence_normalises_1677`
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames and host replies, growth within
+    ///   the program's run
     fn terminal(
         &self,
         (returned, forced): (CommandId, CommandId),
@@ -1297,6 +1304,11 @@ impl<'source> Machine<'_, 'source>
     ///
     /// # Errors
     /// The tier's [`Declined`].
+    ///
+    /// # Cost
+    /// - allocation: the step budget's bound, read once, setup
+    /// - allocation: the run's store, frames, jobs and host replies, growth
+    ///   within the program's run
     fn terminal_on(
         &self,
         (pool, scheduled): (&Pool, &Definitions),
@@ -1305,7 +1317,7 @@ impl<'source> Machine<'_, 'source>
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
         let budget = budget::bound();
-        let mut host = console::PrintingHost::new(console);
+        let mut host = console::PrintingHost::new(Streams::Captured(console));
         self.forced(
             roots,
             store,
@@ -1919,7 +1931,7 @@ impl Runner for Machine<'_, '_>
     ) -> RunSpelling
     {
         let mut captured = Captured::default();
-        let evaluation = self.evaluate_printing(constant, &mut captured);
+        let evaluation = self.evaluate_printing(constant, &mut Streams::Captured(&mut captured));
         printed(&captured, &evaluation)
     }
 
@@ -1929,6 +1941,10 @@ impl Runner for Machine<'_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the captured text, the trace and each channel's name and
+    ///   web, diagnostic
     #[inline]
     fn run_traced(
         &mut self,
@@ -1937,7 +1953,8 @@ impl Runner for Machine<'_, '_>
     {
         let mut captured = Captured::default();
         let mut trace = Trace::default();
-        let evaluation = self.evaluate_traced(constant, &mut captured, &mut trace);
+        let evaluation =
+            self.evaluate_traced(constant, &mut Streams::Captured(&mut captured), &mut trace);
         let channels = trace
             .plays
             .iter()
@@ -2186,7 +2203,7 @@ pub trait Runs<'source>
     fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>;
 
     /// As [`Machine::evaluate_traced`].
@@ -2203,7 +2220,7 @@ pub trait Runs<'source>
     fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>;
 
@@ -2279,7 +2296,7 @@ pub trait Runs<'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>;
 
     /// As [`Machine::read_on`].
@@ -2341,7 +2358,7 @@ pub trait Runs<'source>
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>;
 
@@ -2360,7 +2377,7 @@ pub trait Runs<'source>
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted;
 }
 
@@ -2387,7 +2404,7 @@ impl<'source> Runs<'source> for Program<'source>
     fn evaluate_printing(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Evaluation<'source>
     {
         Machine::new(self).evaluate_printing(constant, console)
@@ -2401,7 +2418,7 @@ impl<'source> Runs<'source> for Program<'source>
     fn evaluate_traced(
         &mut self,
         constant: ConstantIndex,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         trace: &mut Trace,
     ) -> Evaluation<'source>
     {
@@ -2457,7 +2474,7 @@ impl<'source> Runs<'source> for Program<'source>
         &mut self,
         constant: ConstantIndex,
         engine: Engine,
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         Machine::new(self).evaluate_printing_on(constant, engine, console)
@@ -2505,7 +2522,7 @@ impl<'source> Runs<'source> for Program<'source>
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
@@ -2522,7 +2539,7 @@ impl<'source> Runs<'source> for Program<'source>
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         Machine::new(self).host(worlds, net, hosting, console)
@@ -2602,7 +2619,7 @@ impl gandr_surface_dispatcher::Engine for Evaluator
         program: &mut Program<'source>,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
@@ -2619,7 +2636,7 @@ impl gandr_surface_dispatcher::Engine for Evaluator
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         Machine::new(program).host(worlds, net, hosting, console)
@@ -2707,6 +2724,7 @@ mod tests
     use super::Runs as _;
     use super::SealedRun;
     use super::Start;
+    use super::Streams;
     use super::Unfinished;
     use super::Unrunnable;
     use crate::Evaluator;
@@ -2852,7 +2870,9 @@ mod tests
             .expect("the program declares `greet`");
         let mut console = Captured::default();
         assert_eq!(
-            printing.evaluate_printing(greet, &mut console).to_string(),
+            printing
+                .evaluate_printing(greet, &mut Streams::Captured(&mut console))
+                .to_string(),
             "*{}",
             "the run returns the unit"
         );
@@ -2860,7 +2880,11 @@ mod tests
         let mut executed = Captured::default();
         assert_eq!(
             printing
-                .evaluate_printing_on(greet, Engine::Executor, &mut executed)
+                .evaluate_printing_on(
+                    greet,
+                    Engine::Executor,
+                    &mut Streams::Captured(&mut executed)
+                )
                 .map(|evaluation| evaluation.to_string()),
             Ok(String::from("*{}")),
             "the executor alone runs it alike"
@@ -4484,8 +4508,8 @@ mod tests
     /// trivial.
     fn record(
         walked: &mut Walked,
-        item: &dyn core::fmt::Display,
-        name: &dyn core::fmt::Display,
+        item: &impl core::fmt::Display,
+        name: &impl core::fmt::Display,
         run: &Swept<'_>,
     )
     {

@@ -4,7 +4,7 @@
 //!
 //! The run takes a host. An operation no handler of the run claims is offered
 //! to it: `Proc.exit` stops the run with its payload as the exit status,
-//! `Console.print` writes its line to the run's [`Console`], a `Net`
+//! `Console.print` writes its line to the run's [`Streams`], a `Net`
 //! operation goes to the run's network when it has one, a `Reals` operation
 //! goes to the plans and the machines the run holds, a `Rand` operation draws
 //! from the entropy source of the operating system, and every other operation
@@ -33,11 +33,11 @@ use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::Migrated;
 use gandr_runtime_emitter::MigrationRequest;
 use gandr_runtime_net::Net;
-use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Entry;
 use gandr_surface_dispatcher::ExitStatus;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Worlds;
 use gandr_surface_lowering::Arguments;
 use quenchant_shape::shape::Maybe;
@@ -65,7 +65,7 @@ const EXIT: &str = "exit";
 pub(super) struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
-    console: &'host mut dyn Console,
+    console: Streams<'host>,
     /// The run's network, when it has one.
     net: Option<&'host mut Net>,
     /// The plans and the machines of exact reals that the run holds.
@@ -83,7 +83,7 @@ impl<'host> EntryHost<'host>
     /// # Specification
     /// trivial.
     pub(super) fn new(
-        console: &'host mut dyn Console,
+        console: Streams<'host>,
         net: Option<&'host mut Net>,
         profile: RealsProfile,
         worlds: Option<(Worlds<'host>, &'host [String])>,
@@ -116,7 +116,7 @@ impl HostHandler for EntryHost<'_>
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>
     {
-        if let Some(reply) = console::served(self.console, request, values) {
+        if let Some(reply) = console::served(&mut self.console, request, values) {
             return reply;
         }
         if let Some(network) = self.net.as_deref_mut()
@@ -124,10 +124,10 @@ impl HostHandler for EntryHost<'_>
         {
             return reply;
         }
-        if let Some(reply) = reals::served(&mut self.reals, self.console, request, values) {
+        if let Some(reply) = reals::served(&mut self.reals, &mut self.console, request, values) {
             return reply;
         }
-        if let Some(reply) = rand::served(self.console, request, values) {
+        if let Some(reply) = rand::served(&mut self.console, request, values) {
             return reply;
         }
         if request.signature.name().as_ref() != PROC || request.operation.as_ref() != EXIT {
@@ -210,12 +210,16 @@ impl<'source> Machine<'_, 'source>
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_world_bound_to_this_host_runs_here`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_world_no_binding_names_is_refused_before_the_run`
+    ///
+    /// # Cost
+    /// - allocation: the core arena, the argument list, the run's store and its
+    ///   host's tables, growth within the program's run
     #[inline]
     pub fn enter(
         &mut self,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         (net, worlds, profile): (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>
     {
@@ -246,7 +250,7 @@ impl<'source> Machine<'_, 'source>
         };
         let mut store = Store::new();
         let mut host = EntryHost::new(
-            console,
+            console.reborrow(),
             net,
             profile,
             worlds.map(|worlds| (worlds, self.names.as_slice())),

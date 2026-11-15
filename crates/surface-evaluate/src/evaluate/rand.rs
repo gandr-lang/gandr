@@ -46,9 +46,10 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::Bits;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Console as _;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Printed;
+use gandr_surface_dispatcher::Streams;
 
 #[cfg(test)]
 mod tests;
@@ -145,12 +146,16 @@ impl fmt::Display for Declined
 ///   sum from 0 to 6; the widths 0, 65 and -1 are each declined with their
 ///   cause on standard error, and the run is stuck at the draw.
 /// - witness: `gandr-surface-dispatcher::tests::run::a_script_draws_fair_bits_5707`
+///
+/// # Cost
+/// - allocation: the reply in the store and the decline's line, growth within
+///   the run's store
 #[spec(
     captures: [random = request.signature.name().as_ref() == RAND],
     ensures: |ret| ret.is_none() != random,
 )]
 pub(super) fn served<Abort>(
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>
@@ -435,18 +440,20 @@ impl Draws
 /// - hypothesis: L3 — the exemplar's two draws of two bits settle their stated
 ///   distribution, and a draw of 17 bits is refused past the quota.
 /// - witness: `gandr-surface-dispatcher::tests::corpus::a_distribution_settles_over_every_answer_of_its_draws_5710`
+///
+/// # Cost
+/// - allocation: the reply in the store and the decline's line, growth within
+///   the run's store
 #[spec(
     captures: [random = request.signature.name().as_ref() == RAND],
     ensures: |ret| ret.is_none() != random,
 )]
-pub(super) fn answered<Abort, Printer>(
-    console: &mut Printer,
+pub(super) fn answered<Abort>(
+    console: &mut Streams<'_>,
     draws: &mut Draws,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>
-where
-    Printer: Console + ?Sized,
 {
     if request.signature.name().as_ref() != RAND {
         return None;

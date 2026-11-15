@@ -2,16 +2,21 @@
 //! `Stderr.eprint` perform go, and where `Stdin.read_line` reads.
 //!
 //! A [`Console`] takes each line that a run prints and gives each line that it
-//! reads. The driver's console writes to standard output or standard error and
-//! reads standard input. [`Captured`] keeps the lines and answers from the
-//! input that it gets, so a test or a corpus expectation reads what the program
-//! printed. The run stage serves the three streams on a console
-//! (`evaluate::console`). The script and the session give the console to a
-//! run, so these types stay below the run stage.
+//! reads. A run takes its console as [`Streams`], the closed set of the known
+//! consoles, so the run stage has one instance and each operation is one match.
+//! [`Streams::Standard`] writes to standard output or standard error and reads
+//! standard input. [`Captured`] keeps the lines and answers from the input that
+//! it gets, so a test or a corpus expectation reads what the program printed.
+//! [`Closed`] fails each operation, as a stream whose reader is gone does. The
+//! run stage serves the three streams on a console (`evaluate::console`). The
+//! script and the session give the console to a run, so these types stay below
+//! the run stage.
 
 use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
+use std::io::BufRead as _;
+use std::io::Write as _;
 
 /// Whether a console wrote a line.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -226,5 +231,216 @@ impl Console for Captured
     fn read_line(&mut self) -> Input
     {
         Input::Line(self.input.pop_front().unwrap_or_default())
+    }
+}
+
+/// A count of the lines and the reads asked of a console.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub struct Asked(usize);
+
+impl From<Asked> for usize
+{
+    /// The count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(asked: Asked) -> Self
+    {
+        asked.0
+    }
+}
+
+/// A console whose streams are closed: each line it is handed fails, as on a
+/// pipe whose reader is gone, and each read fails. It counts each line and
+/// each read, so a test reads where the run stopped.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(transparent)]
+pub struct Closed
+{
+    /// The lines and the reads asked of it.
+    asked: Asked,
+}
+
+impl Closed
+{
+    /// The lines and the reads asked of the console.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn asked(&self) -> Asked
+    {
+        self.asked
+    }
+
+    /// Count one line or one read more.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn ask(&mut self)
+    {
+        self.asked = Asked(self.asked.0.saturating_add(1));
+    }
+}
+
+impl Console for Closed
+{
+    /// Count the line and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn print(
+        &mut self,
+        _line: Line<'_>,
+    ) -> Printed
+    {
+        self.ask();
+        Printed::Failed
+    }
+
+    /// Count the line and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eprint(
+        &mut self,
+        _line: Line<'_>,
+    ) -> Printed
+    {
+        self.ask();
+        Printed::Failed
+    }
+
+    /// Count the read and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn read_line(&mut self) -> Input
+    {
+        self.ask();
+        Input::Failed
+    }
+}
+
+/// The console a host hands a run, one of the known set. The run stage has
+/// one instance for the set, and each operation is one match.
+#[derive(Debug, Eq, PartialEq)]
+pub enum Streams<'console>
+{
+    /// The process's standard output, standard error and standard input. Each
+    /// operation takes its stream's lock, which the thread can hold already,
+    /// so the run's lines join the host's own in order.
+    Standard,
+    /// The lines kept in memory and the input fed ([`Captured`]).
+    Captured(&'console mut Captured),
+    /// Streams that fail each line and each read ([`Closed`]).
+    Closed(&'console mut Closed),
+}
+
+impl Streams<'_>
+{
+    /// The same console, borrowed for a shorter run: what lets a run hand its
+    /// console to each step in turn.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reborrow(&mut self) -> Streams<'_>
+    {
+        match *self {
+            Self::Standard => Streams::Standard,
+            Self::Captured(ref mut captured) => Streams::Captured(captured),
+            Self::Closed(ref mut closed) => Streams::Closed(closed),
+        }
+    }
+}
+
+/// Whether a write of a line to a standard stream came to the whole line.
+///
+/// # Specification
+/// trivial.
+const fn written(result: &std::io::Result<()>) -> Printed
+{
+    match *result {
+        Ok(()) => Printed::Written,
+        Err(_) => Printed::Failed,
+    }
+}
+
+impl Console for Streams<'_>
+{
+    /// Write `line` and a newline to standard output, or hand it to the
+    /// console held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
+    #[inline]
+    fn print(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed
+    {
+        match *self {
+            Self::Standard => written(&writeln!(std::io::stdout().lock(), "{}", line.as_ref())),
+            Self::Captured(ref mut captured) => captured.print(line),
+            Self::Closed(ref mut closed) => closed.print(line),
+        }
+    }
+
+    /// Write `line` and a newline to standard error, or hand it to the
+    /// console held.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the I/O error's payload, error path
+    #[inline]
+    fn eprint(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed
+    {
+        match *self {
+            Self::Standard => written(&writeln!(std::io::stderr().lock(), "{}", line.as_ref())),
+            Self::Captured(ref mut captured) => captured.eprint(line),
+            Self::Closed(ref mut closed) => closed.eprint(line),
+        }
+    }
+
+    /// The next line of standard input, its newline kept, and the empty
+    /// string at its end, or the console held's next line. A line of standard
+    /// input that is not UTF-8 fails.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the line read from standard input, growth within the line
+    #[inline]
+    fn read_line(&mut self) -> Input
+    {
+        match *self {
+            Self::Standard => {
+                let mut line = String::new();
+                let read = std::io::stdin().lock().read_line(&mut line);
+                match read {
+                    Ok(_) => Input::Line(line),
+                    Err(_) => Input::Failed,
+                }
+            },
+            Self::Captured(ref mut captured) => captured.read_line(),
+            Self::Closed(ref mut closed) => closed.read_line(),
+        }
     }
 }

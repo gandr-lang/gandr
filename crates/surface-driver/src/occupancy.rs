@@ -170,10 +170,16 @@ impl Occupied
     /// - hypothesis: L3 — the printed lines are one for each thread and one for
     ///   the run, each in its form.
     /// - witness: `tests::cli::check_prints_each_thread_s_occupancy_6298`
-    pub fn print(
+    ///
+    /// # Cost
+    /// - allocation: each thread's report text and the I/O fault's payload,
+    ///   diagnostic
+    pub fn print<Faults>(
         &self,
-        stderr: &mut dyn io::Write,
+        stderr: &mut Faults,
     ) -> io::Result<()>
+    where
+        Faults: io::Write,
     {
         let wall = u64::from(self.wall);
         let last = self.rows.len().saturating_sub(1);

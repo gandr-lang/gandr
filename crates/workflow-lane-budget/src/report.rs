@@ -622,6 +622,35 @@ impl Report
     }
 }
 
+/// The class column of a row: the cone of a landing's run, or the name of the
+/// window that the row reads.
+#[derive(Clone, Copy)]
+enum Class
+{
+    /// A landing's run, by the cone it touched.
+    Cone(Cone),
+    /// A run of another window, by the window's name.
+    Named(&'static str),
+}
+
+impl fmt::Display for Class
+{
+    /// Writes the class as the report's class column.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            Self::Cone(ref cone) => cone.fmt(f),
+            Self::Named(name) => f.write_str(name),
+        }
+    }
+}
+
 /// Writes `rows`, sampled over `window` from `runs`, as the report's Markdown
 /// table collapsed under a one-line summary: lane, class, median, budget,
 /// sample count and standing, the class `integration` for a row of the
@@ -650,6 +679,9 @@ impl Report
 /// - witness: `report::tests::a_daily_lane_is_held_over_the_scheduled_runs`
 /// - witness: `report::tests::a_nightly_lane_is_held_over_the_nightly_runs`
 /// - witness: `tests::cli::a_test_lane_is_sampled_over_the_integration_dispatches`
+///
+/// # Cost
+/// - allocation: each row's median text, growth within the rows
 fn table(
     f: &mut fmt::Formatter<'_>,
     rows: &[Row],
@@ -685,12 +717,12 @@ fn table(
             Maybe::Present(median) => median.to_string(),
             Maybe::Absent(Unsampled::NoSuccessfulJob) => "—".to_owned(),
         };
-        let class: &dyn fmt::Display = match window {
-            Window::Landing => &row.cone,
-            Window::Integration => &"integration",
-            Window::Main => &"main",
-            Window::Scheduled => &"daily",
-            Window::Nightly => &"nightly",
+        let class = match window {
+            Window::Landing => Class::Cone(row.cone),
+            Window::Integration => Class::Named("integration"),
+            Window::Main => Class::Named("main"),
+            Window::Scheduled => Class::Named("daily"),
+            Window::Nightly => Class::Named("nightly"),
         };
         if informed {
             writeln!(

@@ -2451,6 +2451,7 @@ INSERT INTO purpose VALUES('surface-agentic','rap::Announcement','struct','Names
 INSERT INTO purpose VALUES('surface-agentic','rap::Toolset','struct','Serves the Reactive Agent Protocol''s manifest and invoke endpoint beside the hub''s socket, so an agent runtime calls the hub''s tools and hears each answer by a callback.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-agentic','rap::deliver::Policy','struct','States when the toolset tries a failed callback again and how often, so a runtime that fails for a time still receives each result and each new state.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-agentic','rap::deliver::Retries','struct','Counts the attempts of a delivery after the first.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-agentic','rap::jobs::JobStream','struct','One stream of a job of the hub: the text that a verb writes, kept until the job ends, and refused once the job is retired.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-agentic','rap::jobs::Verbs','trait','Walks the paths of a `check` or a `test` job on the hub''s pool as the command line walks them, so the toolset answers a long operation with the lines that the verb prints.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-agentic','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','distribution::Bits','struct','The bits the draws of one path of runs take, and the quota a distributed run holds each path to.',NULL,'fits','sound',NULL);
@@ -2637,11 +2638,14 @@ INSERT INTO purpose VALUES('surface-dispatcher','entry::Entries','struct','The d
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Refusals','enum','Which of a step''s refusals its declarations print.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::Repairs','enum','Whether the repair a refusal names is checked before the refusal proposes it as its fix, so `check` proposes only a fix that settles its declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::answered::Unran','enum','Why a source checked alone ran nothing: it cannot be read, or it does not compose.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Asked','struct','A count of the writes and the reads that a run makes on a console.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Captured','struct','A console keeping every line it is handed, in order, each stream apart, and answering reads from the input it was fed.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Closed','struct','A console whose streams are closed: it fails each write and each read, and counts them, so a test reads where the run stopped.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Console','trait','Where a run''s printed lines go and where its input comes from.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Input','enum','What reading a line of input came to: the line with its newline, or a failure.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Line','struct','A line a run prints, without its newline.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Printed','enum','Whether a console wrote a line.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','entry::console::Streams','enum','The console that a host hands a run, one of the known set: the standard streams, the captured text or the closed streams.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::entered::Entered','enum','What running a program''s entry came to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::entered::Entry','struct','The declaration a program starts at, and what it takes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','entry::entered::ExitStatus','struct','The status a process leaves with: the low eight bits of the integer an entry returns or exits with, as a POSIX `exit` keeps them.',NULL,'fits','sound',NULL);

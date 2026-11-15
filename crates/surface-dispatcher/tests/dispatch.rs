@@ -15,6 +15,7 @@ use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Threads;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Width;
@@ -132,7 +133,8 @@ fn the_run_verb_routes_to_a_script()
     else {
         panic!("run routes to a script");
     };
-    let ScriptRun::Fault { path, .. } = script.run::<Evaluator>(&mut Captured::default())
+    let ScriptRun::Fault { path, .. } =
+        script.run::<Evaluator>(&mut Streams::Captured(&mut Captured::default()))
     else {
         panic!("an absent script faults");
     };

@@ -200,6 +200,7 @@ use self::deliver::Post;
 pub use self::deliver::Retries;
 use self::deliver::Row;
 use self::jobs::Command;
+pub use self::jobs::JobStream;
 use self::jobs::Pinned;
 pub use self::jobs::Verbs;
 use self::subscriptions::Generation;
@@ -1979,6 +1980,10 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the request's text and the reply's body, growth within the
+///   request
 fn answer<Log>(
     stream: &mut TcpStream,
     buffer: &mut Buffer,
@@ -2141,9 +2146,12 @@ fn ended<Log>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the reason's text, diagnostic
 fn refuse(
     stream: &mut TcpStream,
-    reason: &dyn core::fmt::Display,
+    reason: &impl core::fmt::Display,
 ) -> io::Result<()>
 {
     let reason = alloc::format!("{reason}");
@@ -2843,6 +2851,7 @@ mod tests
 
     use super::Announcement;
     use super::Buffer;
+    use super::JobStream;
     use super::LOST;
     use super::Policy;
     use super::REQUEST_WAIT;
@@ -4297,7 +4306,7 @@ mod tests
             _verb: Verb,
             paths: Vec<PathBuf>,
             _pool: &Pool,
-            (printed, _faulted): (&mut dyn std::io::Write, &mut dyn std::io::Write),
+            (printed, _faulted): (&mut JobStream, &mut JobStream),
         ) -> std::io::Result<()>
         {
             for path in &paths {

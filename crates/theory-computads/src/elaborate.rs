@@ -4935,9 +4935,14 @@ mod tests
         assert!(missing.to_string().contains("73"));
         assert!(count.to_string().contains("37"));
         assert!(mixed.to_string().contains("chosen-seam"));
-        let diagnostics: [&dyn fmt::Display; 4] = [&missing, &count, &no_inverse, &mixed];
-        for diagnostic in diagnostics {
-            assert!(write!(RefusingWriter, "{diagnostic}").is_err());
+        let written = [
+            write!(RefusingWriter, "{missing}"),
+            write!(RefusingWriter, "{count}"),
+            write!(RefusingWriter, "{no_inverse}"),
+            write!(RefusingWriter, "{mixed}"),
+        ];
+        for each in written {
+            assert!(each.is_err());
         }
     }
 

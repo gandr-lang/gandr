@@ -50,6 +50,7 @@ use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_evaluate::Engine;
@@ -299,14 +300,21 @@ fn the_corpus_runs_items_agree_on_both_executors()
                 item.clear();
                 write!(item, "{} {}", path.display(), declaration.name()).expect("an item writes");
                 let mut printed = Captured::default();
-                let expected =
-                    program.evaluate_printing_on(constant, Engine::Executor, &mut printed);
+                let expected = program.evaluate_printing_on(
+                    constant,
+                    Engine::Executor,
+                    &mut Streams::Captured(&mut printed),
+                );
                 if PATCHER {
                     let mut native = Captured::default();
                     assert_eq!(
                         (&expected, printed.lines()),
                         (
-                            &program.evaluate_printing_on(constant, Engine::Native, &mut native),
+                            &program.evaluate_printing_on(
+                                constant,
+                                Engine::Native,
+                                &mut Streams::Captured(&mut native)
+                            ),
                             native.lines()
                         ),
                         "{item}: native code against the executor"

@@ -18,7 +18,7 @@ use gandr_runtime_emitter::HostHandler;
 use gandr_runtime_net::Net;
 use gandr_surface_corpus::Runner;
 
-use crate::entry::console::Console;
+use crate::entry::console::Streams;
 use crate::entry::entered::Entered;
 use crate::entry::entered::Entry;
 use crate::entry::entered::RealsProfile;
@@ -141,7 +141,7 @@ pub trait Engine
         program: &mut Program<'source>,
         entry: Entry,
         arguments: &[String],
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
         hosting: (Option<&mut Net>, Option<Worlds<'_>>, RealsProfile),
     ) -> Entered<'source>;
 
@@ -166,6 +166,6 @@ pub trait Engine
         worlds: Worlds<'_>,
         net: &mut Net,
         hosting: (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted;
 }

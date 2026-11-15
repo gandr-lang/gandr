@@ -61,10 +61,11 @@ use gandr_kernel_term::StringLiteral;
 use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Console as _;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_theory_exact_reals::Answer;
 use gandr_theory_exact_reals::BitWidth;
 use gandr_theory_exact_reals::Budget;
@@ -477,13 +478,17 @@ impl fmt::Display for Declined
 ///   verdict.
 /// - witness: `gandr-surface-dispatcher::tests::run::a_script_encloses_the_square_root_of_two_5700`
 /// - witness: `gandr-surface-dispatcher::tests::run::a_script_decides_comparisons_through_reals_5703`
+///
+/// # Cost
+/// - allocation: the plans and machines held, each reply in the store and the
+///   decline's line, growth within the run's tables
 #[spec(
     captures: [real = request.signature.name().as_ref() == REALS],
     ensures: |ret| ret.is_none() != real,
 )]
 pub(super) fn served<Abort>(
     reals: &mut Reals,
-    console: &mut dyn Console,
+    console: &mut Streams<'_>,
     request: HostRequest<'_>,
     values: &mut HostValues<'_>,
 ) -> Option<HostReply<Abort>>

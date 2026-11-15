@@ -73,12 +73,13 @@ use gandr_runtime_net::Net;
 use gandr_runtime_net::WorldName;
 use gandr_storage_values::ChunkCount;
 use gandr_storage_values::ValueManifest;
-use gandr_surface_dispatcher::Console;
+use gandr_surface_dispatcher::Console as _;
 use gandr_surface_dispatcher::Hosted;
 use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::MigrationCount;
 use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::RealsProfile;
+use gandr_surface_dispatcher::Streams;
 use gandr_surface_dispatcher::Worlds;
 
 use super::Machine;
@@ -197,13 +198,17 @@ impl Machine<'_, '_>
     ///   migration's body prints.
     /// - witness: `gandr-surface-dispatcher::tests::run::a_second_migration_of_an_edited_list_fetches_what_changed_3365`
     /// - witness: `gandr-surface-dispatcher::tests::run::a_host_prints_the_line_its_migration_prints_3546`
+    ///
+    /// # Cost
+    /// - allocation: the manifests held and each migration's report line,
+    ///   growth within the migrations
     #[inline]
     pub fn host(
         &self,
         worlds: Worlds<'_>,
         net: &mut Net,
         (migrations, profile): (MigrationCount, RealsProfile),
-        console: &mut dyn Console,
+        console: &mut Streams<'_>,
     ) -> Hosted
     {
         let mut held: Vec<ValueManifest> = Vec::new();
@@ -250,12 +255,16 @@ impl Machine<'_, '_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: each capture fetched, the answer's manifest and the run's
+    ///   values, growth within the migration's captures
     fn arrived(
         &self,
         (worlds, net): (Worlds<'_>, &mut Net),
         arrival: &Arrival,
         (held, fetched): (&mut Vec<ValueManifest>, &mut ChunkCount),
-        (console, profile): (&mut dyn Console, RealsProfile),
+        (console, profile): (&mut Streams<'_>, RealsProfile),
     ) -> Answer
     {
         let configuration = &arrival.configuration;
@@ -305,7 +314,7 @@ impl Machine<'_, '_>
             World::Host => None,
         };
         let mut entry = EntryHost::new(
-            console,
+            console.reborrow(),
             Some(&mut *net),
             profile,
             Some((worlds, self.names.as_slice())),

@@ -2,14 +2,16 @@
 # The policy refuses a trait object of a configured class, and a reasoned
 # `expect` at the site keeps it (#7384). `check:dylint` runs the case after
 # its own run, through its own command (`policy`). The case builds a scratch
-# workspace of four packages. Two hold one static trait object of
+# workspace of five packages. Two hold one static trait object of
 # `core::fmt::Display`, and the configuration names that trait as a class.
 # The run over `trait-object-case-refused` fails and names the lint. The run
 # over `trait-object-case-kept`, whose static carries the `expect`, passes.
-# The other two hold a static `dyn Fn` and a static `dyn FnMut`, and the
+# Two more hold a static `dyn Fn` and a static `dyn FnMut`, and the
 # configuration names `core::ops::Fn` and `core::ops::FnMut` as the
-# workspace does (#7386). Each run fails and names the lint, so a class path
-# that resolves to no trait fails the case.
+# workspace does (#7386). The last holds a static `dyn std::io::Write`, and
+# the configuration names `std::io::Write` as the workspace does (#7387).
+# Each of the last three runs fails and names the lint, so a class path that
+# resolves to no trait fails the case.
 set -euo pipefail
 declare -F policy > /dev/null || { echo "trait-object case: run it from check:dylint, which exports \`policy\`" >&2; exit 2; }
 scratch=$(mktemp -d)
@@ -32,17 +34,18 @@ package() {
 }
 
 shown='pub static SHOWN: &(dyn core::fmt::Display + Sync) = &1_u32;'
-printf '[workspace]\nmembers = ["refused", "kept", "called", "moved"]\nresolver = "3"\n' > "$scratch/Cargo.toml"
+printf '[workspace]\nmembers = ["refused", "kept", "called", "moved", "written"]\nresolver = "3"\n' > "$scratch/Cargo.toml"
 package refused '' "$shown"
 package kept '#[cfg_attr(dylint_lib = "quenchant_dylints", expect(trait_object, reason = "the case keeps one trait object"))]' "$shown"
 package called '' 'pub static CALLED: &(dyn Fn() + Sync) = &|| {};'
 package moved '' 'pub static MOVED: &(dyn FnMut() + Sync) = &|| {};'
+package written '' 'pub static WRITTEN: &(dyn std::io::Write + Sync) = &std::io::empty();'
 cargo generate-lockfile --offline --quiet --manifest-path "$scratch/Cargo.toml"
 
 # The records of the case's crates go to the scratch directory, never to the
 # workspace's evidence. Cargo writes its output plain, so the case reads its
 # lines as text.
-configuration=$(printf '[quenchant-dylints]\nevidence_directory = "%s"\ntrait_object_classes = ["core::fmt::Display", "core::ops::Fn", "core::ops::FnMut"]\n' "$scratch/records")
+configuration=$(printf '[quenchant-dylints]\nevidence_directory = "%s"\ntrait_object_classes = ["core::fmt::Display", "core::ops::Fn", "core::ops::FnMut", "std::io::Write"]\n' "$scratch/records")
 run() {
   DYLINT_TOML=$configuration CARGO_TERM_COLOR=never \
     policy --manifest-path "$scratch/Cargo.toml" --package "trait-object-case-$1" 2>&1
@@ -65,6 +68,11 @@ for name in called moved; do
     fail "#7386: the policy refuses the $name callback by its class path" "exit $status: $out"
   fi
 done
+status=0
+out=$(run written) || status=$?
+if [[ $status == 0 || $out != *"is a trait object of a configured class"* ]]; then
+  fail "#7387: the policy refuses the writer by its class path" "exit $status: $out"
+fi
 
 (( failed == 0 )) || exit 1
-echo "trait-object case OK: the policy refuses each configured class by name, the callbacks' paths among them, and a reasoned expect keeps its site"
+echo "trait-object case OK: the policy refuses each configured class by name, the callbacks' and the writer's paths among them, and a reasoned expect keeps its site"
