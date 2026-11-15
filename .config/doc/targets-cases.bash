@@ -9,6 +9,8 @@
 #
 # The crates:
 #
+# - `gandr-runtime-uring`: the crate root stands on Linux alone, and another
+#   system compiles it empty.
 # - `gandr-storage-io`: each item of the ring stands on Linux on x86-64,
 #   aarch64 and riscv64 alone. Another target holds the module `absent`.
 #
@@ -19,7 +21,7 @@ case $(uname -s) in
   Linux) target=aarch64-apple-darwin ;;
   *) target=x86_64-unknown-linux-gnu ;;
 esac
-crates=(gandr-storage-io)
+crates=(gandr-runtime-uring gandr-storage-io)
 packages=()
 for crate in "${crates[@]}"; do packages+=(--package "$crate"); done
 export RUSTDOCFLAGS="-D warnings -Zunstable-options --check"

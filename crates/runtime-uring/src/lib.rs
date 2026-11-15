@@ -2,15 +2,17 @@
 //! its registrar of files, and a preparer for each operation that liburing
 //! names.
 //!
-//! [`IoUring`] sets up a ring through [`IoUringBuilder`], which takes each
-//! setup flag at most once and fixes the sizes of the two kinds of entry in
-//! the ring's type. [`SubmissionQueue`] gives free entries; each preparer is
-//! a method of [`Sqe64`] in the module [`sqe`] that names its operation.
-//! [`CompletionQueue`] gives the ready completions, or waits for them, and
+//! `IoUring` sets up a ring through `IoUringBuilder`, which takes each setup
+//! flag at most once and fixes the sizes of the two kinds of entry in the
+//! ring's type. `SubmissionQueue` gives free entries; each preparer is a
+//! method of `Sqe64` in the module `sqe` that names its operation.
+//! `CompletionQueue` gives the ready completions, or waits for them, and
 //! marks each given one as seen when its run drops.
 //!
 //! The crate stands on liburing, the kernel's C library of the ring, as the
-//! owner's crate does. On a system other than Linux it compiles empty.
+//! owner's crate does. On a system other than Linux it compiles empty. So
+//! this lead names each item in code and links none: a link resolves on
+//! Linux alone.
 
 // The ring is the Linux kernel's: on another system the crate compiles empty.
 #![cfg(target_os = "linux")]
