@@ -291,16 +291,22 @@ pub(super) fn keep_entry(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the vacancy and the commit records of the retired entry,
+///   growth within the record's entries
+///
 /// # Adequacy
 /// - hypothesis: L3 — a refused keep retires the unit and the place crosses, as
 ///   a fresh admission crosses it; a retirement that a running check reads
 ///   waits, and the place does not cross beside a live entry of its own.
 /// - witness: `bridge::tests::a_kept_readmission_answers_as_a_whole_one_6846`
 #[spec(captures: length = environment.entries().len(), ensures: environment.entries().len() == length)]
-pub(super) fn retire_unit(
-    environment: &mut Environment,
+pub(super) fn retire_unit<Obligations>(
+    environment: &mut Environment<Obligations>,
     entry: &Readmitted,
 ) -> Result<(), KernelError>
+where
+    Obligations: gandr_kernel_core::fork::ObligationFork,
 {
     if let Maybe::Present(position) = position_of(&entry.outcome)
         && environment.entries().get(usize::from(position)).is_some()

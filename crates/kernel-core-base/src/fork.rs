@@ -15,9 +15,11 @@
 //! them. The runs read the size of the drain and the [`ForkWidth`] alone, so
 //! a check at one width forks the same jobs each time.
 //!
-//! The seam is object-safe, so a `Judgement` carries it
-//! without a type parameter. The kernel sits below the core crates, so it
-//! states the seam itself. The driver's pool implements it.
+//! The judgement carries the fork's type as a parameter, so each call through
+//! the seam is static. The kernel sits below the core crates, so it states the
+//! seam itself. The driver's pool implements it. A check with no fork names
+//! [`Unforked`]: one worker, the calling thread, so the kernel never forks
+//! through it.
 //!
 //! # References
 //!
@@ -62,7 +64,7 @@ pub trait Job: Send
 ///   once.
 /// - panics: a panic of a job, wherever it ran.
 /// - executable: none — the schedule is the implementation's.
-pub trait ObligationFork: Sync
+pub trait ObligationFork: Send + Sync
 {
     /// Run each of `jobs` one time.
     ///
@@ -78,10 +80,11 @@ pub trait ObligationFork: Sync
     /// - hypothesis: L3 — the forked drain's witnesses run the jobs in the
     ///   serial order, in the reverse order and on threads of their own.
     /// - declaration-only: the obligation is each implementation's schedule.
-    fn run_jobs(
+    fn run_jobs<J>(
         &self,
-        jobs: &mut [&mut dyn Job],
-    );
+        jobs: &mut [J],
+    ) where
+        J: Job;
 
     /// How many jobs this fork runs at once.
     ///
@@ -96,6 +99,46 @@ pub trait ObligationFork: Sync
     ///   width of their fork, and count the jobs.
     /// - declaration-only: the obligation is each implementation's.
     fn workers(&self) -> ForkWidth;
+}
+
+/// The fork of a check that has none: one worker, the calling thread.
+///
+/// The kernel forks only through a fork of two workers or more, so it never
+/// forks through this one. A call runs each job on the calling thread, in
+/// order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Unforked;
+
+impl ObligationFork for Unforked
+{
+    /// Run each of `jobs` on the calling thread, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn run_jobs<J>(
+        &self,
+        jobs: &mut [J],
+    ) where
+        J: Job,
+    {
+        for job in jobs {
+            job.run();
+        }
+    }
+
+    /// One worker: the calling thread.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn workers(&self) -> ForkWidth
+    {
+        ForkWidth(NonZeroUsize::MIN)
+    }
 }
 
 /// How many jobs a fork runs at once: the workers it has, the calling thread
@@ -138,11 +181,10 @@ impl From<ForkWidth> for NonZeroUsize
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Default)]
 #[repr(transparent)]
-pub struct Forking<'session>(Option<&'session dyn ObligationFork>);
+pub struct Forking<'session, Fork>(Option<&'session Fork>);
 
-impl<'session> Forking<'session>
+impl<'session, Fork> Forking<'session, Fork>
 {
     /// A check that forks through `fork`, or that runs each obligation on the
     /// calling thread, in order, when `fork` is none.
@@ -151,7 +193,7 @@ impl<'session> Forking<'session>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn new(fork: Option<&'session dyn ObligationFork>) -> Self
+    pub const fn new(fork: Option<&'session Fork>) -> Self
     {
         Self(fork)
     }
@@ -162,13 +204,43 @@ impl<'session> Forking<'session>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn fork(self) -> Option<&'session dyn ObligationFork>
+    pub const fn fork(self) -> Option<&'session Fork>
     {
         self.0
     }
 }
 
-impl fmt::Debug for Forking<'_>
+impl<Fork> Clone for Forking<'_, Fork>
+{
+    /// The same fork, by its reference.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Fork> Copy for Forking<'_, Fork>
+{
+}
+
+impl<Fork> Default for Forking<'_, Fork>
+{
+    /// A check that runs each obligation on the calling thread, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self(None)
+    }
+}
+
+impl<Fork> fmt::Debug for Forking<'_, Fork>
 {
     /// `forked` or `serial`: the fork itself is the driver's.
     ///
@@ -190,11 +262,10 @@ impl fmt::Debug for Forking<'_>
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Default)]
 #[repr(transparent)]
-pub struct SharedFork(Option<Arc<dyn ObligationFork + Send>>);
+pub struct SharedFork<Fork>(Option<Arc<Fork>>);
 
-impl SharedFork
+impl<Fork> SharedFork<Fork>
 {
     /// Each check running its obligations on the calling thread, in order.
     ///
@@ -214,7 +285,7 @@ impl SharedFork
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn through(fork: Arc<dyn ObligationFork + Send>) -> Self
+    pub const fn through(fork: Arc<Fork>) -> Self
     {
         Self(Some(fork))
     }
@@ -225,15 +296,39 @@ impl SharedFork
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn forking(&self) -> Option<&dyn ObligationFork>
+    pub fn forking(&self) -> Option<&Fork>
     {
-        self.0
-            .as_deref()
-            .map(|fork| -> &dyn ObligationFork { fork })
+        self.0.as_deref()
     }
 }
 
-impl fmt::Debug for SharedFork
+impl<Fork> Clone for SharedFork<Fork>
+{
+    /// The same fork, shared by one more count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self(self.0.clone())
+    }
+}
+
+impl<Fork> Default for SharedFork<Fork>
+{
+    /// Each check running its obligations on the calling thread, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self(None)
+    }
+}
+
+impl<Fork> fmt::Debug for SharedFork<Fork>
 {
     /// `forked` or `serial`: the fork itself is the driver's.
     ///

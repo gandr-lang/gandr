@@ -85,8 +85,8 @@ pub(super) struct Signature<'signature>
 /// - witness: `tests::codata::a_data_head_is_not_codata`
 #[spec(ensures: |ret| ret.is_ok() == (matches!(judgement.block, super::Block::Codata { position, .. } if position == index)
     || matches!(judgement.entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Codata { .. }))))]
-pub(super) fn resolve<'session>(
-    judgement: super::Judgement<'session>,
+pub(super) fn resolve<'session, Fork>(
+    judgement: super::Judgement<'session, Fork>,
     index: ConstantIndex,
 ) -> Result<Signature<'session>, KernelError>
 {
@@ -327,6 +327,10 @@ fn argument_at(
 /// Returns `ArenaFault`, `NotACodataType`, `DataArgumentArity` or
 /// `CodataWithoutObservations`.
 ///
+/// # Cost
+/// - allocation: the nodes of the read observations in the arena, growth within
+///   the declaration's check
+///
 /// # Adequacy
 /// - hypothesis: L3 — a stream of naturals reads as `F Nat & Stream Nat`, its
 ///   head observation instantiated at the argument; a one-observation codata
@@ -334,12 +338,14 @@ fn argument_at(
 /// - witness: `tests::codata::a_stream_is_admitted_and_observed`
 /// - witness: `tests::codata::a_single_observation_reads_as_a_lazy_product_of_one`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| arena.comp_type(*read).is_some()))]
-pub(super) fn observed(
+pub(super) fn observed<Fork>(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    judgement: super::Judgement<'_>,
+    judgement: super::Judgement<'_, Fork>,
     codata: CompTypeId,
 ) -> Result<CompTypeId, KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let Some(&CompType::Codata {
         declaration,
@@ -398,12 +404,14 @@ pub(super) fn observed(
 /// - witness: `tests::codata::a_stream_is_admitted_and_observed`
 /// - witness: `check::tests::a_lambda_checks_at_a_decode_of_a_case_on_an_injection_5036`
 #[spec(ensures: |ret| matches!(arena.comp_type(shape), Some(CompType::Codata { .. } | CompType::Element { .. })) || ret.as_ref() == Ok(&shape))]
-pub(super) fn read(
+pub(super) fn read<Fork>(
     arena: &mut TermArena,
     session: &mut SupportContext,
-    judgement: super::Judgement<'_>,
+    judgement: super::Judgement<'_, Fork>,
     shape: CompTypeId,
 ) -> Result<CompTypeId, KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let head = super::read_returned_comp_decode(arena, judgement, shape);
     if matches!(arena.comp_type(head), Some(CompType::Codata { .. })) {

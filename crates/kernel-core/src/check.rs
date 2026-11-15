@@ -636,11 +636,13 @@ fn returner_ending(
 /// - witness: `element_identity::tests::a_corrupted_relation_is_refused_by_name`
 /// - witness: `check::tests::a_mode_switch_reads_a_call_a_stuck_arm_holds_by_its_unfolding_3090`
 #[spec(captures: before = arena.watermark(), ensures: arena.watermark() == before)]
-fn read_returned(
+fn read_returned<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     goal: ConversionGoal,
 ) -> Result<EndpointReading, KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let mut pending = Vec::new();
     let structural = pending_endpoints(arena, judgement.presentations, goal, &mut pending);
@@ -688,7 +690,7 @@ fn read_returned(
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
 /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
-fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+fn entry_unfoldings<Fork>(judgement: Judgement<'_, Fork>) -> Unfoldings
 {
     Unfoldings::admitted(judgement.entries)
         .presenting(judgement.presentations.clone())
@@ -776,9 +778,9 @@ fn literal_identity_typed(
 ///   field 443, and one that names a definition of 80 is refused by its label.
 /// - witness: `tests::native_formers::a_value_coerced_in_at_a_named_fixed_value_replays_5683`
 #[spec(ensures: |ret| ret == value || matches!(arena.value(value), Some(&Value::Constant(_))))]
-fn defined_value(
+fn defined_value<Fork>(
     arena: &TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     value: ValueId,
 ) -> ValueId
 {
@@ -841,11 +843,13 @@ fn defined_value(
             && matches!(arena.value_type(ty), Some(&ValueType::Element { code, .. })
                 if matches!(arena.value(code), Some(Value::Returned(_))))),
 )]
-fn read_returned_decode(
+fn read_returned_decode<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     ty: ValueTypeId,
 ) -> ValueTypeId
+where
+    Fork: crate::fork::ObligationFork,
 {
     let Some(&ValueType::Element { code, .. }) = arena.value_type(ty)
     else {
@@ -884,11 +888,13 @@ fn read_returned_decode(
             && matches!(arena.comp_type(ty), Some(&CompType::Element { code, .. })
                 if matches!(arena.value(code), Some(Value::Returned(_))))),
 )]
-fn read_returned_comp_decode(
+fn read_returned_comp_decode<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     ty: CompTypeId,
 ) -> CompTypeId
+where
+    Fork: crate::fork::ObligationFork,
 {
     let Some(&CompType::Element { code, .. }) = arena.comp_type(ty)
     else {
@@ -966,8 +972,7 @@ const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
 /// admitted results. Grouped because they travel together through both
 /// machines and are constant for the whole of one check, which is also why
 /// none is in a memo key.
-#[derive(Clone, Copy, Debug)]
-pub struct Judgement<'session>
+pub struct Judgement<'session, Fork>
 {
     /// The environment's admitted declarations, for constant and atom
     /// resolution.
@@ -1004,7 +1009,53 @@ pub struct Judgement<'session>
     taking: crate::admitted::Taking<'session>,
     /// Whether the check's last drain runs its obligations apart, and
     /// through which fork.
-    forking: crate::fork::Forking<'session>,
+    forking: crate::fork::Forking<'session, Fork>,
+}
+
+impl<Fork> Clone for Judgement<'_, Fork>
+{
+    /// The same judgement: each of its inputs is a reference or a copy.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Fork> Copy for Judgement<'_, Fork>
+{
+}
+
+impl<Fork> core::fmt::Debug for Judgement<'_, Fork>
+{
+    /// Each input of the judgement, by its field.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("Judgement")
+            .field("entries", &self.entries)
+            .field("levels", &self.levels)
+            .field("manifest", &self.manifest)
+            .field("related", &self.related)
+            .field("laws", &self.laws)
+            .field("block", &self.block)
+            .field("presentations", &self.presentations)
+            .field("own", &self.own)
+            .field("following", &self.following)
+            .field("partial", &self.partial)
+            .field("taking", &self.taking)
+            .field("forking", &self.forking)
+            .finish()
+    }
 }
 
 /// A walk's parameters as the kept memo names them. A walk names them at its
@@ -1028,11 +1079,15 @@ impl KeptParameters
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the walk's parameters named in the session, growth within
+    ///   the session's names
     #[inline]
-    fn name(
+    fn name<Fork>(
         &mut self,
         arena: &TermArena,
-        judgement: &Judgement<'_>,
+        judgement: &Judgement<'_, Fork>,
         session: &mut SupportContext,
     ) -> Option<RecordName>
     {
@@ -1085,7 +1140,7 @@ enum Block<'session>
     },
 }
 
-impl<'session> Judgement<'session>
+impl<'session> Judgement<'session, crate::fork::Unforked>
 {
     /// Pair an admission log with a level context, outside any block.
     ///
@@ -1113,7 +1168,10 @@ impl<'session> Judgement<'session>
             forking: crate::fork::Forking::new(None),
         }
     }
+}
 
+impl<'session, Fork> Judgement<'session, Fork>
+{
     /// The same judgement admitting the partial fixpoints of a ruled
     /// operation.
     ///
@@ -1292,14 +1350,24 @@ impl<'session> Judgement<'session>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn forking(
+    pub const fn forking<Other>(
         self,
-        fork: Option<&'session dyn crate::fork::ObligationFork>,
-    ) -> Self
+        fork: Option<&'session Other>,
+    ) -> Judgement<'session, Other>
     {
-        Self {
+        Judgement {
+            entries: self.entries,
+            levels: self.levels,
+            manifest: self.manifest,
+            related: self.related,
+            laws: self.laws,
+            block: self.block,
+            presentations: self.presentations,
+            own: self.own,
+            following: self.following,
+            partial: self.partial,
+            taking: self.taking,
             forking: crate::fork::Forking::new(fork),
-            ..self
         }
     }
 
@@ -1930,7 +1998,7 @@ impl Owing
     ///
     /// # Specification
     /// trivial.
-    const fn of(judgement: Judgement<'_>) -> Self
+    const fn of<Fork>(judgement: Judgement<'_, Fork>) -> Self
     {
         match judgement.block {
             Block::Mutual { block, .. } => Self::Mutual(block),
@@ -1942,10 +2010,10 @@ impl Owing
     ///
     /// # Specification
     /// trivial.
-    const fn reading(
+    const fn reading<Fork>(
         self,
-        judgement: Judgement<'_>,
-    ) -> Judgement<'_>
+        judgement: Judgement<'_, Fork>,
+    ) -> Judgement<'_, Fork>
     {
         match (self, judgement.block) {
             (Self::Mutual(block), Block::Mutual { members, .. }) => {
@@ -2115,15 +2183,16 @@ enum TypeLevelFrame
             TypeLevelGoal::Value(_) | TypeLevelGoal::Comp(_) => true,
         })
 })]
-fn type_level<M>(
+fn type_level<M, Fork>(
     arena: &TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     root: TypeLevelGoal,
     mut context: Vec<ValueTypeId>,
     recording: Recording<'_, M>,
 ) -> Result<Level, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     let Recording {
         memo,
@@ -3812,18 +3881,24 @@ fn lookup(
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the staged type's nodes in the arena, growth within the
+///   declaration's check
+///
 /// # Adequacy
 /// - hypothesis: L3 — a field moved along a path in the naturals keeps its
 ///   stage, and its recursive call is admitted; along the circle's loop the
 ///   transport is refused by name.
 /// - witness: `tests::native_formers::a_stage_is_carried_across_a_set_and_not_along_a_loop_3631`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&ty| ty == target || matches!(arena.value_type(ty), Some(&ValueType::Staged { .. }))))]
-fn carried_stage(
+fn carried_stage<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     context: &[ValueTypeId],
     (value, carrier, target): (ValueId, ValueTypeId, ValueTypeId),
 ) -> Result<ValueTypeId, KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let Some(&Value::Variable(index)) = arena.value(value)
     else {
@@ -4127,8 +4202,8 @@ fn strengthened(
     |entry| matches!(&ret, Maybe::Present(found) if *found == entry.declared_id()),
 ))]
 #[inline]
-fn resolve_constant(
-    judgement: Judgement<'_>,
+fn resolve_constant<Fork>(
+    judgement: Judgement<'_, Fork>,
     index: ConstantIndex,
 ) -> Maybe<ValueTypeId, constant_type::Absent>
 {
@@ -4173,7 +4248,7 @@ fn resolve_constant(
 /// - witness: `element_identity::tests::a_higher_evaluation_unfolds_what_the_environment_admitted`
 /// - witness: `path_universe::tests::a_translator_may_name_an_admitted_definition`
 #[spec(ensures: |ret| ret.presentations() == judgement.presentations)]
-fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
+fn admitted_unfoldings<Fork>(judgement: Judgement<'_, Fork>) -> Unfoldings
 {
     Unfoldings::admitted(judgement.entries)
         .presenting(judgement.presentations.clone())
@@ -4242,9 +4317,9 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             (Goal::CheckValue(_, _) | Goal::CheckComp(_, _), &Ok(Produced::Checked)) | (_, &Err(_)) => true,
             _ => false,
         })]
-fn machine<M>(
+fn machine<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     mut context: Vec<ValueTypeId>,
     initial: Goal,
     walk: &mut Walk,
@@ -4253,6 +4328,7 @@ fn machine<M>(
 ) -> Result<Produced, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     let Recording {
         memo,
@@ -7887,9 +7963,9 @@ where
 /// - hypothesis: L3 — as [`field_refused`].
 /// - witness: `check::tests::a_record_field_of_another_type_is_refused_by_its_label`
 /// - witness: `check::tests::a_fixed_value_of_another_type_is_refused_by_its_label`
-fn run<M>(
+fn run<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     context: Vec<ValueTypeId>,
     initial: Goal,
     stages: StageOrder,
@@ -7898,6 +7974,7 @@ fn run<M>(
 ) -> Result<Produced, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     continuation.frames.clear();
     continuation.goals.clear();
@@ -8101,13 +8178,15 @@ fn check_sealing_provenance(
                 DeclarationContent::Data { .. } | DeclarationContent::Codata { .. } | DeclarationContent::Axiom { .. } | DeclarationContent::LiteralIdentity { .. } | DeclarationContent::AbstractType { .. } => true,
             })))]
 #[inline]
-pub(crate) fn check_declaration(
+pub(crate) fn check_declaration<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     declaration: &Declaration,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
 ) -> Result<occurrence::Accessibility, KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
     session.begin_admission();
@@ -8133,18 +8212,24 @@ pub(crate) fn check_declaration(
 /// # Errors
 /// Any [`KernelError`].
 ///
+/// # Cost
+/// - allocation: the memo and the frames of the walk that forms the type,
+///   growth within the declaration's check
+///
 /// # Adequacy
 /// - hypothesis: L3 — a decoder's type over its universe forms in the block.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
 #[spec(captures: entry_mark = arena.watermark(), ensures:
     entry_mark.clamped_into(gandr_kernel_term::ArenaWatermark::default(), arena.watermark()) == entry_mark)]
-pub(crate) fn form_declared(
+pub(crate) fn form_declared<Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     declared: ValueTypeId,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
 ) -> Result<(), KernelError>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let mut memo: DefaultMemo = DefaultMemo::new();
     session.begin_admission();
@@ -8230,6 +8315,10 @@ pub(crate) fn form_declared(
 /// # Errors
 /// Any [`KernelError`].
 ///
+/// # Cost
+/// - allocation: the goals, the frames and the obligations of the check, growth
+///   within the declaration's check
+///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the finite differential corpus agrees below the
 ///   operational ceiling. The boundary fixture separates resource refusal from
@@ -8271,9 +8360,9 @@ pub(crate) fn form_declared(
                     >= entry_type_expanded.saturating_add(entry_type_recalled).saturating_add(entry_type_kept).saturating_add(1_u64))
     })]
 #[inline]
-pub fn check_declaration_with_memo<M>(
+pub fn check_declaration_with_memo<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     declaration: &Declaration,
     memo: &mut M,
     session: &mut SupportContext,
@@ -8281,6 +8370,7 @@ pub fn check_declaration_with_memo<M>(
 ) -> Result<occurrence::Accessibility, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     // A declaration's check opens on an empty accrual stack, whatever a
     // refusal before it left there.
@@ -8877,6 +8967,10 @@ where
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the obligations that each check owes and the frames of their
+///   checks, growth within the declaration's obligations
+///
 /// # Adequacy
 /// - hypothesis: L3 — the finite witnesses separate a valid code, a code's own
 ///   refusal, and the drain's operational boundary. Exactly the allowed count
@@ -8931,9 +9025,9 @@ where
                     }
             }
     })]
-fn drain_code_obligations<M>(
+fn drain_code_obligations<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
@@ -8942,6 +9036,7 @@ fn drain_code_obligations<M>(
 ) -> Result<(), KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     // The drains of the check's forked children took their obligations
     // already, so this drain goes on from what they checked: their count
@@ -9003,6 +9098,10 @@ const FORKED_PART: usize = 16;
 /// - input recursion: none — a drained check appends to this worklist rather
 ///   than re-entering this function.
 ///
+/// # Cost
+/// - allocation: the obligations that each check owes and the frames of their
+///   checks, growth within the drain's obligations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`drain_code_obligations`].
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
@@ -9011,9 +9110,9 @@ const FORKED_PART: usize = 16;
     Err(KernelError::CodeObligationCeiling { ceiling }) => ceiling == MAX_CODE_OBLIGATIONS,
     _ => true,
 })]
-fn drain_into<M>(
+fn drain_into<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
+    judgement: Judgement<'_, Fork>,
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
@@ -9022,6 +9121,7 @@ fn drain_into<M>(
 ) -> Result<(), KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     while let Some(obligation) = owed.pop() {
         ledger.take(MAX_CODE_OBLIGATIONS)?;
@@ -9195,10 +9295,10 @@ where
 ///
 /// # Specification
 /// trivial.
-struct DrainPart<'part>
+struct DrainPart<'part, Fork>
 {
     /// The judgement of the drain, which forks no further.
-    judgement: Judgement<'part>,
+    judgement: Judgement<'part, Fork>,
     /// Set by the first part that refuses: a part that has not started then
     /// does not start, since the drain checks serially after.
     refused: &'part AtomicBool,
@@ -9218,7 +9318,9 @@ struct DrainPart<'part>
     answer: Option<Result<(), KernelError>>,
 }
 
-impl crate::fork::Job for DrainPart<'_>
+impl<Fork> crate::fork::Job for DrainPart<'_, Fork>
+where
+    Fork: crate::fork::ObligationFork,
 {
     /// Drain the part's run of obligations, and every obligation they owe.
     ///
@@ -9273,16 +9375,20 @@ impl crate::fork::Job for DrainPart<'_>
 /// and both outcomes, when the memo or the session of a part keeps an outcome
 /// under a key that an earlier part kept with another outcome.
 ///
+/// # Cost
+/// - allocation: a clone of the arena, an overlay of the memo and a fork of the
+///   session for each part, growth within the drain's parts
+///
 /// # Adequacy
 /// - hypothesis: L3 — declarations whose drains pass and refuse, checked at
 ///   width one, in the reverse order and on threads of their own, against the
 ///   unforked check.
 /// - witness: `check::tests::a_forked_drain_gives_the_serial_verdict_at_each_order`
 #[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
-fn drain_forked<M>(
+fn drain_forked<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
-    fork: &dyn crate::fork::ObligationFork,
+    judgement: Judgement<'_, Fork>,
+    fork: &Fork,
     memo: &mut M,
     session: &mut SupportContext,
     census: &mut ExpansionCensus,
@@ -9290,6 +9396,7 @@ fn drain_forked<M>(
 ) -> Result<Option<DrainLedger>, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     let runs = NonZeroUsize::from(fork.workers())
         .get()
@@ -9311,7 +9418,7 @@ where
     // A part forks no further.
     let unforked = judgement.forking(None);
     let refused = AtomicBool::new(false);
-    let mut parts: Vec<DrainPart<'_>> = owed
+    let mut parts: Vec<DrainPart<'_, Fork>> = owed
         .chunks(run)
         .rev()
         .zip(memos)
@@ -9327,11 +9434,7 @@ where
             answer: None,
         })
         .collect();
-    let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
-        .iter_mut()
-        .map(|part| -> &mut dyn crate::fork::Job { part })
-        .collect();
-    fork.run_jobs(&mut jobs);
+    fork.run_jobs(&mut parts);
     let passed = parts
         .iter()
         .try_fold(usize::from(session.drained()), |sum, part| {
@@ -9411,11 +9514,13 @@ const FORKED_AFTER: u64 = 256;
 /// # Specification
 /// trivial.
 #[inline]
-fn sibling_fork<'session>(
-    judgement: Judgement<'session>,
+fn sibling_fork<'session, Fork>(
+    judgement: Judgement<'session, Fork>,
     census: &ExpansionCensus,
     frame: &Siblings<'_>,
-) -> Option<&'session dyn crate::fork::ObligationFork>
+) -> Option<&'session Fork>
+where
+    Fork: crate::fork::ObligationFork,
 {
     let fork = judgement.forking.fork()?;
     (matches!(frame.root, Maybe::Absent(_))
@@ -9464,10 +9569,10 @@ struct Siblings<'frame>
 /// of the frame's frozen arena, through overlays of the frame's memo and
 /// session, from a copy of the frame's walk. It drains the obligations it
 /// owes on its own clone, so none of them names a node the join leaves out.
-struct SiblingPart<'part>
+struct SiblingPart<'part, Fork>
 {
     /// The judgement of the frame.
-    judgement: Judgement<'part>,
+    judgement: Judgement<'part, Fork>,
     /// Set by the first part that refuses: a part that has not started then
     /// does not start, since the frame checks its goals inline after.
     refused: &'part AtomicBool,
@@ -9492,7 +9597,9 @@ struct SiblingPart<'part>
     answer: Option<Result<(), KernelError>>,
 }
 
-impl crate::fork::Job for SiblingPart<'_>
+impl<Fork> crate::fork::Job for SiblingPart<'_, Fork>
+where
+    Fork: crate::fork::ObligationFork,
 {
     /// Check the part's goal, then drain the obligations it owes.
     ///
@@ -9512,7 +9619,9 @@ impl crate::fork::Job for SiblingPart<'_>
     }
 }
 
-impl SiblingPart<'_>
+impl<Fork> SiblingPart<'_, Fork>
+where
+    Fork: crate::fork::ObligationFork,
 {
     /// Check the part's goal on a frame stack of its own, with its field's
     /// frame at the bottom, and drain what the goal owes into the session's
@@ -9520,6 +9629,10 @@ impl SiblingPart<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the part's frames and the obligations that it folds into
+    ///   its session, growth within the part's goal
     #[inline]
     fn check(&mut self) -> Result<(), KernelError>
     {
@@ -9590,21 +9703,27 @@ impl SiblingPart<'_>
 /// under a key that an earlier part kept with an outcome that does not agree.
 /// Two types of one content agree ([`NodeOutcome::agrees`]).
 ///
+/// # Cost
+/// - allocation: a clone of the arena, an overlay of the memo, a fork of the
+///   session and a copy of the context for each goal, growth within the frame's
+///   goals
+///
 /// # Adequacy
 /// - hypothesis: L3 — declarations whose frames pass and refuse, checked at
 ///   width one, in the reverse order and on threads of their own, against the
 ///   unforked check.
 /// - witness: `check::tests::a_forked_frame_gives_the_serial_verdict_at_each_order`
 #[spec(captures: entry_mark = arena.watermark(), ensures: arena.watermark() == entry_mark)]
-fn siblings_forked<M>(
+fn siblings_forked<M, Fork>(
     arena: &mut TermArena,
-    judgement: Judgement<'_>,
-    fork: &dyn crate::fork::ObligationFork,
+    judgement: Judgement<'_, Fork>,
+    fork: &Fork,
     frame: &Siblings<'_>,
     recording: Recording<'_, M>,
 ) -> Result<FrameFork, KernelError>
 where
     M: CheckMemo<NodeSupport, NodeOutcome>,
+    Fork: crate::fork::ObligationFork,
 {
     let Recording {
         memo,
@@ -9634,7 +9753,7 @@ where
     arena.freeze();
     let refused = AtomicBool::new(false);
     // The serial run checks the goals last first, as the frame pops them.
-    let mut parts: Vec<SiblingPart<'_>> = goals
+    let mut parts: Vec<SiblingPart<'_, Fork>> = goals
         .iter()
         .rev()
         .zip(memos)
@@ -9659,13 +9778,7 @@ where
             answer: None,
         })
         .collect();
-    {
-        let mut jobs: Vec<&mut dyn crate::fork::Job> = parts
-            .iter_mut()
-            .map(|part| -> &mut dyn crate::fork::Job { part })
-            .collect();
-        fork.run_jobs(&mut jobs);
-    }
+    fork.run_jobs(&mut parts);
     let passed = parts.iter().all(|part| matches!(part.answer, Some(Ok(()))));
     if !passed {
         judgement.taking.reset(taken);
@@ -12569,157 +12682,91 @@ mod tests
         crate::fork::ForkWidth::from(core::num::NonZeroUsize::MIN.saturating_add(3))
     }
 
-    /// Runs the parts of a drain in order, on the calling thread.
+    /// How a test fork runs the parts of a drain.
+    #[derive(Clone, Copy, Debug)]
+    enum Order
+    {
+        /// Each part in order, on the calling thread.
+        Forward,
+        /// Each part last first, on the calling thread.
+        Backwards,
+        /// Each part on a scoped thread of its own, all at once.
+        Threads,
+        /// No part, so the drain must check serially.
+        Idle,
+    }
+
+    /// Each order a test fork runs the parts of a drain in.
+    const ORDERS: [Order; 4] = [
+        Order::Forward,
+        Order::Backwards,
+        Order::Threads,
+        Order::Idle,
+    ];
+
+    /// A test fork of four workers: it counts the parts it is handed, and runs
+    /// them in its order.
     ///
     /// # Specification
     /// trivial.
-    struct InOrder;
-
-    impl crate::fork::ObligationFork for InOrder
+    struct Ordered
     {
-        /// Each part, in order.
+        /// How the fork runs the parts.
+        order: Order,
+        /// How many parts the fork was handed.
+        handed: core::sync::atomic::AtomicUsize,
+    }
+
+    impl Ordered
+    {
+        /// A fork that runs its parts in `order`, handed none yet.
         ///
         /// # Specification
         /// trivial.
-        fn run_jobs(
-            &self,
-            jobs: &mut [&mut dyn crate::fork::Job],
-        )
+        const fn new(order: Order) -> Self
         {
-            for job in jobs.iter_mut() {
-                job.run();
+            Self {
+                order,
+                handed: core::sync::atomic::AtomicUsize::new(0),
             }
         }
-
-        /// Four workers.
-        ///
-        /// # Specification
-        /// trivial.
-        fn workers(&self) -> crate::fork::ForkWidth
-        {
-            four()
-        }
     }
 
-    /// Runs the parts of a drain last first, on the calling thread.
-    ///
-    /// # Specification
-    /// trivial.
-    struct Backwards;
-
-    impl crate::fork::ObligationFork for Backwards
+    impl crate::fork::ObligationFork for Ordered
     {
-        /// Each part, last first.
+        /// Each part in the fork's order, counted.
         ///
         /// # Specification
         /// trivial.
-        fn run_jobs(
+        fn run_jobs<J>(
             &self,
-            jobs: &mut [&mut dyn crate::fork::Job],
-        )
-        {
-            for job in jobs.iter_mut().rev() {
-                job.run();
-            }
-        }
-
-        /// Four workers.
-        ///
-        /// # Specification
-        /// trivial.
-        fn workers(&self) -> crate::fork::ForkWidth
-        {
-            four()
-        }
-    }
-
-    /// Runs each part of a drain on a thread of its own, all at once.
-    ///
-    /// # Specification
-    /// trivial.
-    struct Threads;
-
-    impl crate::fork::ObligationFork for Threads
-    {
-        /// Each part on a scoped thread of its own.
-        ///
-        /// # Specification
-        /// trivial.
-        fn run_jobs(
-            &self,
-            jobs: &mut [&mut dyn crate::fork::Job],
-        )
-        {
-            extern crate std;
-            std::thread::scope(|scope| {
-                for job in jobs.iter_mut() {
-                    let _running = scope.spawn(move || job.run());
-                }
-            });
-        }
-
-        /// Four workers.
-        ///
-        /// # Specification
-        /// trivial.
-        fn workers(&self) -> crate::fork::ForkWidth
-        {
-            four()
-        }
-    }
-
-    /// Runs no part, so the drain must check serially.
-    ///
-    /// # Specification
-    /// trivial.
-    struct Idle;
-
-    impl crate::fork::ObligationFork for Idle
-    {
-        /// Nothing.
-        ///
-        /// # Specification
-        /// trivial.
-        fn run_jobs(
-            &self,
-            _jobs: &mut [&mut dyn crate::fork::Job],
-        )
-        {
-        }
-
-        /// Four workers.
-        ///
-        /// # Specification
-        /// trivial.
-        fn workers(&self) -> crate::fork::ForkWidth
-        {
-            four()
-        }
-    }
-
-    /// Counts the parts it is handed, and runs them in order.
-    ///
-    /// # Specification
-    /// trivial.
-    #[repr(transparent)]
-    struct Counting(core::sync::atomic::AtomicUsize);
-
-    impl crate::fork::ObligationFork for Counting
-    {
-        /// Each part in order, counted.
-        ///
-        /// # Specification
-        /// trivial.
-        fn run_jobs(
-            &self,
-            jobs: &mut [&mut dyn crate::fork::Job],
-        )
+            jobs: &mut [J],
+        ) where
+            J: crate::fork::Job,
         {
             let _before = self
-                .0
+                .handed
                 .fetch_add(jobs.len(), core::sync::atomic::Ordering::Relaxed);
-            for job in jobs.iter_mut() {
-                job.run();
+            match self.order {
+                Order::Forward => {
+                    for job in jobs.iter_mut() {
+                        job.run();
+                    }
+                },
+                Order::Backwards => {
+                    for job in jobs.iter_mut().rev() {
+                        job.run();
+                    }
+                },
+                Order::Threads => {
+                    extern crate std;
+                    std::thread::scope(|scope| {
+                        for job in jobs.iter_mut() {
+                            let _running = scope.spawn(move || job.run());
+                        }
+                    });
+                },
+                Order::Idle => {},
             }
         }
 
@@ -12731,6 +12778,41 @@ mod tests
         {
             four()
         }
+    }
+
+    /// Check `declaration` under `judgement`, then forget what the check
+    /// minted past `content_end`: the verdict, and the goals that the check
+    /// expanded, recalled and kept.
+    ///
+    /// # Specification
+    /// trivial.
+    fn checked<Fork>(
+        arena: &mut TermArena,
+        judgement: Judgement<'_, Fork>,
+        declaration: &gandr_kernel_term::Declaration,
+        content_end: gandr_kernel_term::ArenaWatermark,
+    ) -> (
+        Result<super::occurrence::Accessibility, KernelError>,
+        crate::census::ExpansionCount,
+    )
+    where
+        Fork: crate::fork::ObligationFork,
+    {
+        let mut census = ExpansionCensus::new();
+        let verdict = super::check_declaration_with_memo(
+            arena,
+            judgement,
+            declaration,
+            &mut super::DefaultMemo::new(),
+            &mut SupportContext::new(),
+            &mut census,
+        );
+        arena.truncate_to(content_end);
+        let goals = [census.expansions(), census.recalls(), census.kept()]
+            .map(u64::from)
+            .iter()
+            .sum::<u64>();
+        (verdict, crate::census::ExpansionCount::from(goals))
     }
 
     /// A declaration's last drain gives the verdict of the serial drain at
@@ -12793,45 +12875,39 @@ mod tests
             .axiom(LevelSignature::monomorphic(), few);
         let levels = level_context(LevelParamCount::from(0_u32));
         let content_end = arena.watermark();
-        let mut check = |declaration: &gandr_kernel_term::Declaration,
-                         fork: Option<&dyn crate::fork::ObligationFork>| {
-            let mut census = ExpansionCensus::new();
-            let verdict = super::check_declaration_with_memo(
-                &mut arena,
-                Judgement::new(environment.entries(), &levels).forking(fork),
-                declaration,
-                &mut super::DefaultMemo::new(),
-                &mut SupportContext::new(),
-                &mut census,
-            );
-            arena.truncate_to(content_end);
-            let goals = [census.expansions(), census.recalls(), census.kept()]
-                .map(u64::from)
-                .iter()
-                .sum::<u64>();
-            (verdict, goals)
-        };
+        let judgement = Judgement::new(environment.entries(), &levels);
         for (declaration, parts, passes) in [
             (&passing, 4_usize, true),
             (&refusing, 4, false),
             (&few, 0, true),
         ] {
-            let (serial, serial_goals) = check(declaration, None);
+            let (serial, serial_goals) = checked(&mut arena, judgement, declaration, content_end);
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
-            let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
-            let forks: [&dyn crate::fork::ObligationFork; 5] =
-                [&InOrder, &Backwards, &Threads, &Idle, &counting];
-            for fork in forks {
-                let (forked, forked_goals) = check(declaration, Some(fork));
+            for order in ORDERS {
+                let fork = Ordered::new(order);
+                let (forked, forked_goals) = checked(
+                    &mut arena,
+                    judgement.forking(Some(&fork)),
+                    declaration,
+                    content_end,
+                );
                 assert_eq!(forked, serial, "a fork gives the serial verdict");
                 assert!(
                     forked_goals >= serial_goals,
-                    "a fork expands no less than the serial check: {forked_goals} against \
-                     {serial_goals}"
+                    "a fork expands no less than the serial check: {forked_goals:?} against \
+                     {serial_goals:?}"
                 );
             }
+            let counting = Ordered::new(Order::Forward);
+            let (counted, _goals) = checked(
+                &mut arena,
+                judgement.forking(Some(&counting)),
+                declaration,
+                content_end,
+            );
+            assert_eq!(counted, serial, "a counted fork gives the serial verdict");
             assert_eq!(
-                counting.0.into_inner(),
+                counting.handed.into_inner(),
                 parts,
                 "the drain forks one run for each worker, or none below the grain"
             );
@@ -12925,45 +13001,39 @@ mod tests
         let few = frame_tuple(&mut arena, two, three, Last::Constructor);
         let levels = level_context(LevelParamCount::from(0_u32));
         let content_end = arena.watermark();
-        let mut check = |declaration: &gandr_kernel_term::Declaration,
-                         fork: Option<&dyn crate::fork::ObligationFork>| {
-            let mut census = ExpansionCensus::new();
-            let verdict = super::check_declaration_with_memo(
-                &mut arena,
-                Judgement::new(environment.entries(), &levels).forking(fork),
-                declaration,
-                &mut super::DefaultMemo::new(),
-                &mut SupportContext::new(),
-                &mut census,
-            );
-            arena.truncate_to(content_end);
-            let goals = [census.expansions(), census.recalls(), census.kept()]
-                .map(u64::from)
-                .iter()
-                .sum::<u64>();
-            (verdict, goals)
-        };
+        let judgement = Judgement::new(environment.entries(), &levels);
         for (declaration, forks, passes) in [
             (&passing, true, true),
             (&refusing, true, false),
             (&few, false, true),
         ] {
-            let (serial, serial_goals) = check(declaration, None);
+            let (serial, serial_goals) = checked(&mut arena, judgement, declaration, content_end);
             assert_eq!(serial.is_ok(), passes, "the serial verdict: {serial:?}");
-            let counting = Counting(core::sync::atomic::AtomicUsize::new(0));
-            let orders: [&dyn crate::fork::ObligationFork; 5] =
-                [&InOrder, &Backwards, &Threads, &Idle, &counting];
-            for fork in orders {
-                let (forked, forked_goals) = check(declaration, Some(fork));
+            for order in ORDERS {
+                let fork = Ordered::new(order);
+                let (forked, forked_goals) = checked(
+                    &mut arena,
+                    judgement.forking(Some(&fork)),
+                    declaration,
+                    content_end,
+                );
                 assert_eq!(forked, serial, "a fork gives the serial verdict");
                 assert!(
                     forked_goals >= serial_goals,
-                    "a fork expands no less than the serial check: {forked_goals} against \
-                     {serial_goals}"
+                    "a fork expands no less than the serial check: {forked_goals:?} against \
+                     {serial_goals:?}"
                 );
             }
+            let counting = Ordered::new(Order::Forward);
+            let (counted, _goals) = checked(
+                &mut arena,
+                judgement.forking(Some(&counting)),
+                declaration,
+                content_end,
+            );
+            assert_eq!(counted, serial, "a counted fork gives the serial verdict");
             assert_eq!(
-                counting.0.into_inner() > 0,
+                counting.handed.into_inner() > 0,
                 forks,
                 "a frame past the grain forks, and a check below the grain forks no frame"
             );

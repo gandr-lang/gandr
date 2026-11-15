@@ -582,6 +582,7 @@ use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::content_digest;
+use gandr_kernel_core::fork::ObligationFork;
 use gandr_kernel_core::fork::SharedFork;
 use gandr_kernel_core::held_on;
 use gandr_kernel_core::places;
@@ -2387,6 +2388,10 @@ impl Crossed
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the record's copy of the environment, its positions and
+    ///   its entries, growth within the recorded declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a record made over one arena resumes a readmission
     ///   over another to the answer a whole readmission gives.
@@ -2397,10 +2402,12 @@ impl Crossed
             && crossed.boundary() > from && built.1.open.is_empty(),
         Maybe::Absent(_) => true,
     })]
-    fn record(
-        built: (&mut Environment, &Positions, &[Readmitted]),
+    fn record<Obligations>(
+        built: (&mut Environment<Obligations>, &Positions, &[Readmitted]),
         from: LeadingCount,
     ) -> Maybe<Self, crossed::Absent>
+    where
+        Obligations: ObligationFork,
     {
         let (environment, positions, readmitted) = built;
         if readmitted.len() <= from.0 {
@@ -2417,7 +2424,7 @@ impl Crossed
         }
         environment.freeze();
         Maybe::Present(Self {
-            environment: environment.handed_on(),
+            environment: environment.handed_on().forking(SharedFork::serial()),
             positions: Positions {
                 native: positions.native.clone(),
                 assumed: positions.assumed.clone(),
@@ -2676,17 +2683,38 @@ pub fn readmit_resuming(
 ///   record made under no source, it recalls from its own.
 /// - witness: `bridge::tests::a_readmission_recalls_what_its_own_receipt_recorded`
 /// - witness: `bridge::tests::a_resumed_readmission_recalls_from_its_own_source_6566`
-#[derive(Clone, Debug)]
-pub struct Recall
+#[derive(Debug)]
+pub struct Recall<Obligations = gandr_kernel_core::fork::Unforked>
 {
     /// Whose receipts are believed.
     policy: TrustPolicy,
     /// Where receipts are read.
     source: Arc<dyn VerdictSource>,
     /// The fork that each check's last drain runs its obligations through.
-    fork: SharedFork,
+    fork: SharedFork<Obligations>,
     /// What a release behind the cursor predicts of the earlier commits.
     speculation: Speculation,
+}
+
+impl<Obligations> Clone for Recall<Obligations>
+{
+    /// The same recall: the source and the fork shared by one more count.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of the trust policy, setup
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            policy: self.policy.clone(),
+            source: Arc::clone(&self.source),
+            fork: self.fork.clone(),
+            speculation: self.speculation,
+        }
+    }
 }
 
 impl Recall
@@ -2695,6 +2723,9 @@ impl Recall
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the empty source of verdicts, setup
     #[inline]
     #[must_use]
     pub fn recheck() -> Self
@@ -2725,7 +2756,12 @@ impl Recall
             speculation: Speculation::OFF,
         }
     }
+}
 
+impl<Obligations> Recall<Obligations>
+where
+    Obligations: ObligationFork,
+{
     /// The same recall, each kernel check running the obligations of its
     /// last drain as `fork` states. The fork changes no verdict.
     ///
@@ -2733,12 +2769,17 @@ impl Recall
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn forking(
+    pub fn forking<Other>(
         self,
-        fork: SharedFork,
-    ) -> Self
+        fork: SharedFork<Other>,
+    ) -> Recall<Other>
     {
-        Self { fork, ..self }
+        Recall {
+            policy: self.policy,
+            source: self.source,
+            fork,
+            speculation: self.speculation,
+        }
     }
 
     /// The same recall, each release behind the cursor predicting what
@@ -2771,6 +2812,9 @@ impl Recall
     ///   otherwise.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: an empty environment and a copy of the trust policy, setup
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a readmission that keeps entries under a recall that
     ///   rechecks keeps them, and recalls nothing; a whole readmission that
@@ -2781,7 +2825,7 @@ impl Recall
     fn environment(
         &self,
         keyed: Keyed,
-    ) -> Environment
+    ) -> Environment<Obligations>
     {
         let policy = match (keyed, &self.policy) {
             (Keyed::Always, &TrustPolicy::Recheck) => TrustPolicy::Trusted(BTreeSet::new()),
@@ -2846,11 +2890,11 @@ pub type Readmitting<Retired> = Polled<
     Polled::Retired(_, Maybe::Present(ref record)) => usize::from(record.boundary()) < report.judged().len(),
     Polled::Retired(_, Maybe::Absent(_)) => true,
 })]
-pub fn readmit_retiring<Poll, Watch, Forker>(
+pub fn readmit_retiring<Poll, Watch, Forker, Obligations>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     leading: (LeadingCount, Maybe<&Crossed, crossed::Absent>),
-    recall: &Recall,
+    recall: &Recall<Obligations>,
     retirement: &Poll,
     stopwatch: &mut Watch,
     fork: &Forker,
@@ -2859,6 +2903,7 @@ where
     Poll: Retirement,
     Watch: Stopwatch,
     Forker: Fork,
+    Obligations: ObligationFork,
 {
     let (boundary, crossed) = leading;
     readmit_from(
@@ -2927,11 +2972,11 @@ where
     Polled::Whole((ref readmission, _)) => readmission.readmitted().len() == report.judged().len(),
     Polled::Retired(..) => true,
 })]
-pub fn readmit_keeping<Poll, Watch, Forker>(
+pub fn readmit_keeping<Poll, Watch, Forker, Obligations>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     kept: (&[DeclarationKey], Maybe<&Crossed, crossed::Absent>),
-    recall: &Recall,
+    recall: &Recall<Obligations>,
     retirement: &Poll,
     stopwatch: &mut Watch,
     fork: &Forker,
@@ -2940,6 +2985,7 @@ where
     Poll: Retirement,
     Watch: Stopwatch,
     Forker: Fork,
+    Obligations: ObligationFork,
 {
     let (keys, record) = kept;
     readmit_from(
@@ -3002,7 +3048,7 @@ fn readmit_with<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    readmit_from(
+    readmit_from::<_, _, _, _, gandr_kernel_core::fork::Unforked>(
         arena,
         report,
         vouch,
@@ -3017,8 +3063,8 @@ where
 }
 
 /// How a readmission treats its report's leading declarations.
-#[derive(Clone, Copy, Debug)]
-enum Resume<'crossed>
+#[derive(Debug)]
+enum Resume<'crossed, Obligations>
 {
     /// Cross every declaration, checking each, and record nothing.
     Whole
@@ -3035,7 +3081,7 @@ enum Resume<'crossed>
         /// An earlier readmission's record, when the caller holds one.
         crossed: Maybe<&'crossed Crossed, crossed::Absent>,
         /// The recall a fresh environment admits under.
-        recall: &'crossed Recall,
+        recall: &'crossed Recall<Obligations>,
         /// The content key of each declaration of the report, which a record
         /// of all of them keeps; none when the caller has no keys.
         keys: &'crossed [DeclarationKey],
@@ -3051,11 +3097,28 @@ enum Resume<'crossed>
         /// The content key of each declaration of the report.
         keys: &'crossed [DeclarationKey],
         /// The recall a crossing admits under.
-        recall: &'crossed Recall,
+        recall: &'crossed Recall<Obligations>,
     },
 }
 
-impl Resume<'_>
+impl<Obligations> Clone for Resume<'_, Obligations>
+{
+    /// The same resume: each of its parts is a reference or a copy.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        *self
+    }
+}
+
+impl<Obligations> Copy for Resume<'_, Obligations>
+{
+}
+
+impl<Obligations> Resume<'_, Obligations>
 {
     /// This resume, keying each admission. A resumed environment keys as the
     /// walk that recorded it did, so a leading walk resumes no record.
@@ -3107,7 +3170,7 @@ enum Keyed
     reason = "one per readmission, matched at once by its caller; boxing the readmission would \
               allocate per keystroke to shrink the rare misplaced walk"
 )]
-enum Walked<'crossed, Retired>
+enum Walked<'crossed, Retired, Obligations>
 {
     /// The readmission, whole or retired.
     Done(Readmitting<Retired>),
@@ -3115,7 +3178,7 @@ enum Walked<'crossed, Retired>
     Misplaced
     {
         /// The recall the whole readmission admits under.
-        recall: &'crossed Recall,
+        recall: &'crossed Recall<Obligations>,
         /// The content key of each declaration of the report.
         keys: &'crossed [DeclarationKey],
     },
@@ -3153,11 +3216,11 @@ enum Walked<'crossed, Retired>
             || (usize::from(readmission.resumed()) == 0 && matches!(recorded, Maybe::Absent(_)))),
     Polled::Retired(..) => true,
 })]
-fn readmit_from<Vouch, Poll, Watch, Forker>(
+fn readmit_from<Vouch, Poll, Watch, Forker, Obligations>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
-    resume: Resume<'_>,
+    resume: Resume<'_, Obligations>,
     (retirement, stopwatch): (&Poll, &mut Watch),
     fork: &Forker,
 ) -> Readmitting<Poll::Retired>
@@ -3166,6 +3229,7 @@ where
     Poll: Retirement,
     Watch: Stopwatch,
     Forker: Fork,
+    Obligations: ObligationFork,
 {
     let mut resume = resume;
     // A leading or a whole walk is never misplaced, and a walk that keys
@@ -3223,6 +3287,10 @@ where
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the slots, the plan, the entries and the positions of the
+///   readmission, growth within the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`readmit`], [`readmit_resuming`],
 ///   [`readmit_retiring`] and [`readmit_keeping`]; checks committed in the
@@ -3241,19 +3309,20 @@ where
     Walked::Unkeyed => matches!(resume, Resume::Whole { keyed: Keyed::AsRecalled } | Resume::Leading { keyed: Keyed::AsRecalled, .. }),
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn walk<'crossed, Vouch, Poll, Watch, Forker>(
+fn walk<'crossed, Vouch, Poll, Watch, Forker, Obligations>(
     arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
-    resume: Resume<'crossed>,
+    resume: Resume<'crossed, Obligations>,
     (retirement, stopwatch): (&Poll, &mut Watch),
     fork: &Forker,
-) -> Walked<'crossed, Poll::Retired>
+) -> Walked<'crossed, Poll::Retired, Obligations>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
     Watch: Stopwatch,
     Forker: Fork,
+    Obligations: ObligationFork,
 {
     let source = Source {
         lifts: report.lifts(),
@@ -3280,7 +3349,7 @@ where
     let judged_all = report.judged();
     // A resumed or a kept environment admits under the recall as a fresh one
     // does.
-    let recalling = |environment: Environment, recall: &Recall| {
+    let recalling = |environment: Environment, recall: &Recall<Obligations>| {
         let mut environment = environment
             .forking(recall.fork.clone())
             .speculating(recall.speculation);
@@ -3294,7 +3363,9 @@ where
             &[][..],
             None,
             (
-                Recall::recheck().environment(keyed),
+                Recall::recheck()
+                    .environment(keyed)
+                    .forking(SharedFork::serial()),
                 Positions::default(),
                 fresh(),
             ),
@@ -3401,7 +3472,7 @@ where
         &mut items,
         &after,
         |item, &mut ()| underway.borrow_mut().release(item),
-        |(check, mut stopwatch): (Check, Watch)| {
+        |(check, mut stopwatch): (Check<Obligations>, Watch)| {
             let (ran, took) = run_check(check, &mut stopwatch);
             Answer::Ran(ran, took)
         },
@@ -3506,13 +3577,18 @@ fn plan(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the frames of the check and the entry that it finds, growth
+///   within the declaration's check
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn run_check<Watch>(
-    check: Check,
+fn run_check<Watch, Obligations>(
+    check: Check<Obligations>,
     stopwatch: &mut Watch,
 ) -> (Ran, AdmissionCost)
 where
     Watch: Stopwatch,
+    Obligations: ObligationFork,
 {
     let started = stopwatch.start();
     let ran = check.run();
@@ -3647,7 +3723,7 @@ enum Slot<'report>
 ///
 /// # Specification
 /// trivial.
-struct Keeping<'crossed>
+struct Keeping<'crossed, Obligations>
 {
     /// The record's entry each place keeps, by place; none for a place that
     /// crosses.
@@ -3656,7 +3732,7 @@ struct Keeping<'crossed>
     /// that the walk keeps, by its module position in the record.
     renames: BTreeMap<ConstantIndex, ConstantIndex>,
     /// The recall the whole readmission admits under.
-    recall: &'crossed Recall,
+    recall: &'crossed Recall<Obligations>,
     /// The kernel positions that a closed seal of the record holds: each
     /// atom and its scope. A keep refused there crosses at another extent
     /// than a whole readmission draws, so the walk readmits whole.
@@ -3678,7 +3754,7 @@ struct Keeping<'crossed>
 ///
 /// # Specification
 /// trivial.
-struct Underway<'report, 'run, 'crossed, Vouch, Poll, Watch>
+struct Underway<'report, 'run, 'crossed, Vouch, Poll, Watch, Obligations>
 where
     Poll: Retirement,
 {
@@ -3695,7 +3771,7 @@ where
     /// What times each check: each released check takes its own copy.
     stopwatch: &'run mut Watch,
     /// The kernel environment.
-    environment: Environment,
+    environment: Environment<Obligations>,
     /// The kernel position of each recorded declaration, and what it unfolds
     /// to.
     positions: Positions,
@@ -3734,7 +3810,7 @@ where
     /// declaration carries.
     keys: &'crossed [DeclarationKey],
     /// What a walk that keeps holds of its record; none for any other walk.
-    keeping: Option<Keeping<'crossed>>,
+    keeping: Option<Keeping<'crossed, Obligations>>,
     /// How many declarations were kept in place.
     kept: usize,
     /// Whether the kernel rejected a crossing of a walk that keeps: then the
@@ -3742,11 +3818,13 @@ where
     misplaced: bool,
 }
 
-impl<'report, 'crossed, Vouch, Poll, Watch> Underway<'report, '_, 'crossed, Vouch, Poll, Watch>
+impl<'report, 'crossed, Vouch, Poll, Watch, Obligations>
+    Underway<'report, '_, 'crossed, Vouch, Poll, Watch, Obligations>
 where
     Vouch: Fn(Certificate) -> Certificate,
     Poll: Retirement,
     Watch: Stopwatch,
+    Obligations: ObligationFork,
 {
     /// The answer of a release that waits for `hold`, which names the kernel
     /// position `on` of an outstanding release when one commit frees it.
@@ -3757,7 +3835,7 @@ where
         &mut self,
         hold: Hold,
         on: Maybe<ConstantIndex, held_on::Absent>,
-    ) -> Releasing<(Check, Watch), Answer>
+    ) -> Releasing<(Check<Obligations>, Watch), Answer>
     {
         let waited = self.waited(hold, on);
         Releasing::Held(Answer::Waits, hold, waited)
@@ -3851,6 +3929,10 @@ where
     /// - executable: none — what the release reads of the environment is the
     ///   kernel's, which no predicate over one call restates.
     ///
+    /// # Cost
+    /// - allocation: the staging, the definitions and the released check of the
+    ///   declaration, growth within the report's declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
@@ -3859,7 +3941,7 @@ where
     fn release(
         &mut self,
         item: ItemIndex,
-    ) -> Releasing<(Check, Watch), Answer>
+    ) -> Releasing<(Check<Obligations>, Watch), Answer>
     {
         let at = usize::from(item);
         let index = self.from.saturating_add(at);
@@ -4148,6 +4230,10 @@ where
     /// - panics: none.
     /// - executable: none — as [`Self::release`].
     ///
+    /// # Cost
+    /// - allocation: a copy of the staged declaration and its running release,
+    ///   growth within the report's declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::checks_committed_in_reverse_readmit_as_the_serial_run_3476`
@@ -4159,7 +4245,7 @@ where
         item: ItemIndex,
         judged: &crate::report::Judged,
         offer: Offer<'report>,
-    ) -> Releasing<(Check, Watch), Answer>
+    ) -> Releasing<(Check<Obligations>, Watch), Answer>
     {
         let at = usize::from(item);
         let caught_up = self.cursor == self.from.saturating_add(at);
@@ -4307,6 +4393,10 @@ where
     ///   order, up to the first that is not.
     /// - panics: none.
     /// - executable: none — the settle is the kernel's.
+    ///
+    /// # Cost
+    /// - allocation: the box of a check that ran ahead of the cursor, growth
+    ///   within the running releases
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
@@ -4540,6 +4630,10 @@ where
     /// - executable: none — the crossing is the serial run's, which no
     ///   predicate over one call restates.
     ///
+    /// # Cost
+    /// - allocation: the entries that a drop gives back, growth within the
+    ///   running releases
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a pair left undecided whose answer crosses at a
     ///   position that a later release took, or whose later releases keep their
@@ -4635,6 +4729,10 @@ where
     /// - panics: none.
     /// - executable: none — the settle is the kernel's.
     ///
+    /// # Cost
+    /// - allocation: the entry and the commit records of the settled
+    ///   declaration, growth within the report's declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a prediction taken back that keeps a later slot, or a
     ///   refused declaration whose record stays, records other positions or
@@ -4672,6 +4770,10 @@ where
     ///   one, and no record made at a release stands after `constant`.
     /// - panics: none.
     /// - executable: none — as [`Self::settle_at_cursor`].
+    ///
+    /// # Cost
+    /// - allocation: the entries that a drop gives back, growth within the
+    ///   running releases
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::settle_at_cursor`].
@@ -4714,6 +4816,10 @@ where
     ///   after a retirement.
     /// - panics: none.
     /// - executable: none — as [`Self::release`].
+    ///
+    /// # Cost
+    /// - allocation: the entries that a check gives back, growth within the
+    ///   running releases
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::settle_at_cursor`].
@@ -4769,6 +4875,10 @@ where
     ///   walk misplaced.
     /// - panics: none.
     /// - executable: none — the closes are the kernel's.
+    ///
+    /// # Cost
+    /// - allocation: the entry, the open seals and the withheld positions of
+    ///   the declaration, growth within the report's declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
@@ -4837,6 +4947,10 @@ where
     /// - panics: none.
     /// - executable: none — the record is [`Crossed::record`]'s.
     ///
+    /// # Cost
+    /// - allocation: the record of the leading declarations and its keys,
+    ///   growth within the recorded declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`readmit_from`].
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
@@ -4883,7 +4997,7 @@ where
     /// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
     /// - witness: `bridge::tests::a_retired_keeping_readmission_leaves_its_record_whole_6846`
-    fn finish(mut self) -> Walked<'crossed, Poll::Retired>
+    fn finish(mut self) -> Walked<'crossed, Poll::Retired, Obligations>
     {
         if self.positions.unkeyed {
             return Walked::Unkeyed;
@@ -4931,7 +5045,7 @@ where
         let audit = ArtifactAudit::of(&readmitted);
         Walked::Done(Polled::Whole((
             Readmission {
-                environment,
+                environment: environment.forking(SharedFork::serial()),
                 readmitted,
                 audit,
                 admitted: positions.exports,
@@ -5143,6 +5257,10 @@ struct OpenSeal
 /// - fails: never; a refusal is recorded, as above.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the scopes and the entries of the closed seals, growth within
+///   the open seals
+///
 /// # Adequacy
 /// - hypothesis: L3 — a sealed module's export replays with the atom closed
 ///   over its members, and a client past the seal reads the atom rigid.
@@ -5155,12 +5273,13 @@ struct OpenSeal
     )
 )]
 #[spec(ensures: positions.open.iter().all(|seal| seal.end > reached))]
-fn close_seals(
-    environment: &mut Environment,
+fn close_seals<Obligations>(
+    environment: &mut Environment<Obligations>,
     positions: &mut Positions,
     readmitted: &mut [Readmitted],
     reached: ConstantIndex,
-)
+) where
+    Obligations: ObligationFork,
 {
     let (closing, open): (Vec<OpenSeal>, Vec<OpenSeal>) = core::mem::take(&mut positions.open)
         .into_iter()
@@ -5390,6 +5509,10 @@ enum Erased
 ///   [`Outcome::Rejected`].
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the staging, the replayed certificates and the entry of the
+///   declaration, growth within the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — definitions, owed axioms, refused erasures and declined
 ///   certificates expose exact outcomes, receipts and environment contents;
@@ -5428,8 +5551,8 @@ enum Erased
     },
 )]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn cross<Vouch, Watch>(
-    environment: &mut Environment,
+fn cross<Vouch, Watch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -5440,6 +5563,7 @@ fn cross<Vouch, Watch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
     Watch: Stopwatch,
+    Obligations: ObligationFork,
 {
     // The reflexivities whose second certificates answered the pairs the
     // kernel reported undecided; none until it reports one.
@@ -5610,12 +5734,18 @@ fn answered(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the entry of the declaration and the frames of its check,
+///   growth within the report's declarations
 #[inline]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn admit(
-    environment: &mut Environment,
+fn admit<Obligations>(
+    environment: &mut Environment<Obligations>,
     staged: gandr_kernel_core::StagedDeclaration,
 ) -> Result<CheckedId, KernelError>
+where
+    Obligations: ObligationFork,
 {
     environment.add_decl(staged)
 }
@@ -5633,18 +5763,23 @@ fn admit(
 /// - panics: none.
 /// - executable: none — the answer is the kernel's.
 ///
+/// # Cost
+/// - allocation: the entry of the declaration and the frames of its check,
+///   growth within the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a readmission under a ticking clock times each check at
 ///   the one tick that its run spans.
 /// - witness: `bridge::tests::a_timed_readmission_times_each_admission_it_makes`
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn checked<Watch>(
-    environment: &mut Environment,
+fn checked<Watch, Obligations>(
+    environment: &mut Environment<Obligations>,
     staged: gandr_kernel_core::StagedDeclaration,
     stopwatch: &mut Watch,
 ) -> (Result<CheckedId, KernelError>, AdmissionCost)
 where
     Watch: Stopwatch,
+    Obligations: ObligationFork,
 {
     let started = stopwatch.start();
     match environment.release(staged) {
@@ -5755,6 +5890,10 @@ enum Seed
 /// [`Unstaged::Refused`] with the refused outcome and the verdicts replayed
 /// before it.
 ///
+/// # Cost
+/// - allocation: the erased content of the declaration in the kernel's arena,
+///   growth within the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`cross`] and [`cross_block`].
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
@@ -5769,8 +5908,8 @@ enum Seed
     Unstaged::Unseeded(Seed::Ahead(_)) => matches!(environment.next_rank(), Maybe::Present(_)),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-fn stage<Vouch>(
-    environment: &mut Environment,
+fn stage<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     (source, positions): (Source<'_>, &Positions),
     offer: Offer<'_>,
@@ -5783,6 +5922,7 @@ fn stage<Vouch>(
 ) -> Result<Staged, Unstaged>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let next = ConstantIndex::from(environment.entries().len());
     let ahead = positions.ahead(environment);
@@ -6069,13 +6209,17 @@ fn kernel_rules(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the positions and the unfolding of the declaration, growth
+///   within the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`cross`].
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
 #[spec(ensures: |ret| matches!(ret, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))]
-fn settle(
-    environment: &Environment,
+fn settle<Obligations>(
+    environment: &Environment<Obligations>,
     source: Source<'_>,
     positions: &mut Positions,
     (constant, offer, image): (
@@ -6085,6 +6229,8 @@ fn settle(
     ),
     (staged_as, admitted): (KernelDeclaration, CheckedId),
 ) -> Outcome
+where
+    Obligations: ObligationFork,
 {
     positions.exports.push(staged_as);
     let audit = environment.audit(admitted);
@@ -6130,6 +6276,10 @@ fn settle(
 ///   [`Outcome::Rejected`].
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the staging, the entry and the outcome of each member, growth
+///   within the block's members
+///
 /// # Adequacy
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
@@ -6137,8 +6287,8 @@ fn settle(
 #[spec(captures: [entries = environment.entries().admitted(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
         || usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
-fn cross_block<Vouch>(
-    environment: &mut Environment,
+fn cross_block<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -6147,6 +6297,7 @@ fn cross_block<Vouch>(
 ) -> Vec<(Outcome, Vec<Replayed>)>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     // As in `cross`: the reflexivities whose second certificates answered the
     // pairs the kernel reported undecided; none until it reports one.
@@ -6389,6 +6540,10 @@ quenchant_shape::reason_enum! {
 ///   the kernel refused.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the declaration of the assumption and its entry, growth within
+///   the refused declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration reading a received value, and one taking an
 ///   offer's choice, are each admitted once their assumption is, and every
@@ -6401,8 +6556,8 @@ quenchant_shape::reason_enum! {
     ensures: |ret| matches!(ret, Maybe::Present(_)) == (positions.assumed.len() > assumed)
         && usize::from(environment.entries().admitted()).checked_sub(usize::from(entries)) == positions.assumed.len().checked_sub(assumed),
 )]
-fn assumed_for<Vouch>(
-    environment: &mut Environment,
+fn assumed_for<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -6411,6 +6566,7 @@ fn assumed_for<Vouch>(
 ) -> Maybe<ConstantIndex, assumption::Absent>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let &Outcome::Refused(Refusal::Session { at }) = refused
     else {
@@ -6480,6 +6636,10 @@ where
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the declarations of the seed and their entries, growth within
+///   the report's seeds
+///
 /// # Adequacy
 /// - hypothesis: L3 — a native operation and a handled effect each seeded at
 ///   their first reader, and a readmission resumed past a prefix that read
@@ -6490,8 +6650,8 @@ where
 /// - witness: `bridge::tests::a_deep_handler_of_several_operations_crosses_as_one_fold_2750`
 /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
 #[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).saturating_add(positions.formed.len()) == seeded.saturating_add(usize::from(!matches!(*seed, Seed::Ahead(_)))))]
-fn seeded<Vouch>(
-    environment: &mut Environment,
+fn seeded<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -6500,6 +6660,7 @@ fn seeded<Vouch>(
 ) -> Result<(), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     match *seed {
         Seed::Native(primitive) => positions
@@ -6547,6 +6708,10 @@ where
 /// # Errors
 /// As `- fails:`.
 ///
+/// # Cost
+/// - allocation: the declarations of the model and their entries, growth within
+///   the report's effect rows
+///
 /// # Adequacy
 /// - hypothesis: L3 — two handlers of one effect share one model, admitted once
 ///   ahead of the first as a data type over the subject's result with a
@@ -6563,8 +6728,8 @@ where
 ///
 /// [`EffectSig::operations`]: gandr_core_term::effect::EffectSig::operations
 #[spec(captures: models = positions.models.len(), ensures: |ret| ret.is_err() || positions.models.len() == models.saturating_add(1))]
-fn modelled<Vouch>(
-    environment: &mut Environment,
+fn modelled<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -6573,6 +6738,7 @@ fn modelled<Vouch>(
 ) -> Result<(), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let operations: usize = row
         .iter()
@@ -6739,6 +6905,10 @@ fn model_name(
 /// [`Outcome::Rejected`] with the kernel's refusal of a witness, or
 /// [`Outcome::Refused`] with its erasure's refusal.
 ///
+/// # Cost
+/// - allocation: the declarations of the formation and their entries, growth
+///   within the report's formations
+///
 /// # Adequacy
 /// - hypothesis: L3 — a system whose faces agree, one whose meet value differs,
 ///   and one whose glued value has another type than its field's separate the
@@ -6747,8 +6917,8 @@ fn model_name(
 /// - witness: `gandr-core-checker-base::tests::module::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 /// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
 #[spec(captures: formed = positions.formed.len(), ensures: |ret| ret.is_err() || positions.formed.len() == formed.saturating_add(1))]
-fn formed<Vouch>(
-    environment: &mut Environment,
+fn formed<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
@@ -6757,6 +6927,7 @@ fn formed<Vouch>(
 ) -> Result<(), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
     let Some(&gandr_core_term::ValueType::Patched {
@@ -6989,12 +7160,16 @@ fn record_of<'label>(
 /// # Errors
 /// [`Outcome::Refused`] with the erasure's refusal.
 ///
+/// # Cost
+/// - allocation: the content keys and the names that the formation reads,
+///   growth within the formation's records
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
 /// - witness: `gandr-core-checker-base::tests::module::equal_patched_types_share_one_formation_5748`
 #[spec(captures: entries = environment.entries().len(), ensures: |ret| environment.entries().len() == entries && ret.as_ref().map_or(true, |keyed| keyed.0.len() == records.len()))]
-fn formation_key<Vouch>(
-    environment: &mut Environment,
+fn formation_key<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     (source, positions): (Source<'_>, &mut Positions),
     records: &[FormationRecord],
@@ -7002,6 +7177,7 @@ fn formation_key<Vouch>(
 ) -> Result<(Vec<gandr_kernel_core::ContentId>, NameReads), Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let invariant = || Outcome::Refused(Refusal::MachineInvariant);
     let mut key = Vec::with_capacity(records.len());
@@ -7244,6 +7420,10 @@ impl FormationTable
     /// - executable: none — the names are digests, which a predicate would
     ///   restate.
     ///
+    /// # Cost
+    /// - allocation: the open roots, the keyed definitions and the names ahead,
+    ///   growth within the definitions that the roots reach
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a recheck of a module whose formation reads a
     ///   definition that reads an abstract type admits each declaration once,
@@ -7252,11 +7432,13 @@ impl FormationTable
     ///   keys.
     /// - witness: `bridge::tests::a_recheck_names_each_formation_in_one_walk_7456`
     /// - witness: `bridge::tests::a_formation_over_two_twins_forms_as_a_whole_readmission_forms_it_7261`
-    fn settle(
+    fn settle<Obligations>(
         &mut self,
-        environment: &Environment,
+        environment: &Environment<Obligations>,
         roots: &[ConstantIndex],
     ) -> Settled
+    where
+        Obligations: ObligationFork,
     {
         use gandr_kernel_core::encoding::ConstantName;
         if environment.keying() != gandr_kernel_core::verdict::Keying::Rechecks {
@@ -7349,12 +7531,16 @@ enum Settled
 /// [`Outcome::Refused`] with the erasure's refusal, or [`Outcome::Rejected`]
 /// with the kernel's.
 ///
+/// # Cost
+/// - allocation: the declaration of the witness and its entry, growth within
+///   the report's declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`formed`].
 /// - witness: `gandr-core-checker-base::tests::module::a_patched_type_crosses_its_formation_and_the_meets_of_its_faces_5663`
 #[spec(captures: exports = positions.exports.len(), ensures: |ret| ret.is_err() || positions.exports.len() != exports)]
-fn witness<Vouch>(
-    environment: &mut Environment,
+fn witness<Vouch, Obligations>(
+    environment: &mut Environment<Obligations>,
     arena: &mut CoreArena,
     (source, positions): (Source<'_>, &mut Positions),
     (declared, body): (ValueTypeId, ValueId),
@@ -7363,6 +7549,7 @@ fn witness<Vouch>(
 ) -> Result<ConstantIndex, Outcome>
 where
     Vouch: Fn(Certificate) -> Certificate,
+    Obligations: ObligationFork,
 {
     let next = ConstantIndex::from(environment.entries().len());
     let base = ConstantIndex::from(usize::from(next).saturating_add(1));
@@ -7645,14 +7832,20 @@ impl Positions
     ///   no allocation, when the environment sets no next rank.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the positions ahead of the cursor, growth within the
+    ///   report's definitions
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Environment::take_next_rank`].
     /// - witness: `bridge::tests::a_crossing_that_reads_a_kept_seed_first_takes_it_below_itself_7196`
     #[spec(ensures: |ret| ret.windows(2).all(|pair| matches!(*pair, [earlier, later] if earlier < later)))]
-    fn ahead(
+    fn ahead<Obligations>(
         &self,
-        environment: &Environment,
+        environment: &Environment<Obligations>,
     ) -> Vec<ConstantIndex>
+    where
+        Obligations: ObligationFork,
     {
         let Maybe::Present(next) = environment.next_rank()
         else {
@@ -7736,6 +7929,10 @@ impl Positions
     /// # Errors
     /// A kernel rejection of the native signature.
     ///
+    /// # Cost
+    /// - allocation: the declaration of the primitive and its entry, growth
+    ///   within the report's primitives
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — native operations cross and retain their named
     ///   assumptions in a decoded artifact, and a resumed readmission seeds the
@@ -7743,11 +7940,13 @@ impl Positions
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
     #[spec(ensures: |ret| ret.is_err() || self.native.contains_key(&primitive))]
-    fn seed(
+    fn seed<Obligations>(
         &mut self,
-        environment: &mut Environment,
+        environment: &mut Environment<Obligations>,
         primitive: gandr_core_term::primitive::Primitive,
     ) -> Result<(), KernelError>
+    where
+        Obligations: ObligationFork,
     {
         use gandr_core_term::primitive::PrimitiveType;
         let mut staging = environment.stage();

@@ -185,12 +185,12 @@ use crate::levels::LevelContext;
 /// - hypothesis: L3 — as [`Environment::release`].
 /// - witness: `environment::tests::a_released_check_crosses_threads_and_settles_as_an_admission_3476`
 #[derive(Debug)]
-pub struct Check
+pub struct Check<Fork = crate::fork::Unforked>
 {
     /// The declaration that the check reads.
     declaration: Declaration,
     /// A recorded verdict, or what the check reads.
-    way: Way,
+    way: Way<Fork>,
 }
 
 quenchant_shape::reason_enum! {
@@ -250,11 +250,11 @@ quenchant_shape::reason_enum! {
     clippy::large_enum_variant,
     reason = "one per release, moved once to its thread or back to its caller; boxing the check would allocate at every release"
 )]
-pub enum Released
+pub enum Released<Fork = crate::fork::Unforked>
 {
     /// The check runs apart from the environment, and what its commit needs
     /// beside it.
-    Running(Pending, Check),
+    Running(Pending, Check<Fork>),
     /// The declaration, handed back: its release reads a commit that has not
     /// come. The hold names the position of the outstanding release whose
     /// commit frees it, when one commit does.
@@ -314,7 +314,9 @@ pub enum Hold
     Read,
 }
 
-impl Check
+impl<Fork> Check<Fork>
+where
+    Fork: crate::fork::ObligationFork,
 {
     /// Run the check on the thread that calls: answer a recorded verdict,
     /// or check the declaration against the check's own scope.
@@ -419,8 +421,7 @@ impl Check
 ///     Ok(())
 /// }
 /// ```
-#[derive(Clone, Debug, Default)]
-pub struct Environment
+pub struct Environment<Fork = crate::fork::Unforked>
 {
     /// The one arena every declaration's content lives in.
     arena: TermArena,
@@ -456,7 +457,7 @@ pub struct Environment
     admitted: crate::admitted::AdmittedCount,
     /// The fork that the last drain of each check runs its obligations
     /// through, if any.
-    forking: crate::fork::SharedFork,
+    forking: crate::fork::SharedFork<Fork>,
     /// The releases whose commits the cursor has not folded, and what each
     /// outstanding release holds. Only the committer reads it.
     releases: crate::releases::Releases,
@@ -465,6 +466,105 @@ pub struct Environment
     /// How many predictions the fold found wrong and set right, and how many
     /// outstanding releases a drop took back.
     rollbacks: crate::speculation::Rollbacks,
+}
+
+impl<Fork> Clone for Environment<Fork>
+{
+    /// A copy of the environment, each field cloned: the frozen parts shared,
+    /// and the same fork.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copy's arena tail, staged marks, manifest, atoms,
+    ///   verdicts and releases, growth within the copy
+    #[inline]
+    fn clone(&self) -> Self
+    {
+        Self {
+            arena: self.arena.clone(),
+            entries: self.entries.clone(),
+            commits: alloc::sync::Arc::clone(&self.commits),
+            admission_floor: self.admission_floor,
+            outstanding: self.outstanding.clone(),
+            manifest: self.manifest.clone(),
+            atoms: self.atoms.clone(),
+            verdicts: self.verdicts.clone(),
+            names: self.names.clone(),
+            admitting: self.admitting,
+            admitted: self.admitted,
+            forking: self.forking.clone(),
+            releases: self.releases.clone(),
+            speculation: self.speculation,
+            rollbacks: self.rollbacks,
+        }
+    }
+}
+
+impl<Fork> core::fmt::Debug for Environment<Fork>
+{
+    /// Each field of the environment.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.debug_struct("Environment")
+            .field("arena", &self.arena)
+            .field("entries", &self.entries)
+            .field("commits", &self.commits)
+            .field("admission_floor", &self.admission_floor)
+            .field("outstanding", &self.outstanding)
+            .field("manifest", &self.manifest)
+            .field("atoms", &self.atoms)
+            .field("verdicts", &self.verdicts)
+            .field("names", &self.names)
+            .field("admitting", &self.admitting)
+            .field("admitted", &self.admitted)
+            .field("forking", &self.forking)
+            .field("releases", &self.releases)
+            .field("speculation", &self.speculation)
+            .field("rollbacks", &self.rollbacks)
+            .finish()
+    }
+}
+
+impl<Fork> Default for Environment<Fork>
+{
+    /// An empty environment, each check running its obligations on the
+    /// calling thread.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: an empty arena, commit log and verdict state, setup
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            arena: TermArena::default(),
+            entries: Entries::default(),
+            commits: alloc::sync::Arc::default(),
+            admission_floor: ArenaWatermark::default(),
+            outstanding: StagedMarks::default(),
+            manifest: Vec::new(),
+            atoms: Vec::new(),
+            verdicts: crate::verdict::Verdicts::default(),
+            names: Names::default(),
+            admitting: crate::admitted::AdmissionPolicy::default(),
+            admitted: crate::admitted::AdmittedCount::default(),
+            forking: crate::fork::SharedFork::serial(),
+            releases: crate::releases::Releases::default(),
+            speculation: crate::speculation::Speculation::default(),
+            rollbacks: crate::speculation::Rollbacks::default(),
+        }
+    }
 }
 
 impl Environment
@@ -514,6 +614,123 @@ impl Environment
         }
     }
 
+    /// Re-admit an artifact's declarations, in order, into a fresh environment
+    /// over the arena their content lives in.
+    ///
+    /// Each declaration passes the same choke point it passed when it was
+    /// produced — checked through [`Self::add_decl`], or through the warned
+    /// bypass when the artifact marks it so — and each abstract type closes
+    /// at the extent its record carries, so a sealed module's members are
+    /// re-checked at the representation and every later declaration against
+    /// the atom.
+    ///
+    /// # Specification
+    /// - requires: every root of `declarations` resolves in `arena`, as a
+    ///   decoded artifact's do.
+    /// - ensures: `Ok` holding an environment with one entry per declaration,
+    ///   in order, each admitted as its mark says, whose audit is the producing
+    ///   environment's; or the first refusal with the position it met.
+    /// - provides: the replay a reader runs over a decoded artifact, which is
+    ///   what makes the artifact's opacity a kernel fact rather than a
+    ///   producer's claim.
+    /// - fails: [`ArtifactRefusal`] naming the first declaration the kernel
+    ///   rejects and why.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ArtifactRefusal`].
+    ///
+    /// # Cost
+    /// - allocation: the entry of each declaration and the frames of its check,
+    ///   growth within the artifact's declarations
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sealed module's export replays; a copy whose client
+    ///   reads the atom at its representation, a copy whose atom was downgraded
+    ///   to an axiom, and a copy whose provenance was rewritten are each
+    ///   refused at the declaration that broke.
+    /// - witness: `tests::sealed_export::the_export_of_a_sealed_module_replays`
+    /// - witness: `tests::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
+    /// - witness: `tests::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |refusal| usize::from(refusal.position()) < declarations.len(),
+        |environment| environment.entries.len() == declarations.len(),
+    ))]
+    #[inline]
+    pub fn replay(
+        arena: TermArena,
+        declarations: &[MarkedDeclaration],
+    ) -> Result<Self, ArtifactRefusal>
+    {
+        let floor = arena.watermark();
+        let mut environment = Self {
+            arena,
+            admission_floor: floor,
+            ..Self::default()
+        };
+        let mut position = 0_usize;
+        while let Some(marked) = declarations.get(position) {
+            // A data declaration whose fields name later positions leads the
+            // block they reach, measured as both checkers measure it, and the
+            // block is admitted whole.
+            let end = usize::from(block_end(
+                &environment.arena,
+                declarations,
+                ConstantIndex::from(position),
+            ));
+            if end > position.saturating_add(1) {
+                let members = declarations.get(position .. end).unwrap_or_default();
+                if members
+                    .iter()
+                    .all(|member| member.mark() == AdmissionMark::Checked)
+                {
+                    let staged = members
+                        .iter()
+                        .map(|member| {
+                            StagedDeclaration::new(floor, None, member.declaration().clone())
+                        })
+                        .collect();
+                    let _admitted =
+                        environment
+                            .add_block(staged)
+                            .map_err(|error| ArtifactRefusal {
+                                position: ConstantIndex::from(position),
+                                error,
+                            })?;
+                    position = end;
+                    continue;
+                }
+            }
+            let staged = StagedDeclaration::new(floor, None, marked.declaration().clone());
+            match marked.mark() {
+                AdmissionMark::Checked => {
+                    let _admitted =
+                        environment
+                            .add_decl(staged)
+                            .map_err(|error| ArtifactRefusal {
+                                position: ConstantIndex::from(position),
+                                error,
+                            })?;
+                },
+                AdmissionMark::UncheckedBypass => {
+                    let _admitted = environment.add_decl_unchecked(staged).map_err(|error| {
+                        ArtifactRefusal {
+                            position: ConstantIndex::from(position),
+                            error,
+                        }
+                    })?;
+                },
+            }
+            position = position.saturating_add(1);
+        }
+        Ok(environment)
+    }
+}
+
+impl<Fork> Environment<Fork>
+where
+    Fork: crate::fork::ObligationFork,
+{
     /// The same environment, its checks standing on admitted results as
     /// `policy` states.
     ///
@@ -540,14 +757,27 @@ impl Environment
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn forking(
+    pub fn forking<Other>(
         self,
-        fork: crate::fork::SharedFork,
-    ) -> Self
+        fork: crate::fork::SharedFork<Other>,
+    ) -> Environment<Other>
     {
-        Self {
+        Environment {
+            arena: self.arena,
+            entries: self.entries,
+            commits: self.commits,
+            admission_floor: self.admission_floor,
+            outstanding: self.outstanding,
+            manifest: self.manifest,
+            atoms: self.atoms,
+            verdicts: self.verdicts,
+            names: self.names,
+            admitting: self.admitting,
+            admitted: self.admitted,
             forking: fork,
-            ..self
+            releases: self.releases,
+            speculation: self.speculation,
+            rollbacks: self.rollbacks,
         }
     }
 
@@ -614,6 +844,10 @@ impl Environment
     /// - executable: none — the clauses compare the copy's answers to every
     ///   later admission with `self`'s, which no predicate over one call reads.
     ///
+    /// # Cost
+    /// - allocation: the copy's arena tail, staged marks, manifest, atoms,
+    ///   verdicts and releases, growth within the copy
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a copy handed on after a recorded run recalls a later
     ///   declaration under the key the run would have given it, stands on the
@@ -666,6 +900,10 @@ impl Environment
     ///   the session when it checks a declaration.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a frozen chunk for the tail of the arena, of the entries
+    ///   and of the session, growth within the admitted prefix
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an environment frozen after one admission and cloned
@@ -804,6 +1042,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the entry, its commit records and a copy of a shared
+    ///   commit log, growth within the entries
     fn enter(
         &mut self,
         entry: AdmittedDeclaration,
@@ -820,6 +1062,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a vacancy in the entries and in the commit log, and a copy
+    ///   of a shared commit log, growth within the entries
     fn vacate(&mut self)
     {
         let position = ConstantIndex::from(usize::from(self.entries.len()));
@@ -847,6 +1093,10 @@ impl Environment
     ///   separately.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the staged declaration's mark, growth within the staged
+    ///   declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the surface is the registration and its release,
@@ -902,6 +1152,10 @@ impl Environment
     ///   executions.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared chunk of the arena before its
+    ///   truncation, growth within the staged declarations
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the surfaces are the resolution and the
@@ -1157,7 +1411,7 @@ impl Environment
     pub fn release(
         &mut self,
         staged: StagedDeclaration,
-    ) -> Result<Released, KernelError>
+    ) -> Result<Released<Fork>, KernelError>
     {
         self.release_as(staged, Predicting::Never)
     }
@@ -1192,7 +1446,7 @@ impl Environment
     pub fn release_predicting(
         &mut self,
         staged: StagedDeclaration,
-    ) -> Result<Released, KernelError>
+    ) -> Result<Released<Fork>, KernelError>
     {
         self.release_as(staged, Predicting::Admission)
     }
@@ -1210,7 +1464,7 @@ impl Environment
         &mut self,
         staged: StagedDeclaration,
         predicting: Predicting,
-    ) -> Result<Released, KernelError>
+    ) -> Result<Released<Fork>, KernelError>
     {
         let (content_start, staged_rank, declaration) = staged.into_parts();
         // The guard, before anything is truncated: a declaration staged after
@@ -1448,11 +1702,15 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the staged mark of the declaration that goes back, growth
+    ///   within the staged declarations
     fn hand_back(
         &mut self,
         staged: StagedDeclaration,
         (hold, on): (Hold, Maybe<ConstantIndex, held_on::Absent>),
-    ) -> Released
+    ) -> Released<Fork>
     {
         self.outstanding.register(staged.content_start());
         Released::Held(staged, hold, on)
@@ -1476,6 +1734,10 @@ impl Environment
     /// - panics: none.
     /// - executable: none — the clauses state what the outstanding releases
     ///   would change, which no predicate over one call reads.
+    ///
+    /// # Cost
+    /// - allocation: the likeness of the two keys that the hold compares,
+    ///   growth within the declaration's key
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::release`].
@@ -1639,6 +1901,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared table of the entries before its
+    ///   truncation, growth within the entries
     fn drop_past(
         &mut self,
         position: ConstantIndex,
@@ -1676,6 +1942,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared table of the entries, growth within the
+    ///   entries
     fn miss(
         &mut self,
         position: ConstantIndex,
@@ -1700,6 +1970,10 @@ impl Environment
     ///   outcome or record of the check reaches the environment.
     /// - panics: none.
     /// - executable: none — the scope is private to the run.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared table of the entries as the view goes
+    ///   back, growth within the entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a discard that folds the check's session keeps the
@@ -1729,6 +2003,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the check's view, its clone of the arena and its fork of
+    ///   the session, growth within the check's scope
     fn open_scope(
         &mut self,
         (roots, rank): (&[ConstantIndex], SourceRank),
@@ -1769,6 +2047,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the join of the check's session and a copy of a shared
+    ///   table of the entries, growth within the check's scope
     fn close_scope<T>(
         &mut self,
         scope: Scope,
@@ -1830,7 +2112,7 @@ impl Environment
         (levels, taken): (&LevelContext, &crate::admitted::Tally),
         check: impl FnOnce(
             &mut TermArena,
-            check::Judgement<'_>,
+            check::Judgement<'_, Fork>,
             &mut crate::support::SupportContext,
         ) -> Result<T, KernelError>,
     ) -> Result<T, KernelError>
@@ -1877,6 +2159,10 @@ impl Environment
     /// [`KernelError::UnboundConstant`] when no reservation stands at
     /// `lone.place.0`, or at the first prediction before it whose commit has
     /// not come; then nothing changes.
+    ///
+    /// # Cost
+    /// - allocation: the declaration's entry and commit records, growth within
+    ///   the entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::add_decl`], and a refusal under a later
@@ -2024,6 +2310,10 @@ impl Environment
     /// - executable: none — the folded state is the serial run's, which no
     ///   predicate over one call reads.
     ///
+    /// # Cost
+    /// - allocation: the commit records and the verdict of each folded entry,
+    ///   and a copy of a shared commit log, growth within the folded releases
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a fold out of position order moves the order flag,
     ///   the reach or the record of a verdict off the serial run's.
@@ -2093,6 +2383,10 @@ impl Environment
     /// - executable: none — the serial rank reads the folded entries below
     ///   `position`, which a predicate over one call would restate.
     ///
+    /// # Cost
+    /// - allocation: the commit records of the rank and the new rank of the
+    ///   entry, growth within the entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a refusal settled after a later release that
     ///   predicted its admission leaves the later entry one rank too high, and
@@ -2131,6 +2425,10 @@ impl Environment
     /// - panics: none.
     /// - executable: none — which admissions this environment checked rather
     ///   than recalled is private to its verdicts, so no predicate reads it.
+    ///
+    /// # Cost
+    /// - allocation: the receipt and its signature, growth within the checked
+    ///   verdicts
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a receipt an environment gave recalls its
@@ -2234,6 +2532,10 @@ impl Environment
     /// # Errors
     /// [`KernelError::UnsettledReleases`] while a released check is not
     /// settled.
+    ///
+    /// # Cost
+    /// - allocation: the declaration's entry and commit records, growth within
+    ///   the entries
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the bypass's whole observable effect is that the
@@ -2347,6 +2649,10 @@ impl Environment
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the likeness of the two keys, growth within the
+    ///   declaration's key
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a keep beside a release that reads into its key reads
     ///   a key or a name that the serial run, which commits the release first,
@@ -2440,6 +2746,10 @@ impl Environment
     /// # Errors
     /// [`KernelError::OutstandingStagedContent`],
     /// [`KernelError::UnsettledReleases`], or any [`KernelError`].
+    ///
+    /// # Cost
+    /// - allocation: one entry and one checked id for each member, and the
+    ///   frames of their checks, growth within the block's members
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a universe and its decoder are admitted together; a
@@ -2782,6 +3092,10 @@ impl Environment
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: the vacancy and the commit records of the retired entry,
+    ///   growth within the entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a readmission that retires the reach of an edit reads
@@ -3144,6 +3458,10 @@ impl Environment
     /// - executable: none — the keys are digests, which a predicate would
     ///   restate.
     ///
+    /// # Cost
+    /// - allocation: the units that wait on the demand and the units that it
+    ///   tried, growth within the demanded units
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::demanded_key`], whose program holds an
     ///   axiom that reads a sort and the type of words over it, the type of
@@ -3225,6 +3543,9 @@ impl Environment
     /// - panics: none.
     /// - executable: none — the keys are digests, which a predicate would
     ///   restate.
+    ///
+    /// # Cost
+    /// - allocation: the raw key of the unit, growth within the demanded units
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::demanded_key`].
@@ -3329,6 +3650,10 @@ impl Environment
     /// - executable: none — the keys are digests, which a predicate would
     ///   restate.
     ///
+    /// # Cost
+    /// - allocation: the members whose keys are missing, growth within the
+    ///   unit's members
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::demanded_key`], whose program holds twin
     ///   axioms, twin sorts and twin blocks.
@@ -3396,6 +3721,10 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the marked declarations and the keyed segment of the unit,
+    ///   growth within the unit's members
     fn fingerprint(
         &self,
         unit: Unit,
@@ -3542,6 +3871,10 @@ impl Environment
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the new ranks of the entries and their commit records,
+    ///   growth within the entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — an environment whose entries take new ranks in their
     ///   order, and whose entries are each kept in place, reads as a fresh
@@ -3617,6 +3950,10 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the table of ranks of the ranking, growth within the
+    ///   entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a readmission that crosses each edited declaration at
     ///   its place reads as a fresh admission of the edited source.
@@ -3642,6 +3979,10 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the table of ranks of the ranking, growth within the
+    ///   entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::ranking_from`].
     /// - witness: `environment::tests::a_crossing_at_the_next_rank_ranks_at_its_place_6846`
@@ -3659,12 +4000,18 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: none in steady state
     #[inline]
     pub fn next_rank(&self) -> Maybe<SourceRank, next_rank::Absent>
     {
         self.commits
             .next
-            .map_or(Maybe::Absent(next_rank::Absent::Unset), Maybe::Present)
+            .as_ref()
+            .map_or(Maybe::Absent(next_rank::Absent::Unset), |&rank| {
+                Maybe::Present(rank)
+            })
     }
 
     /// Move the live entry at `position` to the next rank, and the next rank
@@ -3696,6 +4043,9 @@ impl Environment
     ///
     /// # Errors
     /// As `- fails:`.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared commit log, growth within the entries
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a kept seed that a crossing reads first moves below
@@ -3898,6 +4248,10 @@ impl Environment
     /// # Errors
     /// As `- fails:`.
     ///
+    /// # Cost
+    /// - allocation: the definition's name and its rename in the entries,
+    ///   growth within the entries
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::keep_in_place`].
     /// - witness: `environment::tests::a_reranked_environment_reads_as_a_fresh_admission_6846`
@@ -3940,6 +4294,9 @@ impl Environment
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: a copy of a shared commit log, growth within the commits
     fn key_through(
         &mut self,
         unit: crate::env::Unit,
@@ -4006,6 +4363,10 @@ impl Environment
     /// # Errors
     /// [`KernelError::SealNotOpen`].
     ///
+    /// # Cost
+    /// - allocation: the scope of the atom and its key records, growth within
+    ///   the sealed atoms
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a member admitted before the close checks at the
     ///   representation, a value of the representation offered after it is
@@ -4059,114 +4420,6 @@ impl Environment
         Ok(extent)
     }
 
-    /// Re-admit an artifact's declarations, in order, into a fresh environment
-    /// over the arena their content lives in.
-    ///
-    /// Each declaration passes the same choke point it passed when it was
-    /// produced — checked through [`Self::add_decl`], or through the warned
-    /// bypass when the artifact marks it so — and each abstract type closes
-    /// at the extent its record carries, so a sealed module's members are
-    /// re-checked at the representation and every later declaration against
-    /// the atom.
-    ///
-    /// # Specification
-    /// - requires: every root of `declarations` resolves in `arena`, as a
-    ///   decoded artifact's do.
-    /// - ensures: `Ok` holding an environment with one entry per declaration,
-    ///   in order, each admitted as its mark says, whose audit is the producing
-    ///   environment's; or the first refusal with the position it met.
-    /// - provides: the replay a reader runs over a decoded artifact, which is
-    ///   what makes the artifact's opacity a kernel fact rather than a
-    ///   producer's claim.
-    /// - fails: [`ArtifactRefusal`] naming the first declaration the kernel
-    ///   rejects and why.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// [`ArtifactRefusal`].
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a sealed module's export replays; a copy whose client
-    ///   reads the atom at its representation, a copy whose atom was downgraded
-    ///   to an axiom, and a copy whose provenance was rewritten are each
-    ///   refused at the declaration that broke.
-    /// - witness: `tests::sealed_export::the_export_of_a_sealed_module_replays`
-    /// - witness: `tests::sealed_export::an_atom_downgraded_to_an_axiom_fails_to_replay`
-    /// - witness: `tests::sealed_export::sealing_provenance_round_trips_and_cannot_be_rewritten`
-    #[spec(ensures: |ret| ret.as_ref().map_or_else(
-        |refusal| usize::from(refusal.position()) < declarations.len(),
-        |environment| environment.entries.len() == declarations.len(),
-    ))]
-    #[inline]
-    pub fn replay(
-        arena: TermArena,
-        declarations: &[MarkedDeclaration],
-    ) -> Result<Self, ArtifactRefusal>
-    {
-        let floor = arena.watermark();
-        let mut environment = Self {
-            arena,
-            admission_floor: floor,
-            ..Self::default()
-        };
-        let mut position = 0_usize;
-        while let Some(marked) = declarations.get(position) {
-            // A data declaration whose fields name later positions leads the
-            // block they reach, measured as both checkers measure it, and the
-            // block is admitted whole.
-            let end = usize::from(block_end(
-                &environment.arena,
-                declarations,
-                ConstantIndex::from(position),
-            ));
-            if end > position.saturating_add(1) {
-                let members = declarations.get(position .. end).unwrap_or_default();
-                if members
-                    .iter()
-                    .all(|member| member.mark() == AdmissionMark::Checked)
-                {
-                    let staged = members
-                        .iter()
-                        .map(|member| {
-                            StagedDeclaration::new(floor, None, member.declaration().clone())
-                        })
-                        .collect();
-                    let _admitted =
-                        environment
-                            .add_block(staged)
-                            .map_err(|error| ArtifactRefusal {
-                                position: ConstantIndex::from(position),
-                                error,
-                            })?;
-                    position = end;
-                    continue;
-                }
-            }
-            let staged = StagedDeclaration::new(floor, None, marked.declaration().clone());
-            match marked.mark() {
-                AdmissionMark::Checked => {
-                    let _admitted =
-                        environment
-                            .add_decl(staged)
-                            .map_err(|error| ArtifactRefusal {
-                                position: ConstantIndex::from(position),
-                                error,
-                            })?;
-                },
-                AdmissionMark::UncheckedBypass => {
-                    let _admitted = environment.add_decl_unchecked(staged).map_err(|error| {
-                        ArtifactRefusal {
-                            position: ConstantIndex::from(position),
-                            error,
-                        }
-                    })?;
-                },
-            }
-            position = position.saturating_add(1);
-        }
-        Ok(environment)
-    }
-
     /// Open an atom just admitted at `position`, and close every atom whose
     /// scope that admission exhausted.
     ///
@@ -4181,6 +4434,10 @@ impl Environment
     ///   checked choke point and the bypass.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the scope of each closed atom, growth within the sealed
+    ///   atoms
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a replayed atom closed after one member is manifest
@@ -4329,6 +4586,10 @@ impl Environment
     /// - panics: none.
     /// - executable: none — the key is a digest, which a predicate would
     ///   restate.
+    ///
+    /// # Cost
+    /// - allocation: the marked declarations, keyed segments, manifest and word
+    ///   registry of the unit, growth within the unit's members
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::content_key`], and a key computed on
@@ -4498,6 +4759,10 @@ impl Environment
     ///
     /// # Errors
     /// As `- ensures:`.
+    ///
+    /// # Cost
+    /// - allocation: the operations and the order of the ranked unit, growth
+    ///   within the unit's members
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::content_key`].
@@ -4699,6 +4964,10 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the positions that the report reaches, growth within the
+    ///   declaration's support
+    ///
     /// # Adequacy
     /// - hypothesis: L2 — the finite axiom and unchecked chains preserve their
     ///   audit reasons through definitions and through type-level code edges.
@@ -4785,6 +5054,10 @@ impl Environment
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the definition's structured name, growth within the
+    ///   declaration's name
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a plain definition reads alike under either admission
     ///   order, and definitions of one type and body keep a name each. An axiom
@@ -4846,12 +5119,12 @@ impl Environment
     clippy::large_enum_variant,
     reason = "one per released check, moved once to its thread and back; boxing the scope would allocate at every release to shrink the rare recall"
 )]
-enum Way
+enum Way<Fork>
 {
     /// A verdict that a trusted record holds under the declaration's key.
     Recalled(check::Accessibility),
     /// The check's own scope, and what its judgement reads beside it.
-    Checking(Scope, Judged),
+    Checking(Scope, Judged<Fork>),
 }
 
 /// The content key of one unit, computed in place, with the shape that gives
@@ -6114,7 +6387,7 @@ struct Scope
 /// # Specification
 /// trivial.
 #[derive(Debug)]
-struct Judged
+struct Judged<Fork>
 {
     /// The declaration's level context.
     levels: LevelContext,
@@ -6124,7 +6397,7 @@ struct Judged
     admitting: crate::admitted::AdmissionPolicy,
     /// The fork that the last drain of the check runs its obligations
     /// through, if any.
-    forking: crate::fork::SharedFork,
+    forking: crate::fork::SharedFork<Fork>,
 }
 
 /// What a released check found: its outcome and its tally, with the scope

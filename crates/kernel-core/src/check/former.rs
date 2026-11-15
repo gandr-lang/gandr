@@ -177,8 +177,8 @@ pub(super) fn signature(
 #[spec(ensures: |ret| ret.is_ok() == (matches!(judgement.block, super::Block::Inside { position, .. } if position == index)
     || matches!(judgement.member(index), Maybe::Present((member, super::occurrence::Membership::Family)) if matches!(member.content(), DeclarationContent::Data { .. }))
     || matches!(judgement.entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. }))))]
-pub(super) fn resolve<'session>(
-    judgement: super::Judgement<'session>,
+pub(super) fn resolve<'session, Fork>(
+    judgement: super::Judgement<'session, Fork>,
     index: ConstantIndex,
 ) -> Result<Signature<'session>, KernelError>
 {

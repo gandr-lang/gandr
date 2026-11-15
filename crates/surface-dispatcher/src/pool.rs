@@ -866,10 +866,11 @@ impl ObligationFork for Pool
     ///   parts of a drain, and each part runs once.
     /// - witness: `pool::tests::the_pool_runs_each_part_of_a_drain_once_at_its_width`
     #[inline]
-    fn run_jobs(
+    fn run_jobs<J>(
         &self,
-        jobs: &mut [&mut dyn Job],
-    )
+        jobs: &mut [J],
+    ) where
+        J: Job,
     {
         self.each(jobs, || (), |_worker, job| job.run());
     }
@@ -3954,7 +3955,6 @@ mod tests
     fn the_pool_runs_each_part_of_a_drain_once_at_its_width()
     {
         use gandr_kernel_core::fork::ForkWidth;
-        use gandr_kernel_core::fork::Job as Part;
         use gandr_kernel_core::fork::ObligationFork;
 
         let wide = Pool::new(Width::Threads(Threads::from(
@@ -3968,11 +3968,7 @@ mod tests
             );
             let runs: [AtomicUsize; 16] = core::array::from_fn(|_| AtomicUsize::new(0));
             let mut parts: Vec<Counted<'_>> = runs.iter().map(Counted).collect();
-            let mut jobs: Vec<&mut dyn Part> = parts
-                .iter_mut()
-                .map(|part| -> &mut dyn Part { part })
-                .collect();
-            ObligationFork::run_jobs(&pool, &mut jobs);
+            ObligationFork::run_jobs(&pool, &mut parts);
             assert!(
                 runs.iter().all(|runs| runs.load(Ordering::Relaxed) == 1),
                 "each part of the drain runs once on a pool of {threads}"

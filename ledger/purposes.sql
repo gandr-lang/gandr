@@ -1503,8 +1503,9 @@ INSERT INTO purpose VALUES('kernel-core-base','error::session::SessionError','en
 INSERT INTO purpose VALUES('kernel-core-base','fork::ForkWidth','struct','How many jobs a fork runs at once, which the forked drain splits its obligations by.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::Forking','struct','Whether one check forks its independent obligations, and through which fork.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::Job','trait','One part of a declaration''s check that a fork runs apart, which keeps its answer in itself.','fork','fits','sound',NULL);
-INSERT INTO purpose VALUES('kernel-core-base','fork::ObligationFork','trait','Runs the parts of one declaration''s check on the workers the driver provides: the object-safe seam a judgement carries.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','fork::ObligationFork','trait','Runs the parts of one declaration''s check on the workers the driver provides: the seam whose type a judgement carries.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','fork::SharedFork','struct','The fork that an environment''s checks run their obligations through, shared with each copy of the environment.','fork','fits','sound',NULL);
+INSERT INTO purpose VALUES('kernel-core-base','fork::Unforked','struct','The fork of a check that has none, which runs each job on the calling thread in order.','fork','fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','hashed::HashedMap','struct','A map from `Key` to `Value`, filed by the key''s hash.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','levels::LevelContext','struct','The admitted level context of one declaration.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-core-base','occurrence::Accessibility','struct','What a declaration''s recursion was read to be.',NULL,'fits','sound',NULL);

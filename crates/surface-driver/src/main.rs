@@ -3391,6 +3391,10 @@ fn reach_hub(
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the socket's path, the toolset with its verbs, and the hub's
+///   state, setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — a hub serving a client exits `0` after its linger and
 ///   removes its socket; a hub with its toolset writes the URL of its manifest
@@ -3418,9 +3422,10 @@ fn hub(
             let announcement = gandr_surface_agentic::Announcement::beside(&socket);
             announcement.vacant()?;
             self::toolset(address, policy).map(|toolset| {
-                let verbs: alloc::sync::Arc<dyn gandr_surface_agentic::Verbs> =
-                    alloc::sync::Arc::new(HubVerbs { spelling });
-                (toolset.walking(verbs), announcement)
+                (
+                    toolset.walking(alloc::sync::Arc::new(HubVerbs { spelling })),
+                    announcement,
+                )
             })
         })
         .transpose()
@@ -3520,6 +3525,10 @@ fn hub(
 /// The error binding, reading the directory, or opening the store or the
 /// table, or one that says no directory names the state.
 ///
+/// # Cost
+/// - allocation: the paths of the toolset's files and the rows that they hold,
+///   setup
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`hub`].
 /// - witness: `tests::cli::serve_offers_the_toolset_by_default`
@@ -3527,7 +3536,7 @@ fn hub(
 fn toolset(
     address: core::net::SocketAddr,
     policy: gandr_surface_agentic::Policy,
-) -> std::io::Result<gandr_surface_agentic::Toolset>
+) -> std::io::Result<gandr_surface_agentic::Toolset<HubVerbs>>
 {
     let listener = std::net::TcpListener::bind(address)?;
     let unstated =

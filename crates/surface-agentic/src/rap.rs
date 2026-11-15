@@ -1315,7 +1315,7 @@ struct Request
 /// The hub's Reactive Agent Protocol face: a listener, the store of the calls
 /// it acknowledged, the calls that a crash cut short, and the subscriptions
 /// with their table.
-pub struct Toolset
+pub struct Toolset<Walker>
 {
     /// The listener, bound on the loopback interface.
     listener: TcpListener,
@@ -1331,10 +1331,10 @@ pub struct Toolset
     /// When to retry a delivery, and how often.
     policy: Policy,
     /// The verbs that `check` and `test` walk with, when the driver gave them.
-    verbs: Option<Arc<dyn Verbs>>,
+    verbs: Option<Arc<Walker>>,
 }
 
-impl Toolset
+impl<Walker> Toolset<Walker>
 {
     /// A toolset that answers on `listener`, keeps its rows in the file
     /// `calls` and its subscriptions in the file `subscriptions`, and retries
@@ -1360,6 +1360,10 @@ impl Toolset
     /// # Errors
     /// The error making a directory, or opening or reading a file, or
     /// [`io::ErrorKind::InvalidData`] for a file that holds no table.
+    ///
+    /// # Cost
+    /// - allocation: the state directory, the rows that the file of calls
+    ///   holds, and the calls that lost their answer, setup
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a store that holds an open row, an answered row and a
@@ -1441,7 +1445,7 @@ impl Toolset
     #[must_use]
     pub fn walking(
         self,
-        verbs: Arc<dyn Verbs>,
+        verbs: Arc<Walker>,
     ) -> Self
     {
         Self {
@@ -1449,7 +1453,12 @@ impl Toolset
             ..self
         }
     }
+}
 
+impl<Walker> Toolset<Walker>
+where
+    Walker: Verbs + 'static,
+{
     /// The address the toolset listens on.
     ///
     /// # Specification
@@ -1457,6 +1466,9 @@ impl Toolset
     ///
     /// # Errors
     /// The error reading the address of the listener.
+    ///
+    /// # Cost
+    /// - allocation: the error of the listener's address, error path
     #[inline]
     pub fn address(&self) -> io::Result<SocketAddr>
     {
@@ -1513,6 +1525,11 @@ impl Toolset
     /// # Errors
     /// The first error accepting a connection, or reading the listener's
     /// address.
+    ///
+    /// # Cost
+    /// - allocation: the manifest, the channels, the watches and the threads of
+    ///   the toolset, setup
+    /// - allocation: the row of each call, growth within the open calls
     ///
     /// # Adequacy
     /// - hypothesis: L3 — through a running hub, the manifest lists every tool;
@@ -1902,12 +1919,12 @@ struct Ending
 /// What the thread of the jobs reads and writes besides its jobs: the
 /// workspace, the verbs, the store, the subscriptions, the deliveries and the
 /// log.
-struct Held<'toolset, Log>
+struct Held<'toolset, Log, Walker>
 {
     /// The workspace that the editors share.
     workspace: &'toolset Arc<Mutex<Workspace>>,
     /// The verbs that the driver gave, when it gave them.
-    verbs: Option<&'toolset Arc<dyn Verbs>>,
+    verbs: Option<&'toolset Arc<Walker>>,
     /// The hand-off to the writer of the rows.
     rows: &'toolset Rows,
     /// The subscriptions, which hold the views of the running jobs.
@@ -2930,7 +2947,7 @@ mod tests
     /// trivial.
     fn hub(
         scratch: &Scratch,
-        toolset: Toolset,
+        toolset: Toolset<Echoing>,
     )
     {
         hub_over(
@@ -2946,11 +2963,12 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn hub_over(
+    fn hub_over<Walker>(
         scratch: &Scratch,
-        toolset: Toolset,
+        toolset: Toolset<Walker>,
         workspace: Workspace,
-    )
+    ) where
+        Walker: Verbs + 'static,
     {
         let socket = scratch.socket();
         let Maybe::Present(listener) = bind(&socket).expect("the socket binds")
@@ -3025,7 +3043,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn opened(scratch: &Scratch) -> Toolset
+    fn opened(scratch: &Scratch) -> Toolset<Echoing>
     {
         Toolset::open(
             loopback(),
@@ -4640,7 +4658,7 @@ mod tests
             let writer = scope.spawn(move || store.write(rowed, log));
             let held = super::Held {
                 workspace: &workspace,
-                verbs: None,
+                verbs: None::<&Arc<Echoing>>,
                 rows: &rows,
                 #[cfg(feature = "instrument")]
                 subscriptions: &subscriptions,

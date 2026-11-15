@@ -344,12 +344,13 @@ impl Wake for Ended
 ///
 /// # Cost
 /// - allocation: the jobs' tables and channel, setup
-pub(super) fn run<Log>(
+pub(super) fn run<Log, Walker>(
     commands: Receiver<Command>,
     finished: Sender<Command>,
-    held: &Held<'_, Log>,
+    held: &Held<'_, Log, Walker>,
 ) where
     Log: Write,
+    Walker: Verbs + 'static,
 {
     let pool = Arc::clone(lock(held.workspace).pool());
     let mut jobs = Jobs {
@@ -381,13 +382,14 @@ impl Jobs
     ///
     /// # Cost
     /// - allocation: the row and the running entry, growth within the calls
-    fn start<Log>(
+    fn start<Log, Walker>(
         &mut self,
         pending: Pending,
         (job, pinned): (Job, Pinned),
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         let row = Row::Call(pending.group_id.clone(), pending.id.clone());
         match job {
@@ -446,15 +448,16 @@ impl Jobs
     ///
     /// # Cost
     /// - allocation: the running entry and the job, growth within the calls
-    fn walk<Log>(
+    fn walk<Log, Walker>(
         &mut self,
         row: Row,
         pending: Pending,
         (verb, paths): (Verb, Vec<PathBuf>),
         pinned: &Pinned,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         let Some(verbs) = held.verbs
         else {
@@ -496,14 +499,19 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
-    fn replay<Log>(
+    ///
+    /// # Cost
+    /// - allocation: the text of the refusal and the awaited row of the replay,
+    ///   growth within the awaited documents
+    fn replay<Log, Walker>(
         &mut self,
         row: Row,
         pending: Pending,
         (document, pinned): (DocumentUri, &Pinned),
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         let workspace = lock(held.workspace);
         if let Some(retired) = pinned.moved(|read| version_of(&workspace, read)) {
@@ -557,12 +565,13 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
-    fn changed<Log>(
+    fn changed<Log, Walker>(
         &mut self,
         document: &DocumentUri,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         // A document that no job reads costs this lookup.
         let Some(rows) = self.documents.get(document)
@@ -601,12 +610,13 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
-    fn settled<Log>(
+    fn settled<Log, Walker>(
         &mut self,
         document: &DocumentUri,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         let Some(rows) = self.documents.get(document)
         else {
@@ -631,12 +641,17 @@ impl Jobs
     ///
     /// # Specification
     /// trivial.
-    fn end<Log>(
+    ///
+    /// # Cost
+    /// - allocation: the text of the outcome of a cancelled job, growth within
+    ///   the ended jobs
+    fn end<Log, Walker>(
         &mut self,
         ending: &Ending,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         let ended = ending.named(self.running.keys().chain(self.awaited.keys()));
         for row in ended {
@@ -651,11 +666,12 @@ impl Jobs
     ///
     /// # Cost
     /// - allocation: the channel's internals, growth within the ended jobs
-    fn finished<Log>(
+    fn finished<Log, Walker>(
         &mut self,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         while let Maybe::Present(delivered) = self.generations.ready() {
             self.close(&delivered.slot, delivered.output, held);
@@ -670,13 +686,14 @@ impl Jobs
     ///
     /// # Cost
     /// - allocation: the call's document list, growth within its documents
-    fn close<Log>(
+    fn close<Log, Walker>(
         &mut self,
         row: &Row,
         outcome: Outcome,
-        held: &Held<'_, Log>,
+        held: &Held<'_, Log, Walker>,
     ) where
         Log: Write,
+        Walker: Verbs + 'static,
     {
         // A slot that ended has no generation to stop, and its entry goes.
         self.generations.retire(row);
@@ -846,12 +863,14 @@ impl Walking
     ///
     /// # Cost
     /// - allocation: what the verb's walk keeps, growth within the paths
-    fn walk(
+    fn walk<Walker>(
         &self,
-        verbs: &dyn Verbs,
+        verbs: &Walker,
         (verb, paths): (Verb, Vec<PathBuf>),
         streams: (&mut JobStream, &mut JobStream),
     ) -> io::Result<()>
+    where
+        Walker: Verbs,
     {
         #[cfg(feature = "instrument")]
         if let Some(ref rings) = self.rings {
@@ -874,12 +893,14 @@ impl Walking
 /// # Cost
 /// - allocation: the two job streams and the verdict's text, growth within the
 ///   job's output
-fn walked(
-    verbs: &dyn Verbs,
+fn walked<Walker>(
+    verbs: &Walker,
     (verb, paths): (Verb, Vec<PathBuf>),
     walking: &Walking,
     watch: &Watch,
 ) -> Result<Outcome, Retired>
+where
+    Walker: Verbs,
 {
     let (mut printed, mut faulted) = (JobStream::new(watch.clone()), JobStream::new(watch.clone()));
     // A panic of the verb ends its job alone, not the thread of the jobs.
@@ -918,12 +939,17 @@ fn ran(prepared: &Prepared) -> Outcome
 ///
 /// # Specification
 /// trivial.
-fn answer<Log>(
+///
+/// # Cost
+/// - allocation: the answer's copy of the group and the id of the call, growth
+///   within the answered calls
+fn answer<Log, Walker>(
     pending: &Pending,
     outcome: Outcome,
-    held: &Held<'_, Log>,
+    held: &Held<'_, Log, Walker>,
 ) where
     Log: Write,
+    Walker: Verbs + 'static,
 {
     let Outcome { text, display } = outcome;
     let answer = Answer {
@@ -948,11 +974,12 @@ fn answer<Log>(
 /// # Specification
 /// trivial.
 #[cfg(feature = "instrument")]
-fn view<Log>(
+fn view<Log, Walker>(
     pending: &Pending,
-    held: &Held<'_, Log>,
+    held: &Held<'_, Log, Walker>,
 ) where
     Log: Write,
+    Walker: Verbs + 'static,
 {
     let viewed = lock(held.subscriptions).view(pending);
     if let Err(error) = viewed {

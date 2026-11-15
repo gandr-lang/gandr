@@ -82,7 +82,7 @@ static INSTALLED: OnceLock<VerdictCache> = OnceLock::new();
 // economy: one fork per process, read where every readmission funnels, as
 // the verdict cache is. #2802 threads the fork through the admission when
 // the frames of a check fork.
-static FORKING: OnceLock<SharedFork> = OnceLock::new();
+static FORKING: OnceLock<SharedFork<Pool>> = OnceLock::new();
 
 /// The speculation group this process installed for each readmission.
 // One group for each process: the driver sets it by the kind of run, and it
@@ -286,7 +286,11 @@ impl VerdictCache
     ///
     /// # Specification
     /// trivial.
-    fn recall(&self) -> bridge::Recall
+    ///
+    /// # Cost
+    /// - allocation: the layered source of verdicts and a copy of the trust
+    ///   policy, setup
+    fn recall(&self) -> bridge::Recall<Pool>
     {
         let source: Arc<dyn VerdictSource> = match self.kept {
             Kept::Stored(ref store) => Arc::<StoredVerdicts>::clone(store),
@@ -423,7 +427,7 @@ pub fn install_verdict_cache(cache: VerdictCache) -> Result<(), AlreadyInstalled
 ///
 /// # Specification
 /// trivial.
-fn forking() -> SharedFork
+fn forking() -> SharedFork<Pool>
 {
     FORKING.get().cloned().unwrap_or_default()
 }
@@ -485,6 +489,10 @@ pub fn install_session(pool: &Arc<Pool>)
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the process's globals of the pool, the speculation and the
+///   fork, setup
 fn install<Sources>(
     pool: &Arc<Pool>,
     sources: Sources,
@@ -519,11 +527,15 @@ fn scheduling() -> &'static Pool
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the readmission's environment, entries and record, growth
+///   within the report's declarations
 fn readmit_as<Poll, Watch>(
     arena: &mut CoreArena,
     report: &gandr_core_checker::ModuleReport,
     reuse: Reuse<'_>,
-    recall: &bridge::Recall,
+    recall: &bridge::Recall<Pool>,
     (retirement, stopwatch): (&Poll, &mut Watch),
 ) -> bridge::Readmitting<Poll::Retired>
 where
@@ -627,6 +639,10 @@ pub fn verdict_tally() -> Maybe<VerdictTally, tallied::Absent>
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: a copy of the recall that rechecks, and the readmission's
+///   environment, entries and record, growth within the report's declarations
 pub fn readmit<Poll, Watch>(
     arena: &mut CoreArena,
     report: &gandr_core_checker::ModuleReport,
