@@ -18,7 +18,7 @@ A Rust crate for the Linux Userspace API.
 
 **Why.** gandr's storage, its transport and its standard library take their asynchronous IO from one ring for each worker. The ring removes a system call and a wait from each operation. The crate gives the whole interface of the ring, each operation the kernel offers, and not one consumer's subset of it.
 
-**How.** `IoUring` sets up a ring through `IoUringBuilder`. The builder takes each setup flag at most once, and it fixes the sizes of the two kinds of entry in the ring's type. `SubmissionQueue` gives free entries, and a preparer method of `Sqe64` fills each one. `CompletionQueue` gives the ready completions, or waits for them, and marks each given one as seen when its run drops. The crate calls liburing, the kernel's C library of the ring, for each step.
+**How.** `IoUring` sets up a ring through `IoUringBuilder`. The builder takes each setup flag at most once, and it fixes the sizes of the two kinds of entry in the ring's type. `SubmissionQueue` gives free entries, and a preparer method of `Sqe64` fills each one. `CompletionQueue` gives the ready completions, or waits for them, and marks each given one as seen when its run drops. The crate calls liburing, the kernel's C library of the ring, for each step. The module `base` holds the owner's newer system-call base beside the ring. It issues `io_uring_setup`, `io_uring_register` and `io_uring_enter` by inline assembly, with no C library. No call of the ring goes through it yet.
 
 ## References
 
@@ -32,12 +32,13 @@ A Rust crate for the Linux Userspace API.
 - `Sqe64` and `Sqe128` hold one preparer for each operation of liburing. The operations include read, write, sync, open, close, accept, connect, send, receive, poll, timeout, cancel, futex, splice, statx and the extended attributes. `Sqe64::set_flags` puts the entry's flags in place. `Sqe64::set_data` and `Sqe64::set_data64` put its user data in place.
 - `CompletionQueue::ready` and `CompletionQueue::wait` give the completions as `Cqe16` or `Cqe32`.
 - `Registrar::register_files` and `Registrar::register_files_sparse` register the ring's file table. `SlotDesc` names a slot of that table or a descriptor of the process.
+- `base::io_uring_setup`, `base::io_uring_register`, `base::io_uring_register_with` and `base::io_uring_enter` issue the ring's three system calls by inline assembly on x86-64, aarch64, riscv64, powerpc64 and s390x. `base::Sqe64`, `base::Sqe128`, `base::Cqe16` and `base::Cqe32` are the four sizes of entry.
 
 ## Expected features
 
 The crate runs on Linux alone. On another system it compiles empty. A kernel that refuses `io_uring` refuses `IoUring::new` with its error number.
 
-The liburing crate makes its C library and its bindings in each build. So each build needs `make`, a C compiler and a `libclang`. With the `bindgen` feature on, this crate's build script also makes the kernel's declarations for the target. It reads the target's kernel headers from a variable such as `x86_64_LINUX_HEADERS`. Without that variable it makes nothing.
+The liburing crate makes its C library and its bindings in each build. So each build needs `make`, a C compiler and a `libclang`. With the `bindgen` feature on, this crate's build script also makes the base's declarations for the target, under `src/base/sys/linux/uapi/arch`. It reads the target's kernel headers from a variable such as `x86_64_LINUX_HEADERS`. Without that variable it makes nothing. On powerpc64 the build needs `--cfg asm_experimental_arch`, because the base's inline assembly is unstable there.
 
 Each preparer is `unsafe`. The caller keeps each pointer of an entry valid until the kernel posts its completion, and each descriptor open. Each preparer's `# Safety` names what it reads.
 
@@ -69,7 +70,7 @@ mise exec -- cargo nextest run -p gandr-runtime-uring
 
 ## Where the detail lives
 
-The crate's lead in [`src/lib.rs`](src/lib.rs) names the parts. Each module's rustdoc states its mechanism. [`src/ring.rs`](src/ring.rs) holds the ring and its builder. [`src/squeue.rs`](src/squeue.rs) and [`src/cqueue.rs`](src/cqueue.rs) hold the queues. [`src/sqe.rs`](src/sqe.rs) and [`src/cqe.rs`](src/cqe.rs) hold the entries. Under [`src/sqe/`](src/sqe) each kind of operation has one module of preparers.
+The crate's lead in [`src/lib.rs`](src/lib.rs) names the parts. Each module's rustdoc states its mechanism. [`src/ring.rs`](src/ring.rs) holds the ring and its builder. [`src/squeue.rs`](src/squeue.rs) and [`src/cqueue.rs`](src/cqueue.rs) hold the queues. [`src/sqe.rs`](src/sqe.rs) and [`src/cqe.rs`](src/cqe.rs) hold the entries. Under [`src/sqe/`](src/sqe) each kind of operation has one module of preparers. [`src/base.rs`](src/base.rs) holds the owner's system-call base, and [`src/base/sys/linux/`](src/base/sys/linux) holds its error number, its entries of each architecture and its UAPI.
 
 ## License
 

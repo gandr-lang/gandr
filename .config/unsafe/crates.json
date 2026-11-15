@@ -60,6 +60,22 @@
       "path": "crates/runtime-uring",
       "skips": [
         {
+          "test": "base::io_uring::test::enter",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::register",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::setup",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
+          "test": "base::io_uring::test::setup_refuses_no_entries",
+          "why": "it issues a system call by inline assembly, which Miri cannot run"
+        },
+        {
           "test": "cqueue::test::cqes::ready::one",
           "why": "it sets up a ring through liburing, which Miri cannot run"
         },
