@@ -109,9 +109,12 @@ jobs:
       - &measure-coverage
         name: measure this part's coverage
         run: mise run ci:coverage "$COVERAGE_PART"
+      # cargo-llvm-cov builds in `llvm-cov-target/` under the target
+      # directory, so the test reads the one file that its build writes at
+      # that root.
       - &save-coverage-state
         name: cache instrumented build state
-        if: ${{ !cancelled() && env.COVERAGE_STATE_SAVE == 'true' && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles(format('target/{0}/.rustc_info.json', env.COVERAGE_STATE)) != '' }}
+        if: ${{ !cancelled() && env.COVERAGE_STATE_SAVE == 'true' && steps.coverage-state-restore.outputs.cache-hit != 'true' && hashFiles(format('target/{0}/llvm-cov-target/.rustc_info.json', env.COVERAGE_STATE)) != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: target/${{ env.COVERAGE_STATE }}
@@ -167,12 +170,18 @@ jobs:
             echo "stale=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # The measure in parts, so no job reaches its limit (#4020): the whole
-  # instrumented run took 40 minutes against its 45, its tests 12 to more
-  # than 30 of them. Each enforcing part builds the workspace and runs one of
-  # nextest's four hash slices of the suite; the plain part runs the
-  # plain-only parser witness. Each part exports its own report, and `join`
-  # merges them.
+  # The measure runs in parts. Thus no job reaches its 45-minute limit. A run
+  # of the whole suite in one job reaches it.
+  # - see: #4020
+  #
+  # Each enforcing part builds the workspace. It then runs one of nextest's
+  # eight hash slices of the suite. The plain part runs the plain-only parser
+  # witness. Each part exports its own report. The job `join` merges the
+  # reports.
+  #
+  # The cold build is the largest cost of a part. On 2026-11-14 it takes 27.6
+  # of the 45 minutes. It grows with the workspace.
+  # - see: #7785
   coverage-part:
     name: measure coverage (${{ matrix.part }})
     needs: [ci-image-ref, freshness]
@@ -196,17 +205,29 @@ jobs:
       matrix:
         include:
           - part: enforcing-1
-            slice: hash:1/4
+            slice: hash:1/8
             state: coverage
             save: true
           - part: enforcing-2
-            slice: hash:2/4
+            slice: hash:2/8
             state: coverage
           - part: enforcing-3
-            slice: hash:3/4
+            slice: hash:3/8
             state: coverage
           - part: enforcing-4
-            slice: hash:4/4
+            slice: hash:4/8
+            state: coverage
+          - part: enforcing-5
+            slice: hash:5/8
+            state: coverage
+          - part: enforcing-6
+            slice: hash:6/8
+            state: coverage
+          - part: enforcing-7
+            slice: hash:7/8
+            state: coverage
+          - part: enforcing-8
+            slice: hash:8/8
             state: coverage
           - part: plain
             slice: plain
