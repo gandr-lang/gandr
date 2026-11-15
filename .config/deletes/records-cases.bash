@@ -64,23 +64,27 @@ rustc() {
     --print) echo "$work/sysroot" ;;
   esac
 }
-# A record run, `cargo dylint --lib <library> -- -p <name> …`, builds the
-# library and the test unit of the package and the library of each
-# dependency, each unit that its check target lacks, as Cargo builds each
-# unit that is not fresh. It writes a record for each unit that it builds.
-# The targets of `r` build only with the features that they require, so a
-# run of `r` without `--features extra,report` stops.
-# The check target is `dylint/target/<toolchain>` of the records target, as
-# `cargo dylint` keeps it. `cargo clean --quiet -p <name> --target-dir <dir>`
-# takes the units of the package out of `<dir>`.
+# A record run, `cargo dylint --path <root> -- -p <name> …`, builds units.
+# It builds the library unit and the test unit of the package. It also
+# builds the library unit of each dependency. It builds only the units that
+# its check target lacks. It writes a record for each unit that it builds.
+#
+# The targets of `r` build only with the features that they require. So a
+# run of `r` without `--features extra,report` stops. `cargo dylint` keeps
+# its check target under the records target, one for each toolchain.
+# `cargo clean --quiet -p <name> --target-dir <dir>` removes the units of
+# the package from that directory.
 cargo() {
   case $1 in
     -V) echo "cargo 1.0.0-nightly" ;;
     dylint)
       if [[ $2 == --version ]]; then echo "$tool_dylint"; return; fi
-      if [[ $6 == r && ${8:-} != extra,report ]]; then return 101; fi
-      local unit units=("$6.lib" "$6.test") built=$records_target/dylint/target/nightly-x
-      if [[ $6 == a ]]; then units+=(b.lib); fi
+      local -a rest=("$@")
+      while [[ ${rest[0]} != -- ]]; do rest=("${rest[@]:1}"); done
+      local name=${rest[2]} features=${rest[4]:-}
+      if [[ $name == r && $features != extra,report ]]; then return 101; fi
+      local unit units=("$name.lib" "$name.test") built=$records_target/dylint/target/nightly-x
+      if [[ $name == a ]]; then units+=(b.lib); fi
       mkdir -p "$built"
       for unit in "${units[@]}"; do
         [[ -e $built/$unit ]] && continue
@@ -94,6 +98,8 @@ cargo() {
     clean) rm -f "${6%/}/$4".* ;;
   esac
 }
+# The checkout of the library's revision, which no case reads.
+records_library() { echo "$work/library-$1"; }
 
 # The workspace: `a` depends on `b`, and `k` stands alone. `a` reads a file of
 # `shared` by `include_str!`. The build script of `b` reads a file of `tools`.
