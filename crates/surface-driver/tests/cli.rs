@@ -3721,32 +3721,83 @@ fn a_client_names_the_exit_of_a_hub_that_binds_no_socket_7524()
     );
 }
 
-/// `gandr tokens` starts the hub of its socket, names the FIFO that the hub's
-/// porter makes beside the socket, and exits `0` once its input ends.
+/// `gandr tokens -- <command>` starts the hub of its socket and runs the
+/// command on a FIFO of its own beside the socket. `MAKEFLAGS` and
+/// `CARGO_MAKEFLAGS` name the FIFO in place of the jobserver that the verb's
+/// `MAKEFLAGS` names, and keep its other words. A token that the command reads
+/// and keeps comes back at the command's end, and the verb counts it on
+/// standard error, takes the FIFO away, and exits with the command's code.
 #[cfg(unix)]
 #[test]
-fn tokens_names_the_fifo_of_the_hub_s_porter_7605()
+fn tokens_runs_a_command_on_a_fifo_of_its_own_7688()
 {
     use std::ffi::OsStr;
 
     // The name is short: a socket path must fit the platform's limit.
     let scratch = Scratch::new(Path::new("tok"));
     let socket = scratch.0.join("hub.sock");
-    let held = piped(
-        &[
-            OsStr::new("tokens"),
-            OsStr::new("--socket"),
-            socket.as_os_str(),
-            OsStr::new("--linger-ms"),
-            OsStr::new("200"),
-        ],
-        Text::from(""),
-    );
-    assert_eq!(code(&held), Code(0_i32), "{}", stderr(&held));
+    // The command reads one token of the FIFO and keeps it, as a rustc does,
+    // and then writes the flags that it reads.
+    let script = "fifo=${CARGO_MAKEFLAGS#*fifo:}; fifo=${fifo%% *}; \
+        test \"$MAKEFLAGS\" = \"$CARGO_MAKEFLAGS\" || exit 9; \
+        dd if=\"$fifo\" of=/dev/null bs=1 count=1 2> /dev/null || exit 8; \
+        printf '%s\\n' \"$MAKEFLAGS\"; exit 3";
+    let mut command = gandr(&[
+        OsStr::new("tokens"),
+        OsStr::new("--socket"),
+        socket.as_os_str(),
+        OsStr::new("--linger-ms"),
+        OsStr::new("200"),
+        OsStr::new("--"),
+        OsStr::new("sh"),
+        OsStr::new("-c"),
+        OsStr::new(script),
+    ]);
+    command
+        .env(
+            "MAKEFLAGS",
+            "-j3 --jobserver-auth=fifo:/nonexistent -- LEVEL=1",
+        )
+        .env_remove("CARGO_MAKEFLAGS");
+    let held = ran(command);
     assert_eq!(
-        stdout(&held).trim_end(),
-        scratch.0.join("tokens.fifo").display().to_string(),
-        "the verb names the porter's FIFO beside the hub's socket"
+        code(&held),
+        Code(3_i32),
+        "the verb exits with the command's code: {}",
+        stderr(&held)
+    );
+    let named = stdout(&held);
+    let fifo = named
+        .trim_end()
+        .strip_prefix("-j3 --jobserver-auth=fifo:")
+        .and_then(|rest| rest.strip_suffix(" -- LEVEL=1"))
+        .map(Path::new);
+    let Some(fifo) = fifo
+    else {
+        panic!("the command's flags name the verb's FIFO alone, and keep the other words: {named}");
+    };
+    assert_eq!(
+        fifo.parent(),
+        Some(scratch.0.as_path()),
+        "the verb's FIFO stands beside the hub's socket"
+    );
+    assert!(
+        fifo.extension() == Some(OsStr::new("fifo"))
+            && fifo
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("tokens3.")),
+        "the verb names a holder's FIFO: {}",
+        fifo.display()
+    );
+    assert!(
+        !fifo.exists(),
+        "the verb takes its FIFO away once the command ends"
+    );
+    assert!(
+        stderr(&held).contains("which the reap gives back: 1\n"),
+        "the verb counts the one token that the command kept: {}",
+        stderr(&held)
     );
 }
 

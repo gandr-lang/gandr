@@ -1,8 +1,8 @@
-//! The porter: the hub's thread that carries tokens between the host's
-//! counter and the build tools' FIFO.
+//! The porter: the thread of a holder of the build tools, which carries
+//! tokens between the host's counter and the holder's own FIFO.
 //!
 //! The account of the two crossings stands in the documentation of the host's
-//! module, under "The porter carries tokens to the build tools".
+//! module, under "Each holder of the build tools carries a FIFO of its own".
 
 use alloc::ffi::CString;
 use alloc::sync::Arc;
@@ -10,9 +10,6 @@ use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::fs::TryLockError;
 use std::os::unix::ffi::OsStrExt as _;
 #[cfg(target_os = "linux")]
 use std::os::unix::io::OwnedFd;
@@ -26,13 +23,9 @@ use rustix::fs::inotify;
 
 use super::Class;
 use super::Counter;
-use super::FIFO;
-use super::HUNGRY;
 use super::Host;
-use super::IDLE;
 use super::Left;
-use super::PORTER;
-use super::STOCKED;
+use super::Porting;
 use super::TICK;
 use super::left;
 use super::wait;
@@ -43,20 +36,6 @@ use crate::pool::grant::Fifo;
 /// file.
 #[cfg(target_os = "linux")]
 const EVENTS: usize = 256;
-
-quenchant_shape::reason_enum! {
-    /// Why a directory names no FIFO that a porter carries.
-    pub mod unported {
-        /// The reason a build names no host's FIFO.
-        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub enum Absent {
-            /// No porter holds the porter's lock, or no hub made the file.
-            Unheld,
-            /// The porter's file does not open, or its lock fails.
-            Unopened,
-        }
-    }
-}
 
 /// Whether a take of gandr waits on the counter.
 ///
@@ -71,8 +50,9 @@ enum Wanted
     Unwanted,
 }
 
-/// The hub's porter: a thread that carries tokens between the host's counter
-/// and the build tools' FIFO, so the tools and gandr draw on one bound.
+/// A holder's porter: a thread of the process that holds the counter for a
+/// build, which carries tokens between the counter and the process's own FIFO,
+/// so the build's tools and gandr draw on one bound.
 ///
 /// # Specification
 /// - provides: the two crossings, a byte of the FIFO to the counter while a
@@ -84,10 +64,13 @@ enum Wanted
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a tool takes a spare, the porter stocks the next, and a
-///   byte that the tool gives back reaches a take of gandr that waits; a porter
-///   that dies gives its tokens back at the reap.
+///   byte that the tool gives back reaches a take of gandr that waits; a holder
+///   that ends or dies gives back the tokens that its tools kept, and they
+///   reach the tool of another holder.
 /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
 /// - witness: `pool::host::porter::tests::a_dead_porter_s_tokens_come_back_at_the_reap`
+/// - witness: `pool::host::porter::tests::a_holder_s_end_reaches_the_tool_of_another_holder_7688`
+/// - witness: `pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688`
 #[derive(Debug)]
 pub struct Porter
 {
@@ -102,8 +85,39 @@ pub struct Porter
     watcher: Option<JoinHandle<()>>,
 }
 
+/// The tokens that a holder's tools read from its FIFO and did not write back,
+/// which the holder's slot gives back to the counter at the holder's end.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Reaped(u32);
+
+impl core::fmt::Display for Reaped
+{
+    /// The count, as a decimal number.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Reaped
+{
+    /// No token: each tool wrote back each token that it read.
+    pub const NONE: Self = Self(0);
+}
+
 /// What the porter's thread holds: its slot of the counter, the FIFO's ends,
-/// the word that stops it, and the porter's lock.
+/// and the word that stops it.
 ///
 /// # Specification
 /// trivial.
@@ -115,13 +129,11 @@ struct Carrying
     host: Host,
     /// The FIFO's ends.
     fifo: Fifo,
-    /// Set when the hub ends the porter.
+    /// Set when the holder ends the porter.
     stop: AtomicBool,
     /// The watch of each read and each write of the FIFO.
     #[cfg(target_os = "linux")]
     watch: Watch,
-    /// The porter's file, which the porter holds an exclusive lock on.
-    _lock: File,
 }
 
 impl Carrying
@@ -179,25 +191,31 @@ impl Watch
 
 impl Porter
 {
-    /// Start the porter of the counter in `directory`: take the porter's lock,
-    /// make the FIFO, join the counter, and start the thread.
+    /// Hold the counter in `directory` for a build: join the counter with a
+    /// slot of this process's own, make this process's FIFO beside the
+    /// segment, and start the porter's threads.
     ///
     /// # Specification
     /// - requires: a hub owns the counter in `directory`.
-    /// - ensures: as [`super::HostCounter::carry`].
-    /// - fails: as [`super::HostCounter::carry`];
-    ///   [`std::io::ErrorKind::NotConnected`] when the porter joins no slot.
+    /// - ensures: a porter with a slot of its own, and an empty FIFO at
+    ///   [`Porter::fifo`], which the porter stocks with one spare token. Once
+    ///   the porter drops, or its process dies, the slot gives back each token
+    ///   in the FIFO or in the hands of its tools.
+    /// - fails: the host's error for a FIFO, a watch or a thread that fails,
+    ///   and the call leaves no FIFO then; [`std::io::ErrorKind::NotConnected`]
+    ///   when the process joins no slot.
     /// - panics: none.
     /// - executable: none — the FIFO and the counter are the host's.
     ///
     /// # Errors
-    /// As [`super::HostCounter::carry`], and
-    /// [`std::io::ErrorKind::NotConnected`] when the porter joins no slot of
-    /// the counter.
+    /// Returns the host's error for a FIFO, a watch or a thread that fails,
+    /// and [`std::io::ErrorKind::NotConnected`] when the process joins no slot
+    /// of the counter.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Porter`].
     /// - witness: `pool::host::porter::tests::the_porter_carries_a_spare_to_a_tool_and_back_to_a_waiting_take`
+    /// - witness: `pool::host::porter::tests::a_holder_s_end_reaches_the_tool_of_another_holder_7688`
     ///
     /// # Cost
     /// - allocation: the porter's paths and state and threads, setup
@@ -205,57 +223,44 @@ impl Porter
         dylint_lib = "quenchant_dylints",
         expect(
             pool_only_threads,
-            reason = "io: the porter's thread waits on the counter's futex and reads the build tools' FIFO for the hub's life"
+            reason = "io: the porter's thread waits on the counter's futex and reads the build tools' FIFO for the holder's life"
         )
     )]
-    pub(super) fn start(directory: &Path) -> std::io::Result<Self>
+    #[inline]
+    pub fn hold(directory: &Path) -> std::io::Result<Self>
     {
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(directory.join(PORTER))?;
-        match lock.try_lock() {
-            Ok(()) => {},
-            Err(TryLockError::WouldBlock) => return Err(std::io::ErrorKind::WouldBlock.into()),
-            Err(TryLockError::Error(error)) => return Err(error),
-        }
-        let path = directory.join(FIFO);
-        made(&path)?;
-        let fifo = Fifo::open(&path)?;
-        #[cfg(target_os = "linux")]
-        let watched = Watch::on(&path)?;
         let Maybe::Present(host) = Host::join(directory, Class::Batch)
         else {
             return Err(std::io::ErrorKind::NotConnected.into());
         };
-        let carrying = Arc::new(Carrying {
-            host,
-            fifo,
-            stop: AtomicBool::new(false),
-            #[cfg(target_os = "linux")]
-            watch: watched,
-            _lock: lock,
-        });
-        let thread = std::thread::Builder::new()
-            .name(String::from("gandr-porter"))
-            .spawn({
-                let carrying = Arc::clone(&carrying);
-                move || carry(&carrying)
-            })?;
-        let porter = Self {
+        let path = host.fifo(directory);
+        made(&path)?;
+        let carrying = match opened(&path, host) {
+            Ok(carrying) => Arc::new(carrying),
+            Err(error) => {
+                drop(std::fs::remove_file(&path));
+                return Err(error);
+            },
+        };
+        let mut porter = Self {
             carrying,
             path,
-            thread: Some(thread),
+            thread: None,
             #[cfg(target_os = "linux")]
             watcher: None,
         };
-        // A watch thread that does not start drops the porter, and the drop
-        // stops the porter's thread.
+        // A thread that does not start drops the porter, and the drop takes
+        // the FIFO away and stops the thread that did start.
+        porter.thread = Some(
+            std::thread::Builder::new()
+                .name(String::from("gandr-porter"))
+                .spawn({
+                    let carrying = Arc::clone(&porter.carrying);
+                    move || carry(&carrying)
+                })?,
+        );
         #[cfg(target_os = "linux")]
-        let porter = {
-            let mut porter = porter;
+        {
             porter.watcher = Some(
                 std::thread::Builder::new()
                     .name(String::from("gandr-porter-watch"))
@@ -264,63 +269,59 @@ impl Porter
                         move || watch(&carrying)
                     })?,
             );
-            porter
-        };
+        }
         Ok(porter)
     }
 
-    /// The FIFO that a hub's porter carries in `directory`, while a porter
-    /// holds the porter's lock there.
+    /// The path of this holder's FIFO, which a build names as
+    /// `--jobserver-auth=fifo:<path>` in `MAKEFLAGS`.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the FIFO's path while a porter holds the lock;
-    ///   [`unported::Absent::Unheld`] when no hub made the porter's file or its
-    ///   lock is free, which the call takes and gives back at once;
-    ///   [`unported::Absent::Unopened`] when the file does not open or the lock
-    ///   fails. The call makes no file.
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn fifo(&self) -> &Path
+    {
+        &self.path
+    }
+
+    /// End the hold and count the tokens that the build's tools kept. The
+    /// porter stops, gives each byte of its FIFO back to the counter, and
+    /// takes the FIFO's path away. Then the slot gives back each token that
+    /// the tools read and did not write back.
+    ///
+    /// # Specification
+    /// - ensures: the FIFO's path is gone, and each byte of the FIFO is back in
+    ///   the counter. The result counts the tokens that the slot gives back for
+    ///   the tools' hands, and it is 0 when each tool wrote its tokens back.
     /// - panics: none.
-    /// - executable: none — the porter is another process's.
+    /// - executable: none — the FIFO and the counter are the host's.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a running porter's FIFO is named, and once the porter
-    ///   ends none is.
-    /// - witness: `pool::host::porter::tests::a_porter_s_fifo_is_named_while_it_carries`
+    /// - hypothesis: L3 — a token that a tool reads and keeps counts one, and
+    ///   the spare in the FIFO counts none.
+    /// - witness: `pool::host::porter::tests::a_holder_s_end_counts_the_token_its_tool_kept_7688`
     ///
     /// # Cost
-    /// - allocation: the paths of the porter's lock and its FIFO, setup
+    /// - allocation: the host's error of the FIFO's removal, error path
     #[inline]
-    pub fn carried(directory: &Path) -> Maybe<PathBuf, unported::Absent>
+    #[must_use]
+    pub fn end(mut self) -> Reaped
     {
-        let lock = match File::open(directory.join(PORTER)) {
-            Ok(lock) => lock,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Maybe::Absent(unported::Absent::Unheld);
-            },
-            Err(_) => return Maybe::Absent(unported::Absent::Unopened),
-        };
-        match lock.try_lock() {
-            Err(TryLockError::WouldBlock) => Maybe::Present(directory.join(FIFO)),
-            // The lock goes back as the file closes.
-            Ok(()) => Maybe::Absent(unported::Absent::Unheld),
-            Err(TryLockError::Error(_)) => Maybe::Absent(unported::Absent::Unopened),
-        }
+        self.stop();
+        Reaped(self.carrying.host.held().0)
     }
-}
 
-impl Drop for Porter
-{
-    /// Take the FIFO's path away, stop the thread, and let the slot go: the
-    /// thread gives each byte of the FIFO back, and the slot gives back the
-    /// tokens in the tools' hands.
+    /// Take the FIFO's path away and stop the threads. The porter's thread
+    /// gives each byte of the FIFO back before it returns. A second call does
+    /// nothing more.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Cost
     /// - allocation: the host's error of the FIFO's removal, error path
-    #[inline]
-    fn drop(&mut self)
+    fn stop(&mut self)
     {
         drop(std::fs::remove_file(&self.path));
         self.carrying.stop.store(true, Ordering::Release);
@@ -339,6 +340,49 @@ impl Drop for Porter
         if let Some(watcher) = self.watcher.take() {
             drop(watcher.join());
         }
+    }
+}
+
+/// What a porter's thread holds for the FIFO at `path` and the slot `host`:
+/// the FIFO's ends and, on Linux, its watch.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// Returns the host's error for a FIFO or a watch that does not open.
+///
+/// # Cost
+/// - allocation: the FIFO's ends and its watch, setup
+fn opened(
+    path: &Path,
+    host: Host,
+) -> std::io::Result<Carrying>
+{
+    Ok(Carrying {
+        host,
+        fifo: Fifo::open(path)?,
+        stop: AtomicBool::new(false),
+        #[cfg(target_os = "linux")]
+        watch: Watch::on(path)?,
+    })
+}
+
+impl Drop for Porter
+{
+    /// Take the FIFO's path away, stop the thread, and let the slot go: the
+    /// thread gives each byte of the FIFO back, and the slot gives back the
+    /// tokens in the tools' hands.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the host's error of the FIFO's removal, error path
+    #[inline]
+    fn drop(&mut self)
+    {
+        self.stop();
     }
 }
 
@@ -402,33 +446,33 @@ fn carry(carrying: &Carrying)
             },
             // The spare stays, and the porter's slot counts it all the while,
             // so no token crosses.
-            Counted::Spare => STOCKED,
+            Counted::Spare => Porting::Stocked,
             // The second crossing: a free token of the counter goes to the
             // empty FIFO as its spare, while no take of gandr waits.
             Counted::Empty => match wants {
                 Wanted::Unwanted => match host.take_now() {
                     Maybe::Present(token) => {
                         fifo.give(token);
-                        STOCKED
+                        Porting::Stocked
                     },
-                    Maybe::Absent(_) => HUNGRY,
+                    Maybe::Absent(_) => Porting::Hungry,
                 },
-                Wanted::Waits => HUNGRY,
+                Wanted::Waits => Porting::Hungry,
             },
         };
-        counter.porting.store(porting, Ordering::SeqCst);
+        host.post(porting);
         // A give or a waiting take before the store found no word to wake the
         // porter by, so the porter reads the counter again before it waits.
         let due = match wanted(counter) {
-            Wanted::Unwanted => porting == HUNGRY && left(counter) == Left::Free,
-            Wanted::Waits => porting == STOCKED,
+            Wanted::Unwanted => porting == Porting::Hungry && left(counter) == Left::Free,
+            Wanted::Waits => porting == Porting::Stocked,
         };
         if !due && !stop.load(Ordering::Acquire) {
             wait(&counter.porter_wakes, seen, TICK);
         }
-        counter.porting.store(IDLE, Ordering::SeqCst);
+        host.unpost();
     }
-    // The hub ends: each byte of the FIFO goes back to the counter.
+    // The holder ends: each byte of the FIFO goes back to the counter.
     loop {
         match fifo.count() {
             Counted::Past(token) => host.give(token),
@@ -518,11 +562,11 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     use super::super::Class;
-    use super::super::FIFO;
     use super::super::FREE;
     use super::super::Host;
     use super::super::HostCounter;
     use super::Porter;
+    use super::Reaped;
     use crate::pool::grant::Fifo;
     use crate::width::Threads;
 
@@ -589,8 +633,8 @@ mod tests
             fresh(std::env::temp_dir().join(format!("gandr-porter-carry-{}", std::process::id())));
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
-        let porter = counter.carry().unwrap();
-        let tool = Fifo::open(&directory.join(FIFO)).unwrap();
+        let porter = Porter::hold(&directory).unwrap();
+        let tool = Fifo::open(porter.fifo()).unwrap();
         // The tool waits on the FIFO, as make and cargo do.
         let first = tool.take();
         assert!(
@@ -639,26 +683,91 @@ mod tests
     }
 
     #[test]
-    fn a_porter_s_fifo_is_named_while_it_carries()
+    fn a_holder_s_end_reaches_the_tool_of_another_holder_7688()
     {
-        let directory =
-            fresh(std::env::temp_dir().join(format!("gandr-porter-named-{}", std::process::id())));
-        assert!(
-            matches!(Porter::carried(&directory), Maybe::Absent(_)),
-            "a directory that no hub used names no FIFO"
+        let directory = fresh(
+            std::env::temp_dir().join(format!("gandr-porter-holders-{}", std::process::id())),
         );
         let counter =
             HostCounter::with(&directory, Threads::from(NonZeroUsize::new(1).unwrap())).unwrap();
-        let porter = counter.carry().unwrap();
+        let first = Porter::hold(&directory).unwrap();
+        let first_tool = Fifo::open(first.fifo()).unwrap();
         assert!(
-            matches!(Porter::carried(&directory), Maybe::Present(ref fifo) if *fifo == directory.join(FIFO)),
-            "a running porter's FIFO is named"
+            matches!(first_tool.take(), Maybe::Present(_)),
+            "the first holder's tool takes the one token, and keeps it"
         );
-        drop(porter);
+        let second = Porter::hold(&directory).unwrap();
+        assert_ne!(
+            first.fifo(),
+            second.fifo(),
+            "each holder makes a FIFO of its own"
+        );
+        let second_tool = Fifo::open(second.fifo()).unwrap();
+        let (sent, received) = std::sync::mpsc::channel();
+        // The second holder's tool waits on its FIFO, as make and cargo do.
+        let waiting = std::thread::spawn(move || {
+            sent.send(matches!(second_tool.take(), Maybe::Present(_)))
+                .unwrap();
+        });
         assert!(
-            matches!(Porter::carried(&directory), Maybe::Absent(_)),
-            "once the porter ends, its free lock names no FIFO"
+            received.recv_timeout(Duration::from_millis(100)).is_err(),
+            "no token reaches the second tool while the first tool keeps the one token"
         );
+        drop(first);
+        assert_eq!(
+            received.recv_timeout(Duration::from_secs(5)),
+            Ok(true),
+            "the first holder's end gives back its tool's token, and the second porter carries it to the second tool"
+        );
+        waiting.join().unwrap();
+        drop(second);
+        assert_eq!(
+            settles(&counter, &Free(1)),
+            Free(1),
+            "the second holder's end gives back the token that its tool kept"
+        );
+        let porters = &counter.mapping.segment().counter;
+        assert_eq!(
+            (
+                porters.hungry.load(Ordering::SeqCst),
+                porters.stocked.load(Ordering::SeqCst)
+            ),
+            (0, 0),
+            "no porter stays counted once each holder ends"
+        );
+        drop(counter);
+        drop(std::fs::remove_dir_all(&directory));
+    }
+
+    #[test]
+    fn a_holder_s_end_counts_the_token_its_tool_kept_7688()
+    {
+        let directory =
+            fresh(std::env::temp_dir().join(format!("gandr-porter-kept-{}", std::process::id())));
+        let counter =
+            HostCounter::with(&directory, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
+        let porter = Porter::hold(&directory).unwrap();
+        let tool = Fifo::open(porter.fifo()).unwrap();
+        assert!(
+            matches!(tool.take(), Maybe::Present(_)),
+            "the tool reads the porter's spare, and keeps it as a rustc does"
+        );
+        assert_eq!(
+            settles(&counter, &Free(0)),
+            Free(0),
+            "the porter stocks the counter's other token as its next spare"
+        );
+        assert_eq!(
+            porter.end(),
+            Reaped(1),
+            "the end counts the token in the tool's hands, and not the spare in the FIFO"
+        );
+        assert_eq!(
+            free(&counter),
+            Free(2),
+            "the end gives back the spare and the token that the tool kept"
+        );
+        drop(tool);
         drop(counter);
         drop(std::fs::remove_dir_all(&directory));
     }
@@ -670,7 +779,7 @@ mod tests
     /// trivial.
     fn carry_and_hold(directory: &Path)
     {
-        let porter = Porter::start(directory).unwrap();
+        let porter = Porter::hold(directory).unwrap();
         let since = Instant::now();
         // The porter's slot holds the spare once the counter's free tokens
         // fall from four to three.
@@ -726,6 +835,15 @@ mod tests
             free(&counter),
             Free(4),
             "the reap gives back the dead porter's spare"
+        );
+        let porters = &counter.mapping.segment().counter;
+        assert_eq!(
+            (
+                porters.hungry.load(Ordering::SeqCst),
+                porters.stocked.load(Ordering::SeqCst)
+            ),
+            (0, 0),
+            "the reap takes the dead porter's wait off the counter"
         );
         drop(counter);
         drop(std::fs::remove_dir_all(&directory));

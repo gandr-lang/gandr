@@ -430,6 +430,8 @@ pub use crate::pool::Pool;
 pub use crate::pool::PoolFault;
 #[cfg(unix)]
 pub use crate::pool::Porter;
+#[cfg(unix)]
+pub use crate::pool::Reaped;
 pub use crate::pool::Spin;
 pub use crate::pool::Tokens;
 pub use crate::pool::Wanting;

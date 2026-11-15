@@ -15,12 +15,14 @@ experimental = true
 env_shell_expand = true
 minimum_release_age = "1d"
 lockfile = true
-# Rust resolves through mise's rust backend: `rust-toolchain.toml` stays the one
-# channel pin, mise installs it through rustup, sets RUSTUP_TOOLCHAIN from it,
-# and places the rustup proxy dir among its own tool paths, after the shims and
-# ahead of the inherited PATH. No project `_.path` entry: a dir that config puts
-# on PATH sits ahead of every mise tool, and a distribution rustup lives in
-# /usr/bin, which would shadow every pin.
+# Rust resolves through mise's rust backend. `rust-toolchain.toml` stays the
+# one channel pin. Mise installs that pin through rustup and sets
+# RUSTUP_TOOLCHAIN from it. Mise puts the rustup proxy dir after its shims and
+# ahead of the inherited PATH.
+#
+# A dir that config puts on PATH sits ahead of every mise tool. A config dir
+# that holds a distribution rustup then shadows every pin. So the one
+# `_.path` entry is the gate's, in `[env]` below.
 idiomatic_version_file_enable_tools = ["rust"]
 
 [settings.cargo]
@@ -98,3 +100,13 @@ version = "0.1.6"
 # Local workflow runner, so a workflow change is testable without a push.
 [tools."github:nektos/act"]
 version = "0.2.94"
+
+# This entry puts the gate's `cargo` first on PATH. While a gate draws on the
+# host's counter, `gate_hosted` names the gate's `gate-bin` directory in
+# `GANDR_GATE_BIN`. Then each cargo command of the gate runs through its own
+# `gandr tokens`. Elsewhere the entry is a path that holds no command. Mise
+# reads an empty entry as the directory of this file, which puts the tree's
+# root first on PATH.
+# - see: #7688 — the hold of one build command on the host's counter
+[env]
+_.path = ["${GANDR_GATE_BIN:-/nonexistent}"]

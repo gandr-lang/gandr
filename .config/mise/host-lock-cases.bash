@@ -1,20 +1,33 @@
 #!/usr/bin/env bash
-# The host lock's behaviour (#3105), pinned once for its three callers: in a
-# scratch lock directory, two holders take a lock's two slots and a third
-# taker with `--no-wait` refuses, naming both; another lock name is
-# unaffected; a holder killed outright frees its slot; a waiter takes the
-# slot a holder leaves; and a slot stays held while a child of a killed
-# holder still runs in its process group, as `act` does when `ci:act` is
-# killed, but not while only a daemon in a group of its own holds it, as `op
-# daemon` does. A gate releases its slot as it exits, whether it ends or is
-# stopped by `TERM`, while a daemon one of its steps started keeps the
-# descriptor open (#4421). A lane holds one slot, and a heavy check run alone
-# takes one (#4911). The lane table names the lanes, so two lanes whose names
-# share a first word hold two slots (#6699). A gate that waits for its lane's
-# lock gives that wait for its record (#6699). The lock directory comes before
-# the runtime directory, so a harness keeps its locks apart without moving the
-# runtime directory (#6182). A gate makes its own FIFO of its share, even
-# beside a `gandr` whose `tokens` names a porter's FIFO (#7688).
+# These cases pin the host lock's behaviour once for its three callers, in a
+# scratch lock directory. Two holders take a lock's two slots. One more taker
+# with `--no-wait` gets no slot. Its message names both holders. Another lock
+# name stays free.
+# - see: #3105 — the host lock
+#
+# A kill of a holder frees its slot. A waiter takes the slot that a holder
+# leaves. A child of a dead holder keeps the slot while it runs in the
+# holder's process group. `act` does so after a kill of `ci:act`. A daemon in
+# a group of its own keeps no slot, as `op daemon` does.
+#
+# A gate releases its slot as it exits, whether it ends or `TERM` stops it. A
+# daemon of one of its steps keeps the descriptor open and holds no slot.
+# - see: #4421 — the slot of a gate after its exit
+#
+# A lane holds one slot. A heavy check that runs alone takes one too. The lane
+# table names the lanes, so two lanes whose names share a first word hold two
+# slots. A gate that waits for its lane's lock gives that wait to its record.
+# - see: #4911 — one slot for each lane
+# - see: #6699 — the lane table and the wait of a gate
+#
+# The lock directory comes before the runtime directory. So a harness keeps
+# its locks apart and leaves the runtime directory as it stands.
+# - see: #6182 — the lock directory
+#
+# A gate makes its own FIFO of its share, even beside a `gandr` whose `tokens`
+# runs a command. On the host's counter, the gate names its own `cargo`. That
+# `cargo` runs the next `cargo` on the path through `gandr tokens --`.
+# - see: #7688 — the gate's cargo on the host's counter
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 source "${BASH_SOURCE[0]%/*}/../cases/scratch.bash"
@@ -173,25 +186,58 @@ for pid in "${pids[@]}"; do wait "$pid" 2> /dev/null || true; done
 pids=()
 
 # A gate makes its own FIFO of its share, even where the `gandr` on the path
-# names a porter's FIFO (#7688): on the host's counter, each cargo of a gate
-# runs one `rustc`. The `gandr` of the case answers `tokens` as a hub with a
-# porter does, so a gate that draws on the counter names that FIFO.
-mkdir -p "$scratch/bin-7688"
-mkfifo -m 600 "$scratch/porter-7688.fifo"
-printf '#!/usr/bin/env bash\necho %q\nexec cat > /dev/null\n' "$scratch/porter-7688.fifo" > "$scratch/bin-7688/gandr"
-chmod +x "$scratch/bin-7688/gandr"
+# runs a command on the host's counter. The gate draws on the counter only
+# after four gates at once on it beat a median run of 701 seconds. The case's
+# `gandr` answers `tokens --help` as a build whose `tokens` runs a command. It
+# writes each command that `tokens` runs.
+# - see: #7688 — the gate's cargo on the host's counter
+mkdir -p "$scratch/bin-7688" "$scratch/old-7688" "$scratch/cargo-7688"
+printf '%s\n' '#!/usr/bin/env bash' \
+  'if [[ $1 == tokens && $2 == --help ]]; then echo "Usage: gandr tokens [OPTIONS] -- <COMMAND>..."; exit 0; fi' \
+  'if [[ $1 == tokens && $2 == -- ]]; then shift 2; echo "tokens runs: $*"; exit 0; fi' \
+  'exit 2' > "$scratch/bin-7688/gandr"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "Usage: gandr tokens [OPTIONS]"' > "$scratch/old-7688/gandr"
+printf '%s\n' '#!/usr/bin/env bash' 'echo cargo' > "$scratch/cargo-7688/cargo"
+chmod +x "$scratch/bin-7688/gandr" "$scratch/old-7688/gandr" "$scratch/cargo-7688/cargo"
 status=0
 bound=$(PATH="$scratch/bin-7688:$PATH" bash -c '
   source "$1"
-  unset MAKEFLAGS NEXTEST_TEST_THREADS GANDR_JOBS
+  unset MAKEFLAGS NEXTEST_TEST_THREADS GANDR_JOBS GANDR_GATE_BIN
   gate_cores=8
   gate_slots=4
   gate_bound
-  printf "%s\n%s\n" "$MAKEFLAGS" "$gate_jobs"
+  printf "%s\n%s\n%s\n" "$MAKEFLAGS" "$gate_jobs" "${GANDR_GATE_BIN:-none}"
 ' _ "$gate_helper" 2>&1) || status=$?
 [[ $status == 0 ]] || fail "#7688: the gate's bound exited $status: $bound"
-[[ $bound != *porter-7688.fifo* ]] || fail "#7688: the gate draws on the porter's FIFO: $bound"
-[[ $bound == "-j2 --jobserver-auth=fifo:"*/gandr-gate-jobs.*$'\n'2 ]] || fail "#7688: the gate makes no FIFO of its share of 2: $bound"
+[[ $bound == "-j2 --jobserver-auth=fifo:"*/gandr-gate-jobs.*$'\n'2$'\n'none ]] || fail "#7688: the gate makes no FIFO of its share of 2, or names the shim of the counter: $bound"
+
+# On the counter, the gate names the directory of its `cargo`. `MAKEFLAGS`
+# keeps the share and names no jobserver. A `gandr` whose `tokens` runs no
+# command leaves the gate's flags as they stand.
+# - see: #7688 — the gate's cargo on the host's counter
+gate_bin=$(cd "${gate_helper%/*}/gate-bin" && pwd)
+for build in bin-7688 old-7688; do
+  status=0
+  hosted=$(PATH="$scratch/$build:$PATH" bash -c '
+    source "$1"
+    unset GANDR_GATE_BIN
+    MAKEFLAGS=inherited
+    gate_hosted 2 || echo refused
+    printf "%s\n%s\n" "$MAKEFLAGS" "${GANDR_GATE_BIN:-none}"
+  ' _ "$gate_helper" 2>&1) || status=$?
+  [[ $status == 0 ]] || fail "#7688: gate_hosted beside $build exited $status: $hosted"
+  case $build in
+    bin-7688) [[ $hosted == "-j2"$'\n'"$gate_bin" ]] || fail "#7688: the gate on the counter names no directory of its shim: $hosted" ;;
+    old-7688) [[ $hosted == refused$'\n'inherited$'\n'none ]] || fail "#7688: the gate draws on a build whose tokens runs no command: $hosted" ;;
+  esac
+done
+
+# The gate's `cargo` runs the next `cargo` on the path, past its own
+# directory, through `gandr tokens --`.
+# - see: #7688 — the gate's cargo on the host's counter
+status=0
+ran=$(PATH="$gate_bin:$scratch/bin-7688:$scratch/cargo-7688:$PATH" GANDR_GATE_BIN=$gate_bin "$gate_bin/cargo" --locked -q 2>&1) || status=$?
+[[ $status == 0 && $ran == "tokens runs: $scratch/cargo-7688/cargo --locked -q" ]] || fail "#7688: the gate's shim runs no next program of its name through gandr tokens: $ran"
 
 # A lane holds one slot (#4911). Of two slots, a gate of the lane `surface`
 # holds one. A second gate of that lane refuses with `--no-wait`, naming the
@@ -386,4 +432,4 @@ bash -c 'source "$1"; host_scratch "$2/case"' _ "$helper" "$leases"
 [[ ! -e $made ]] || fail "#7615: a call kept the directory of a holder that KILL ended"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a gate made its own FIFO of its share beside a porter's; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a gate made its own FIFO of its share beside a holder's; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"

@@ -63,9 +63,10 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use super::host::Class;
-use super::host::FIFO;
+use super::host::FifoName;
 use super::host::Host;
 use super::host::Wanting;
+use super::host::fifo_name;
 use super::host::runtime_directory;
 
 quenchant_shape::reason_enum! {
@@ -122,14 +123,15 @@ impl Grant
 {
     /// The grant that the process's environment names: the jobserver of the
     /// first of `CARGO_MAKEFLAGS`, `MAKEFLAGS` and `MFLAGS` that names one.
-    /// A FIFO that a hub's porter carries names the hub's counter, which the
-    /// process takes as `class` and never reads through the FIFO. With no
-    /// jobserver named, the host's counter as `class`, while a hub owns it.
+    /// A FIFO that a holder of the host's counter makes names the counter
+    /// beside it, which the process takes as `class` and never reads through
+    /// the FIFO. With no jobserver named, the host's counter as `class`, while
+    /// a hub owns it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the counter's tokens, taken as `class`, when the named FIFO
-    ///   is a porter's and the process joins its counter; else the tokens of
+    ///   is a holder's and the process joins its counter; else the tokens of
     ///   the named jobserver, when it opens; else the tokens of the hub's
     ///   counter in the runtime directory, taken as `class`; else no grant, so
     ///   the process runs as with no jobserver. A jobserver that a parent names
@@ -140,11 +142,11 @@ impl Grant
     /// # Adequacy
     /// - hypothesis: L3 — the flags are read as the build tools write them, a
     ///   FIFO that a test makes opens as a jobserver, a counter that a test hub
-    ///   owns takes a joiner, and a porter's FIFO opens as its counter.
+    ///   owns takes a joiner, and a holder's FIFO opens as its counter.
     /// - witness: `pool::grant::tests::the_flags_name_the_last_jobserver`
     /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
     /// - witness: `pool::tests::a_hosted_pool_runs_as_many_parts_as_it_holds_tokens`
-    /// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+    /// - witness: `pool::grant::tests::a_process_named_a_holder_s_fifo_takes_the_counter_and_reads_no_byte`
     ///
     /// # Cost
     /// - allocation: the value of each flag from the environment, setup
@@ -833,11 +835,11 @@ fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
 }
 
 /// The tokens of the jobserver that `named` names, when it opens: for a
-/// porter's FIFO, the tokens of its counter, taken as `class`.
+/// holder's FIFO, the tokens of its counter, taken as `class`.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the counter's tokens when `named` is a porter's FIFO whose
+/// - ensures: the counter's tokens when `named` is a holder's FIFO whose
 ///   counter the process joins, with no read of the FIFO; else the tokens of a
 ///   FIFO that opens; on Linux, the tokens of a pipe whose descriptors open
 ///   again through `/dev/fd`.
@@ -849,7 +851,7 @@ fn named(flags: Flags<'_>) -> Maybe<Named<'_>, ungranted::Absent>
 /// # Adequacy
 /// - hypothesis: L3 — as [`Grant`].
 /// - witness: `pool::tests::a_granted_pool_runs_as_many_parts_as_it_holds_tokens`
-/// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+/// - witness: `pool::grant::tests::a_process_named_a_holder_s_fifo_takes_the_counter_and_reads_no_byte`
 fn opened(
     named: Named<'_>,
     class: Class,
@@ -872,13 +874,13 @@ fn opened(
 }
 
 /// The tokens of the counter beside `path`, taken as `class`, when `path` is
-/// the FIFO that a hub's porter carries: the hub makes the FIFO beside its
-/// segment, so a FIFO of the porter's name whose directory holds a counter
-/// that a hub owns is the porter's.
+/// the FIFO of a holder of the counter: a holder makes its FIFO beside the
+/// segment, so a FIFO of a holder's name whose directory holds a counter that
+/// a hub owns is a holder's.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the counter's tokens when the file's name is the porter's and the
+/// - ensures: the counter's tokens when the file's name is a holder's and the
 ///   process joins the counter in its directory; else
 ///   [`ungranted::Absent::Unnamed`].
 /// - panics: none.
@@ -886,14 +888,14 @@ fn opened(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Host::join`].
-/// - witness: `pool::grant::tests::a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte`
+/// - witness: `pool::grant::tests::a_process_named_a_holder_s_fifo_takes_the_counter_and_reads_no_byte`
 fn carried(
     path: &Path,
     class: Class,
 ) -> Maybe<Tokens, ungranted::Absent>
 {
-    match (path.file_name(), path.parent()) {
-        (Some(name), Some(directory)) if name == FIFO => hosted(directory, class),
+    match path.parent() {
+        Some(directory) if fifo_name(path) == FifoName::Holder => hosted(directory, class),
         _ => Maybe::Absent(ungranted::Absent::Unnamed),
     }
 }
@@ -936,10 +938,10 @@ mod tests
     #[cfg(unix)]
     use super::super::host::HostCounter;
     #[cfg(unix)]
+    use super::super::host::Porter;
+    #[cfg(unix)]
     use super::Class;
     use super::Descriptors;
-    #[cfg(unix)]
-    use super::FIFO;
     use super::Flags;
     use super::Named;
     use super::Right;
@@ -1047,7 +1049,7 @@ mod tests
 
     #[cfg(unix)]
     #[test]
-    fn a_process_named_the_porter_s_fifo_takes_the_counter_and_reads_no_byte()
+    fn a_process_named_a_holder_s_fifo_takes_the_counter_and_reads_no_byte()
     {
         let directory =
             std::env::temp_dir().join(format!("gandr-grant-porter-{}", std::process::id()));
@@ -1058,25 +1060,23 @@ mod tests
         std::fs::create_dir_all(&alone).unwrap();
         let counter =
             HostCounter::with(&hub, Threads::from(NonZeroUsize::new(2).unwrap())).unwrap();
-        let porter = counter.carry().unwrap();
+        let porter = Porter::hold(&hub).unwrap();
         assert!(
             matches!(
-                opened(Named::Fifo(&hub.join(FIFO)), Class::Batch),
+                opened(Named::Fifo(porter.fifo()), Class::Batch),
                 Maybe::Present(Tokens::Host(_))
             ),
-            "the porter's FIFO opens as the hub's counter, which reads no byte of the FIFO"
+            "a holder's FIFO opens as the hub's counter, which reads no byte of the FIFO"
         );
-        let made = Command::new("mkfifo")
-            .arg(alone.join(FIFO))
-            .status()
-            .unwrap();
+        let lone = alone.join("tokens3.0.fifo");
+        let made = Command::new("mkfifo").arg(&lone).status().unwrap();
         assert!(made.success(), "mkfifo makes a FIFO with no hub beside it");
         assert!(
             matches!(
-                opened(Named::Fifo(&alone.join(FIFO)), Class::Batch),
+                opened(Named::Fifo(&lone), Class::Batch),
                 Maybe::Present(Tokens::Fifo(_))
             ),
-            "a FIFO of the porter's name with no counter beside it opens as a jobserver"
+            "a FIFO of a holder's name with no counter beside it opens as a jobserver"
         );
         drop(porter);
         drop(counter);
