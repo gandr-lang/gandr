@@ -32,7 +32,7 @@ The crate runs on Linux alone. On another system it compiles empty. A kernel tha
 
 The table has one slot for each entry of the ring. A request that finds every slot taken waits for a completion. When the kernel holds no operation of the table, the request gives `RuntimeError::Full`.
 
-The scope's thread is the one thread of the runtime. Once the ring is set up, a request allocates nothing.
+The scope's thread is the one thread of the runtime. After `Runtime::new` makes the ring, a request allocates nothing.
 
 ## Examples
 
