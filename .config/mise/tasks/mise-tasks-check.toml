@@ -135,8 +135,9 @@ mkdir -p target/gate
 SECONDS=0
 { MISE_TASK_TIMINGS=1 mise run --output prefix "${tasks[@]:0:${#tasks[@]}-1}" 2>&1 1>&3 3>&- | tee target/gate/check.log >&2; } 3>&1
 .config/gate-scope/passed.bash record check "$tree" target/gate/check.log "$SECONDS" "$(gate_wait)" "${checks[@]}"
-# Each check that a job of the pull request or of the merge group runs
-# again gets a signed record of this pass (#7684), and `pr:open` pushes it.
+# Each check that a job of the pull request or of the merge group runs again
+# gets a signed record of this pass. `pr:open` pushes the records.
+# - see: #7684
 .config/gate-scope/verdict.bash write "$tree" "${checks[@]}" || echo "check: no record of the pass is written, so the jobs run the checks again (#7684)" >&2
 gate_ran=1
 {% endraw %}'''
@@ -445,14 +446,16 @@ for target in "${targets[@]}"; do
 done
 {% endraw %}'''
 
-# The lint of the code that only an arm64 build compiles (#7684): the job of
-# the queue lints on x86-64, and a lane's record serves it. Each package
-# whose sources hold a `cfg` that names `aarch64` and not `x86_64` is linted
-# here, on an arm64 host, by `check:clippy-enforcing`
-# (`.config/gate-scope/arch.bash`). A change that reaches no such package
-# lints nothing. A host that builds for another architecture lints nothing
-# either: `check:clippy-enforcing` lints its own code, so a lane's gate on
-# x86-64 does not lint those packages twice.
+# The lint of the code that only an arm64 build compiles. The job of the
+# queue lints on x86-64, and a lane's record serves it. Here, on an arm64
+# host, `check:clippy-enforcing` lints each package whose sources hold a
+# `cfg` that names `aarch64` and not `x86_64`. A change that reaches no such
+# package lints nothing.
+# - see: #7684, `.config/gate-scope/arch.bash`
+#
+# A host that builds for another architecture lints nothing either.
+# `check:clippy-enforcing` lints its own code. So a lane's gate on x86-64 does
+# not lint those packages twice.
 ["check:clippy-arch"]
 description = "The clippy wall over the packages that hold code only an arm64 build compiles"
 tools.jq = "1.8.1"
@@ -2223,20 +2226,26 @@ read -r structs kept owed local none <<< "$counts"
 echo "positions check OK: $structs structs, each with its row; rows: $kept kept, $owed owed, $local local, $none none"
 {% endraw %}'''
 
-# The sharing ledger (#7339, `ledger/shared.sql`): every field whose type
-# holds an `Arc`, or a `Shared` or a `ThinShared` of `gandr-kernel-data`, alone
-# or in an `Option`, a `Maybe`, a `Vec` or a `SmallVec`, in a struct or an enum
-# of a kernel crate or of the fork crate outside its tests, has a row
-# in `shared`, and every row names such a field. A freeze, a fork or a hand-on
-# clones such a field by a count, so the row classes what a write after it
-# does: `chunked`, `layered`, `copied whole` or `grows with the module`, the
-# last two with the issue whose unit moves them, or `read only`. Each row of
-# `stated` names an item that its file declares: an id that takes a width, a
-# structure that takes the arena's region, or a window of the schedule. The
-# dump builds with every constraint holding and is its own re-dump. Each case
-# in `.config/shared/cases.json` holds the lines that `git grep` prints and the
-# fields that `.config/shared/hits.jq` reads from them. Every finding is
-# printed before the gate fails.
+# The sharing ledger holds a row in `shared` for every shared field. A shared
+# field is a field whose type holds an `Arc`, or a `Shared` or a `ThinShared`
+# of `gandr-kernel-data`. The type can hold it alone or in an `Option`, a
+# `Maybe`, a `Vec` or a `SmallVec`. The field is in a struct or an enum of a
+# kernel crate, or of the fork crate outside its tests. Every row names such a
+# field.
+# - see: #7339, `ledger/shared.sql`
+#
+# A freeze, a fork or a hand-on clones such a field by a count. So the row
+# classes what a write after it does: `chunked`, `layered`, `copied whole`,
+# `grows with the module` or `read only`. The rows `copied whole` and `grows
+# with the module` name the issue whose unit moves them.
+#
+# Each row of `stated` names an item that its file declares. The item is an id
+# that takes a width, a structure that takes the arena's region, or a window of
+# the schedule. The dump builds with every constraint holding and is its own
+# re-dump. Each case holds the lines that `git grep` prints and the fields
+# that the hits program reads from them. The gate prints every finding before
+# it fails.
+# - see: `.config/shared/cases.json`, `.config/shared/hits.jq`
 ["check:shared"]
 description = "Every shared field of the kernel crates and of the fork crate has its row in the sharing ledger, every row names one, and every stated row names an item its file declares"
 tools.jq = "1.8.1"
@@ -2749,62 +2758,89 @@ description = "Each run of a gate leaves one row of its times, head, result, gat
 tools.jq = "1.8.1"
 run = ".config/gate-rows/cases.bash"
 
-# The checks a change selects (#4911): `.config/gate-scope/cases.json` holds
-# `select.jq` over the table, a workflow-only change selecting no Rust check, a
-# crate's source the whole wall and an unmapped path every check, and for the
-# landing's gate (#5458) a crate's source keeping the light checks,
-# `check:landing`, `check:corpus-comments` and `check:corpus`, a corpus source
-# keeping the light checks, `check:corpus-comments` and the corpus checks of
-# #6489, and an extension source keeping the light checks alone (#6365). It
-# holds
-# `packages.jq` (#5014), #5007's diff scoping its one package, a `Cargo.lock`
-# change the whole workspace and a change growing by its dependents, and
-# `passed.jq` (#5076), a gated tree accepted, a changed tree refused, a
-# reworded commit accepted, a gate that skipped a selected check refused,
-# and a head stacked on the top refused for the gate before the stack (#5091).
-# It holds `times.jq` (#5215), a gate's log giving each task's time, each
-# suite's tests and the slowest tests, a test or a task two lines name
-# counted once, and `budget.jq`, a gate on main past its budget filed, one
-# at its budget within it, and a gate with no budget never past it.
-# `.config/gate-scope/carry-cases.bash` builds scratch repositories (#5153): a
-# restack onto a top that touches other files carries the gate to the new
-# tree, a restack that changes the branch's patch carries none, and a head on
-# the gated tree keeps its own record.
-# `.config/gate-scope/select-cases.bash` builds scratch repositories (#5220):
-# a working change and a commit of 4000 paths, a list longer than one
-# argument holds, each select every check.
-# `.config/gate-scope/tests-cases.bash` builds scratch workspaces of three
-# packages (#6812): a change that breaks a test of the package it touches is
-# refused, a change to one package runs its suite and the dispatcher's alone,
-# and the watcher's whole suite refuses it by a red test of another.
-# `.config/gate-scope/comments-cases.bash` builds scratch repositories
-# (#6648): a `//` edit in a crate selects neither `check:doc` nor
-# `check:corpus`, a `///` edit, a blank line or one token of code beside a
-# comment selects both, and a corpus comment edit selects `check:prose`.
-# `.config/gate-scope/remote-cases.bash` runs the gate on another host
-# (#6996) through a stand-in `ssh` and `mise`: a far pass comes here with its
-# host after the push, a far red records nothing, a far host that lacks a
-# tool stops before its gate (#7127), work beyond HEAD is refused and the
-# probe counts the free slots.
-# `.config/gate-scope/known-red-cases.bash` reads a recorded known-red list
-# in a scratch repository (#7061): a list below the branch's base leaves each
-# listed test of the suite's scope out of a scratch crate's red suite, and
-# another head, a closed list and a failed read leave every test in.
-# `.config/gate-scope/verdict-cases.bash` writes, pushes and reads the signed
-# record of a pass in a scratch repository with a bare remote (#7684): a run
-# on the gated tree with the gate's key reads it, and so does a merge group on
-# a newer base. Another tree, scope, flag set, compiler or policy revision
-# reads none. A record that no allowed signer signed, a body that is not the
-# run's key, and a base that the trunk does not hold are refused. Work that is
-# not HEAD's tree writes no record.
-# Then `unmapped.jq` reads the live tasks: a check that builds or runs the
-# toolchain outside every group of the table, or a group or the `landing`
-# list naming no check, fails it. So does a check that builds `GATE_SCOPE`
-# under `--cfg anodized_panic` without the workspace feature unification.
-# Last, `reads.bash` walks each light check that the table's `reads` scopes
-# (#6895), and `reads.jq` holds its row to the paths that it reads. A read
-# outside the row, a check that lists the whole tree, or a row of a grouped
-# check fails it.
+# The checks a change selects. The cases hold `select.jq` over the table. A
+# change of the workflow alone selects no Rust check. A crate's source
+# selects the whole wall, and an unmapped path selects every check.
+# - see: #4911, `.config/gate-scope/cases.json`
+#
+# For the landing's gate, a crate's source keeps the light checks,
+# `check:landing`, `check:corpus-comments` and `check:corpus`. A corpus source
+# keeps the light checks, `check:corpus-comments` and the corpus checks of a
+# corpus change. An extension source keeps the light checks alone.
+# - see: #5458, #6489, #6365
+#
+# The cases hold `packages.jq`. A diff in one package scopes that package. A
+# `Cargo.lock` change scopes the whole workspace, and a change grows by its
+# dependents.
+# - see: #5014, #5007
+#
+# The cases hold `passed.jq`. It accepts a gated tree and refuses a changed
+# tree. It accepts a reworded commit and refuses a gate that skipped a selected
+# check. It refuses a head on the top of a stack for the gate before the stack.
+# - see: #5076, #5091
+#
+# The cases hold `times.jq`. It reads each task's time, each suite's tests and
+# the slowest tests from a gate's log. It counts once a test or a task that two
+# lines name. They hold `budget.jq` too. It files a gate on main past its
+# budget, and no gate at its budget or with no budget.
+# - see: #5215
+#
+# The carry cases build scratch repositories. A restack onto a top that
+# touches other files carries the gate to the new tree. A restack that changes
+# the branch's patch carries none. A head on the gated tree keeps its own
+# record.
+# - see: #5153, `.config/gate-scope/carry-cases.bash`
+#
+# The select cases build scratch repositories. A working change and a commit
+# of 4000 paths each select every check. That list is longer than one argument
+# holds.
+# - see: #5220, `.config/gate-scope/select-cases.bash`
+#
+# The tests cases build scratch workspaces of three packages. A change that
+# breaks a test of the package it touches is refused. A change to one package
+# runs its suite and the dispatcher's alone. The watcher's whole suite refuses
+# it by a red test of another.
+# - see: #6812, `.config/gate-scope/tests-cases.bash`
+#
+# The comments cases build scratch repositories. A `//` edit in a crate
+# selects neither `check:doc` nor `check:corpus`. A `///` edit, a blank line
+# or one token of code beside a comment selects both. A corpus comment edit
+# selects `check:prose`.
+# - see: #6648, `.config/gate-scope/comments-cases.bash`
+#
+# The remote cases run the gate on another host. Two fakes replace `ssh` and
+# `mise`. A far pass comes here with its host after the push. A
+# far red records nothing, and a far host that lacks a tool stops before its
+# gate. Work beyond HEAD is refused, and the probe counts the free slots.
+# - see: #6996, #7127, `.config/gate-scope/remote-cases.bash`
+#
+# The known-red cases hold a known-red list in a scratch repository.
+# A list below the branch's base omits each listed test of the suite's scope
+# from a scratch crate's red suite. Another head, a closed list and a failed
+# read keep every test in.
+# - see: #7061, `.config/gate-scope/known-red-cases.bash`
+#
+# The verdict cases write, push and read the signed record of a pass in a
+# scratch repository with a bare remote. A run on the gated tree with the
+# gate's key reads it, and so does a merge group on a newer base. Another
+# tree, scope, flag set, compiler or policy revision reads none.
+# - see: #7684, `.config/gate-scope/verdict-cases.bash`
+#
+# A record that no allowed signer signed is refused. A body that is not the
+# run's key is refused, and so is a base that the trunk does not hold. Work
+# that is not HEAD's tree writes no record.
+#
+# Then `unmapped.jq` reads the live tasks. A check fails it when it builds or
+# runs the toolchain outside every group of the table. A group or the
+# `landing` list that names no check fails it too. So does a check that builds
+# `GATE_SCOPE` under `--cfg anodized_panic` without the workspace feature
+# unification.
+#
+# Last, `reads.bash` walks each light check that the table's `reads` scopes.
+# Then `reads.jq` holds its row to the paths that it reads. A read outside the
+# row fails it. A check that lists the whole tree, or a row of a grouped check,
+# fails it too.
+# - see: #6895
 ["check:gate-scope"]
 description = "The table scoping `mise run check` maps a change to its checks, every check that builds the toolchain sits in one of its groups, and each scoped light check reads only its row"
 tools.jq = "1.8.1"
@@ -4063,35 +4099,43 @@ replay 1581 .config/mise/tasks/mise-tasks-check.toml eb6f7620 3465e3d6a
 description = "A comment on every fixture item, ratcheted against the ledger"
 run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --test tests comments:: -- --nocapture"
 
-# The sentence rules that need a parse (#2919): a passive outside the stated
-# list, a past tense, a stack of four nouns, an `-ing` main verb and a
-# glossary word in another part of speech, over the comments of every tracked
-# `.gandr` source. A comment also keeps a body's length,
-# semicolon and dash rules, a paragraph of at most five sentences, and no
-# path, issue or URL outside its `- see:` and `- owes:` lines (#4900).
-# A paper is cited as `[label]`, never by a locator or a title in prose.
-# A corpus source outside the features ledger holds a head of four paragraphs,
-# or five whose fourth opens on `Limits:` (#6005).
-# Its first sentence holds at most twenty words.
-# Each `- cites:` label has a footer line with a quoted title (#5045).
-# An item comment holds at most two sentences, and a third that opens on
-# `Limits:`.
-# The procedural form binds the rendered diagnostics
-# (crates/workflow-prose/README.md). spaCy parses under the venv these
-# tools pin; the crate decides. The debt is `corpus/prose.ledger`: a new
-# finding refuses, a fixed one leaves a stale line, and `--write` rewrites
-# it.
+# The sentence rules that need a parse, over the comments of every tracked
+# `.gandr` source. They refuse a passive outside the stated list, a past
+# tense and a stack of four nouns. They refuse an `-ing` main verb and a
+# glossary word in another part of speech.
+# - see: #2919
 #
-# The markdown documents keep no ledger (#7621). A change answers for the
-# paragraphs it wrote since its base: `PROSE_BASE`, else the gate's
-# `GATE_BASE`, else the merge base with the trunk. Each paragraph whose
-# digest the base holds is left alone, and each other one meets every rule.
-# `PROSE_OVERRIDE` names pull request bodies, `:`-joined, whose
+# A comment also keeps a body's length, semicolon and dash rules. It holds a
+# paragraph of at most five sentences. It holds no path, issue or URL outside
+# its `- see:` and `- owes:` lines. A comment cites a paper as `[label]`, never
+# by a locator or a title in prose.
+# - see: #4900
+#
+# A corpus source outside the features ledger holds a head of four
+# paragraphs, or five whose fourth opens on `Limits:`. Its first sentence
+# holds at most twenty words. Each `- cites:` label has a footer line with a
+# quoted title. An item comment holds at most two sentences, and a third that
+# opens on `Limits:`.
+# - see: #6005, #5045
+#
+# The procedural form binds the rendered diagnostics. spaCy parses under the
+# venv that these tools pin. The crate decides. The debt is the prose ledger.
+# The check refuses a new finding, and `--write` rewrites the ledger.
+# - see: `crates/workflow-prose/README.md`, `corpus/prose.ledger`
+#
+# The markdown documents keep no ledger. A change answers for the paragraphs
+# that it wrote since its base: `PROSE_BASE`, else the gate's `GATE_BASE`,
+# else the merge base with the trunk. The check skips each paragraph whose
+# digest the base holds. Each other paragraph meets every rule.
+# - see: #7621
+#
+# `PROSE_OVERRIDE` names pull request bodies, `:`-joined. Their
 # `prose-override:` lines admit the paragraphs of a mechanical change. Each
-# override needs the architect's sign-off (`.config/prose/signed.bash`). The
-# parse cache under the host's cache directory keeps each parse by its
-# passage's digest, named by spaCy's and the model's installed versions, so
-# a run whose passages it holds starts no interpreter.
+# override needs the architect's sign-off. The parse cache under the host's
+# cache directory keeps each parse by its passage's digest. spaCy's and the
+# model's installed versions name the cache, so a run whose passages it holds
+# starts no interpreter.
+# - see: `.config/prose/signed.bash`
 #
 # The `#` comments of the tasks, the scripts, the workflows, the manifests and
 # the lists keep no ledger either. A change answers for its new comments, as
@@ -4099,14 +4143,16 @@ run = ".config/mise/scope cargo test --locked --package gandr-surface-corpus --t
 # file kind names the lines that it skips.
 # - see: #7623 — the `#` comments under the prose gate's rule
 #
-# The merge group runs it too (`landing-checks.yml`'s `prose-gate`, #3082): the
-# interpreter is this task's tool, installed there by the same pins. The
-# filers' templates under `.config/issues/templates/` keep the body rules
-# with no ledger (#3591): `issue:file --template` files a mechanism's body
-# unread, so the template is held here. The venv `depends` on the
-# interpreter and on uv: `uvx_args` stops mise reading the venv's own
-# dependencies, so with no `depends` a fresh install can start the venv
-# before uv is in place, and the install fails.
+# The merge group runs it too. There the interpreter is this task's tool, and
+# the same pins install it. The filers' templates keep the body rules with no
+# ledger. `issue:file --template` files a mechanism's body and does not read
+# it. So the check holds the template here.
+# - see: #3082, `landing-checks.yml`'s `prose-gate`, #3591,
+#   `.config/issues/templates/`
+#
+# The venv `depends` on the interpreter and on uv. With `uvx_args`, mise does
+# not read the venv's own dependencies. With no `depends`, a fresh install can
+# start the venv before uv is in place. Then the install fails.
 ["check:prose"]
 description = "The parsed sentence rules, against the prose ledger, and over each paragraph a change wrote in the markdown documents and the # comments"
 tools.python = "3.15.2"

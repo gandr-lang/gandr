@@ -1,13 +1,16 @@
 def forbidden_context:
   capture("\\$\\{\\{[^}]*\\b(?<context>runner|job|steps|env)\\."; "i").context;
 
-# The argument of each `hashFiles` call that walks a build directory: a
-# pattern under `target/` with `**`, or a pattern whose first segment is
-# `**`, which walks each directory of the workspace and each build directory
-# among them. The expression engine reads every file the walk finds within a
-# 120 s budget. So a large build state fails the step (#6888). A
-# self-hosted runner keeps its warm build across checkouts, and a walk from
-# the root passes the budget on a loaded host (#7705).
+# The argument of each `hashFiles` call that walks a build directory. That is
+# a pattern under `target/` with `**`, or a pattern whose first segment is
+# `**`. Such a pattern walks each directory of the workspace and each build
+# directory among them. The expression engine reads every file that the walk
+# finds within a 120 s budget. So a large build state fails the step.
+# - see: #6888
+#
+# A self-hosted runner keeps its warm build across checkouts. A walk from the
+# root passes the budget on a loaded host.
+# - see: #7705
 def build_walks:
   [scan("hashFiles\\(([^)]*)\\)") | .[0]
    | select((test("(^|[^A-Za-z0-9_.-])target/") and test("\\*\\*")) or test("(^|,)\\s*['\"]\\*\\*"))];

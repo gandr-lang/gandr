@@ -339,15 +339,18 @@ jobs:
           done
           if [[ -n $line ]]; then printf '### Lane state\n\n%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"; fi
       # Compute once, before any restored build directory can add manifests.
-      # The manifests are named by their places: a pattern from the root
+      # The step names the manifests by their places. A pattern from the root
       # walks a self-hosted runner's warm build and passes the expression
-      # engine's 120 s (#7705).
-      # The fingerprint names one exact state; the generation is the toolchain
-      # pin alone. A restore takes the newest state of its generation and
-      # Cargo's own fingerprints, which hash a Git dependency's revision and
-      # check source checksums, rebuild what the manifests changed. A toolchain
-      # bump starts a new generation: every artifact of the old one is stale,
-      # and the superseded ones a generation accumulates go with it.
+      # engine's 120 s.
+      # - see: #7705
+      #
+      # The fingerprint names one exact state. The generation is the toolchain
+      # pin alone. A restore takes the newest state of its generation. Then
+      # Cargo's own fingerprints rebuild what the manifests changed. They hash
+      # a Git dependency's revision and check source checksums.
+      #
+      # A toolchain bump starts a new generation: every artifact of the old one
+      # is stale, and the superseded ones a generation accumulates go with it.
       - &identify-build-state
         name: identify build-state inputs
         env:
@@ -1210,11 +1213,12 @@ jobs:
     if: *test-lane
     runs-on: *linux
     permissions: *build-state-read-permissions
-    # The tests of `gandr-runtime-uring` set up an `io_uring` ring, and
-    # Docker's default seccomp profile refuses `io_uring_setup` with EPERM.
-    # Docker reads a profile only from a file on the host, before the
-    # checkout, so no file of the tree can reach it. The jobs that run the
-    # crate's tests drop the filter, and only they do (#7633).
+    # The tests of `gandr-runtime-uring` start an `io_uring` ring. Docker's
+    # default seccomp profile refuses `io_uring_setup` with EPERM. Docker
+    # reads a profile only from a file on the host, before the checkout, so no
+    # file of the tree can reach it. The jobs that run the crate's tests drop
+    # the filter, and only they do.
+    # - see: #7633
     container: &ci-test-image
       image: *ci-image # zizmor: ignore[unpinned-images]
       options: --security-opt seccomp=unconfined
@@ -1536,39 +1540,55 @@ jobs:
       - name: require the enforcing test pass
         run: test "$SHARDS_RESULT" = success
 
-  # Clippy writes check metadata, which a restored test build does not hold,
-  # so the lane keeps its own state: main's newest, restored by prefix on the
-  # toolchain pin alone, and Cargo's fingerprints decide what a change
-  # re-checks. The merge group prunes the state to the units its run used and
-  # uploads it, and main's push promotes it (`promote-cargo-clippy-crate`)
-  # rather than linting the tested commit again (#2045); a push no queue run
-  # tested lints, prunes and saves the state itself.
-  # The enforcing pass lints the workspace; the plain pass lints only the
+  # Clippy writes check metadata, which a restored test build does not hold.
+  # So the lane keeps its own state, main's newest, and restores it by prefix
+  # on the toolchain pin alone. Cargo's fingerprints decide what a change
+  # checks again.
+  #
+  # The merge group prunes the state to the units that its run used and
+  # uploads it. Then main's push promotes it, and does not lint the tested
+  # commit again. A push that no queue run tested lints, prunes and saves the
+  # state itself.
+  # - see: #2045, `promote-cargo-clippy-crate`
+  #
+  # The enforcing pass lints the workspace. The plain pass lints only the
   # targets that carry `cfg(not(anodized_panic))` code, which the enforcing
-  # pass never compiles (`check:clippy-plain-only`, which fails on such a
-  # file outside its list). Linting the whole plain graph again cost the
-  # lane a pass over the workspace for that one target (#2070).
+  # pass never compiles. `check:clippy-plain-only` fails on such a file outside
+  # its list. A lint of the whole plain graph costs the lane a pass over the
+  # workspace for that one target.
+  # - see: #2070
+  #
   # A pull request on `landing` skips the lane, and the skip satisfies the
-  # required check (#5439). The author ran `check:landing` before `pr:open`,
-  # and the group on `landing` runs the lane again.
+  # required check. The author runs `check:landing` before `pr:open`, and the
+  # group on `landing` runs the lane again.
+  # - see: #5439
+  #
   # The group on `landing` first runs the shared formatters over the paths
-  # that its entries change against its base (#6883). The queue builds a
-  # tree that no lane's gate read, and a red formatter fails the group
-  # before Clippy starts. The check takes seconds, so it shares this
-  # required job and its image rather than paying for a job of its own.
+  # that its entries change against its base. The queue builds a tree that no
+  # lane's gate read, and a red formatter fails the group before Clippy
+  # starts. The check takes seconds. So it shares this required job and its
+  # image, and has no job of its own.
+  # - see: #6883
+  #
   # Then the group lints the packages that its change reaches against its
-  # base (#6894), and a group that reaches none lints nothing. Each package
-  # outside that set is the base's, so the base's verdict on it stands. The
-  # group starts from the newest state that a group on `landing` uploaded,
-  # not from main's, which lags `landing` by the integration cycle. The
-  # prune's two passes read the whole workspace, so the state that the group
-  # hands on is whole for its tree whichever state it started from.
-  # The job lints on x86-64, where each lane gates, so a lane's signed record
-  # of the pass on this tree serves it (#7684): the job reads the record and
-  # runs neither lint again. The code that only an arm64 build compiles is
-  # linted by `cargo-clippy-arch`, and this required check needs that job and
-  # fails on its failure. When the ruleset of `landing` requires the arm64 job
-  # by its name, the `needs` comes out.
+  # base. A group that reaches none lints nothing. Each package outside that
+  # set is the base's, so the base's verdict on it stands.
+  # - see: #6894
+  #
+  # The group starts from the newest state that a group on `landing` uploaded.
+  # It does not start from main's, which lags `landing` by the integration
+  # cycle. The prune's two passes cover the whole workspace. So the state that
+  # the group hands on is whole for its tree, from any state at its start.
+  #
+  # The job lints on x86-64, where each lane gates. So a lane's signed record
+  # of the pass on this tree serves it. Then the job reads the record and runs
+  # neither lint again.
+  # - see: #7684
+  #
+  # `cargo-clippy-arch` lints the code that only an arm64 build compiles. This
+  # required check needs that job and fails on its failure. When the ruleset
+  # of `landing` requires the arm64 job by its name, this job drops the
+  # `needs`.
   cargo-clippy-crate:
     name: check Clippy wall
     needs: [prepare, ci-image, cargo-clippy-arch]
@@ -1628,11 +1648,11 @@ jobs:
             printf 'the working tree differs from its commit, so the scope reads paths the change does not hold:\n%s\n' "$changed" >&2
             exit 1
           fi
-      # A lane's gate that passed on this tree wrote a signed record of each
-      # check that this job runs (#7684, `.config/gate-scope/verdict.bash`).
-      # A record that binds this run's key holds, and the check does not run
-      # again. The key reads the scope against the record's base, which the
-      # trunk must hold.
+      # A lane's gate that passed on this tree writes a signed record of each
+      # check that this job runs. A record that binds this run's key holds,
+      # and the check does not run again. The key reads the scope against the
+      # record's base, which the trunk must hold.
+      # - see: #7684, `.config/gate-scope/verdict.bash`
       - &read-verdicts
         name: read the records of the lane's gate
         id: verdict
@@ -1709,12 +1729,12 @@ jobs:
           CI_STATE_KEY: ${{ steps.clippy-state-restore.outputs.cache-primary-key }}
         run: mise run ci:delete-superseded clippy-state-v "$CI_STATE_KEY"
       - *lane-state
-  # The lint of the code that only an arm64 build compiles (#7684,
-  # `check:clippy-arch`): each package whose sources hold a `cfg` that names
-  # `aarch64` and not `x86_64`, cut to the packages that the change reaches.
-  # The lanes gate on x86-64 and write no record for arm64, so the job runs
-  # whenever its set holds a package. `check Clippy wall` needs it and fails
-  # on its failure.
+  # The lint of the code that only an arm64 build compiles. Its set is each
+  # package whose sources hold a `cfg` that names `aarch64` and not `x86_64`,
+  # cut to the packages that the change reaches. The lanes gate on x86-64 and
+  # write no record for arm64, so the job runs whenever its set holds a
+  # package. `check Clippy wall` needs it and fails on its failure.
+  # - see: #7684, `check:clippy-arch`
   cargo-clippy-arch:
     name: check Clippy on arm64 code
     needs: *rust-needs
@@ -2772,21 +2792,27 @@ jobs:
             fi
           done
 
-  # The prose check (#2919) is a merge-group gate (#3082): `main` took
-  # unledgered findings from pull requests gated before the check landed, so
-  # what `main` can fail is checked where `main` is decided. `cargo-test`
-  # requires it in the queue; a pull request reads it as information, and a
-  # push to main checks the landing and saves the tools. The check's own
-  # task pins Python, uv and spaCy with its model; their installs are cached
-  # by those pins and saved on main, where every ref can read them. The
-  # sentence parse is the spaCy venv's Python, so the lane builds only the
-  # `prose` binary. The markdown documents answer for the paragraphs the
-  # change wrote since `PROSE_BASE` (#7621), so the checkout holds the
-  # history, as the format gate's does. The bodies of the pull requests the
-  # change lands give their named overrides, and the architect's comments
-  # sign them. The parse cache is saved on main beside the tools. A run that
-  # saves it prunes it first, so the cache holds the parses of the head's
-  # passages and no older script's (#7659).
+  # The prose check is a gate of the merge group. `main` holds findings with
+  # no ledger line from pull requests that gated before the check landed. So
+  # the queue checks what `main` can fail, where it decides `main`.
+  # `cargo-test` requires the check in the queue. A pull request reads it as
+  # information, and a push to main checks the landing and saves the tools.
+  #
+  # The check's own task pins Python, uv and spaCy with its model. The cache
+  # keeps their installs by those pins, and main saves them, where each ref
+  # can read them. The sentence parse is the spaCy venv's Python, so the lane
+  # builds only the `prose` binary.
+  #
+  # The markdown documents answer for the paragraphs that the change wrote
+  # since `PROSE_BASE`. So the checkout holds the history, as the format
+  # gate's does. The bodies of the pull requests that the change lands give
+  # their named overrides, and the architect's comments sign them.
+  # - see: #2919, #3082, #7621
+  #
+  # Main saves the parse cache beside the tools. A run that saves it prunes it
+  # first. Thus the cache holds the parses of the head's passages and of no
+  # older script.
+  # - see: #7659
   prose-gate:
     name: check the prose against its ledger
     needs: *rust-needs
@@ -2831,8 +2857,9 @@ jobs:
           path: ${{ steps.prose-tools.outputs.parses }}
           key: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-${{ github.sha }}
           restore-keys: prose-parses-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.prose-tools.outputs.pins }}-
-      # The signers of an override are those of a deletion (#6962): the
-      # repository variable holds them, and the owner alone sets it.
+      # The signers of an override are those of a deletion. The repository
+      # variable holds them, and the owner alone sets it.
+      # - see: #6962
       - name: write the signers of an override
         if: ${{ vars.GANDR_DELETE_SIGNERS != '' }}
         shell: bash

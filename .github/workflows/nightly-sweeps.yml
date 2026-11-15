@@ -405,11 +405,12 @@ jobs:
     if: ${{ !cancelled() && !failure() && (github.event_name == 'workflow_dispatch' || needs.freshness.outputs.stale == 'true') && !contains(needs.freshness.outputs.waiting, 'cargo-test-plain-only') }}
     runs-on: *linux
     permissions: *image-read-permissions
-    # The tests of `gandr-runtime-uring` set up an `io_uring` ring, and
-    # Docker's default seccomp profile refuses `io_uring_setup` with EPERM.
-    # Docker reads a profile only from a file on the host, before the
-    # checkout, so no file of the tree can reach it. The jobs that run the
-    # crate's tests drop the filter, and only they do (#7633).
+    # The tests of `gandr-runtime-uring` start an `io_uring` ring. Docker's
+    # default seccomp profile refuses `io_uring_setup` with EPERM. Docker
+    # reads a profile only from a file on the host, before the checkout, so no
+    # file of the tree can reach it. The jobs that run the crate's tests drop
+    # the filter, and only they do.
+    # - see: #7633
     container:
       image: &ci-image ${{ needs.ci-image-ref.outputs.ref }} # zizmor: ignore[unpinned-images]
       options: --security-opt seccomp=unconfined

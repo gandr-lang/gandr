@@ -21,12 +21,15 @@ ARG RUST_CHANNEL
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 
-# rustup needs curl and certificates. Rust linking needs build-essential and
-# mold, which `.cargo/config.toml` names for every Linux build. git2's
+# rustup needs curl and certificates. The Rust linker needs build-essential
+# and mold, which the cargo configuration names for every Linux build. git2's
 # openssl-sys needs pkg-config and libssl-dev. Cargo Git sources need git.
 # The coverage upload verifies the Codecov uploader's signature with gpg.
-# The liburing crate of `gandr-runtime-uring` runs bindgen in its build, which
-# needs libclang-dev, until #7638 takes that crate out.
+# - see: `.cargo/config.toml`
+#
+# The liburing crate of `gandr-runtime-uring` runs bindgen in its build.
+# Bindgen needs libclang-dev, until a later unit removes that crate.
+# - see: #7638
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl git build-essential mold pkg-config libssl-dev zstd gpg libclang-dev \
     && rm -rf /var/lib/apt/lists/*

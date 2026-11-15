@@ -52,8 +52,8 @@ records=$(git rev-parse --path-format=absolute --git-common-dir)/gandr-gate
 
 # A copy of the index keeps its file stamps, so `git add` reads only the
 # changed files. The real index does not change. The copy also keeps the
-# index's own stamp: git reads an entry again by content when the entry is
-# not older than the index, and a copy stamped now hides that.
+# index's own stamp. Git reads an entry again by content when the entry is
+# not older than the index. A copy stamped now hides that.
 work_tree() {
   local index
   index=$(mktemp)

@@ -1,9 +1,12 @@
-# The structures that the sharing ledger rows (#7339): each field whose type
-# holds an `Arc`, or a `Shared` or a `ThinShared` of `gandr-kernel-data`, alone
-# or in an `Option`, a `Maybe`, a `Vec` or a `SmallVec`, in a struct or an enum
-# of a kernel crate or of the fork crate, outside its tests. A freeze,
-# a fork or an `open_scope` clones such a field by a count, so a write after it
-# either copies what the field shares or adds beside it.
+# The structures that the sharing ledger rows. Each holds a field whose type
+# holds an `Arc`, or a `Shared` or a `ThinShared` of `gandr-kernel-data`. The
+# type holds it alone or in an `Option`, a `Maybe`, a `Vec` or a `SmallVec`.
+# The field is in a struct or an enum of a kernel crate or of the fork crate,
+# outside its tests.
+# - see: #7339
+#
+# A freeze, a fork or an `open_scope` clones such a field by a count. So a
+# write after it copies what the field shares, or it adds beside it.
 #
 # The input is the lines `git grep -n` prints for six patterns over those
 # sources, test files left out: a named field, a tuple variant or a tuple

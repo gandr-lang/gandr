@@ -44,12 +44,11 @@ description = "Give each borrowed dyn Fn and dyn FnMut of a function's parameter
 tools."github:ast-grep/ast-grep" = "0.51.1"
 run = ".config/mise/codemod-callbacks.bash"
 
-# The codemod of the writers' and consoles' wave
-# (`.config/mise/codemod-writers.bash`, #7387): each `dyn io::Write` and
+# The codemod of the writers' and consoles' wave. Each `dyn io::Write` and
 # `dyn fmt::Display` behind a reference in a function's parameter takes
-# `impl`, each `dyn Console` there takes `Streams<'_>`, and the sites that
-# stay are the wave's second phase. The rules live in
-# `.config/ast-grep/writers`.
+# `impl`. Each `dyn Console` there takes `Streams<'_>`. The sites that stay
+# are the wave's second phase.
+# - see: #7387, `.config/mise/codemod-writers.bash`, `.config/ast-grep/writers`
 ["codemod:writers"]
 description = "Give each borrowed dyn io::Write and dyn fmt::Display of a function's parameter a generic, and each dyn Console the closed set"
 tools."github:ast-grep/ast-grep" = "0.51.1"
