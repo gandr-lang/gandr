@@ -3950,6 +3950,9 @@ fn own_constants(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the member's report, growth within its declarations
+///
 /// # Adequacy
 /// - hypothesis: L3 — an importer reports its own declarations, its sibling's
 ///   obligations left to the sibling; each source of a component, separated by
@@ -3986,6 +3989,10 @@ fn owned<'source>(
 ///   kept.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the member's share of the report, growth within its
+///   declarations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`judge_members`].
@@ -4096,6 +4103,9 @@ fn share<'source>(
 /// - intension: one pass over the module's declarations, binders, bindings and
 ///   resolutions; every table it keeps holds only spans `own` holds of, so a
 ///   member judged after a large closure builds tables its own size.
+///
+/// # Cost
+/// - allocation: the unused binders, growth within the declarations
 ///
 /// # Adequacy
 /// - hypothesis: L3 — parameters, `let` binders, pattern variables and lambda

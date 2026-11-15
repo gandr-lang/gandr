@@ -107,6 +107,9 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 /// - executable: none — the sentence's mood is the prose check's to judge.
 ///
+/// # Cost
+/// - allocation: the help text, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — one refusal of every vocabulary name is either worded,
 ///   with a one-line help, or unworded; the most-seen names are worded.
@@ -157,6 +160,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text of a lowering refusal, diagnostic
 fn lowered(refusal: LoweringRefusal<'_>) -> Maybe<String, help::Absent>
 {
     Maybe::Present(match refusal {
@@ -697,6 +703,9 @@ fn malformed(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text of an ill-formed description, diagnostic
 fn ill_formed(kind: WfKind) -> String
 {
     String::from(match kind {
@@ -770,6 +779,9 @@ fn ill_formed(kind: WfKind) -> String
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the help text of a checker refusal, diagnostic
 fn checked<N>(refusal: CheckRefusalOf<N>) -> Maybe<String, help::Absent>
 where
     N: Naming,

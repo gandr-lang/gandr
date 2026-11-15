@@ -534,6 +534,9 @@ impl Report<'_>
     /// # Specification
     /// trivial.
     ///
+    /// # Cost
+    /// - allocation: the diagnostic's text and annotations, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a term on one line and over two, and a lint finding
     ///   inside the text and past it, observe the expression and fix guards.
@@ -889,6 +892,9 @@ impl Report<'_>
     /// - panics: none.
     /// - executable: none — the clause restates the match the body makes on the
     ///   subject and the innermost context.
+    ///
+    /// # Cost
+    /// - allocation: the help text and the repair, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two list items with no `,` between them name the `,`;
@@ -1326,6 +1332,9 @@ impl fmt::Display for TitleText<'_>
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
     /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Cost
+    /// - allocation: the outcome that the message compares, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — unresolved-name and goal titles retain source names

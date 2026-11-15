@@ -603,6 +603,9 @@ fn lead(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the outcome that each settlement compares, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — a declaration calling one the lowering refused is a note
 ///   naming it, not another refused before it, and one calling a declaration
@@ -668,14 +671,17 @@ pub fn obstruction<'step>(
     else {
         return Maybe::Absent(obstructed::Absent::Unparted);
     };
-    parted
+    let Some(pair) = parted
         .iter()
         .filter(|diagnostic| diagnostic.span == span)
         .find_map(|diagnostic| match parting(diagnostic) {
             Maybe::Present(pair) if pair.cells.earlier == first => Some(pair),
             Maybe::Present(_) | Maybe::Absent(_) => None,
         })
-        .map_or(Maybe::Absent(obstructed::Absent::Unparted), Maybe::Present)
+    else {
+        return Maybe::Absent(obstructed::Absent::Unparted);
+    };
+    Maybe::Present(pair)
 }
 
 /// The refused declaration of `declaration`'s name, among `admitted`, when
@@ -719,19 +725,20 @@ fn unread_half<'step>(
     if unsettlement != Unsettlement::Obligations {
         return Maybe::Absent(upstream::Absent::Own);
     }
-    admitted
-        .iter()
-        .find(|other| {
-            !core::ptr::eq(
-                core::ptr::from_ref(*other),
-                core::ptr::from_ref(declaration),
-            ) && other.name() == declaration.name()
-                && matches!(
-                    other.produced().refusal(),
-                    Maybe::Present(Refusal::Lowering(_))
-                )
-        })
-        .map_or(Maybe::Absent(upstream::Absent::Own), Maybe::Present)
+    let Some(half) = admitted.iter().find(|other| {
+        !core::ptr::eq(
+            core::ptr::from_ref(*other),
+            core::ptr::from_ref(declaration),
+        ) && other.name() == declaration.name()
+            && matches!(
+                other.produced().refusal(),
+                Maybe::Present(Refusal::Lowering(_))
+            )
+    })
+    else {
+        return Maybe::Absent(upstream::Absent::Own);
+    };
+    Maybe::Present(half)
 }
 
 /// The shadowing warnings `verb` prints of `shadowed`: every one under
@@ -947,6 +954,9 @@ where
     /// - provides: verb-directed selection without changing declaration order.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the printed declaration, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite real declarations distinguish counted, goal

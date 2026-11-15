@@ -314,6 +314,9 @@ pub fn sentence(role: FrameRole) -> Sentence
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the context annotations and their names, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — a force inside a thunk reads as the thunk checked against
 ///   its type while checking its body, with the force at the primary span left
@@ -434,6 +437,9 @@ where
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the names of the opened binders, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — a `let` binder and a function's parameters are named, and
 ///   a type over them spells them by those names; a record split's two binders,
@@ -474,6 +480,9 @@ pub fn opened(
 ///   type under them read before the obligations' own ([`opened`]).
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the names of the binders, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a refusal in a field's type, in an index's type and at a
@@ -533,6 +542,9 @@ pub fn framed(
 /// - fails: never.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the written name, diagnostic
+///
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`].
 /// - witness: `tests::diagnostics::a_later_binder_of_one_split_spells_under_the_earlier`
@@ -578,6 +590,9 @@ fn split_binder(
 ///   hypotheses or, a hold's slot, linear.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the written name, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`opened`]; a type kept at a hold spells the hold's
@@ -633,6 +648,9 @@ where
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the spelled type, diagnostic
 fn spelled(
     spellings: &Spellings,
     ty: NodeKey,

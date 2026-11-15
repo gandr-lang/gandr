@@ -322,6 +322,9 @@ impl Exercised
     /// - panics: none.
     /// - intension: walks each accepted body once with an explicit worklist.
     ///
+    /// # Cost
+    /// - allocation: the rows, growth within the settled declarations
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — representative modules cover every row, repeated
     ///   formers count once per declaration, unsettled declarations count

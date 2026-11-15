@@ -681,6 +681,9 @@ impl<'source> DeclarationReport<'source>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the copy of the report at the face's span, diagnostic
     #[inline]
     #[must_use]
     pub fn at(
@@ -826,6 +829,9 @@ impl<'source> DeclarationReport<'source>
     ///   against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the produced outcome's text and channels, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — checked, owed, refused, guarded and requested-run
@@ -2509,7 +2515,7 @@ fn asker<'module, 'source>(
     terms: ConstantIndex,
 ) -> Maybe<&'module LoweredDeclaration<'source>, asked::Absent>
 {
-    verdicts
+    let Some(declaration) = verdicts
         .judged()
         .iter()
         .find(|answer| answer.verdict() == Verdict::Refused(CheckRefusal::NotADataType(terms)))
@@ -2519,7 +2525,10 @@ fn asker<'module, 'source>(
                 .iter()
                 .find(|declaration| declaration.constant() == answer.constant())
         })
-        .map_or(Maybe::Absent(asked::Absent::Unasked), Maybe::Present)
+    else {
+        return Maybe::Absent(asked::Absent::Unasked);
+    };
+    Maybe::Present(declaration)
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the

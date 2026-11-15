@@ -1117,6 +1117,9 @@ const fn root(node: TypeNode) -> CoreNode
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the comparison's work list, growth within the two types
 fn term_subject(
     arena: &CoreArena,
     (first, last): (TypeNode, TypeNode),
@@ -1546,6 +1549,9 @@ fn module_scopes(
 /// - executable: none — a projection of the origin table, read back by the
 ///   table's universe entries.
 ///
+/// # Cost
+/// - allocation: the written types, growth within the module's types
+///
 /// # Adequacy
 /// - hypothesis: L3 — a source writing a value type, a computation type and a
 ///   transport answers each at its universe; a type a model's header derives
@@ -1594,6 +1600,9 @@ pub fn written_types(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the wanted types, growth within the written types
 pub fn wanted_types(written: &[(TypeNode, Origin, GroundSort)]) -> Vec<TypeNode>
 {
     let mut wanted: Vec<TypeNode> = written.iter().map(|&(node, ..)| node).collect();
@@ -1642,6 +1651,9 @@ impl TypedRun
     /// - panics: none.
     /// - executable: none — a read of the context, compared whole by the
     ///   witness of [`TypeTable::assemble`].
+    ///
+    /// # Cost
+    /// - allocation: the entries read off the run, growth within the run
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TypeTable::assemble`].
@@ -1717,6 +1729,9 @@ impl TypeTable
     /// # Errors
     /// - [`ComposeFault::Parse`]: the tree could not be committed.
     /// - [`ComposeFault::Lowering`]: the lowering faulted.
+    ///
+    /// # Cost
+    /// - allocation: the table, growth within the source's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a function with a parameter used in its body, a
@@ -1918,6 +1933,9 @@ impl TypeTable
     /// - panics: none.
     /// - executable: none — as [`of_unit`](Self::of_unit), which types through
     ///   this.
+    ///
+    /// # Cost
+    /// - allocation: the table, growth within the source's nodes
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`of_unit`](Self::of_unit) and
@@ -4100,6 +4118,10 @@ impl TypeTable
     /// - executable: none — the families are read off the type's core graph,
     ///   which only a second walk of that graph could restate.
     ///
+    /// # Cost
+    /// - allocation: the referent declarations, growth within the type's
+    ///   families
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a recursion's staged parameter answers the family its
     ///   stage refines, a function's use every family its type names, and a
@@ -4512,6 +4534,9 @@ impl TypeTable
     /// - fails: never; an absence names its reason.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the spelled types of the answer, growth within the types
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::at`], and nodes checked against the type
     ///   they synthesise, or one spelled alike, answer one type.
@@ -4581,6 +4606,9 @@ impl TypeTable
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Cost
+    /// - allocation: the written map, growth within its arguments
     fn applied(
         &self,
         by: &CrossedBy,
@@ -4655,6 +4683,9 @@ impl TypeTable
     /// - provides: the declaration half of a face's answer.
     /// - fails: never; an absence names its reason.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the spelled type or the refusal, growth within the type
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a signature, its definition and a synthesised
@@ -5286,6 +5317,9 @@ impl TypeTable
     /// - panics: none.
     /// - executable: none — as [`Self::read_back`], whose witnesses read open
     ///   types through it.
+    ///
+    /// # Cost
+    /// - allocation: the spelled binders, growth within the context
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::read_back`]; a type under a model
@@ -6156,6 +6190,9 @@ impl TypeTable
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the reprinted value, growth within the written value
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the census reprints every run value and normal form
     ///   the corpus states; a value whose spelling lowers to another prints
@@ -6689,6 +6726,10 @@ fn matched(
 /// - reason: the `loop` below takes one step per turn, not recursion.
 /// - measure: the static normal form's distance: each step reduces a δ- or
 ///   β-redex of a code the typed run formed, as the checker's weak head does.
+///
+/// # Cost
+/// - allocation: each element's target and its new type, growth within the
+///   arena
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a pattern on a scrutinee at a static application of a

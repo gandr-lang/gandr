@@ -98,6 +98,9 @@ pub enum Scheduling<'pool>
 ///   of a module over `core`, and the call holds no judgement to check them
 ///   against.
 ///
+/// # Cost
+/// - allocation: the independent writers, growth within the typed binds
+///
 /// # Adequacy
 /// - hypothesis: L3 — over the tree sum, the recursive calls are named and the
 ///   call that prints is not. A writer that captures a capability's binder
@@ -214,6 +217,9 @@ impl Level
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the unlaid levels, growth within the typings
 fn unlaid_levels(
     core: &CoreArena,
     typings: &[Typing],

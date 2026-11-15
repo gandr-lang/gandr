@@ -1555,6 +1555,9 @@ impl<'text> Submission<'text>
 /// - fails: the declining absences the ensures clause names.
 /// - panics: none.
 ///
+/// # Cost
+/// - allocation: the evaluation's values, growth within the run
+///
 /// # Adequacy
 /// - hypothesis: L3 — exact integer and function-call results plus owed and
 ///   refused declarations. The result category is executable independently of
@@ -2600,6 +2603,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Errors
     /// As above.
     ///
+    /// # Cost
+    /// - allocation: the revision's judgement, growth within the revision
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — finite corpus agreement with the batch pipeline;
     ///   accepted, refused and edited revisions; exact synthesis, import,
@@ -2787,6 +2793,10 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Errors
     /// As above. A persistence failure with a retained resume is carried as
     /// [`Persistence::Failed`]; without a resume it is [`SessionFault::Store`].
+    ///
+    /// # Cost
+    /// - allocation: the revision's parse, lowering and judgement, growth
+    ///   within the revision
     ///
     /// # Adequacy
     /// - hypothesis: L3 — finite corpus agreement with the batch pipeline;
@@ -3134,6 +3144,10 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///
     /// # Errors
     /// As [`judge`](Self::judge).
+    ///
+    /// # Cost
+    /// - allocation: the revision's parse, lowering and judgement, growth
+    ///   within the revision
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`judge_unit_reading`](Self::judge_unit_reading).

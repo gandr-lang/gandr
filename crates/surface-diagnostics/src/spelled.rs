@@ -212,6 +212,9 @@ impl Failures
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the failures, each node named by its key, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused body's failure is read back under its
     ///   position.
@@ -246,9 +249,11 @@ impl Failures
         constant: ConstantIndex,
     ) -> Maybe<&FailureOf<Keyed>, kept::Absent>
     {
-        self.0
-            .get(&constant)
-            .map_or(Maybe::Absent(kept::Absent::Unrefused), Maybe::Present)
+        let Some(failure) = self.0.get(&constant)
+        else {
+            return Maybe::Absent(kept::Absent::Unrefused);
+        };
+        Maybe::Present(failure)
     }
 }
 
@@ -342,6 +347,9 @@ impl TypeSpellings
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the spelled types, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a value mismatch spells its expected and found types
     ///   apart; a failure spells the types its rules were checked against; a
@@ -401,6 +409,9 @@ impl TypeSpellings
     /// - panics: none.
     /// - executable: none — the clause names [`Self::of`]'s spelling of each
     ///   node; the witness compares the joined spellings with a fresh one's.
+    ///
+    /// # Cost
+    /// - allocation: the spelled types, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a document judged after a closure judged once spells
@@ -915,9 +926,11 @@ impl Spellings
         node: TypeNodeOf<Keyed>,
     ) -> Maybe<&Presentation, spelling::Absent>
     {
-        self.types
-            .get(&node)
-            .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
+        let Some(presentation) = self.types.get(&node)
+        else {
+            return Maybe::Absent(spelling::Absent::Unspelled);
+        };
+        Maybe::Present(presentation)
     }
 
     /// The printed side `node` of a loop refusal: on one line where it fits a
@@ -931,9 +944,11 @@ impl Spellings
         node: NodeKey,
     ) -> Maybe<&Presentation, spelling::Absent>
     {
-        self.loops
-            .get(&node)
-            .map_or(Maybe::Absent(spelling::Absent::Unspelled), Maybe::Present)
+        let Some(side) = self.loops.get(&node)
+        else {
+            return Maybe::Absent(spelling::Absent::Unspelled);
+        };
+        Maybe::Present(side)
     }
 }
 
@@ -1320,6 +1335,9 @@ pub fn written_blocks<'module>(
 ///
 /// # Specification
 /// trivial.
+///
+/// # Cost
+/// - allocation: the model implicits of each function, diagnostic
 #[inline]
 #[must_use]
 pub fn model_slots<'module>(
@@ -1575,6 +1593,9 @@ impl Families
     ///   a constructor value with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Cost
+    /// - allocation: the constructor names, diagnostic
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a refusal whose type mentions a constructor value

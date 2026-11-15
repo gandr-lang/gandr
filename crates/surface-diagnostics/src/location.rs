@@ -124,6 +124,9 @@ impl Located
     /// - fails: never; an unrecorded node leaves its part absent.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the omitted call and the frames, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a refused declaration's report marks the loci, the
     ///   contexts and the binder names that a report through the origin table
@@ -284,6 +287,9 @@ impl Locations
     /// - fails: never.
     /// - panics: none.
     ///
+    /// # Cost
+    /// - allocation: the located refusals, diagnostic
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a document judged after a closure judged once locates
     ///   as on a fresh judgement of the closure.
@@ -329,9 +335,11 @@ impl Locations
         constant: ConstantIndex,
     ) -> Maybe<&Located, locating::Absent>
     {
-        self.0
-            .get(&constant)
-            .map_or(Maybe::Absent(locating::Absent::Unrefused), Maybe::Present)
+        let Some(record) = self.0.get(&constant)
+        else {
+            return Maybe::Absent(locating::Absent::Unrefused);
+        };
+        Maybe::Present(record)
     }
 }
 
@@ -342,6 +350,9 @@ impl Locations
 /// - ensures: as [`Locations::of`], of the declarations among `declarations`.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Cost
+/// - allocation: the located refusals, diagnostic
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Located::of`].
