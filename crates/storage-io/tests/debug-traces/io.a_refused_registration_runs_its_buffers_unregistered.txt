@@ -1,0 +1,85 @@
+test: io::a_refused_registration_runs_its_buffers_unregistered
+package: gandr-storage-io
+command: mise run debug:test gandr-storage-io io::a_refused_registration_runs_its_buffers_unregistered --break Pinned>::reserve
+
+(lldb) target create "target/debug-trace/debug/build/gandr-storage-io/88982dd09497440f/out/tests-88982dd09497440f"
+Current executable set to 'target/debug-trace/debug/build/gandr-storage-io/88982dd09497440f/out/tests-88982dd09497440f' (x86_64).
+(lldb) settings set -- target.run-args  "io::a_refused_registration_runs_its_buffers_unregistered" "--exact" "--nocapture" "--test-threads=1"
+(lldb) command source .config/debug/lldbinit
+Executing commands in '.config/debug/lldbinit'.
+(lldb) # Rust formatters for this checkout (#3760): rustc's, from the pinned
+(lldb) # toolchain, corrected so a sum-type enum prints its true variant
+(lldb) # (`rust_formatters.py`). Every lldb session on a gandr binary sources this.
+(lldb) command script import -c rust_formatters.py
+(lldb) settings set target.max-children-count 16
+(lldb) breakpoint set --func-regex Pinned>::reserve
+Breakpoint 1: 13 locations.
+(lldb) breakpoint set --name rust_panic
+Breakpoint 2: where = tests-88982dd09497440f`__rustc::rust_panic + 8 at panicking.rs:883:16, address = 0x00000000000ee9a8
+(lldb) run
+
+running 1 test
+test io::a_refused_registration_runs_its_buffers_unregistered ... warning: this version of LLDB has no plugin for the language "rust". Inspection of frame variables will be limited
+Process 716299 launched: 'target/debug-trace/debug/build/gandr-storage-io/88982dd09497440f/out/tests-88982dd09497440f' (x86_64)
+Process 716299 stopped
+* thread #2, name = 'io::a_refused_r', stop reason = breakpoint 1.13
+       frame #0: 0x000055555562c469 tests-88982dd09497440f`<gandr_storage_io::io::Pinned>::reserve(count={0:1}, each={0:4096}) at io.rs:112:34
+   109 	        each: Self,
+   110 	    ) -> (Count, Self)
+   111 	    {
+-> 112 	        let limit = Self(*LOCKED.get_or_init(|| {
+    	                                 ^
+   113 	            sys::locked().ok().flatten().map_or(u64::MAX, |bytes| {
+   114 	                u64::try_from(usize::from(bytes)).unwrap_or(u64::MAX)
+   115 	            })
+(lldb) bt 24
+* thread #2, name = 'io::a_refused_r', stop reason = breakpoint 1.13
+   * frame #0: 0x000055555562c469 tests-88982dd09497440f`<gandr_storage_io::io::Pinned>::reserve(count={0:1}, each={0:4096}) at io.rs:112:34
+     frame #1: 0x00005555555d98ea tests-88982dd09497440f`<gandr_storage_io::io::Io<alloc::alloc::Global>>::register(self={engine:Ring({ring:{params:{sq_entries:8, cq_entries:16, flags:0, sq_thread_cpu:0, sq_thread_idle:0, features:262143, wq_fd:0, resv:(…), sq_off:{…}, cq_off:{…}}, queues:{start:{…}, length:{…}}, completions:None, entries:{start:{…}, length:{…}}, pushed:{0:0}, unsubmitted:{0:0}, table:{0:0}, descriptor:{fd:{…}}}, flight:size=0, files:size=0, pinned:{0:0}}), depth:8, staged:size=0, flushed:0, unread:size=0, next:0, faults:None}, count={0:1}, length={0:4096}, allocator={}) at io.rs:1045:35
+     frame #2: 0x00005555555e6200 tests-88982dd09497440f`tests::io::a_refused_registration_runs_its_buffers_unregistered at io.rs:446:14
+     frame #3: 0x00005555555dfb07 tests-88982dd09497440f`tests::io::a_refused_registration_runs_its_buffers_unregistered::{closure#0}((null)={}) at io.rs:440:58
+     frame #4: 0x00005555555b8a36 tests-88982dd09497440f`<tests::io::a_refused_registration_runs_its_buffers_unregistered::{closure#0} as core::ops::function::FnOnce<()>>::call_once((null)={}, (null)=<unavailable>) at function.rs:250:5
+     frame #5: 0x00005555555ea73b tests-88982dd09497440f`<fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once at function.rs:250:5 [inlined]
+     frame #6: 0x00005555555ea739 tests-88982dd09497440f`test::__rust_begin_short_backtrace::<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> at lib.rs:701:18
+     frame #7: 0x00005555555f7915 tests-88982dd09497440f`test::run_test_in_process::{closure#0} at lib.rs:724:74 [inlined]
+     frame #8: 0x00005555555f7910 tests-88982dd09497440f`<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #9: 0x00005555555f7910 tests-88982dd09497440f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panicking.rs:573:43 [inlined]
+     frame #10: 0x00005555555f78fb tests-88982dd09497440f`std::panicking::catch_unwind::<core::result::Result<(), alloc::string::String>, core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #11: 0x00005555555f78fb tests-88982dd09497440f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure#0}>, core::result::Result<(), alloc::string::String>> at panic.rs:359:14 [inlined]
+     frame #12: 0x00005555555f78fb tests-88982dd09497440f`test::run_test_in_process at lib.rs:724:27 [inlined]
+     frame #13: 0x00005555555f78e6 tests-88982dd09497440f`test::run_test::{closure#0} at lib.rs:645:43
+     frame #14: 0x00005555555f2304 tests-88982dd09497440f`test::run_test::{closure#1} at lib.rs:675:41 [inlined]
+     frame #15: 0x00005555555f2289 tests-88982dd09497440f`std::sys::backtrace::__rust_begin_short_backtrace::<test::run_test::{closure#1}, ()> at backtrace.rs:166:18
+     frame #16: 0x00005555555fa9a2 tests-88982dd09497440f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0} at lifecycle.rs:70:13 [inlined]
+     frame #17: 0x00005555555fa993 tests-88982dd09497440f`<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once at unwind_safe.rs:275:9 [inlined]
+     frame #18: 0x00005555555fa993 tests-88982dd09497440f`std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panicking.rs:573:43 [inlined]
+     frame #19: 0x00005555555fa983 tests-88982dd09497440f`std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>> at panicking.rs:541:19 [inlined]
+     frame #20: 0x00005555555fa983 tests-88982dd09497440f`std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()> at panic.rs:359:14 [inlined]
+     frame #21: 0x00005555555fa983 tests-88982dd09497440f`std::thread::lifecycle::spawn_unchecked::<test::run_test::{closure#1}, ()>::{closure#1} at lifecycle.rs:68:26 [inlined]
+     frame #22: 0x00005555555fa974 tests-88982dd09497440f`<std::thread::lifecycle::spawn_unchecked<test::run_test::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} at function.rs:250:5
+     frame #23: 0x00005555556656bf tests-88982dd09497440f`<alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once at boxed.rs:2314:9 [inlined]
+(lldb) frame variable --depth 3
+(gandr_storage_io::ring::Count) count = {0:1}
+(gandr_storage_io::io::Pinned) each = {0:4096}
+(lldb) up
+frame #1: 0x00005555555d98ea tests-88982dd09497440f`<gandr_storage_io::io::Io<alloc::alloc::Global>>::register(self={engine:Ring({ring:{params:{sq_entries:8, cq_entries:16, flags:0, sq_thread_cpu:0, sq_thread_idle:0, features:262143, wq_fd:0, resv:(…), sq_off:{…}, cq_off:{…}}, queues:{start:{…}, length:{…}}, completions:None, entries:{start:{…}, length:{…}}, pushed:{0:0}, unsubmitted:{0:0}, table:{0:0}, descriptor:{fd:{…}}}, flight:size=0, files:size=0, pinned:{0:0}}), depth:8, staged:size=0, flushed:0, unread:size=0, next:0, faults:None}, count={0:1}, length={0:4096}, allocator={}) at io.rs:1045:35
+   1042	            });
+   1043	        };
+   1044	        let each = Pinned(u64::from(u32::from(length)).next_multiple_of(PAGE));
+-> 1045	        let (fixed, mut pinned) = Pinned::reserve(count, each);
+    	                                  ^
+   1046	        let mut chosen = usize::try_from(u32::from(fixed)).unwrap_or(usize::MAX);
+   1047	        let mut vectors = Vec::new_in(allocator);
+   1048	        if vectors.try_reserve_exact(chosen).is_err() {
+(lldb) frame variable --depth 3
+(gandr_storage_io::io::Io<alloc::alloc::Global> *) self = 0x00007ffff79fe1f0 {engine:Ring({ring:{params:{sq_entries:8, cq_entries:16, flags:0, sq_thread_cpu:0, sq_thread_idle:0, features:262143, wq_fd:0, resv:(…), sq_off:{…}, cq_off:{…}}, queues:{start:{…}, length:{…}}, completions:None, entries:{start:{…}, length:{…}}, pushed:{0:0}, unsubmitted:{0:0}, table:{0:0}, descriptor:{fd:{…}}}, flight:size=0, files:size=0, pinned:{0:0}}), depth:8, staged:size=0, flushed:0, unread:size=0, next:0, faults:None}
+(gandr_storage_io::ring::Count) count = {0:1}
+(gandr_storage_io::ring::Moved) length = {0:4096}
+(alloc::alloc::Global) allocator = {}
+(gandr_storage_io::io::Refused<alloc::alloc::Global>) budget = {reason:Budget, buffer:None}
+(unsigned long) width = 1
+(alloc::vec::Vec<gandr_storage_io::buffer::Buffer<alloc::alloc::Global>, alloc::alloc::Global>) buffers = size=1 {
+  [0] = {bytes:size=4096, fixed:None}
+}
+(gandr_storage_io::io::Uring<alloc::alloc::Global> *) uring = 0x00007ffff79fe228 {ring:{params:{sq_entries:8, cq_entries:16, flags:0, sq_thread_cpu:0, sq_thread_idle:0, features:262143, wq_fd:0, resv:(0, 0, 0), sq_off:{head:0, tail:4, ring_mask:16, ring_entries:24, flags:36, dropped:32, array:320, resv1:0, user_addr:0}, cq_off:{head:8, tail:12, ring_mask:20, ring_entries:28, overflow:44, cqes:64, flags:40, resv1:0, user_addr:0}}, queues:{start:{0:{pointer:""}}, length:{0:352}}, completions:None, entries:{start:{0:{pointer:""}}, length:{0:512}}, pushed:{0:0}, unsubmitted:{0:0}, table:{0:0}, descriptor:{fd:{0:3}}}, flight:size=0, files:size=0, pinned:{0:0}}
+(gandr_storage_io::io::Pinned) each = {0:4096}

@@ -1,0 +1,7 @@
+import std.list (List) ;
+dat Circle : Type {
+  Base : Circle;
+}
+def twice : Path[.A = Circle](Base, Base) ;
+def twice = refl(Base) ;
+def none(xs : List()) -> -F Unit { pure *{} }
