@@ -1,0 +1,2 @@
+def far : Integer ;
+def far = away ;

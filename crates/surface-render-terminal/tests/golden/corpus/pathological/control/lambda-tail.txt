@@ -1,0 +1,131 @@
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:31:3
+   │
+30 │    def lambda_body() -> Two -> Two =
+   │    │                    ────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+31 │ │┏   fun (u) {
+32 │ │┃     u
+33 │ │┃   }
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │      its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_body` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:39:3
+   │
+37 │    def lambda_after_let() -> Two -> Two =
+   │    │                         ────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+38 │ │    let kept = pure Left
+   │ │    ─── checked against `-F (Two -> Two)`; while checking the body under this binding; binds kept : Two
+39 │ │┏   fun (u) {
+40 │ │┃     u
+41 │ │┃   }
+   │ │┃   ╿
+   │ └┃───│
+   │  ┗━━━checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │      its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_after_let` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:47:5
+   │
+45 │    def lambda_block_tail() -> Two -> Two =
+   │    │                          ────────── the type met, where an arrow `A → C` is required
+   │ ┌──┘
+   │ │
+46 │ │    {
+47 │ │┏     fun (u) {
+48 │ │┃       u
+49 │ │┃     }
+   │ │┗━━━━━┛ its type is not of the required shape: found `-F (Two -> Two)`
+50 │ │    }
+   │ └────┘ checked against `() -> (Two -> Two)`; while checking the body of this thunk
+   │
+   ├ note: `lambda_block_tail` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:56:15
+   │
+54 │     def lambda_left_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+   │     │                   ┬─────           ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                   │
+   │ ┌───┘                   checked against `Two -> -F (Two -> Two)`; while checking the body of this function; binds choice : Two
+   │ │
+55 │ │┌    match choice where
+56 │ ││      | Left => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━┛
+57 │ ││┃       return u
+58 │ ││┃     }
+   │ ││┗━━━━━┛ its type is not of the required shape: found `-F (Two -> Two)`
+59 │ ││      | Right => return fun (u) {
+60 │ ││        return u
+61 │ ││      }
+   │ ││      │
+   │ └│──────│
+   │  └──────checked against `Two -> (Two -> Two)`; while checking the body of this thunk
+   │         checked against `-F (Two -> Two)`; while checking the next premise of this
+   │
+   ├ note: `lambda_left_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:70:16
+   │
+65 │     def lambda_right_arm(choice : Two) -> +U ((u : Two) -> -F Two) =
+   │     │                    ┬─────           ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                    │
+   │ ┌───┘                    checked against `Two -> -F (Two -> Two)`; while checking the body of this function; binds choice : Two
+   │ │
+66 │ │┌    match choice where
+67 │ ││      | Left => return fun (u) {
+68 │ ││        return u
+69 │ ││      }
+70 │ ││      | Right => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━━┛
+71 │ ││┃       return u
+72 │ ││┃     }
+   │ ││┃     ╿
+   │ └│┃─────│
+   │  └┃─────checked against `Two -> (Two -> Two)`; while checking the body of this thunk
+   │   ┗━━━━━checked against `-F (Two -> Two)`; while finishing the type of this
+   │         its type is not of the required shape: found `-F (Two -> Two)`
+   │
+   ├ note: `lambda_right_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
+
+error[ShapeMismatch]: expected an arrow `A → C`
+   ╭▸ corpus/pathological/control/lambda-tail.gandr:79:15
+   │
+77 │     def lambda_refined_arm(n : Nat, x : natOr(n)) -> +U ((u : Nat) -> -F Nat) =
+   │     │                      ┬        ┬                ──────────────────────── the type met, where an arrow `A → C` is required
+   │     │                      │        │
+   │     │                      │        checked against `natOr(n) -> -F (Nat -> Nat)`; while checking the body of this function; binds x : natOr(n)
+   │ ┌───┘                      checked against `(n : Nat) -> natOr(n) -> -F (Nat -> Nat)`; while checking the body of this function; binds n : Nat
+   │ │
+78 │ │┌    match n where
+79 │ ││      | Zero => fun (u) {
+   │ ││┏━━━━━━━━━━━━━━━┛
+80 │ ││┃       return u
+81 │ ││┃     }
+   │ ││┗━━━━━┛ its type is not of the required shape: found `-F (Nat -> Nat)`
+82 │ ││      | Succ(_n) => return fun (u) {
+83 │ ││        return u
+84 │ ││      }
+   │ ││      │
+   │ └│──────│
+   │  └──────checked against `(n : Nat, natOr(n)) -> (Nat -> Nat)`; while checking the body of this thunk
+   │         checked against `-F (Nat -> Nat)`; while checking the next premise of this
+   │
+   ├ note: `lambda_refined_arm` is refused with ShapeMismatch, as its expectation states
+   ╰ help: write `thunk { … }` to make the lambda a thunk. Write `return (fun …)` to return the function value.
