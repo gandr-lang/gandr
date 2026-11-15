@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,9 +24,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_link(
             &mut self,
-            oldpath: *const ::core::ffi::c_char,
-            newpath: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
+            Text(oldpath): Text,
+            Text(newpath): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -48,7 +51,7 @@ pub mod repr
         pub unsafe fn prep_link_timeout(
             &mut self,
             ts: *const ::liburing_rs::__kernel_timespec,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -79,11 +82,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_linkat(
             &mut self,
-            olddfd: ::core::ffi::c_int,
-            oldpath: *const ::core::ffi::c_char,
-            newdfd: ::core::ffi::c_int,
-            newpath: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
+            Fd(olddfd): Fd,
+            Text(oldpath): Text,
+            Fd(newdfd): Fd,
+            Text(newpath): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

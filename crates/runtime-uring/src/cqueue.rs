@@ -4,6 +4,8 @@ use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
 
 use crate::IoUring;
+use crate::arg::Answer;
+use crate::arg::Count;
 use crate::cqe::CqesReady;
 use crate::cqe::CqesWait;
 use crate::cqe::kind::Cqe16;
@@ -68,14 +70,14 @@ where
     #[inline]
     pub fn wait(
         &mut self,
-        count: usize,
+        Count(count): Count<usize>,
     ) -> ::std::io::Result<CqesWait<'_, C>>
     {
         let ring = self.ring;
         let mut cqe_ptr = NonNull::<::liburing_rs::io_uring_cqe>::dangling();
 
         if count == 0 {
-            return Ok(CqesWait::new(ring, cqe_ptr, count));
+            return Ok(CqesWait::new(ring, cqe_ptr, Count(count)));
         }
 
         #[expect(
@@ -87,18 +89,20 @@ where
 
         // SAFETY: `ring` is the live ring that this queue borrows, and
         // `cqe_ptr` has room for the pointer that liburing writes.
-        unsafe {
+        Answer(unsafe {
             ::liburing_rs::io_uring_wait_cqe_nr(ring.as_ptr(), (&raw mut cqe_ptr).cast(), wait_nr)
-        }
+        })
         .sys_zero()?;
 
-        Ok(CqesWait::new(ring, cqe_ptr, count))
+        Ok(CqesWait::new(ring, cqe_ptr, Count(count)))
     }
 }
 
 #[cfg(test)]
 pub mod test
 {
+    use crate::arg::Count;
+    use crate::arg::UserData;
     use crate::cqueue::CompletionQueue;
     use crate::ring::IoUring;
 
@@ -152,7 +156,7 @@ pub mod test
                 }
 
                 let num = 1;
-                let num = sq.submit_and_wait(num).unwrap();
+                let Count(num) = sq.submit_and_wait(Count(num)).unwrap();
                 let cqes = cq.ready().collect::<Vec<_>>();
                 assert_eq!(cqes.len(), usize::try_from(num).unwrap());
             }
@@ -180,7 +184,7 @@ pub mod test
                 }
 
                 let num = 2;
-                let num = sq.submit_and_wait(num).unwrap();
+                let Count(num) = sq.submit_and_wait(Count(num)).unwrap();
                 let cqes = cq.ready().collect::<Vec<_>>();
                 assert_eq!(cqes.len(), usize::try_from(num).unwrap());
             }
@@ -200,7 +204,7 @@ pub mod test
                 let mut ring = IoUring::new().unwrap();
                 let mut cq = ring.cqueue();
 
-                let count = cq.wait(0).unwrap().count();
+                let count = cq.wait(Count(0)).unwrap().count();
                 assert_eq!(count, 0);
             }
 
@@ -221,8 +225,8 @@ pub mod test
                 }
 
                 let num = 1;
-                let num = sq.submit_and_wait(num).unwrap();
-                let count = cq.wait(1).unwrap().count();
+                let Count(num) = sq.submit_and_wait(Count(num)).unwrap();
+                let count = cq.wait(Count(1)).unwrap().count();
                 assert_eq!(count, usize::try_from(num).unwrap());
             }
 
@@ -249,8 +253,8 @@ pub mod test
                 }
 
                 let num = 2;
-                let num = sq.submit_and_wait(num).unwrap();
-                let count = cq.wait(2).unwrap().count();
+                let Count(num) = sq.submit_and_wait(Count(num)).unwrap();
+                let count = cq.wait(Count(2)).unwrap().count();
                 assert_eq!(count, usize::try_from(num).unwrap());
             }
 
@@ -277,14 +281,14 @@ pub mod test
                     // SAFETY: the data is a plain number, which the kernel
                     // gives back unread.
                     unsafe {
-                        sqe.set_data64(data);
+                        sqe.set_data64(UserData(data));
                     }
                 }
 
-                let num = sq.submit_and_wait(2).unwrap();
-                assert_eq!(num, 2);
+                let num = sq.submit_and_wait(Count(2)).unwrap();
+                assert_eq!(num, Count(2));
                 let data = cq
-                    .wait(2)
+                    .wait(Count(2))
                     .unwrap()
                     .map(|cqe| cqe.cqe().user_data)
                     .collect::<Vec<_>>();

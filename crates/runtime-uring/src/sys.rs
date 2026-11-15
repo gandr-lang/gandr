@@ -7,6 +7,8 @@
 // and the target's headers variable names a directory. No module includes
 // them yet: #7638 includes them as the kernel's types when liburing leaves.
 
+use crate::arg::Answer;
+
 /// The answer of a liburing call, read as a result.
 pub trait SysResult: self::private::SysResult
 {
@@ -43,10 +45,10 @@ pub trait SysResult: self::private::SysResult
     ///   its error number.
     /// - declaration-only: the implementation for the kernel's answer carries
     ///   the witnesses.
-    fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>;
+    fn sys_uint(&self) -> ::std::io::Result<Answer<::core::ffi::c_uint>>;
 }
 
-impl SysResult for ::core::ffi::c_int
+impl SysResult for Answer<::core::ffi::c_int>
 {
     /// Zero as success, and any other answer as its error number.
     ///
@@ -59,8 +61,8 @@ impl SysResult for ::core::ffi::c_int
     /// trivial.
     fn sys_zero(&self) -> ::std::io::Result<()>
     {
-        if *self != 0i32 {
-            return Err(::std::io::Error::from_raw_os_error(self.abs()));
+        if self.0 != 0i32 {
+            return Err(::std::io::Error::from_raw_os_error(self.0.abs()));
         }
         Ok(())
     }
@@ -74,14 +76,14 @@ impl SysResult for ::core::ffi::c_int
     /// # Specification
     ///
     /// trivial.
-    fn sys_uint(&self) -> ::std::io::Result<::core::ffi::c_uint>
+    fn sys_uint(&self) -> ::std::io::Result<Answer<::core::ffi::c_uint>>
     {
-        if self.is_negative() {
-            return Err(::std::io::Error::from_raw_os_error(self.abs()));
+        if self.0.is_negative() {
+            return Err(::std::io::Error::from_raw_os_error(self.0.abs()));
         }
         #[expect(clippy::as_conversions, reason = "checked non-negative")]
         #[expect(clippy::cast_sign_loss, reason = "checked non-negative")]
-        Ok(*self as ::core::ffi::c_uint)
+        Ok(Answer(self.0 as ::core::ffi::c_uint))
     }
 }
 
@@ -92,7 +94,7 @@ mod private
     pub trait SysResult
     {
     }
-    impl self::SysResult for ::core::ffi::c_int
+    impl self::SysResult for crate::arg::Answer<::core::ffi::c_int>
     {
     }
 }
@@ -100,6 +102,7 @@ mod private
 #[cfg(test)]
 pub mod test
 {
+    use crate::arg::Answer;
     use crate::sys::SysResult as _;
 
     mod sys_result
@@ -113,7 +116,7 @@ pub mod test
             #[test]
             fn ok()
             {
-                let code = 0i32;
+                let code = Answer(0i32);
                 code.sys_zero().unwrap();
             }
 
@@ -123,7 +126,7 @@ pub mod test
             )]
             fn err()
             {
-                let code = -::rustix::io::Errno::INVAL.raw_os_error();
+                let code = Answer(-::rustix::io::Errno::INVAL.raw_os_error());
                 code.sys_zero().unwrap();
             }
         }
@@ -135,8 +138,8 @@ pub mod test
             #[test]
             fn ok()
             {
-                let code = 4096i32;
-                assert_eq!(code.sys_uint().unwrap(), 4096u32);
+                let code = Answer(4096i32);
+                assert_eq!(code.sys_uint().unwrap(), Answer(4096u32));
             }
 
             #[test]
@@ -145,7 +148,7 @@ pub mod test
             )]
             fn err()
             {
-                let code = -::rustix::io::Errno::INVAL.raw_os_error();
+                let code = Answer(-::rustix::io::Errno::INVAL.raw_os_error());
                 code.sys_uint().unwrap();
             }
         }

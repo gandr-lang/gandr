@@ -4,6 +4,8 @@ use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
 
 use crate::IoUring;
+use crate::arg::Answer;
+use crate::arg::Count;
 use crate::sqe::Sqes;
 use crate::sys::SysResult as _;
 
@@ -69,7 +71,7 @@ where
     #[inline]
     pub fn get_sqes(
         &mut self,
-        len: u32,
+        Count(len): Count<u32>,
     ) -> Option<Sqes<'_, S>>
     {
         let ring = self.ring.as_ptr();
@@ -78,7 +80,7 @@ where
         if rem < len {
             return None;
         }
-        Some(Sqes::new(self, len))
+        Some(Sqes::new(self, Count(len)))
     }
 
     /// Submits the prepared entries, and gives how many the kernel takes.
@@ -98,12 +100,12 @@ where
     /// - witness: `sqe::bind::test::bind`
     /// - witness: `sqe::listen::test::listen`
     #[inline]
-    pub fn submit(&mut self) -> ::std::io::Result<u32>
+    pub fn submit(&mut self) -> ::std::io::Result<Count<u32>>
     {
         let ring = self.ring.as_ptr();
         // SAFETY: `ring` is the live ring that this queue borrows.
         let code = unsafe { ::liburing_rs::io_uring_submit(ring) };
-        code.sys_uint()
+        Answer(code).sys_uint().map(|Answer(n)| Count(n))
     }
 
     /// Submits the prepared entries and waits for `wait_nr` completions, and
@@ -126,13 +128,13 @@ where
     #[inline]
     pub fn submit_and_wait(
         &mut self,
-        wait_nr: u32,
-    ) -> ::std::io::Result<u32>
+        Count(wait_nr): Count<u32>,
+    ) -> ::std::io::Result<Count<u32>>
     {
         let ring = self.ring.as_ptr();
         // SAFETY: `ring` is the live ring that this queue borrows.
         let code = unsafe { ::liburing_rs::io_uring_submit_and_wait(ring, wait_nr) };
-        code.sys_uint()
+        Answer(code).sys_uint().map(|Answer(n)| Count(n))
     }
 }
 
@@ -157,6 +159,7 @@ impl SubmissionQueue<'_, crate::sqe::kind::Sqe128>
 pub mod test
 {
     use crate::IoUringBuilder;
+    use crate::arg::Count;
     use crate::ring::IoUring;
     use crate::squeue::SubmissionQueue;
 
@@ -183,7 +186,7 @@ pub mod test
                 State: crate::ring::io_uring_builder::IsComplete,
                 State::Entries: crate::ring::io_uring_builder::IsUnset,
             {
-                let mut ring = builder.entries(1).build().unwrap();
+                let mut ring = builder.entries(Count(1)).build().unwrap();
                 let mut squeue = ring.squeue();
                 squeue.get_sqe().unwrap();
                 squeue.get_sqe().unwrap();
@@ -202,7 +205,7 @@ pub mod test
                 State: crate::ring::io_uring_builder::IsComplete,
                 State::Entries: crate::ring::io_uring_builder::IsUnset,
             {
-                let mut ring = builder.entries(1).build().unwrap();
+                let mut ring = builder.entries(Count(1)).build().unwrap();
                 let mut squeue = ring.squeue();
                 squeue.get_sqe().unwrap();
             }
@@ -226,10 +229,10 @@ pub mod test
                 State: crate::ring::io_uring_builder::IsComplete,
                 State::Entries: crate::ring::io_uring_builder::IsUnset,
             {
-                let mut ring = builder.entries(1).build().unwrap();
+                let mut ring = builder.entries(Count(1)).build().unwrap();
                 let mut squeue = ring.squeue();
                 let len = 2u32;
-                squeue.get_sqes(len).unwrap();
+                squeue.get_sqes(Count(len)).unwrap();
             }
 
             /// A check of the submission queue of a ring that `builder` sets
@@ -245,10 +248,10 @@ pub mod test
                 State: crate::ring::io_uring_builder::IsComplete,
                 State::Entries: crate::ring::io_uring_builder::IsUnset,
             {
-                let mut ring = builder.entries(1).build().unwrap();
+                let mut ring = builder.entries(Count(1)).build().unwrap();
                 let mut squeue = ring.squeue();
                 let len = 1u32;
-                let num = squeue.get_sqes(len).unwrap().count();
+                let num = squeue.get_sqes(Count(len)).unwrap().count();
                 assert_eq!(num, usize::try_from(len).unwrap());
             }
 
@@ -265,10 +268,10 @@ pub mod test
                 State: crate::ring::io_uring_builder::IsComplete,
                 State::Entries: crate::ring::io_uring_builder::IsUnset,
             {
-                let mut ring = builder.entries(1024).build().unwrap();
+                let mut ring = builder.entries(Count(1024)).build().unwrap();
                 let mut squeue = ring.squeue();
                 let len = 256u32;
-                let num = squeue.get_sqes(len).unwrap().count();
+                let num = squeue.get_sqes(Count(len)).unwrap().count();
                 assert_eq!(num, usize::try_from(len).unwrap());
             }
         }
@@ -372,8 +375,8 @@ pub mod test
                 sqe.prep_nop();
             }
 
-            let num = sq.submit_and_wait(1).unwrap();
-            assert_eq!(num, 1);
+            let num = sq.submit_and_wait(Count(1)).unwrap();
+            assert_eq!(num, Count(1));
         }
     }
 

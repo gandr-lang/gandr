@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Code;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,8 +24,8 @@ pub mod repr
         pub unsafe fn prep_madvise(
             &mut self,
             addr: *mut ::core::ffi::c_void,
-            length: u32,
-            advice: ::core::ffi::c_int,
+            Len(length): Len<u32>,
+            Code(advice): Code<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -48,8 +50,8 @@ pub mod repr
         pub unsafe fn prep_madvise64(
             &mut self,
             addr: *mut ::core::ffi::c_void,
-            length: ::liburing_rs::off_t,
-            advice: ::core::ffi::c_int,
+            Len(length): Len<::liburing_rs::off_t>,
+            Code(advice): Code<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,9 +24,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_connect(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             addr: *const ::liburing_rs::sockaddr,
-            addrlen: ::liburing_rs::socklen_t,
+            Len(addrlen): Len<::liburing_rs::socklen_t>,
         )
         {
             let sqe = &raw mut *self.sqe();

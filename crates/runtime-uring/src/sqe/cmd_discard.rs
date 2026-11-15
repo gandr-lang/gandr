@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,9 +24,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_cmd_discard(
             &mut self,
-            fd: ::core::ffi::c_int,
-            offset: u64,
-            nbytes: u64,
+            Fd(fd): Fd,
+            Offset(offset): Offset<u64>,
+            Len(nbytes): Len<u64>,
         )
         {
             let sqe = &raw mut *self.sqe();

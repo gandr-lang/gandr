@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fds;
+    use crate::arg::Flags;
+    use crate::arg::Index;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,8 +24,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_pipe(
             &mut self,
-            fds: *mut ::core::ffi::c_int,
-            pipe_flags: ::core::ffi::c_int,
+            Fds(fds): Fds<*mut ::core::ffi::c_int>,
+            Flags(pipe_flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -46,9 +49,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_pipe_direct(
             &mut self,
-            fds: *mut ::core::ffi::c_int,
-            pipe_flags: ::core::ffi::c_int,
-            file_index: ::core::ffi::c_uint,
+            Fds(fds): Fds<*mut ::core::ffi::c_int>,
+            Flags(pipe_flags): Flags<::core::ffi::c_int>,
+            Index(file_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

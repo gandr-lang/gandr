@@ -3,6 +3,10 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -20,10 +24,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_sync_file_range(
             &mut self,
-            fd: ::core::ffi::c_int,
-            len: ::core::ffi::c_uint,
-            offset: u64,
-            flags: ::core::ffi::c_int,
+            Fd(fd): Fd,
+            Len(len): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

@@ -3,6 +3,11 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Bytes;
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +28,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_fgetxattr(
             &mut self,
-            fd: ::core::ffi::c_int,
-            name: *const ::core::ffi::c_char,
-            value: *mut ::core::ffi::c_char,
-            len: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Text(name): Text,
+            Bytes(value): Bytes<*mut ::core::ffi::c_char>,
+            Len(len): Len<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -52,11 +57,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_fsetxattr(
             &mut self,
-            fd: ::core::ffi::c_int,
-            name: *const ::core::ffi::c_char,
-            value: *mut ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            len: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Text(name): Text,
+            Bytes(value): Bytes<*mut ::core::ffi::c_char>,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Len(len): Len<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -81,10 +86,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_getxattr(
             &mut self,
-            name: *const ::core::ffi::c_char,
-            value: *mut ::core::ffi::c_char,
-            path: *const ::core::ffi::c_char,
-            len: ::core::ffi::c_uint,
+            Text(name): Text,
+            Bytes(value): Bytes<*mut ::core::ffi::c_char>,
+            Text(path): Text,
+            Len(len): Len<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -109,11 +114,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_setxattr(
             &mut self,
-            name: *const ::core::ffi::c_char,
-            value: *const ::core::ffi::c_char,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            len: ::core::ffi::c_uint,
+            Text(name): Text,
+            Bytes(value): Bytes<*const ::core::ffi::c_char>,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Len(len): Len<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

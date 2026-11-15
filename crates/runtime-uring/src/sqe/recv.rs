@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +26,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_recv(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *mut ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -52,10 +55,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_recv_multishot(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *mut ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -81,9 +84,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_recvmsg(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             msg: *mut ::liburing_rs::msghdr,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -109,9 +112,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_recvmsg_multishot(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             msg: *mut ::liburing_rs::msghdr,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

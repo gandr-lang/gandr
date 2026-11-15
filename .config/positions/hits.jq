@@ -1,8 +1,8 @@
 # The structs that the positions ledger rows (#7323): each struct whose one
 # field is an unsigned integer or a byte array, in a source of a kernel or a
-# storage crate, outside its tests. Such a struct is where a place, a count or
-# a digest takes a name, so a positional identity cannot enter a key, a name
-# or a byte form without one.
+# storage crate or of the ring crate, outside its tests. Such a struct is
+# where a place, a count or a digest takes a name, so a positional identity
+# cannot enter a key, a name or a byte form without one.
 #
 # The input is the lines `git grep -n` prints for three patterns over those
 # sources, test files left out: such a struct, a `#[cfg(test)]` attribute

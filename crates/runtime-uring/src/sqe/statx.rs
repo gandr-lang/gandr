@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +26,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_statx(
             &mut self,
-            dfd: ::core::ffi::c_int,
-            path: *const ::core::ffi::c_char,
-            flags: ::core::ffi::c_int,
-            mask: ::core::ffi::c_uint,
+            Fd(dfd): Fd,
+            Text(path): Text,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Flags(mask): Flags<::core::ffi::c_uint>,
             statxbuf: *mut ::liburing_rs::statx,
         )
         {

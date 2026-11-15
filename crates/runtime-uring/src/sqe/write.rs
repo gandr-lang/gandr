@@ -3,6 +3,12 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Index;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +29,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_write(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             buf: *const ::core::ffi::c_void,
-            nbytes: ::core::ffi::c_uint,
-            offset: u64,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -52,11 +58,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_write_fixed(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             buf: *const ::core::ffi::c_void,
-            nbytes: ::core::ffi::c_uint,
-            offset: u64,
-            buf_index: ::core::ffi::c_int,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Index(buf_index): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -82,10 +88,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_writev(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -111,11 +117,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_writev2(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
-            flags: ::core::ffi::c_int,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -141,12 +147,12 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_writev_fixed(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
-            flags: ::core::ffi::c_int,
-            buf_index: ::core::ffi::c_int,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Index(buf_index): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

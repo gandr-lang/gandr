@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::UserData;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,7 +25,7 @@ pub mod repr
         pub unsafe fn prep_cancel(
             &mut self,
             user_data: *const ::core::ffi::c_void,
-            flags: ::core::ffi::c_int,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -51,8 +54,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_cancel64(
             &mut self,
-            user_data: u64,
-            flags: ::core::ffi::c_int,
+            UserData(user_data): UserData,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -75,8 +78,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_cancel_fd(
             &mut self,
-            fd: ::core::ffi::c_int,
-            flags: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

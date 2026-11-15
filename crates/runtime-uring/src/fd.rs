@@ -4,6 +4,8 @@
 use ::core::ops::Deref;
 use ::std::os::fd::AsRawFd;
 
+use crate::arg::Holds;
+
 /// A file that an entry names. The kernel reads a slot of the ring's file
 /// table when the entry carries the fixed-file flag, and a descriptor of the
 /// process otherwise.
@@ -83,9 +85,9 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
-    pub const fn is_desc(&self) -> bool
+    pub const fn is_desc(&self) -> Holds
     {
-        matches!(self, &Self::Desc(..))
+        Holds(matches!(self, &Self::Desc(..)))
     }
 
     /// Whether this is a slot of the ring's file table.
@@ -93,8 +95,8 @@ impl<T> SlotDesc<T>
     /// # Specification
     ///
     /// trivial.
-    pub const fn is_slot(&self) -> bool
+    pub const fn is_slot(&self) -> Holds
     {
-        matches!(self, &Self::Slot(..))
+        Holds(matches!(self, &Self::Slot(..)))
     }
 }

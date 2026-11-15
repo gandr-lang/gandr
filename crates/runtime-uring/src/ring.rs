@@ -1,6 +1,14 @@
 //! The ring: its setup through a typed builder, with each setup flag at most
 //! once, and the borrows of its two queues and its registrar.
 
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        single_field_struct_needs_transparent_repr,
+        reason = "the builder's macro makes a struct for each argument of `make`, and the source has no struct to mark; #7729 owes the lint's reading of a macro's structs"
+    )
+)]
+
 use ::bon::bon;
 use ::core::marker::PhantomData;
 use ::core::ptr::NonNull;
@@ -11,6 +19,12 @@ use self::io_uring_builder::IsUnset;
 use crate::CompletionQueue;
 use crate::Registrar;
 use crate::SubmissionQueue;
+use crate::arg::Answer;
+use crate::arg::Bytes;
+use crate::arg::Count;
+use crate::arg::Cpu;
+use crate::arg::Millis;
+use crate::arg::Switch;
 use crate::ring::io_uring_builder::SetFlagSetupClamp;
 use crate::ring::io_uring_builder::SetFlagSetupCoopTaskrun;
 use crate::ring::io_uring_builder::SetFlagSetupCqe32;
@@ -142,85 +156,85 @@ where
     /// - witness: `ring::test::new::with_setup_no_mmap`
     #[builder(builder_type = IoUringBuilder, finish_fn = build, state_mod(vis = "pub(crate)"))]
     pub fn make(
-        #[builder(default = 4096)] entries: u32,
-        #[builder(default, setters(vis = ""))] flag_setup_iopoll: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_hybrid_iopoll: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_sqpoll: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_sq_aff: bool,
-        setup_cqsize: Option<u32>,
-        #[builder(default, setters(vis = ""))] flag_setup_clamp: bool,
+        #[builder(default = Count(4096))] entries: Count<u32>,
+        #[builder(default, setters(vis = ""))] flag_setup_iopoll: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_hybrid_iopoll: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_sqpoll: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_sq_aff: Switch,
+        setup_cqsize: Option<Count<u32>>,
+        #[builder(default, setters(vis = ""))] flag_setup_clamp: Switch,
         setup_attach_wq: Option<BorrowedFd<'fd>>,
-        setup_mem: Option<&'fd mut [u8]>,
-        #[builder(default, setters(vis = ""))] flag_setup_r_disabled: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_submit_all: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_coop_taskrun: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_taskrun_flag: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_sqe128: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_cqe32: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_single_issuer: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_defer_taskrun: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_no_mmap: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_registered_fd_only: bool,
-        #[builder(default, setters(vis = ""))] flag_setup_no_sqarray: bool,
-        #[builder(default)] sq_thread_cpu: u32,
-        #[builder(default)] sq_thread_idle: u32,
-        #[builder(default)] dontfork: bool,
+        setup_mem: Option<Bytes<&'fd mut [u8]>>,
+        #[builder(default, setters(vis = ""))] flag_setup_r_disabled: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_submit_all: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_coop_taskrun: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_taskrun_flag: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_sqe128: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_cqe32: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_single_issuer: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_defer_taskrun: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_no_mmap: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_registered_fd_only: Switch,
+        #[builder(default, setters(vis = ""))] flag_setup_no_sqarray: Switch,
+        #[builder(default)] sq_thread_cpu: Cpu,
+        #[builder(default)] sq_thread_idle: Millis,
+        #[builder(default)] dontfork: Switch,
     ) -> ::std::io::Result<Self>
     {
         let mut ring = ::liburing_rs::io_uring::default();
 
         let mut params = ::liburing_rs::io_uring_params::default();
 
-        if flag_setup_iopoll {
+        if flag_setup_iopoll.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_IOPOLL;
         }
-        if flag_setup_hybrid_iopoll {
+        if flag_setup_hybrid_iopoll.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_HYBRID_IOPOLL;
         }
-        if flag_setup_sqpoll {
+        if flag_setup_sqpoll.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_SQPOLL;
         }
-        if flag_setup_sq_aff {
+        if flag_setup_sq_aff.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_SQ_AFF;
         }
-        if flag_setup_clamp {
+        if flag_setup_clamp.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_CLAMP;
         }
-        if flag_setup_r_disabled {
+        if flag_setup_r_disabled.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_R_DISABLED;
         }
-        if flag_setup_submit_all {
+        if flag_setup_submit_all.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_SUBMIT_ALL;
         }
-        if flag_setup_coop_taskrun {
+        if flag_setup_coop_taskrun.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_COOP_TASKRUN;
         }
-        if flag_setup_taskrun_flag {
+        if flag_setup_taskrun_flag.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_TASKRUN_FLAG;
         }
-        if flag_setup_sqe128 {
+        if flag_setup_sqe128.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_SQE128;
         }
-        if flag_setup_cqe32 {
+        if flag_setup_cqe32.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_CQE32;
         }
-        if flag_setup_single_issuer {
+        if flag_setup_single_issuer.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_SINGLE_ISSUER;
         }
-        if flag_setup_defer_taskrun {
+        if flag_setup_defer_taskrun.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_DEFER_TASKRUN;
         }
-        if flag_setup_no_mmap {
+        if flag_setup_no_mmap.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_NO_MMAP;
         }
-        if flag_setup_registered_fd_only {
+        if flag_setup_registered_fd_only.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_REGISTERED_FD_ONLY;
         }
-        if flag_setup_no_sqarray {
+        if flag_setup_no_sqarray.0 {
             params.flags |= ::liburing_rs::IORING_SETUP_NO_SQARRAY;
         }
 
-        if let Some(cq_entries) = setup_cqsize {
+        if let Some(Count(cq_entries)) = setup_cqsize {
             params.cq_entries = cq_entries;
             params.flags |= ::liburing_rs::IORING_SETUP_CQSIZE;
         }
@@ -229,36 +243,36 @@ where
             params.flags |= ::liburing_rs::IORING_SETUP_ATTACH_WQ;
         }
 
-        params.sq_thread_cpu = sq_thread_cpu;
-        params.sq_thread_idle = sq_thread_idle;
+        params.sq_thread_cpu = sq_thread_cpu.0;
+        params.sq_thread_idle = sq_thread_idle.0;
 
-        if let Some(mem) = setup_mem {
+        if let Some(Bytes(mem)) = setup_mem {
             // SAFETY: `ring` and `params` are this frame's own, `mem` stays
             // borrowed for `'fd`, which the ring does not outlive, and
             // liburing fills `ring` when the answer is not negative.
-            unsafe {
+            Answer(unsafe {
                 ::liburing_rs::io_uring_queue_init_mem(
-                    entries,
+                    entries.0,
                     &raw mut ring,
                     &raw mut params,
                     mem.as_mut_ptr().cast(),
                     mem.len(),
                 )
-            }
+            })
             .sys_uint()?;
         }
         else {
             // SAFETY: `ring` and `params` are this frame's own, and liburing
             // fills `ring` when the answer is zero.
-            unsafe {
-                ::liburing_rs::io_uring_queue_init_params(entries, &raw mut ring, &raw mut params)
-            }
+            Answer(unsafe {
+                ::liburing_rs::io_uring_queue_init_params(entries.0, &raw mut ring, &raw mut params)
+            })
             .sys_zero()?;
         }
 
-        if dontfork {
+        if dontfork.0 {
             // SAFETY: `ring` is the ring that the call above set up.
-            unsafe { ::liburing_rs::io_uring_ring_dontfork(&raw mut ring) }.sys_zero()?;
+            Answer(unsafe { ::liburing_rs::io_uring_ring_dontfork(&raw mut ring) }).sys_zero()?;
         }
 
         Ok(Self {
@@ -343,7 +357,7 @@ macro_rules! io_uring_flag_setup {
         where
             State::$FlagSetup: IsUnset,
         {
-            self.$setter(true)
+            self.$setter(Switch(true))
         }
     };
 }
@@ -468,7 +482,7 @@ where
         // which the builder holds as a marker of no size.
         let this: IoUringBuilder<'_, S, crate::cqe::kind::Cqe32, State> =
             unsafe { ::core::mem::transmute(self) };
-        this.flag_setup_cqe32(true) // tarpaulin
+        this.flag_setup_cqe32(Switch(true)) // tarpaulin
     }
 
     /// Sets the flag for submission entries of 128 bytes, and makes them the
@@ -488,13 +502,18 @@ where
         // which the builder holds as a marker of no size.
         let this: IoUringBuilder<'_, crate::sqe::kind::Sqe128, C, State> =
             unsafe { ::core::mem::transmute(self) };
-        this.flag_setup_sqe128(true) // tarpaulin
+        this.flag_setup_sqe128(Switch(true)) // tarpaulin
     }
 }
 
 #[cfg(test)]
 pub mod test
 {
+    use crate::arg::Bytes;
+    use crate::arg::Count;
+    use crate::arg::Cpu;
+    use crate::arg::Millis;
+    use crate::arg::Switch;
     use crate::ring::IoUring;
 
     mod new
@@ -508,7 +527,7 @@ pub mod test
         )]
         fn with_entries()
         {
-            IoUring::builder().entries(1024).build().unwrap();
+            IoUring::builder().entries(Count(1024)).build().unwrap();
         }
 
         #[test]
@@ -554,7 +573,7 @@ pub mod test
         {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
             let cpus = ::num_cpus::get_physical();
-            let sq_thread_cpu = u32::try_from(cpus).unwrap() - 1;
+            let sq_thread_cpu = Cpu(u32::try_from(cpus).unwrap() - 1);
             IoUring::builder()
                 .setup_sqpoll()
                 .setup_sq_aff()
@@ -571,8 +590,8 @@ pub mod test
         fn with_setup_cqsize()
         {
             IoUring::builder()
-                .entries(128)
-                .setup_cqsize(256)
+                .entries(Count(128))
+                .setup_cqsize(Count(256))
                 .build()
                 .unwrap();
         }
@@ -705,9 +724,9 @@ pub mod test
             let start = mem.as_ptr().align_offset(BLOCK);
             let (_, mem) = mem.split_at_mut(start);
             IoUring::builder()
-                .entries(8)
+                .entries(Count(8))
                 .setup_no_mmap()
-                .setup_mem(mem)
+                .setup_mem(Bytes(mem))
                 .build()
                 .unwrap();
         }
@@ -725,10 +744,10 @@ pub mod test
             let start = mem.as_ptr().align_offset(BLOCK);
             let (_, mem) = mem.split_at_mut(start);
             IoUring::builder()
-                .entries(8)
+                .entries(Count(8))
                 .setup_no_mmap()
                 .setup_registered_fd_only()
-                .setup_mem(mem)
+                .setup_mem(Bytes(mem))
                 .build()
                 .unwrap();
         }
@@ -752,7 +771,7 @@ pub mod test
         {
             // NOTE: tarpaulin runs cause `::num_cpus::get()` to return 1.
             let cpus = ::num_cpus::get_physical();
-            let sq_thread_cpu = u32::try_from(cpus).unwrap() - 1;
+            let sq_thread_cpu = Cpu(u32::try_from(cpus).unwrap() - 1);
             IoUring::builder()
                 .setup_sqpoll()
                 .setup_sq_aff()
@@ -768,7 +787,7 @@ pub mod test
         )]
         fn with_sq_thread_idle()
         {
-            let sq_thread_idle = 250u32;
+            let sq_thread_idle = Millis(250u32);
             IoUring::builder()
                 .setup_sqpoll()
                 .sq_thread_idle(sq_thread_idle)
@@ -783,7 +802,7 @@ pub mod test
         )]
         fn with_dontfork()
         {
-            IoUring::builder().dontfork(true).build().unwrap();
+            IoUring::builder().dontfork(Switch(true)).build().unwrap();
         }
     }
 

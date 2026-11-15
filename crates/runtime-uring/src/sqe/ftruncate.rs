@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -20,8 +22,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_ftruncate(
             &mut self,
-            fd: ::core::ffi::c_int,
-            len: ::core::ffi::c_longlong,
+            Fd(fd): Fd,
+            Len(len): Len<::core::ffi::c_longlong>,
         )
         {
             let sqe = &raw mut *self.sqe();

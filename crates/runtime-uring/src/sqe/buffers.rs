@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Index;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +26,10 @@ pub mod repr
         pub unsafe fn prep_provide_buffers(
             &mut self,
             addr: *mut ::core::ffi::c_void,
-            len: ::core::ffi::c_int,
-            nr: ::core::ffi::c_int,
-            bgid: ::core::ffi::c_int,
-            bid: ::core::ffi::c_int,
+            Len(len): Len<::core::ffi::c_int>,
+            Count(nr): Count<::core::ffi::c_int>,
+            Index(bgid): Index<::core::ffi::c_int>,
+            Index(bid): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -51,8 +54,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_remove_buffers(
             &mut self,
-            nr: ::core::ffi::c_int,
-            bgid: ::core::ffi::c_int,
+            Count(nr): Count<::core::ffi::c_int>,
+            Index(bgid): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

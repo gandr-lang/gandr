@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Flags;
+    use crate::arg::UserData;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,8 +25,8 @@ pub mod repr
         pub unsafe fn prep_timeout(
             &mut self,
             ts: *const ::liburing_rs::__kernel_timespec,
-            count: ::core::ffi::c_uint,
-            flags: ::core::ffi::c_uint,
+            Count(count): Count<::core::ffi::c_uint>,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -52,8 +55,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_timeout_remove(
             &mut self,
-            user_data: u64,
-            flags: ::core::ffi::c_uint,
+            UserData(user_data): UserData,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -78,8 +81,8 @@ pub mod repr
         pub unsafe fn prep_timeout_update(
             &mut self,
             ts: *const ::liburing_rs::__kernel_timespec,
-            user_data: u64,
-            flags: ::core::ffi::c_uint,
+            UserData(user_data): UserData,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

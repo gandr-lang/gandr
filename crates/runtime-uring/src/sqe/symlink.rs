@@ -3,6 +3,8 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Text;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,8 +23,8 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_symlink(
             &mut self,
-            target: *const ::core::ffi::c_char,
-            linkpath: *const ::core::ffi::c_char,
+            Text(target): Text,
+            Text(linkpath): Text,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -48,9 +50,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_symlinkat(
             &mut self,
-            target: *const ::core::ffi::c_char,
-            newdirfd: ::core::ffi::c_int,
-            linkpath: *const ::core::ffi::c_char,
+            Text(target): Text,
+            Fd(newdirfd): Fd,
+            Text(linkpath): Text,
         )
         {
             let sqe = &raw mut *self.sqe();

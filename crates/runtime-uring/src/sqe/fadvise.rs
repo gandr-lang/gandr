@@ -3,6 +3,10 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Code;
+    use crate::arg::Fd;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,10 +25,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_fadvise(
             &mut self,
-            fd: ::core::ffi::c_int,
-            offset: u64,
-            len: u32,
-            advice: ::core::ffi::c_int,
+            Fd(fd): Fd,
+            Offset(offset): Offset<u64>,
+            Len(len): Len<u32>,
+            Code(advice): Code<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -48,10 +52,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_fadvise64(
             &mut self,
-            fd: ::core::ffi::c_int,
-            offset: u64,
-            len: ::liburing_rs::off_t,
-            advice: ::core::ffi::c_int,
+            Fd(fd): Fd,
+            Offset(offset): Offset<u64>,
+            Len(len): Len<::liburing_rs::off_t>,
+            Code(advice): Code<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

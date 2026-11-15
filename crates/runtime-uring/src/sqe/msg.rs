@@ -3,6 +3,10 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
+    use crate::arg::UserData;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -21,10 +25,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_msg_ring(
             &mut self,
-            fd: ::core::ffi::c_int,
-            len: ::core::ffi::c_uint,
-            data: u64,
-            flags: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Len(len): Len<::core::ffi::c_uint>,
+            UserData(data): UserData,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -49,11 +53,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_msg_ring_cqe_flags(
             &mut self,
-            fd: ::core::ffi::c_int,
-            len: ::core::ffi::c_uint,
-            data: u64,
-            flags: ::core::ffi::c_uint,
-            cqe_flags: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Len(len): Len<::core::ffi::c_uint>,
+            UserData(data): UserData,
+            Flags(flags): Flags<::core::ffi::c_uint>,
+            Flags(cqe_flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -80,11 +84,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_msg_ring_fd(
             &mut self,
-            fd: ::core::ffi::c_int,
-            source_fd: ::core::ffi::c_int,
-            target_fd: ::core::ffi::c_int,
-            data: u64,
-            flags: ::core::ffi::c_uint,
+            Fd(fd): Fd,
+            Fd(source_fd): Fd,
+            Fd(target_fd): Fd,
+            UserData(data): UserData,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();

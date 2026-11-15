@@ -3,6 +3,12 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Count;
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Index;
+    use crate::arg::Len;
+    use crate::arg::Offset;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -23,10 +29,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_read(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             buf: *mut ::core::ffi::c_void,
-            nbytes: ::core::ffi::c_uint,
-            offset: u64,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -52,11 +58,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_read_fixed(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             buf: *mut ::core::ffi::c_void,
-            nbytes: ::core::ffi::c_uint,
-            offset: u64,
-            buf_index: ::core::ffi::c_int,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Index(buf_index): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -80,10 +86,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_read_multishot(
             &mut self,
-            fd: ::core::ffi::c_int,
-            nbytes: ::core::ffi::c_uint,
-            offset: u64,
-            buf_group: ::core::ffi::c_int,
+            Fd(fd): Fd,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Index(buf_group): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -109,10 +115,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_readv(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -138,11 +144,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_readv2(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
-            flags: ::core::ffi::c_int,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -168,12 +174,12 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_readv_fixed(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             iovecs: *const ::liburing_rs::iovec,
-            nr_vecs: ::core::ffi::c_uint,
-            offset: u64,
-            flags: ::core::ffi::c_int,
-            buf_index: ::core::ffi::c_int,
+            Count(nr_vecs): Count<::core::ffi::c_uint>,
+            Offset(offset): Offset<u64>,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Index(buf_index): Index<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();

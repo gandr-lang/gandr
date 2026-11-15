@@ -3,6 +3,10 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Index;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,10 +26,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_send(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *const ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -49,9 +53,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_send_bundle(
             &mut self,
-            sockfd: ::core::ffi::c_int,
-            len: usize,
-            flags: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -76,7 +80,7 @@ pub mod repr
         pub unsafe fn prep_send_set_addr(
             &mut self,
             dest_addr: *const ::liburing_rs::sockaddr,
-            addr_len: u16,
+            Len(addr_len): Len<u16>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -102,11 +106,11 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_send_zc(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *const ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
-            zc_flags: ::core::ffi::c_uint,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Flags(zc_flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -132,12 +136,12 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_send_zc_fixed(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *const ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
-            zc_flags: ::core::ffi::c_uint,
-            buf_index: ::core::ffi::c_uint,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
+            Flags(zc_flags): Flags<::core::ffi::c_uint>,
+            Index(buf_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -164,9 +168,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_sendmsg(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             msg: *const ::liburing_rs::msghdr,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -192,9 +196,9 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_sendmsg_zc(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             msg: *const ::liburing_rs::msghdr,
-            flags: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -220,10 +224,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_sendmsg_zc_fixed(
             &mut self,
-            fd: ::core::ffi::c_int,
+            Fd(fd): Fd,
             msg: *const ::liburing_rs::msghdr,
-            flags: ::core::ffi::c_uint,
-            buf_index: ::core::ffi::c_uint,
+            Flags(flags): Flags<::core::ffi::c_uint>,
+            Index(buf_index): Index<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -249,12 +253,12 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_sendto(
             &mut self,
-            sockfd: ::core::ffi::c_int,
+            Fd(sockfd): Fd,
             buf: *const ::core::ffi::c_void,
-            len: usize,
-            flags: ::core::ffi::c_int,
+            Len(len): Len<usize>,
+            Flags(flags): Flags<::core::ffi::c_int>,
             addr: *const ::liburing_rs::sockaddr,
-            addrlen: ::liburing_rs::socklen_t,
+            Len(addrlen): Len<::liburing_rs::socklen_t>,
         )
         {
             let sqe = &raw mut *self.sqe();

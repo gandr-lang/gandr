@@ -5,6 +5,7 @@ pub mod repr
 {
     use ::std::os::fd::AsRawFd as _;
 
+    use crate::arg::Count;
     use crate::fd::SlotDesc;
     use crate::sqe::repr::Sqe64;
 
@@ -27,7 +28,7 @@ pub mod repr
         pub unsafe fn prep_listen(
             &mut self,
             socket: SlotDesc<&'op ::socket2::Socket>,
-            backlog: ::core::ffi::c_int,
+            Count(backlog): Count<::core::ffi::c_int>,
         )
         {
             let sqe = &raw mut *self.sqe();
@@ -43,12 +44,24 @@ pub mod repr
 }
 
 #[cfg(test)]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        single_field_struct_needs_transparent_repr,
+        reason = "the builder's macro makes a struct for each field of the fixture, and the source has no struct to mark; #7729 owes the lint's reading of a macro's structs"
+    )
+)]
 pub mod test
 {
     use ::assert_fs::TempDir;
     use ::assert_fs::prelude::PathChild as _;
 
     use crate::IoUring;
+    use crate::arg::Answer;
+    use crate::arg::Count;
+    use crate::arg::Flags;
+    use crate::arg::Index;
+    use crate::arg::Switch;
     use crate::fd::SlotDesc;
     use crate::sys::SysResult as _;
 
@@ -57,12 +70,12 @@ pub mod test
     {
         #[builder(start_fn)]
         socket: SlotDesc<&'op ::socket2::Socket>,
-        #[builder(default = ::libc::SOMAXCONN)]
-        backlog: ::core::ffi::c_int,
-        #[builder(default = false)]
-        sqe_link: bool,
-        #[builder(default = false)]
-        cqe_skip: bool,
+        #[builder(default = Count(::libc::SOMAXCONN))]
+        backlog: Count<::core::ffi::c_int>,
+        #[builder(default = Switch(false))]
+        sqe_link: Switch,
+        #[builder(default = Switch(false))]
+        cqe_skip: Switch,
     }
 
     impl Fixture<'_>
@@ -76,7 +89,7 @@ pub mod test
         fn submit<S, C>(
             self,
             ring: &mut IoUring<'_, S, C>,
-        ) -> u32
+        ) -> Count<u32>
         where
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
@@ -99,19 +112,19 @@ pub mod test
             }
 
             let mut flags = ::core::ffi::c_uint::default();
-            if sqe_link {
+            if sqe_link.0 {
                 flags |= ::liburing_rs::IOSQE_IO_LINK;
             }
-            if cqe_skip {
+            if cqe_skip.0 {
                 flags |= ::liburing_rs::IOSQE_CQE_SKIP_SUCCESS;
             }
-            if socket.is_slot() {
+            if socket.is_slot().0 {
                 flags |= ::liburing_rs::IOSQE_FIXED_FILE;
             }
             // SAFETY: each flag is the kernel's, and the fixed-file flag goes
             // with a slot alone.
             unsafe {
-                sqe.set_flags(flags);
+                sqe.set_flags(Flags(flags));
             }
 
             sq.submit().unwrap()
@@ -130,18 +143,18 @@ pub mod test
             S: crate::sqe::Kind,
         {
             let num = self.submit(ring);
-            assert_eq!(1, num);
+            assert_eq!(Count(1), num);
 
             let mut cq = ring.cqueue();
 
             let cqe = cq
-                .wait(1)
+                .wait(Count(1))
                 .unwrap()
                 .next()
                 .map(Into::into)
                 .ok_or_else(|| ::std::io::Error::other("failed to get cqe"))
                 .unwrap();
-            cqe.cqe().res.sys_zero().unwrap();
+            Answer(cqe.cqe().res).sys_zero().unwrap();
         }
 
         /// Runs the fixture on `ring` and checks the outcome.
@@ -156,7 +169,7 @@ pub mod test
             C: crate::cqe::Kind,
             S: crate::sqe::Kind,
         {
-            if self.cqe_skip {
+            if self.cqe_skip.0 {
                 self.submit(ring);
             }
             else {
@@ -173,8 +186,8 @@ pub mod test
     pub fn listen_with<S, C>(
         ring: &mut IoUring<'_, S, C>,
         socket: &SlotDesc<::socket2::Socket>,
-        sqe_link: Option<bool>,
-        cqe_skip: Option<bool>,
+        sqe_link: Option<Switch>,
+        cqe_skip: Option<Switch>,
     ) where
         C: crate::cqe::Kind,
         S: crate::sqe::Kind,
@@ -202,7 +215,7 @@ pub mod test
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(
@@ -230,12 +243,14 @@ pub mod test
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
-        let slots = Some(1);
-        let socket_slot = Some(::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned());
+        let slots = Some(Count(1));
+        let socket_slot = Some(Index(
+            ::liburing_rs::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
+        ));
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
+        let sqe_link = Some(Switch(true));
         let cqe_skip = None;
 
         let socket = crate::sqe::socket::test::socket_with(
@@ -263,13 +278,13 @@ pub mod test
         let temp = TempDir::new().map_err(::std::io::Error::other).unwrap();
         let path = temp.child("socket");
 
-        let slots = Some(1);
-        let socket_slot = Some(0);
+        let slots = Some(Count(1));
+        let socket_slot = Some(Index(0));
 
         let mut ring = IoUring::new().unwrap();
 
-        let sqe_link = Some(true);
-        let cqe_skip = Some(true);
+        let sqe_link = Some(Switch(true));
+        let cqe_skip = Some(Switch(true));
 
         let socket = crate::sqe::socket::test::socket_with(
             &mut ring,
@@ -281,7 +296,7 @@ pub mod test
         crate::sqe::bind::test::bind_with(&mut ring, &temp, &path, &socket, sqe_link, cqe_skip);
 
         let sqe_link = None;
-        let cqe_skip = Some(true);
+        let cqe_skip = Some(Switch(true));
 
         crate::sqe::listen::test::listen_with(&mut ring, &socket, sqe_link, cqe_skip);
     }

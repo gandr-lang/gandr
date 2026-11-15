@@ -3,6 +3,9 @@
 /// The preparers, as methods of the submission entry.
 pub mod repr
 {
+    use crate::arg::Fd;
+    use crate::arg::Flags;
+    use crate::arg::Len;
     use crate::sqe::repr::Sqe64;
 
     impl Sqe64<'_>
@@ -22,10 +25,10 @@ pub mod repr
         #[inline]
         pub unsafe fn prep_tee(
             &mut self,
-            fd_in: ::core::ffi::c_int,
-            fd_out: ::core::ffi::c_int,
-            nbytes: ::core::ffi::c_uint,
-            splice_flags: ::core::ffi::c_uint,
+            Fd(fd_in): Fd,
+            Fd(fd_out): Fd,
+            Len(nbytes): Len<::core::ffi::c_uint>,
+            Flags(splice_flags): Flags<::core::ffi::c_uint>,
         )
         {
             let sqe = &raw mut *self.sqe();
