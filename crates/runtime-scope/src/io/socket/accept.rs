@@ -23,8 +23,13 @@ pub struct OpSocketAccept<'tsk, 'env: 'tsk, 'fd> {
     addr: Pin<Box<(SockAddrStorage, socklen_t)>>,
 }
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd> {
-    pub(crate) fn new(scope: &'tsk Scope<'tsk, 'env>, fd: BorrowedFd<'fd>) -> Self {
+impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd>
+{
+    pub(crate) fn new(
+        scope: &'tsk Scope<'tsk, 'env>,
+        fd: BorrowedFd<'fd>,
+    ) -> Self
+    {
         #[expect(clippy::as_conversions, reason = "size_of")]
         #[expect(clippy::cast_possible_truncation, reason = "size_of")]
         const STORAGE_SIZE: socklen_t = size_of::<SockAddrStorage>() as u32;
@@ -48,10 +53,15 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketAccept<'tsk, 'env, 'fd> {
         }
     }
 }
-impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_> {
+impl<'tsk, 'env> Future for OpSocketAccept<'tsk, 'env, '_>
+{
     type Output = ::anyhow::Result<(Socket<'tsk, 'env>, SockAddr)>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output>
+    {
         let this = self.as_mut().project();
         let cqe = ready!(this.rsp.poll(cx))?;
 

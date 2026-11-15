@@ -19,8 +19,15 @@ pub struct OpSocketNew<'tsk, 'env: 'tsk> {
     cqe: Completion<'tsk>,
 }
 }
-impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env> {
-    pub(crate) fn new(scope: &'tsk Scope<'tsk, 'env>, domain: Domain, ty: Type, protocol: Option<Protocol>) -> Self {
+impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env>
+{
+    pub(crate) fn new(
+        scope: &'tsk Scope<'tsk, 'env>,
+        domain: Domain,
+        ty: Type,
+        protocol: Option<Protocol>,
+    ) -> Self
+    {
         let domain = i32::from(domain);
         let ty = i32::from(ty);
         let protocol = protocol.map_or(0i32, i32::from);
@@ -32,10 +39,15 @@ impl<'tsk, 'env: 'tsk> OpSocketNew<'tsk, 'env> {
         Self { scope, cqe }
     }
 }
-impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env> {
+impl<'tsk, 'env: 'tsk> Future for OpSocketNew<'tsk, 'env>
+{
     type Output = ::anyhow::Result<Socket<'tsk, 'env>>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output>
+    {
         let this = self.as_mut().project();
         let cqe = ready!(this.cqe.poll(cx))?;
 

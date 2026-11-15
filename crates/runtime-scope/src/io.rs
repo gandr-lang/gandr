@@ -39,42 +39,69 @@ macro_rules! reader_trait {
 //     };
 // }
 
-pub trait AsyncBufRead: AsyncReadRent {
+pub trait AsyncBufRead: AsyncReadRent
+{
     fn fill_buf(&mut self) -> impl Future<Output = std::io::Result<&[u8]>>;
-    fn consume(&mut self, amt: usize);
+    fn consume(
+        &mut self,
+        amt: usize,
+    );
 }
 
-pub trait AsyncBufReadExt {
+pub trait AsyncBufReadExt
+{
     fn read_until<'buf>(
         &'buf mut self,
         byte: u8,
         buf: &'buf mut Vec<u8>,
     ) -> impl Future<Output = ::std::io::Result<usize>>;
 
-    fn read_line<'buf>(&'buf mut self, buf: &'buf mut String) -> impl Future<Output = ::std::io::Result<usize>>;
+    fn read_line<'buf>(
+        &'buf mut self,
+        buf: &'buf mut String,
+    ) -> impl Future<Output = ::std::io::Result<usize>>;
 }
 
-pub trait AsyncReadRent {
-    fn read<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncReadRent
+{
+    fn read<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut;
-    fn readv<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+    fn readv<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBufMut;
 }
 
-pub trait AsyncReadRentAt {
-    fn read_at<T>(&mut self, buf: T, pos: usize) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncReadRentAt
+{
+    fn read_at<T>(
+        &mut self,
+        buf: T,
+        pos: usize,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut;
 }
 
-pub trait AsyncReadRentExt {
-    fn read_exact<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncReadRentExt
+{
+    fn read_exact<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut + 'static;
 
-    fn read_vectored_exact<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+    fn read_vectored_exact<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBufMut + 'static;
 
@@ -105,12 +132,19 @@ pub trait AsyncReadRentExt {
     reader_trait!(ReadF64LEFuture, f64, read_f64_le);
 }
 
-pub trait AsyncWriteRent {
-    fn write<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncWriteRent
+{
+    fn write<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBuf;
 
-    fn writev<T>(&mut self, buf_vec: T) -> impl Future<Output = BufResult<usize, T>>
+    fn writev<T>(
+        &mut self,
+        buf_vec: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBuf;
 
@@ -119,34 +153,60 @@ pub trait AsyncWriteRent {
     fn shutdown(&mut self) -> impl Future<Output = std::io::Result<()>>;
 }
 
-pub trait AsyncWriteRentAt {
-    fn write_at<T>(&self, buf: T, pos: usize) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncWriteRentAt
+{
+    fn write_at<T>(
+        &self,
+        buf: T,
+        pos: usize,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut;
 }
 
-pub trait AsyncWriteRentExt {
-    fn write_all<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+pub trait AsyncWriteRentExt
+{
+    fn write_all<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBuf + 'static;
 
-    fn write_vectored_all<T>(&mut self, buf: T) -> impl Future<Output = BufResult<usize, T>>
+    fn write_vectored_all<T>(
+        &mut self,
+        buf: T,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBuf + 'static;
 }
 
-pub trait CancelableAsyncReadRent: AsyncReadRent {
-    fn cancelable_read<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+pub trait CancelableAsyncReadRent: AsyncReadRent
+{
+    fn cancelable_read<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut;
 
-    fn cancelable_readv<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+    fn cancelable_readv<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBufMut;
 }
 
-pub trait CancelableAsyncReadRentExt {
-    fn cancelable_read_exact<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+pub trait CancelableAsyncReadRentExt
+{
+    fn cancelable_read_exact<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBufMut + 'static;
 
@@ -185,26 +245,50 @@ pub trait CancelableAsyncReadRentExt {
     reader_trait!(ReadF64LEFuture, f64, cancelable_read_f64_le);
 }
 
-pub trait CancelableAsyncWriteRent: AsyncWriteRent {
-    fn cancelable_write<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+pub trait CancelableAsyncWriteRent: AsyncWriteRent
+{
+    fn cancelable_write<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBuf;
 
-    fn cancelable_writev<T>(&mut self, buf_vec: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+    fn cancelable_writev<T>(
+        &mut self,
+        buf_vec: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBuf;
 
-    fn cancelable_flush(&mut self, c: CancelHandle) -> impl Future<Output = std::io::Result<()>>;
+    fn cancelable_flush(
+        &mut self,
+        c: CancelHandle,
+    ) -> impl Future<Output = std::io::Result<()>>;
 
-    fn cancelable_shutdown(&mut self, c: CancelHandle) -> impl Future<Output = std::io::Result<()>>;
+    fn cancelable_shutdown(
+        &mut self,
+        c: CancelHandle,
+    ) -> impl Future<Output = std::io::Result<()>>;
 }
 
-pub trait CancelableAsyncWriteRentExt {
-    fn write_all<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+pub trait CancelableAsyncWriteRentExt
+{
+    fn write_all<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoBuf + 'static;
 
-    fn write_vectored_all<T>(&mut self, buf: T, c: CancelHandle) -> impl Future<Output = BufResult<usize, T>>
+    fn write_vectored_all<T>(
+        &mut self,
+        buf: T,
+        c: CancelHandle,
+    ) -> impl Future<Output = BufResult<usize, T>>
     where
         T: IoVecBuf + 'static;
 }

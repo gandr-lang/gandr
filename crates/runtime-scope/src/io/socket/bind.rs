@@ -18,8 +18,14 @@ pub struct OpSocketBind<'tsk, 'env: 'tsk, 'fd> {
     fd: BorrowedFd<'fd>,
 }
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd> {
-    pub(crate) fn new(scope: &'tsk Scope<'tsk, 'env>, fd: BorrowedFd<'fd>, addr: SockAddr) -> Self {
+impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd>
+{
+    pub(crate) fn new(
+        scope: &'tsk Scope<'tsk, 'env>,
+        fd: BorrowedFd<'fd>,
+        addr: SockAddr,
+    ) -> Self
+    {
         let addrlen = addr.len();
         let op = {
             let fd = ::io_uring::types::Fd(fd.as_raw_fd());
@@ -34,10 +40,15 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketBind<'tsk, 'env, 'fd> {
         Self { scope, rsp, fd }
     }
 }
-impl Future for OpSocketBind<'_, '_, '_> {
+impl Future for OpSocketBind<'_, '_, '_>
+{
     type Output = ::anyhow::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output>
+    {
         let this = self.as_mut().project();
         let cqe = ready!(this.rsp.poll(cx))?;
 

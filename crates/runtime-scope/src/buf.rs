@@ -2,7 +2,8 @@
 
 pub type BufResult<T, B> = (::std::io::Result<T>, B);
 
-pub unsafe trait IoBuf: Unpin + 'static {
+pub unsafe trait IoBuf: Unpin + 'static
+{
     fn read_ptr(&self) -> *const u8;
 
     fn bytes_init(&self) -> usize;
@@ -26,18 +27,23 @@ pub unsafe trait IoBuf: Unpin + 'static {
     // }
 }
 
-pub unsafe trait IoVecBuf: Unpin + 'static {
+pub unsafe trait IoVecBuf: Unpin + 'static
+{
     fn read_iovec_ptr(&self) -> *const libc::iovec;
 
     fn read_iovec_len(&self) -> usize;
 }
 
-pub unsafe trait IoBufMut: Unpin + 'static {
+pub unsafe trait IoBufMut: Unpin + 'static
+{
     fn write_ptr(&mut self) -> *mut u8;
 
     fn bytes_total(&mut self) -> usize;
 
-    unsafe fn set_init(&mut self, pos: usize);
+    unsafe fn set_init(
+        &mut self,
+        pos: usize,
+    );
 
     // #[inline]
     // fn slice_mut(mut self, range: impl ::core::ops::RangeBounds<usize>) ->
@@ -50,8 +56,8 @@ pub unsafe trait IoBufMut: Unpin + 'static {
     // }
 
     // #[inline]
-    // unsafe fn slice_mut_unchecked(mut self, range: impl ops::RangeBounds<usize>)
-    // -> SliceMut<Self> where
+    // unsafe fn slice_mut_unchecked(mut self, range: impl
+    // ops::RangeBounds<usize>) -> SliceMut<Self> where
     //     Self: Sized,
     // {
     //     let (begin, end) = parse_range(range, self.bytes_total());
@@ -59,10 +65,14 @@ pub unsafe trait IoBufMut: Unpin + 'static {
     // }
 }
 
-pub unsafe trait IoVecBufMut: Unpin + 'static {
+pub unsafe trait IoVecBufMut: Unpin + 'static
+{
     fn write_iovec_ptr(&mut self) -> *mut ::libc::iovec;
 
     fn write_iovec_len(&mut self) -> usize;
 
-    unsafe fn set_init(&mut self, pos: usize);
+    unsafe fn set_init(
+        &mut self,
+        pos: usize,
+    );
 }

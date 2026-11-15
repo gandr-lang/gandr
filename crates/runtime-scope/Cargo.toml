@@ -1,19 +1,14 @@
 [package]
-publish.workspace = true
 name = "gandr-runtime-scope"
 version.workspace = true
-license.workspace = true
 authors.workspace = true
-description = "A crate implementing an io_uring async runtime"
 edition.workspace = true
 rust-version.workspace = true
+description = "A crate implementing an io_uring async runtime"
+license.workspace = true
 keywords.workspace = true
 categories.workspace = true
-
-[features]
-default = []
-debug = []
-tracing = ["dep:tracing-subscriber", "debug"]
+publish.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
@@ -27,14 +22,23 @@ qcell = { workspace = true }
 ringbuf = { workspace = true }
 slab = { workspace = true }
 socket2 = { workspace = true }
-tracing-subscriber = { workspace = true, features = [
-  "env-filter",
-  "fmt",
-], optional = true }
-
-[lints]
-workspace = true
+tracing-subscriber = {
+  workspace = true,
+  features = [
+    "env-filter",
+    "fmt",
+  ],
+  optional = true
+}
 
 [dev-dependencies]
 assert_fs = { workspace = true }
 predicates = { workspace = true }
+
+[features]
+default = []
+debug = []
+tracing = ["debug", "dep:tracing-subscriber"]
+
+[lints]
+workspace = true

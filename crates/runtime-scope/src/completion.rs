@@ -8,7 +8,8 @@ use ::core::task::ready;
 
 use crate::submission::Submission;
 
-enum State {
+enum State
+{
     Submitting,
     Completing,
 }
@@ -22,30 +23,38 @@ pub struct Completion<'tsk> {
 }
 }
 
-impl<'scope> Completion<'scope> {
+impl<'scope> Completion<'scope>
+{
     pub(crate) fn new(
         sqe: ::kanal::SendFuture<'scope, Submission>,
         cqe: ::oneshot::Receiver<::io_uring::cqueue::Entry>,
-    ) -> Self {
+    ) -> Self
+    {
         let state = State::Submitting;
         Completion { sqe, cqe, state }
     }
 }
 
-impl Future for Completion<'_> {
+impl Future for Completion<'_>
+{
     type Output = ::anyhow::Result<::io_uring::cqueue::Entry>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output>
+    {
         let mut this = self.project();
         match *this.state {
-            | State::Submitting => {
+            State::Submitting => {
                 ready!(this.sqe.poll(cx))?;
                 *this.state = State::Completing;
                 Poll::Pending
             },
-            | State::Completing => {
+            State::Completing => {
                 let cqe = pin!(this.cqe);
-                let cqe = ready!(cqe.poll(cx)).map_err(|_err| anyhow!("value sender disconnected"))?;
+                let cqe =
+                    ready!(cqe.poll(cx)).map_err(|_err| anyhow!("value sender disconnected"))?;
                 Poll::Ready(Ok(cqe))
             },
         }

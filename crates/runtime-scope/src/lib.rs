@@ -30,19 +30,24 @@ type Receiver<T> = ::kanal::Receiver<T>;
 type Sender<T> = ::kanal::AsyncSender<T>;
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     #![allow(clippy::as_conversions, reason = "cfg(test)")]
     #![allow(clippy::cast_possible_truncation, reason = "cfg(test)")]
     #![allow(clippy::print_stdout, reason = "cfg(test)")]
     #![allow(clippy::unwrap_used, reason = "cfg(test)")]
 
-    pub mod harness {
-        pub mod io {
-            pub mod socket {
+    pub mod harness
+    {
+        pub mod io
+        {
+            pub mod socket
+            {
                 pub use crate::io::socket::test::harness::*;
             }
         }
-        pub mod runtime {
+        pub mod runtime
+        {
             pub use crate::runtime::test::harness::*;
         }
     }

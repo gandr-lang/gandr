@@ -17,8 +17,14 @@ pub struct OpSocketListen<'tsk, 'env: 'tsk, 'fd> {
     fd: BorrowedFd<'fd>,
 }
 }
-impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd> {
-    pub(crate) fn new(scope: &'tsk Scope<'tsk, 'env>, fd: BorrowedFd<'fd>, backlog: ::core::ffi::c_int) -> Self {
+impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd>
+{
+    pub(crate) fn new(
+        scope: &'tsk Scope<'tsk, 'env>,
+        fd: BorrowedFd<'fd>,
+        backlog: ::core::ffi::c_int,
+    ) -> Self
+    {
         let op = {
             let fd = ::io_uring::types::Fd(fd.as_raw_fd());
             ::io_uring::opcode::Listen::new(fd, backlog)
@@ -29,10 +35,15 @@ impl<'tsk, 'env: 'tsk, 'fd> OpSocketListen<'tsk, 'env, 'fd> {
         Self { scope, rsp, fd }
     }
 }
-impl Future for OpSocketListen<'_, '_, '_> {
+impl Future for OpSocketListen<'_, '_, '_>
+{
     type Output = ::anyhow::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Self::Output>
+    {
         let this = self.as_mut().project();
         let cqe = ready!(this.rsp.poll(cx))?;
 

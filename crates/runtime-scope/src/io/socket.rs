@@ -16,12 +16,14 @@ use crate::io::socket::new::OpSocketNew;
 use crate::scope::Scope;
 
 #[non_exhaustive]
-pub struct Socket<'tsk, 'env: 'tsk> {
+pub struct Socket<'tsk, 'env: 'tsk>
+{
     scope: &'tsk Scope<'tsk, 'env>,
     inner: ::socket2::Socket,
 }
 
-impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env> {
+impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
+{
     #[expect(clippy::new_ret_no_self, reason = "future")]
     #[must_use]
     pub fn new(
@@ -29,26 +31,36 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env> {
         domain: Domain,
         ty: Type,
         protocol: Option<Protocol>,
-    ) -> OpSocketNew<'tsk, 'env> {
+    ) -> OpSocketNew<'tsk, 'env>
+    {
         OpSocketNew::new(scope, domain, ty, protocol)
     }
 
     #[must_use]
-    pub fn bind(&self, addr: SockAddr) -> OpSocketBind<'tsk, 'env, '_> {
+    pub fn bind(
+        &self,
+        addr: SockAddr,
+    ) -> OpSocketBind<'tsk, 'env, '_>
+    {
         let scope = self.scope;
         let fd = self.inner.as_fd();
         OpSocketBind::new(scope, fd, addr)
     }
 
     #[must_use]
-    pub fn listen(&self, backlog: ::core::ffi::c_int) -> OpSocketListen<'tsk, 'env, '_> {
+    pub fn listen(
+        &self,
+        backlog: ::core::ffi::c_int,
+    ) -> OpSocketListen<'tsk, 'env, '_>
+    {
         let scope = self.scope;
         let fd = self.inner.as_fd();
         OpSocketListen::new(scope, fd, backlog)
     }
 
     #[must_use]
-    pub fn accept(&self) -> OpSocketAccept<'tsk, 'env, '_> {
+    pub fn accept(&self) -> OpSocketAccept<'tsk, 'env, '_>
+    {
         let scope = self.scope;
         let fd = self.inner.as_fd();
         OpSocketAccept::new(scope, fd)
@@ -56,17 +68,20 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env> {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
+pub(crate) mod test
+{
     #![expect(clippy::unwrap_used, reason = "cfg(test)")]
 
     use super::*;
 
-    pub mod harness {
+    pub mod harness
+    {
         use ::std::path::Path;
 
         use super::*;
 
-        pub fn new<'tsk, 'env: 'tsk>(scope: &'tsk Scope<'tsk, 'env>) -> OpSocketNew<'tsk, 'env> {
+        pub fn new<'tsk, 'env: 'tsk>(scope: &'tsk Scope<'tsk, 'env>) -> OpSocketNew<'tsk, 'env>
+        {
             let domain = Domain::UNIX;
             let ty = Type::STREAM;
             let protocol = None;
@@ -74,7 +89,8 @@ pub(crate) mod test {
         }
     }
 
-    pub mod socket {
+    pub mod socket
+    {
         use ::assert_fs::assert::PathAssert as _;
         use ::assert_fs::prelude::FileTouch as _;
         use ::assert_fs::prelude::PathChild as _;
@@ -85,7 +101,8 @@ pub(crate) mod test {
         use crate::runtime::RuntimeClosure;
 
         #[test]
-        fn new() {
+        fn new()
+        {
             crate::test::harness::runtime::new()
                 .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
                     let socket = crate::test::harness::io::socket::new(scope);
@@ -98,7 +115,8 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn bind() {
+        fn bind()
+        {
             crate::test::harness::runtime::new()
                 .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
@@ -116,7 +134,8 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn listen() {
+        fn listen()
+        {
             crate::test::harness::runtime::new()
                 .run(crate::async_scope!(|scope| -> ::anyhow::Result<()> {
                     let temp = ::assert_fs::TempDir::new().unwrap();
@@ -136,7 +155,8 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn accept() {
+        fn accept()
+        {
             let temp = ::assert_fs::TempDir::new().unwrap();
             let path = temp.child("socket");
             let connector = ::std::thread::spawn({
