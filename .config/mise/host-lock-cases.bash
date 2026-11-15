@@ -13,7 +13,8 @@
 # share a first word hold two slots (#6699). A gate that waits for its lane's
 # lock gives that wait for its record (#6699). The lock directory comes before
 # the runtime directory, so a harness keeps its locks apart without moving the
-# runtime directory (#6182).
+# runtime directory (#6182). A gate makes its own FIFO of its share, even
+# beside a `gandr` whose `tokens` names a porter's FIFO (#7688).
 set -euo pipefail
 helper=$(cd "${BASH_SOURCE[0]%/*}" && pwd)/host-lock.bash
 source "${BASH_SOURCE[0]%/*}/../cases/scratch.bash"
@@ -170,6 +171,27 @@ done
 for pid in "${pids[@]}"; do kill -KILL "$pid" 2> /dev/null || true; done
 for pid in "${pids[@]}"; do wait "$pid" 2> /dev/null || true; done
 pids=()
+
+# A gate makes its own FIFO of its share, even where the `gandr` on the path
+# names a porter's FIFO (#7688): on the host's counter, each cargo of a gate
+# runs one `rustc`. The `gandr` of the case answers `tokens` as a hub with a
+# porter does, so a gate that draws on the counter names that FIFO.
+mkdir -p "$scratch/bin-7688"
+mkfifo -m 600 "$scratch/porter-7688.fifo"
+printf '#!/usr/bin/env bash\necho %q\nexec cat > /dev/null\n' "$scratch/porter-7688.fifo" > "$scratch/bin-7688/gandr"
+chmod +x "$scratch/bin-7688/gandr"
+status=0
+bound=$(PATH="$scratch/bin-7688:$PATH" bash -c '
+  source "$1"
+  unset MAKEFLAGS NEXTEST_TEST_THREADS GANDR_JOBS
+  gate_cores=8
+  gate_slots=4
+  gate_bound
+  printf "%s\n%s\n" "$MAKEFLAGS" "$gate_jobs"
+' _ "$gate_helper" 2>&1) || status=$?
+[[ $status == 0 ]] || fail "#7688: the gate's bound exited $status: $bound"
+[[ $bound != *porter-7688.fifo* ]] || fail "#7688: the gate draws on the porter's FIFO: $bound"
+[[ $bound == "-j2 --jobserver-auth=fifo:"*/gandr-gate-jobs.*$'\n'2 ]] || fail "#7688: the gate makes no FIFO of its share of 2: $bound"
 
 # A lane holds one slot (#4911). Of two slots, a gate of the lane `surface`
 # holds one. A second gate of that lane refuses with `--no-wait`, naming the
@@ -364,4 +386,4 @@ bash -c 'source "$1"; host_scratch "$2/case"' _ "$helper" "$leases"
 [[ ! -e $made ]] || fail "#7615: a call kept the directory of a holder that KILL ended"
 
 (( failed == 0 )) || exit 1
-echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
+echo "host-lock check OK: a third taker refused naming both holders; names apart; a killed holder's slot freed; a waiter took a left slot; a running child kept its killed holder's slot; a detached daemon kept no slot of a killed holder; a gate's daemon kept no slot after the gate ended or was stopped; a gate made its own FIFO of its share beside a porter's; a lane's second gate waited while another lane's gate took the free slot and gave its wait; two lanes of the lane table that share a first word held two slots; a worktree <repository>.<branch> read as its lane; a heavy check run alone held a slot; a lock took its file under its own directory, not the runtime directory; a scratch directory's lease kept a live run's directory and freed a killed run's"
