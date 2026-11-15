@@ -1,0 +1,97 @@
+[
+  {
+    "name": "#4020: the whole instrumented suite in one job is refused, since it reached the job's limit",
+    "input": {
+      "template": {
+        "if": false,
+        "steps": [{ "name": "measure enforcing coverage", "run": "mise run ci:coverage" }]
+      },
+      "coverage": {
+        "timeout-minutes": 45,
+        "steps": [
+          { "name": "measure enforcing coverage", "run": "mise run ci:coverage" },
+          { "name": "upload coverage", "uses": "codecov/codecov-action" }
+        ]
+      },
+      "guard": {
+        "steps": [
+          {
+            "name": "compare main's upload with the one before",
+            "run": "mise run ci:coverage-guard --threshold 0.5"
+          }
+        ]
+      }
+    },
+    "output": "[\"`coverage` runs the whole instrumented suite in one job, which reached its 45-minute limit: run one part a job, `ci:coverage \\\"$COVERAGE_PART\\\"` with the part from the job's matrix (#4020)\"]"
+  },
+  {
+    "name": "every slice once and the plain witness once, each a job, holds; the join and the guard measure nothing",
+    "input": {
+      "coverage-part": {
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/2" },
+              { "part": "enforcing-2", "slice": "hash:2/2" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}" },
+        "steps": [
+          {
+            "name": "measure this part's coverage",
+            "run": "mise run ci:coverage \"$COVERAGE_PART\""
+          }
+        ]
+      },
+      "coverage": {
+        "steps": [
+          {
+            "name": "join the parts' reports",
+            "run": "mise run ci:coverage-merge target/coverage-parts/*/coverage.lcov"
+          }
+        ]
+      }
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a slice left out is refused: its tests would go unmeasured",
+    "input": {
+      "coverage-part": {
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/3" },
+              { "part": "enforcing-3", "slice": "hash:3/3" },
+              { "part": "plain", "slice": "plain" }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}" },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      }
+    },
+    "output": "[\"`coverage-part` runs the slices 1, 3 of 3: run every slice `hash:1/3` to `hash:3/3` once (#4020)\"]"
+  },
+  {
+    "name": "slices of two counts, an entry naming no part and no plain witness are each refused",
+    "input": {
+      "coverage-part": {
+        "strategy": {
+          "matrix": {
+            "include": [
+              { "part": "enforcing-1", "slice": "hash:1/2" },
+              { "part": "enforcing-2", "slice": "hash:2/3" },
+              { "part": "extra" }
+            ]
+          }
+        },
+        "env": { "COVERAGE_PART": "${{ matrix.slice }}" },
+        "steps": [{ "run": "mise run ci:coverage \"$COVERAGE_PART\"" }]
+      }
+    },
+    "output": "[\"`coverage-part` has a matrix entry `extra` naming no `slice`: name its part, `hash:<k>/<n>` or `plain` (#4020)\",\"`coverage-part` runs the plain-only witness 0 times: run it once, as the part `plain` (#4020)\",\"`coverage-part` runs the enforcing suite in slices of 2 and 3: name one count n and every slice `hash:1/n` to `hash:n/n` once (#4020)\"]"
+  }
+]

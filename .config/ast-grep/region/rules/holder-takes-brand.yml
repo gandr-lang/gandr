@@ -1,0 +1,60 @@
+# A struct, an enum, a union or a type alias that holds the brand `'r` and
+# has no generic parameters takes `<'r>` after its name.
+id: holder-takes-brand
+language: Rust
+severity: hint
+message: the holder of an id takes the region's brand
+rule:
+  pattern: $NAME
+  kind: type_identifier
+  inside:
+    field: name
+    all:
+      - any:
+          - kind: struct_item
+          - kind: enum_item
+          - kind: union_item
+          - kind: type_item
+      - has:
+          kind: lifetime
+          regex: ^'r$
+          stopBy: end
+      - not:
+          has:
+            field: type_parameters
+            kind: type_parameters
+fix: $NAME<'r>
+---
+# A struct, an enum, a union or a type alias that holds the brand `'r` and
+# has generic parameters takes `'r` first among them.
+id: holder-parameters-take-brand
+language: Rust
+severity: hint
+message: the holder of an id takes the region's brand
+rule:
+  pattern: $PARAMETERS
+  kind: type_parameters
+  inside:
+    field: type_parameters
+    all:
+      - any:
+          - kind: struct_item
+          - kind: enum_item
+          - kind: union_item
+          - kind: type_item
+      - has:
+          kind: lifetime
+          regex: ^'r$
+          stopBy: end
+  not:
+    has:
+      kind: lifetime
+      regex: ^'r$
+      stopBy: end
+transform:
+  BRANDED:
+    replace:
+      source: $PARAMETERS
+      replace: ^<
+      by: "<'r, "
+fix: $BRANDED

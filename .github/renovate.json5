@@ -1,0 +1,74 @@
+// Renovate for gandr: the shared gandr-lang policy, plus the tools the mise
+// tasks pin one by one, which neither Renovate's mise manager nor
+// `mise upgrade` reads.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["github>gandr-lang/quenchant//.github/renovate/default.json5"],
+  // `collector` keeps the dashboard out of the unit check.
+  dependencyDashboardLabels: ["kind:ci", "area:workflow", "collector"],
+  packageRules: [
+    {
+      matchFileNames: [".config/mise/tasks/**"],
+      groupName: "mise tools",
+    },
+    {
+      description: "jq 1.8.2 stops `findings.jq` at an assertion (the `pr:open` task).",
+      matchDepNames: ["jqlang/jq"],
+      allowedVersions: "!/^1\\.8\\.2$/",
+    },
+  ],
+  customManagers: [
+    {
+      customType: "regex",
+      description: "A task's Python, and the Python its spaCy environment is built with.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: [
+        'tools\\.python = "(?<currentValue>\\d+\\.\\d+\\.\\d+)"',
+        '--python (?<currentValue>\\d+\\.\\d+\\.\\d+)',
+      ],
+      depNameTemplate: "python",
+      datasourceTemplate: "python-version",
+      versioningTemplate: "python",
+    },
+    {
+      customType: "regex",
+      description: "A task's jq.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: ['tools\\.jq = "(?<currentValue>[^"]+)"'],
+      depNameTemplate: "jqlang/jq",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^jq-(?<version>.+)$",
+    },
+    {
+      customType: "regex",
+      description: "A task's yq.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: ['tools\\.yq = "(?<currentValue>[^"]+)"'],
+      depNameTemplate: "mikefarah/yq",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^v(?<version>.+)$",
+    },
+    {
+      customType: "regex",
+      description: "A task's tool from a GitHub release.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: ['tools\\."github:(?<depName>[\\w.-]+/[\\w.-]+)" = "(?<currentValue>[^"]+)"'],
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^v?(?<version>.+)$",
+    },
+    {
+      customType: "regex",
+      description: "A task's tool from crates.io.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: ['tools\\."cargo:(?<depName>[\\w-]+)" = "(?<currentValue>[^"]+)"'],
+      datasourceTemplate: "crate",
+    },
+    {
+      customType: "regex",
+      description: "A task's tool from PyPI.",
+      managerFilePatterns: ["/^\\.config/mise/tasks/.+\\.toml$/"],
+      matchStrings: ['tools\\."pipx:(?<depName>[\\w.-]+)" = \\{ version = "(?<currentValue>[^"]+)"'],
+      datasourceTemplate: "pypi",
+    },
+  ],
+}
