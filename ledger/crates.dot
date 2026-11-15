@@ -63,7 +63,6 @@ digraph crates {
     label = "storage";
     "storage-artifact";
     "storage-chunker";
-    "storage-io";
     "storage-records";
     "storage-schema";
     "storage-store";
@@ -283,8 +282,8 @@ digraph crates {
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
   "surface-dispatcher" -> "runtime-net";
+  "surface-dispatcher" -> "runtime-scope";
   "surface-dispatcher" -> "storage-artifact";
-  "surface-dispatcher" -> "storage-io";
   "surface-dispatcher" -> "storage-store";
   "surface-dispatcher" -> "storage-values";
   "surface-dispatcher" -> "surface-corpus";

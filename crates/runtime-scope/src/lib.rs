@@ -26,6 +26,8 @@ mod submission;
 
 pub use crate::error::RuntimeError;
 pub use crate::runtime::Runtime;
+pub use crate::scope::Scope;
+pub use crate::submission::Depth;
 
 /// The harnesses of the crate's tests, one for each area.
 #[cfg(test)]

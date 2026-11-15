@@ -27,7 +27,6 @@ members = [
   "crates/runtime-uring",
   "crates/storage-artifact",
   "crates/storage-chunker",
-  "crates/storage-io",
   "crates/storage-records",
   "crates/storage-schema",
   "crates/storage-store",
@@ -635,7 +634,6 @@ path = "crates/kernel-core-base"
 # and an allocator under the same budget.
 # consumers:
 # - runtime-scope (dev)
-# - storage-io (dev)
 [workspace.dependencies.gandr-kernel-data]
 path = "crates/kernel-data"
 
@@ -725,6 +723,13 @@ path = "crates/runtime-emitter"
 [workspace.dependencies.gandr-runtime-net]
 path = "crates/runtime-net"
 
+# The owner's scoped runtime: one thread drives a scope's futures over the
+# kernel's ring, and the scope's end drains its operations.
+# consumers:
+# - surface-dispatcher (Linux)
+[workspace.dependencies.gandr-runtime-scope]
+path = "crates/runtime-scope"
+
 # The L machine's transitions written once: the stencils the emitter copies
 # and the portable executor that dispatches the same functions.
 # consumers:
@@ -736,6 +741,7 @@ path = "crates/runtime-stencils"
 # submissions and completions.
 # consumers:
 # - runtime-scope
+# - surface-dispatcher (dev, Linux)
 [workspace.dependencies.gandr-runtime-uring]
 path = "crates/runtime-uring"
 
@@ -757,13 +763,6 @@ path = "crates/storage-artifact"
 # - storage-values
 [workspace.dependencies.gandr-storage-chunker]
 path = "crates/storage-chunker"
-
-# The IO layer: one io_uring for each worker on the kernel's own system
-# calls, and the blocking form beside it.
-# consumers:
-# - surface-dispatcher
-[workspace.dependencies.gandr-storage-io]
-path = "crates/storage-io"
 
 # The authenticated ordered-record plane.
 # consumers:

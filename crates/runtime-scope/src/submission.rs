@@ -83,7 +83,7 @@ impl TryFrom<u64> for Key
 /// The count of a table's slots: the depth of the ring.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Depth(usize);
+pub struct Depth(u16);
 
 impl From<u16> for Depth
 {
@@ -95,7 +95,21 @@ impl From<u16> for Depth
     #[inline]
     fn from(entries: u16) -> Self
     {
-        Self(usize::from(entries))
+        Self(entries)
+    }
+}
+
+impl From<Depth> for u16
+{
+    /// The count of the ring's entries at `depth`.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    #[inline]
+    fn from(depth: Depth) -> Self
+    {
+        depth.0
     }
 }
 
@@ -162,17 +176,15 @@ impl Table
     /// - allocation: the slots and the stack of free keys, setup
     pub fn new(depth: Depth) -> Self
     {
+        let depth = usize::from(depth.0);
         let slots = ::core::iter::repeat_with(|| Cell::new(Slot::Free))
-            .take(depth.0)
+            .take(depth)
             .collect();
-        let free = (0 .. depth.0)
-            .rev()
-            .map(|key| Cell::new(Key(key)))
-            .collect();
+        let free = (0 .. depth).rev().map(|key| Cell::new(Key(key))).collect();
         Self {
             slots,
             free,
-            free_len: Cell::new(depth.0),
+            free_len: Cell::new(depth),
             held: Cell::new(0),
         }
     }

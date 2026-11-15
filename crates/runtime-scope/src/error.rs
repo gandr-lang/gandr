@@ -30,6 +30,9 @@ pub enum RuntimeError
     },
     /// A completion's user data named no slot of the table.
     Unknown(u64),
+    /// An earlier run of the runtime failed, so the kernel can hold that
+    /// run's operations. The runtime takes no further run.
+    Spent,
 }
 
 impl From<::std::io::Error> for RuntimeError
@@ -73,6 +76,7 @@ impl fmt::Display for RuntimeError
                 )
             },
             Self::Unknown(data) => write!(f, "task lookup failed: {data}"),
+            Self::Spent => f.write_str("an earlier run failed, and the runtime is spent"),
         }
     }
 }

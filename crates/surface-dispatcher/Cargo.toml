@@ -90,7 +90,6 @@ gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
 gandr-runtime-net.workspace = true
 gandr-storage-artifact.workspace = true
-gandr-storage-io.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-corpus.workspace = true
@@ -143,8 +142,16 @@ serde.workspace = true
 serde_json.workspace = true
 
 # The host's counter waits on its word across processes through the futex.
+# Each worker of the pool owns one runtime of the scoped runtime, which it
+# opens at its first IO.
 [target.'cfg(target_os = "linux")'.dependencies]
+gandr-runtime-scope.workspace = true
 rustix.workspace = true
+
+# The test of the worker's runtime prepares a write through the ring's own
+# preparer. The scoped runtime has no write of its own.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gandr-runtime-uring.workspace = true
 
 # The default width counts the host's physical performance cores; Linux reads
 # them from sysfs with std alone.

@@ -45,8 +45,8 @@ flowchart BT
   surface -->|37| theory
   surface -->|28| kernel
   surface -->|45| core
-  surface -->|12| storage
-  surface -->|6| runtime
+  surface -->|11| storage
+  surface -->|7| runtime
   workflow -->|1| theory
   workflow -->|2| core
   workflow -->|18| surface
@@ -86,7 +86,6 @@ crates/
 ├── runtime-uring/                 the kernel's io_uring as the owner wrote it: the ring, its queues, its registrar, a preparer for each operation, and his system-call base beside them
 ├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
-├── storage-io/                    the IO layer: one io_uring for each worker on the kernel's own system calls
 ├── storage-records/               the authenticated ordered-record plane
 ├── storage-schema/                the record plane as C-sets with checked equations
 ├── storage-store/                 one store over both planes and named roots

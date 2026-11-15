@@ -1711,14 +1711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gandr-storage-io"
-version = "0.0.0"
-dependencies = [
- "gandr-kernel-data",
- "quenchant-anodized",
-]
-
-[[package]]
 name = "gandr-storage-records"
 version = "0.0.0"
 dependencies = [
@@ -1855,8 +1847,9 @@ dependencies = [
  "gandr-kernel-term",
  "gandr-runtime-emitter",
  "gandr-runtime-net",
+ "gandr-runtime-scope",
+ "gandr-runtime-uring",
  "gandr-storage-artifact",
- "gandr-storage-io",
  "gandr-storage-store",
  "gandr-storage-values",
  "gandr-surface-corpus",

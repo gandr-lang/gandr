@@ -6,6 +6,7 @@
 use ::core::alloc::GlobalAlloc;
 use ::core::alloc::Layout;
 use ::core::cell::Cell;
+use ::gandr_runtime_scope::Depth;
 use ::gandr_runtime_scope::Runtime;
 use ::gandr_runtime_uring::Sqe64;
 use ::std::alloc::System;
@@ -111,7 +112,7 @@ mod request
                 sqe.prep_nop();
             }
         };
-        let runtime = Runtime::new().unwrap();
+        let mut runtime = Runtime::with_depth(Depth::from(4096_u16)).unwrap();
         let made = runtime
             .run(async |scope| {
                 scope.request(nop).await.unwrap();
@@ -122,6 +123,33 @@ mod request
                 ALLOCATIONS.with(Cell::get).saturating_sub(before)
             })
             .unwrap();
+        assert_eq!(made, 0);
+    }
+
+    /// A second run of one runtime, with a no-op in it, makes no allocation
+    /// of the thread: the runtime keeps its ring and its table.
+    #[test]
+    #[cfg_attr(
+        miri,
+        ignore = "it sets up a ring of the kernel, which Miri cannot run"
+    )]
+    fn a_later_run_allocates_nothing()
+    {
+        let nop = |sqe: &mut Sqe64<'_>| {
+            // SAFETY: a no-op reads no pointer and names no descriptor.
+            unsafe {
+                sqe.prep_nop();
+            }
+        };
+        let mut runtime = Runtime::with_depth(Depth::from(8_u16)).unwrap();
+        runtime
+            .run(async |scope| scope.request(nop).await.unwrap())
+            .unwrap();
+        let before = ALLOCATIONS.with(Cell::get);
+        runtime
+            .run(async |scope| scope.request(nop).await.unwrap())
+            .unwrap();
+        let made = ALLOCATIONS.with(Cell::get).saturating_sub(before);
         assert_eq!(made, 0);
     }
 }
