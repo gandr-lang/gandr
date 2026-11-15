@@ -36,6 +36,7 @@ use gandr_surface_dispatcher::Coordinate;
 use gandr_surface_dispatcher::Export;
 use gandr_surface_dispatcher::Exporting;
 use gandr_surface_dispatcher::Field;
+use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Identity;
 use gandr_surface_dispatcher::LOCK;
 use gandr_surface_dispatcher::Lock;
@@ -48,6 +49,7 @@ use gandr_surface_dispatcher::Package;
 use gandr_surface_dispatcher::Pool;
 use gandr_surface_dispatcher::Reconciled;
 use gandr_surface_dispatcher::Revisions;
+use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Shadows;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Threads;
@@ -60,6 +62,7 @@ use gandr_surface_dispatcher::Unreadmitted;
 use gandr_surface_dispatcher::Unresolved;
 use gandr_surface_dispatcher::Unshadowed;
 use gandr_surface_dispatcher::Unstated;
+use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::WORKSPACE_LOCK;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
@@ -879,6 +882,103 @@ fn a_model_s_sources_is_the_literal_discovery_reads_4916()
         "a laid-out nested module's `sources` reads none"
     );
     std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
+}
+
+/// Each file below `from` copied to the same path below `to`, the entries of
+/// each directory made in the reverse of their sorted order (#7635).
+///
+/// # Specification
+/// trivial.
+fn copied_in_reverse(
+    from: &Path,
+    to: &Path,
+)
+{
+    let mut pending = vec![(from.to_path_buf(), to.to_path_buf())];
+    while let Some((from, to)) = pending.pop() {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(&from)
+            .expect("the directory reads")
+            .map(|entry| entry.expect("the entry reads").path())
+            .collect();
+        entries.sort();
+        for entry in entries.into_iter().rev() {
+            let target = to.join(entry.file_name().expect("an entry has a name"));
+            if entry.is_dir() {
+                std::fs::create_dir_all(&target).expect("the directory is made");
+                pending.push((entry, target));
+            }
+            else {
+                let _bytes = std::fs::copy(&entry, &target).expect("the file is copied");
+            }
+        }
+    }
+}
+
+/// #7635: a package is the standard library by its model's name, wherever it
+/// stands. A copy of `library/std` outside the tree, its entries made in the
+/// reverse of their order, checks as the checkout does. Its modules are homed,
+/// so each names its own host interface, and its imports of `std` read the
+/// copy's own modules. The same copy under another name is no standard
+/// library, and its modules that name their own interfaces are refused.
+#[test]
+fn a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635()
+{
+    let library = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../library/std");
+    let copy = scratch(Path::new("std-copy"), &[]);
+    copied_in_reverse(&library, &copy);
+    let standard = |path: &Path| match Package::discover(path) {
+        Maybe::Present(package) => package.library() == gandr_surface_dispatcher::Library::Standard,
+        Maybe::Absent(_) => panic!("{} stands in a package", path.display()),
+    };
+    let walked = |path: &Path| {
+        let ControlFlow::Continue(report) = Walk::new(vec![path.to_path_buf()])
+            .visit::<Evaluator, _, _>(
+                &Pool::new(Width::SERIAL),
+                |step| -> ControlFlow<Infallible> {
+                    if let Step::Fault { path, fault } = step {
+                        panic!("{}: {fault}", path.display());
+                    }
+                    ControlFlow::Continue(())
+                },
+            );
+        let declarations = report.tally().declarations();
+        (
+            usize::from(declarations.settled()),
+            usize::from(declarations.unsettled()),
+            report.verdict(Verb::Check(Goals::Gated)),
+            report.to_string(),
+        )
+    };
+    let (checked_out, none, verdict, shown) = walked(&library);
+    assert!(
+        checked_out > 0_usize && none == 0_usize && verdict == RunVerdict::Settled,
+        "the checkout settles each declaration:\n{shown}"
+    );
+    assert!(
+        standard(&copy.join("src/io.gandr")),
+        "the copy is the standard library"
+    );
+    let (settled, unsettled, verdict, shown) = walked(&copy);
+    assert_eq!(
+        (settled, unsettled, verdict),
+        (checked_out, 0_usize, RunVerdict::Settled),
+        "the copy checks as the checkout does:\n{shown}"
+    );
+    let model = std::fs::read_to_string(copy.join("package.gandr")).expect("the model reads");
+    std::fs::write(
+        copy.join("package.gandr"),
+        model.replace("def name = \"std\";", "def name = \"other\";"),
+    )
+    .expect("the model is written");
+    assert!(
+        !standard(&copy.join("src/io.gandr")),
+        "a package named otherwise is no standard library"
+    );
+    let (_, unsettled, _, shown) = walked(&copy);
+    assert!(
+        unsettled > 0_usize,
+        "a module of a package named otherwise cannot name its own interface:\n{shown}"
+    );
 }
 
 /// #2687: a manifest renders its header, the digest of its body and its

@@ -93,6 +93,7 @@ use super::DIGEST;
 use super::Differing;
 use super::Held;
 use super::Identity;
+use super::Library;
 use super::Manifested;
 use super::Opening;
 use super::Package;
@@ -936,6 +937,10 @@ impl Package
     /// - executable: none — the clause reads the file system and lowers every
     ///   package again; the witnesses observe each outcome.
     ///
+    /// # Cost
+    /// - allocation: the walk's frames, its open roots and the lock's entries,
+    ///   setup
+    ///
     /// # Errors
     /// [`Unresolved::Unpackaged`] for a coordinate rooting no package,
     /// [`Unresolved::Unrevisioned`] for a `gh:` coordinate no lock gives a
@@ -1624,15 +1629,17 @@ fn source_of(directory: &Path) -> Option<PathBuf>
     Some(dependency.source().to_path_buf())
 }
 
-/// The file an import through [`STANDARD`] names when no lock records it, the
-/// path below it `rest`: the standard library's package source for `std`
-/// alone, and the file under its sources otherwise; none when the tree this
-/// build was built from holds no standard library.
+/// The file an import through [`STANDARD`] names from a source outside the
+/// standard library when no lock records it, the path below it `rest`: the
+/// standard library's package source for `std` alone, and the file under its
+/// sources otherwise; none when the tree this build was built from holds no
+/// standard library. A source inside the standard library reads its own
+/// package instead (#7635).
 ///
-/// **Choice.** The standard library is `library/std` of the tree the driver
-/// was built from, the one every toolchain links today. **Reversal.** A
-/// toolchain that ships its standard library beside its `gandr` names it
-/// there.
+/// **Choice.** The standard library such an import reads is `library/std` of
+/// the tree the driver was built from. **Reversal.** #7685 replaces this place
+/// with the place the host's profile names, else the first package named
+/// `std` that a workspace above the source names.
 ///
 /// # Specification
 /// trivial.
@@ -1649,43 +1656,70 @@ pub fn standard(rest: Option<&Path>) -> Option<PathBuf>
 
 /// The module path of the standard library's source at `path`, `std.io` for
 /// its `src/io.gandr` and `std` for its package source: the module whose
-/// host interfaces the source names without importing it (#4523).
+/// host interfaces the source names without importing it (#4523). A package
+/// is the standard library by its model's name, wherever it stands (#7635).
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`STANDARD`] for the standard library's package source, else
-///   [`STANDARD`], a dot and the path's module path under the standard
-///   library's sources, as the package walk names it; none for a path outside
-///   them, or when the tree this build was built from holds no standard
-///   library.
+/// - ensures: [`standard_module_of`] the package [`Package::discover`] finds
+///   from `path`; none for a path in no package.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause reads the file system again.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — `std.io`'s file is `std.io`, the package source is `std`,
-///   and a source beside the importer is none.
+/// - hypothesis: L3 — the witnesses of [`standard_module_of`].
 /// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
+/// - witness: `tests::package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635`
 #[must_use]
 pub fn standard_module(path: &Path) -> Option<String>
 {
-    static LIBRARY: std::sync::OnceLock<Option<(PathBuf, PathBuf)>> = std::sync::OnceLock::new();
-    let &(ref source, ref sources) = LIBRARY
-        .get_or_init(|| match Package::discover(Path::new(STANDARD_ROOT)) {
-            Maybe::Present(library) => Some((
-                library.source().to_path_buf(),
-                std::fs::canonicalize(library.sources()).ok()?,
-            )),
-            Maybe::Absent(_) => None,
-        })
-        .as_ref()?;
+    match Package::discover(path) {
+        Maybe::Present(package) => standard_module_of(&package, path),
+        Maybe::Absent(_) => None,
+    }
+}
+
+/// The module path of the source at `path` in `package` when `package` is the
+/// standard library: `std` for its package source, and `std`, a dot and the
+/// path's module path under its sources otherwise (#4523, #7635).
+///
+/// # Specification
+/// - requires: `package` is the package [`Package::discover`] finds from
+///   `path`.
+/// - ensures: none when [`Package::library`] is not [`Library::Standard`]; else
+///   [`STANDARD`] for its package source, else [`STANDARD`], a dot and the
+///   path's module path under its sources, as the package walk names it; none
+///   for a path outside them.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the file system again.
+///
+/// # Cost
+/// - allocation: the canonical path and the module path, setup
+///
+/// # Adequacy
+/// - hypothesis: L3 — `std.io`'s file is `std.io` and the package source is
+///   `std`, in the checkout and in a copy elsewhere; a source of a package
+///   named otherwise is none.
+/// - witness: `component::tests::a_std_module_path_names_the_standard_library_from_any_root_4517`
+/// - witness: `tests::package::a_copy_of_the_standard_library_elsewhere_is_the_standard_library_7635`
+#[must_use]
+pub fn standard_module_of(
+    package: &Package,
+    path: &Path,
+) -> Option<String>
+{
+    if package.library() != Library::Standard {
+        return None;
+    }
     let canonical = || std::fs::canonicalize(path).ok();
-    if path == source.as_path() || canonical().as_deref() == Some(source.as_path()) {
+    if path == package.source() || canonical().as_deref() == Some(package.source()) {
         return Some(alloc::string::String::from(STANDARD));
     }
-    let module = super::module_path(sources, path).or_else(|| {
+    let module = super::module_path(package.sources(), path).or_else(|| {
         let canonical = canonical()?;
-        super::module_path(sources, &canonical)
+        super::module_path(package.sources(), &canonical)
     })?;
     Some(alloc::format!("{STANDARD}.{module}"))
 }
@@ -1695,7 +1729,7 @@ pub fn standard_module(path: &Path) -> Option<String>
 ///
 /// # Specification
 /// trivial.
-fn within(
+pub fn within(
     dependency: &Package,
     rest: Option<&Path>,
 ) -> PathBuf

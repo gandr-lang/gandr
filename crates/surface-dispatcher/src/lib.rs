@@ -366,6 +366,7 @@ pub use crate::package::Differing;
 pub use crate::package::Field;
 pub use crate::package::Held;
 pub use crate::package::Identity;
+pub use crate::package::Library;
 pub use crate::package::MANIFEST;
 pub use crate::package::Manifest;
 pub use crate::package::ManifestFault;
