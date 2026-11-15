@@ -2516,14 +2516,18 @@ fn opaque_key(node: ArenaNode) -> NodeKey
 /// that a layout gives it.
 ///
 /// It takes a verdict to its keyed form. A session that takes an edit and a
-/// fresh one judge one text into two arenas, and the keyed forms agree.
-#[derive(Clone, Copy, Debug)]
+/// fresh one judge one text into two arenas, and the keyed forms agree. It
+/// keeps the key of each node that it keys, so a node that two parts of a
+/// report name is encoded once.
+#[derive(Debug)]
 pub struct NodeKeys<'program>
 {
     /// The arena whose nodes it keys.
     arena: &'program CoreArena,
     /// The items that name the constants.
     layout: &'program Layout,
+    /// The key of each node keyed so far.
+    memo: core::cell::RefCell<BTreeMap<ArenaNode, NodeKey>>,
 }
 
 impl<'program> NodeKeys<'program>
@@ -2540,7 +2544,11 @@ impl<'program> NodeKeys<'program>
         layout: &'program Layout,
     ) -> Self
     {
-        Self { arena, layout }
+        Self {
+            arena,
+            layout,
+            memo: core::cell::RefCell::new(BTreeMap::new()),
+        }
     }
 
     /// The keys of the nodes of `program`'s arena, under its layout.
@@ -2554,13 +2562,13 @@ impl<'program> NodeKeys<'program>
         Self::new(program.arena(), program.layout())
     }
 
-    /// The key of `node`.
+    /// The key of `node`, encoded on its first request.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`node_key`] of `node`; for a node whose content holds an
     ///   unresolved node, the key of its sort alone.
-    /// - panics: none.
+    /// - panics: none; the memo is never borrowed across an encoding.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`node_key`].
@@ -2576,10 +2584,15 @@ impl<'program> NodeKeys<'program>
         node: ArenaNode,
     ) -> NodeKey
     {
-        match node_key((self.arena, self.layout), node) {
+        if let Some(&key) = self.memo.borrow().get(&node) {
+            return key;
+        }
+        let key = match node_key((self.arena, self.layout), node) {
             Maybe::Present(key) => key,
             Maybe::Absent(_) => opaque_key(node),
-        }
+        };
+        let _replaced = self.memo.borrow_mut().insert(node, key);
+        key
     }
 }
 

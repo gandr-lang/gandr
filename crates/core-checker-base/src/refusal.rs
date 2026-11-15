@@ -2826,5 +2826,32 @@ where
 /// by its id in the checker's arena.
 pub type Compared = ComparedOf<Arena>;
 
+impl Compared
+{
+    /// The same comparison, each type named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> ComparedOf<Keyed>
+    where
+        K: Keying,
+    {
+        let side = |side: Maybe<TypeNode, compared::Absent>| match side {
+            Maybe::Present(node) => Maybe::Present(node.keyed(keys)),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        ComparedOf {
+            expected: side(self.expected),
+            found: side(self.found),
+            unfolded: side(self.unfolded),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

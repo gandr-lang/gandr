@@ -47,10 +47,17 @@ use anodized::spec;
 use gandr_core_term::ValueTypeId;
 use quenchant_shape::shape::Maybe;
 
+use crate::naming::Arena;
+use crate::naming::Keyed;
+use crate::naming::Keying;
+use crate::naming::Naming;
 use crate::refusal::CheckRefusal;
-use crate::refusal::CoreNode;
-use crate::refusal::TypeNode;
+use crate::refusal::CheckRefusalOf;
+use crate::refusal::ComparedOf;
+use crate::refusal::CoreNodeOf;
+use crate::refusal::TypeNodeOf;
 use crate::session::LiveEndpoint;
+use crate::session::LiveEndpointOf;
 
 quenchant_shape::reason_enum! {
     /// Why a judgement names no type it was checked against.
@@ -522,21 +529,25 @@ impl fmt::Display for FrameRole
 
 /// One rule pending when a run refused: a frame of the machine.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Obligation
+pub struct ObligationOf<N>
+where
+    N: Naming,
 {
     /// The rule the frame stands for.
     role: FrameRole,
     /// The node the rule stands on: the goal under way when it pushed the
     /// frame.
-    at: CoreNode,
+    at: CoreNodeOf<N>,
     /// The type that node was checked against.
-    expected: Maybe<TypeNode, judged::Absent>,
+    expected: Maybe<TypeNodeOf<N>, judged::Absent>,
     /// The types of the binders the rule opened and has not closed, outermost
     /// first.
-    binders: Vec<ValueTypeId>,
+    binders: Vec<N::ValueType>,
 }
 
-impl Obligation
+impl<N> ObligationOf<N>
+where
+    N: Naming,
 {
     /// The obligation of a frame of `role`, pushed while `at` was judged
     /// against `expected`, holding the binders of types `binders` open.
@@ -547,9 +558,9 @@ impl Obligation
     #[must_use]
     pub const fn new(
         role: FrameRole,
-        at: CoreNode,
-        expected: Maybe<TypeNode, judged::Absent>,
-        binders: Vec<ValueTypeId>,
+        at: CoreNodeOf<N>,
+        expected: Maybe<TypeNodeOf<N>, judged::Absent>,
+        binders: Vec<N::ValueType>,
     ) -> Self
     {
         Self {
@@ -577,7 +588,7 @@ impl Obligation
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn at(&self) -> CoreNode
+    pub const fn at(&self) -> CoreNodeOf<N>
     {
         self.at
     }
@@ -587,7 +598,7 @@ impl Obligation
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn expected(&self) -> Maybe<TypeNode, judged::Absent>
+    pub const fn expected(&self) -> Maybe<TypeNodeOf<N>, judged::Absent>
     {
         self.expected
     }
@@ -600,9 +611,43 @@ impl Obligation
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn binders(&self) -> &[ValueTypeId]
+    pub fn binders(&self) -> &[N::ValueType]
     {
         &self.binders
+    }
+}
+
+/// A pending rule of the checker's arena.
+pub type Obligation = ObligationOf<Arena>;
+
+impl Obligation
+{
+    /// The same rule, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        &self,
+        keys: &K,
+    ) -> ObligationOf<Keyed>
+    where
+        K: Keying,
+    {
+        ObligationOf {
+            role: self.role,
+            at: self.at.keyed(keys),
+            expected: match self.expected {
+                Maybe::Present(node) => Maybe::Present(node.keyed(keys)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            binders: self
+                .binders
+                .iter()
+                .map(|&binder| keys.value_type(binder))
+                .collect(),
+        }
     }
 }
 
@@ -620,17 +665,21 @@ pub enum Stage
 
 /// The goal a run was pursuing when it refused.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Pursuit
+pub struct PursuitOf<N>
+where
+    N: Naming,
 {
     /// The node judged or formed.
-    at: CoreNode,
+    at: CoreNodeOf<N>,
     /// The type it was checked against.
-    expected: Maybe<TypeNode, judged::Absent>,
+    expected: Maybe<TypeNodeOf<N>, judged::Absent>,
     /// Where the machine stood.
     stage: Stage,
 }
 
-impl Pursuit
+impl<N> PursuitOf<N>
+where
+    N: Naming,
 {
     /// The pursuit of `at` against `expected`, at `stage`.
     ///
@@ -639,8 +688,8 @@ impl Pursuit
     #[inline]
     #[must_use]
     pub const fn new(
-        at: CoreNode,
-        expected: Maybe<TypeNode, judged::Absent>,
+        at: CoreNodeOf<N>,
+        expected: Maybe<TypeNodeOf<N>, judged::Absent>,
         stage: Stage,
     ) -> Self
     {
@@ -658,7 +707,7 @@ impl Pursuit
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn at(&self) -> CoreNode
+    pub const fn at(&self) -> CoreNodeOf<N>
     {
         self.at
     }
@@ -668,7 +717,7 @@ impl Pursuit
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn expected(&self) -> Maybe<TypeNode, judged::Absent>
+    pub const fn expected(&self) -> Maybe<TypeNodeOf<N>, judged::Absent>
     {
         self.expected
     }
@@ -685,30 +734,61 @@ impl Pursuit
     }
 }
 
+/// A goal of the checker's arena.
+pub type Pursuit = PursuitOf<Arena>;
+
+impl Pursuit
+{
+    /// The same goal, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> PursuitOf<Keyed>
+    where
+        K: Keying,
+    {
+        PursuitOf {
+            at: self.at.keyed(keys),
+            expected: match self.expected {
+                Maybe::Present(node) => Maybe::Present(node.keyed(keys)),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            },
+            stage: self.stage,
+        }
+    }
+}
+
 /// A refused run's state: the refusal, the obligations pending outermost
 /// first, the goal under way, the hypotheses the run had opened and the
 /// endpoints its linear zone held.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Failure
+pub struct FailureOf<N>
+where
+    N: Naming,
 {
     /// The refusal.
-    refusal: CheckRefusal,
+    refusal: CheckRefusalOf<N>,
     /// The frames pending, outermost first.
-    obligations: Box<[Obligation]>,
+    obligations: Box<[ObligationOf<N>]>,
     /// The goal under way.
-    pursuit: Pursuit,
+    pursuit: PursuitOf<N>,
     /// The binders the run had opened, outermost first. Boxed slices, not
     /// vectors: a failure is returned by value on every refused path, and
     /// the capacities it would never use kept it past the size an error is
     /// passed at cheaply.
-    hypotheses: Box<[ValueTypeId]>,
+    hypotheses: Box<[N::ValueType]>,
     /// The endpoints the run had bound, outermost first.
-    endpoints: Box<[LiveEndpoint]>,
+    endpoints: Box<[LiveEndpointOf<N>]>,
     /// The types the refusal compares, read through the solutions the
     /// solver held when it refused; none when no solution changed either.
     /// One thin box, so the failure stays at the size an error is passed
     /// at cheaply.
-    solved: Option<Box<crate::refusal::Compared>>,
+    solved: Option<Box<ComparedOf<N>>>,
 }
 
 impl Failure
@@ -784,7 +864,12 @@ impl Failure
             solved: solved.map(Box::new),
         }
     }
+}
 
+impl<N> FailureOf<N>
+where
+    N: Naming,
+{
     /// The types the refusal compares, read through the solutions the solver
     /// held when it refused; none when no solution changed either.
     ///
@@ -792,7 +877,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn solutions(&self) -> Option<crate::refusal::Compared>
+    pub fn solutions(&self) -> Option<ComparedOf<N>>
     {
         self.solved.as_deref().copied()
     }
@@ -817,7 +902,7 @@ impl Failure
     )]
     pub(crate) fn under(
         self,
-        mut outer: Vec<ValueTypeId>,
+        mut outer: Vec<N::ValueType>,
     ) -> Self
     {
         if outer.is_empty() {
@@ -838,7 +923,7 @@ impl Failure
     /// trivial.
     pub(crate) fn solved_as(
         self,
-        solved: crate::refusal::Compared,
+        solved: ComparedOf<N>,
     ) -> Self
     {
         Self {
@@ -859,8 +944,8 @@ impl Failure
     #[must_use]
     pub fn solved(
         &self,
-        written: TypeNode,
-    ) -> TypeNode
+        written: TypeNodeOf<N>,
+    ) -> TypeNodeOf<N>
     {
         let Some(solved) = self.solved.as_deref()
         else {
@@ -885,7 +970,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn refusal(&self) -> CheckRefusal
+    pub const fn refusal(&self) -> CheckRefusalOf<N>
     {
         self.refusal
     }
@@ -896,7 +981,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn obligations(&self) -> &[Obligation]
+    pub fn obligations(&self) -> &[ObligationOf<N>]
     {
         &self.obligations
     }
@@ -907,7 +992,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn pursuit(&self) -> Pursuit
+    pub const fn pursuit(&self) -> PursuitOf<N>
     {
         self.pursuit
     }
@@ -918,7 +1003,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn hypotheses(&self) -> &[ValueTypeId]
+    pub fn hypotheses(&self) -> &[N::ValueType]
     {
         &self.hypotheses
     }
@@ -931,7 +1016,7 @@ impl Failure
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn endpoints(&self) -> &[LiveEndpoint]
+    pub fn endpoints(&self) -> &[LiveEndpointOf<N>]
     {
         &self.endpoints
     }
@@ -960,14 +1045,14 @@ impl Failure
     #[spec(ensures: |ret| ret.len() >= self.hypotheses.len())]
     #[inline]
     #[must_use]
-    pub fn types(&self) -> Vec<TypeNode>
+    pub fn types(&self) -> Vec<TypeNodeOf<N>>
     {
         let compared = self.refusal.compared();
-        let present = |side: Maybe<TypeNode, judged::Absent>| match side {
+        let present = |side: Maybe<TypeNodeOf<N>, judged::Absent>| match side {
             Maybe::Present(node) => Some(node),
             Maybe::Absent(_) => None,
         };
-        let mut types: Vec<TypeNode> = [compared.expected, compared.found, compared.unfolded]
+        let mut types: Vec<TypeNodeOf<N>> = [compared.expected, compared.found, compared.unfolded]
             .into_iter()
             .filter_map(|side| match side {
                 Maybe::Present(node) => Some(node),
@@ -977,15 +1062,55 @@ impl Failure
         types.extend(present(self.pursuit.expected));
         for obligation in &self.obligations {
             types.extend(present(obligation.expected));
-            types.extend(obligation.binders.iter().copied().map(TypeNode::Value));
+            types.extend(obligation.binders.iter().copied().map(TypeNodeOf::Value));
         }
-        types.extend(self.hypotheses.iter().copied().map(TypeNode::Value));
+        types.extend(self.hypotheses.iter().copied().map(TypeNodeOf::Value));
         types.extend(
             self.endpoints
                 .iter()
-                .map(|live| TypeNode::Value(live.state)),
+                .map(|live| TypeNodeOf::Value(live.state)),
         );
         types
+    }
+}
+
+/// A refused run's state in the checker's arena.
+pub type Failure = FailureOf<Arena>;
+
+impl Failure
+{
+    /// The same state, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        &self,
+        keys: &K,
+    ) -> FailureOf<Keyed>
+    where
+        K: Keying,
+    {
+        FailureOf {
+            refusal: self.refusal.keyed(keys),
+            obligations: self
+                .obligations
+                .iter()
+                .map(|obligation| obligation.keyed(keys))
+                .collect(),
+            pursuit: self.pursuit.keyed(keys),
+            hypotheses: self
+                .hypotheses
+                .iter()
+                .map(|&hypothesis| keys.value_type(hypothesis))
+                .collect(),
+            endpoints: self.endpoints.iter().map(|live| live.keyed(keys)).collect(),
+            solved: self
+                .solved
+                .as_deref()
+                .map(|solved| Box::new(solved.keyed(keys))),
+        }
     }
 }
 

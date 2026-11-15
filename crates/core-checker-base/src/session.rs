@@ -468,14 +468,42 @@ impl LinearityDefect
 
 /// An endpoint the linear zone held when a run refused.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct LiveEndpoint
+pub struct LiveEndpointOf<N>
+where
+    N: Naming,
 {
     /// The endpoint.
-    pub endpoint: Endpoint,
+    pub endpoint: EndpointOf<N>,
     /// Its session type.
-    pub state: ValueTypeId,
+    pub state: N::ValueType,
     /// Whether it was still unconsumed.
     pub use_state: LinearUse,
+}
+
+/// An endpoint of the checker's arena that a linear zone held.
+pub type LiveEndpoint = LiveEndpointOf<Arena>;
+
+impl LiveEndpoint
+{
+    /// The same endpoint, each node named by its content key.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn keyed<K>(
+        self,
+        keys: &K,
+    ) -> LiveEndpointOf<Keyed>
+    where
+        K: Keying,
+    {
+        LiveEndpointOf {
+            endpoint: self.endpoint.keyed(keys),
+            state: keys.value_type(self.state),
+            use_state: self.use_state,
+        }
+    }
 }
 
 quenchant_shape::reason_enum! {
