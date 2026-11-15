@@ -212,7 +212,7 @@ const FIFO_END: &str = ".fifo";
 /// long for the next one when no give wakes the porter. An idle porter reads
 /// the FIFO, writes its spare back and waits once each tick: three system
 /// calls. #7627 wakes the porter on macOS by a kqueue event, and the tick goes.
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 const TICK: Duration = Duration::from_millis(10);
 
 /// How long the porter waits before it reads the FIFO again.
@@ -877,6 +877,7 @@ impl Host
     ///
     /// # Cost
     /// - allocation: the FIFO's path, setup
+    #[cfg(unix)]
     pub(super) fn fifo(
         &self,
         directory: &Path,
@@ -899,6 +900,7 @@ impl Host
     /// - hypothesis: L3 — a porter that dies while it waits leaves no wake to
     ///   the counter after the reap.
     /// - witness: `pool::host::porter::tests::a_dead_porter_s_tokens_come_back_at_the_reap`
+    #[cfg(unix)]
     pub(super) fn post(
         &self,
         porting: Porting,
@@ -928,6 +930,7 @@ impl Host
     /// # Adequacy
     /// - hypothesis: L3 — as [`Host::post`].
     /// - witness: `pool::host::porter::tests::a_dead_porter_s_tokens_come_back_at_the_reap`
+    #[cfg(unix)]
     pub(super) fn unpost(&self)
     {
         let counter = &self.mapping.segment().counter;
@@ -947,6 +950,7 @@ impl Host
     ///
     /// # Specification
     /// trivial.
+    #[cfg(unix)]
     fn held(&self) -> Count
     {
         Count(u32::try_from(self.slot().held.load(Ordering::SeqCst)).unwrap_or(0))
@@ -1355,6 +1359,7 @@ fn summon(counter: &Counter)
 ///
 /// # Specification
 /// trivial.
+#[cfg(unix)]
 fn raise_porters(
     counter: &Counter,
     porting: Porting,

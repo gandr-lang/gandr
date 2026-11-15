@@ -356,6 +356,15 @@
         "crates/core-term/",
         "ledger/features.sql"
       ],
+      "check:unsafe-skips": [
+        ".cargo/",
+        ".config/cases/",
+        ".config/mise/scope",
+        ".config/unsafe/",
+        "Cargo.lock",
+        "Cargo.toml",
+        "crates/"
+      ],
       "check:vectors": [".config/pr-stack/", "crates/storage-records/", "crates/storage-values/"],
       "check:vscode-smoke-admits": [".config/vscode-smoke/"],
       "check:witness-cases": [
