@@ -61,7 +61,7 @@ unsafe impl GlobalAlloc for Counting
 static GLOBAL: Counting = Counting;
 
 #[cfg(test)]
-mod path
+mod request
 {
     use super::*;
 
