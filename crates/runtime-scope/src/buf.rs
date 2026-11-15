@@ -2,7 +2,7 @@
 
 pub type BufResult<T, B> = (::std::io::Result<T>, B);
 
-pub unsafe trait IoBuf: Unpin + 'static
+pub unsafe trait IoBuf: Unpin
 {
     fn read_ptr(&self) -> *const u8;
 
@@ -27,14 +27,14 @@ pub unsafe trait IoBuf: Unpin + 'static
     // }
 }
 
-pub unsafe trait IoVecBuf: Unpin + 'static
+pub unsafe trait IoVecBuf: Unpin
 {
     fn read_iovec_ptr(&self) -> *const libc::iovec;
 
     fn read_iovec_len(&self) -> usize;
 }
 
-pub unsafe trait IoBufMut: Unpin + 'static
+pub unsafe trait IoBufMut: Unpin
 {
     fn write_ptr(&mut self) -> *mut u8;
 
@@ -65,7 +65,7 @@ pub unsafe trait IoBufMut: Unpin + 'static
     // }
 }
 
-pub unsafe trait IoVecBufMut: Unpin + 'static
+pub unsafe trait IoVecBufMut: Unpin
 {
     fn write_iovec_ptr(&mut self) -> *mut ::libc::iovec;
 

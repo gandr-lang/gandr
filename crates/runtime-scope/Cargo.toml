@@ -19,6 +19,7 @@ socket2 = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 assert_fs = { workspace = true }
+gandr-kernel-data = { workspace = true }
 predicates = { workspace = true }
 
 [features]

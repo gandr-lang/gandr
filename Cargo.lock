@@ -1643,6 +1643,7 @@ name = "gandr-runtime-scope"
 version = "0.0.0"
 dependencies = [
  "assert_fs",
+ "gandr-kernel-data",
  "gandr-runtime-uring",
  "libc",
  "pin-project-lite",

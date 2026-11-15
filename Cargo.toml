@@ -634,6 +634,7 @@ path = "crates/kernel-core-base"
 # The region: values in buckets under a budget, whose ids carry its brand,
 # and an allocator under the same budget.
 # consumers:
+# - runtime-scope (dev)
 # - storage-io (dev)
 [workspace.dependencies.gandr-kernel-data]
 path = "crates/kernel-data"

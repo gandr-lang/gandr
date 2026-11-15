@@ -2,6 +2,7 @@ mod accept;
 mod bind;
 mod listen;
 mod new;
+mod recv;
 
 use ::socket2::Domain;
 use ::socket2::Protocol;
@@ -12,6 +13,7 @@ use crate::io::socket::accept::OpSocketAccept;
 use crate::io::socket::bind::OpSocketBind;
 use crate::io::socket::listen::OpSocketListen;
 use crate::io::socket::new::OpSocketNew;
+use crate::io::socket::recv::OpSocketRecv;
 use crate::scope::Scope;
 
 #[non_exhaustive]
@@ -65,6 +67,19 @@ impl<'tsk, 'env: 'tsk> Socket<'tsk, 'env>
         let scope = self.scope;
         OpSocketAccept::new(scope, &self.inner)
     }
+
+    /// A receive of at most `buf.len()` bytes into `buf`, a buffer lent for
+    /// the scope's life; the completion gives the count and the buffer back.
+    #[must_use]
+    #[inline]
+    pub fn recv(
+        &self,
+        buf: &'tsk mut [u8],
+    ) -> OpSocketRecv<'tsk, 'env, '_>
+    {
+        let scope = self.scope;
+        OpSocketRecv::new(scope, &self.inner, buf)
+    }
 }
 
 #[cfg(test)]
@@ -84,6 +99,28 @@ pub(crate) mod test
             let ty = Type::STREAM;
             let protocol = None;
             Socket::new(scope, domain, ty, protocol)
+        }
+
+        /// The near end of a connected pair as a socket of `scope`.
+        pub fn wrap<'tsk, 'env>(
+            scope: &'tsk Scope<'tsk, 'env>,
+            near: ::std::os::unix::net::UnixStream,
+        ) -> Socket<'tsk, 'env>
+        {
+            let inner = ::socket2::Socket::from(::std::os::fd::OwnedFd::from(near));
+            Socket { scope, inner }
+        }
+
+        /// A buffer of `len` zero bytes, lent through the allocator of
+        /// `region` for the region's life.
+        pub fn lend<'region>(
+            region: &'region ::gandr_kernel_data::Region<'_, (), ::alloc::alloc::Global>,
+            len: usize,
+        ) -> &'region mut [u8]
+        {
+            let mut bytes = ::alloc::vec::Vec::with_capacity_in(len, region);
+            bytes.resize(len, 0_u8);
+            bytes.leak()
         }
     }
 
@@ -204,6 +241,58 @@ pub(crate) mod test
                 })
                 .unwrap()
                 .unwrap();
+        }
+
+        /// A receive into a buffer that the region lends gives the bytes
+        /// that the peer sent, and the buffer back.
+        #[test]
+        fn recv()
+        {
+            let (near, mut far) = ::std::os::unix::net::UnixStream::pair().unwrap();
+            ::std::io::Write::write_all(&mut far, b"ping").unwrap();
+            let budget = ::gandr_kernel_data::Budget::from(4096_usize);
+            ::gandr_kernel_data::scoped::<(), _, _>(budget, |region, _mint| {
+                let buf = harness::lend(region, 8);
+                let got = crate::test::harness::runtime::new()
+                    .run(
+                        async |scope| -> Result<Option<Vec<u8>>, crate::RuntimeError> {
+                            let socket = harness::wrap(scope, near);
+                            let (len, buf) = socket.recv(buf).await?;
+                            Ok(buf.get(.. len).map(<[u8]>::to_vec))
+                        },
+                    )
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(got.as_deref(), Some(b"ping".as_slice()));
+            });
+        }
+
+        /// A scope that ends with a receive in flight cancels it before the
+        /// run returns. So the bytes that the peer sends after the run stay
+        /// in the socket, and the region's buffer keeps its zeros.
+        #[test]
+        fn recv_in_flight()
+        {
+            let (near, mut far) = ::std::os::unix::net::UnixStream::pair().unwrap();
+            let kept = near.try_clone().unwrap();
+            let budget = ::gandr_kernel_data::Budget::from(4096_usize);
+            ::gandr_kernel_data::scoped::<(), _, _>(budget, |region, _mint| {
+                let buf = harness::lend(region, 8);
+                crate::test::harness::runtime::new()
+                    .run(async |scope| -> Result<(), crate::RuntimeError> {
+                        let socket = harness::wrap(scope, near);
+                        let recv = socket.recv(&mut *buf);
+                        drop(recv);
+                        Ok(())
+                    })
+                    .unwrap()
+                    .unwrap();
+                ::std::io::Write::write_all(&mut far, b"late").unwrap();
+                let mut read = [0_u8; 4];
+                ::std::io::Read::read_exact(&mut &kept, &mut read).unwrap();
+                assert_eq!(&read, b"late");
+                assert_eq!(&*buf, &[0_u8; 8]);
+            });
         }
     }
 }
