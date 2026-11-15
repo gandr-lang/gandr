@@ -1,0 +1,132 @@
+[
+  {
+    "name": "#3113: an issue failing the reading gets its label and one comment with a finding table",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": []
+    },
+    "output": {
+      "label": "add",
+      "comment": {
+        "act": "create",
+        "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a run finding what the standing comment lists, the label on, changes nothing, the comment read as GitHub keeps it, without its trailing newline",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit."
+        }
+      ]
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  },
+  {
+    "name": "#3113: new findings rewrite the oldest marked comment in place with a finding table",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
+        },
+        {
+          "id": 9,
+          "body": "<!-- unit:check -->\nstray"
+        }
+      ]
+    },
+    "output": {
+      "label": null,
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n**unit:check:** This issue has 1 missing unit section.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a pass takes the label off and rewrites the comment to say the sections are complete",
+    "input": {
+      "state": "open",
+      "labels": ["kind:defect", "area:core", "status:unsectioned"],
+      "findings": [],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
+        }
+      ]
+    },
+    "output": {
+      "label": "remove",
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n**unit:check:** The unit sections are complete.\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: an issue that passes and was never flagged gets no label and no comment",
+    "input": {
+      "state": "open",
+      "labels": ["kind:gap", "area:surface"],
+      "findings": [],
+      "comments": []
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  },
+  {
+    "name": "#3113: an epic is not read: its label comes off and its standing comment says why",
+    "input": {
+      "state": "open",
+      "labels": ["kind:epic", "area:core", "status:unsectioned"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": [
+        {
+          "id": 7,
+          "body": "<!-- unit:check -->\n**unit:check:** This issue has 2 missing unit sections.\n\n| Section |\n| --- |\n| `## Ledger` is missing |\n| `## After` is missing |\n\nThe seat that claims this issue writes these sections. It then pages for `shape:signed` (`units.md` § units-claim). This comment is rewritten after every edit.\n"
+        }
+      ]
+    },
+    "output": {
+      "label": "remove",
+      "comment": {
+        "act": "edit",
+        "id": 7,
+        "body": "<!-- unit:check -->\n**unit:check:** This issue is not read. An epic or a `collector` keeps its own shape (`units.md` § units-issue).\n"
+      }
+    }
+  },
+  {
+    "name": "#3113: a closed issue is left as it is",
+    "input": {
+      "state": "closed",
+      "labels": ["kind:defect", "area:core"],
+      "findings": ["`## Ledger` is missing", "`## After` is missing"],
+      "comments": []
+    },
+    "output": {
+      "label": null,
+      "comment": null
+    }
+  }
+]

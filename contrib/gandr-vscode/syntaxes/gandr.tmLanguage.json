@@ -1,0 +1,102 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "gandr",
+  "scopeName": "source.gandr",
+  "patterns": [
+    {
+      "include": "#block-comments"
+    },
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "comment": "A line comment is a region, so the code-span injection can enter it. It ends at the end of its line. It also ends at the start of a line, where a code span that runs past its line leaves it open.",
+          "name": "comment.line.double-slash.gandr",
+          "begin": "//",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.gandr"
+            }
+          },
+          "end": "$|^"
+        }
+      ]
+    },
+    "block-comments": {
+      "patterns": [
+        {
+          "comment": "block comments, which nest",
+          "name": "comment.block.gandr",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [
+            {
+              "include": "#block-comments"
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "comment": "codata",
+          "name": "keyword.declaration.codata.gandr storage.type.gandr",
+          "match": "\\b(codata)\\b"
+        },
+        {
+          "comment": "data",
+          "name": "keyword.declaration.data.gandr storage.type.gandr",
+          "match": "\\b(data)\\b"
+        },
+        {
+          "comment": "def",
+          "name": "keyword.other.def.gandr",
+          "match": "\\b(def)\\b"
+        },
+        {
+          "comment": "match",
+          "name": "keyword.control.gandr",
+          "match": "\\b(match)\\b"
+        },
+        {
+          "comment": "pure, return, become",
+          "name": "keyword.control.gandr",
+          "match": "\\b(pure|return|become)\\b"
+        },
+        {
+          "comment": "theory",
+          "name": "storage.type.gandr",
+          "match": "\\b(theory)\\b"
+        },
+        {
+          "comment": "let, var",
+          "name": "keyword.other.gandr storage.type.gandr",
+          "match": "\\b(let|var)\\b"
+        },
+        {
+          "comment": "-F, the shift into computation types",
+          "name": "keyword.other.shift.gandr",
+          "match": "(?<![\\w+-])(-F)\\b"
+        },
+        {
+          "comment": "+U, the shift into value types",
+          "name": "keyword.other.shift.gandr",
+          "match": "(?<![\\w+-])(\\+U)\\b"
+        },
+        {
+          "comment": "Type",
+          "name": "entity.name.type.primitive.gandr",
+          "match": "\\b(Type)\\b"
+        }
+      ]
+    }
+  }
+}

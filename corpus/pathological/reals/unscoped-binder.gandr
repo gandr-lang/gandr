@@ -1,0 +1,32 @@
+// A program hands the host a plan whose bound variable stands outside its
+// binder, and `admit` refuses the plan.
+//
+// The root of the plan is the meet of `∀ x ∈ [0, 1] (x · x < 2)` and
+// `x < 2`, and the two comparisons share one node for `x`. Inside the
+// universal, that node is the variable that the universal binds. The second
+// comparison stands outside the universal, so there the node reaches past
+// every binder. The validation pass reads each path from the root, and it
+// refuses the plan at that node, node 1, by the check `EscapedBinder`.
+//
+// `gandr run unscoped-binder.gandr` writes the refusal as one line on
+// standard error. The run stops at `admit`, and it prints nothing.
+//
+// - see: `corpus/model/reals/forall.gandr` — the universal in its scope
+// - see: `crates/theory-exact-reals/src/validate.rs` — the checks of a plan
+
+// The console's host interface.
+import std.io;
+// The exact reals' host interface.
+import std.reals;
+
+/// The canonical bytes of the plan of the meet of
+/// `∀ x ∈ [0, 1] (x · x < 2)` and `x < 2`: 8 nodes in 128 bytes.
+pub def escaped : String = "4758525001000800000000000000200001000000000000000000000000000100000000010000000000000001000101000000010200000001000000000501000000010000000201000000010000000000000001120200000003000000160000000004000000020000000101000000120100000003000000130500000006000000";
+
+/// The entry: admit the plan and decide its root. The host declines
+/// `admit`, so the run stops there and prints nothing.
+def main() -> [std.reals.Eff, std.io.Console.Eff] Integer =
+  let held = std.reals.admit escaped
+  let *{verdict, machine} = std.reals.decide held 16
+  std.io.Console.print verdict
+  0

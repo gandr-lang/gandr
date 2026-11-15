@@ -1,0 +1,5 @@
+def f(p : Path[.A = Circle](Base, Base)) -> -F Integer {
+  match p {
+    | loop :: q => 1
+  }
+}

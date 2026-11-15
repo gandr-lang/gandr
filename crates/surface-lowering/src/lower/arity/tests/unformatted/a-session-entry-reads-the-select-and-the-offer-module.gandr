@@ -1,0 +1,3 @@
+def choose : +{ok : ! Integer . end} ;
+def menu : &{get : ! Integer . end, put : ? Integer . end} ;
+def nested : +{ok : &{go : end}} ;
